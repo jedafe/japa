@@ -1,0 +1,26 @@
+# Developer & AI Usage Guidelines for Japa (japaconnect)
+
+Welcome to the team. To protect the intellectual property, commercial viability, and security of Japa (also known as japaconnect), all developers and contractors must strictly adhere to the following guidelines regarding code security and Artificial Intelligence (AI) tools.
+
+## 1. Authorized AI Tools & Data Privacy
+You are permitted to use AI assistants to assist with development, troubleshooting, and refactoring under the following strict conditions:
+* **Approved Tools Only:** You may only use enterprise-grade AI tools provided or approved explicitly by Jephthah Edafe Okpukoro (e.g., GitHub Copilot Business, Claude Team/Enterprise, OpenAI Team).
+* **Data Training Opt-Out:** You are strictly prohibited from using free or consumer-tier AI tools (such as free ChatGPT, Claude, or Gemini) where inputs are used for model training. 
+* **No Public Leaks:** Do not paste proprietary Japa / japaconnect codebase snippets, API keys, architecture diagrams, or database schemas into any unauthorized third-party AI interfaces.
+
+## 2. IP Ownership & "Human-in-the-Loop" Requirements
+Because this project intends to transition to an open-source model in the future, the legal chain of ownership must remain flawless:
+* **Work-for-Hire:** All code, prompt engineering, configurations, and documentation you generate—whether written manually or generated via authorized AI—belong exclusively to Jephthah Edafe Okpukoro.
+* **Human Validation:** Do not commit raw, unverified AI outputs. Every line of code must be reviewed, tested, and validated by you before submission to the repository.
+* **Traceability:** Maintain descriptive Git commit messages. Document *what* changes were made and *why*, establishing a clear record of human oversight and modification.
+
+## 3. Security & Dependency Hygiene
+AI models frequently hallucinate or recommend outdated packages. You must:
+* Verify that any open-source libraries or packages suggested by an AI assistant actually exist and are safe before importing them into Japa / japaconnect.
+* Never commit secrets, private keys, tokens, or environmental variables (`.env`) to the repository.
+
+## 4. Compliance and Enforcement
+Failure to adhere to these guidelines compromises the intellectual property and security of Japa / japaconnect. Violations may result in immediate termination of your contract and potential legal action for breach of confidentiality.
+
+---
+By contributing to this repository, you acknowledge that you have read, understood, and agreed to these guidelines.
