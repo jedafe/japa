@@ -1,0 +1,9 @@
+-- docker/postgres-init.sql
+-- Create the additional databases that JapaConnect services depend on.
+-- The primary "japa" database is created by the POSTGRES_DB environment
+-- variable in docker-compose.yml. This script runs once on first boot
+-- (when the PostgreSQL data directory is initialized) to create the
+-- extra databases that Honcho and Glitchtip need.
+
+CREATE DATABASE honcho;
+CREATE DATABASE glitchtip;
