@@ -1,0 +1,89 @@
+package features
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestDefaultFor(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want bool
+	}{
+		{"blog is on by default", "feature.blog", true},
+		{"forum is on by default", "feature.forum", true},
+		{"wallet is off by default", "feature.wallet", false},
+		{"japabot is off by default", "feature.japabot", false},
+		{"unknown feature defaults off", "feature.unknown", false},
+		{"empty key defaults off", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DefaultFor(tt.key)
+			if got != tt.want {
+				t.Errorf("DefaultFor(%q) = %v, want %v", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAllKeys(t *testing.T) {
+	keys := AllKeys()
+	if len(keys) != len(Registry) {
+		t.Errorf("AllKeys() returned %d keys, registry has %d", len(keys), len(Registry))
+	}
+	for _, k := range keys {
+		if !strings.HasPrefix(k, "feature.") {
+			t.Errorf("key %q does not start with 'feature.'", k)
+		}
+	}
+}
+
+func TestChecker_ClearCache(t *testing.T) {
+	c := &Checker{
+		cache: &flagCache{
+			entries: map[string]map[string]bool{
+				"tenant1": {"feature.blog": true},
+			},
+		},
+	}
+	c.ClearCache()
+	if len(c.cache.entries) != 0 {
+		t.Errorf("cache should be empty, got %d entries", len(c.cache.entries))
+	}
+}
+
+func TestChecker_CacheGetSet(t *testing.T) {
+	c := &Checker{
+		cache: &flagCache{
+			entries: make(map[string]map[string]bool),
+		},
+	}
+
+	c.cacheSet("tenant1", "feature.blog", true)
+
+	val := c.cacheGet("tenant1", "feature.blog")
+	if val == nil {
+		t.Fatal("expected cached value, got nil")
+	}
+	if !*val {
+		t.Error("expected true, got false")
+	}
+
+	val = c.cacheGet("tenant1", "feature.unknown")
+	if val != nil {
+		t.Error("expected nil for uncached key")
+	}
+}
+
+func TestRegistryHasNoDuplicates(t *testing.T) {
+	seen := make(map[string]bool)
+	for _, f := range Registry {
+		if seen[f.Key] {
+			t.Errorf("duplicate feature key: %s", f.Key)
+		}
+		seen[f.Key] = true
+	}
+}
