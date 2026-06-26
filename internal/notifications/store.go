@@ -1,0 +1,149 @@
+package notifications
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// Store provides low-level database access for notifications.
+type Store struct {
+	write *gen.Queries
+	read  *gen.Queries
+}
+
+// NewStore creates a Store backed by the given gen.Queries instances.
+func NewStore(read, write *gen.Queries) *Store {
+	return &Store{read: read, write: write}
+}
+
+// insertNotification creates a new notification row.
+func (s *Store) insertNotification(ctx context.Context, params gen.InsertNotificationParams) error {
+	if err := s.write.InsertNotification(ctx, params); err != nil {
+		return fmt.Errorf("inserting notification: %w", err)
+	}
+	return nil
+}
+
+// getNotificationsByRecipient returns paginated notifications for a user.
+func (s *Store) getNotificationsByRecipient(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32) ([]gen.GetNotificationsByRecipientRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.GetNotificationsByRecipient(ctx, gen.GetNotificationsByRecipientParams{
+		TenantID:    tenantID,
+		RecipientID: recipientID,
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting notifications: %w", err)
+	}
+	return rows, nil
+}
+
+// getUnreadCount returns the number of unread notifications.
+func (s *Store) getUnreadCount(ctx context.Context, tenantID, recipientID pgtype.UUID) (int32, error) {
+	count, err := s.read.GetUnreadNotificationCount(ctx, gen.GetUnreadNotificationCountParams{
+		TenantID:    tenantID,
+		RecipientID: recipientID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting unread notifications: %w", err)
+	}
+	return count, nil
+}
+
+// markNotificationRead marks a single notification as read.
+func (s *Store) markNotificationRead(ctx context.Context, notificationID, recipientID pgtype.UUID) error {
+	if err := s.write.MarkNotificationRead(ctx, gen.MarkNotificationReadParams{
+		ID:          notificationID,
+		RecipientID: recipientID,
+	}); err != nil {
+		return fmt.Errorf("marking notification read: %w", err)
+	}
+	return nil
+}
+
+// markAllNotificationsRead marks all notifications as read for a user.
+func (s *Store) markAllNotificationsRead(ctx context.Context, tenantID, recipientID pgtype.UUID) error {
+	if err := s.write.MarkAllNotificationsRead(ctx, gen.MarkAllNotificationsReadParams{
+		TenantID:    tenantID,
+		RecipientID: recipientID,
+	}); err != nil {
+		return fmt.Errorf("marking all notifications read: %w", err)
+	}
+	return nil
+}
+
+// deleteNotification deletes a single notification.
+func (s *Store) deleteNotification(ctx context.Context, notificationID, recipientID pgtype.UUID) error {
+	if err := s.write.DeleteNotification(ctx, gen.DeleteNotificationParams{
+		ID:          notificationID,
+		RecipientID: recipientID,
+	}); err != nil {
+		return fmt.Errorf("deleting notification: %w", err)
+	}
+	return nil
+}
+
+// getNotificationPreferences returns user's notification preferences.
+func (s *Store) getNotificationPreferences(ctx context.Context, userID pgtype.UUID) ([]gen.GetNotificationPreferencesRow, error) {
+	rows, err := s.read.GetNotificationPreferences(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("getting notification preferences: %w", err)
+	}
+	return rows, nil
+}
+
+// upsertNotificationPreference creates or updates a notification preference.
+func (s *Store) upsertNotificationPreference(ctx context.Context, params gen.UpsertNotificationPreferenceParams) error {
+	if err := s.write.UpsertNotificationPreference(ctx, params); err != nil {
+		return fmt.Errorf("upserting notification preference: %w", err)
+	}
+	return nil
+}
+
+// getOpenBatchWindow returns an open, non-dispatched batch window.
+func (s *Store) getOpenBatchWindow(ctx context.Context, params gen.GetOpenBatchWindowParams) (gen.NotificationBatchWindow, error) {
+	window, err := s.read.GetOpenBatchWindow(ctx, params)
+	if err != nil {
+		return gen.NotificationBatchWindow{}, fmt.Errorf("getting open batch window: %w", err)
+	}
+	return window, nil
+}
+
+// createBatchWindow creates a new batch dedup window.
+func (s *Store) createBatchWindow(ctx context.Context, params gen.CreateBatchWindowParams) error {
+	if err := s.write.CreateBatchWindow(ctx, params); err != nil {
+		return fmt.Errorf("creating batch window: %w", err)
+	}
+	return nil
+}
+
+// extendBatchWindow adds an actor to an existing batch window.
+func (s *Store) extendBatchWindow(ctx context.Context, params gen.ExtendBatchWindowParams) error {
+	if err := s.write.ExtendBatchWindow(ctx, params); err != nil {
+		return fmt.Errorf("extending batch window: %w", err)
+	}
+	return nil
+}
+
+// markBatchWindowDispatched marks a batch window as dispatched.
+func (s *Store) markBatchWindowDispatched(ctx context.Context, windowID pgtype.UUID) error {
+	if err := s.write.MarkBatchWindowDispatched(ctx, windowID); err != nil {
+		return fmt.Errorf("marking batch window dispatched: %w", err)
+	}
+	return nil
+}
+
+// getNotificationTypes returns all configured notification types.
+func (s *Store) getNotificationTypes(ctx context.Context) ([]gen.NotificationType, error) {
+	types, err := s.read.GetNotificationTypes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting notification types: %w", err)
+	}
+	return types, nil
+}

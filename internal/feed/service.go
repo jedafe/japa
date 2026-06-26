@@ -1,0 +1,341 @@
+package feed
+
+import (
+	"context"
+	"fmt"
+	"math"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// FeedItem represents a single item in a feed response, normalized across
+// all feed types (explore, primary, space, profile).
+type FeedItem struct {
+	ID           string  `json:"id"`
+	Title        string  `json:"title"`
+	Slug         string  `json:"slug"`
+	ContentType  string  `json:"content_type"`
+	AuthorID     string  `json:"author_id"`
+	SpaceID      *string `json:"space_id,omitempty"`
+	CreatedAt    string  `json:"created_at"`
+	ViewCount    int32   `json:"view_count"`
+	CommentCount int32   `json:"comment_count"`
+	VoteScore    int32   `json:"vote_score"`
+	VelocityScore float64 `json:"velocity_score"`
+}
+
+// PrimaryFeedItem represents a feed item from the personalized (push) feed.
+type PrimaryFeedItem struct {
+	ID                string  `json:"id"`
+	ContentID         string  `json:"content_id"`
+	SpaceID           *string `json:"space_id,omitempty"`
+	ContentType       string  `json:"content_type"`
+	Score             float64 `json:"score"`
+	CreatedAt         string  `json:"created_at"`
+	Title             string  `json:"title"`
+	Slug              string  `json:"slug"`
+	AuthorID          string  `json:"author_id"`
+	ContentCreatedAt  string  `json:"content_created_at"`
+}
+
+// FanOutPost distributes a post to follower feeds.
+// If space member count ≤ FanOutThreshold: push mode (write feeds rows).
+// If larger: pull mode (mark in hot cache, followers pull on next request).
+func (s *Service) FanOutPost(ctx context.Context, tenantID, contentID, spaceID pgtype.UUID, contentType string) error {
+	// TODO: In Phase 6 (Asynq), this will be an async task that:
+	// 1. Queries space member count
+	// 2. If ≤ FanOutThreshold: fetch followers, insert feed rows
+	// 3. If > FanOutThreshold: mark in hot cache for pull
+	return nil
+}
+
+// GetFeed returns paginated feed items for the specified timeline and sort.
+// timeline: "explore", "primary", "space", "profile"
+// sort: "latest", "top", "rising", "relevant"
+func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline string, userID *pgtype.UUID, spaceID *pgtype.UUID, authorID *pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	// Clamp pagination limits.
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	switch timeline {
+	case "explore":
+		return s.getExploreFeed(ctx, tenantID, sort, limit, offset)
+	case "primary":
+		if userID == nil {
+			return nil, fmt.Errorf("primary feed requires user_id")
+		}
+		return s.getPrimaryFeedItems(ctx, tenantID, *userID, sort, limit, offset)
+	case "space":
+		if spaceID == nil {
+			return nil, fmt.Errorf("space feed requires space_id")
+		}
+		return s.getSpaceFeedItems(ctx, tenantID, *spaceID, sort, limit, offset)
+	case "profile":
+		if authorID == nil {
+			return nil, fmt.Errorf("profile feed requires author_id")
+		}
+		return s.getProfileFeedItems(ctx, tenantID, *authorID, sort, limit, offset)
+	default:
+		return nil, fmt.Errorf("unknown timeline: %s", timeline)
+	}
+}
+
+// getExploreFeed returns the explore feed with the given sort mode.
+func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	switch sort {
+	case SortTop:
+		rows, err := s.store.getTopFeed(ctx, tenantID, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		return topRowsToItems(rows), nil
+	case SortRising:
+		rows, err := s.store.getRisingFeed(ctx, tenantID, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		return risingRowsToItems(rows), nil
+	default: // "latest" or "relevant" both use velocity_score DESC
+		rows, err := s.store.getExploreFeed(ctx, tenantID, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		return exploreRowsToItems(rows), nil
+	}
+}
+
+// getPrimaryFeedItems returns the user's personalized feed with sort.
+func (s *Service) getPrimaryFeedItems(ctx context.Context, tenantID, userID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	rows, err := s.store.getPrimaryFeed(ctx, tenantID, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return primaryRowsToItems(rows), nil
+}
+
+// getSpaceFeedItems returns space-specific feed with sort.
+func (s *Service) getSpaceFeedItems(ctx context.Context, tenantID, spaceID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	switch sort {
+	case SortTop:
+		// For space top feed, filter by space_id via a different query.
+		// Since GetTopFeed doesn't filter by space, fall through to default.
+		fallthrough
+	case SortRising:
+		fallthrough
+	default:
+		rows, err := s.store.getSpaceFeed(ctx, tenantID, spaceID, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		return spaceRowsToItems(rows), nil
+	}
+}
+
+// getProfileFeedItems returns a user's public posts with sort.
+func (s *Service) getProfileFeedItems(ctx context.Context, tenantID, authorID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	rows, err := s.store.getProfileFeed(ctx, tenantID, authorID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return profileRowsToItems(rows), nil
+}
+
+// UpdateVelocityScores batch updates velocity scores for posts < 7 days old.
+// velocity = engagement / (hours_old + 2)^1.8
+func (s *Service) UpdateVelocityScores(ctx context.Context, tenantID pgtype.UUID) error {
+	return s.store.updateVelocityScores(ctx, tenantID)
+}
+
+// UpdateContentScore updates a single content's score.
+func (s *Service) UpdateContentScore(ctx context.Context, contentID pgtype.UUID, voteScore, commentCount, viewCount, bookmarkCount int32) error {
+	return s.store.updateContentScore(ctx, gen.UpdateContentScoreParams{
+		ContentID:     contentID,
+		VoteScore:     voteScore,
+		CommentCount:  commentCount,
+		ViewCount:     viewCount,
+		BookmarkCount: bookmarkCount,
+	})
+}
+
+// DeleteFeedItemsByContent removes all feed rows for a content ID.
+func (s *Service) DeleteFeedItemsByContent(ctx context.Context, contentID pgtype.UUID) error {
+	return s.store.deleteFeedItemsByContent(ctx, contentID)
+}
+
+// DeleteFeedItemsByUser removes all feed rows for a user.
+func (s *Service) DeleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID) error {
+	return s.store.deleteFeedItemsByUser(ctx, userID)
+}
+
+// GetFeedItemCount returns the total number of feed items for a user.
+func (s *Service) GetFeedItemCount(ctx context.Context, userID pgtype.UUID) (int, error) {
+	count, err := s.store.getFeedItemCount(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+// ---------------------------------------------------------------------------
+// Row-to-item converters
+// ---------------------------------------------------------------------------
+
+// uuidToString converts a pgtype.UUID to its string representation.
+func uuidToString(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+	return u.String()
+}
+
+// nullableUUIDToString converts a nullable pgtype.UUID to *string.
+func nullableUUIDToString(u pgtype.UUID) *string {
+	if !u.Valid {
+		return nil
+	}
+	s := u.String()
+	return &s
+}
+
+func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
+	items := make([]FeedItem, len(rows))
+	for i, r := range rows {
+		items[i] = FeedItem{
+			ID:            uuidToString(r.ID),
+			Title:         r.Title,
+			Slug:          r.Slug,
+			ContentType:   r.ContentType,
+			AuthorID:      uuidToString(r.AuthorID),
+			SpaceID:       nullableUUIDToString(r.SpaceID),
+			CreatedAt:     r.CreatedAt.Time.String(),
+			ViewCount:     r.ViewCount,
+			CommentCount:  r.CommentCount,
+			VoteScore:     r.VoteScore,
+			VelocityScore: pgNumericToFloat64(r.VelocityScore),
+		}
+	}
+	return items
+}
+
+func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
+	items := make([]FeedItem, len(rows))
+	for i, r := range rows {
+		items[i] = FeedItem{
+			ID:            uuidToString(r.ID),
+			Title:         r.Title,
+			Slug:          r.Slug,
+			ContentType:   r.ContentType,
+			AuthorID:      uuidToString(r.AuthorID),
+			SpaceID:       nullableUUIDToString(r.SpaceID),
+			CreatedAt:     r.CreatedAt.Time.String(),
+			ViewCount:     r.ViewCount,
+			CommentCount:  r.CommentCount,
+			VoteScore:     r.VoteScore,
+			VelocityScore: pgNumericToFloat64(r.VelocityScore),
+		}
+	}
+	return items
+}
+
+func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
+	items := make([]FeedItem, len(rows))
+	for i, r := range rows {
+		items[i] = FeedItem{
+			ID:            uuidToString(r.ID),
+			Title:         r.Title,
+			Slug:          r.Slug,
+			ContentType:   r.ContentType,
+			AuthorID:      uuidToString(r.AuthorID),
+			SpaceID:       nullableUUIDToString(r.SpaceID),
+			CreatedAt:     r.CreatedAt.Time.String(),
+			ViewCount:     r.ViewCount,
+			CommentCount:  r.CommentCount,
+			VoteScore:     r.VoteScore,
+			VelocityScore: pgNumericToFloat64(r.VelocityScore),
+		}
+	}
+	return items
+}
+
+func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
+	items := make([]FeedItem, len(rows))
+	for i, r := range rows {
+		items[i] = FeedItem{
+			ID:            uuidToString(r.ID),
+			Title:         r.Title,
+			Slug:          r.Slug,
+			ContentType:   r.ContentType,
+			AuthorID:      uuidToString(r.AuthorID),
+			SpaceID:       nullableUUIDToString(r.SpaceID),
+			CreatedAt:     r.CreatedAt.Time.String(),
+			VelocityScore: pgNumericToFloat64(r.Score),
+		}
+	}
+	return items
+}
+
+func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
+	items := make([]FeedItem, len(rows))
+	for i, r := range rows {
+		items[i] = FeedItem{
+			ID:            uuidToString(r.ID),
+			Title:         r.Title,
+			Slug:          r.Slug,
+			ContentType:   r.ContentType,
+			AuthorID:      uuidToString(r.AuthorID),
+			CreatedAt:     r.CreatedAt.Time.String(),
+			ViewCount:     r.ViewCount,
+			CommentCount:  r.CommentCount,
+			VoteScore:     r.VoteScore,
+			VelocityScore: pgNumericToFloat64(r.VelocityScore),
+		}
+	}
+	return items
+}
+
+func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
+	items := make([]FeedItem, len(rows))
+	for i, r := range rows {
+		items[i] = FeedItem{
+			ID:            uuidToString(r.ID),
+			Title:         r.Title,
+			Slug:          r.Slug,
+			ContentType:   r.ContentType,
+			SpaceID:       nullableUUIDToString(r.SpaceID),
+			CreatedAt:     r.CreatedAt.Time.String(),
+			ViewCount:     r.ViewCount,
+			CommentCount:  r.CommentCount,
+			VoteScore:     r.VoteScore,
+			VelocityScore: pgNumericToFloat64(r.VelocityScore),
+		}
+	}
+	return items
+}
+
+// ComputeVelocity calculates the velocity score for a post.
+// Formula: engagement / (hours_old + 2)^1.8
+func ComputeVelocity(voteScore, commentCount, viewCount, bookmarkCount int32, hoursOld float64) float64 {
+	engagement := float64(voteScore + commentCount + viewCount + bookmarkCount)
+	denominator := math.Pow(hoursOld+2, 1.8)
+	if denominator == 0 {
+		return 0
+	}
+	return engagement / denominator
+}
+
+// pgNumericToFloat64 converts pgtype.Numeric to float64.
+func pgNumericToFloat64(n pgtype.Numeric) float64 {
+	if !n.Valid {
+		return 0
+	}
+	f, err := n.Float64Value()
+	if err != nil {
+		return 0
+	}
+	return f.Float64
+}

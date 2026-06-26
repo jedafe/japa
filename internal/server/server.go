@@ -12,8 +12,19 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/blog"
+	"github.com/jedafe/japa/internal/comparison"
+	"github.com/jedafe/japa/internal/feed"
+	"github.com/jedafe/japa/internal/follows"
+	"github.com/jedafe/japa/internal/forum"
+	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/customfields"
+	"github.com/jedafe/japa/internal/professional"
+	"github.com/jedafe/japa/internal/reviews"
+	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/linkpreview"
@@ -101,6 +112,34 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Link preview subsystem (Section 15 — Link Preview Fetch).
 	linkPreviewFetcher := linkpreview.NewFetcher(nil, vkClient)
 	linkPreviewHandlers := linkpreview.NewHandlers(linkPreviewFetcher)
+
+	// Follow System subsystem (Section 31 — Follow System).
+	followService := follows.NewService(database)
+	followHandlers := follows.NewHandlers(followService)
+
+	// Notification System subsystem (Section 35 — Notification System).
+	notificationService := notifications.NewService(database)
+	notificationHandlers := notifications.NewHandlers(notificationService)
+
+		// Feed System subsystem (Section 32 — Activity Feed / Timeline).
+		feedService := feed.NewService(database)
+		feedHandlers := feed.NewHandlers(feedService)
+
+		// Blog Extension subsystem (Section 24 — Blog Extension).
+		blogService := blog.NewService(database)
+		blogHandlers := blog.NewHandlers(blogService)
+
+		// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
+		reviewService := reviews.NewService(database)
+		reviewHandlers := reviews.NewHandlers(reviewService)
+
+		// Comparison subsystem (Section 30 — Generic Comparison System).
+		comparisonService := comparison.NewService(database)
+		comparisonHandlers := comparison.NewHandlers(comparisonService)
+
+		// Professional Profiles subsystem (Section 33 — Professional Profiles).
+		professionalService := professional.NewService(database)
+		professionalHandlers := professional.NewHandlers(professionalService)
 
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
@@ -262,6 +301,232 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Link preview routes (Section 15 — Link Preview Fetch)
 			r.With(auth.RequireAuth(kr)).Get("/link-preview", linkPreviewHandlers.Fetch)
+
+			// Follow System routes (Section 31 — Follow System)
+			r.With(auth.RequireAuth(kr)).Post("/follows", followHandlers.ToggleFollow)
+			r.With(auth.RequireAuth(kr)).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
+			r.With(auth.RequireAuth(kr)).Get("/users/{user_id}/following", followHandlers.GetFollowing)
+			r.With(auth.RequireAuth(kr)).Get("/users/{user_id}/mutual/{other_user_id}", followHandlers.CheckMutual)
+			r.With(auth.RequireAuth(kr)).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
+			r.With(auth.RequireAuth(kr)).Get("/tags/{tag_id}/followers", followHandlers.GetFollowers)
+
+			// Notification System routes (Section 35 — Notification System)
+			r.With(auth.RequireAuth(kr)).Get("/notifications", notificationHandlers.ListNotifications)
+			r.With(auth.RequireAuth(kr)).Get("/notifications/unread-count", notificationHandlers.GetUnreadCount)
+			r.With(auth.RequireAuth(kr)).Patch("/notifications/{id}/read", notificationHandlers.MarkAsRead)
+			r.With(auth.RequireAuth(kr)).Post("/notifications/read-all", notificationHandlers.MarkAllAsRead)
+			r.With(auth.RequireAuth(kr)).Get("/notification-preferences", notificationHandlers.GetPreferences)
+			r.With(auth.RequireAuth(kr)).Put("/notification-preferences/{type}", notificationHandlers.UpdatePreference)
+			r.With(auth.RequireAuth(kr)).Get("/notification-types", notificationHandlers.ListNotificationTypes)
+
+			// Feed routes (Section 32 — Activity Feed / Timeline)
+			r.Get("/feed/explore", feedHandlers.GetExploreFeed) // public — no auth required
+			r.With(auth.RequireAuth(kr)).Get("/feed/primary", feedHandlers.GetPrimaryFeed)
+			r.With(auth.RequireAuth(kr)).Get("/feed/space/{space_id}", feedHandlers.GetSpaceFeed)
+			r.With(auth.RequireAuth(kr)).Get("/feed/profile/{user_id}", feedHandlers.GetProfileFeed)
+
+			// WebSocket + DM routes (Section 10 — Real-Time WebSockets)
+			wsHub := websocket.NewHub()
+			wsService := websocket.NewService(database, wsHub)
+			wsDMStore := websocket.NewDMStore(gen.New(database.Reader), gen.New(database.Writer))
+			wsDMService := websocket.NewDMService(wsDMStore, wsHub)
+			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
+
+			// WebSocket
+			r.With(auth.RequireAuth(kr)).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
+			r.Get("/ws", wsHandlers.HandleWebSocket) // ticket auth, not Bearer
+			r.With(auth.RequireAuth(kr)).Get("/ws/online", wsHandlers.GetOnlineUsers)
+
+			// Direct Messaging
+			r.With(auth.RequireAuth(kr)).Get("/dm/conversations", wsHandlers.ListConversations)
+			r.With(auth.RequireAuth(kr)).Get("/dm/conversations/{id}/messages", wsHandlers.ListMessages)
+			r.With(auth.RequireAuth(kr)).Post("/dm/conversations/{id}/messages", wsHandlers.SendMessage)
+			r.With(auth.RequireAuth(kr)).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
+			r.With(auth.RequireAuth(kr)).Post("/dm/message-requests/{id}/accept", wsHandlers.AcceptMessageRequest)
+			r.With(auth.RequireAuth(kr)).Post("/dm/message-requests/{id}/decline", wsHandlers.DeclineMessageRequest)
+			r.With(auth.RequireAuth(kr)).Put("/dm/privacy", wsHandlers.UpdateDMPrivacy)
+
+			// Media routes (Section 34 — Media System)
+			mediaService := media.NewService(database)
+			mediaHandlers := media.NewHandlers(mediaService)
+
+			r.With(auth.RequireAuth(kr)).Post("/media/upload", mediaHandlers.InitiateUpload)
+			r.With(auth.RequireAuth(kr)).Post("/media/confirm/{id}", mediaHandlers.ConfirmUpload)
+			r.With(auth.RequireAuth(kr)).Get("/media/{id}", mediaHandlers.GetMedia)
+			r.With(auth.RequireAuth(kr)).Patch("/media/{id}", mediaHandlers.UpdateMetadata)
+			r.With(auth.RequireAuth(kr)).Delete("/media/{id}", mediaHandlers.DeleteMedia)
+			r.With(auth.RequireAuth(kr)).Get("/media", mediaHandlers.ListMedia)
+			r.With(auth.RequireAuth(kr)).Post("/media/bulk-delete", mediaHandlers.BulkDelete)
+
+			// Forum Q&A / Solved routes (Section 08)
+			forumService := forum.NewService(database)
+			forumHandlers := forum.NewHandlers(forumService)
+
+			// Thread routes
+			r.With(auth.RequireAuth(kr)).Post("/forum/threads", forumHandlers.CreateThread)
+			r.With(auth.RequireAuth(kr)).Get("/forum/threads", forumHandlers.ListThreads)
+			r.With(auth.RequireAuth(kr)).Get("/forum/threads/{slug}", forumHandlers.GetThread)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.thread.edit_own")).
+				Patch("/forum/threads/{id}", forumHandlers.UpdateThread)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.thread.delete_own")).
+				Delete("/forum/threads/{id}", forumHandlers.DeleteThread)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.thread.solve")).
+				Post("/forum/threads/{id}/solve", forumHandlers.SolveThread)
+
+			// Reply routes
+			r.With(auth.RequireAuth(kr)).Post("/forum/threads/{id}/replies", forumHandlers.CreateReply)
+			r.With(auth.RequireAuth(kr)).Get("/forum/threads/{id}/replies", forumHandlers.ListReplies)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.reply.edit_own")).
+				Patch("/forum/replies/{id}", forumHandlers.UpdateReply)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.reply.delete_own")).
+				Delete("/forum/replies/{id}", forumHandlers.DeleteReply)
+
+			// Vote route
+			r.With(auth.RequireAuth(kr)).Post("/forum/vote", forumHandlers.Vote)
+
+			// Poll routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
+				Post("/forum/polls", forumHandlers.CreatePoll)
+			r.With(auth.RequireAuth(kr)).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
+			r.With(auth.RequireAuth(kr)).Get("/forum/polls/{id}", forumHandlers.GetPoll)
+
+			// Tag routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.tag.create")).
+				Post("/forum/tags", forumHandlers.CreateTag)
+			r.With(auth.RequireAuth(kr)).Get("/forum/tags", forumHandlers.ListTags)
+			r.With(auth.RequireAuth(kr)).Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
+			r.With(auth.RequireAuth(kr)).Post("/forum/threads/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
+			r.With(auth.RequireAuth(kr)).Delete("/forum/threads/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
+
+			// Bookmark routes
+			r.With(auth.RequireAuth(kr)).Post("/forum/bookmarks", forumHandlers.AddBookmark)
+			r.With(auth.RequireAuth(kr)).Delete("/forum/bookmarks/{id}", forumHandlers.RemoveBookmark)
+			r.With(auth.RequireAuth(kr)).Get("/forum/bookmarks", forumHandlers.ListBookmarks)
+
+			// Blog Extension routes (Section 24 — Blog Extension)
+			// Series routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.create")).
+				Post("/blog/series", blogHandlers.CreateSeries)
+			r.With(auth.RequireAuth(kr)).Get("/blog/series", blogHandlers.ListSeries)
+			r.With(auth.RequireAuth(kr)).Get("/blog/series/{slug}", blogHandlers.GetSeries)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
+				Patch("/blog/series/{id}", blogHandlers.UpdateSeries)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.delete")).
+				Delete("/blog/series/{id}", blogHandlers.DeleteSeries)
+
+			// Series post routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
+				Post("/blog/series/{id}/posts", blogHandlers.AddPostToSeries)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
+				Delete("/blog/series/{id}/posts/{postId}", blogHandlers.RemovePostFromSeries)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
+				Patch("/blog/series/{id}/posts/reorder", blogHandlers.ReorderSeriesPosts)
+
+			// Review routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.review.create")).
+				Post("/blog/reviews", blogHandlers.CreateReview)
+			r.With(auth.RequireAuth(kr)).Get("/blog/reviews", blogHandlers.ListReviews)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+				Patch("/blog/reviews/{id}", blogHandlers.UpdateReview)
+
+			// Featured routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.feature")).
+				Post("/blog/featured", blogHandlers.FeaturePost)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.feature")).
+				Delete("/blog/featured/{contentId}", blogHandlers.UnfeaturePost)
+			r.With(auth.RequireAuth(kr)).Get("/blog/featured", blogHandlers.ListFeatured)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.feature")).
+				Patch("/blog/featured/reorder", blogHandlers.ReorderFeatured)
+
+			// RSS feed (public — no auth required)
+			r.Get("/blog/feed.xml", blogHandlers.GetRSSFeed)
+
+			// Universal Ratings & Reviews routes (Section 29)
+			r.With(auth.RequireAuth(kr)).Post("/reviews", reviewHandlers.CreateReview)
+			r.With(auth.RequireAuth(kr)).Get("/reviews", reviewHandlers.ListReviews)
+			r.With(auth.RequireAuth(kr)).Get("/reviews/aggregate", reviewHandlers.GetAggregate)
+			r.With(auth.RequireAuth(kr)).Get("/reviews/{id}", reviewHandlers.GetReview)
+			r.With(auth.RequireAuth(kr)).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
+			r.With(auth.RequireAuth(kr)).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
+			r.With(auth.RequireAuth(kr)).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
+
+			// Generic Comparison System routes (Section 30)
+			// Type definition routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.create")).
+				Post("/comparison/types", comparisonHandlers.CreateComparisonType)
+			r.With(auth.RequireAuth(kr)).Get("/comparison/types", comparisonHandlers.ListComparisonTypes)
+			r.With(auth.RequireAuth(kr)).Get("/comparison/types/{slug}", comparisonHandlers.GetComparisonType)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.edit")).
+				Patch("/comparison/types/{id}", comparisonHandlers.UpdateComparisonType)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.delete")).
+				Delete("/comparison/types/{id}", comparisonHandlers.DeleteComparisonType)
+
+			// Type access routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.access.manage")).
+				Put("/comparison/types/{id}/access", comparisonHandlers.SetComparisonTypeAccess)
+			r.With(auth.RequireAuth(kr)).Get("/comparison/types/{id}/access", comparisonHandlers.ListComparisonTypeAccess)
+
+			// Comparison CRUD routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.create")).
+				Post("/comparison", comparisonHandlers.CreateComparison)
+			r.With(auth.RequireAuth(kr)).Get("/comparison/{id}", comparisonHandlers.GetComparison)
+			r.With(auth.RequireAuth(kr)).Get("/comparison/{id}/matrix", comparisonHandlers.GetComparisonMatrix)
+
+			// Item routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
+				Post("/comparison/{id}/items", comparisonHandlers.CreateComparisonItem)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
+				Patch("/comparison/items/{id}", comparisonHandlers.UpdateComparisonItem)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
+				Delete("/comparison/items/{id}", comparisonHandlers.DeleteComparisonItem)
+
+			// Dimension routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
+				Post("/comparison/{id}/dimensions", comparisonHandlers.CreateComparisonDimension)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
+				Patch("/comparison/dimensions/{id}", comparisonHandlers.UpdateComparisonDimension)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
+				Delete("/comparison/dimensions/{id}", comparisonHandlers.DeleteComparisonDimension)
+
+			// Value routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.value.manage")).
+				Put("/comparison/dimensions/{id}/values", comparisonHandlers.UpsertComparisonValues)
+
+			// Professional Profiles routes (Section 33 — Professional Profiles)
+			// Profile type routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.type.create")).
+				Post("/professional-profiles/types", professionalHandlers.CreateProfessionalProfileType)
+			r.With(auth.RequireAuth(kr)).Get("/professional-profiles/types", professionalHandlers.ListProfessionalProfileTypes)
+			r.With(auth.RequireAuth(kr)).Get("/professional-profiles/types/{slug}", professionalHandlers.GetProfessionalProfileType)
+
+			// Profile CRUD routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.create")).
+				Post("/professional-profiles", professionalHandlers.CreateProfessionalProfile)
+			r.With(auth.RequireAuth(kr)).Get("/professional-profiles", professionalHandlers.ListProfessionalProfiles)
+			r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{slug}", professionalHandlers.GetProfessionalProfile)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
+				Patch("/professional-profiles/{id}", professionalHandlers.UpdateProfessionalProfile)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
+				Delete("/professional-profiles/{id}", professionalHandlers.DeleteProfessionalProfile)
+
+			// Member management routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
+				Post("/professional-profiles/{id}/members", professionalHandlers.AddMember)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
+				Delete("/professional-profiles/{id}/members/{userId}", professionalHandlers.RemoveMember)
+			r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{id}/members", professionalHandlers.ListMembers)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
+				Patch("/professional-profiles/{id}/members/{userId}", professionalHandlers.UpdateMemberRole)
+
+			// Invitation routes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.invite")).
+				Post("/professional-profiles/{id}/invitations", professionalHandlers.CreateInvitation)
+			r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{id}/invitations", professionalHandlers.ListInvitations)
+			r.With(auth.RequireAuth(kr)).Post("/professional-profiles/invitations/{token}/accept", professionalHandlers.AcceptInvitation)
+
+			// Author context route
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.author.switch")).
+				Get("/professional-profiles/{id}/author-context", professionalHandlers.GetAuthorContext)
 		})
 	})
 
@@ -329,6 +594,86 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "content.page_builder.delete", Description: "Delete page builder pages"},
 		{Key: "content.render", Description: "Render content via TipTap SSR"},
 		{Key: "link_preview.fetch", Description: "Fetch link previews from external URLs"},
+		{Key: "follows.toggle", Description: "Follow/unfollow entities"},
+		{Key: "follows.view", Description: "View follower/following lists"},
+		{Key: "notifications.view", Description: "View notifications"},
+		{Key: "notifications.manage", Description: "Manage notification types"},
+		{Key: "dm.send", Description: "Send direct messages"},
+		{Key: "dm.view", Description: "View direct messages"},
+		{Key: "dm.manage_privacy", Description: "Manage DM privacy settings"},
+		{Key: "media.upload", Description: "Upload media files"},
+		{Key: "media.view_own", Description: "View own uploaded media"},
+		{Key: "media.view_all", Description: "View all media (admin)"},
+		{Key: "media.delete_own", Description: "Delete own uploaded media"},
+		{Key: "media.delete_any", Description: "Delete any media (admin)"},
+		{Key: "media.video.upload", Description: "Upload video files"},
+		{Key: "media.library.view_own", Description: "View own media library"},
+		{Key: "media.library.view_all", Description: "View all media library (admin)"},
+		// Forum Q&A / Solved (Section 08)
+		{Key: "forum.thread.create", Description: "Create forum threads"},
+		{Key: "forum.thread.edit_own", Description: "Edit own forum threads"},
+		{Key: "forum.thread.edit_any", Description: "Edit any forum thread (admin)"},
+		{Key: "forum.thread.delete_own", Description: "Delete own forum threads"},
+		{Key: "forum.thread.delete_any", Description: "Delete any forum thread (admin)"},
+		{Key: "forum.thread.solve", Description: "Mark forum threads as solved"},
+		{Key: "forum.reply.create", Description: "Create forum replies"},
+		{Key: "forum.reply.edit_own", Description: "Edit own forum replies"},
+		{Key: "forum.reply.edit_any", Description: "Edit any forum reply (admin)"},
+		{Key: "forum.reply.delete_own", Description: "Delete own forum replies"},
+		{Key: "forum.reply.delete_any", Description: "Delete any forum reply (admin)"},
+		{Key: "forum.vote", Description: "Vote on forum threads and replies"},
+		{Key: "forum.bookmark.manage", Description: "Manage forum bookmarks"},
+		{Key: "forum.poll.create", Description: "Create forum polls"},
+		{Key: "forum.poll.vote", Description: "Vote on forum polls"},
+		{Key: "forum.tag.create", Description: "Create forum tags"},
+		{Key: "forum.tag.edit", Description: "Edit forum tags"},
+		{Key: "forum.tag.moderate", Description: "Moderate forum tags"},
+		{Key: "forum.admin", Description: "Admin-only forum management"},
+		// Blog Extension (Section 24)
+		{Key: "blog.create", Description: "Create blog posts"},
+		{Key: "blog.edit_own", Description: "Edit own blog posts"},
+		{Key: "blog.edit_any", Description: "Edit any blog post (admin)"},
+		{Key: "blog.publish", Description: "Publish blog posts"},
+		{Key: "blog.feature", Description: "Feature/unfeature blog posts"},
+		{Key: "blog.series.create", Description: "Create blog series"},
+		{Key: "blog.series.edit", Description: "Edit blog series"},
+		{Key: "blog.series.delete", Description: "Delete blog series"},
+		{Key: "blog.review.create", Description: "Create content reviews"},
+		{Key: "blog.review.manage", Description: "Manage content review status"},
+		{Key: "blog.rss.view", Description: "View RSS feed"},
+		// Universal Ratings & Reviews (Section 29)
+		{Key: "reviews.create", Description: "Create reviews"},
+		{Key: "reviews.edit_own", Description: "Edit own reviews"},
+		{Key: "reviews.edit_any", Description: "Edit any review (admin)"},
+		{Key: "reviews.delete_own", Description: "Delete own reviews"},
+		{Key: "reviews.delete_any", Description: "Delete any review (admin)"},
+		{Key: "reviews.flag", Description: "Flag reviews for moderation"},
+		{Key: "reviews.moderate", Description: "Moderate review status"},
+		{Key: "reviews.aggregate.view", Description: "View review aggregates"},
+		// Generic Comparison System (Section 30)
+		{Key: "comparison.type.create", Description: "Create comparison types"},
+		{Key: "comparison.type.edit", Description: "Edit comparison types"},
+		{Key: "comparison.type.delete", Description: "Delete comparison types"},
+		{Key: "comparison.type.access.manage", Description: "Manage comparison type access permissions"},
+		{Key: "comparison.create", Description: "Create comparisons"},
+		{Key: "comparison.edit_own", Description: "Edit own comparisons"},
+		{Key: "comparison.edit_any", Description: "Edit any comparison (admin)"},
+		{Key: "comparison.delete_own", Description: "Delete own comparisons"},
+		{Key: "comparison.delete_any", Description: "Delete any comparison (admin)"},
+		{Key: "comparison.item.manage", Description: "Manage comparison items"},
+		{Key: "comparison.dimension.manage", Description: "Manage comparison dimensions"},
+		{Key: "comparison.value.manage", Description: "Manage comparison values"},
+		// Professional Profiles (Section 33)
+		{Key: "professional_profile.type.create", Description: "Create professional profile types"},
+		{Key: "professional_profile.type.view", Description: "View professional profile types"},
+		{Key: "professional_profile.create", Description: "Create professional profiles"},
+		{Key: "professional_profile.edit_own", Description: "Edit own professional profiles"},
+		{Key: "professional_profile.edit_any", Description: "Edit any professional profile (admin)"},
+		{Key: "professional_profile.delete_own", Description: "Delete own professional profiles"},
+		{Key: "professional_profile.delete_any", Description: "Delete any professional profile (admin)"},
+		{Key: "professional_profile.member.manage", Description: "Manage professional profile members"},
+		{Key: "professional_profile.invite", Description: "Send professional profile invitations"},
+		{Key: "professional_profile.author.switch", Description: "Switch authorship to professional profile"},
 	}
 
 	var defaultTenantID pgtype.UUID

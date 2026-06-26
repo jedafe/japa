@@ -1,0 +1,346 @@
+package media
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/tenant"
+)
+
+// Handlers holds dependencies for media HTTP handlers.
+type Handlers struct {
+	service *Service
+}
+
+// NewHandlers creates Handlers with the given Service.
+func NewHandlers(service *Service) *Handlers {
+	return &Handlers{service: service}
+}
+
+// requireTenant resolves the tenant from the request context.
+func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return pgtype.UUID{}, false
+	}
+	return t.ID, true
+}
+
+// requireUser resolves the authenticated user from the request context.
+func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return nil, false
+	}
+	return user, true
+}
+
+// writeJSON serializes the given value as JSON and writes it to the response.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeError writes a JSON error response following the JapaConnect API format.
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
+}
+
+// parsePageSize extracts and clamps the page_size query parameter.
+func parsePageSize(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_size")
+	if s == "" {
+		return DefaultPageSize
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return DefaultPageSize
+	}
+	if n > int(MaxPageSize) {
+		return MaxPageSize
+	}
+	return int32(n)
+}
+
+// parsePageOffset extracts the page_offset query parameter.
+func parsePageOffset(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_offset")
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return int32(n)
+}
+
+// ---------------------------------------------------------------------------
+// Media Handlers
+// ---------------------------------------------------------------------------
+
+// InitiateUpload handles POST /api/v1/media/upload.
+// Request body: { "filename": "photo.jpg", "mime_type": "image/jpeg", "file_size": 123456 }
+// Response: { "data": { "media_id": "...", "storage_path": "...", "presigned_url": "...", "expires_at": "..." } }
+func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Filename string `json:"filename"`
+		MimeType string `json:"mime_type"`
+		FileSize int64  `json:"file_size"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Filename == "" {
+		writeError(w, http.StatusBadRequest, "missing_filename", "filename is required")
+		return
+	}
+	if input.MimeType == "" {
+		writeError(w, http.StatusBadRequest, "missing_mime_type", "mime_type is required")
+		return
+	}
+	if input.FileSize <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid_file_size", "file_size must be positive")
+		return
+	}
+
+	result, err := h.service.InitiateUpload(r.Context(), tenantID, user.UserID, input.Filename, input.MimeType, input.FileSize)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "upload_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+// ConfirmUpload handles POST /api/v1/media/confirm/{id}.
+// Response: { "data": { "confirmed": true } }
+func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	var mediaID pgtype.UUID
+	if err := mediaID.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+		return
+	}
+
+	if err := h.service.ConfirmUpload(r.Context(), tenantID, mediaID); err != nil {
+		writeError(w, http.StatusInternalServerError, "confirm_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"confirmed": true}})
+}
+
+// GetMedia handles GET /api/v1/media/{id}.
+// Response: { "data": { ... } }
+func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	var mediaID pgtype.UUID
+	if err := mediaID.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+		return
+	}
+
+	m, err := h.service.GetMedia(r.Context(), tenantID, mediaID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "media_not_found", "Media not found")
+		return
+	}
+
+	// Generate imgproxy URL on serialization (never cached).
+	url := h.service.GetMediaURL(&m, ImageProxyOpts{})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"media": m,
+			"url":   url,
+		},
+	})
+}
+
+// UpdateMetadata handles PATCH /api/v1/media/{id}.
+// Request body: { "alt_text": "...", "caption": "...", "width": 100, "height": 200 }
+// Response: { "data": { "updated": true } }
+func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	var mediaID pgtype.UUID
+	if err := mediaID.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+		return
+	}
+
+	var input struct {
+		AltText  *string `json:"alt_text"`
+		Caption  *string `json:"caption"`
+		Width    *int32  `json:"width"`
+		Height   *int32  `json:"height"`
+		Duration *float64 `json:"duration_secs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if err := h.service.UpdateMetadata(r.Context(), tenantID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration); err != nil {
+		writeError(w, http.StatusInternalServerError, "update_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
+}
+
+// DeleteMedia handles DELETE /api/v1/media/{id}.
+// Response: { "data": { "deleted": true } }
+func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	var mediaID pgtype.UUID
+	if err := mediaID.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+		return
+	}
+
+	if err := h.service.DeleteMedia(r.Context(), tenantID, mediaID); err != nil {
+		writeError(w, http.StatusInternalServerError, "delete_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+}
+
+// ListMedia handles GET /api/v1/media.
+// Query params: page_size, page_offset, type, q (search), uploader_id
+// Response: { "data": [...] }
+func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	var uploaderID *pgtype.UUID
+	if uidStr := r.URL.Query().Get("uploader_id"); uidStr != "" {
+		var uid pgtype.UUID
+		if err := uid.Scan(uidStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_uploader_id", "Invalid uploader_id format")
+			return
+		}
+		uploaderID = &uid
+	}
+
+	var mimeType *string
+	if mt := r.URL.Query().Get("type"); mt != "" {
+		mimeType = &mt
+	}
+
+	var query *string
+	if q := r.URL.Query().Get("q"); q != "" {
+		query = &q
+	}
+
+	items, err := h.service.ListMedia(r.Context(), tenantID, uploaderID, mimeType, query, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// BulkDelete handles POST /api/v1/media/bulk-delete.
+// Request body: { "media_ids": ["...", "..."] }
+// Response: { "data": { "deleted": 2 } }
+func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		MediaIDs []string `json:"media_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if len(input.MediaIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "missing_media_ids", "media_ids is required")
+		return
+	}
+
+	ids := make([]pgtype.UUID, 0, len(input.MediaIDs))
+	for _, idStr := range input.MediaIDs {
+		var id pgtype.UUID
+		if err := id.Scan(idStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format: "+idStr)
+			return
+		}
+		ids = append(ids, id)
+	}
+
+	if err := h.service.BulkDelete(r.Context(), tenantID, ids); err != nil {
+		writeError(w, http.StatusInternalServerError, "bulk_delete_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]int{"deleted": len(ids)},
+	})
+}

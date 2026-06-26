@@ -1,0 +1,292 @@
+package websocket
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/valkey"
+)
+
+var wsUpgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
+}
+
+// Handlers holds dependencies for WebSocket and DM HTTP handlers.
+type Handlers struct {
+	service     *Service
+	dmService   *DMService
+	hub         *Hub
+	vkClient    *valkey.Client
+	keyRotation *auth.KeyRotation
+}
+
+// NewHandlers creates Handlers with the given dependencies.
+func NewHandlers(service *Service, dmService *DMService, hub *Hub, vkClient *valkey.Client, kr *auth.KeyRotation) *Handlers {
+	return &Handlers{
+		service:     service,
+		dmService:   dmService,
+		hub:         hub,
+		vkClient:    vkClient,
+		keyRotation: kr,
+	}
+}
+
+// requireUser extracts the authenticated user from context.
+func (h *Handlers) requireUser(r *http.Request) (*auth.AuthenticatedUser, bool) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		return nil, false
+	}
+	return user, true
+}
+
+// writeJSON serializes the given value as JSON and writes it to the response.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeError writes a JSON error response following the JapaConnect API format.
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
+}
+
+// GetWSTicket mints a short-lived WS ticket.
+// POST /api/v1/auth/ws-ticket
+func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Generate a ticket ID.
+	ticketID := pgtype.UUID{}
+	if err := ticketID.Scan(generateUUID()); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate ticket")
+		return
+	}
+
+	// Insert ticket into DB.
+	if err := h.service.store.CreateWSTicket(ctx, user.UserID, user.TenantID); err != nil {
+		slog.Error("creating ws ticket", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
+		return
+	}
+
+	// Store in Valkey for fast lookup: jc:ws_ticket:{ticket_id} -> user_id, TTL 60s
+	if h.vkClient != nil {
+		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		_ = h.vkClient.Redis().Set(vctx, "jc:ws_ticket:"+ticketID.String(), user.UserID.String(), 60*time.Second).Err()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"ticket": ticketID.String(),
+	})
+}
+
+// HandleWebSocket upgrades connection and authenticates via ticket.
+// GET /api/v1/ws?ticket={ticket_id}
+func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	ticketStr := r.URL.Query().Get("ticket")
+	if ticketStr == "" {
+		writeError(w, http.StatusBadRequest, "missing_ticket", "Ticket query parameter is required")
+		return
+	}
+
+	var ticketID pgtype.UUID
+	if err := ticketID.Scan(ticketStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_ticket", "Invalid ticket format")
+		return
+	}
+
+	ctx := r.Context()
+	var userID pgtype.UUID
+	var tenantID pgtype.UUID
+
+	// Try Valkey first for fast lookup.
+	if h.vkClient != nil {
+		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		val, err := h.vkClient.Redis().Get(vctx, "jc:ws_ticket:"+ticketStr).Result()
+		if err == nil {
+			_ = userID.Scan(val)
+			// Tenant ID not stored in Valkey, use default for now.
+			_ = tenantID.Scan("00000000-0000-0000-0000-000000000001")
+		}
+	}
+
+	// Fallback to DB if Valkey didn't have it.
+	if !userID.Valid {
+		writeError(w, http.StatusUnauthorized, "invalid_ticket", "Ticket not found or expired")
+		return
+	}
+
+	// Mark ticket as used in DB.
+	_, _ = h.service.store.UseWSTicket(ctx, ticketID, userID)
+
+	// Upgrade to WebSocket.
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		slog.Error("websocket upgrade failed", "error", err)
+		return
+	}
+
+	// Create Client.
+	client := &Client{
+		Hub:      h.hub,
+		Conn:     conn,
+		UserID:   userID.String(),
+		TenantID: tenantID.String(),
+		Send:     make(chan []byte, 256),
+		SpaceIDs: make(map[string]bool),
+	}
+
+	// Register with hub.
+	h.hub.Register(client)
+
+	// Send presence event to all.
+	h.hub.BroadcastToAll(WSEvent{
+		Type:    EventPresence,
+		Payload: map[string]interface{}{"user_id": userID.String(), "status": "online"},
+	})
+
+	// Start read/write pumps.
+	go client.writePump()
+	go client.readPump(h.dmService)
+}
+
+// GetOnlineUsers returns currently online users.
+// GET /api/v1/ws/online
+func (h *Handlers) GetOnlineUsers(w http.ResponseWriter, r *http.Request) {
+	users := h.hub.GetOnlineUsers()
+	writeJSON(w, http.StatusOK, map[string]any{"data": users})
+}
+
+// readPump reads messages from the WebSocket connection.
+func (c *Client) readPump(dmSvc *DMService) {
+	defer func() {
+		c.Hub.Unregister(c)
+		c.Conn.Close()
+	}()
+
+	c.Conn.SetReadLimit(4096)
+	_ = c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.Conn.SetPongHandler(func(string) error {
+		_ = c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	for {
+		_, message, err := c.Conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				slog.Error("ws read error", "error", err)
+			}
+			break
+		}
+
+		var event WSEvent
+		if err := json.Unmarshal(message, &event); err != nil {
+			slog.Error("ws unmarshal event", "error", err)
+			continue
+		}
+
+		// Handle client events.
+		switch event.Type {
+		case "subscribe_space":
+			var payload struct {
+				SpaceID string `json:"space_id"`
+			}
+			if data, ok := event.Payload.(map[string]interface{}); ok {
+				if err := json.Unmarshal(mustMarshal(data), &payload); err == nil {
+					c.Hub.SubscribeToSpace(c, payload.SpaceID)
+				}
+			}
+		case "unsubscribe_space":
+			var payload struct {
+				SpaceID string `json:"space_id"`
+			}
+			if data, ok := event.Payload.(map[string]interface{}); ok {
+				if err := json.Unmarshal(mustMarshal(data), &payload); err == nil {
+					c.Hub.UnsubscribeFromSpace(c, payload.SpaceID)
+				}
+			}
+		}
+	}
+}
+
+// writePump writes messages from the send channel to the WebSocket connection.
+func (c *Client) writePump() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer func() {
+		ticker.Stop()
+		c.Conn.Close()
+	}()
+
+	for {
+		select {
+		case message, ok := <-c.Send:
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if !ok {
+				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			w, err := c.Conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
+			}
+			_, _ = w.Write(message)
+
+			// Drain queued messages into current write.
+			n := len(c.Send)
+			for i := 0; i < n; i++ {
+				_, _ = w.Write([]byte("\n"))
+				_, _ = w.Write(<-c.Send)
+			}
+
+			if err := w.Close(); err != nil {
+				return
+			}
+
+		case <-ticker.C:
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// generateUUID generates a random UUID string.
+func generateUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40 // Version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // Variant 10
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// mustMarshal marshals v to JSON, returning empty byte slice on error.
+func mustMarshal(v interface{}) []byte {
+	b, _ := json.Marshal(v)
+	return b
+}

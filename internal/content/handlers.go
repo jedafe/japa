@@ -19,7 +19,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -244,7 +243,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	contentType := r.URL.Query().Get("type")
 	spaceIDStr := r.URL.Query().Get("space_id")
 
-	var contents []gen.Content
+	var contents any
 	var err error
 	if spaceIDStr != "" {
 		var spaceID pgtype.UUID

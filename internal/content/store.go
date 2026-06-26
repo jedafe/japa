@@ -34,14 +34,14 @@ type CreateContentInput struct {
 
 // CreateContent creates a new content row, ensuring slug uniqueness within
 // the tenant. If the provided slug is empty, one is derived from the title.
-func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input CreateContentInput) (gen.Content, error) {
+func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
 	slug := input.Slug
 	if slug == "" {
 		slug = Slugify(input.Title)
 	}
 	uniqueSlug, err := s.EnsureUniqueSlug(ctx, slug, tenantID)
 	if err != nil {
-		return gen.Content{}, fmt.Errorf("ensuring unique slug: %w", err)
+		return gen.CreateContentRow{}, fmt.Errorf("ensuring unique slug: %w", err)
 	}
 
 	fieldValues := input.FieldValues
@@ -68,7 +68,7 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 		PublishAt:       input.PublishAt,
 	})
 	if err != nil {
-		return gen.Content{}, fmt.Errorf("creating content: %w", err)
+		return gen.CreateContentRow{}, fmt.Errorf("creating content: %w", err)
 	}
 
 	// Create the initial revision.
@@ -80,40 +80,40 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 		BodyHtml:    input.BodyHtml,
 		EditedBy:    input.AuthorID,
 	}); err != nil {
-		return gen.Content{}, fmt.Errorf("creating initial revision: %w", err)
+		return gen.CreateContentRow{}, fmt.Errorf("creating initial revision: %w", err)
 	}
 
 	return content, nil
 }
 
 // GetContent returns the content with the given ID, scoped to the tenant.
-func (s *Service) GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.Content, error) {
+func (s *Service) GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error) {
 	content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
 		ID:       id,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.Content{}, fmt.Errorf("getting content: %w", err)
+		return gen.GetContentByIDRow{}, fmt.Errorf("getting content: %w", err)
 	}
 	return content, nil
 }
 
 // GetContentBySlug returns the content matching the given slug, scoped to
 // the tenant.
-func (s *Service) GetContentBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Content, error) {
+func (s *Service) GetContentBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentBySlugRow, error) {
 	content, err := s.read.GetContentBySlug(ctx, gen.GetContentBySlugParams{
 		Slug:     slug,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.Content{}, fmt.Errorf("getting content by slug: %w", err)
+		return gen.GetContentBySlugRow{}, fmt.Errorf("getting content by slug: %w", err)
 	}
 	return content, nil
 }
 
 // ListContents returns a page of content for the given tenant, newest first.
 // Pass a zero-value CursorCreatedAt for the first page.
-func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.Content, error) {
+func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -129,7 +129,7 @@ func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, cursor
 }
 
 // ListContentsByType returns a page of content filtered by content_type.
-func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32) ([]gen.Content, error) {
+func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTypeRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -146,7 +146,7 @@ func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // ListContentsBySpace returns a page of content filtered by space_id.
-func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.Content, error) {
+func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsBySpaceRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -182,13 +182,13 @@ type UpdateContentInput struct {
 // UpdateContent updates an existing content row, recording a revision and
 // tracking slug changes in slug_history. The old slug is preserved for
 // 301 redirects.
-func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input UpdateContentInput) (gen.Content, error) {
+func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input UpdateContentInput) (gen.UpdateContentRow, error) {
 	existing, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
 		ID:       id,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.Content{}, fmt.Errorf("getting existing content for update: %w", err)
+		return gen.UpdateContentRow{}, fmt.Errorf("getting existing content for update: %w", err)
 	}
 
 	newSlug := input.Slug
@@ -197,7 +197,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 	} else if newSlug != existing.Slug {
 		uniqueSlug, err := s.EnsureUniqueSlug(ctx, newSlug, tenantID)
 		if err != nil {
-			return gen.Content{}, fmt.Errorf("ensuring unique slug on update: %w", err)
+			return gen.UpdateContentRow{}, fmt.Errorf("ensuring unique slug on update: %w", err)
 		}
 		newSlug = uniqueSlug
 	}
@@ -226,7 +226,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		TenantID:        tenantID,
 	})
 	if err != nil {
-		return gen.Content{}, fmt.Errorf("updating content: %w", err)
+		return gen.UpdateContentRow{}, fmt.Errorf("updating content: %w", err)
 	}
 
 	// Record slug change for 301 redirect.
@@ -241,7 +241,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		BodyHtml:    input.BodyHtml,
 		EditedBy:    editedBy,
 	}); err != nil {
-		return gen.Content{}, fmt.Errorf("creating revision: %w", err)
+		return gen.UpdateContentRow{}, fmt.Errorf("creating revision: %w", err)
 	}
 
 	return content, nil
@@ -250,14 +250,14 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 // UpdateContentStatus changes the status of a content row (e.g. draft to
 // published). When transitioning to 'published', published_at is stamped
 // if it was previously null.
-func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Content, error) {
+func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
 	content, err := s.write.UpdateContentStatus(ctx, gen.UpdateContentStatusParams{
 		Status:   status,
 		ID:       id,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.Content{}, fmt.Errorf("updating content status: %w", err)
+		return gen.UpdateContentStatusRow{}, fmt.Errorf("updating content status: %w", err)
 	}
 	return content, nil
 }
