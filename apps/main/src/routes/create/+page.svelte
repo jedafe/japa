@@ -1,0 +1,29 @@
+<script lang="ts">
+	import ContentTypeSelector from '$lib/create/ContentTypeSelector.svelte';
+
+	const contentTypes = [
+		{ slug: 'blog_post', icon: 'file-text', label: 'Blog Post', description: 'Write a blog post or article' },
+		{ slug: 'discussion', icon: 'message-square', label: 'Discussion', description: 'Start a discussion thread' },
+		{ slug: 'guide', icon: 'book-open', label: 'Guide', description: 'Create a comprehensive guide' },
+		{ slug: 'event', icon: 'calendar', label: 'Event', description: 'Create an event or meetup' },
+		{ slug: 'question', icon: 'help-circle', label: 'Question', description: 'Ask a question to the community' },
+		{ slug: 'listing', icon: 'clipboard-list', label: 'Listing', description: 'Create a job or service listing' },
+		{ slug: 'comparison', icon: 'scale', label: 'Comparison', description: 'Compare two options or services' }
+	];
+</script>
+
+<svelte:head>
+	<title>Create New Post | JapaConnect</title>
+	<meta name="description" content="Create a new post on JapaConnect — choose a content type to get started." />
+</svelte:head>
+
+<main class="mx-auto max-w-4xl px-6 py-16">
+	<h1 class="text-3xl font-bold tracking-tight">Create New Post</h1>
+	<p class="mt-2 text-lg" style="color: var(--color-muted)">
+		Choose a content type to get started
+	</p>
+
+	<div class="mt-10">
+		<ContentTypeSelector types={contentTypes} />
+	</div>
+</main>
