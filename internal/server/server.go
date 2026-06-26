@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/advertising"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
@@ -20,8 +21,10 @@ import (
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/customfields"
+	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/professional"
 	"github.com/jedafe/japa/internal/reviews"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -140,6 +143,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// Professional Profiles subsystem (Section 33 — Professional Profiles).
 		professionalService := professional.NewService(database)
 		professionalHandlers := professional.NewHandlers(professionalService)
+
+// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
+	walletService := wallet.NewService(database)
+	walletHandlers := wallet.NewHandlers(walletService)
+
+	// Payment Core subsystem (Section 17 — Payment Core).
+	paymentService := payments.NewService(database, &walletCreditAdapter{svc: walletService})
+	paymentHandlers := payments.NewHandlers(paymentService)
+
+	// Advertising subsystem (Section 25 — Ad Placement).
+	adService := advertising.NewService(database)
+	adHandlers := advertising.NewHandlers(adService)
 
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
@@ -527,6 +542,93 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Author context route
 			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.author.switch")).
 				Get("/professional-profiles/{id}/author-context", professionalHandlers.GetAuthorContext)
+
+			// Payment Core routes (Section 17 — Payment Core)
+			// Payment initiation
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "payments.create")).
+				Post("/payments/initiate", paymentHandlers.InitiatePayment)
+			// Webhooks (public - no auth required)
+			r.Post("/payments/webhook/paystack", paymentHandlers.HandlePaystackWebhook)
+			r.Post("/payments/webhook/stripe", paymentHandlers.HandleStripeWebhook)
+			// Payment listing and details
+			r.With(auth.RequireAuth(kr)).Get("/payments", paymentHandlers.ListPayments)
+			r.With(auth.RequireAuth(kr)).Get("/payments/{id}", paymentHandlers.GetPayment)
+			// Refunds
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "payments.refund")).
+				Post("/payments/{id}/refund", paymentHandlers.RefundPayment)
+			// Subscriptions
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage")).
+				Post("/subscriptions", paymentHandlers.CreateSubscription)
+			r.With(auth.RequireAuth(kr)).Get("/subscriptions", paymentHandlers.ListSubscriptions)
+			r.With(auth.RequireAuth(kr)).Get("/subscriptions/active", paymentHandlers.GetActiveSubscription)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage")).
+				Patch("/subscriptions/{id}/cancel", paymentHandlers.CancelSubscription)
+			// Discount codes
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
+				Post("/discount-codes", paymentHandlers.CreateDiscountCode)
+			r.With(auth.RequireAuth(kr)).Get("/discount-codes", paymentHandlers.ListDiscountCodes)
+			r.With(auth.RequireAuth(kr)).Post("/discount-codes/validate", paymentHandlers.ValidateDiscountCode)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
+				Delete("/discount-codes/{id}", paymentHandlers.DeleteDiscountCode)
+
+			// Wallet & Credits routes (Section 28 — Wallet & Credits)
+			// Balance and ledger
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
+				Get("/wallet/balance", walletHandlers.GetBalance)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
+				Get("/wallet/ledger", walletHandlers.GetLedger)
+			// Conversion
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.points.convert")).
+				Post("/wallet/convert", walletHandlers.ConvertPoints)
+			// Settings (admin)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
+				Get("/wallet/settings", walletHandlers.GetSettings)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
+				Put("/wallet/settings", walletHandlers.UpdateSettings)
+			// Activity rules (admin)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
+				Get("/wallet/rules", walletHandlers.ListRules)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
+				Post("/wallet/rules", walletHandlers.CreateOrUpdateRule)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
+				Patch("/wallet/rules/{id}/toggle", walletHandlers.ToggleRule)
+			// Admin adjustments
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
+				Post("/wallet/admin/adjust", walletHandlers.AdminAdjust)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
+				Get("/wallet/admin/user/{userId}/balance", walletHandlers.AdminGetUserBalance)
+
+			// Advertising routes (Section 25 — Ad Placement)
+			// Admin campaign management
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Post("/admin/advertising/campaigns", adHandlers.CreateCampaign)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Get("/admin/advertising/campaigns", adHandlers.ListCampaigns)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Get("/admin/advertising/campaigns/{id}", adHandlers.GetCampaign)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Post("/admin/advertising/campaigns/{id}/activate", adHandlers.ActivateCampaign)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Post("/admin/advertising/campaigns/{id}/pause", adHandlers.PauseCampaign)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Post("/admin/advertising/campaigns/{id}/end", adHandlers.EndCampaign)
+			// Public ad serving and event tracking
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.event.track")).
+				Get("/ads/render", adHandlers.RenderSlot)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.event.track")).
+				Post("/ads/events/ingest", adHandlers.IngestEvents)
+			// Slot types (admin)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
+				Get("/admin/advertising/slot-types", adHandlers.ListSlotTypes)
+			// Organization boosts
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Post("/admin/advertising/boosts", adHandlers.CreateBoost)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Get("/admin/advertising/boosts", adHandlers.ListBoosts)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Get("/admin/advertising/boosts/active", adHandlers.ListActiveBoosts)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Post("/admin/advertising/boosts/{id}/end", adHandlers.EndBoost)
 		})
 	})
 
@@ -674,6 +776,29 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "professional_profile.member.manage", Description: "Manage professional profile members"},
 		{Key: "professional_profile.invite", Description: "Send professional profile invitations"},
 		{Key: "professional_profile.author.switch", Description: "Switch authorship to professional profile"},
+		// Payment Core (Section 17)
+		{Key: "payments.create", Description: "Create payments"},
+		{Key: "payments.view_own", Description: "View own payments"},
+		{Key: "payments.view_any", Description: "View any payment (admin)"},
+		{Key: "payments.refund", Description: "Refund payments"},
+		{Key: "payments.webhook", Description: "Handle payment webhooks"},
+		{Key: "payments.subscriptions.manage", Description: "Manage subscriptions"},
+		{Key: "payments.discount_codes.manage", Description: "Manage discount codes"},
+		// Wallet & Credits (Section 28)
+		{Key: "wallet.points.balance", Description: "View points balance"},
+		{Key: "wallet.credits.balance", Description: "View credits balance"},
+		{Key: "wallet.points.earn", Description: "Earn points"},
+		{Key: "wallet.credits.spend", Description: "Spend credits"},
+		{Key: "wallet.points.convert", Description: "Convert points to credits"},
+		{Key: "wallet.credits.purchase", Description: "Purchase credits"},
+		{Key: "wallet.admin.adjust", Description: "Admin balance adjustment"},
+		{Key: "wallet.admin.rules.manage", Description: "Manage activity point rules"},
+		{Key: "wallet.admin.settings.manage", Description: "Manage wallet settings"},
+		// Advertising (Section 25)
+		{Key: "ad.campaign.manage", Description: "Manage advertising campaigns"},
+		{Key: "ad.slot.manage", Description: "Manage advertising slot types"},
+		{Key: "ad.stats.view", Description: "View advertising analytics"},
+		{Key: "ad.event.track", Description: "Track ad impressions and clicks"},
 	}
 
 	var defaultTenantID pgtype.UUID
@@ -734,4 +859,28 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 	}
 
 	slog.Info("permissions bootstrapped", "permissions", len(permissions), "role", "super_admin_role")
+}
+
+// ---------------------------------------------------------------------------
+// Adapter: wallet.Service → payments.CreditSpender
+// ---------------------------------------------------------------------------
+
+// walletCreditAdapter adapts wallet.Service to implement payments.CreditSpender.
+type walletCreditAdapter struct {
+	svc *wallet.Service
+}
+
+func (a *walletCreditAdapter) SpendCredits(
+	ctx context.Context,
+	tenantID pgtype.UUID,
+	userID pgtype.UUID,
+	input payments.CreditSpendInput,
+) (int64, error) {
+	return a.svc.SpendCredits(ctx, tenantID, userID, wallet.SpendCreditsInput{
+		Amount:      input.Amount,
+		Source:      input.Source,
+		Reference:   input.Reference,
+		PurposeType: input.PurposeType,
+		PurposeID:   input.PurposeID,
+	})
 }
