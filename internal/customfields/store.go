@@ -1,0 +1,430 @@
+package customfields
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// ---------------------------------------------------------------------------
+// Custom Field Groups
+// ---------------------------------------------------------------------------
+
+// ListFieldGroups returns every custom field group owned by the given tenant,
+// newest first.
+func (s *Service) ListFieldGroups(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomFieldGroup, error) {
+	groups, err := s.read.ListCustomFieldGroupsByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing custom field groups: %w", err)
+	}
+	return groups, nil
+}
+
+// GetFieldGroup returns the custom field group with the given ID, scoped to
+// the tenant.
+func (s *Service) GetFieldGroup(ctx context.Context, id, tenantID pgtype.UUID) (gen.CustomFieldGroup, error) {
+	group, err := s.read.GetCustomFieldGroupByID(ctx, gen.GetCustomFieldGroupByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.CustomFieldGroup{}, fmt.Errorf("getting custom field group: %w", err)
+	}
+	return group, nil
+}
+
+// GetFieldGroupBySlug returns the custom field group matching the given slug,
+// scoped to the tenant.
+func (s *Service) GetFieldGroupBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.CustomFieldGroup, error) {
+	group, err := s.read.GetCustomFieldGroupBySlug(ctx, gen.GetCustomFieldGroupBySlugParams{
+		Slug:     slug,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.CustomFieldGroup{}, fmt.Errorf("getting custom field group by slug: %w", err)
+	}
+	return group, nil
+}
+
+// CreateFieldGroup creates a new custom field group. System groups can only be
+// seeded at install time; set isSystem to false for tenant-created groups.
+func (s *Service) CreateFieldGroup(ctx context.Context, tenantID pgtype.UUID, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error) {
+	group, err := s.write.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
+		TenantID:    tenantID,
+		Name:        name,
+		Slug:        slug,
+		Description: description,
+		IsSystem:    isSystem,
+	})
+	if err != nil {
+		return gen.CustomFieldGroup{}, fmt.Errorf("creating custom field group: %w", err)
+	}
+	return group, nil
+}
+
+// UpdateFieldGroup updates the name and description of a non-system field
+// group, scoped to the tenant.
+func (s *Service) UpdateFieldGroup(ctx context.Context, id, tenantID pgtype.UUID, name string, description *string) (gen.CustomFieldGroup, error) {
+	group, err := s.write.UpdateCustomFieldGroup(ctx, gen.UpdateCustomFieldGroupParams{
+		Name:        name,
+		Description: description,
+		ID:          id,
+		TenantID:    tenantID,
+	})
+	if err != nil {
+		return gen.CustomFieldGroup{}, fmt.Errorf("updating custom field group: %w", err)
+	}
+	return group, nil
+}
+
+// DeleteFieldGroup deletes a non-system custom field group, scoped to the
+// tenant. System groups are protected at the database level.
+func (s *Service) DeleteFieldGroup(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteCustomFieldGroup(ctx, gen.DeleteCustomFieldGroupParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("deleting custom field group: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Custom Fields
+// ---------------------------------------------------------------------------
+
+// ListFieldsByGroup returns every custom field belonging to the given group,
+// ordered by position then creation time.
+func (s *Service) ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtype.UUID) ([]gen.CustomField, error) {
+	fields, err := s.read.ListCustomFieldsByGroup(ctx, gen.ListCustomFieldsByGroupParams{
+		GroupID:  groupID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing custom fields by group: %w", err)
+	}
+	return fields, nil
+}
+
+// GetField returns the custom field with the given ID, scoped to the tenant.
+func (s *Service) GetField(ctx context.Context, id, tenantID pgtype.UUID) (gen.CustomField, error) {
+	field, err := s.read.GetCustomFieldByID(ctx, gen.GetCustomFieldByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.CustomField{}, fmt.Errorf("getting custom field: %w", err)
+	}
+	return field, nil
+}
+
+// CreateField creates a new custom field. The caller is responsible for
+// validating the field type via IsValidFieldType before calling this method.
+func (s *Service) CreateField(ctx context.Context, params gen.CreateCustomFieldParams) (gen.CustomField, error) {
+	field, err := s.write.CreateCustomField(ctx, params)
+	if err != nil {
+		return gen.CustomField{}, fmt.Errorf("creating custom field: %w", err)
+	}
+	return field, nil
+}
+
+// UpdateField updates a non-system custom field. System fields are protected
+// at the database level.
+func (s *Service) UpdateField(ctx context.Context, params gen.UpdateCustomFieldParams) (gen.CustomField, error) {
+	field, err := s.write.UpdateCustomField(ctx, params)
+	if err != nil {
+		return gen.CustomField{}, fmt.Errorf("updating custom field: %w", err)
+	}
+	return field, nil
+}
+
+// DeleteField deletes a non-system custom field, scoped to the tenant. System
+// fields are protected at the database level.
+func (s *Service) DeleteField(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteCustomField(ctx, gen.DeleteCustomFieldParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("deleting custom field: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Group Assignments
+// ---------------------------------------------------------------------------
+
+// ListAssignmentsByEntityClass returns every group assignment for the given
+// entity class (e.g. "content_type", "space_type"), ordered by position.
+func (s *Service) ListAssignmentsByEntityClass(ctx context.Context, entityClass string) ([]gen.CustomFieldGroupAssignment, error) {
+	assignments, err := s.read.ListAssignmentsByEntityClass(ctx, entityClass)
+	if err != nil {
+		return nil, fmt.Errorf("listing assignments by entity class: %w", err)
+	}
+	return assignments, nil
+}
+
+// CreateAssignment assigns a custom field group to an entity. If the
+// assignment already exists it is a no-op (ON CONFLICT DO NOTHING).
+func (s *Service) CreateAssignment(ctx context.Context, params gen.CreateAssignmentParams) (gen.CustomFieldGroupAssignment, error) {
+	assignment, err := s.write.CreateAssignment(ctx, params)
+	if err != nil {
+		return gen.CustomFieldGroupAssignment{}, fmt.Errorf("creating group assignment: %w", err)
+	}
+	return assignment, nil
+}
+
+// DeleteAssignment removes a group assignment matching the given group,
+// entity class, and entity ID.
+func (s *Service) DeleteAssignment(ctx context.Context, groupID pgtype.UUID, entityClass string, entityID pgtype.UUID) error {
+	if err := s.write.DeleteAssignment(ctx, gen.DeleteAssignmentParams{
+		GroupID:     groupID,
+		EntityClass: entityClass,
+		EntityID:    entityID,
+	}); err != nil {
+		return fmt.Errorf("deleting group assignment: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Field Permissions
+// ---------------------------------------------------------------------------
+
+// ListPermissionsByField returns every RBAC permission row for the given
+// field, one per user group.
+func (s *Service) ListPermissionsByField(ctx context.Context, fieldID pgtype.UUID) ([]gen.CustomFieldPermission, error) {
+	perms, err := s.read.ListPermissionsByField(ctx, fieldID)
+	if err != nil {
+		return nil, fmt.Errorf("listing field permissions: %w", err)
+	}
+	return perms, nil
+}
+
+// UpsertFieldPermission inserts or updates a permission row for a field and
+// user group pair.
+func (s *Service) UpsertFieldPermission(ctx context.Context, params gen.UpsertFieldPermissionParams) error {
+	if err := s.write.UpsertFieldPermission(ctx, params); err != nil {
+		return fmt.Errorf("upserting field permission: %w", err)
+	}
+	return nil
+}
+
+// DeleteFieldPermission removes the permission row for the given field and
+// user group.
+func (s *Service) DeleteFieldPermission(ctx context.Context, fieldID, userGroupID pgtype.UUID) error {
+	if err := s.write.DeleteFieldPermission(ctx, gen.DeleteFieldPermissionParams{
+		FieldID:     fieldID,
+		UserGroupID: userGroupID,
+	}); err != nil {
+		return fmt.Errorf("deleting field permission: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Field Values
+// ---------------------------------------------------------------------------
+
+// GetFieldValue returns the stored value for a single field on a given entity.
+func (s *Service) GetFieldValue(ctx context.Context, fieldID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.CustomFieldValue, error) {
+	value, err := s.read.GetCustomFieldValue(ctx, gen.GetCustomFieldValueParams{
+		FieldID:    fieldID,
+		EntityType: entityType,
+		EntityID:   entityID,
+	})
+	if err != nil {
+		return gen.CustomFieldValue{}, fmt.Errorf("getting custom field value: %w", err)
+	}
+	return value, nil
+}
+
+// ListFieldValuesByEntity returns every stored field value for a given entity.
+func (s *Service) ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error) {
+	values, err := s.read.ListCustomFieldValuesByEntity(ctx, gen.ListCustomFieldValuesByEntityParams{
+		EntityType: entityType,
+		EntityID:   entityID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing custom field values by entity: %w", err)
+	}
+	return values, nil
+}
+
+// UpsertFieldValue inserts or updates the stored value for a field on a given
+// entity. The conflict target is (field_id, entity_type, entity_id).
+func (s *Service) UpsertFieldValue(ctx context.Context, params gen.UpsertCustomFieldValueParams) (gen.CustomFieldValue, error) {
+	value, err := s.write.UpsertCustomFieldValue(ctx, params)
+	if err != nil {
+		return gen.CustomFieldValue{}, fmt.Errorf("upserting custom field value: %w", err)
+	}
+	return value, nil
+}
+
+// DeleteFieldValue removes the stored value for a field on a given entity.
+func (s *Service) DeleteFieldValue(ctx context.Context, fieldID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	if err := s.write.DeleteCustomFieldValue(ctx, gen.DeleteCustomFieldValueParams{
+		FieldID:    fieldID,
+		EntityType: entityType,
+		EntityID:   entityID,
+	}); err != nil {
+		return fmt.Errorf("deleting custom field value: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Forms
+// ---------------------------------------------------------------------------
+
+// ListForms returns every form owned by the given tenant, newest first.
+func (s *Service) ListForms(ctx context.Context, tenantID pgtype.UUID) ([]gen.Form, error) {
+	forms, err := s.read.ListFormsByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing forms: %w", err)
+	}
+	return forms, nil
+}
+
+// GetForm returns the form with the given ID, scoped to the tenant.
+func (s *Service) GetForm(ctx context.Context, id, tenantID pgtype.UUID) (gen.Form, error) {
+	form, err := s.read.GetFormByID(ctx, gen.GetFormByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.Form{}, fmt.Errorf("getting form: %w", err)
+	}
+	return form, nil
+}
+
+// GetFormBySlug returns the form matching the given slug, scoped to the
+// tenant.
+func (s *Service) GetFormBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Form, error) {
+	form, err := s.read.GetFormBySlug(ctx, gen.GetFormBySlugParams{
+		Slug:     slug,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.Form{}, fmt.Errorf("getting form by slug: %w", err)
+	}
+	return form, nil
+}
+
+// CreateForm creates a new form. System forms can only be seeded at install
+// time; set IsSystem to false for tenant-created forms.
+func (s *Service) CreateForm(ctx context.Context, params gen.CreateFormParams) (gen.Form, error) {
+	form, err := s.write.CreateForm(ctx, params)
+	if err != nil {
+		return gen.Form{}, fmt.Errorf("creating form: %w", err)
+	}
+	return form, nil
+}
+
+// UpdateForm updates a non-system form's mutable fields. System forms are
+// protected at the database level.
+func (s *Service) UpdateForm(ctx context.Context, params gen.UpdateFormParams) (gen.Form, error) {
+	form, err := s.write.UpdateForm(ctx, params)
+	if err != nil {
+		return gen.Form{}, fmt.Errorf("updating form: %w", err)
+	}
+	return form, nil
+}
+
+// DeleteForm deletes a non-system form, scoped to the tenant. System forms
+// are protected at the database level.
+func (s *Service) DeleteForm(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteForm(ctx, gen.DeleteFormParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("deleting form: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Form Steps
+// ---------------------------------------------------------------------------
+
+// ListFormSteps returns every step belonging to the given form, ordered by
+// position.
+func (s *Service) ListFormSteps(ctx context.Context, formID pgtype.UUID) ([]gen.FormStep, error) {
+	steps, err := s.read.ListFormStepsByForm(ctx, formID)
+	if err != nil {
+		return nil, fmt.Errorf("listing form steps: %w", err)
+	}
+	return steps, nil
+}
+
+// CreateFormStep adds a new step to a multi-step form.
+func (s *Service) CreateFormStep(ctx context.Context, params gen.CreateFormStepParams) (gen.FormStep, error) {
+	step, err := s.write.CreateFormStep(ctx, params)
+	if err != nil {
+		return gen.FormStep{}, fmt.Errorf("creating form step: %w", err)
+	}
+	return step, nil
+}
+
+// DeleteFormStep removes a step from a form, identified by both step ID and
+// form ID.
+func (s *Service) DeleteFormStep(ctx context.Context, id, formID pgtype.UUID) error {
+	if err := s.write.DeleteFormStep(ctx, gen.DeleteFormStepParams{
+		ID:     id,
+		FormID: formID,
+	}); err != nil {
+		return fmt.Errorf("deleting form step: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Form Submissions
+// ---------------------------------------------------------------------------
+
+// ListFormSubmissions returns a page of submissions for a form, scoped to the
+// tenant, using cursor-based pagination (newest first).
+func (s *Service) ListFormSubmissions(ctx context.Context, params gen.ListFormSubmissionsByFormParams) ([]gen.FormSubmission, error) {
+	submissions, err := s.read.ListFormSubmissionsByForm(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("listing form submissions: %w", err)
+	}
+	return submissions, nil
+}
+
+// CreateFormSubmission records a new submission for a form.
+func (s *Service) CreateFormSubmission(ctx context.Context, params gen.CreateFormSubmissionParams) (gen.FormSubmission, error) {
+	submission, err := s.write.CreateFormSubmission(ctx, params)
+	if err != nil {
+		return gen.FormSubmission{}, fmt.Errorf("creating form submission: %w", err)
+	}
+	return submission, nil
+}
+
+// GetFormSubmission returns the submission with the given ID, scoped to the
+// tenant.
+func (s *Service) GetFormSubmission(ctx context.Context, id, tenantID pgtype.UUID) (gen.FormSubmission, error) {
+	submission, err := s.read.GetFormSubmissionByID(ctx, gen.GetFormSubmissionByIDParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.FormSubmission{}, fmt.Errorf("getting form submission: %w", err)
+	}
+	return submission, nil
+}
+
+// UpdateFormSubmissionStatus updates the processing status of a submission,
+// scoped to the tenant.
+func (s *Service) UpdateFormSubmissionStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) error {
+	if err := s.write.UpdateFormSubmissionStatus(ctx, gen.UpdateFormSubmissionStatusParams{
+		Status:   status,
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("updating form submission status: %w", err)
+	}
+	return nil
+}

@@ -1,7 +1,8 @@
-## This is phase 1 implementation
+## This is phase 2 implementation
 
-### Before you start the Phase 1 Implemention:
+### Before you start the Phase 2 Implemention:
 1. Make sure you've read and understand everything about the project.
+1. Make sure you've understand where the previous Phase stops. And how to Implement this Phase Succesfully.
 2. Write and Run all the necessary tests for every features
 3. Leverage the necessary Skills, MCPs and Plugins that are related to the feature/features you're implementing
 4. Always ask for a go ahead after completing each section. 
