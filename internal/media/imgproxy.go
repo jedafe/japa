@@ -1,0 +1,69 @@
+package media
+
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/base64"
+	"fmt"
+	"os"
+)
+
+// ImageProxyOpts controls how imgproxy resizes and formats the image.
+type ImageProxyOpts struct {
+	ResizingType string // "fill", "fit", "auto"
+	Width        int
+	Height       int
+	Format       string // "webp", "png", "jpg"
+}
+
+// MediaURL generates an imgproxy HMAC-SHA256 signed URL for a media item.
+// Called on every serialization — NEVER cached in DB.
+func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string {
+	key := os.Getenv("JC_IMGPROXY_KEY")
+	salt := os.Getenv("JC_IMGPROXY_SALT")
+	baseURL := os.Getenv("JC_IMGPROXY_BASE_URL")
+
+	if key == "" || salt == "" || baseURL == "" {
+		return ""
+	}
+
+	src := "s3://" + storageBucket + "/" + storagePath
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(src))
+
+	resizingType := opts.ResizingType
+	if resizingType == "" {
+		resizingType = "fill"
+	}
+	width := opts.Width
+	if width == 0 {
+		width = 640
+	}
+	height := opts.Height
+	if height == 0 {
+		resizingType = "auto"
+		height = 0
+	}
+	format := opts.Format
+	if format == "" {
+		format = "webp"
+	}
+
+	path := fmt.Sprintf("/rs:%s:%d:%d/plain/%s@%s",
+		resizingType, width, height, encoded, format)
+
+	keyBytes := hexDecode(key)
+	saltBytes := hexDecode(salt)
+
+	mac := hmac.New(sha256.New, keyBytes)
+	mac.Write(append(saltBytes, []byte(path)...))
+	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+
+	return baseURL + "/" + sig + path
+}
+
+// hexDecode decodes a hex string, returning nil on error.
+func hexDecode(s string) []byte {
+	b, _ := hex.DecodeString(s)
+	return b
+}

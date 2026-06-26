@@ -1,0 +1,168 @@
+package feed
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// Store provides low-level database access for feed operations.
+type Store struct {
+	write *gen.Queries
+	read  *gen.Queries
+}
+
+// NewStore creates a Store backed by the given gen.Queries instances.
+func NewStore(read, write *gen.Queries) *Store {
+	return &Store{read: read, write: write}
+}
+
+// insertFeedItem creates a new feed row (idempotent via ON CONFLICT DO NOTHING).
+func (s *Store) insertFeedItem(ctx context.Context, params gen.InsertFeedItemParams) error {
+	if err := s.write.InsertFeedItem(ctx, params); err != nil {
+		return fmt.Errorf("inserting feed item: %w", err)
+	}
+	return nil
+}
+
+// getExploreFeed returns trending published content for guest users.
+func (s *Store) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.GetExploreFeedRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.GetExploreFeed(ctx, gen.GetExploreFeedParams{
+		TenantID:    tenantID,
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting explore feed: %w", err)
+	}
+	return rows, nil
+}
+
+// getPrimaryFeed returns the user's personalized feed from the feeds table.
+func (s *Store) getPrimaryFeed(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.GetPrimaryFeedRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.GetPrimaryFeed(ctx, gen.GetPrimaryFeedParams{
+		TenantID:   tenantID,
+		UserID:     userID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting primary feed: %w", err)
+	}
+	return rows, nil
+}
+
+// getSpaceFeed returns published posts in a specific space.
+func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID pgtype.UUID, limit, offset int32) ([]gen.GetSpaceFeedRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.GetSpaceFeed(ctx, gen.GetSpaceFeedParams{
+		TenantID:   tenantID,
+		SpaceID:    spaceID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting space feed: %w", err)
+	}
+	return rows, nil
+}
+
+// getProfileFeed returns all public published posts by a specific user.
+func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID pgtype.UUID, limit, offset int32) ([]gen.GetProfileFeedRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.GetProfileFeed(ctx, gen.GetProfileFeedParams{
+		TenantID:   tenantID,
+		AuthorID:   authorID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting profile feed: %w", err)
+	}
+	return rows, nil
+}
+
+// getTopFeed returns top published content from the 7-day rolling window.
+func (s *Store) getTopFeed(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.GetTopFeedRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.GetTopFeed(ctx, gen.GetTopFeedParams{
+		TenantID:    tenantID,
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting top feed: %w", err)
+	}
+	return rows, nil
+}
+
+// getRisingFeed returns rising content sorted by velocity score.
+func (s *Store) getRisingFeed(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.GetRisingFeedRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.GetRisingFeed(ctx, gen.GetRisingFeedParams{
+		TenantID:    tenantID,
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting rising feed: %w", err)
+	}
+	return rows, nil
+}
+
+// updateContentScore updates a single content's score columns.
+func (s *Store) updateContentScore(ctx context.Context, params gen.UpdateContentScoreParams) error {
+	if err := s.write.UpdateContentScore(ctx, params); err != nil {
+		return fmt.Errorf("updating content score: %w", err)
+	}
+	return nil
+}
+
+// updateVelocityScores batch updates velocity scores for posts < 7 days old.
+func (s *Store) updateVelocityScores(ctx context.Context, tenantID pgtype.UUID) error {
+	if err := s.write.UpdateVelocityScores(ctx, tenantID); err != nil {
+		return fmt.Errorf("updating velocity scores: %w", err)
+	}
+	return nil
+}
+
+// deleteFeedItemsByContent removes all feed rows referencing a content ID.
+func (s *Store) deleteFeedItemsByContent(ctx context.Context, contentID pgtype.UUID) error {
+	if err := s.write.DeleteFeedItemsByContent(ctx, contentID); err != nil {
+		return fmt.Errorf("deleting feed items by content: %w", err)
+	}
+	return nil
+}
+
+// deleteFeedItemsByUser removes all feed rows for a user.
+func (s *Store) deleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.DeleteFeedItemsByUser(ctx, userID); err != nil {
+		return fmt.Errorf("deleting feed items by user: %w", err)
+	}
+	return nil
+}
+
+// getFeedItemCount returns the total number of feed items for a user.
+func (s *Store) getFeedItemCount(ctx context.Context, userID pgtype.UUID) (int32, error) {
+	count, err := s.read.GetFeedItemCount(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("counting feed items: %w", err)
+	}
+	return count, nil
+}

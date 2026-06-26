@@ -1,0 +1,268 @@
+package professional
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+// Store provides low-level database access for professional profile operations.
+// The Service layer wraps Store methods with business logic.
+type Store struct {
+	write *gen.Queries
+	read  *gen.Queries
+}
+
+// NewStore creates a Store backed by the given gen.Queries instances.
+func NewStore(read, write *gen.Queries) *Store {
+	return &Store{read: read, write: write}
+}
+
+// ---------------------------------------------------------------------------
+// Profile Type Definitions
+// ---------------------------------------------------------------------------
+
+func (s *Store) createProfessionalProfileType(ctx context.Context, p gen.CreateProfessionalProfileTypeParams) (gen.ProfessionalProfileType, error) {
+	row, err := s.write.CreateProfessionalProfileType(ctx, p)
+	if err != nil {
+		return gen.ProfessionalProfileType{}, fmt.Errorf("creating professional profile type: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) getProfessionalProfileTypeByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ProfessionalProfileType, error) {
+	row, err := s.read.GetProfessionalProfileTypeByID(ctx, gen.GetProfessionalProfileTypeByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.ProfessionalProfileType{}, fmt.Errorf("getting professional profile type by ID: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) getProfessionalProfileTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.ProfessionalProfileType, error) {
+	row, err := s.read.GetProfessionalProfileTypeBySlug(ctx, gen.GetProfessionalProfileTypeBySlugParams{Slug: slug, TenantID: tenantID})
+	if err != nil {
+		return gen.ProfessionalProfileType{}, fmt.Errorf("getting professional profile type by slug: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) listProfessionalProfileTypesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalProfileType, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.ListProfessionalProfileTypesByTenant(ctx, gen.ListProfessionalProfileTypesByTenantParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing professional profile types: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *Store) updateProfessionalProfileType(ctx context.Context, p gen.UpdateProfessionalProfileTypeParams) (gen.ProfessionalProfileType, error) {
+	row, err := s.write.UpdateProfessionalProfileType(ctx, p)
+	if err != nil {
+		return gen.ProfessionalProfileType{}, fmt.Errorf("updating professional profile type: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) deleteProfessionalProfileType(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteProfessionalProfileType(ctx, gen.DeleteProfessionalProfileTypeParams{ID: id, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting professional profile type: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Professional Profiles
+// ---------------------------------------------------------------------------
+
+func (s *Store) createProfessionalProfile(ctx context.Context, p gen.CreateProfessionalProfileParams) (gen.ProfessionalProfile, error) {
+	row, err := s.write.CreateProfessionalProfile(ctx, p)
+	if err != nil {
+		return gen.ProfessionalProfile{}, fmt.Errorf("creating professional profile: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) getProfessionalProfileByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ProfessionalProfile, error) {
+	row, err := s.read.GetProfessionalProfileByID(ctx, gen.GetProfessionalProfileByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.ProfessionalProfile{}, fmt.Errorf("getting professional profile by ID: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) getProfessionalProfileBySlug(ctx context.Context, slug string) (gen.ProfessionalProfile, error) {
+	row, err := s.read.GetProfessionalProfileBySlug(ctx, slug)
+	if err != nil {
+		return gen.ProfessionalProfile{}, fmt.Errorf("getting professional profile by slug: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) listProfessionalProfilesByOwner(ctx context.Context, ownerUserID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalProfile, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.ListProfessionalProfilesByOwner(ctx, gen.ListProfessionalProfilesByOwnerParams{
+		OwnerUserID: ownerUserID,
+		TenantID:    tenantID,
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing professional profiles by owner: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *Store) listProfessionalProfilesByType(ctx context.Context, typeID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalProfile, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.ListProfessionalProfilesByType(ctx, gen.ListProfessionalProfilesByTypeParams{
+		TypeID:     typeID,
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing professional profiles by type: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *Store) updateProfessionalProfile(ctx context.Context, p gen.UpdateProfessionalProfileParams) (gen.ProfessionalProfile, error) {
+	row, err := s.write.UpdateProfessionalProfile(ctx, p)
+	if err != nil {
+		return gen.ProfessionalProfile{}, fmt.Errorf("updating professional profile: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) deleteProfessionalProfile(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteProfessionalProfile(ctx, gen.DeleteProfessionalProfileParams{ID: id, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting professional profile: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) incrementFollowerCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
+	if err := s.write.IncrementFollowerCount(ctx, gen.IncrementFollowerCountParams{ID: id, TenantID: tenantID, Delta: delta}); err != nil {
+		return fmt.Errorf("incrementing follower count: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Professional Profile Members
+// ---------------------------------------------------------------------------
+
+func (s *Store) addProfessionalProfileMember(ctx context.Context, p gen.AddProfessionalProfileMemberParams) error {
+	if err := s.write.AddProfessionalProfileMember(ctx, p); err != nil {
+		return fmt.Errorf("adding professional profile member: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) removeProfessionalProfileMember(ctx context.Context, profileID, userID pgtype.UUID) error {
+	if err := s.write.RemoveProfessionalProfileMember(ctx, gen.RemoveProfessionalProfileMemberParams{ProfileID: profileID, UserID: userID}); err != nil {
+		return fmt.Errorf("removing professional profile member: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) listProfessionalProfileMembers(ctx context.Context, profileID pgtype.UUID) ([]gen.ListProfessionalProfileMembersRow, error) {
+	rows, err := s.read.ListProfessionalProfileMembers(ctx, profileID)
+	if err != nil {
+		return nil, fmt.Errorf("listing professional profile members: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *Store) updateProfessionalProfileMemberRole(ctx context.Context, profileID, userID pgtype.UUID, role string) error {
+	if err := s.write.UpdateProfessionalProfileMemberRole(ctx, gen.UpdateProfessionalProfileMemberRoleParams{
+		ProfileID: profileID,
+		UserID:    userID,
+		Role:      role,
+	}); err != nil {
+		return fmt.Errorf("updating professional profile member role: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) getProfessionalProfileMember(ctx context.Context, profileID, userID pgtype.UUID) (gen.ProfessionalProfileMember, error) {
+	row, err := s.read.GetProfessionalProfileMember(ctx, gen.GetProfessionalProfileMemberParams{ProfileID: profileID, UserID: userID})
+	if err != nil {
+		return gen.ProfessionalProfileMember{}, fmt.Errorf("getting professional profile member: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) isProfessionalProfileMember(ctx context.Context, profileID, userID pgtype.UUID) (bool, error) {
+	exists, err := s.read.IsProfessionalProfileMember(ctx, gen.IsProfessionalProfileMemberParams{ProfileID: profileID, UserID: userID})
+	if err != nil {
+		return false, fmt.Errorf("checking professional profile membership: %w", err)
+	}
+	return exists, nil
+}
+
+func (s *Store) isProfessionalProfileOwner(ctx context.Context, profileID, userID, tenantID pgtype.UUID) (bool, error) {
+	exists, err := s.read.IsProfessionalProfileOwner(ctx, gen.IsProfessionalProfileOwnerParams{
+		ProfileID: profileID,
+		UserID:    userID,
+		TenantID:  tenantID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking professional profile ownership: %w", err)
+	}
+	return exists, nil
+}
+
+// ---------------------------------------------------------------------------
+// Professional Profile Invitations
+// ---------------------------------------------------------------------------
+
+func (s *Store) createProfessionalProfileInvitation(ctx context.Context, p gen.CreateProfessionalProfileInvitationParams) (gen.ProfessionalProfileInvitation, error) {
+	row, err := s.write.CreateProfessionalProfileInvitation(ctx, p)
+	if err != nil {
+		return gen.ProfessionalProfileInvitation{}, fmt.Errorf("creating professional profile invitation: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) getProfessionalProfileInvitationByToken(ctx context.Context, token string) (gen.ProfessionalProfileInvitation, error) {
+	row, err := s.read.GetProfessionalProfileInvitationByToken(ctx, token)
+	if err != nil {
+		return gen.ProfessionalProfileInvitation{}, fmt.Errorf("getting professional profile invitation by token: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) acceptProfessionalProfileInvitation(ctx context.Context, id pgtype.UUID) error {
+	if err := s.write.AcceptProfessionalProfileInvitation(ctx, id); err != nil {
+		return fmt.Errorf("accepting professional profile invitation: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) listProfessionalProfileInvitations(ctx context.Context, profileID pgtype.UUID) ([]gen.ProfessionalProfileInvitation, error) {
+	rows, err := s.read.ListProfessionalProfileInvitations(ctx, profileID)
+	if err != nil {
+		return nil, fmt.Errorf("listing professional profile invitations: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *Store) deleteExpiredInvitations(ctx context.Context) error {
+	if err := s.write.DeleteExpiredInvitations(ctx); err != nil {
+		return fmt.Errorf("deleting expired invitations: %w", err)
+	}
+	return nil
+}

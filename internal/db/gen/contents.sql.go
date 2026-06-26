@@ -50,11 +50,42 @@ type CreateContentParams struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 }
 
+type CreateContentRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Content, revision, slug history, pinned posts, JSON-LD templates, and scores.
 // =====================
 // Contents
 // =====================
-func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (Content, error) {
+func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (CreateContentRow, error) {
 	row := q.db.QueryRow(ctx, createContent,
 		arg.TenantID,
 		arg.AuthorID,
@@ -74,7 +105,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.PublishAt,
 		arg.PublishedAt,
 	)
-	var i Content
+	var i CreateContentRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -229,9 +260,40 @@ type GetContentByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) (Content, error) {
+type GetContentByIDRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) (GetContentByIDRow, error) {
 	row := q.db.QueryRow(ctx, getContentByID, arg.ID, arg.TenantID)
-	var i Content
+	var i GetContentByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -280,9 +342,40 @@ type GetContentBySlugParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugParams) (Content, error) {
+type GetContentBySlugRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugParams) (GetContentBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getContentBySlug, arg.Slug, arg.TenantID)
-	var i Content
+	var i GetContentBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -508,7 +601,38 @@ type ListContentsBySpaceParams struct {
 	PageLimit       int32              `json:"page_limit"`
 }
 
-func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpaceParams) ([]Content, error) {
+type ListContentsBySpaceRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpaceParams) ([]ListContentsBySpaceRow, error) {
 	rows, err := q.db.Query(ctx, listContentsBySpace,
 		arg.TenantID,
 		arg.SpaceID,
@@ -519,9 +643,9 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Content
+	var items []ListContentsBySpaceRow
 	for rows.Next() {
-		var i Content
+		var i ListContentsBySpaceRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -581,15 +705,46 @@ type ListContentsByTenantParams struct {
 	PageLimit       int32              `json:"page_limit"`
 }
 
-func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTenantParams) ([]Content, error) {
+type ListContentsByTenantRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTenantParams) ([]ListContentsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listContentsByTenant, arg.TenantID, arg.CursorCreatedAt, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Content
+	var items []ListContentsByTenantRow
 	for rows.Next() {
-		var i Content
+		var i ListContentsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -650,7 +805,38 @@ type ListContentsByTypeParams struct {
 	PageLimit       int32              `json:"page_limit"`
 }
 
-func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByTypeParams) ([]Content, error) {
+type ListContentsByTypeRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByTypeParams) ([]ListContentsByTypeRow, error) {
 	rows, err := q.db.Query(ctx, listContentsByType,
 		arg.TenantID,
 		arg.ContentType,
@@ -661,9 +847,9 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Content
+	var items []ListContentsByTypeRow
 	for rows.Next() {
-		var i Content
+		var i ListContentsByTypeRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -859,7 +1045,38 @@ type UpdateContentParams struct {
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (Content, error) {
+type UpdateContentRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (UpdateContentRow, error) {
 	row := q.db.QueryRow(ctx, updateContent,
 		arg.Title,
 		arg.Slug,
@@ -879,7 +1096,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (C
 		arg.ID,
 		arg.TenantID,
 	)
-	var i Content
+	var i UpdateContentRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -931,9 +1148,40 @@ type UpdateContentStatusParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStatusParams) (Content, error) {
+type UpdateContentStatusRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStatusParams) (UpdateContentStatusRow, error) {
 	row := q.db.QueryRow(ctx, updateContentStatus, arg.Status, arg.ID, arg.TenantID)
-	var i Content
+	var i UpdateContentStatusRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,

@@ -1,0 +1,88 @@
+-- Media system queries (Section 34).
+-- Two-step upload: pre-sign → client uploads to MinIO → confirm.
+
+-- =====================
+-- Insert
+-- =====================
+
+-- name: InsertMedia :one
+INSERT INTO media (tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, storage_path, storage_bucket)
+VALUES (@tenant_id, @uploader_user_id, @original_filename, @mime_type, @file_size_bytes, @storage_path, @storage_bucket)
+RETURNING *;
+
+-- =====================
+-- Read
+-- =====================
+
+-- name: GetMediaByID :one
+SELECT * FROM media WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: GetMediaByStoragePath :one
+SELECT * FROM media WHERE storage_path = @storage_path AND tenant_id = @tenant_id;
+
+-- =====================
+-- Update
+-- =====================
+
+-- name: ConfirmMedia :exec
+UPDATE media SET confirmed = true WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: UpdateMediaMetadata :exec
+UPDATE media
+SET alt_text = COALESCE(@alt_text, alt_text),
+    caption = COALESCE(@caption, caption),
+    width_px = COALESCE(@width_px, width_px),
+    height_px = COALESCE(@height_px, height_px),
+    duration_secs = COALESCE(@duration_secs, duration_secs)
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: SoftDeleteMedia :exec
+UPDATE media SET deleted_at = now() WHERE id = @id AND tenant_id = @tenant_id;
+
+-- =====================
+-- Lists
+-- =====================
+
+-- name: ListMediaByUploader :many
+SELECT * FROM media
+WHERE tenant_id = @tenant_id AND uploader_user_id = @uploader_user_id AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListMediaByTenant :many
+SELECT * FROM media
+WHERE tenant_id = @tenant_id AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListMediaByType :many
+SELECT * FROM media
+WHERE tenant_id = @tenant_id AND mime_type LIKE @mime_pattern || '%' AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: SearchMedia :many
+SELECT * FROM media
+WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
+  AND (original_filename ILIKE '%' || @query || '%'
+       OR alt_text ILIKE '%' || @query || '%'
+       OR caption ILIKE '%' || @query || '%')
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- =====================
+-- Counts
+-- =====================
+
+-- name: CountMediaByUploader :one
+SELECT COUNT(*)::int AS count FROM media
+WHERE tenant_id = @tenant_id AND uploader_user_id = @uploader_user_id AND deleted_at IS NULL;
+
+-- =====================
+-- Bulk Operations
+-- =====================
+
+-- name: BulkSoftDeleteMedia :exec
+UPDATE media SET deleted_at = now()
+WHERE id = ANY(@media_ids::uuid[]) AND tenant_id = @tenant_id;
