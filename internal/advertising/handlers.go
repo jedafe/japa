@@ -1,0 +1,607 @@
+// Package advertising — HTTP handlers for the Ad Placement system.
+//
+// Every handler is a method on Handlers so dependencies (Service) are
+// injected via the constructor, never read from globals. Responses follow
+// the JapaConnect API envelope: success bodies are wrapped in {"data": ...}
+// and errors in {"error":{"code":"...","message":"..."}}. Permission
+// enforcement is handled by middleware wired at the router level.
+// V1 routes are admin-only.
+package advertising
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/tenant"
+)
+
+// Handlers holds dependencies for advertising HTTP handlers.
+type Handlers struct {
+	Service *Service
+}
+
+// NewHandlers creates Handlers with the given Service.
+func NewHandlers(service *Service) *Handlers {
+	return &Handlers{Service: service}
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+// parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
+func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, param)); err != nil {
+		return pgtype.UUID{}, err
+	}
+	return id, nil
+}
+
+// requireTenant resolves the tenant from the request context.
+func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return pgtype.UUID{}, false
+	}
+	return t.ID, true
+}
+
+// requireUser resolves the authenticated user from the request context.
+func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return nil, false
+	}
+	return user, true
+}
+
+// handleServiceError translates a Service-layer error into the appropriate HTTP response.
+func handleServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+	case strings.Contains(err.Error(), "already_exists"):
+		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	case strings.Contains(err.Error(), "duplicate"):
+		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	default:
+		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+	}
+}
+
+// writeJSON serializes the given value as JSON and writes it to the response.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeError writes a JSON error response following the JapaConnect API format.
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
+}
+
+// parsePageSize extracts and clamps the page_size query parameter.
+func parsePageSize(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_size")
+	if s == "" {
+		return DefaultPageSize
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return DefaultPageSize
+	}
+	if n > int(MaxPageSize) {
+		return MaxPageSize
+	}
+	return int32(n)
+}
+
+// parsePageSizeOffset extracts the page_offset query parameter.
+func parsePageSizeOffset(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_offset")
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return int32(n)
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Handlers
+// ---------------------------------------------------------------------------
+
+// CreateCampaign handles POST /api/v1/admin/advertising/campaigns.
+func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Name                string                 `json:"name"`
+		SlotTypeName        string                 `json:"slot_type_name"`
+		Content             map[string]interface{} `json:"content"`
+		TargetURL           string                 `json:"target_url"`
+		Budget              *int64                 `json:"budget"`
+		Priority            int32                  `json:"priority"`
+		FrequencyCapPerUser *int32                 `json:"frequency_cap_per_user"`
+		StartDate           string                 `json:"start_date"`
+		EndDate             string                 `json:"end_date"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		return
+	}
+	if input.SlotTypeName == "" {
+		writeError(w, http.StatusBadRequest, "missing_slot_type_name", "slot_type_name is required")
+		return
+	}
+	if input.Content == nil {
+		writeError(w, http.StatusBadRequest, "missing_content", "content is required")
+		return
+	}
+
+	startDate := time.Now()
+	if input.StartDate != "" {
+		var err error
+		startDate, err = time.Parse(time.RFC3339, input.StartDate)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
+			return
+		}
+	}
+
+	var endDate *time.Time
+	if input.EndDate != "" {
+		t, err := time.Parse(time.RFC3339, input.EndDate)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
+			return
+		}
+		endDate = &t
+	}
+
+	campaign, err := h.Service.CreateCampaign(r.Context(), tenantID, user.UserID, CreateCampaignInput{
+		Name:                input.Name,
+		SlotTypeName:        input.SlotTypeName,
+		Content:             input.Content,
+		TargetURL:           input.TargetURL,
+		Budget:              input.Budget,
+		Priority:            input.Priority,
+		FrequencyCapPerUser: input.FrequencyCapPerUser,
+		StartDate:           startDate,
+		EndDate:             endDate,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": campaign})
+}
+
+// GetCampaign handles GET /api/v1/admin/advertising/campaigns/{id}.
+func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		return
+	}
+
+	campaign, err := h.Service.GetCampaign(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+}
+
+// ListCampaigns handles GET /api/v1/admin/advertising/campaigns.
+func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	campaigns, err := h.Service.ListCampaigns(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": campaigns})
+}
+
+// ActivateCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/activate.
+func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		return
+	}
+
+	campaign, err := h.Service.ActivateCampaign(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+}
+
+// PauseCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/pause.
+func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		return
+	}
+
+	campaign, err := h.Service.PauseCampaign(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+}
+
+// EndCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/end.
+func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		return
+	}
+
+	campaign, err := h.Service.EndCampaign(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+}
+
+// ---------------------------------------------------------------------------
+// Ad Rendering Handler
+// ---------------------------------------------------------------------------
+
+// RenderSlot handles GET /api/v1/ads/render?slot={slot_name}.
+// Returns eligible campaigns for the given slot. Empty result when no match
+// — never a placeholder.
+func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	slotName := r.URL.Query().Get("slot")
+	if slotName == "" {
+		writeError(w, http.StatusBadRequest, "missing_slot", "slot query parameter is required")
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	var userID pgtype.UUID
+	if user != nil {
+		userID = user.UserID
+	}
+
+	campaigns, err := h.Service.RenderSlot(r.Context(), tenantID, userID, slotName)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": campaigns})
+}
+
+// ---------------------------------------------------------------------------
+// Ad Events Ingestion Handler
+// ---------------------------------------------------------------------------
+
+// IngestEvents handles POST /api/v1/ads/events/ingest.
+// Accepts a batch of ad events for async ingestion.
+func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Events []struct {
+			CampaignID string `json:"campaign_id"`
+			UserID     string `json:"user_id"`
+			EventType  string `json:"event_type"`
+			OccurredAt string `json:"occurred_at"`
+		} `json:"events"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if len(input.Events) == 0 {
+		writeError(w, http.StatusBadRequest, "empty_events", "events array is empty")
+		return
+	}
+
+	events := make([]IngestAdEventInput, 0, len(input.Events))
+	for _, e := range input.Events {
+		if e.EventType != EventTypeImpression && e.EventType != EventTypeClick {
+			continue
+		}
+		var occurredAt time.Time
+		if e.OccurredAt != "" {
+			var err error
+			occurredAt, err = time.Parse(time.RFC3339, e.OccurredAt)
+			if err != nil {
+				continue
+			}
+		}
+		events = append(events, IngestAdEventInput{
+			CampaignID: e.CampaignID,
+			UserID:     e.UserID,
+			EventType:  e.EventType,
+			OccurredAt: occurredAt,
+		})
+	}
+
+	ingested, err := h.Service.IngestAdEvents(r.Context(), tenantID, events)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"ingested": ingested,
+			"total":    len(input.Events),
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Slot Type Handlers
+// ---------------------------------------------------------------------------
+
+// ListSlotTypes handles GET /api/v1/admin/advertising/slot-types.
+func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	slotTypes, err := h.Service.ListSlotTypes(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": slotTypes})
+}
+
+// ---------------------------------------------------------------------------
+// Organization Boost Handlers
+// ---------------------------------------------------------------------------
+
+// CreateBoost handles POST /api/v1/admin/advertising/boosts.
+func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		OrganizationID string `json:"organization_id"`
+		CampaignID     string `json:"campaign_id"`
+		BoostType      string `json:"boost_type"`
+		StartDate      string `json:"start_date"`
+		EndDate        string `json:"end_date"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.OrganizationID == "" {
+		writeError(w, http.StatusBadRequest, "missing_organization_id", "organization_id is required")
+		return
+	}
+	if input.CampaignID == "" {
+		writeError(w, http.StatusBadRequest, "missing_campaign_id", "campaign_id is required")
+		return
+	}
+
+	var organizationID pgtype.UUID
+	if err := organizationID.Scan(input.OrganizationID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
+		return
+	}
+	var campaignID pgtype.UUID
+	if err := campaignID.Scan(input.CampaignID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_campaign_id", "Invalid campaign_id")
+		return
+	}
+
+	startDate := time.Now()
+	if input.StartDate != "" {
+		var err error
+		startDate, err = time.Parse(time.RFC3339, input.StartDate)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
+			return
+		}
+	}
+
+	var endDate *time.Time
+	if input.EndDate != "" {
+		t, err := time.Parse(time.RFC3339, input.EndDate)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
+			return
+		}
+		endDate = &t
+	}
+
+	boost, err := h.Service.CreateBoost(r.Context(), tenantID, CreateBoostInput{
+		OrganizationID: organizationID,
+		CampaignID:     campaignID,
+		BoostType:      input.BoostType,
+		StartDate:      startDate,
+		EndDate:        endDate,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": boost})
+}
+
+// ListBoosts handles GET /api/v1/admin/advertising/boosts?organization_id={id}.
+func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	orgIDStr := r.URL.Query().Get("organization_id")
+	if orgIDStr == "" {
+		writeError(w, http.StatusBadRequest, "missing_organization_id", "organization_id query parameter is required")
+		return
+	}
+
+	var organizationID pgtype.UUID
+	if err := organizationID.Scan(orgIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
+		return
+	}
+
+	boosts, err := h.Service.ListBoosts(r.Context(), tenantID, organizationID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": boosts})
+}
+
+// ListActiveBoosts handles GET /api/v1/admin/advertising/boosts/active.
+func (h *Handlers) ListActiveBoosts(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	boosts, err := h.Service.ListActiveBoosts(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": boosts})
+}
+
+// EndBoost handles POST /api/v1/admin/advertising/boosts/{id}/end.
+func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
+		return
+	}
+
+	boost, err := h.Service.EndBoost(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": boost})
+}
