@@ -14,6 +14,7 @@ import (
 	"github.com/jedafe/japa/internal/advertising"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/bots"
+	"github.com/jedafe/japa/internal/docs"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/blog"
@@ -23,6 +24,7 @@ import (
 	"github.com/jedafe/japa/internal/forum"
 	"github.com/jedafe/japa/internal/gdpr"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/onboarding"
 	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/payments"
@@ -32,6 +34,7 @@ import (
 	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/linkpreview"
@@ -41,6 +44,7 @@ import (
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/tickets"
+	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -180,6 +184,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	gdprAdapter := gdpr.NewWorkerAdapter(gdprService)
 	worker.RegisterGDPRProcessor(gdprAdapter)
 
+	// Documentation System subsystem (Section 44).
+	docsService := docs.NewService(database)
+	docsHandlers := docs.NewHandlers(docsService)
+
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
 	botService := bots.NewServiceFromStore(botStore)
@@ -196,6 +204,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Cache flusher for admin-only cache invalidation.
 	cacheFlusher := analytics.NewCacheFlusher(vkClient)
 
+	// User Profile & Preferences subsystem.
+	usersService := users.NewService(database)
+	usersHandlers := users.NewHandlers(usersService)
+
+	// Onboarding subsystem (Section 09).
+	onboardingService := onboarding.NewService(database)
+	onboardingHandlers := onboarding.NewHandlers(onboardingService)
+
+	// SEO & Performance subsystem (Section 26).
+	seoQueries := gen.New(database.Writer)
+	sitemapHandler := seo.NewSitemapHandler(seoQueries, database.Reader)
+	ogImageHandler := seo.NewOGImageHandler(database.Reader)
+
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
 	r.Get("/ready", h.ReadinessCheck)
@@ -207,6 +228,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/robots.txt", bots.RobotsHandler(botStore, vkClient))
 		r.Get("/llms.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
 		r.Get("/llms-full.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
+		r.Get("/sitemap.xml", sitemapHandler.ServeSitemap)
+		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
 	})
 
 	// API routes go through tenant resolution
@@ -789,10 +812,38 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 							"scope":   scope,
 							"deleted": deleted,
 						},
-					})
 				})
 		})
+
+		// User Profile & Preferences routes
+		r.With(auth.RequireAuth(kr)).Get("/users/me", usersHandlers.GetMyProfile)
+		r.With(auth.RequireAuth(kr)).Patch("/users/me", usersHandlers.UpdateMyProfile)
+		r.With(auth.RequireAuth(kr)).Get("/users/me/preferences", usersHandlers.GetMyPreferences)
+		r.With(auth.RequireAuth(kr)).Put("/users/me/preferences", usersHandlers.UpdateMyPreferences)
+
+		// Onboarding routes (Section 09)
+		r.With(auth.RequireAuth(kr)).Get("/onboarding/status", onboardingHandlers.GetStatus)
+		r.With(auth.RequireAuth(kr)).Put("/onboarding/step", onboardingHandlers.UpdateStep)
+		r.With(auth.RequireAuth(kr)).Post("/onboarding/complete", onboardingHandlers.Complete)
+		r.With(auth.RequireAuth(kr)).Get("/onboarding/recommendations", onboardingHandlers.GetRecommendations)
+		r.With(auth.RequireAuth(kr)).Post("/onboarding/tour/dismiss", onboardingHandlers.DismissTour)
+
+		// Documentation System routes (Section 44)
+		// Public: read published pages for an audience
+		r.Get("/docs/{audience}", docsHandlers.ListDocPages)
+		r.Get("/docs/{audience}/{slug}", docsHandlers.GetDocPage)
+
+		// Admin: manage documentation pages
+		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			Get("/admin/docs/{audience}", docsHandlers.ListAllDocPages)
+		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			Post("/admin/docs", docsHandlers.CreateDocPage)
+		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			Patch("/admin/docs/{id}", docsHandlers.UpdateDocPage)
+		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			Delete("/admin/docs/{id}", docsHandlers.DeleteDocPage)
 	})
+})
 
 	return r
 }
@@ -980,6 +1031,8 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		// Platform Analytics & Site Reports (Section 40)
 		{Key: "analytics.admin", Description: "View analytics dashboard and security scan results"},
 		{Key: "analytics.cache.flush", Description: "Flush platform caches (admin-only)"},
+		// Documentation System (Section 44)
+		{Key: "docs.admin", Description: "Manage documentation pages (create, edit, delete, review)"},
 	}
 
 	var defaultTenantID pgtype.UUID

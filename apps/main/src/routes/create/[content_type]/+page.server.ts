@@ -5,7 +5,7 @@ const validTypes = ['blog_post', 'discussion', 'guide', 'event', 'question', 'li
 
 export const load: PageServerLoad = async ({ params }) => {
 	if (!(validTypes as readonly string[]).includes(params.content_type)) {
-		error(404, { message: `Content type "${params.content_type}" not found` });
+		error(404, { code: 'NOT_FOUND', message: `Content type "${params.content_type}" not found` });
 	}
 
 	return {

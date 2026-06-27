@@ -1,13 +1,26 @@
 import type { LayoutServerLoad } from './$types';
-import type { HealthStatus } from '$lib/types';
+import { apiFetch } from '$lib/server/api';
 
-/**
- * Root layout server load.
- *
- * Placeholder for feature flags and a health check that will later be
- * resolved from the internal Go backend via `src/lib/server/api.ts`.
- */
-export const load: LayoutServerLoad = async (): Promise<HealthStatus> => {
-	// TODO: replace with a real API health probe once the Go service is wired up.
-	return { healthy: true, flags: {} };
+export const load: LayoutServerLoad = async ({ locals, cookies }) => {
+	const token = cookies.get('jc_token');
+	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+	const flagsResult = await apiFetch<Record<string, boolean>>('/features');
+	const flags = flagsResult.ok && flagsResult.data ? flagsResult.data : {};
+
+	let notificationCount = 0;
+	if (locals.user) {
+		const countResult = await apiFetch<{ count: number }>('/notifications/unread-count', {
+			headers
+		});
+		if (countResult.ok && countResult.data) {
+			notificationCount = countResult.data.count;
+		}
+	}
+
+	return {
+		user: locals.user,
+		flags,
+		notificationCount
+	};
 };
