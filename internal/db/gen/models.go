@@ -11,6 +11,105 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
+type AccountDeletionRequest struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Status      string             `json:"status"`
+	Reason      *string            `json:"reason"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type ActivityEvent struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	ActivityKey string             `json:"activity_key"`
+	Reference   string             `json:"reference"`
+	Payload     []byte             `json:"payload"`
+	Processed   *bool              `json:"processed"`
+	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type ActivityPointRule struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	ActivityKey string             `json:"activity_key"`
+	PointValue  int32              `json:"point_value"`
+	IsEnabled   *bool              `json:"is_enabled"`
+	CapPerDay   *int32             `json:"cap_per_day"`
+	CapPerWeek  *int32             `json:"cap_per_week"`
+	Description *string            `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AdAnalyticsDaily struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	CampaignID  pgtype.UUID        `json:"campaign_id"`
+	SlotTypeID  pgtype.UUID        `json:"slot_type_id"`
+	Date        pgtype.Date        `json:"date"`
+	Impressions int32              `json:"impressions"`
+	Clicks      int32              `json:"clicks"`
+	Spent       int64              `json:"spent"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type AdCampaign struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Name                string             `json:"name"`
+	SlotTypeID          pgtype.UUID        `json:"slot_type_id"`
+	Content             []byte             `json:"content"`
+	TargetUrl           *string            `json:"target_url"`
+	Budget              *int64             `json:"budget"`
+	Spent               int64              `json:"spent"`
+	Status              string             `json:"status"`
+	Priority            int32              `json:"priority"`
+	FrequencyCapPerUser *int32             `json:"frequency_cap_per_user"`
+	StartDate           pgtype.Timestamptz `json:"start_date"`
+	EndDate             pgtype.Timestamptz `json:"end_date"`
+	CreatedBy           pgtype.UUID        `json:"created_by"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AdEvent struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	CampaignID pgtype.UUID        `json:"campaign_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EventType  string             `json:"event_type"`
+	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type AdSlotType struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	SlotName          string             `json:"slot_name"`
+	Description       *string            `json:"description"`
+	MaxDisplayPerPage int32              `json:"max_display_per_page"`
+	IsActive          bool               `json:"is_active"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuditLog struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	ActorUserID        pgtype.UUID        `json:"actor_user_id"`
+	ImpersonatedUserID pgtype.UUID        `json:"impersonated_user_id"`
+	ActionType         string             `json:"action_type"`
+	TargetType         *string            `json:"target_type"`
+	TargetID           pgtype.UUID        `json:"target_id"`
+	Metadata           []byte             `json:"metadata"`
+	IpAddress          *netip.Addr        `json:"ip_address"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+}
+
 type BlogSeries struct {
 	ID           pgtype.UUID        `json:"id"`
 	TenantID     pgtype.UUID        `json:"tenant_id"`
@@ -28,6 +127,15 @@ type BlogSeriesPost struct {
 	SeriesID  pgtype.UUID `json:"series_id"`
 	ContentID pgtype.UUID `json:"content_id"`
 	Position  int32       `json:"position"`
+}
+
+type CensoredWord struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Pattern     string             `json:"pattern"`
+	Action      string             `json:"action"`
+	Replacement *string            `json:"replacement"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type ComparisonDimension struct {
@@ -82,6 +190,18 @@ type ComparisonValue struct {
 	ValueRating  pgtype.Numeric     `json:"value_rating"`
 	ValueBoolean *bool              `json:"value_boolean"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type ConsentRecord struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	ConsentType   string             `json:"consent_type"`
+	Granted       bool               `json:"granted"`
+	PolicyVersion string             `json:"policy_version"`
+	IpAddress     *netip.Addr        `json:"ip_address"`
+	UserAgent     *string            `json:"user_agent"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type Content struct {
@@ -227,6 +347,40 @@ type CustomFieldValue struct {
 	ValueJson   []byte             `json:"value_json"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type DataExportRequest struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Status      string             `json:"status"`
+	DownloadUrl *string            `json:"download_url"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type DiscountCode struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	Code          string             `json:"code"`
+	DiscountType  string             `json:"discount_type"`
+	DiscountValue pgtype.Numeric     `json:"discount_value"`
+	ApplicableTo  string             `json:"applicable_to"`
+	MaxUses       *int32             `json:"max_uses"`
+	UsesPerUser   int32              `json:"uses_per_user"`
+	GroupID       pgtype.UUID        `json:"group_id"`
+	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
+	ValidUntil    pgtype.Timestamptz `json:"valid_until"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type DiscountCodeUse struct {
+	CodeID    pgtype.UUID        `json:"code_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	PaymentID pgtype.UUID        `json:"payment_id"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
 }
 
 type DmConversation struct {
@@ -446,6 +600,30 @@ type GroupRole struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type IpBlock struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Cidr      netip.Addr         `json:"cidr"`
+	BlockType string             `json:"block_type"`
+	Reason    *string            `json:"reason"`
+	BlockedBy pgtype.UUID        `json:"blocked_by"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type KnownBot struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	Name             string             `json:"name"`
+	UserAgentPattern string             `json:"user_agent_pattern"`
+	BotType          string             `json:"bot_type"`
+	Policy           string             `json:"policy"`
+	IsSystem         bool               `json:"is_system"`
+	CrawlDelay       int32              `json:"crawl_delay"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
 type Medium struct {
 	ID               pgtype.UUID        `json:"id"`
 	TenantID         pgtype.UUID        `json:"tenant_id"`
@@ -463,6 +641,35 @@ type Medium struct {
 	Confirmed        bool               `json:"confirmed"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type MvDailyContentStat struct {
+	Day           pgtype.Date `json:"day"`
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	ContentID     pgtype.UUID `json:"content_id"`
+	Views         int64       `json:"views"`
+	Reactions     int64       `json:"reactions"`
+	Comments      int64       `json:"comments"`
+	UniqueViewers int64       `json:"unique_viewers"`
+}
+
+type MvDailySpaceStat struct {
+	Day         pgtype.Date `json:"day"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	SpaceID     pgtype.UUID `json:"space_id"`
+	Joins       int64       `json:"joins"`
+	Posts       int64       `json:"posts"`
+	ActiveUsers int64       `json:"active_users"`
+}
+
+type MvUserEngagementStat struct {
+	Day            pgtype.Date `json:"day"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	PostsCreated   int64       `json:"posts_created"`
+	ReactionsGiven int64       `json:"reactions_given"`
+	CommentsMade   int64       `json:"comments_made"`
+	Views          int64       `json:"views"`
 }
 
 type Notification struct {
@@ -522,10 +729,74 @@ type OauthAccount struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type OrganizationBoost struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	CampaignID     pgtype.UUID        `json:"campaign_id"`
+	BoostType      string             `json:"boost_type"`
+	Status         string             `json:"status"`
+	StartDate      pgtype.Timestamptz `json:"start_date"`
+	EndDate        pgtype.Timestamptz `json:"end_date"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type Payment struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Provider       string             `json:"provider"`
+	ProviderRef    *string            `json:"provider_ref"`
+	PurposeType    string             `json:"purpose_type"`
+	PurposeID      pgtype.UUID        `json:"purpose_id"`
+	Amount         int64              `json:"amount"`
+	Currency       string             `json:"currency"`
+	Status         string             `json:"status"`
+	Metadata       []byte             `json:"metadata"`
+	SubscriptionID pgtype.UUID        `json:"subscription_id"`
+	DiscountCodeID pgtype.UUID        `json:"discount_code_id"`
+	DiscountAmount int64              `json:"discount_amount"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type PaymentRefund struct {
+	ID          pgtype.UUID        `json:"id"`
+	PaymentID   pgtype.UUID        `json:"payment_id"`
+	Amount      int64              `json:"amount"`
+	Reason      *string            `json:"reason"`
+	Status      string             `json:"status"`
+	ProviderRef *string            `json:"provider_ref"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type PaymentWebhookEvent struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Provider    string             `json:"provider"`
+	EventID     string             `json:"event_id"`
+	RawPayload  []byte             `json:"raw_payload"`
+	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Permission struct {
 	ID          pgtype.UUID        `json:"id"`
 	Key         string             `json:"key"`
 	Description *string            `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type PlatformEvent struct {
+	ID          int64              `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	EventType   string             `json:"event_type"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	EntityType  *string            `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	Meta        []byte             `json:"meta"`
+	CountryCode *string            `json:"country_code"`
+	SessionID   *string            `json:"session_id"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -644,6 +915,17 @@ type RolePermission struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
+type SecurityScanResult struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	ScanType   string             `json:"scan_type"`
+	Severity   string             `json:"severity"`
+	Finding    string             `json:"finding"`
+	Meta       []byte             `json:"meta"`
+	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type SlugHistory struct {
 	ID         pgtype.UUID        `json:"id"`
 	EntityType string             `json:"entity_type"`
@@ -725,6 +1007,21 @@ type SpaceType struct {
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Subscription struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	Plan               string             `json:"plan"`
+	Provider           string             `json:"provider"`
+	ProviderRef        *string            `json:"provider_ref"`
+	Status             string             `json:"status"`
+	CurrentPeriodStart pgtype.Timestamptz `json:"current_period_start"`
+	CurrentPeriodEnd   pgtype.Timestamptz `json:"current_period_end"`
+	CancelAt           pgtype.Timestamptz `json:"cancel_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
 type SystemSetting struct {
 	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`
@@ -755,6 +1052,71 @@ type Tenant struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Ticket struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	TypeID          pgtype.UUID        `json:"type_id"`
+	Subject         string             `json:"subject"`
+	Description     string             `json:"description"`
+	Status          string             `json:"status"`
+	Priority        string             `json:"priority"`
+	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
+	SubmitterEmail  *string            `json:"submitter_email"`
+	AssignedTo      pgtype.UUID        `json:"assigned_to"`
+	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
+	ResolutionNote  *string            `json:"resolution_note"`
+	FieldValues     []byte             `json:"field_values"`
+	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
+	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
+	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type TicketAttachment struct {
+	ID        pgtype.UUID        `json:"id"`
+	TicketID  pgtype.UUID        `json:"ticket_id"`
+	CommentID pgtype.UUID        `json:"comment_id"`
+	MediaID   pgtype.UUID        `json:"media_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type TicketComment struct {
+	ID         pgtype.UUID        `json:"id"`
+	TicketID   pgtype.UUID        `json:"ticket_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Body       string             `json:"body"`
+	IsInternal bool               `json:"is_internal"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type TicketEvent struct {
+	ID        pgtype.UUID        `json:"id"`
+	TicketID  pgtype.UUID        `json:"ticket_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	EventType string             `json:"event_type"`
+	OldValue  *string            `json:"old_value"`
+	NewValue  *string            `json:"new_value"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type TicketType struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	Name              string             `json:"name"`
+	Slug              string             `json:"slug"`
+	Description       *string            `json:"description"`
+	FieldGroupID      pgtype.UUID        `json:"field_group_id"`
+	DefaultPriority   string             `json:"default_priority"`
+	AutoAssignGroupID pgtype.UUID        `json:"auto_assign_group_id"`
+	SlaHours          *int32             `json:"sla_hours"`
+	IsPublic          bool               `json:"is_public"`
+	IsSystem          bool               `json:"is_system"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 type TotpCredential struct {
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
@@ -779,6 +1141,12 @@ type User struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	FollowerCount   int32              `json:"follower_count"`
+}
+
+type UserBlock struct {
+	BlockerID pgtype.UUID        `json:"blocker_id"`
+	BlockedID pgtype.UUID        `json:"blocked_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type UserDmSetting struct {
@@ -827,6 +1195,30 @@ type UserRole struct {
 	Slug      string             `json:"slug"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WalletLedger struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	LedgerType       string             `json:"ledger_type"`
+	Operation        string             `json:"operation"`
+	Amount           int64              `json:"amount"`
+	ResultingBalance int64              `json:"resulting_balance"`
+	Source           *string            `json:"source"`
+	ActorUserID      pgtype.UUID        `json:"actor_user_id"`
+	Reference        *string            `json:"reference"`
+	IdempotencyKey   *string            `json:"idempotency_key"`
+	Reason           *string            `json:"reason"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type WalletSetting struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	PointsToCreditsRate *int32             `json:"points_to_credits_rate"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WsTicket struct {

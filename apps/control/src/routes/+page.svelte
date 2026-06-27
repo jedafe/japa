@@ -1,15 +1,117 @@
-<svelte:head>
-	<title>JapaConnect Control</title>
-</svelte:head>
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import MetricCard from '$lib/components/MetricCard.svelte';
+	import { api } from '$lib/api';
 
-<main class="mx-auto max-w-5xl px-6 py-8">
-	<h1 class="text-3xl font-bold tracking-tight">Control Panel</h1>
-	<p class="mt-2" style="color: var(--color-muted)">Platform operations visibility</p>
+	type HealthGroup = {
+		name: string;
+		items: { name: string; status: 'healthy' | 'warning' | 'critical' | 'unknown' }[];
+	};
 
-	<div class="mt-8 grid gap-4">
-		<section class="rounded-lg border p-6" style="border-color: var(--color-muted)">
-			<h2 class="text-xl font-semibold">System Health</h2>
-			<p class="mt-2" style="color: var(--color-muted)">Platform monitoring and observability will appear here.</p>
-		</section>
-	</div>
-</main>
+	let groups = $state<HealthGroup[]>([
+		{
+			name: 'Infrastructure',
+			items: [
+				{ name: 'PostgreSQL', status: 'healthy' },
+				{ name: 'Valkey', status: 'healthy' },
+				{ name: 'Meilisearch', status: 'healthy' },
+				{ name: 'MinIO', status: 'healthy' }
+			]
+		},
+		{
+			name: 'Application',
+			items: [
+				{ name: 'API Server', status: 'healthy' },
+				{ name: 'imgproxy', status: 'healthy' },
+				{ name: 'Nginx', status: 'healthy' }
+			]
+		},
+		{
+			name: 'Background Processing',
+			items: [
+				{ name: 'Asynq Workers', status: 'healthy' },
+				{ name: 'Queue Depth', status: 'healthy' }
+			]
+		},
+		{
+			name: 'Real-time',
+			items: [
+				{ name: 'WebSocket Hub', status: 'healthy' },
+				{ name: 'SSE Connections', status: 'healthy' }
+			]
+		}
+	]);
+
+	let throughput = $state('—');
+	let latency = $state('—');
+	let errorRate = $state('—');
+	let queueDepth = $state('—');
+	let wsConnections = $state(0);
+	let lastRefresh = $state(new Date().toLocaleTimeString());
+
+	async function refresh() {
+		try {
+			const data = await api<{
+				health: HealthGroup[];
+				metrics: { throughput: string; latency: string; errorRate: string; queueDepth: string; wsConnections: number };
+			}>('/control/health');
+			groups = data.health;
+			throughput = data.metrics.throughput;
+			latency = data.metrics.latency;
+			errorRate = data.metrics.errorRate;
+			queueDepth = data.metrics.queueDepth;
+			wsConnections = data.metrics.wsConnections;
+			lastRefresh = new Date().toLocaleTimeString();
+		} catch {
+			// API not available — show static state
+		}
+	}
+
+	let interval: ReturnType<typeof setInterval>;
+	onMount(() => {
+		refresh();
+		interval = setInterval(refresh, 30_000);
+		return () => clearInterval(interval);
+	});
+</script>
+
+<PageHeader title="Dashboard" description="System health overview with live polling" />
+
+<div class="mb-4 flex items-center justify-between">
+	<p class="text-xs" style="color: var(--color-muted)">Last refresh: {lastRefresh}</p>
+	<button
+		class="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+		style="border-color: var(--color-border)"
+		onclick={refresh}
+	>
+		Refresh
+	</button>
+</div>
+
+<!-- Metrics row -->
+<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+	<MetricCard label="Throughput" value={throughput} subtitle="req/s" />
+	<MetricCard label="Latency p99" value={latency} subtitle="ms" />
+	<MetricCard label="Error Rate" value={errorRate} subtitle="%" />
+	<MetricCard label="Queue Depth" value={queueDepth} subtitle="pending tasks" />
+	<MetricCard label="WS Connections" value={wsConnections} subtitle="active" />
+</div>
+
+<!-- Health groups -->
+<div class="grid gap-4 sm:grid-cols-2">
+	{#each groups as group}
+		<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
+			<h3 class="mb-3 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{group.name}</h3>
+			<div class="space-y-2">
+				{#each group.items as item}
+					<div class="flex items-center justify-between">
+						<span class="text-sm">{item.name}</span>
+						<StatusBadge status={item.status} />
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/each}
+</div>

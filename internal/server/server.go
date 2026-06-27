@@ -3,14 +3,17 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/analytics"
 	"github.com/jedafe/japa/internal/advertising"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/blog"
@@ -18,6 +21,7 @@ import (
 	"github.com/jedafe/japa/internal/feed"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/forum"
+	"github.com/jedafe/japa/internal/gdpr"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/customfields"
@@ -34,8 +38,11 @@ import (
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/renderer"
 	"github.com/jedafe/japa/internal/spaces"
+	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/tickets"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // NewServer creates a fully configured Chi router with middleware and routes.
@@ -52,6 +59,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		slog.Warn("geoip database not loaded", "error", err)
 	}
 	r.Use(geoip.Middleware(geoipReader))
+
+	// IP block middleware — reject blocked IPs before they reach any handler.
+	// Runs after RealIP (so the resolved IP is available) but before all
+	// other middleware and route handlers.
+	r.Use(spam.IPBlockMiddleware(database))
 
 	h := NewHandler(database)
 	tenantStore := tenant.NewDBStore(database)
@@ -156,9 +168,46 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adService := advertising.NewService(database)
 	adHandlers := advertising.NewHandlers(adService)
 
+	// Ticket System subsystem (Section 38 — Ticket System).
+	ticketService := tickets.NewService(database)
+	ticketHandlers := tickets.NewHandlers(ticketService)
+
+	// GDPR / NDPR Compliance subsystem (Section 19).
+	gdprService := gdpr.NewService(database)
+	gdprHandlers := gdpr.NewHandlers(gdprService)
+
+	// Register GDPR processor with worker for background tasks.
+	gdprAdapter := gdpr.NewWorkerAdapter(gdprService)
+	worker.RegisterGDPRProcessor(gdprAdapter)
+
+	// Bot & Crawler Management subsystem (Section 43).
+	botStore := bots.NewStoreWithDB(database)
+	botService := bots.NewServiceFromStore(botStore)
+	botHandlers := bots.NewHandlers(botService)
+
+	// Platform Analytics & Site Reports subsystem (Section 40).
+	analyticsService := analytics.NewService(database)
+	analyticsHandlers := analytics.NewHandlers(analyticsService)
+
+	// Register analytics processor with worker for background tasks.
+	analyticsAdapter := analytics.NewWorkerAdapter(analyticsService)
+	worker.RegisterAnalyticsProcessor(analyticsAdapter)
+
+	// Cache flusher for admin-only cache invalidation.
+	cacheFlusher := analytics.NewCacheFlusher(vkClient)
+
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
 	r.Get("/ready", h.ReadinessCheck)
+
+	// Public bot-facing endpoints (robots.txt and llms.txt)
+	// These require tenant resolution but no authentication.
+	r.Group(func(r chi.Router) {
+		r.Use(tenant.Middleware(tenantStore))
+		r.Get("/robots.txt", bots.RobotsHandler(botStore, vkClient))
+		r.Get("/llms.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
+		r.Get("/llms-full.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
+	})
 
 	// API routes go through tenant resolution
 	r.Group(func(r chi.Router) {
@@ -629,6 +678,119 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/advertising/boosts/active", adHandlers.ListActiveBoosts)
 			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
 				Post("/admin/advertising/boosts/{id}/end", adHandlers.EndBoost)
+
+			// Ticket System routes (Section 38 — Ticket System)
+			// User portal (main site /support)
+			r.With(auth.RequireAuth(kr)).
+				Post("/support", ticketHandlers.CreateTicket)
+			r.With(auth.RequireAuth(kr)).
+				Get("/support/my", ticketHandlers.ListMyTickets)
+			r.With(auth.RequireAuth(kr)).
+				Get("/support/my/{id}", ticketHandlers.GetMyTicket)
+			r.With(auth.RequireAuth(kr)).
+				Post("/support/my/{id}/reply", ticketHandlers.AddReply)
+
+			// Admin panel (/api/v1/admin/tickets)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+				Get("/admin/tickets", ticketHandlers.ListTickets)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+				Get("/admin/tickets/{id}", ticketHandlers.GetTicket)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+				Patch("/admin/tickets/{id}", ticketHandlers.UpdateTicket)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+				Post("/admin/tickets/{id}/notes", ticketHandlers.AddInternalNote)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+				Get("/admin/tickets/{id}/events", ticketHandlers.GetTicketEvents)
+
+			// Ticket type management
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
+				Get("/admin/ticket-types", ticketHandlers.ListTicketTypes)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
+				Post("/admin/ticket-types", ticketHandlers.CreateTicketType)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
+				Put("/admin/ticket-types/{id}", ticketHandlers.UpdateTicketType)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
+				Delete("/admin/ticket-types/{id}", ticketHandlers.DeleteTicketType)
+
+			// GDPR / NDPR Compliance routes (Section 19)
+			// User-facing endpoints
+			r.With(auth.RequireAuth(kr)).
+				Post("/consent", gdprHandlers.RecordConsent)
+			r.With(auth.RequireAuth(kr)).
+				Get("/consent", gdprHandlers.GetUserConsents)
+			r.With(auth.RequireAuth(kr)).
+				Delete("/consent/{type}", gdprHandlers.RevokeConsent)
+			r.With(auth.RequireAuth(kr)).
+				Post("/account/export", gdprHandlers.RequestDataExport)
+			r.With(auth.RequireAuth(kr)).
+				Post("/account/delete", gdprHandlers.RequestAccountDeletion)
+
+			// Admin endpoints
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "gdpr.audit_logs.view")).
+				Get("/admin/audit-logs", gdprHandlers.ListAuditLogs)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "gdpr.consents.view")).
+				Get("/admin/consents", gdprHandlers.ListConsentsByTenant)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Get("/admin/data-exports", gdprHandlers.ListPendingDataExports)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "gdpr.deletions.view")).
+				Get("/admin/deletions", gdprHandlers.ListPendingDeletions)
+
+			// Bot & Crawler Management routes (Section 43)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "bots.admin")).
+				Get("/admin/bots", botHandlers.ListKnownBots)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "bots.admin")).
+				Post("/admin/bots", botHandlers.CreateKnownBot)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "bots.admin")).
+				Put("/admin/bots/{id}", botHandlers.UpdateKnownBot)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "bots.admin")).
+				Delete("/admin/bots/{id}", botHandlers.DeleteKnownBot)
+
+			// Platform Analytics & Site Reports routes (Section 40)
+			// User dashboard
+			r.With(auth.RequireAuth(kr)).
+				Post("/analytics/events", analyticsHandlers.TrackEvent)
+			r.With(auth.RequireAuth(kr)).
+				Get("/analytics/dashboard", analyticsHandlers.GetUserDashboard)
+
+			// Admin endpoints
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Get("/admin/analytics/overview", analyticsHandlers.GetAdminOverview)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Get("/admin/analytics/events", analyticsHandlers.ListEvents)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Get("/admin/analytics/security", analyticsHandlers.ListSecurityScanResults)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Post("/admin/analytics/security/{id}/resolve", analyticsHandlers.ResolveSecurityScanResult)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Post("/admin/analytics/refresh", analyticsHandlers.RefreshViews)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Post("/admin/analytics/security/scan", analyticsHandlers.RunSecurityScan)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "analytics.cache.flush")).
+				Post("/admin/analytics/cache/flush", func(w http.ResponseWriter, r *http.Request) {
+					var input struct {
+						Scope string `json:"scope"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+						writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+						return
+					}
+					scope := analytics.FlushScope(input.Scope)
+					if scope == "" {
+						scope = analytics.FlushAll
+					}
+					deleted, err := cacheFlusher.FlushCache(r.Context(), scope)
+					if err != nil {
+						writeError(w, http.StatusInternalServerError, "flush_error", err.Error())
+						return
+					}
+					writeJSON(w, http.StatusOK, map[string]any{
+						"data": map[string]any{
+							"status":  "flushed",
+							"scope":   scope,
+							"deleted": deleted,
+						},
+					})
+				})
 		})
 	})
 
@@ -799,6 +961,25 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "ad.slot.manage", Description: "Manage advertising slot types"},
 		{Key: "ad.stats.view", Description: "View advertising analytics"},
 		{Key: "ad.event.track", Description: "Track ad impressions and clicks"},
+		// Spam Prevention & Content Safety (Section 41)
+		{Key: "spam.ip_block.manage", Description: "Manage IP blocks"},
+		{Key: "spam.censored_words.manage", Description: "Manage censored word list"},
+		{Key: "spam.user_block.manage", Description: "Block/unblock users"},
+		// Ticket System (Section 38)
+		{Key: "tickets.submit", Description: "Submit support tickets"},
+		{Key: "tickets.view_own", Description: "View own tickets"},
+		{Key: "tickets.admin", Description: "Admin ticket management"},
+		{Key: "tickets.type.manage", Description: "Manage ticket types"},
+		// GDPR / NDPR Compliance (Section 19)
+		{Key: "gdpr.audit_logs.view", Description: "View audit logs (super_admin)"},
+		{Key: "gdpr.consents.view", Description: "View consent records (admin)"},
+		{Key: "gdpr.data_exports.view", Description: "View data export requests (admin)"},
+		{Key: "gdpr.deletions.view", Description: "View account deletion requests (admin)"},
+		// Bot & Crawler Management (Section 43)
+		{Key: "bots.admin", Description: "Administer known bots and crawler policies"},
+		// Platform Analytics & Site Reports (Section 40)
+		{Key: "analytics.admin", Description: "View analytics dashboard and security scan results"},
+		{Key: "analytics.cache.flush", Description: "Flush platform caches (admin-only)"},
 	}
 
 	var defaultTenantID pgtype.UUID
@@ -883,4 +1064,25 @@ func (a *walletCreditAdapter) SpendCredits(
 		PurposeType: input.PurposeType,
 		PurposeID:   input.PurposeID,
 	})
+}
+
+// StartWorker creates an Asynq worker server from the provided config,
+// registers all task handlers, and starts processing in a background goroutine.
+// The returned shutdown function must be called during application shutdown to
+// gracefully drain in-flight tasks and close the Redis connection.
+func StartWorker(cfg *worker.Config) (shutdown func(), err error) {
+	srv := worker.NewServer(cfg)
+	mux := worker.NewMux()
+
+	go func() {
+		slog.Info("asynq worker starting", "addr", worker.Addr(cfg))
+		if err := srv.Run(mux); err != nil {
+			slog.Error("asynq worker stopped", "error", err)
+		}
+	}()
+
+	return func() {
+		slog.Info("asynq worker shutting down")
+		srv.Shutdown()
+	}, nil
 }

@@ -32,6 +32,8 @@ type Config struct {
 	Port              string // JC_PORT — HTTP listen port, defaults to 8080
 	JWTSecret         string // JC_JWT_SECRET — signing secret for JWT access tokens (empty = random in dev)
 	JWTKeyID          string // JC_JWT_KEY_ID — key ID for JWT kid header, defaults to "key-dev"
+	SiteName          string // JC_SITE_NAME — site name for LLMS.txt and branding
+	SiteDescription   string // JC_SITE_DESCRIPTION — site description for LLMS.txt
 }
 
 // Load reads all JC_ environment variables and returns a populated Config.
@@ -61,6 +63,8 @@ func Load() (Config, error) {
 		Port:              os.Getenv("JC_PORT"),
 		JWTSecret:         os.Getenv("JC_JWT_SECRET"),
 		JWTKeyID:          os.Getenv("JC_JWT_KEY_ID"),
+		SiteName:          os.Getenv("JC_SITE_NAME"),
+		SiteDescription:   os.Getenv("JC_SITE_DESCRIPTION"),
 	}
 
 	applyDefaults(&cfg)
@@ -98,6 +102,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.JWTKeyID == "" {
 		cfg.JWTKeyID = "key-dev"
+	}
+	if cfg.SiteName == "" {
+		cfg.SiteName = "JapaConnect"
+	}
+	if cfg.SiteDescription == "" {
+		cfg.SiteDescription = "A community platform for the Nigerian diaspora and Nigerians planning to relocate abroad"
 	}
 }
 

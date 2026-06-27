@@ -1,0 +1,128 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import DataTable from '$lib/components/DataTable.svelte';
+	import { api } from '$lib/api';
+
+	type AuditEntry = {
+		id: string;
+		actor_id: string;
+		action_type: string;
+		target_type: string;
+		target_id: string;
+		created_at: string;
+	};
+
+	let entries = $state<AuditEntry[]>([]);
+	let page = $state(0);
+	let totalPages = $state(1);
+	let loading = $state(true);
+
+	// Filters
+	let filterActor = $state('');
+	let filterAction = $state('');
+	let filterTarget = $state('');
+	let filterFrom = $state('');
+	let filterTo = $state('');
+
+	const columns = [
+		{ key: 'created_at', label: 'Timestamp' },
+		{ key: 'actor_id', label: 'Actor' },
+		{ key: 'action_type', label: 'Action' },
+		{ key: 'target_type', label: 'Target Type' },
+		{ key: 'target_id', label: 'Target ID' }
+	];
+
+	function buildQuery() {
+		const params = new URLSearchParams({ page: String(page) });
+		if (filterActor) params.set('actor', filterActor);
+		if (filterAction) params.set('action_type', filterAction);
+		if (filterTarget) params.set('target_type', filterTarget);
+		if (filterFrom) params.set('from', filterFrom);
+		if (filterTo) params.set('to', filterTo);
+		return params.toString();
+	}
+
+	async function load() {
+		loading = true;
+		try {
+			const data = await api<{
+				entries: AuditEntry[];
+				page: number;
+				total_pages: number;
+			}>(`/control/audit?${buildQuery()}`);
+			entries = data.entries;
+			totalPages = data.total_pages;
+		} catch {
+			// API not available
+		} finally {
+			loading = false;
+		}
+	}
+
+	function applyFilters() {
+		page = 0;
+		load();
+	}
+
+	function handlePageChange(p: number) {
+		page = p;
+		load();
+	}
+
+	onMount(load);
+</script>
+
+<PageHeader title="Audit Log" description="Append-only system audit trail (super_admin only)" />
+
+<!-- Filters -->
+<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+	<input
+		type="text"
+		placeholder="Actor ID"
+		class="rounded-md border px-3 py-1.5 text-sm"
+		style="border-color: var(--color-border); background-color: var(--color-surface)"
+		bind:value={filterActor}
+	/>
+	<input
+		type="text"
+		placeholder="Action type"
+		class="rounded-md border px-3 py-1.5 text-sm"
+		style="border-color: var(--color-border); background-color: var(--color-surface)"
+		bind:value={filterAction}
+	/>
+	<input
+		type="text"
+		placeholder="Target type"
+		class="rounded-md border px-3 py-1.5 text-sm"
+		style="border-color: var(--color-border); background-color: var(--color-surface)"
+		bind:value={filterTarget}
+	/>
+	<input
+		type="date"
+		class="rounded-md border px-3 py-1.5 text-sm"
+		style="border-color: var(--color-border); background-color: var(--color-surface)"
+		bind:value={filterFrom}
+	/>
+	<input
+		type="date"
+		class="rounded-md border px-3 py-1.5 text-sm"
+		style="border-color: var(--color-border); background-color: var(--color-surface)"
+		bind:value={filterTo}
+	/>
+</div>
+<div class="mb-4">
+	<button
+		class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+		style="border-color: var(--color-border)"
+		onclick={applyFilters}
+	>
+		Apply Filters
+	</button>
+</div>
+
+{#if loading}
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+{:else}
+	<DataTable {columns} rows={entries} {page} {totalPages} onPageChange={handlePageChange} />
+{/if}
