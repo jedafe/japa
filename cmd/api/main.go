@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/server"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 func main() {
@@ -58,6 +59,20 @@ func run() error {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+
+	// Start the Asynq background worker. The worker shares the same
+	// Valkey/Redis instance used for caching. If the worker fails to start
+	// we log the error but continue — the HTTP server remains functional.
+	workerCfg := worker.DefaultConfig()
+	workerShutdown, workerErr := server.StartWorker(workerCfg)
+	if workerErr != nil {
+		slog.Error("failed to start Asynq worker", "error", workerErr)
+	}
+	defer func() {
+		if workerShutdown != nil {
+			workerShutdown()
+		}
+	}()
 
 	// Start listening in a goroutine so we can handle shutdown signals.
 	errChan := make(chan error, 1)

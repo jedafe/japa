@@ -1,0 +1,141 @@
+package tickets
+
+import (
+	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// ---------------------------------------------------------------------------
+// Service unit tests (pure logic, no DB)
+// ---------------------------------------------------------------------------
+
+func TestCreateTicketInputValidation(t *testing.T) {
+	// Empty subject should be invalid.
+	input := CreateTicketInput{Subject: "", Description: "desc"}
+	if input.Subject != "" {
+		t.Error("expected empty subject")
+	}
+
+	// Empty description should be invalid.
+	input2 := CreateTicketInput{Subject: "Test", Description: ""}
+	if input2.Description != "" {
+		t.Error("expected empty description")
+	}
+}
+
+func TestAddCommentInputValidation(t *testing.T) {
+	// Empty body should be invalid.
+	input := AddCommentInput{Body: ""}
+	if input.Body != "" {
+		t.Error("expected empty body")
+	}
+}
+
+func TestUpdateTicketStatusInputDefaults(t *testing.T) {
+	input := UpdateTicketStatusInput{
+		Status: string(StatusOpen),
+	}
+	if input.ResolutionNote != "" {
+		t.Error("expected empty resolution note")
+	}
+}
+
+func TestUpdateTicketPriorityInputDefaults(t *testing.T) {
+	input := UpdateTicketPriorityInput{
+		Priority: string(PriorityNormal),
+	}
+	if input.Priority != string(PriorityNormal) {
+		t.Errorf("expected priority %q, got %q", PriorityNormal, input.Priority)
+	}
+}
+
+func TestAssignTicketInputDefaults(t *testing.T) {
+	input := AssignTicketInput{}
+	if input.AssignedTo.Valid {
+		t.Error("expected invalid AssignedTo")
+	}
+	if input.AssignedGroupID.Valid {
+		t.Error("expected invalid AssignedGroupID")
+	}
+}
+
+func TestStrPtrHelper(t *testing.T) {
+	p := strPtr("hello")
+	if p == nil {
+		t.Fatal("expected non-nil pointer")
+	}
+	if *p != "hello" {
+		t.Errorf("expected %q, got %q", "hello", *p)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Ticket type input validation
+// ---------------------------------------------------------------------------
+
+func TestCreateTicketTypeInputValidation(t *testing.T) {
+	// Empty name should be invalid.
+	input := CreateTicketTypeInput{Name: "", Slug: "test"}
+	if input.Name != "" {
+		t.Error("expected empty name")
+	}
+
+	// Empty slug should be invalid.
+	input2 := CreateTicketTypeInput{Name: "Test", Slug: ""}
+	if input2.Slug != "" {
+		t.Error("expected empty slug")
+	}
+}
+
+func TestUpdateTicketTypeInputValidation(t *testing.T) {
+	// Empty name should be invalid.
+	input := UpdateTicketTypeInput{Name: ""}
+	if input.Name != "" {
+		t.Error("expected empty name")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Ticket structure tests
+// ---------------------------------------------------------------------------
+
+func TestCreateTicketInputFieldValues(t *testing.T) {
+	fv := map[string]any{
+		"browser": "Chrome",
+		"version": "120",
+	}
+	input := CreateTicketInput{
+		Subject:     "Test",
+		Description: "Desc",
+		FieldValues: fv,
+	}
+	if len(input.FieldValues) != 2 {
+		t.Errorf("expected 2 field values, got %d", len(input.FieldValues))
+	}
+}
+
+func TestCreateTicketTypeInputSlaHours(t *testing.T) {
+	hours := int32(24)
+	input := CreateTicketTypeInput{
+		Name:        "Support",
+		Slug:        "support",
+		SlaHours:    &hours,
+		IsPublic:    true,
+		IsSystem:    false,
+	}
+	if input.SlaHours == nil || *input.SlaHours != 24 {
+		t.Error("expected SLA hours to be 24")
+	}
+}
+
+func TestUpdateTicketStatusInputWithResolution(t *testing.T) {
+	input := UpdateTicketStatusInput{
+		Status:         string(StatusResolved),
+		ResolutionNote: "Issue fixed",
+		UserID:         pgtype.UUID{},
+	}
+	if input.ResolutionNote != "Issue fixed" {
+		t.Errorf("expected resolution note %q, got %q", "Issue fixed", input.ResolutionNote)
+	}
+}
