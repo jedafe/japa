@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ContentTypeSelector from '$lib/create/ContentTypeSelector.svelte';
+	import { MetadataHead } from '$lib/seo';
 
 	const contentTypes = [
 		{ slug: 'blog_post', icon: 'file-text', label: 'Blog Post', description: 'Write a blog post or article' },
@@ -10,12 +11,14 @@
 		{ slug: 'listing', icon: 'clipboard-list', label: 'Listing', description: 'Create a job or service listing' },
 		{ slug: 'comparison', icon: 'scale', label: 'Comparison', description: 'Compare two options or services' }
 	];
+
+	const metadata = $derived({
+		title: 'Create New Post | JapaConnect',
+		description: 'Create a new post on JapaConnect — choose a content type to get started.'
+	});
 </script>
 
-<svelte:head>
-	<title>Create New Post | JapaConnect</title>
-	<meta name="description" content="Create a new post on JapaConnect — choose a content type to get started." />
-</svelte:head>
+<MetadataHead {metadata} noindex={true} />
 
 <main class="mx-auto max-w-4xl px-6 py-16">
 	<h1 class="text-3xl font-bold tracking-tight">Create New Post</h1>

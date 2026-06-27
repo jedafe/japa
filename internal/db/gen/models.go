@@ -412,6 +412,23 @@ type DmMessageRequest struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type DocPage struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Audience       string             `json:"audience"`
+	Content        []byte             `json:"content"`
+	AiGenerated    bool               `json:"ai_generated"`
+	ReviewStatus   string             `json:"review_status"`
+	LastReviewedBy pgtype.UUID        `json:"last_reviewed_by"`
+	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Per-group permissions for editor block types. Row presence + enabled flag controls access.
 type EditorBlockPermission struct {
 	// Editor block type identifier (e.g. paragraph, video_embed, ai_generate).
@@ -727,6 +744,18 @@ type OauthAccount struct {
 	Provider       string             `json:"provider"`
 	ProviderUserID string             `json:"provider_user_id"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type OnboardingState struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	CurrentStep   int32              `json:"current_step"`
+	Completed     bool               `json:"completed"`
+	StepData      []byte             `json:"step_data"`
+	TourDismissed bool               `json:"tour_dismissed"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 type OrganizationBoost struct {
@@ -1171,6 +1200,16 @@ type UserGroupMembership struct {
 	UserID    pgtype.UUID        `json:"user_id"`
 	GroupID   pgtype.UUID        `json:"group_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type UserPreference struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	DarkMode  string             `json:"dark_mode"`
+	Language  string             `json:"language"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type UserProfile struct {

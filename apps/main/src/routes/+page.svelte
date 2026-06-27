@@ -1,16 +1,23 @@
 <script lang="ts">
 	import type { HealthStatus } from '$lib/types';
+	import { MetadataHead, JsonLd, createWebsiteSchema } from '$lib/seo';
 
 	let { data }: { data: HealthStatus } = $props();
 
 	const status = $derived(data.healthy ? 'Services operational' : 'Service degraded');
 	const label = $derived(data.healthy ? 'ok' : 'warn');
+
+	const metadata = $derived({
+		title: 'JapaConnect | Home',
+		description: 'The community platform for the Nigerian diaspora.',
+		content_type: 'website'
+	});
+
+	const websiteSchema = $derived(createWebsiteSchema());
 </script>
 
-<svelte:head>
-	<title>JapaConnect | Home</title>
-	<meta name="description" content="The community platform for the Nigerian diaspora." />
-</svelte:head>
+<MetadataHead {metadata} />
+<JsonLd schema={websiteSchema} />
 
 <main class="mx-auto max-w-3xl px-6 py-16">
 	<h1 class="text-4xl font-bold tracking-tight">JapaConnect</h1>

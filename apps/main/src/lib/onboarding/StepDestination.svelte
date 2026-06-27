@@ -1,0 +1,101 @@
+<script lang="ts">
+	import { ArrowLeft, ArrowRight, Plane, Target } from 'lucide-svelte';
+
+	let { stepData, onupdate, onnext, onback, submitting } = $props();
+
+	let destination = $state((stepData.destination as string) || '');
+	let primaryGoal = $state((stepData.primary_goal as string) || '');
+
+	const destinations = [
+		{ value: 'canada', label: 'Canada' },
+		{ value: 'uk', label: 'United Kingdom' },
+		{ value: 'usa', label: 'United States' },
+		{ value: 'germany', label: 'Germany' },
+		{ value: 'ireland', label: 'Ireland' },
+		{ value: 'australia', label: 'Australia' },
+		{ value: 'not_sure', label: 'Not sure yet' }
+	];
+
+	const goals = [
+		{ value: 'education', label: 'Education' },
+		{ value: 'career', label: 'Career' },
+		{ value: 'business', label: 'Business' },
+		{ value: 'family', label: 'Family' },
+		{ value: 'not_sure', label: 'Not sure yet' }
+	];
+
+	function handleNext() {
+		onupdate({ destination, primary_goal: primaryGoal });
+		onnext();
+	}
+</script>
+
+<div class="space-y-6">
+	<div class="flex items-center gap-3">
+		<div class="flex h-10 w-10 items-center justify-center rounded-full" style="background: var(--color-primary); color: white;">
+			<Plane size={20} />
+		</div>
+		<div>
+			<h2 class="text-xl font-semibold">Where are you headed?</h2>
+			<p class="text-sm" style="color: var(--color-muted)">Help us personalize your experience</p>
+		</div>
+	</div>
+
+	<div class="space-y-4">
+		<div>
+			<label for="destination" class="mb-1 block text-sm font-medium">Destination country</label>
+			<div class="relative">
+				<select
+					id="destination"
+					bind:value={destination}
+					class="w-full appearance-none rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2"
+					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary);"
+				>
+					<option value="">Select a destination...</option>
+					{#each destinations as dest}
+						<option value={dest.value}>{dest.label}</option>
+					{/each}
+				</select>
+				<Plane class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" size={16} style="color: var(--color-muted)" />
+			</div>
+		</div>
+
+		<div>
+			<label for="goal" class="mb-1 block text-sm font-medium">Primary goal</label>
+			<div class="relative">
+				<select
+					id="goal"
+					bind:value={primaryGoal}
+					class="w-full appearance-none rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2"
+					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary);"
+				>
+					<option value="">Select your primary goal...</option>
+					{#each goals as goal}
+						<option value={goal.value}>{goal.label}</option>
+					{/each}
+				</select>
+				<Target class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" size={16} style="color: var(--color-muted)" />
+			</div>
+		</div>
+	</div>
+
+	<div class="flex gap-3 mt-6">
+		<button
+			class="flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors hover:opacity-80"
+			style="border-color: var(--color-border); color: var(--color-foreground)"
+			onclick={onback}
+		>
+			<ArrowLeft size={16} />
+			Back
+		</button>
+		<button
+			class="flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+			style="background: var(--color-primary)"
+			onclick={handleNext}
+			disabled={!destination || !primaryGoal || submitting}
+		>
+			Continue
+			<ArrowRight size={16} />
+		</button>
+	</div>
+</div>
