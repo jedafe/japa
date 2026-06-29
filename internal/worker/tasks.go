@@ -18,6 +18,7 @@ const (
 	TypeWebhookDelivery           = "webhook_delivery"
 	TypePaymentWebhookProcess     = "payment_webhook_process"
 	TypeTicketSendConfirmation    = "ticket:send_confirmation"
+	TypePushDelivery               = "push:delivery"
 
 	// ---- Default tier (standard background processing) ----
 
@@ -68,6 +69,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeWebhookDelivery, HandleWebhookDelivery)
 	mux.HandleFunc(TypePaymentWebhookProcess, HandlePaymentWebhookProcess)
 	mux.HandleFunc(TypeTicketSendConfirmation, HandleTicketSendConfirmation)
+	mux.HandleFunc(TypePushDelivery, HandlePushDelivery)
 
 	// Default handlers
 	mux.HandleFunc(TypeEmailSend, HandleEmailSend)

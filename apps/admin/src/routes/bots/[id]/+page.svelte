@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type Bot = {
 		id: string;
@@ -40,7 +41,7 @@
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = 'Failed to load bot';
+			errorMessage = t('bots.load_error');
 		} finally {
 			loading = false;
 		}
@@ -61,7 +62,7 @@
 				}
 			});
 			if (result.ok) {
-				successMessage = 'Bot updated successfully';
+				successMessage = t('bots.updated');
 				bot.name = editName.trim();
 				bot.avatar_url = editAvatarUrl.trim();
 				bot.description = editDescription.trim();
@@ -69,7 +70,7 @@
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = 'Failed to update bot';
+			errorMessage = t('bots.update_error');
 		} finally {
 			saving = false;
 		}
@@ -83,7 +84,7 @@
 </svelte:head>
 
 <div class="mb-4">
-	<a href="/bots" class="text-sm hover:underline" style="color: var(--color-muted)">&larr; Back to Bots</a>
+	<a href="/bots" class="text-sm hover:underline" style="color: var(--color-muted)">&larr; {t('bots.back')}</a>
 </div>
 
 {#if errorMessage}
@@ -98,7 +99,7 @@
 {/if}
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else if bot}
 	<h1 class="mb-1 text-2xl font-bold tracking-tight">{bot.name}</h1>
 	<p class="mb-6 text-sm" style="color: var(--color-muted)">
@@ -106,10 +107,10 @@
 	</p>
 
 	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Bot Details</h2>
+		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('bots.bot_details')}</h2>
 		<div class="space-y-4">
 			<div>
-				<label for="edit-name" class="mb-1 block text-sm font-medium">Name</label>
+				<label for="edit-name" class="mb-1 block text-sm font-medium">{t('bots.name')}</label>
 				<input
 					id="edit-name"
 					type="text"
@@ -119,7 +120,7 @@
 				/>
 			</div>
 			<div>
-				<label for="edit-avatar" class="mb-1 block text-sm font-medium">Avatar URL</label>
+				<label for="edit-avatar" class="mb-1 block text-sm font-medium">{t('bots.avatar_url')}</label>
 				<input
 					id="edit-avatar"
 					type="url"
@@ -130,7 +131,7 @@
 				/>
 			</div>
 			<div>
-				<label for="edit-desc" class="mb-1 block text-sm font-medium">Description</label>
+				<label for="edit-desc" class="mb-1 block text-sm font-medium">{t('bots.description_label')}</label>
 				<textarea
 					id="edit-desc"
 					class="w-full rounded-md border px-3 py-2 text-sm"
@@ -146,14 +147,14 @@
 					disabled={saving || !editName.trim()}
 					onclick={saveBot}
 				>
-					{saving ? 'Saving...' : 'Save Changes'}
+					{saving ? t('common.saving') : t('bots.save_changes')}
 				</button>
 				<button
 					class="rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 					style="color: var(--color-danger)"
 					onclick={async () => {
 						if (!bot) return;
-						if (!confirm('Delete this bot permanently?')) return;
+						if (!confirm(t('bots.delete_confirm'))) return;
 						const result = await api(`/admin/bots/${bot.id}`, { method: 'DELETE' });
 						if (result.ok) {
 							await goto('/bots');
@@ -162,7 +163,7 @@
 						}
 					}}
 				>
-					Delete Bot
+					{t('bots.delete_bot')}
 				</button>
 			</div>
 		</div>

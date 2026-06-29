@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
+
 	let {
 		filters,
 		values: initialValues = {},
@@ -27,7 +29,7 @@
 					style="border-color: var(--color-border); background-color: var(--color-surface)"
 					bind:value={localValues[filter.key]}
 				>
-					<option value="">All</option>
+					<option value="">{t('common.all')}</option>
 					{#each filter.options ?? [] as opt}
 						<option value={opt}>{opt}</option>
 					{/each}
@@ -57,6 +59,6 @@
 		style="border-color: var(--color-border)"
 		onclick={apply}
 	>
-		Apply
+		{t('common.apply')}
 	</button>
 </div>

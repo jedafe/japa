@@ -28,6 +28,35 @@ func (q *Queries) AddSpaceMember(ctx context.Context, arg AddSpaceMemberParams) 
 	return err
 }
 
+const assignSpaceModerator = `-- name: AssignSpaceModerator :exec
+
+INSERT INTO space_moderators (tenant_id, space_id, user_id, assigned_by, assigned_by_user_id)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (tenant_id, space_id, user_id) DO NOTHING
+`
+
+type AssignSpaceModeratorParams struct {
+	TenantID         pgtype.UUID `json:"tenant_id"`
+	SpaceID          pgtype.UUID `json:"space_id"`
+	UserID           pgtype.UUID `json:"user_id"`
+	AssignedBy       string      `json:"assigned_by"`
+	AssignedByUserID pgtype.UUID `json:"assigned_by_user_id"`
+}
+
+// =====================
+// Space Moderators
+// =====================
+func (q *Queries) AssignSpaceModerator(ctx context.Context, arg AssignSpaceModeratorParams) error {
+	_, err := q.db.Exec(ctx, assignSpaceModerator,
+		arg.TenantID,
+		arg.SpaceID,
+		arg.UserID,
+		arg.AssignedBy,
+		arg.AssignedByUserID,
+	)
+	return err
+}
+
 const checkSpaceMembership = `-- name: CheckSpaceMembership :one
 
 SELECT EXISTS(
@@ -390,6 +419,32 @@ func (q *Queries) GetSpaceBySlug(ctx context.Context, arg GetSpaceBySlugParams) 
 	return i, err
 }
 
+const getSpaceModerator = `-- name: GetSpaceModerator :one
+SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
+FROM space_moderators
+WHERE space_id = $1 AND user_id = $2
+`
+
+type GetSpaceModeratorParams struct {
+	SpaceID pgtype.UUID `json:"space_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetSpaceModerator(ctx context.Context, arg GetSpaceModeratorParams) (SpaceModerator, error) {
+	row := q.db.QueryRow(ctx, getSpaceModerator, arg.SpaceID, arg.UserID)
+	var i SpaceModerator
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SpaceID,
+		&i.UserID,
+		&i.AssignedBy,
+		&i.AssignedByUserID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getSpaceTypeByID = `-- name: GetSpaceTypeByID :one
 SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at
 FROM space_types
@@ -558,6 +613,59 @@ func (q *Queries) ListPermissionPresetsByTenant(ctx context.Context, tenantID pg
 			&i.IsSystem,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaceModerators = `-- name: ListSpaceModerators :many
+SELECT sm.id, sm.tenant_id, sm.space_id, sm.user_id, sm.assigned_by,
+       sm.assigned_by_user_id, sm.created_at,
+       u.username AS user_username, up.display_name AS user_display_name
+FROM space_moderators sm
+JOIN users u ON u.id = sm.user_id
+LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+WHERE sm.space_id = $1
+ORDER BY sm.created_at ASC
+`
+
+type ListSpaceModeratorsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	SpaceID          pgtype.UUID        `json:"space_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	AssignedBy       string             `json:"assigned_by"`
+	AssignedByUserID pgtype.UUID        `json:"assigned_by_user_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UserUsername     string             `json:"user_username"`
+	UserDisplayName  *string            `json:"user_display_name"`
+}
+
+func (q *Queries) ListSpaceModerators(ctx context.Context, spaceID pgtype.UUID) ([]ListSpaceModeratorsRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceModerators, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceModeratorsRow
+	for rows.Next() {
+		var i ListSpaceModeratorsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.SpaceID,
+			&i.UserID,
+			&i.AssignedBy,
+			&i.AssignedByUserID,
+			&i.CreatedAt,
+			&i.UserUsername,
+			&i.UserDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -839,6 +947,21 @@ type RemoveSpaceMemberParams struct {
 
 func (q *Queries) RemoveSpaceMember(ctx context.Context, arg RemoveSpaceMemberParams) error {
 	_, err := q.db.Exec(ctx, removeSpaceMember, arg.SpaceID, arg.UserID, arg.TenantID)
+	return err
+}
+
+const removeSpaceModerator = `-- name: RemoveSpaceModerator :exec
+DELETE FROM space_moderators
+WHERE space_id = $1 AND user_id = $2
+`
+
+type RemoveSpaceModeratorParams struct {
+	SpaceID pgtype.UUID `json:"space_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) RemoveSpaceModerator(ctx context.Context, arg RemoveSpaceModeratorParams) error {
+	_, err := q.db.Exec(ctx, removeSpaceModerator, arg.SpaceID, arg.UserID)
 	return err
 }
 

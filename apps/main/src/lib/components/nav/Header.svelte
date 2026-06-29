@@ -13,6 +13,7 @@
 	} from 'lucide-svelte';
 	import { DropdownMenu } from 'bits-ui';
 	import { theme } from '$lib/stores/theme.svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let {
 		user = null,
@@ -60,11 +61,11 @@
 				/>
 				<input
 					type="search"
-					placeholder="Search communities, posts, people..."
+					placeholder={$t('search.placeholder')}
 					bind:value={searchQuery}
 					class="w-full rounded-lg border py-1.5 pl-9 pr-3 text-sm outline-none transition-colors focus:ring-2"
 					style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-foreground)"
-					aria-label="Search"
+				aria-label={$t('nav.search')}
 				/>
 			</div>
 		</form>
@@ -83,7 +84,7 @@
 				<a
 					href="/notifications"
 					class="relative rounded-md p-2 hover:bg-black/5 dark:hover:bg-white/10"
-					aria-label="Notifications"
+					aria-label={$t('nav.notifications')}
 				>
 					<Bell class="h-5 w-5" style="color: var(--color-muted)" />
 					{#if notificationCount > 0}
@@ -125,13 +126,13 @@
 							class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
 						>
 							<User class="h-4 w-4" />
-							<a href="/profile/{user.username}">Profile</a>
+							<a href="/profile/{user.username}">{$t('nav.profile')}</a>
 						</DropdownMenu.Item>
 						<DropdownMenu.Item
 							class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
 						>
 							<Settings class="h-4 w-4" />
-							<a href="/settings">Settings</a>
+							<a href="/settings">{$t('nav.settings')}</a>
 						</DropdownMenu.Item>
 						<DropdownMenu.Separator
 							class="my-1 h-px"
@@ -142,13 +143,13 @@
 						>
 							{#if theme.current === 'dark'}
 								<Sun class="h-4 w-4" />
-								<button onclick={() => theme.set('light')}>Light mode</button>
-							{:else if theme.current === 'light'}
-								<Monitor class="h-4 w-4" />
-								<button onclick={() => theme.set('system')}>System mode</button>
-							{:else}
-								<Moon class="h-4 w-4" />
-								<button onclick={() => theme.set('dark')}>Dark mode</button>
+							<button onclick={() => theme.set('light')}>{$t('theme.light')}</button>
+						{:else if theme.current === 'light'}
+							<Monitor class="h-4 w-4" />
+							<button onclick={() => theme.set('system')}>{$t('theme.system')}</button>
+						{:else}
+							<Moon class="h-4 w-4" />
+							<button onclick={() => theme.set('dark')}>{$t('theme.dark')}</button>
 							{/if}
 						</DropdownMenu.Item>
 						<DropdownMenu.Separator
@@ -159,7 +160,7 @@
 							class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
 						>
 							<LogOut class="h-4 w-4" />
-							<a href="/auth/logout">Logout</a>
+							<a href="/auth/logout">{$t('nav.logout')}</a>
 						</DropdownMenu.Item>
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
@@ -168,9 +169,9 @@
 					href="/auth/login"
 					class="rounded-md px-3 py-1.5 text-sm font-medium text-white"
 					style="background-color: var(--color-primary)"
-				>
-					Sign in
-				</a>
+			>
+				{$t('nav.login')}
+			</a>
 			{/if}
 		</div>
 	</div>

@@ -1,19 +1,23 @@
+<script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
+</script>
+
 <svelte:head>
-	<title>Contact Us | JapaConnect</title>
-	<meta name="description" content="Get in touch with the JapaConnect team." />
+	<title>{$t('contact.title')} | JapaConnect</title>
+	<meta name="description" content="{$t('search.find')}" />
 </svelte:head>
 
 <main class="mx-auto max-w-3xl px-6 py-16">
-	<h1 class="text-3xl font-bold" style="color: var(--color-foreground)">Contact Us</h1>
+	<h1 class="text-3xl font-bold" style="color: var(--color-foreground)">{$t('contact.title')}</h1>
 	<p class="mt-3 text-lg" style="color: var(--color-muted)">
-		Have a question, suggestion, or need support? We'd love to hear from you.
+		{$t('search.find')}
 	</p>
 
 	<div class="mt-8 grid gap-6 sm:grid-cols-2">
 		<div class="rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-surface);">
-			<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">General Inquiries</h2>
+			<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">{$t('tickets.category')}</h2>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
-				For general questions about JapaConnect.
+				{$t('tickets.account')}
 			</p>
 			<a
 				href="mailto:hello@japaconnect.com"
@@ -25,9 +29,9 @@
 		</div>
 
 		<div class="rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-surface);">
-			<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">Support</h2>
+			<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">{$t('tickets.technical')}</h2>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
-				For technical issues or account problems.
+				{$t('tickets.billing')}
 			</p>
 			<a
 				href="mailto:support@japaconnect.com"
@@ -39,9 +43,9 @@
 		</div>
 
 		<div class="rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-surface);">
-			<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">Partnerships</h2>
+			<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">{$t('tickets.feature_request')}</h2>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
-				For collaboration and partnership opportunities.
+				{$t('tickets.content')}
 			</p>
 			<a
 				href="mailto:partners@japaconnect.com"
@@ -53,9 +57,9 @@
 		</div>
 
 		<div class="rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-surface);">
-			<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">Security</h2>
+			<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">{$t('tickets.other')}</h2>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
-				To report a security vulnerability.
+				{$t('tickets.other')}
 			</p>
 			<a
 				href="mailto:security@japaconnect.com"

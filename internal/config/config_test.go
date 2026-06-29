@@ -22,6 +22,8 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 	t.Setenv("JC_RELEASE_SHA", "abc123")
 	t.Setenv("JC_ENV", "production")
 	t.Setenv("JC_PORT", "9090")
+	t.Setenv("JC_JWT_SECRET", "test-jwt-secret-key-32-bytes-long!")
+	t.Setenv("JC_JWT_KEY_ID", "key-prod")
 
 	cfg, err := Load()
 	if err != nil {
@@ -47,6 +49,8 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 		{"ReleaseSHA", cfg.ReleaseSHA, "abc123"},
 		{"Env", cfg.Env, "production"},
 		{"Port", cfg.Port, "9090"},
+		{"JWTSecret", cfg.JWTSecret, "test-jwt-secret-key-32-bytes-long!"},
+		{"JWTKeyID", cfg.JWTKeyID, "key-prod"},
 	}
 
 	for _, tt := range tests {
@@ -90,6 +94,25 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 				t.Errorf("%s = %q, want %q", tt.name, tt.got, tt.want)
 			}
 		})
+	}
+}
+
+// TestLoad_JWTSecretDefaults verifies that JWTSecret defaults to empty string
+// (random key in dev) and JWTKeyID defaults to "key-dev".
+func TestLoad_JWTSecretDefaults(t *testing.T) {
+	// Clear all JC_ environment variables so defaults kick in.
+	clearAllJCEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+
+	if cfg.JWTSecret != "" {
+		t.Errorf("JWTSecret = %q, want empty string", cfg.JWTSecret)
+	}
+	if cfg.JWTKeyID != "key-dev" {
+		t.Errorf("JWTKeyID = %q, want %q", cfg.JWTKeyID, "key-dev")
 	}
 }
 
@@ -171,6 +194,8 @@ func clearAllJCEnv(t *testing.T) {
 		"JC_RELEASE_SHA",
 		"JC_ENV",
 		"JC_PORT",
+		"JC_JWT_SECRET",
+		"JC_JWT_KEY_ID",
 	} {
 		os.Unsetenv(key)
 	}

@@ -3,6 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { Header, MobileNav, Footer, SideNav } from '$lib/components/nav';
 	import { theme } from '$lib/stores/theme.svelte';
+	import { locale } from '$lib/stores/i18n.svelte';
 	import { setToken } from '$lib/api';
 	import { onNavigate } from '$app/navigation';
 
@@ -12,6 +13,10 @@
 
 	$effect(() => {
 		theme.init('system');
+	});
+
+	$effect(() => {
+		locale.init(data.locale, data.translations);
 	});
 
 	$effect(() => {

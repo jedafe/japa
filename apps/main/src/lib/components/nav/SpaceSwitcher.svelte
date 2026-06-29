@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { DropdownMenu } from 'bits-ui';
 	import { ChevronDown, Plus } from 'lucide-svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let {
 		spaces = [],
@@ -20,7 +21,7 @@
 			style="color: var(--color-foreground)"
 		>
 			<span class="max-w-[120px] truncate">
-				{currentSpace?.name || 'All Spaces'}
+				{currentSpace?.name || $t('nav.all_spaces')}
 			</span>
 			<ChevronDown class="h-3 w-3" style="color: var(--color-muted)" />
 		</DropdownMenu.Trigger>
@@ -29,11 +30,11 @@
 			class="w-52 rounded-lg border p-1 shadow-lg"
 			style="background-color: var(--color-background); border-color: var(--color-border)"
 		>
-			<DropdownMenu.Item
-				class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
-				onclick={() => onselect({ id: '', name: 'All Spaces', slug: '' })}
-			>
-				All Spaces
+		<DropdownMenu.Item
+			class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+			onclick={() => onselect({ id: '', name: $t('nav.all_spaces'), slug: '' })}
+		>
+			{$t('nav.all_spaces')}
 			</DropdownMenu.Item>
 			<DropdownMenu.Separator class="my-1 h-px" style="background-color: var(--color-border)" />
 			{#each spaces as space}
@@ -49,7 +50,7 @@
 				class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
 			>
 				<Plus class="h-4 w-4" />
-				<a href="/spaces/new">Create space</a>
+				<a href="/spaces/new">{$t('nav.create_space')}</a>
 			</DropdownMenu.Item>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

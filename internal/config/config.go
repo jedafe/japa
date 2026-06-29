@@ -35,6 +35,11 @@ type Config struct {
 	JWTKeyID          string // JC_JWT_KEY_ID — key ID for JWT kid header, defaults to "key-dev"
 	SiteName          string // JC_SITE_NAME — site name for LLMS.txt and branding
 	SiteDescription   string // JC_SITE_DESCRIPTION — site description for LLMS.txt
+	OAuthGoogleID     string // JC_OAUTH_GOOGLE_CLIENT_ID — Google OAuth client ID
+	OAuthGoogleSecret string // JC_OAUTH_GOOGLE_CLIENT_SECRET — Google OAuth client secret
+	OAuthGitHubID     string // JC_OAUTH_GITHUB_CLIENT_ID — GitHub OAuth client ID
+	OAuthGitHubSecret string // JC_OAUTH_GITHUB_CLIENT_SECRET — GitHub OAuth client secret
+	OAuthRedirectBase string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.japaconnect.com)
 }
 
 // Load reads all JC_ environment variables and returns a populated Config.
@@ -67,6 +72,11 @@ func Load() (Config, error) {
 		JWTKeyID:          os.Getenv("JC_JWT_KEY_ID"),
 		SiteName:          os.Getenv("JC_SITE_NAME"),
 		SiteDescription:   os.Getenv("JC_SITE_DESCRIPTION"),
+		OAuthGoogleID:     os.Getenv("JC_OAUTH_GOOGLE_CLIENT_ID"),
+		OAuthGoogleSecret: os.Getenv("JC_OAUTH_GOOGLE_CLIENT_SECRET"),
+		OAuthGitHubID:     os.Getenv("JC_OAUTH_GITHUB_CLIENT_ID"),
+		OAuthGitHubSecret: os.Getenv("JC_OAUTH_GITHUB_CLIENT_SECRET"),
+		OAuthRedirectBase: os.Getenv("JC_OAUTH_REDIRECT_BASE"),
 	}
 
 	applyDefaults(&cfg)
@@ -113,6 +123,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.SiteDescription == "" {
 		cfg.SiteDescription = "A community platform for the Nigerian diaspora and Nigerians planning to relocate abroad"
+	}
+	if cfg.OAuthRedirectBase == "" {
+		cfg.OAuthRedirectBase = "http://localhost:8080"
 	}
 }
 

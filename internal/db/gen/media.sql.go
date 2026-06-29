@@ -466,3 +466,18 @@ func (q *Queries) UpdateMediaMetadata(ctx context.Context, arg UpdateMediaMetada
 	)
 	return err
 }
+
+const updateMediaStoragePath = `-- name: UpdateMediaStoragePath :exec
+UPDATE media SET storage_path = $1 WHERE id = $2 AND tenant_id = $3
+`
+
+type UpdateMediaStoragePathParams struct {
+	StoragePath string      `json:"storage_path"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateMediaStoragePath(ctx context.Context, arg UpdateMediaStoragePathParams) error {
+	_, err := q.db.Exec(ctx, updateMediaStoragePath, arg.StoragePath, arg.ID, arg.TenantID)
+	return err
+}

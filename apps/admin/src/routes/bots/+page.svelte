@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type Bot = {
 		id: string;
@@ -25,7 +26,7 @@
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = 'Failed to load bots';
+			errorMessage = t('bots.load_error');
 		} finally {
 			loading = false;
 		}
@@ -38,8 +39,8 @@
 	<title>Bots — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Bot Management</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage automated bots and their messaging capabilities</p>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('bots.title')}</h1>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('bots.description')}</p>
 
 <div class="mb-4 flex justify-end">
 	<a
@@ -47,7 +48,7 @@
 		class="inline-block rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
 		style="background-color: var(--color-primary)"
 	>
-		Create Bot
+		{t('bots.create')}
 	</a>
 </div>
 
@@ -58,15 +59,15 @@
 {/if}
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 		<table class="w-full text-sm">
 			<thead>
 				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Name</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Description</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Created</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('bots.name')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('bots.description_label')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('bots.created')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 				</tr>
 			</thead>
@@ -96,7 +97,7 @@
 				{:else}
 					<tr>
 						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							No bots created yet
+							{t('bots.empty')}
 						</td>
 					</tr>
 				{/each}

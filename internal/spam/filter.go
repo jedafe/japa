@@ -149,6 +149,3 @@ func IsValidCensorAction(a string) bool {
 	}
 	return false
 }
-
-// Ensure unused import is referenced.
-var _ = fmt.Sprintf

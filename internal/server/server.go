@@ -32,6 +32,7 @@ import (
 	"github.com/jedafe/japa/internal/gdpr"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/honcho"
+	"github.com/jedafe/japa/internal/i18n"
 	"github.com/jedafe/japa/internal/impersonation"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/linkpreview"
@@ -78,6 +79,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	}
 	r.Use(geoip.Middleware(geoipReader))
 
+	// GeoIP updater for the maintenance: update_geoip_db task.
+	// Created here and registered with the worker so the Asynq handler
+	// can atomically swap in a fresh MaxMind database weekly.
+	geoipUpdater := geoip.NewUpdater(cfg.MaxmindLicenseKey, cfg.GeoIPDBPath, geoipReader)
+	worker.RegisterGeoIPUpdater(geoipUpdater)
+
 	// IP block middleware — reject blocked IPs before they reach any handler.
 	// Runs after RealIP (so the resolved IP is available) but before all
 	// other middleware and route handlers.
@@ -86,22 +93,60 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	h := NewHandler(database)
 	tenantStore := tenant.NewDBStore(database)
 
-	// JWT key rotation - in production this would be loaded from config/secrets.
-	// For development we generate a random key at startup.
-	devKey := make([]byte, 32)
-	if _, err := rand.Read(devKey); err != nil {
-		slog.Error("generating JWT key", "error", err)
+	// JWT key rotation — use persistent secret from config when set,
+	// otherwise generate a random key for development (sessions won't survive restart).
+	var signingKey []byte
+	if cfg.JWTSecret != "" {
+		signingKey = []byte(cfg.JWTSecret)
+	} else {
+		signingKey = make([]byte, 32)
+		if _, err := rand.Read(signingKey); err != nil {
+			slog.Error("generating random JWT key", "error", err)
+		}
+		slog.Warn("using random JWT key — sessions will not persist across restarts", "key_id", cfg.JWTKeyID)
 	}
-	kr := auth.NewKeyRotation("key-dev", devKey)
+	kr := auth.NewKeyRotation(cfg.JWTKeyID, signingKey)
+
+	// Valkey client for cache, rate limiting, edit locks, brute-force
+	// tracking, and space unread counters. Created with graceful fallback
+	// so the server boots even when Valkey is unreachable.
+	vkClient := valkey.NewWithFallback(cfg.RedisAddr)
+	slog.Info("valkey client created", "addr", cfg.RedisAddr)
+
+	// Spam pipeline — multi-layer content safety checks (IP reputation,
+	// rate limiting, content hash, censored words, link analysis, user
+	// age, content length). Used by content creation and DM handlers.
+	spamStore := spam.NewStore(database)
+	spamPipeline := spam.NewPipeline(spamStore, vkClient, database)
+	_ = spamPipeline // passed to handlers that need content safety checks
 
 	// Auth handlers and DB store
 	authStore := auth.NewDBStore(database)
-	noopBruteForce := &noopBruteForceStore{}
+	bruteForce := auth.NewValkeyBruteForceStore(vkClient)
 	authHandlers := &auth.AuthHandlers{
 		DB:          authStore,
 		KeyRotation: kr,
-		BruteForce:  noopBruteForce,
+		BruteForce:  bruteForce,
 		Policy:      auth.DefaultPasswordPolicy(),
+	}
+
+	// TOTP 2FA handlers — uses the same auth store for TOTP credential storage.
+	totpStore := auth.NewTOTPStore(database)
+	totpHandlers := &auth.TOTPHandlers{Store: totpStore}
+
+	// OAuth social login handlers — provider config from environment.
+	oauthCfg := auth.OAuthConfig{
+		GoogleClientID:     cfg.OAuthGoogleID,
+		GoogleClientSecret: cfg.OAuthGoogleSecret,
+		GitHubClientID:     cfg.OAuthGitHubID,
+		GitHubClientSecret: cfg.OAuthGitHubSecret,
+		RedirectBase:       cfg.OAuthRedirectBase,
+	}
+	oauthStore := auth.NewOAuthStore(database)
+	oauthHandlers := &auth.OAuthHandlers{
+		Config: oauthCfg,
+		Store:  oauthStore,
+		KeyRot: kr,
 	}
 
 	// Feature flag checker
@@ -110,12 +155,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// RBAC resolver and store for permission checks at the router level.
 	rbacResolver := rbac.New(database)
 	rbacStore := rbac.NewStore(database)
-
-	// Valkey client for cache, rate limiting, edit locks, and space unread
-	// counters. Created with graceful fallback so the server boots even when
-	// Valkey is unreachable.
-	vkClient := valkey.NewWithFallback(cfg.RedisAddr)
-	slog.Info("valkey client created", "addr", cfg.RedisAddr)
 
 	// Bootstrap permission keys and the super_admin role at startup. All
 	// operations are idempotent; failures are logged but never crash the
@@ -154,6 +193,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	notificationService := notifications.NewService(database)
 	notificationHandlers := notifications.NewHandlers(notificationService)
 
+	// Create Asynq client for enqueuing background tasks (push delivery, etc.)
+	asynqClient := worker.NewClient(worker.DefaultConfig())
+	notificationService.SetAsynqClient(asynqClient)
+	authHandlers.AsynqClient = asynqClient
+
 	// Feed System subsystem (Section 32 — Activity Feed / Timeline).
 	feedService := feed.NewService(database)
 	feedHandlers := feed.NewHandlers(feedService)
@@ -190,6 +234,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	ticketService := tickets.NewService(database)
 	ticketHandlers := tickets.NewHandlers(ticketService)
 
+	// i18n Translation System.
+	i18nService := i18n.NewService(database)
+	i18nHandlers := i18n.NewHandlers(i18nService)
+
 	// GDPR / NDPR Compliance subsystem (Section 19).
 	gdprService := gdpr.NewService(database)
 	gdprService.SetHonchoEraser(honcho.NewClient(cfg.HonchoURL))
@@ -209,11 +257,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mediaScanProcessor := media.NewScanProcessor(mediaService, clamavClient)
 	worker.RegisterMediaScanProcessor(mediaScanProcessor)
 
+	// Video processor — ffmpeg-based transcoding, thumbnail generation,
+	// and compression for video uploads. Registered with the worker so
+	// the video_processing handler can invoke it asynchronously.
+	worker.RegisterVideoProcessor(media.NewVideoProcessor())
+
 	// Webhook Delivery subsystem — registers the processor so the Asynq
 	// webhook_delivery handler can fetch, sign, and deliver outgoing webhooks.
 	webhookService := webhooks.NewService(database)
 	webhookAdapter := webhooks.NewWorkerAdapter(webhookService)
 	worker.RegisterWebhookProcessor(webhookAdapter)
+
+	// Push Delivery — registers the VAPID push delivery implementation
+	// so the Asynq push_delivery handler can send web push notifications.
+	worker.RegisterPushDelivery(notificationService.PushDelivery())
 
 	// Documentation System subsystem (Section 44).
 	docsService := docs.NewService(database)
@@ -226,6 +283,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	botStore := bots.NewStoreWithDB(database)
 	botService := bots.NewServiceFromStore(botStore)
 	botHandlers := bots.NewHandlers(botService)
+
+	// Spam Prevention & Content Safety admin handlers (Section 41).
+	spamHandlers := spam.NewHandlers(spamStore)
 
 	// Platform Analytics & Site Reports subsystem (Section 40).
 	analyticsService := analytics.NewService(database)
@@ -304,6 +364,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/blog/feed.xml", rsspkg.HandleFeed(database.Reader, "blog"))
 		r.Get("/spaces/{slug}/feed.xml", rsspkg.HandleSpaceFeed(database.Reader))
 		r.Get("/tags/{slug}/feed.xml", rsspkg.HandleTagFeed(database.Reader))
+		r.Get("/users/{username}/feed.xml", rsspkg.HandleUserFeed(database.Reader))
+
+		// API Playground & OpenAPI Spec (Section 44 — docs.japaconnect.com)
+		r.Get("/docs/api/playground", docsHandlers.APIPlaygroundHandler)
+		r.Get("/docs/api/openapi.json", docsHandlers.OpenAPIHandler)
 	})
 
 	// API routes go through tenant resolution
@@ -322,6 +387,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Post("/login", authHandlers.Login)
 				r.Post("/refresh", authHandlers.Refresh)
 				r.Post("/logout", authHandlers.Logout)
+
+				// Password reset flow
+				r.Post("/forgot-password", authHandlers.HandleForgotPassword)
+				r.Get("/reset-password", authHandlers.HandleResetPasswordPage)
+				r.Post("/reset-password", authHandlers.HandleResetPassword)
+
+				// Email verification
+				r.Get("/verify-email", authHandlers.HandleVerifyEmail)
+				r.Post("/resend-verification", authHandlers.HandleResendVerification)
+
+				// TOTP 2FA routes — require authentication
+				r.With(auth.RequireAuth(kr)).Post("/totp/setup", totpHandlers.HandleSetup)
+				r.With(auth.RequireAuth(kr)).Post("/totp/verify", totpHandlers.HandleVerify)
+				r.With(auth.RequireAuth(kr)).Post("/totp/disable", totpHandlers.HandleDisable)
+
+				// OAuth social login routes
+				r.Get("/oauth/{provider}/initiate", oauthHandlers.HandleInitiate)
+				r.Get("/oauth/{provider}/callback", oauthHandlers.HandleCallback)
 			})
 
 			// Feature flags endpoint (public - frontend needs flags to
@@ -417,6 +500,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Delete("/spaces/{slug}/rules/{ruleId}", spaceHandlers.DeleteSpaceRule)
 
+			// Space moderator routes (slug-resolved via SpaceResolver middleware)
+			r.With(auth.RequireAuth(kr), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate.assigned")).
+				Post("/spaces/{slug}/moderators", spaceHandlers.AssignModerator)
+			r.With(auth.RequireAuth(kr), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate.assigned")).
+				Delete("/spaces/{slug}/moderators/{userId}", spaceHandlers.RemoveModerator)
+			r.With(auth.RequireAuth(kr), spaces.SpaceResolver(spaceService)).
+				Get("/spaces/{slug}/moderators", spaceHandlers.ListModerators)
+
 			// Permission preset routes
 			r.With(auth.RequireAuth(kr)).Get("/space-permission-presets", spaceHandlers.ListPermissionPresets)
 			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "spaces.admin")).
@@ -497,6 +588,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// WebSocket + DM routes (Section 10 — Real-Time WebSockets)
 			wsHub := websocket.NewHub()
+			// PubSub bridge for multi-instance WebSocket scaling.
+			wsBridge := websocket.NewPubSubBridge(vkClient.Redis(), wsHub)
+			wsHub.SetPubSub(wsBridge)
+			go wsBridge.Start(context.Background())
 			wsService := websocket.NewService(database, wsHub)
 			wsDMStore := websocket.NewDMStore(gen.New(database.Reader), gen.New(database.Writer))
 			wsDMService := websocket.NewDMService(wsDMStore, wsHub)
@@ -855,6 +950,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
 				Delete("/admin/ticket-types/{id}", ticketHandlers.DeleteTicketType)
 
+			// i18n Translation management (admin)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "i18n.manage")).
+				Get("/admin/translations", i18nHandlers.ListByLocale)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "i18n.manage")).
+				Get("/admin/translations/locales", i18nHandlers.ListLocales)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "i18n.manage")).
+				Post("/admin/translations", i18nHandlers.Upsert)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "i18n.manage")).
+				Post("/admin/translations/batch", i18nHandlers.UpsertBatch)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "i18n.manage")).
+				Delete("/admin/translations/{id}", i18nHandlers.Delete)
+
+			// i18n public endpoint (no auth)
+			r.Get("/translations/{locale}", i18nHandlers.GetLocaleTranslations)
+
 			// GDPR / NDPR Compliance routes (Section 19)
 			// User-facing endpoints
 			r.With(auth.RequireAuth(kr)).
@@ -887,6 +997,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Put("/admin/bots/{id}", botHandlers.UpdateKnownBot)
 			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "bots.admin")).
 				Delete("/admin/bots/{id}", botHandlers.DeleteKnownBot)
+
+			// Spam Prevention & Content Safety admin routes (Section 41)
+			// IP block management
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "spam.ip_block.manage")).
+				Get("/admin/spam/ip-blocks", spamHandlers.ListIPBlocks)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "spam.ip_block.manage")).
+				Post("/admin/spam/ip-blocks", spamHandlers.CreateIPBlock)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "spam.ip_block.manage")).
+				Delete("/admin/spam/ip-blocks/{id}", spamHandlers.DeleteIPBlock)
+			// Censored word management
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "spam.censored_words.manage")).
+				Get("/admin/spam/censored-words", spamHandlers.ListCensoredWords)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "spam.censored_words.manage")).
+				Post("/admin/spam/censored-words", spamHandlers.CreateCensoredWord)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "spam.censored_words.manage")).
+				Delete("/admin/spam/censored-words/{id}", spamHandlers.DeleteCensoredWord)
+			// User block management
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "spam.user_block.manage")).
+				Get("/admin/spam/user-blocks", spamHandlers.ListUserBlocks)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "spam.user_block.manage")).
+				Delete("/admin/spam/user-blocks/{blockerId}/{blockedId}", spamHandlers.DeleteUserBlock)
 
 			// Platform Analytics & Site Reports routes (Section 40)
 			// User dashboard
@@ -1058,20 +1189,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	return r
 }
 
-// noopBruteForceStore is a no-op implementation for development.
-// In production this is replaced by a Valkey-backed store.
-type noopBruteForceStore struct{}
-
-func (n *noopBruteForceStore) GetFailCount(ctx context.Context, key string) (int, error) {
-	return 0, nil
-}
-func (n *noopBruteForceStore) IncrFailCount(ctx context.Context, key string) error {
-	return nil
-}
-func (n *noopBruteForceStore) ResetFailCount(ctx context.Context, key string) error {
-	return nil
-}
-
 // bootstrapPermissions registers all custom field and form permission keys at
 // startup, creates a super_admin role, assigns every permission to it, and
 // grants the role to the super_admin system group. Every operation is
@@ -1099,6 +1216,7 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "spaces.delete", Description: "Delete spaces"},
 		{Key: "spaces.moderate", Description: "Moderate spaces (manage rules and pins)"},
 		{Key: "spaces.moderate.any", Description: "Moderate any space (for admin_only posting permission)"},
+		{Key: "spaces.moderate.assigned", Description: "Assign or remove space moderators"},
 		{Key: "space_types.create", Description: "Create space types"},
 		{Key: "space_types.edit", Description: "Edit space types"},
 		{Key: "space_types.delete", Description: "Delete space types"},
@@ -1266,6 +1384,8 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "api.keys.view.all", Description: "View all API keys across all users (admin)"},
 		{Key: "api.keys.manage", Description: "Suspend and manage API keys (admin)"},
 		{Key: "api.keys.analytics.view", Description: "View API key usage analytics"},
+		// i18n Translation System
+		{Key: "i18n.manage", Description: "Manage i18n translations (create, update, delete)"},
 	}
 
 	var defaultTenantID pgtype.UUID

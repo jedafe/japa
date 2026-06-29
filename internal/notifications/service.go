@@ -95,6 +95,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID, tenan
 }
 
 // CreateNotification directly creates a single notification (non-batch path).
+// If the recipient has push enabled for this type, a push delivery task is enqueued.
 func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error {
 	var actorTypePtr *string
 	if actorType != "" {
@@ -113,7 +114,7 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 		actionURLPtr = &actionURL
 	}
 
-	return s.store.insertNotification(ctx, gen.InsertNotificationParams{
+	if err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
 		TenantID:         tenantID,
 		RecipientID:      recipientID,
 		NotificationType: nType,
@@ -124,7 +125,14 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 		Title:            title,
 		Body:             bodyPtr,
 		ActionUrl:        actionURLPtr,
-	})
+	}); err != nil {
+		return fmt.Errorf("inserting notification: %w", err)
+	}
+
+	// Enqueue push delivery if user has push enabled for this type.
+	s.checkAndEnqueuePush(ctx, recipientID, nType, title, body, actionURL)
+
+	return nil
 }
 
 // GetNotifications returns paginated notifications for a user.

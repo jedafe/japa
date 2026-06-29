@@ -1,15 +1,16 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { BookOpen, ChevronRight, FileText, Search } from 'lucide-svelte';
 
 	let { audience, currentSlug = '' }: { audience: string; currentSlug?: string } = $props();
 
 	const sections = [
-		{ slug: 'users', label: 'User Guide', icon: BookOpen },
-		{ slug: 'premium', label: 'Premium', icon: ChevronRight },
-		{ slug: 'organizations', label: 'Organizations', icon: ChevronRight },
-		{ slug: 'moderators', label: 'Moderators', icon: FileText },
-		{ slug: 'api', label: 'API Reference', icon: FileText },
-		{ slug: 'admin', label: 'Admin', icon: FileText },
+		{ slug: 'users', labelKey: 'sections.user_guide', icon: BookOpen },
+		{ slug: 'premium', labelKey: 'sections.premium', icon: ChevronRight },
+		{ slug: 'organizations', labelKey: 'sections.organizations', icon: ChevronRight },
+		{ slug: 'moderators', labelKey: 'sections.moderators', icon: FileText },
+		{ slug: 'api', labelKey: 'sections.api_reference', icon: FileText },
+		{ slug: 'admin', labelKey: 'sections.admin', icon: FileText },
 	];
 </script>
 
@@ -17,7 +18,7 @@
 	<!-- Brand -->
 	<div class="mb-6">
 		<a href="/" class="text-lg font-bold tracking-tight" style="color: var(--color-primary)">
-			JapaConnect Docs
+			{$t('docs.brand')}
 		</a>
 	</div>
 
@@ -26,7 +27,7 @@
 		<Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
 		<input
 			type="text"
-			placeholder="Search docs..."
+			placeholder={$t('sidebar.search')}
 			class="w-full rounded-md border py-2 pl-9 pr-3 text-sm outline-none focus:ring-2"
 			style="border-color: var(--color-border); background: var(--color-surface)"
 		/>
@@ -44,7 +45,7 @@
 				style={audience !== section.slug ? 'color: var(--color-muted)' : ''}
 			>
 				<Icon class="h-4 w-4" />
-				{section.label}
+				{$t(section.labelKey)}
 			</a>
 		{/each}
 	</nav>

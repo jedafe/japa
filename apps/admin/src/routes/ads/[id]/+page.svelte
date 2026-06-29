@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type Campaign = {
 		id: string;
@@ -61,7 +62,7 @@
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = 'Failed to load campaign';
+			errorMessage = t('ads.load_error');
 		} finally {
 			loading = false;
 		}
@@ -87,7 +88,7 @@
 				}
 			});
 			if (result.ok) {
-				successMessage = 'Campaign updated';
+				successMessage = t('ads.updated');
 				campaign.name = editName.trim();
 				campaign.creative = {
 					title: editTitle.trim(),
@@ -100,7 +101,7 @@
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = 'Failed to update campaign';
+			errorMessage = t('ads.update_error');
 		} finally {
 			saving = false;
 		}
@@ -117,7 +118,7 @@
 				campaign.status = campaign.status === 'active' ? 'paused' : 'active';
 			}
 		} catch {
-			errorMessage = 'Failed to update status';
+			errorMessage = t('ads.status_error');
 		}
 	}
 
@@ -140,7 +141,7 @@
 </svelte:head>
 
 <div class="mb-4">
-	<a href="/ads" class="text-sm hover:underline" style="color: var(--color-muted)">&larr; Back to Campaigns</a>
+	<a href="/ads" class="text-sm hover:underline" style="color: var(--color-muted)">&larr; {t('ads.back')}</a>
 </div>
 
 {#if errorMessage}
@@ -155,11 +156,11 @@
 {/if}
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else if campaign}
 	<h1 class="mb-1 text-2xl font-bold tracking-tight">{campaign.name}</h1>
 	<p class="mb-6 text-sm" style="color: var(--color-muted)">
-		Status:
+		{t('ads.status_label')}
 		<span class="inline-block rounded-full px-2 py-0.5 text-xs {statusColor(campaign.status)}">
 			{campaign.status}
 		</span>
@@ -169,21 +170,21 @@
 	<!-- Stats Cards -->
 	<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 		<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Impressions</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.impressions')}</p>
 			<p class="mt-1 text-2xl font-bold">{campaign.impressions.toLocaleString()}</p>
 		</div>
 		<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Clicks</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.clicks')}</p>
 			<p class="mt-1 text-2xl font-bold">{campaign.clicks.toLocaleString()}</p>
 		</div>
 		<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">CTR</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.ctr')}</p>
 			<p class="mt-1 text-2xl font-bold">
 				{campaign.impressions > 0 ? ((campaign.clicks / campaign.impressions) * 100).toFixed(2) : '0.00'}%
 			</p>
 		</div>
 		<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Budget Spent</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.budget_spent')}</p>
 			<p class="mt-1 text-2xl font-bold">${campaign.spent?.toLocaleString() ?? '0'}</p>
 			<p class="text-xs" style="color: var(--color-muted)">of ${campaign.budget.toLocaleString()}</p>
 		</div>
@@ -193,10 +194,10 @@
 		<!-- Edit form -->
 		<div class="lg:col-span-2">
 			<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Campaign Details</h2>
+				<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.details')}</h2>
 				<div class="space-y-4">
 					<div>
-						<label for="edit-name" class="mb-1 block text-sm font-medium">Name</label>
+						<label for="edit-name" class="mb-1 block text-sm font-medium">{t('ads.fields.name')}</label>
 						<input
 							id="edit-name"
 							type="text"
@@ -207,7 +208,7 @@
 					</div>
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div>
-							<label for="edit-title" class="mb-1 block text-sm font-medium">Headline</label>
+							<label for="edit-title" class="mb-1 block text-sm font-medium">{t('ads.fields.headline')}</label>
 							<input
 								id="edit-title"
 								type="text"
@@ -217,7 +218,7 @@
 							/>
 						</div>
 						<div>
-							<label for="edit-image" class="mb-1 block text-sm font-medium">Image URL</label>
+							<label for="edit-image" class="mb-1 block text-sm font-medium">{t('ads.fields.image_url')}</label>
 							<input
 								id="edit-image"
 								type="url"
@@ -228,7 +229,7 @@
 						</div>
 					</div>
 					<div>
-						<label for="edit-body" class="mb-1 block text-sm font-medium">Body</label>
+						<label for="edit-body" class="mb-1 block text-sm font-medium">{t('ads.fields.body')}</label>
 						<textarea
 							id="edit-body"
 							class="w-full rounded-md border px-3 py-2 text-sm"
@@ -239,7 +240,7 @@
 					</div>
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div>
-							<label for="edit-url" class="mb-1 block text-sm font-medium">Destination URL</label>
+							<label for="edit-url" class="mb-1 block text-sm font-medium">{t('ads.fields.dest_url')}</label>
 							<input
 								id="edit-url"
 								type="url"
@@ -249,7 +250,7 @@
 							/>
 						</div>
 						<div>
-							<label for="edit-budget" class="mb-1 block text-sm font-medium">Budget ($)</label>
+							<label for="edit-budget" class="mb-1 block text-sm font-medium">{t('ads.fields.budget')}</label>
 							<input
 								id="edit-budget"
 								type="number"
@@ -267,7 +268,7 @@
 							disabled={saving || !editName.trim()}
 							onclick={saveCampaign}
 						>
-							{saving ? 'Saving...' : 'Save Changes'}
+							{saving ? t('common.saving') : t('common.save')}
 						</button>
 					</div>
 				</div>
@@ -277,20 +278,20 @@
 		<!-- Sidebar actions -->
 		<div class="space-y-4">
 			<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<h3 class="mb-3 text-sm font-semibold" style="color: var(--color-muted)">Status</h3>
+				<h3 class="mb-3 text-sm font-semibold" style="color: var(--color-muted)">{t('ads.status')}</h3>
 				<button
 					class="w-full rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 					style="border: 1px solid var(--color-border)"
 					onclick={toggleStatus}
 				>
-					{campaign.status === 'active' ? 'Pause Campaign' : 'Resume Campaign'}
+					{campaign.status === 'active' ? t('ads.pause_campaign') : t('ads.resume_campaign')}
 				</button>
 			</div>
 
 			<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<h3 class="mb-3 text-sm font-semibold" style="color: var(--color-muted)">Schedule</h3>
-				<p class="text-sm">Start: {campaign.start_date ?? 'Not set'}</p>
-				<p class="text-sm">End: {campaign.end_date ?? 'Ongoing'}</p>
+				<h3 class="mb-3 text-sm font-semibold" style="color: var(--color-muted)">{t('ads.sections.schedule')}</h3>
+				<p class="text-sm">{t('ads.schedule_start').replace('{date}', campaign.start_date ?? 'Not set')}</p>
+				<p class="text-sm">{t('ads.schedule_end').replace('{date}', campaign.end_date ?? 'Ongoing')}</p>
 			</div>
 		</div>
 	</div>

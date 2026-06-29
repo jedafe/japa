@@ -62,6 +62,12 @@ FROM user_blocks
 WHERE blocker_id = $1
 ORDER BY created_at DESC;
 
+-- name: ListAllUserBlocks :many
+SELECT blocker_id, blocked_id, created_at
+FROM user_blocks
+ORDER BY created_at DESC
+LIMIT $1;
+
 -- name: IsBlocked :one
 SELECT EXISTS(
     SELECT 1 FROM user_blocks

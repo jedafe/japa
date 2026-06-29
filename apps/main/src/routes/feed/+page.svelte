@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { formatTimestamp, formatRelativeTime } from '$lib/utils/timezone';
 	import autoAnimate from '@formkit/auto-animate';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let { data } = $props();
 
@@ -46,16 +47,16 @@
 </script>
 
 <svelte:head>
-	<title>Feed | JapaConnect</title>
-	<meta name="description" content="Stay updated with the latest from your community." />
+	<title>{$t('feed.title')} | JapaConnect</title>
+	<meta name="description" content="{$t('feed.subtitle')}" />
 </svelte:head>
 
 <main class="mx-auto max-w-3xl px-4 py-8">
 	<header class="mb-8 flex items-start justify-between">
 		<div>
-			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Feed</h1>
+			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{$t('feed.title')}</h1>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
-				Stay updated with the latest from your community.
+				{$t('feed.subtitle')}
 			</p>
 		</div>
 		<a
@@ -64,15 +65,15 @@
 			style="border-color: var(--color-border); color: var(--color-muted)"
 		>
 			<Rss class="h-4 w-4" />
-			Refresh
+			{$t('feed.refresh')}
 		</a>
 	</header>
 
 	{#if feed.length === 0}
 		<EmptyState
 			icon={Rss}
-			title="Your feed is empty"
-			message="Follow spaces and people to see their posts here."
+			title={$t('feed.empty')}
+			message={$t('feed.empty_hint')}
 		/>
 	{:else}
 		<div class="space-y-4" use:autoAnimate>
@@ -142,14 +143,14 @@
 		{#if hasMore}
 			<div id="feed-sentinel" class="flex justify-center py-8">
 				{#if loadingMore}
-					<p class="text-sm" style="color: var(--color-muted)">Loading more...</p>
+					<p class="text-sm" style="color: var(--color-muted)">{$t('feed.loading')}</p>
 				{:else}
 					<button
 						onclick={loadMore}
 						class="rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:opacity-80"
 						style="border-color: var(--color-border); color: var(--color-foreground)"
 					>
-						Load more
+						{$t('feed.load_more')}
 					</button>
 				{/if}
 			</div>

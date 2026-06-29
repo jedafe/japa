@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { setToken } from '$lib/api';
+	import { locale, t } from '$lib/stores/i18n.svelte';
 	import '../app.css';
 	import {
 	 LayoutDashboard,
@@ -19,6 +20,10 @@
 
 	let sidebarOpen = $state(false);
 
+	$effect(() => {
+		locale.init(data.locale, data.translations);
+	});
+
 	onMount(() => {
 		if (data.token) {
 			setToken(data.token);
@@ -31,15 +36,15 @@
 		window.location.href = '/login';
 	}
 
-	const nav = [
-	 { label: 'Dashboard', href: '/', icon: LayoutDashboard },
-	 { label: 'Queue', href: '/queue', icon: Activity },
-	 { label: 'DB Health', href: '/db', icon: Database },
-	 { label: 'Audit Log', href: '/audit', icon: ScrollText },
-	 { label: 'Security', href: '/security', icon: Shield },
-	 { label: 'API Keys', href: '/api-keys', icon: Key },
-	 { label: 'Cache', href: '/cache', icon: Trash2 }
-	];
+	const nav = $derived([
+	 { label: t('nav.dashboard'), href: '/', icon: LayoutDashboard },
+	 { label: t('nav.queue'), href: '/queue', icon: Activity },
+	 { label: t('nav.db_health'), href: '/db', icon: Database },
+	 { label: t('nav.audit'), href: '/audit', icon: ScrollText },
+	 { label: t('nav.security'), href: '/security', icon: Shield },
+	 { label: t('nav.api_keys'), href: '/api-keys', icon: Key },
+	 { label: t('nav.cache'), href: '/cache', icon: Trash2 }
+	]);
 </script>
 
 <svelte:head>
@@ -68,7 +73,7 @@
 		class:-translate-x-full={!sidebarOpen}
 	>
 		<div class="flex h-14 items-center border-b px-4" style="border-color: var(--color-border)">
-			<span class="text-sm font-bold tracking-wide uppercase" style="color: var(--color-primary)">JapaControl</span>
+			<span class="text-sm font-bold tracking-wide uppercase" style="color: var(--color-primary)">{t('control.brand')}</span>
 		</div>
 		<nav class="flex-1 space-y-1 p-3">
 			{#each nav as item}
@@ -89,7 +94,7 @@
 				onclick={logout}
 			>
 				<LogOut class="h-3.5 w-3.5" style="color: var(--color-muted)" />
-				Sign Out
+				{t('nav.sign_out')}
 			</button>
 		</div>
 	</aside>

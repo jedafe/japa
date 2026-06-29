@@ -100,3 +100,126 @@ func (s *DBStore) RevokeRefreshToken(ctx context.Context, tokenHash string) erro
 	}
 	return nil
 }
+
+// RevokeAllRefreshTokens marks all active refresh tokens for a user as revoked.
+func (s *DBStore) RevokeAllRefreshTokens(ctx context.Context, tenantID, userID pgtype.UUID) error {
+	query := `
+		UPDATE refresh_tokens
+		SET revoked_at = now(), updated_at = now()
+		WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL
+	`
+	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID)
+	if err != nil {
+		return fmt.Errorf("revoking all refresh tokens: %w", err)
+	}
+	return nil
+}
+
+// StoreResetToken persists a password reset token hash in the database.
+func (s *DBStore) StoreResetToken(ctx context.Context, tenantID, userID pgtype.UUID, tokenHash string, expiresAt time.Time) error {
+	query := `
+		INSERT INTO password_reset_tokens (tenant_id, user_id, token_hash, expires_at)
+		VALUES ($1, $2, $3, $4)
+	`
+	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID, tokenHash, expiresAt)
+	if err != nil {
+		return fmt.Errorf("storing reset token: %w", err)
+	}
+	return nil
+}
+
+// GetValidResetToken looks up a reset token by hash and returns the record
+// if it exists, is not expired, and has not been used.
+func (s *DBStore) GetValidResetToken(ctx context.Context, tokenHash string) (*ResetTokenRecord, error) {
+	query := `
+		SELECT user_id, tenant_id, expires_at, used_at
+		FROM password_reset_tokens
+		WHERE token_hash = $1
+		LIMIT 1
+	`
+	var rec ResetTokenRecord
+	var usedAt pgtype.Timestamptz
+	err := s.db.Reader.QueryRow(ctx, query, tokenHash).Scan(
+		&rec.UserID, &rec.TenantID, &rec.ExpiresAt, &usedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying reset token: %w", err)
+	}
+	rec.UsedAt = usedAt
+	return &rec, nil
+}
+
+// MarkResetTokenUsed sets the used_at timestamp on a reset token.
+func (s *DBStore) MarkResetTokenUsed(ctx context.Context, tokenHash string) error {
+	query := `
+		UPDATE password_reset_tokens
+		SET used_at = now()
+		WHERE token_hash = $1 AND used_at IS NULL
+	`
+	_, err := s.db.Writer.Exec(ctx, query, tokenHash)
+	if err != nil {
+		return fmt.Errorf("marking reset token used: %w", err)
+	}
+	return nil
+}
+
+// UpdateUserPassword updates the password hash for a user.
+func (s *DBStore) UpdateUserPassword(ctx context.Context, userID pgtype.UUID, passwordHash string) error {
+	query := `
+		UPDATE users
+		SET password_hash = $2, updated_at = now()
+		WHERE id = $1
+	`
+	_, err := s.db.Writer.Exec(ctx, query, userID, passwordHash)
+	if err != nil {
+		return fmt.Errorf("updating user password: %w", err)
+	}
+	return nil
+}
+
+// StoreEmailVerification persists an email verification token hash.
+func (s *DBStore) StoreEmailVerification(ctx context.Context, tenantID, userID pgtype.UUID, email, tokenHash string, expiresAt time.Time) error {
+	query := `
+		INSERT INTO email_verifications (tenant_id, user_id, email, token_hash, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID, email, tokenHash, expiresAt)
+	if err != nil {
+		return fmt.Errorf("storing email verification: %w", err)
+	}
+	return nil
+}
+
+// GetValidVerificationToken looks up an email verification token by hash.
+func (s *DBStore) GetValidVerificationToken(ctx context.Context, tokenHash string) (*VerificationTokenRecord, error) {
+	query := `
+		SELECT user_id, tenant_id, expires_at, verified_at
+		FROM email_verifications
+		WHERE token_hash = $1
+		LIMIT 1
+	`
+	var rec VerificationTokenRecord
+	var verifiedAt pgtype.Timestamptz
+	err := s.db.Reader.QueryRow(ctx, query, tokenHash).Scan(
+		&rec.UserID, &rec.TenantID, &rec.ExpiresAt, &verifiedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying verification token: %w", err)
+	}
+	rec.VerifiedAt = verifiedAt
+	return &rec, nil
+}
+
+// MarkEmailVerified sets email_verified_at on the users table.
+func (s *DBStore) MarkEmailVerified(ctx context.Context, userID pgtype.UUID) error {
+	query := `
+		UPDATE users
+		SET email_verified_at = now(), updated_at = now()
+		WHERE id = $1 AND email_verified_at IS NULL
+	`
+	_, err := s.db.Writer.Exec(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("marking email verified: %w", err)
+	}
+	return nil
+}

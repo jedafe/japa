@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type FieldDef = {
 		id: string;
@@ -57,7 +58,7 @@
 				editDescription = form.description;
 			}
 		} catch {
-			errorMessage = 'Failed to load form.';
+			errorMessage = t('space_forms.load_error');
 		} finally {
 			loading = false;
 		}
@@ -83,11 +84,11 @@
 				method: 'PATCH',
 				body: { name: editName.trim(), description: editDescription.trim() }
 			});
-			saveMsg = 'Saved';
+			saveMsg = t('common.saved');
 			setTimeout(() => (saveMsg = ''), 3000);
 			load();
 		} catch {
-			errorMessage = 'Failed to save.';
+			errorMessage = t('space_forms.save_error');
 		} finally {
 			saving = false;
 		}
@@ -98,7 +99,7 @@
 			await api(`/forms/${formId}`, { method: 'DELETE' });
 			window.location.href = `/spaces/${spaceId}/forms`;
 		} catch {
-			errorMessage = 'Failed to delete form.';
+			errorMessage = t('space_forms.delete_error');
 		}
 	}
 
@@ -121,8 +122,8 @@
 
 <div class="mb-4 flex items-center justify-between">
 	<div>
-		<h1 class="text-2xl font-bold tracking-tight">{form?.name ?? 'Form Detail'}</h1>
-		<p class="mt-1 text-sm" style="color: var(--color-muted)">Manage form definition and view submissions</p>
+		<h1 class="text-2xl font-bold tracking-tight">{form?.name ?? t('space_forms.detail_title')}</h1>
+		<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('space_forms.detail_description')}</p>
 	</div>
 	<div class="flex items-center gap-2">
 		<a
@@ -130,14 +131,14 @@
 			class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 			style="border-color: var(--color-border)"
 		>
-			&larr; Back
+			&larr; {t('common.back')}
 		</a>
 		<button
 			class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 			style="border-color: var(--color-border); color: var(--color-danger)"
 			onclick={() => (showDelete = true)}
 		>
-			Delete
+			{t('common.delete')}
 		</button>
 	</div>
 </div>
@@ -155,27 +156,27 @@
 		style={activeTab === 'edit' ? 'color: var(--color-primary); border-bottom: 2px solid var(--color-primary)' : 'color: var(--color-muted)'}
 		onclick={() => (activeTab = 'edit')}
 	>
-		Edit Form
+		{t('space_forms.tab_edit')}
 	</button>
 	<button
 		class="rounded-t-md px-4 py-2 text-sm font-medium transition-colors"
 		style={activeTab === 'submissions' ? 'color: var(--color-primary); border-bottom: 2px solid var(--color-primary)' : 'color: var(--color-muted)'}
 		onclick={() => (activeTab = 'submissions')}
 	>
-		Submissions ({submissions.length})
+		{t('space_forms.tab_submissions').replace('{count}', String(submissions.length))}
 	</button>
 </div>
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else if activeTab === 'edit'}
 	<!-- Edit Form Definition -->
 	<div class="space-y-6">
 		<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Form Details</h2>
+			<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.details')}</h2>
 			<div class="space-y-4">
 				<div>
-					<label for="edit-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Name</label>
+					<label for="edit-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_label')}</label>
 					<input
 						id="edit-name"
 						type="text"
@@ -185,7 +186,7 @@
 					/>
 				</div>
 				<div>
-					<label for="edit-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Description</label>
+					<label for="edit-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.description_label')}</label>
 					<textarea
 						id="edit-desc"
 						class="w-full rounded-md border px-3 py-2 text-sm"
@@ -202,7 +203,7 @@
 					disabled={saving}
 					onclick={saveMetadata}
 				>
-					{saving ? 'Saving...' : 'Save Changes'}
+					{saving ? t('common.saving') : t('common.save')}
 				</button>
 				{#if saveMsg}
 					<span class="text-xs" style="color: var(--color-success)">{saveMsg}</span>
@@ -212,7 +213,7 @@
 
 		<!-- Field list (read-only display) -->
 		<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Fields</h2>
+			<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.fields')}</h2>
 			{#if form?.fields && form.fields.length > 0}
 				<div class="space-y-3">
 					{#each form.fields as field}
@@ -221,17 +222,17 @@
 								<span class="text-sm font-medium">{field.label}</span>
 								<span class="ml-2 inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-white/10">{field.type}</span>
 								{#if field.required}
-									<span class="ml-1 text-xs" style="color: var(--color-danger)">*required</span>
+									<span class="ml-1 text-xs" style="color: var(--color-danger)">{t('space_forms.required_indicator')}</span>
 								{/if}
 							</div>
 							{#if field.options && field.options.length > 0}
-								<span class="text-xs" style="color: var(--color-muted)">{field.options.length} options</span>
+								<span class="text-xs" style="color: var(--color-muted)">{t('space_forms.options_count').replace('{count}', String(field.options.length))}</span>
 							{/if}
 						</div>
 					{/each}
 				</div>
 			{:else}
-				<p class="text-sm" style="color: var(--color-muted)">No fields defined.</p>
+				<p class="text-sm" style="color: var(--color-muted)">{t('space_forms.no_fields')}</p>
 			{/if}
 		</div>
 	</div>
@@ -239,14 +240,14 @@
 	<!-- Submissions -->
 	{#if submissions.length === 0}
 		<div class="rounded-lg border p-8 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<p class="text-sm" style="color: var(--color-muted)">No submissions yet.</p>
+			<p class="text-sm" style="color: var(--color-muted)">{t('space_forms.no_submissions')}</p>
 		</div>
 	{:else}
 		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 			<table class="w-full text-sm">
 				<thead>
 					<tr style="border-color: var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Submitted</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_forms.submitted')}</th>
 						{#each form?.fields ?? [] as field}
 							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{field.label}</th>
 						{/each}
@@ -268,6 +269,6 @@
 {/if}
 
 <!-- Delete Confirmation -->
-<Modal bind:open={showDelete} title="Delete Form" onConfirm={deleteForm} confirmLabel="Delete">
-	<p class="text-sm">Are you sure you want to delete <strong>{form?.name}</strong>? All submissions will also be removed. This cannot be undone.</p>
+<Modal bind:open={showDelete} title={t('space_forms.delete_title')} onConfirm={deleteForm} confirmLabel={t('common.delete')}>
+	<p class="text-sm">{t('space_forms.delete_text').replace('{name}', form?.name ?? '')}</p>
 </Modal>

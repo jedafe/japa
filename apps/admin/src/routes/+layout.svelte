@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { setToken } from '$lib/api';
+	import { locale } from '$lib/stores/i18n.svelte';
 	import '../app.css';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 

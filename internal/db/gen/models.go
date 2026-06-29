@@ -97,6 +97,56 @@ type AdSlotType struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
+type AdsCampaign struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	AdvertiserID  pgtype.UUID        `json:"advertiser_id"`
+	Name          string             `json:"name"`
+	Placement     string             `json:"placement"`
+	BudgetCredits int32              `json:"budget_credits"`
+	SpentCredits  int32              `json:"spent_credits"`
+	Status        string             `json:"status"`
+	StartDate     pgtype.Timestamptz `json:"start_date"`
+	EndDate       pgtype.Timestamptz `json:"end_date"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AiHitlReview struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	ContentID     pgtype.UUID        `json:"content_id"`
+	ContentType   string             `json:"content_type"`
+	AiOutput      []byte             `json:"ai_output"`
+	HumanFeedback []byte             `json:"human_feedback"`
+	Status        string             `json:"status"`
+	ReviewerID    pgtype.UUID        `json:"reviewer_id"`
+	Reason        *string            `json:"reason"`
+	ReviewedAt    pgtype.Timestamptz `json:"reviewed_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type ApiKey struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	Name          string             `json:"name"`
+	KeyPrefix     string             `json:"key_prefix"`
+	KeyHash       string             `json:"key_hash"`
+	Scopes        []string           `json:"scopes"`
+	RateLimitTier string             `json:"rate_limit_tier"`
+	Status        string             `json:"status"`
+	LastUsedAt    pgtype.Timestamptz `json:"last_used_at"`
+	RequestCount  int64              `json:"request_count"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Environment   string             `json:"environment"`
+	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
+	RevokedBy     pgtype.UUID        `json:"revoked_by"`
+	Notes         *string            `json:"notes"`
+}
+
 type AuditLog struct {
 	ID                 pgtype.UUID        `json:"id"`
 	TenantID           pgtype.UUID        `json:"tenant_id"`
@@ -127,6 +177,28 @@ type BlogSeriesPost struct {
 	SeriesID  pgtype.UUID `json:"series_id"`
 	ContentID pgtype.UUID `json:"content_id"`
 	Position  int32       `json:"position"`
+}
+
+type Booking struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	ServiceID   pgtype.UUID        `json:"service_id"`
+	BookerID    pgtype.UUID        `json:"booker_id"`
+	SlotStart   pgtype.Timestamptz `json:"slot_start"`
+	SlotEnd     pgtype.Timestamptz `json:"slot_end"`
+	Status      string             `json:"status"`
+	DepositPaid bool               `json:"deposit_paid"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type BookingSlot struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	ServiceID   pgtype.UUID        `json:"service_id"`
+	StartTime   pgtype.Timestamptz `json:"start_time"`
+	EndTime     pgtype.Timestamptz `json:"end_time"`
+	IsAvailable bool               `json:"is_available"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type CensoredWord struct {
@@ -278,6 +350,14 @@ type ContentScore struct {
 	LastScoredAt       pgtype.Timestamptz `json:"last_scored_at"`
 }
 
+type ContentSpace struct {
+	ID        pgtype.UUID        `json:"id"`
+	ContentID pgtype.UUID        `json:"content_id"`
+	SpaceID   pgtype.UUID        `json:"space_id"`
+	IsPrimary bool               `json:"is_primary"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type ContentTypeJsonldTemplate struct {
 	ID          pgtype.UUID        `json:"id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
@@ -333,6 +413,16 @@ type CustomFieldPermission struct {
 	UserGroupID pgtype.UUID `json:"user_group_id"`
 	CanView     bool        `json:"can_view"`
 	CanEdit     bool        `json:"can_edit"`
+}
+
+type CustomFieldTemplate struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Name         string             `json:"name"`
+	Description  *string            `json:"description"`
+	FieldGroupID pgtype.UUID        `json:"field_group_id"`
+	IsSystem     bool               `json:"is_system"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type CustomFieldValue struct {
@@ -429,14 +519,36 @@ type DocPage struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
-// Per-group permissions for editor block types. Row presence + enabled flag controls access.
 type EditorBlockPermission struct {
-	// Editor block type identifier (e.g. paragraph, video_embed, ai_generate).
-	BlockType string `json:"block_type"`
-	// FK to user_groups. Cascade-deletes when group is removed.
-	UserGroupID pgtype.UUID `json:"user_group_id"`
-	// Whether this group can use this block type. Allows disabling without deleting the row.
-	Enabled bool `json:"enabled"`
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	BlockType   string             `json:"block_type"`
+	UserGroupID pgtype.UUID        `json:"user_group_id"`
+	Enabled     bool               `json:"enabled"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type EmailVerification struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Email      string             `json:"email"`
+	TokenHash  string             `json:"token_hash"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type ExternalDataSource struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	Name          string             `json:"name"`
+	SourceType    string             `json:"source_type"`
+	ApiEndpoint   *string            `json:"api_endpoint"`
+	SyncFrequency string             `json:"sync_frequency"`
+	LastSyncedAt  pgtype.Timestamptz `json:"last_synced_at"`
+	Status        string             `json:"status"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type FeatureFlag struct {
@@ -641,6 +753,68 @@ type KnownBot struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
+type LearningCertificate struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	TrackID           pgtype.UUID        `json:"track_id"`
+	CertificateNumber string             `json:"certificate_number"`
+	MediaID           pgtype.UUID        `json:"media_id"`
+	IssuedAt          pgtype.Timestamptz `json:"issued_at"`
+}
+
+type LearningLesson struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	ModuleID        pgtype.UUID        `json:"module_id"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	LessonType      string             `json:"lesson_type"`
+	Content         *string            `json:"content"`
+	MediaID         pgtype.UUID        `json:"media_id"`
+	DurationMinutes *int32             `json:"duration_minutes"`
+	SortOrder       int32              `json:"sort_order"`
+	IsPublished     bool               `json:"is_published"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type LearningModule struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	Description *string            `json:"description"`
+	SortOrder   int32              `json:"sort_order"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type LearningTrack struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Difficulty   string             `json:"difficulty"`
+	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
+	IsPublished  bool               `json:"is_published"`
+	SortOrder    int32              `json:"sort_order"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type LessonProgress struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	LessonID    pgtype.UUID        `json:"lesson_id"`
+	Status      string             `json:"status"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Medium struct {
 	ID               pgtype.UUID        `json:"id"`
 	TenantID         pgtype.UUID        `json:"tenant_id"`
@@ -658,6 +832,43 @@ type Medium struct {
 	Confirmed        bool               `json:"confirmed"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type MentorReview struct {
+	ID         pgtype.UUID        `json:"id"`
+	SessionID  pgtype.UUID        `json:"session_id"`
+	ReviewerID pgtype.UUID        `json:"reviewer_id"`
+	Rating     int32              `json:"rating"`
+	Comment    *string            `json:"comment"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type MentorSession struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	MentorID    pgtype.UUID        `json:"mentor_id"`
+	MenteeID    pgtype.UUID        `json:"mentee_id"`
+	Status      string             `json:"status"`
+	ScheduledAt pgtype.Timestamptz `json:"scheduled_at"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	Notes       *string            `json:"notes"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type MentorshipProfile struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Bio          *string            `json:"bio"`
+	Skills       []byte             `json:"skills"`
+	Goals        []byte             `json:"goals"`
+	IsMentor     bool               `json:"is_mentor"`
+	IsAvailable  bool               `json:"is_available"`
+	RatingAvg    pgtype.Numeric     `json:"rating_avg"`
+	SessionCount int32              `json:"session_count"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type MvDailyContentStat struct {
@@ -687,6 +898,44 @@ type MvUserEngagementStat struct {
 	ReactionsGiven int64       `json:"reactions_given"`
 	CommentsMade   int64       `json:"comments_made"`
 	Views          int64       `json:"views"`
+}
+
+type NewsletterCampaign struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ListID         pgtype.UUID        `json:"list_id"`
+	Subject        string             `json:"subject"`
+	HtmlBody       string             `json:"html_body"`
+	Status         string             `json:"status"`
+	ScheduledAt    pgtype.Timestamptz `json:"scheduled_at"`
+	SentAt         pgtype.Timestamptz `json:"sent_at"`
+	RecipientCount int32              `json:"recipient_count"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type NewsletterList struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Name        string             `json:"name"`
+	Description *string            `json:"description"`
+	IsDefault   bool               `json:"is_default"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type NewsletterListSubscriber struct {
+	ListID       pgtype.UUID `json:"list_id"`
+	SubscriberID pgtype.UUID `json:"subscriber_id"`
+}
+
+type NewsletterSubscriber struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Email          string             `json:"email"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Status         string             `json:"status"`
+	SubscribedAt   pgtype.Timestamptz `json:"subscribed_at"`
+	UnsubscribedAt pgtype.Timestamptz `json:"unsubscribed_at"`
 }
 
 type Notification struct {
@@ -758,6 +1007,18 @@ type OnboardingState struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type OnboardingTemplate struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Name        string             `json:"name"`
+	Description *string            `json:"description"`
+	Steps       []byte             `json:"steps"`
+	IsActive    bool               `json:"is_active"`
+	IsSystem    bool               `json:"is_system"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type OrganizationBoost struct {
 	ID             pgtype.UUID        `json:"id"`
 	TenantID       pgtype.UUID        `json:"tenant_id"`
@@ -768,6 +1029,29 @@ type OrganizationBoost struct {
 	StartDate      pgtype.Timestamptz `json:"start_date"`
 	EndDate        pgtype.Timestamptz `json:"end_date"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type PageBuilderPage struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	Description *string            `json:"description"`
+	LayoutData  []byte             `json:"layout_data"`
+	Status      string             `json:"status"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type PasswordResetToken struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	TokenHash string             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type Payment struct {
@@ -916,6 +1200,15 @@ type ProfessionalVerifier struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type PushSubscription struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Endpoint  string             `json:"endpoint"`
+	P256dh    string             `json:"p256dh"`
+	AuthKey   string             `json:"auth_key"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type Reaction struct {
 	TenantID    pgtype.UUID        `json:"tenant_id"`
 	EntityType  string             `json:"entity_type"`
@@ -934,6 +1227,18 @@ type ReactionType struct {
 	Position  int32              `json:"position"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Referral struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Code        string             `json:"code"`
+	ReferrerID  pgtype.UUID        `json:"referrer_id"`
+	RefereeID   pgtype.UUID        `json:"referee_id"`
+	Status      string             `json:"status"`
+	QualifiedAt pgtype.Timestamptz `json:"qualified_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
 }
 
 type RefreshToken struct {
@@ -1035,6 +1340,16 @@ type SpaceMember struct {
 	TenantID pgtype.UUID        `json:"tenant_id"`
 	Role     string             `json:"role"`
 	JoinedAt pgtype.Timestamptz `json:"joined_at"`
+}
+
+type SpaceModerator struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	SpaceID          pgtype.UUID        `json:"space_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	AssignedBy       string             `json:"assigned_by"`
+	AssignedByUserID pgtype.UUID        `json:"assigned_by_user_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 type SpacePermissionPreset struct {
@@ -1204,6 +1519,17 @@ type TotpCredential struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Translation struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Locale    string             `json:"locale"`
+	Key       string             `json:"key"`
+	Value     string             `json:"value"`
+	Context   *string            `json:"context"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type User struct {
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
@@ -1232,13 +1558,14 @@ type UserDmSetting struct {
 }
 
 type UserGroup struct {
-	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
-	Name      string             `json:"name"`
-	Slug      string             `json:"slug"`
-	IsSystem  bool               `json:"is_system"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	Name               string             `json:"name"`
+	Slug               string             `json:"slug"`
+	IsSystem           bool               `json:"is_system"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	MaxSpacesCreatable int32              `json:"max_spaces_creatable"`
 }
 
 type UserGroupMembership struct {
@@ -1247,6 +1574,17 @@ type UserGroupMembership struct {
 	UserID    pgtype.UUID        `json:"user_id"`
 	GroupID   pgtype.UUID        `json:"group_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type UserGroupPromotion struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	SourceGroupID pgtype.UUID        `json:"source_group_id"`
+	TargetGroupID pgtype.UUID        `json:"target_group_id"`
+	TriggerType   string             `json:"trigger_type"`
+	TriggerValue  []byte             `json:"trigger_value"`
+	IsActive      bool               `json:"is_active"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type UserPreference struct {
@@ -1305,6 +1643,31 @@ type WalletSetting struct {
 	PointsToCreditsRate *int32             `json:"points_to_credits_rate"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WebhookDelivery struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	EndpointID  pgtype.UUID        `json:"endpoint_id"`
+	EventID     pgtype.UUID        `json:"event_id"`
+	EventType   string             `json:"event_type"`
+	Payload     []byte             `json:"payload"`
+	Status      string             `json:"status"`
+	Attempts    int32              `json:"attempts"`
+	LastError   *string            `json:"last_error"`
+	DeliveredAt pgtype.Timestamptz `json:"delivered_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type WebhookEndpoint struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	Url        string             `json:"url"`
+	Secret     string             `json:"secret"`
+	EventTypes []string           `json:"event_types"`
+	Status     string             `json:"status"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WsTicket struct {

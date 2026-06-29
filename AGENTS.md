@@ -10,6 +10,9 @@ Read this in full before starting any task. For why a decision was made, see `ai
 
 JapaConnect is a community platform for the Nigerian diaspora and Nigerians planning to relocate abroad. Repository: `github.com/jedafe/japa`.
 
+## Sudo Credential
+- sudo credentials → `.sudo`
+
 ## Tech Stack — Pinned Versions
 
 Pin these exactly in `go.mod`, `package.json`, and `docker-compose.yml`. Do not silently drift to "latest" in CI — bump deliberately and update this file in the same PR.

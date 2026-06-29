@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let title = $state('');
 	let message = $state('');
@@ -10,12 +11,12 @@
 	let resultType = $state<'success' | 'error'>('success');
 
 	const scopes = [
-		{ value: 'all', label: 'All Users' },
-		{ value: 'group:moderator', label: 'Moderators' },
-		{ value: 'group:admin', label: 'Admins' },
-		{ value: 'geo:NG', label: 'Nigeria' },
-		{ value: 'geo:US', label: 'United States' },
-		{ value: 'geo:GB', label: 'United Kingdom' }
+		{ value: 'all', label: t('broadcast.audiences.all') },
+		{ value: 'group:moderator', label: t('broadcast.audiences.moderators') },
+		{ value: 'group:admin', label: t('broadcast.audiences.admins') },
+		{ value: 'geo:NG', label: t('broadcast.audiences.nigeria') },
+		{ value: 'geo:US', label: t('broadcast.audiences.us') },
+		{ value: 'geo:GB', label: t('broadcast.audiences.uk') }
 	];
 
 	async function sendBroadcast() {
@@ -33,13 +34,13 @@
 				}
 			});
 			resultType = 'success';
-			resultMsg = scheduledAt ? 'Broadcast scheduled' : 'Broadcast sent';
+			resultMsg = scheduledAt ? t('broadcast.scheduled') : t('broadcast.sent');
 			title = '';
 			message = '';
 			scheduledAt = '';
 		} catch {
 			resultType = 'error';
-			resultMsg = 'Failed to send broadcast';
+			resultMsg = t('broadcast.error');
 		} finally {
 			sending = false;
 		}
@@ -50,37 +51,37 @@
 	<title>Broadcast — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Notification Broadcast</h1>
-<p class="mb-6 text-sm" style="color: var(--color-muted)">Send targeted notifications with optional scheduling</p>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('broadcast.title')}</h1>
+<p class="mb-6 text-sm" style="color: var(--color-muted)">{t('broadcast.description')}</p>
 
 <div class="mx-auto max-w-2xl rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
 	<div class="space-y-4">
 		<div>
-			<label for="bc-title" class="mb-1 block text-sm font-medium">Title</label>
+			<label for="bc-title" class="mb-1 block text-sm font-medium">{t('broadcast.title_label')}</label>
 			<input
 				id="bc-title"
 				type="text"
 				class="w-full rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-background)"
-				placeholder="Notification title"
+				placeholder={t('broadcast.title_placeholder')}
 				bind:value={title}
 			/>
 		</div>
 
 		<div>
-			<label for="bc-message" class="mb-1 block text-sm font-medium">Message</label>
+			<label for="bc-message" class="mb-1 block text-sm font-medium">{t('broadcast.message')}</label>
 			<textarea
 				id="bc-message"
 				class="w-full rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-background)"
 				rows="4"
-				placeholder="Notification body"
+				placeholder={t('broadcast.message_placeholder')}
 				bind:value={message}
 			></textarea>
 		</div>
 
 		<div>
-			<label for="bc-target" class="mb-1 block text-sm font-medium">Target Audience</label>
+			<label for="bc-target" class="mb-1 block text-sm font-medium">{t('broadcast.audience')}</label>
 			<select
 				id="bc-target"
 				class="w-full rounded-md border px-3 py-2 text-sm"
@@ -94,7 +95,7 @@
 		</div>
 
 		<div>
-			<label for="bc-schedule" class="mb-1 block text-sm font-medium">Schedule (optional)</label>
+			<label for="bc-schedule" class="mb-1 block text-sm font-medium">{t('broadcast.schedule')}</label>
 			<input
 				id="bc-schedule"
 				type="datetime-local"
@@ -102,7 +103,7 @@
 				style="border-color: var(--color-border); background-color: var(--color-background)"
 				bind:value={scheduledAt}
 			/>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">Leave empty to send immediately</p>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('broadcast.helper')}</p>
 		</div>
 
 		<div class="flex items-center gap-3 pt-2">
@@ -112,7 +113,7 @@
 				disabled={sending || !title || !message}
 				onclick={sendBroadcast}
 			>
-				{sending ? 'Sending...' : scheduledAt ? 'Schedule Broadcast' : 'Send Now'}
+				{sending ? t('broadcast.sending') : scheduledAt ? t('broadcast.schedule_btn') : t('broadcast.send_now')}
 			</button>
 			{#if resultMsg}
 				<span class="text-sm font-medium" style="color: {resultType === 'success' ? 'var(--color-success)' : 'var(--color-danger)'}">{resultMsg}</span>

@@ -3,6 +3,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type AuditEntry = {
 		id: string;
@@ -80,7 +81,7 @@
 	onMount(load);
 </script>
 
-<PageHeader title="Audit Log" description="Append-only system audit trail (super_admin only)" />
+<PageHeader title={t('audit.title')} description={t('audit.description')} />
 
 {#if !apiAvailable}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">

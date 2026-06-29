@@ -345,6 +345,33 @@ func (q *Queries) IsIPBlocked(ctx context.Context, arg IsIPBlockedParams) (bool,
 	return blocked, err
 }
 
+const listAllUserBlocks = `-- name: ListAllUserBlocks :many
+SELECT blocker_id, blocked_id, created_at
+FROM user_blocks
+ORDER BY created_at DESC
+LIMIT $1
+`
+
+func (q *Queries) ListAllUserBlocks(ctx context.Context, limit int32) ([]UserBlock, error) {
+	rows, err := q.db.Query(ctx, listAllUserBlocks, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UserBlock
+	for rows.Next() {
+		var i UserBlock
+		if err := rows.Scan(&i.BlockerID, &i.BlockedID, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCensoredWords = `-- name: ListCensoredWords :many
 SELECT id, tenant_id, pattern, action, replacement, created_at
 FROM censored_words

@@ -197,3 +197,31 @@ WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id;
 SELECT COUNT(*) AS count
 FROM space_members
 WHERE space_id = @space_id AND tenant_id = @tenant_id;
+
+-- =====================
+-- Space Moderators
+-- =====================
+
+-- name: AssignSpaceModerator :exec
+INSERT INTO space_moderators (tenant_id, space_id, user_id, assigned_by, assigned_by_user_id)
+VALUES (@tenant_id, @space_id, @user_id, @assigned_by, sqlc.narg(assigned_by_user_id))
+ON CONFLICT (tenant_id, space_id, user_id) DO NOTHING;
+
+-- name: RemoveSpaceModerator :exec
+DELETE FROM space_moderators
+WHERE space_id = @space_id AND user_id = @user_id;
+
+-- name: ListSpaceModerators :many
+SELECT sm.id, sm.tenant_id, sm.space_id, sm.user_id, sm.assigned_by,
+       sm.assigned_by_user_id, sm.created_at,
+       u.username AS user_username, up.display_name AS user_display_name
+FROM space_moderators sm
+JOIN users u ON u.id = sm.user_id
+LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+WHERE sm.space_id = @space_id
+ORDER BY sm.created_at ASC;
+
+-- name: GetSpaceModerator :one
+SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
+FROM space_moderators
+WHERE space_id = @space_id AND user_id = @user_id;

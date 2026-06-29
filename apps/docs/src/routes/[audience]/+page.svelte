@@ -1,29 +1,30 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { FileText, ChevronRight } from 'lucide-svelte';
 
 	const { data } = $props<{ data: { pages: Array<{ id: string; title: string; slug: string; review_status: string; position: number }> } }>();
 
 	const sectionLabels: Record<string, string> = {
-		users: 'User Guide',
-		premium: 'Premium',
-		organizations: 'Organizations',
-		moderators: 'Moderators',
-		api: 'API Reference',
-		admin: 'Admin',
+		users: 'sections.user_guide',
+		premium: 'sections.premium',
+		organizations: 'sections.organizations',
+		moderators: 'sections.moderators',
+		api: 'sections.api_reference',
+		admin: 'sections.admin',
 	};
 
 	let currentAudience = $derived(page.params.audience ?? '');
-	let label = $derived(sectionLabels[currentAudience] ?? currentAudience);
+	let labelKey = $derived(sectionLabels[currentAudience] ?? currentAudience);
 </script>
 
 <svelte:head>
-	<title>{label} — JapaConnect Docs</title>
+	<title>{$t(labelKey)} — JapaConnect Docs</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl">
-	<h1 class="text-3xl font-bold tracking-tight">{label}</h1>
-	<p class="mt-2 text-sm" style="color: var(--color-muted)">Documentation for the {label.toLowerCase()} section.</p>
+	<h1 class="text-3xl font-bold tracking-tight">{$t(labelKey)}</h1>
+	<p class="mt-2 text-sm" style="color: var(--color-muted)">{$t('audience.description').replace('{audience}', t(labelKey).toLowerCase())}</p>
 
 	<div class="mt-8 space-y-3">
 		{#each data.pages as docPage}
@@ -39,7 +40,7 @@
 				<ChevronRight class="h-4 w-4" style="color: var(--color-muted)" />
 			</a>
 		{:else}
-			<p class="py-8 text-center" style="color: var(--color-muted)">No documentation pages available yet.</p>
+			<p class="py-8 text-center" style="color: var(--color-muted)">{$t('audience.empty')}</p>
 		{/each}
 	</div>
 </div>

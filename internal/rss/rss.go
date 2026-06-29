@@ -156,6 +156,41 @@ func HandleTagFeed(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
+// HandleUserFeed serves a user-specific RSS feed at /users/{username}/feed.xml.
+func HandleUserFeed(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		username := chi.URLParam(r, "username")
+		if username == "" {
+			http.Error(w, "missing username", http.StatusBadRequest)
+			return
+		}
+
+		tenantID := tenant.IDFromContext(r.Context())
+		if tenantID == (pgtype.UUID{}) {
+			http.Error(w, "tenant unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		rows, err := pool.Query(r.Context(), `
+			SELECT c.title, c.slug, LEFT(c.body, 200), c.created_at, u.username
+			FROM contents c
+			JOIN users u ON c.author_user_id = u.id
+			WHERE c.tenant_id = $1 AND c.status = 'published' AND u.username = $2
+			ORDER BY c.created_at DESC
+			LIMIT 20`, tenantID, username)
+		if err != nil {
+			slog.Error("rss: query user feed", "username", username, "error", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		items := scanFeedItems(rows)
+		serveRSSFeed(w, "JapaConnect — "+username, "https://japaconnect.com/users/"+username,
+			"Posts by "+username, items)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

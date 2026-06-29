@@ -9,8 +9,10 @@
 		Bot,
 		Megaphone,
 		Menu,
-		X
+		X,
+		Languages
 	} from 'lucide-svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let {
 		currentPath = '/'
@@ -21,14 +23,15 @@
 	let open = $state(false);
 
 	const nav = [
-		{ label: 'Dashboard', href: '/', icon: LayoutDashboard },
-		{ label: 'Users', href: '/users', icon: Users },
-		{ label: 'Moderation', href: '/moderation', icon: ShieldCheck },
-		{ label: 'Bots', href: '/bots', icon: Bot },
-		{ label: 'Advertising', href: '/ads', icon: Megaphone },
-		{ label: 'Tickets', href: '/tickets', icon: Ticket },
-		{ label: 'Broadcast', href: '/broadcast', icon: Radio },
-		{ label: 'Settings', href: '/settings', icon: Settings }
+		{ labelKey: 'nav.dashboard', href: '/', icon: LayoutDashboard },
+		{ labelKey: 'nav.users', href: '/users', icon: Users },
+		{ labelKey: 'nav.moderation', href: '/moderation', icon: ShieldCheck },
+		{ labelKey: 'nav.bots', href: '/bots', icon: Bot },
+		{ labelKey: 'nav.advertising', href: '/ads', icon: Megaphone },
+		{ labelKey: 'nav.tickets', href: '/tickets', icon: Ticket },
+		{ labelKey: 'nav.broadcast', href: '/broadcast', icon: Radio },
+		{ labelKey: 'nav.translations', href: '/translations', icon: Languages },
+		{ labelKey: 'nav.settings', href: '/settings', icon: Settings }
 	];
 </script>
 
@@ -37,7 +40,7 @@
 	class="fixed left-4 top-4 z-50 rounded-md p-2 md:hidden"
 	style="background-color: var(--color-surface); border: 1px solid var(--color-border)"
 	onclick={() => (open = !open)}
-	aria-label={open ? 'Close menu' : 'Open menu'}
+	aria-label={open ? t('common.close_menu') : t('common.open_menu')}
 >
 	{#if open}
 		<X class="h-5 w-5" />
@@ -54,7 +57,7 @@
 	class:-translate-x-full={!open}
 >
 	<div class="flex h-14 items-center border-b px-4" style="border-color: var(--color-border)">
-		<span class="text-sm font-bold tracking-wide uppercase" style="color: var(--color-primary)">JapaAdmin</span>
+		<span class="text-sm font-bold tracking-wide uppercase" style="color: var(--color-primary)">{t('admin.brand')}</span>
 	</div>
 	<nav class="flex-1 space-y-1 p-3">
 		{#each nav as item}
@@ -64,19 +67,19 @@
 				onclick={() => (open = false)}
 			>
 				<item.icon class="h-4 w-4" style="color: var(--color-muted)" />
-				{item.label}
+				{t(item.labelKey)}
 			</a>
 		{/each}
 	</nav>
 	<div class="border-t p-3" style="border-color: var(--color-border)">
-		<p class="text-xs" style="color: var(--color-muted)">admin</p>
+		<p class="text-xs" style="color: var(--color-muted)">{t('admin.footer')}</p>
 	</div>
 </aside>
 
 {#if open}
 	<button
 		class="fixed inset-0 z-30 bg-black/50 md:hidden"
-		aria-label="Close sidebar"
+		aria-label={t('common.close_menu')}
 		onclick={() => (open = false)}
 	></button>
 {/if}

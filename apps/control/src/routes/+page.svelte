@@ -4,6 +4,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type HealthGroup = {
 		name: string;
@@ -12,7 +13,7 @@
 
 	let groups = $state<HealthGroup[]>([
 		{
-			name: 'Infrastructure',
+			name: t('dashboard.groups.infra'),
 			items: [
 				{ name: 'PostgreSQL', status: 'healthy' },
 				{ name: 'Valkey', status: 'healthy' },
@@ -21,7 +22,7 @@
 			]
 		},
 		{
-			name: 'Application',
+			name: t('dashboard.groups.app'),
 			items: [
 				{ name: 'API Server', status: 'healthy' },
 				{ name: 'imgproxy', status: 'healthy' },
@@ -29,14 +30,14 @@
 			]
 		},
 		{
-			name: 'Background Processing',
+			name: t('dashboard.groups.background'),
 			items: [
 				{ name: 'Asynq Workers', status: 'healthy' },
 				{ name: 'Queue Depth', status: 'healthy' }
 			]
 		},
 		{
-			name: 'Real-time',
+			name: t('dashboard.groups.realtime'),
 			items: [
 				{ name: 'WebSocket Hub', status: 'healthy' },
 				{ name: 'SSE Connections', status: 'healthy' }
@@ -84,32 +85,32 @@
 	});
 </script>
 
-<PageHeader title="Dashboard" description="System health overview with live polling" />
+<PageHeader title={t('dashboard.title')} description={t('dashboard.description')} />
 
 {#if !apiAvailable}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">
-		Analytics API is not available. Showing default health state.
+		{t('dashboard.analytics_warning')}
 	</div>
 {/if}
 
 <div class="mb-4 flex items-center justify-between">
-	<p class="text-xs" style="color: var(--color-muted)">Last refresh: {lastRefresh}</p>
+	<p class="text-xs" style="color: var(--color-muted)">{t('dashboard.last_refresh').replace('{time}', lastRefresh)}</p>
 	<button
 		class="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 		style="border-color: var(--color-border)"
 		onclick={refresh}
 	>
-		Refresh
+		{t('common.refresh')}
 	</button>
 </div>
 
 <!-- Metrics row -->
 <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-	<MetricCard label="Throughput" value={throughput} subtitle="req/s" />
-	<MetricCard label="Latency p99" value={latency} subtitle="ms" />
-	<MetricCard label="Error Rate" value={errorRate} subtitle="%" />
-	<MetricCard label="Queue Depth" value={queueDepth} subtitle="pending tasks" />
-	<MetricCard label="WS Connections" value={wsConnections} subtitle="active" />
+	<MetricCard label={t('dashboard.metrics.throughput')} value={throughput} subtitle={t('dashboard.units.req_s')} />
+	<MetricCard label={t('dashboard.metrics.latency')} value={latency} subtitle={t('dashboard.units.ms')} />
+	<MetricCard label={t('dashboard.metrics.error_rate')} value={errorRate} subtitle={t('dashboard.units.percent')} />
+	<MetricCard label={t('dashboard.metrics.queue_depth')} value={queueDepth} subtitle={t('dashboard.units.pending')} />
+	<MetricCard label={t('dashboard.metrics.ws_connections')} value={wsConnections} subtitle={t('dashboard.units.active')} />
 </div>
 
 <!-- Health groups -->
