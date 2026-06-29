@@ -36,6 +36,7 @@ const (
 type Service struct {
 	store *Store
 	db    *db.DB
+	s3    *S3Client
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -43,5 +44,6 @@ func NewService(database *db.DB) *Service {
 	return &Service{
 		store: NewStore(gen.New(database.Reader), gen.New(database.Writer), database.Reader, database.Writer),
 		db:    database,
+		s3:    NewS3Client(),
 	}
 }
