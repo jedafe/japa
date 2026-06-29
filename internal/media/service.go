@@ -83,9 +83,20 @@ func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtyp
 		return UploadResult{}, fmt.Errorf("initiating upload: %w", err)
 	}
 
-	// TODO: generate actual MinIO presigned URL via MinIO client.
-	presignedURL := fmt.Sprintf("/minio/upload/%s", storagePath)
+	// Generate presigned URL for client upload.
+	// Uses S3 client if configured, otherwise falls back to local path.
 	expiresAt := time.Now().Add(15 * time.Minute)
+	presignedURL := fmt.Sprintf("/minio/upload/%s", storagePath) // fallback
+
+	if s.s3 != nil {
+		url, err := s.s3.PresignPut(ctx, storagePath, 15*time.Minute)
+		if err != nil {
+			slog.Warn("s3 presign failed, using fallback path",
+				"storage_path", storagePath, "error", err)
+		} else {
+			presignedURL = url
+		}
+	}
 
 	return UploadResult{
 		MediaID:      m.ID.String(),
@@ -140,29 +151,61 @@ func (s *Service) ConfirmUpload(ctx context.Context, tenantID, mediaID pgtype.UU
 // smaller than n bytes (which is fine — http.DetectContentType works with
 // as little as 1 byte for some formats).
 func (s *Service) fetchFileHeader(ctx context.Context, bucket, path string) ([]byte, error) {
-	// TODO: Replace with real MinIO GetObject call when the client is wired.
-	// For now, attempt a local filesystem read from the storage path for
-	// development environments. In production this will hit the S3-compatible
-	// object storage API.
-	//
-	// Pattern: the presigned URL points to /minio/upload/{path}, so the
-	// actual object lives at /{bucket}/{path} in the MinIO root. During
-	// local dev with weed/MinIO, files land in the working directory.
 	const headerSize = 512
 
-	// Try local filesystem first (development).
+	// Try S3 client first if configured.
+	if s.s3 != nil {
+		return s.fetchFromS3(ctx, bucket, path, headerSize)
+	}
+
+	// Fallback to local filesystem (development).
+	return s.fetchFromLocal(bucket, path, headerSize)
+}
+
+// fetchFromS3 reads the first n bytes from S3-compatible storage.
+func (s *Service) fetchFromS3(ctx context.Context, bucket, path string, n int64) ([]byte, error) {
+	// Construct the S3 GET URL
+	objectURL := fmt.Sprintf("%s/%s/%s", s.s3.endpoint, bucket, path)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, objectURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating s3 request: %w", err)
+	}
+	req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", n-1))
+
+	resp, err := s.s3.httpClient.Do(req)
+	if err != nil {
+		// Fall back to local filesystem if S3 is unreachable
+		return s.fetchFromLocal(bucket, path, n)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return s.fetchFromLocal(bucket, path, n)
+	}
+
+	buf := make([]byte, n)
+	read, err := io.ReadAtLeast(resp.Body, buf, 1)
+	if err != nil {
+		return nil, fmt.Errorf("reading s3 object header: %w", err)
+	}
+	return buf[:read], nil
+}
+
+// fetchFromLocal reads the first n bytes from local filesystem (development).
+func (s *Service) fetchFromLocal(bucket, path string, n int64) ([]byte, error) {
 	f, err := openLocalFile(bucket, path)
 	if err != nil {
 		return nil, fmt.Errorf("open file %s/%s: %w", bucket, path, err)
 	}
 	defer f.Close()
 
-	buf := make([]byte, headerSize)
-	n, err := f.Read(buf)
+	buf := make([]byte, n)
+	read, err := f.Read(buf)
 	if err != nil && err != io.EOF {
 		return nil, fmt.Errorf("read file header: %w", err)
 	}
-	return buf[:n], nil
+	return buf[:read], nil
 }
 
 // openLocalFile attempts to open a file from the local filesystem for

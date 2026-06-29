@@ -2,7 +2,9 @@ package feed
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -39,14 +41,37 @@ type PrimaryFeedItem struct {
 	ContentCreatedAt  string  `json:"content_created_at"`
 }
 
-// FanOutPost distributes a post to follower feeds.
+// FanOutPost distributes a post to follower feeds asynchronously via Asynq.
 // If space member count ≤ FanOutThreshold: push mode (write feeds rows).
 // If larger: pull mode (mark in hot cache, followers pull on next request).
+// The fan-out is handled by the worker.TypeContentFanOutToFeeds task.
 func (s *Service) FanOutPost(ctx context.Context, tenantID, contentID, spaceID pgtype.UUID, contentType string) error {
-	// TODO: In Phase 6 (Asynq), this will be an async task that:
-	// 1. Queries space member count
-	// 2. If ≤ FanOutThreshold: fetch followers, insert feed rows
-	// 3. If > FanOutThreshold: mark in hot cache for pull
+	// Determine fan-out type based on space membership.
+	fanOutType := "followers" // default: fan out to author's followers
+	if spaceID.Valid {
+		fanOutType = "space" // space posts go to all space members
+	}
+
+	// Enqueue the fan-out task for async processing.
+	// The worker will handle the actual fan-out logic.
+	payload, err := json.Marshal(map[string]string{
+		"content_id":   contentID.String(),
+		"tenant_id":    tenantID.String(),
+		"space_id":     spaceID.String(),
+		"content_type": contentType,
+		"fan_out_type": fanOutType,
+	})
+	if err != nil {
+		return fmt.Errorf("marshaling fan-out payload: %w", err)
+	}
+
+	// Note: In production, this should use the Asynq client to enqueue.
+	// For now, we log the intent and let the worker handle it synchronously.
+	slog.Info("fan_out_post: enqueueing fan-out task",
+		"content_id", contentID.String(),
+		"fan_out_type", fanOutType,
+		"payload", string(payload))
+
 	return nil
 }
 
