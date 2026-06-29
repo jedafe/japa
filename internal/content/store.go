@@ -366,18 +366,21 @@ func (s *Service) IsContentPinned(ctx context.Context, spaceID, contentID pgtype
 // Reactions
 // ---------------------------------------------------------------------------
 
-// ListReactionTypes returns all reaction types, ordered by position.
-func (s *Service) ListReactionTypes(ctx context.Context) ([]gen.ReactionType, error) {
-	types, err := s.read.ListReactionTypes(ctx)
+// ListReactionTypes returns all reaction types for a tenant, ordered by position.
+func (s *Service) ListReactionTypes(ctx context.Context, tenantID pgtype.UUID) ([]gen.ReactionType, error) {
+	types, err := s.read.ListReactionTypes(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing reaction types: %w", err)
 	}
 	return types, nil
 }
 
-// GetReactionType returns a single reaction type by key.
-func (s *Service) GetReactionType(ctx context.Context, key string) (gen.ReactionType, error) {
-	rt, err := s.read.GetReactionType(ctx, key)
+// GetReactionType returns a single reaction type by tenant and key.
+func (s *Service) GetReactionType(ctx context.Context, tenantID pgtype.UUID, key string) (gen.ReactionType, error) {
+	rt, err := s.read.GetReactionType(ctx, gen.GetReactionTypeParams{
+		TenantID: tenantID,
+		Key:      key,
+	})
 	if err != nil {
 		return gen.ReactionType{}, fmt.Errorf("getting reaction type: %w", err)
 	}
@@ -385,9 +388,10 @@ func (s *Service) GetReactionType(ctx context.Context, key string) (gen.Reaction
 }
 
 // CreateReactionType creates a new reaction type with the given key, emoji,
-// label, and position.
-func (s *Service) CreateReactionType(ctx context.Context, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
+// label, and position for a specific tenant.
+func (s *Service) CreateReactionType(ctx context.Context, tenantID pgtype.UUID, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
 	rt, err := s.write.CreateReactionType(ctx, gen.CreateReactionTypeParams{
+		TenantID: tenantID,
 		Key:      key,
 		Emoji:    emoji,
 		Label:    label,
@@ -400,13 +404,14 @@ func (s *Service) CreateReactionType(ctx context.Context, key, emoji, label stri
 	return rt, nil
 }
 
-// UpdateReactionType updates an existing reaction type by key.
-func (s *Service) UpdateReactionType(ctx context.Context, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
+// UpdateReactionType updates an existing reaction type by tenant and key.
+func (s *Service) UpdateReactionType(ctx context.Context, tenantID pgtype.UUID, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
 	rt, err := s.write.UpdateReactionType(ctx, gen.UpdateReactionTypeParams{
 		Emoji:    emoji,
 		Label:    label,
 		Enabled:  enabled,
 		Position: position,
+		TenantID: tenantID,
 		Key:      key,
 	})
 	if err != nil {
@@ -415,10 +420,13 @@ func (s *Service) UpdateReactionType(ctx context.Context, key, emoji, label stri
 	return rt, nil
 }
 
-// DeleteReactionType removes a reaction type by key. Existing reactions
+// DeleteReactionType removes a reaction type by tenant and key. Existing reactions
 // referencing the key are cascade-deleted by the FK constraint.
-func (s *Service) DeleteReactionType(ctx context.Context, key string) error {
-	if err := s.write.DeleteReactionType(ctx, key); err != nil {
+func (s *Service) DeleteReactionType(ctx context.Context, tenantID pgtype.UUID, key string) error {
+	if err := s.write.DeleteReactionType(ctx, gen.DeleteReactionTypeParams{
+		TenantID: tenantID,
+		Key:      key,
+	}); err != nil {
 		return fmt.Errorf("deleting reaction type: %w", err)
 	}
 	return nil
@@ -426,8 +434,9 @@ func (s *Service) DeleteReactionType(ctx context.Context, key string) error {
 
 // AddReaction adds a reaction from a user to an entity. Idempotent — if the
 // user already reacted with the same key, nothing changes (ON CONFLICT DO NOTHING).
-func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, userID pgtype.UUID, reactionKey string) (gen.Reaction, error) {
+func (s *Service) AddReaction(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID, userID pgtype.UUID, reactionKey string) (gen.Reaction, error) {
 	reaction, err := s.write.AddReaction(ctx, gen.AddReactionParams{
+		TenantID:    tenantID,
 		EntityType:  entityType,
 		EntityID:    entityID,
 		UserID:      userID,
@@ -440,8 +449,9 @@ func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, 
 }
 
 // RemoveReaction removes a user's reaction from an entity.
-func (s *Service) RemoveReaction(ctx context.Context, entityType string, entityID, userID pgtype.UUID, reactionKey string) error {
+func (s *Service) RemoveReaction(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID, userID pgtype.UUID, reactionKey string) error {
 	if err := s.write.RemoveReaction(ctx, gen.RemoveReactionParams{
+		TenantID:    tenantID,
 		EntityType:  entityType,
 		EntityID:    entityID,
 		UserID:      userID,
@@ -453,8 +463,9 @@ func (s *Service) RemoveReaction(ctx context.Context, entityType string, entityI
 }
 
 // ListReactionsByEntity returns all reactions for a given entity.
-func (s *Service) ListReactionsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.Reaction, error) {
+func (s *Service) ListReactionsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.Reaction, error) {
 	reactions, err := s.read.ListReactionsByEntity(ctx, gen.ListReactionsByEntityParams{
+		TenantID:   tenantID,
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -465,8 +476,9 @@ func (s *Service) ListReactionsByEntity(ctx context.Context, entityType string, 
 }
 
 // CountReactionsByEntity returns reaction counts grouped by reaction key.
-func (s *Service) CountReactionsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CountReactionsByEntityRow, error) {
+func (s *Service) CountReactionsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.CountReactionsByEntityRow, error) {
 	counts, err := s.read.CountReactionsByEntity(ctx, gen.CountReactionsByEntityParams{
+		TenantID:   tenantID,
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -477,8 +489,9 @@ func (s *Service) CountReactionsByEntity(ctx context.Context, entityType string,
 }
 
 // GetUserReactions returns all reactions a specific user has on an entity.
-func (s *Service) GetUserReactions(ctx context.Context, entityType string, entityID, userID pgtype.UUID) ([]gen.Reaction, error) {
+func (s *Service) GetUserReactions(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID, userID pgtype.UUID) ([]gen.Reaction, error) {
 	reactions, err := s.read.GetUserReactions(ctx, gen.GetUserReactionsParams{
+		TenantID:   tenantID,
 		EntityType: entityType,
 		EntityID:   entityID,
 		UserID:     userID,

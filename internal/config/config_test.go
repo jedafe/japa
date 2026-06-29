@@ -77,8 +77,8 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 		{"DatabaseURL default", cfg.DatabaseURL, "postgresql://japa:japa@localhost:5432/japa?sslmode=disable"},
 		{"RedisAddr default", cfg.RedisAddr, "localhost:6379"},
 		{"MeilisearchURL default", cfg.MeilisearchURL, "http://localhost:7700"},
-		{"ImgproxyBaseURL default", cfg.ImgproxyBaseURL, "http://localhost:8080"},
-		{"HonchoURL default", cfg.HonchoURL, "http://localhost:8000"},
+		{"ImgproxyBaseURL default", cfg.ImgproxyBaseURL, "http://localhost:8099"},
+		{"HonchoURL default", cfg.HonchoURL, "http://localhost:8001"},
 		{"ReleaseSHA default", cfg.ReleaseSHA, "dev"},
 		{"Env default", cfg.Env, "development"},
 		{"Port default", cfg.Port, "8080"},
@@ -96,10 +96,10 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 // TestIsProduction verifies the IsProduction and IsDevelopment helpers.
 func TestIsProduction(t *testing.T) {
 	tests := []struct {
-		name         string
-		env          string
-		wantProd     bool
-		wantDev      bool
+		name     string
+		env      string
+		wantProd bool
+		wantDev  bool
 	}{
 		{"production lowercase", "production", true, false},
 		{"production uppercase", "PRODUCTION", true, false},

@@ -43,6 +43,20 @@ const (
 	AuthorTypeProfile = "professional_profile"
 )
 
+// Relocation status values.
+const (
+	RelocationStatusPlanned     = "planned"
+	RelocationStatusInProgress  = "in_progress"
+	RelocationStatusCompleted   = "completed"
+)
+
+// Verifier status values.
+const (
+	VerifierStatusPending  = "pending"
+	VerifierStatusVerified = "verified"
+	VerifierStatusRejected = "rejected"
+)
+
 // Pagination defaults.
 const (
 	DefaultPageSize = 20
@@ -84,6 +98,30 @@ var validVerificationTypes = map[string]bool{
 // IsValidVerificationType returns true if the given type is a supported verification type.
 func IsValidVerificationType(t string) bool {
 	return validVerificationTypes[t]
+}
+
+// validRelocationStatuses is the set of all supported relocation status values.
+var validRelocationStatuses = map[string]bool{
+	RelocationStatusPlanned:    true,
+	RelocationStatusInProgress: true,
+	RelocationStatusCompleted:  true,
+}
+
+// IsValidRelocationStatus returns true if the given status is a supported relocation status.
+func IsValidRelocationStatus(s string) bool {
+	return validRelocationStatuses[s]
+}
+
+// validVerifierStatuses is the set of all supported verifier status values.
+var validVerifierStatuses = map[string]bool{
+	VerifierStatusPending:  true,
+	VerifierStatusVerified: true,
+	VerifierStatusRejected: true,
+}
+
+// IsValidVerifierStatus returns true if the given status is a supported verifier status.
+func IsValidVerifierStatus(s string) bool {
+	return validVerifierStatuses[s]
 }
 
 // Service provides professional profile operations with reader/writer pool separation.

@@ -715,3 +715,360 @@ func (h *Handlers) GetAuthorContext(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": ctx})
 }
+
+// ---------------------------------------------------------------------------
+// Relocation Handlers
+// ---------------------------------------------------------------------------
+
+// ListRelocations handles GET /api/v1/professional-profiles/{id}/relocations.
+func (h *Handlers) ListRelocations(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	relocations, err := h.Service.ListRelocations(r.Context(), profileID, tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": relocations})
+}
+
+// CreateRelocation handles POST /api/v1/professional-profiles/{id}/relocations.
+func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	var input struct {
+		Country string `json:"country"`
+		City    string `json:"city"`
+		Status  string `json:"status"`
+		Year    int32  `json:"year"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Country == "" {
+		writeError(w, http.StatusBadRequest, "missing_country", "country is required")
+		return
+	}
+
+	relocation, err := h.Service.CreateRelocation(r.Context(), tenantID, profileID, CreateRelocationInput{
+		Country: input.Country,
+		City:    input.City,
+		Status:  input.Status,
+		Year:    input.Year,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": relocation})
+}
+
+// UpdateRelocation handles PATCH /api/v1/professional-profiles/relocations/{relocationId}.
+func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	relocationID, err := parseUUIDParam(r, "relocationId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_relocation_id", "Invalid relocation ID")
+		return
+	}
+
+	var input struct {
+		Country string `json:"country"`
+		City    string `json:"city"`
+		Status  string `json:"status"`
+		Year    int32  `json:"year"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	relocation, err := h.Service.UpdateRelocation(r.Context(), relocationID, tenantID, UpdateRelocationInput{
+		Country: input.Country,
+		City:    input.City,
+		Status:  input.Status,
+		Year:    input.Year,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": relocation})
+}
+
+// DeleteRelocation handles DELETE /api/v1/professional-profiles/relocations/{relocationId}.
+func (h *Handlers) DeleteRelocation(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	relocationID, err := parseUUIDParam(r, "relocationId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_relocation_id", "Invalid relocation ID")
+		return
+	}
+
+	if err := h.Service.DeleteRelocation(r.Context(), relocationID, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+}
+
+// ---------------------------------------------------------------------------
+// Document Handlers
+// ---------------------------------------------------------------------------
+
+// ListDocuments handles GET /api/v1/professional-profiles/{id}/documents.
+func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	documents, err := h.Service.ListDocuments(r.Context(), profileID, tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": documents})
+}
+
+// CreateDocument handles POST /api/v1/professional-profiles/{id}/documents.
+func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	var input struct {
+		Title        string `json:"title"`
+		DocumentType string `json:"document_type"`
+		Description  string `json:"description"`
+		FileURL      string `json:"file_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Title == "" {
+		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
+		return
+	}
+	if input.DocumentType == "" {
+		writeError(w, http.StatusBadRequest, "missing_document_type", "document_type is required")
+		return
+	}
+
+	document, err := h.Service.CreateDocument(r.Context(), tenantID, profileID, CreateDocumentInput{
+		Title:        input.Title,
+		DocumentType: input.DocumentType,
+		Description:  input.Description,
+		FileURL:      input.FileURL,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": document})
+}
+
+// UpdateDocument handles PATCH /api/v1/professional-profiles/documents/{documentId}.
+func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	documentID, err := parseUUIDParam(r, "documentId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_document_id", "Invalid document ID")
+		return
+	}
+
+	var input struct {
+		Title        string `json:"title"`
+		DocumentType string `json:"document_type"`
+		Description  string `json:"description"`
+		FileURL      string `json:"file_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	document, err := h.Service.UpdateDocument(r.Context(), documentID, tenantID, UpdateDocumentInput{
+		Title:        input.Title,
+		DocumentType: input.DocumentType,
+		Description:  input.Description,
+		FileURL:      input.FileURL,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": document})
+}
+
+// DeleteDocument handles DELETE /api/v1/professional-profiles/documents/{documentId}.
+func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	documentID, err := parseUUIDParam(r, "documentId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_document_id", "Invalid document ID")
+		return
+	}
+
+	if err := h.Service.DeleteDocument(r.Context(), documentID, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+}
+
+// ---------------------------------------------------------------------------
+// Verifier Handlers
+// ---------------------------------------------------------------------------
+
+// ListVerifiers handles GET /api/v1/professional-profiles/{id}/verifiers.
+func (h *Handlers) ListVerifiers(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	verifiers, err := h.Service.ListVerifiers(r.Context(), profileID, tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": verifiers})
+}
+
+// CreateVerifier handles POST /api/v1/professional-profiles/{id}/verifiers.
+func (h *Handlers) CreateVerifier(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	var input struct {
+		UserID string `json:"user_id"`
+		Role   string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.UserID == "" {
+		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
+		return
+	}
+
+	var verifierUserID pgtype.UUID
+	if err := verifierUserID.Scan(input.UserID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id")
+		return
+	}
+
+	verifier, err := h.Service.CreateVerifier(r.Context(), tenantID, profileID, CreateVerifierInput{
+		UserID: verifierUserID,
+		Role:   input.Role,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": verifier})
+}

@@ -829,6 +829,19 @@ type PlatformEvent struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type ProfessionalDocument struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	ProfileID    pgtype.UUID        `json:"profile_id"`
+	Title        string             `json:"title"`
+	DocumentType string             `json:"document_type"`
+	Description  *string            `json:"description"`
+	FileUrl      *string            `json:"file_url"`
+	Verified     bool               `json:"verified"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ProfessionalProfile struct {
 	ID               pgtype.UUID        `json:"id"`
 	TenantID         pgtype.UUID        `json:"tenant_id"`
@@ -880,7 +893,31 @@ type ProfessionalProfileType struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
+type ProfessionalRelocation struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	ProfileID pgtype.UUID        `json:"profile_id"`
+	Country   string             `json:"country"`
+	City      *string            `json:"city"`
+	Status    string             `json:"status"`
+	Year      *int32             `json:"year"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ProfessionalVerifier struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	ProfileID pgtype.UUID        `json:"profile_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Role      *string            `json:"role"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Reaction struct {
+	TenantID    pgtype.UUID        `json:"tenant_id"`
 	EntityType  string             `json:"entity_type"`
 	EntityID    pgtype.UUID        `json:"entity_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
@@ -889,6 +926,7 @@ type Reaction struct {
 }
 
 type ReactionType struct {
+	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Key       string             `json:"key"`
 	Emoji     string             `json:"emoji"`
 	Label     string             `json:"label"`

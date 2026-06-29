@@ -1,5 +1,5 @@
 // Package websocket implements the Real-Time WebSocket system (Section 10).
-// WebSocket hub with Redis pub/sub bridge for multi-instance scaling.
+// WebSocket hub with Valkey pub/sub bridge for multi-instance scaling.
 // Seven event types: notification, presence, typing, space_activity,
 // feed_update, dm_message, moderation_alert.
 // Direct Messaging with conversation threads and message requests.

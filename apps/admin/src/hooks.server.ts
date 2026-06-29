@@ -1,7 +1,15 @@
 import type { Handle, HandleServerError } from '@sveltejs/kit';
+import { building } from '$app/environment';
 import { API_BASE } from '$lib/server/api';
 
 export const handle: Handle = async ({ event, resolve }) => {
+	// During the static build, skip auth so adapter-static can generate the
+	// SPA fallback page without being redirected. In production there is no
+	// server runtime; auth is enforced client-side by the universal layout.
+	if (building) {
+		return resolve(event);
+	}
+
 	const path = event.url.pathname;
 
 	// Allow public paths and static assets through without auth

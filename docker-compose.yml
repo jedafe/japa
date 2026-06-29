@@ -57,38 +57,21 @@ services:
       timeout: 5s
       retries: 10
 
-  # MinIO — S3-compatible object storage for file uploads (avatars, media).
-  minio:
-    image: minio/minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: japa
-      MINIO_ROOT_PASSWORD: japa-secret
+  # SeaweedFS 4.x — S3-compatible object storage for file uploads (Apache 2.0).
+  # `weed server` runs the volume + master servers; -s3 enables the S3 API.
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: weed server -s3 -dir=/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "8333:8333"
+      - "23646:23646"
     volumes:
-      - minio-data:/data
+      - seaweedfs-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8333/status"]
       interval: 5s
       timeout: 5s
       retries: 10
-
-  # MinIO init — creates default buckets on first boot, then exits.
-  minio-init:
-    image: minio/mc
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 japa japa-secret &&
-      mc mb local/japa-uploads --ignore-existing &&
-      mc mb local/japa-avatars --ignore-existing &&
-      mc mb local/japa-media --ignore-existing &&
-      echo 'Buckets created successfully'
-      "
 
   # imgproxy — image processing and resizing (internal only, not exposed).
   imgproxy:
@@ -97,7 +80,36 @@ services:
       IMGPROXY_KEY: ${JC_IMGPROXY_KEY}
       IMGPROXY_SALT: ${JC_IMGPROXY_SALT}
     ports:
-      - "8081:8080"
+      - "8099:8080"
+    restart: unless-stopped
+
+  # Honcho — Plastic Labs AI agent memory service.
+  honcho:
+    image: honcho:latest
+    environment:
+      DATABASE_URL: postgresql://japa:japa@postgres:5432/honcho?sslmode=disable
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # GlitchTip — Sentry-compatible error reporting (self-hosted).
+  glitchtip:
+    image: glitchtip/glitchtip:latest
+    environment:
+      DATABASE_URL: postgresql://japa:japa@postgres:5432/glitchtip?sslmode=disable
+      REDIS_URL: redis://valkey:6379/1
+      SECRET_KEY: ${JC_GLITCHTIP_SECRET_KEY:-dev-secret-key}
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
     restart: unless-stopped
 
   # Mailpit — local development SMTP server with web UI for viewing emails.
@@ -121,7 +133,7 @@ services:
       JC_MEILISEARCH_URL: http://meilisearch:7700
       JC_MEILISEARCH_KEY: ${JC_MEILISEARCH_KEY}
       JC_IMGPROXY_BASE_URL: http://imgproxy:8080
-      JC_HONCHO_URL: http://honcho:8000
+      JC_HONCHO_URL: http://honcho:8001
       JC_RELEASE_SHA: dev
       JC_ENV: development
       JC_PORT: "8080"
@@ -145,8 +157,35 @@ services:
       - go-api
     restart: unless-stopped
 
+  # Control Panel — SvelteKit SPA for internal admin tooling, port 3002.
+  control:
+    build:
+      context: ./apps/control
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    restart: unless-stopped
+
+  # Learn — SvelteKit SSR learning platform, port 3003.
+  learn:
+    build:
+      context: ./apps/learn
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    restart: unless-stopped
+
+  # Docs — SvelteKit SSR documentation site, port 3004.
+  docs:
+    build:
+      context: ./apps/docs
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   valkey-data:
   meili-data:
-  minio-data:
+  seaweedfs-data:

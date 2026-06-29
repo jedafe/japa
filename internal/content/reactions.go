@@ -3,14 +3,17 @@ package content
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 )
 
 // ListReactionTypes handles GET /api/v1/reaction-types.
 func (h *Handlers) ListReactionTypes(w http.ResponseWriter, r *http.Request) {
-	types, err := h.Service.ListReactionTypes(r.Context())
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	types, err := h.Service.ListReactionTypes(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -20,6 +23,10 @@ func (h *Handlers) ListReactionTypes(w http.ResponseWriter, r *http.Request) {
 
 // CreateReactionType handles POST /api/v1/reaction-types.
 func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
 	var input struct {
 		Key      string `json:"key"`
 		Emoji    string `json:"emoji"`
@@ -44,7 +51,7 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rt, err := h.Service.CreateReactionType(r.Context(), input.Key, input.Emoji, input.Label, input.Enabled, input.Position)
+	rt, err := h.Service.CreateReactionType(r.Context(), tenantID, input.Key, input.Emoji, input.Label, input.Enabled, input.Position)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -54,6 +61,10 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 
 // UpdateReactionType handles PATCH /api/v1/reaction-types/{key}.
 func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
@@ -79,7 +90,7 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rt, err := h.Service.UpdateReactionType(r.Context(), key, input.Emoji, input.Label, input.Enabled, input.Position)
+	rt, err := h.Service.UpdateReactionType(r.Context(), tenantID, key, input.Emoji, input.Label, input.Enabled, input.Position)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -89,17 +100,18 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 
 // DeleteReactionType handles DELETE /api/v1/reaction-types/{key}.
 func (h *Handlers) DeleteReactionType(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
 		return
 	}
-	if err := h.Service.DeleteReactionType(r.Context(), key); err != nil {
+	if err := h.Service.DeleteReactionType(r.Context(), tenantID, key); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusNoContent, nil)
 }
-
-// Ensure strconv import is used (position parsing placeholder for future use).
-var _ = strconv.Atoi
