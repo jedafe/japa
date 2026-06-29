@@ -483,3 +483,229 @@ func (s *Service) IncrementFollowerCount(ctx context.Context, id, tenantID pgtyp
 func (s *Service) CleanupExpiredInvitations(ctx context.Context) error {
 	return s.store.deleteExpiredInvitations(ctx)
 }
+
+// ---------------------------------------------------------------------------
+// Professional Profile Relocations
+// ---------------------------------------------------------------------------
+
+// CreateRelocationInput holds parameters for creating a relocation.
+type CreateRelocationInput struct {
+	Country string
+	City    string
+	Status  string
+	Year    int32
+}
+
+// CreateRelocation records a relocation entry for a professional profile.
+func (s *Service) CreateRelocation(ctx context.Context, tenantID, profileID pgtype.UUID, input CreateRelocationInput) (gen.ProfessionalRelocation, error) {
+	if input.Country == "" {
+		return gen.ProfessionalRelocation{}, fmt.Errorf("country is required")
+	}
+	status := input.Status
+	if status == "" {
+		status = RelocationStatusPlanned
+	}
+	if !IsValidRelocationStatus(status) {
+		return gen.ProfessionalRelocation{}, fmt.Errorf("invalid relocation status: %s", status)
+	}
+
+	var city *string
+	if input.City != "" {
+		city = &input.City
+	}
+	var statusPtr *string
+	statusPtr = &status
+	var year *int32
+	if input.Year != 0 {
+		year = &input.Year
+	}
+
+	return s.store.createProfessionalRelocation(ctx, gen.CreateProfessionalRelocationParams{
+		TenantID:  tenantID,
+		ProfileID: profileID,
+		Country:   input.Country,
+		City:      city,
+		Status:    statusPtr,
+		Year:      year,
+	})
+}
+
+// ListRelocations returns all relocations for a profile.
+func (s *Service) ListRelocations(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalRelocation, error) {
+	return s.store.listProfessionalRelocationsByProfile(ctx, profileID, tenantID, limit, offset)
+}
+
+// UpdateRelocationInput holds parameters for updating a relocation.
+// All fields are optional; omitted fields retain their existing values.
+type UpdateRelocationInput struct {
+	Country string
+	City    string
+	Status  string
+	Year    int32
+}
+
+// UpdateRelocation partially updates a relocation entry (PATCH semantics).
+func (s *Service) UpdateRelocation(ctx context.Context, id, tenantID pgtype.UUID, input UpdateRelocationInput) (gen.ProfessionalRelocation, error) {
+	if input.Status != "" && !IsValidRelocationStatus(input.Status) {
+		return gen.ProfessionalRelocation{}, fmt.Errorf("invalid relocation status: %s", input.Status)
+	}
+
+	var country *string
+	if input.Country != "" {
+		country = &input.Country
+	}
+	var city *string
+	if input.City != "" {
+		city = &input.City
+	}
+	var status *string
+	if input.Status != "" {
+		status = &input.Status
+	}
+	var year *int32
+	if input.Year != 0 {
+		year = &input.Year
+	}
+
+	return s.store.updateProfessionalRelocation(ctx, gen.UpdateProfessionalRelocationParams{
+		ID:       id,
+		TenantID: tenantID,
+		Country:  country,
+		City:     city,
+		Status:   status,
+		Year:     year,
+	})
+}
+
+// DeleteRelocation removes a relocation entry.
+func (s *Service) DeleteRelocation(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.store.deleteProfessionalRelocation(ctx, id, tenantID)
+}
+
+// ---------------------------------------------------------------------------
+// Professional Profile Documents
+// ---------------------------------------------------------------------------
+
+// CreateDocumentInput holds parameters for creating a document.
+type CreateDocumentInput struct {
+	Title        string
+	DocumentType string
+	Description  string
+	FileURL      string
+}
+
+// CreateDocument records a credential document for a professional profile.
+func (s *Service) CreateDocument(ctx context.Context, tenantID, profileID pgtype.UUID, input CreateDocumentInput) (gen.ProfessionalDocument, error) {
+	if input.Title == "" {
+		return gen.ProfessionalDocument{}, fmt.Errorf("title is required")
+	}
+	if input.DocumentType == "" {
+		return gen.ProfessionalDocument{}, fmt.Errorf("document_type is required")
+	}
+
+	var description *string
+	if input.Description != "" {
+		description = &input.Description
+	}
+	var fileURL *string
+	if input.FileURL != "" {
+		fileURL = &input.FileURL
+	}
+
+	return s.store.createProfessionalDocument(ctx, gen.CreateProfessionalDocumentParams{
+		TenantID:     tenantID,
+		ProfileID:    profileID,
+		Title:        input.Title,
+		DocumentType: input.DocumentType,
+		Description:  description,
+		FileUrl:      fileURL,
+	})
+}
+
+// ListDocuments returns all documents for a profile.
+func (s *Service) ListDocuments(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalDocument, error) {
+	return s.store.listProfessionalDocumentsByProfile(ctx, profileID, tenantID, limit, offset)
+}
+
+// UpdateDocumentInput holds parameters for updating a document.
+// All fields are optional; omitted fields retain their existing values.
+type UpdateDocumentInput struct {
+	Title        string
+	DocumentType string
+	Description  string
+	FileURL      string
+}
+
+// UpdateDocument partially updates a document entry (PATCH semantics).
+func (s *Service) UpdateDocument(ctx context.Context, id, tenantID pgtype.UUID, input UpdateDocumentInput) (gen.ProfessionalDocument, error) {
+	var title *string
+	if input.Title != "" {
+		title = &input.Title
+	}
+	var documentType *string
+	if input.DocumentType != "" {
+		documentType = &input.DocumentType
+	}
+	var description *string
+	if input.Description != "" {
+		description = &input.Description
+	}
+	var fileURL *string
+	if input.FileURL != "" {
+		fileURL = &input.FileURL
+	}
+
+	return s.store.updateProfessionalDocument(ctx, gen.UpdateProfessionalDocumentParams{
+		ID:           id,
+		TenantID:     tenantID,
+		Title:        title,
+		DocumentType: documentType,
+		Description:  description,
+		FileUrl:      fileURL,
+	})
+}
+
+// DeleteDocument removes a document entry.
+func (s *Service) DeleteDocument(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.store.deleteProfessionalDocument(ctx, id, tenantID)
+}
+
+// ---------------------------------------------------------------------------
+// Professional Profile Verifiers
+// ---------------------------------------------------------------------------
+
+// CreateVerifierInput holds parameters for assigning a verifier.
+type CreateVerifierInput struct {
+	UserID pgtype.UUID
+	Role   string
+}
+
+// CreateVerifier assigns a user as a verifier for a profile. If the user is
+// already a verifier for this profile, their role/status is updated instead.
+func (s *Service) CreateVerifier(ctx context.Context, tenantID, profileID pgtype.UUID, input CreateVerifierInput) (gen.ProfessionalVerifier, error) {
+	var role *string
+	if input.Role != "" {
+		role = &input.Role
+	}
+	status := VerifierStatusPending
+	statusPtr := &status
+
+	return s.store.createProfessionalVerifier(ctx, gen.CreateProfessionalVerifierParams{
+		TenantID:  tenantID,
+		ProfileID: profileID,
+		UserID:    input.UserID,
+		Role:      role,
+		Status:    statusPtr,
+	})
+}
+
+// ListVerifiers returns all verifiers for a profile, with user names resolved
+// at render time via JOIN users.
+func (s *Service) ListVerifiers(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListProfessionalVerifiersByProfileRow, error) {
+	return s.store.listProfessionalVerifiersByProfile(ctx, profileID, tenantID, limit, offset)
+}
+
+// DeleteVerifier removes a verifier entry.
+func (s *Service) DeleteVerifier(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.store.deleteProfessionalVerifier(ctx, id, tenantID)
+}

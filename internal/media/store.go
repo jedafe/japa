@@ -5,18 +5,21 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // Store provides low-level database access for media.
 type Store struct {
-	write *gen.Queries
-	read  *gen.Queries
+	write      *gen.Queries
+	read       *gen.Queries
+	writePool  *pgxpool.Pool
+	readPool   *pgxpool.Pool
 }
 
-// NewStore creates a Store backed by the given gen.Queries instances.
-func NewStore(read, write *gen.Queries) *Store {
-	return &Store{read: read, write: write}
+// NewStore creates a Store backed by the given gen.Queries and pool instances.
+func NewStore(read, write *gen.Queries, readPool, writePool *pgxpool.Pool) *Store {
+	return &Store{read: read, write: write, readPool: readPool, writePool: writePool}
 }
 
 // InsertMedia creates a new media row and returns it.
@@ -171,6 +174,56 @@ func (s *Store) BulkSoftDeleteMedia(ctx context.Context, tenantID pgtype.UUID, m
 		MediaIds: mediaIDs,
 	}); err != nil {
 		return fmt.Errorf("bulk soft-deleting media: %w", err)
+	}
+	return nil
+}
+
+// scanMediaRow holds the minimal fields needed for virus scanning.
+type scanMediaRow struct {
+	StorageBucket    string
+	StoragePath      string
+	OriginalFilename string
+	UploaderUserID   string
+}
+
+// GetMediaForScan retrieves a media item by ID without tenant filtering.
+// Used by background workers that operate across all tenants.
+func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (scanMediaRow, error) {
+	var row scanMediaRow
+	err := s.readPool.QueryRow(ctx, `
+		SELECT storage_bucket, storage_path, original_filename, uploader_user_id::text
+		FROM media
+		WHERE id = $1 AND deleted_at IS NULL
+	`, mediaID).Scan(&row.StorageBucket, &row.StoragePath, &row.OriginalFilename, &row.UploaderUserID)
+	if err != nil {
+		return scanMediaRow{}, fmt.Errorf("getting media for scan: %w", err)
+	}
+	return row, nil
+}
+
+// ConfirmMediaByID marks a media item as confirmed by ID alone (no tenant).
+// Used by the background scan processor after a clean virus scan.
+func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte) error {
+	_, err := s.writePool.Exec(ctx, `
+		UPDATE media SET confirmed = true WHERE id = $1 AND deleted_at IS NULL
+	`, mediaID)
+	if err != nil {
+		return fmt.Errorf("confirming media by ID: %w", err)
+	}
+	return nil
+}
+
+// RejectMediaByID soft-deletes a media item and logs the virus name.
+// Used by the background scan processor when ClamAV detects malware.
+func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, virusName string) error {
+	_, err := s.writePool.Exec(ctx, `
+		UPDATE media
+		SET deleted_at = now(),
+		    alt_text = coalesce(alt_text, '') || ' [REJECTED: ' || $2 || ']'
+		WHERE id = $1 AND deleted_at IS NULL
+	`, mediaID, virusName)
+	if err != nil {
+		return fmt.Errorf("rejecting media by ID: %w", err)
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"time"
 
@@ -18,11 +19,20 @@ type Enqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// HonchoEraser deletes a user's AI context from the Honcho agent-memory
+// service. The honcho.Client implements this interface. The erasure step in
+// ProcessAccountDeletion calls DeleteUser and propagates the error so the
+// Asynq task retries — Honcho deletion is mandatory, not best-effort.
+type HonchoEraser interface {
+	DeleteUser(ctx context.Context, userID string) error
+}
+
 // Service provides GDPR operations with reader/writer pool separation.
 type Service struct {
-	store    *Store
-	db       *db.DB
-	enqueuer Enqueuer
+	store        *Store
+	db           *db.DB
+	enqueuer     Enqueuer
+	honchoEraser HonchoEraser
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -42,6 +52,13 @@ func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc := NewService(database)
 	svc.enqueuer = enqueuer
 	return svc
+}
+
+// SetHonchoEraser injects the Honcho client used for AI context erasure
+// during account deletion. When set, the erasure step must succeed or the
+// deletion job retries. When nil (development), the step is skipped.
+func (s *Service) SetHonchoEraser(h HonchoEraser) {
+	s.honchoEraser = h
 }
 
 // noopEnqueuer is a no-op implementation for development.
@@ -272,7 +289,22 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	}
 
 	// 3. TODO: Delete Valkey session keys (requires Valkey client injection).
-	// 4. TODO: Honcho erasure (requires Honcho client integration).
+
+	// 4. Delete Honcho AI context — mandatory, not best-effort. If the Honcho
+	//    client is configured and the call fails, mark the deletion as failed
+	//    and return the error so Asynq retries the whole job.
+	if s.honchoEraser != nil {
+		if err := s.honchoEraser.DeleteUser(ctx, request.UserID.String()); err != nil {
+			_, _ = s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
+				ID:     requestID,
+				Status: string(DeletionFailed),
+			})
+			return fmt.Errorf("deleting honcho context for user %s: %w", request.UserID, err)
+		}
+	} else {
+		slog.Warn("honcho eraser not configured, skipping AI context deletion",
+			"request_id", requestID, "user_id", request.UserID)
+	}
 
 	// 5. Mark deletion as completed.
 	_, err = s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{

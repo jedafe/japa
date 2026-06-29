@@ -39,7 +39,7 @@ func NewMux() *asynq.ServeMux {
 	return mux
 }
 
-// Addr returns the Redis address from the config as a formatted string.
+// Addr returns the Valkey address from the config as a formatted string.
 // Useful for logging at startup.
 func Addr(cfg *Config) string {
 	return fmt.Sprintf("%s (db=%d)", cfg.RedisAddr, cfg.RedisDB)

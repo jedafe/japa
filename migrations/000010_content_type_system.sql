@@ -73,29 +73,35 @@ CREATE TABLE slug_history (
 CREATE INDEX idx_slug_history_lookup ON slug_history(entity_type, old_slug);
 CREATE INDEX idx_slug_history_entity ON slug_history(entity_type, entity_id);
 
--- 4. Reaction types (admin-configurable emoji set)
+-- 4. Reaction types (admin-configurable emoji set, tenant-scoped)
 CREATE TABLE reaction_types (
-    key        varchar(50) PRIMARY KEY,
+    tenant_id  uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    key        varchar(50) NOT NULL,
     emoji      text NOT NULL,
     label      text NOT NULL,
     enabled    boolean NOT NULL DEFAULT true,
     position   int NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, key)
 );
 
--- 5. Reactions (polymorphic — works for any content entity)
+CREATE INDEX idx_reaction_types_tenant ON reaction_types(tenant_id);
+
+-- 5. Reactions (polymorphic — works for any content entity, tenant-scoped)
 CREATE TABLE reactions (
+    tenant_id    uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     entity_type  text NOT NULL,
     entity_id    uuid NOT NULL,
     user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    reaction_key varchar(50) NOT NULL REFERENCES reaction_types(key) ON DELETE CASCADE,
+    reaction_key varchar(50) NOT NULL,
     created_at   timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (entity_type, entity_id, user_id, reaction_key)
+    PRIMARY KEY (tenant_id, entity_type, entity_id, user_id, reaction_key),
+    FOREIGN KEY (tenant_id, reaction_key) REFERENCES reaction_types(tenant_id, key) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_reactions_entity ON reactions(entity_type, entity_id);
-CREATE INDEX idx_reactions_user ON reactions(user_id);
+CREATE INDEX idx_reactions_entity ON reactions(tenant_id, entity_type, entity_id);
+CREATE INDEX idx_reactions_user ON reactions(tenant_id, user_id);
 
 -- 6. Content scores (drives Activity Feed sorting — Section 32)
 CREATE TABLE content_scores (
@@ -136,11 +142,11 @@ CREATE TABLE space_pinned_posts (
 
 CREATE INDEX idx_space_pinned_posts_space ON space_pinned_posts(space_id);
 
--- Seed default reaction types
-INSERT INTO reaction_types (key, emoji, label, position) VALUES
-    ('like', '👍', 'Like', 0),
-    ('support', '🤝', 'Support', 1),
-    ('celebrate', '🎉', 'Celebrate', 2),
-    ('insightful', '💡', 'Insightful', 3),
-    ('grateful', '🙏', 'Grateful', 4),
-    ('funny', '😄', 'Funny', 5);
+-- Seed default reaction types for the default tenant
+INSERT INTO reaction_types (tenant_id, key, emoji, label, position) VALUES
+    ('00000000-0000-0000-0000-000000000001', 'like', '👍', 'Like', 0),
+    ('00000000-0000-0000-0000-000000000001', 'support', '🤝', 'Support', 1),
+    ('00000000-0000-0000-0000-000000000001', 'celebrate', '🎉', 'Celebrate', 2),
+    ('00000000-0000-0000-0000-000000000001', 'insightful', '💡', 'Insightful', 3),
+    ('00000000-0000-0000-0000-000000000001', 'grateful', '🙏', 'Grateful', 4),
+    ('00000000-0000-0000-0000-000000000001', 'funny', '😄', 'Funny', 5);

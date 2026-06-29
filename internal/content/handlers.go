@@ -451,6 +451,10 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -469,7 +473,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reaction, err := h.Service.AddReaction(r.Context(), EntityContent, contentID, user.UserID, input.ReactionKey)
+	reaction, err := h.Service.AddReaction(r.Context(), tenantID, EntityContent, contentID, user.UserID, input.ReactionKey)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -480,6 +484,10 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 // RemoveReaction handles DELETE /api/v1/content/{id}/reactions/{key}.
 func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -494,7 +502,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveReaction(r.Context(), EntityContent, contentID, user.UserID, reactionKey); err != nil {
+	if err := h.Service.RemoveReaction(r.Context(), tenantID, EntityContent, contentID, user.UserID, reactionKey); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -503,13 +511,17 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 
 // ListReactions handles GET /api/v1/content/{id}/reactions.
 func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
-	counts, err := h.Service.CountReactionsByEntity(r.Context(), EntityContent, contentID)
+	counts, err := h.Service.CountReactionsByEntity(r.Context(), tenantID, EntityContent, contentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

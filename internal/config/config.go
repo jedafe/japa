@@ -27,6 +27,7 @@ type Config struct {
 	ImgproxySalt      string // JC_IMGPROXY_SALT — salt for imgproxy URL signing
 	ImgproxyBaseURL   string // JC_IMGPROXY_BASE_URL — base URL for the imgproxy service
 	HonchoURL         string // JC_HONCHO_URL — Honcho agent memory service URL
+	ClamAVAddr        string // JC_CLAMAV_ADDR — ClamAV daemon address (host:port), default localhost:3310
 	ReleaseSHA        string // JC_RELEASE_SHA — git commit SHA, used for release tracking
 	Env               string // JC_ENV — "development" or "production"
 	Port              string // JC_PORT — HTTP listen port, defaults to 8080
@@ -58,6 +59,7 @@ func Load() (Config, error) {
 		ImgproxySalt:      os.Getenv("JC_IMGPROXY_SALT"),
 		ImgproxyBaseURL:   os.Getenv("JC_IMGPROXY_BASE_URL"),
 		HonchoURL:         os.Getenv("JC_HONCHO_URL"),
+		ClamAVAddr:        os.Getenv("JC_CLAMAV_ADDR"),
 		ReleaseSHA:        os.Getenv("JC_RELEASE_SHA"),
 		Env:               os.Getenv("JC_ENV"),
 		Port:              os.Getenv("JC_PORT"),
@@ -86,10 +88,13 @@ func applyDefaults(cfg *Config) {
 		cfg.MeilisearchURL = "http://localhost:7700"
 	}
 	if cfg.ImgproxyBaseURL == "" {
-		cfg.ImgproxyBaseURL = "http://localhost:8080"
+		cfg.ImgproxyBaseURL = "http://localhost:8099"
 	}
 	if cfg.HonchoURL == "" {
-		cfg.HonchoURL = "http://localhost:8000"
+		cfg.HonchoURL = "http://localhost:8001"
+	}
+	if cfg.ClamAVAddr == "" {
+		cfg.ClamAVAddr = "localhost:3310"
 	}
 	if cfg.ReleaseSHA == "" {
 		cfg.ReleaseSHA = "dev"

@@ -27,7 +27,7 @@ func mustUUID(t *testing.T, s string) pgtype.UUID {
 // ---------------------------------------------------------------------------
 
 func TestNewHandlers(t *testing.T) {
-	h := NewHandlers()
+	h := NewHandlers(nil)
 	if h == nil {
 		t.Fatal("NewHandlers returned nil")
 	}
@@ -38,7 +38,7 @@ func TestNewHandlers(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearch_Unauthorized(t *testing.T) {
-	h := NewHandlers()
+	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test", nil)
 	rr := httptest.NewRecorder()
 
@@ -60,7 +60,7 @@ func TestSearch_Unauthorized(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearch_TenantUnavailable(t *testing.T) {
-	h := NewHandlers()
+	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test", nil)
 	req = withAuthCtxDirect(req, &auth.AuthenticatedUser{
 		UserID:   mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
@@ -86,7 +86,7 @@ func TestSearch_TenantUnavailable(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearch_MissingQuery(t *testing.T) {
-	h := NewHandlers()
+	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search", nil)
 	req = withAuthAndTenant(req, t)
 	rr := httptest.NewRecorder()
@@ -109,7 +109,7 @@ func TestSearch_MissingQuery(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearch_ValidQueryDefaultLimit(t *testing.T) {
-	h := NewHandlers()
+	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=nigeria", nil)
 	req = withAuthAndTenant(req, t)
 	rr := httptest.NewRecorder()
@@ -141,7 +141,7 @@ func TestSearch_ValidQueryDefaultLimit(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearch_ValidQueryCustomLimit(t *testing.T) {
-	h := NewHandlers()
+	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=lagos&limit=5", nil)
 	req = withAuthAndTenant(req, t)
 	rr := httptest.NewRecorder()
@@ -158,7 +158,7 @@ func TestSearch_ValidQueryCustomLimit(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearch_InvalidLimitFallback(t *testing.T) {
-	h := NewHandlers()
+	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test&limit=abc", nil)
 	req = withAuthAndTenant(req, t)
 	rr := httptest.NewRecorder()
@@ -175,7 +175,7 @@ func TestSearch_InvalidLimitFallback(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearch_OutOfRangeLimitFallback(t *testing.T) {
-	h := NewHandlers()
+	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test&limit=200", nil)
 	req = withAuthAndTenant(req, t)
 	rr := httptest.NewRecorder()
@@ -192,7 +192,7 @@ func TestSearch_OutOfRangeLimitFallback(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearch_ZeroLimitFallback(t *testing.T) {
-	h := NewHandlers()
+	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test&limit=0", nil)
 	req = withAuthAndTenant(req, t)
 	rr := httptest.NewRecorder()
@@ -209,7 +209,7 @@ func TestSearch_ZeroLimitFallback(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearch_NegativeLimitFallback(t *testing.T) {
-	h := NewHandlers()
+	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test&limit=-5", nil)
 	req = withAuthAndTenant(req, t)
 	rr := httptest.NewRecorder()

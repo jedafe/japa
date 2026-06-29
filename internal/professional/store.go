@@ -266,3 +266,140 @@ func (s *Store) deleteExpiredInvitations(ctx context.Context) error {
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// Professional Profile Relocations
+// ---------------------------------------------------------------------------
+
+func (s *Store) createProfessionalRelocation(ctx context.Context, p gen.CreateProfessionalRelocationParams) (gen.ProfessionalRelocation, error) {
+	row, err := s.write.CreateProfessionalRelocation(ctx, p)
+	if err != nil {
+		return gen.ProfessionalRelocation{}, fmt.Errorf("creating professional relocation: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) getProfessionalRelocationByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ProfessionalRelocation, error) {
+	row, err := s.read.GetProfessionalRelocationByID(ctx, gen.GetProfessionalRelocationByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.ProfessionalRelocation{}, fmt.Errorf("getting professional relocation by ID: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) listProfessionalRelocationsByProfile(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalRelocation, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.ListProfessionalRelocationsByProfile(ctx, gen.ListProfessionalRelocationsByProfileParams{
+		ProfileID:  profileID,
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing professional relocations: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *Store) updateProfessionalRelocation(ctx context.Context, p gen.UpdateProfessionalRelocationParams) (gen.ProfessionalRelocation, error) {
+	row, err := s.write.UpdateProfessionalRelocation(ctx, p)
+	if err != nil {
+		return gen.ProfessionalRelocation{}, fmt.Errorf("updating professional relocation: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) deleteProfessionalRelocation(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteProfessionalRelocation(ctx, gen.DeleteProfessionalRelocationParams{ID: id, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting professional relocation: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Professional Profile Documents
+// ---------------------------------------------------------------------------
+
+func (s *Store) createProfessionalDocument(ctx context.Context, p gen.CreateProfessionalDocumentParams) (gen.ProfessionalDocument, error) {
+	row, err := s.write.CreateProfessionalDocument(ctx, p)
+	if err != nil {
+		return gen.ProfessionalDocument{}, fmt.Errorf("creating professional document: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) getProfessionalDocumentByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ProfessionalDocument, error) {
+	row, err := s.read.GetProfessionalDocumentByID(ctx, gen.GetProfessionalDocumentByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.ProfessionalDocument{}, fmt.Errorf("getting professional document by ID: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) listProfessionalDocumentsByProfile(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalDocument, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.ListProfessionalDocumentsByProfile(ctx, gen.ListProfessionalDocumentsByProfileParams{
+		ProfileID:  profileID,
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing professional documents: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *Store) updateProfessionalDocument(ctx context.Context, p gen.UpdateProfessionalDocumentParams) (gen.ProfessionalDocument, error) {
+	row, err := s.write.UpdateProfessionalDocument(ctx, p)
+	if err != nil {
+		return gen.ProfessionalDocument{}, fmt.Errorf("updating professional document: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) deleteProfessionalDocument(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteProfessionalDocument(ctx, gen.DeleteProfessionalDocumentParams{ID: id, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting professional document: %w", err)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Professional Profile Verifiers
+// ---------------------------------------------------------------------------
+
+func (s *Store) createProfessionalVerifier(ctx context.Context, p gen.CreateProfessionalVerifierParams) (gen.ProfessionalVerifier, error) {
+	row, err := s.write.CreateProfessionalVerifier(ctx, p)
+	if err != nil {
+		return gen.ProfessionalVerifier{}, fmt.Errorf("creating professional verifier: %w", err)
+	}
+	return row, nil
+}
+
+func (s *Store) listProfessionalVerifiersByProfile(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListProfessionalVerifiersByProfileRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.ListProfessionalVerifiersByProfile(ctx, gen.ListProfessionalVerifiersByProfileParams{
+		ProfileID:  profileID,
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing professional verifiers: %w", err)
+	}
+	return rows, nil
+}
+
+func (s *Store) deleteProfessionalVerifier(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteProfessionalVerifier(ctx, gen.DeleteProfessionalVerifierParams{ID: id, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting professional verifier: %w", err)
+	}
+	return nil
+}

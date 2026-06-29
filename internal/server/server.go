@@ -11,48 +11,59 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/admin"
-	"github.com/jedafe/japa/internal/analytics"
 	"github.com/jedafe/japa/internal/advertising"
+	"github.com/jedafe/japa/internal/ai"
+	"github.com/jedafe/japa/internal/analytics"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/blog"
 	"github.com/jedafe/japa/internal/bots"
-	"github.com/jedafe/japa/internal/docs"
+	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
-	"github.com/jedafe/japa/internal/blog"
-	"github.com/jedafe/japa/internal/comparison"
+	"github.com/jedafe/japa/internal/customfields"
+	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/docs"
+	errtracking "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/feed"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/forum"
 	"github.com/jedafe/japa/internal/gdpr"
+	"github.com/jedafe/japa/internal/geoip"
+	"github.com/jedafe/japa/internal/honcho"
+	"github.com/jedafe/japa/internal/impersonation"
+	"github.com/jedafe/japa/internal/learning"
+	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/media"
-	"github.com/jedafe/japa/internal/onboarding"
+	mw "github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/notifications"
-	"github.com/jedafe/japa/internal/customfields"
+	"github.com/jedafe/japa/internal/onboarding"
 	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/professional"
-	"github.com/jedafe/japa/internal/reviews"
-	"github.com/jedafe/japa/internal/wallet"
-	"github.com/jedafe/japa/internal/websocket"
-	"github.com/jedafe/japa/internal/db"
-	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/seo"
-	"github.com/jedafe/japa/internal/features"
-	"github.com/jedafe/japa/internal/geoip"
-	"github.com/jedafe/japa/internal/linkpreview"
+	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/renderer"
+	"github.com/jedafe/japa/internal/reviews"
 	"github.com/jedafe/japa/internal/search"
+	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/spaces"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/tickets"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/wallet"
+	"github.com/jedafe/japa/internal/webhooks"
+	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/worker"
 )
 
 // NewServer creates a fully configured Chi router with middleware and routes.
 func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
+	// Initialize error tracking (Section 27 — GlitchTip).
+	errtracking.InitSentry(cfg.GlitchtipDSN, cfg.ReleaseSHA)
+
 	r := chi.NewRouter()
 	RegisterMiddleware(r)
 
@@ -142,27 +153,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	notificationService := notifications.NewService(database)
 	notificationHandlers := notifications.NewHandlers(notificationService)
 
-		// Feed System subsystem (Section 32 — Activity Feed / Timeline).
-		feedService := feed.NewService(database)
-		feedHandlers := feed.NewHandlers(feedService)
+	// Feed System subsystem (Section 32 — Activity Feed / Timeline).
+	feedService := feed.NewService(database)
+	feedHandlers := feed.NewHandlers(feedService)
 
-		// Blog Extension subsystem (Section 24 — Blog Extension).
-		blogService := blog.NewService(database)
-		blogHandlers := blog.NewHandlers(blogService)
+	// Blog Extension subsystem (Section 24 — Blog Extension).
+	blogService := blog.NewService(database)
+	blogHandlers := blog.NewHandlers(blogService)
 
-		// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
-		reviewService := reviews.NewService(database)
-		reviewHandlers := reviews.NewHandlers(reviewService)
+	// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
+	reviewService := reviews.NewService(database)
+	reviewHandlers := reviews.NewHandlers(reviewService)
 
-		// Comparison subsystem (Section 30 — Generic Comparison System).
-		comparisonService := comparison.NewService(database)
-		comparisonHandlers := comparison.NewHandlers(comparisonService)
+	// Comparison subsystem (Section 30 — Generic Comparison System).
+	comparisonService := comparison.NewService(database)
+	comparisonHandlers := comparison.NewHandlers(comparisonService)
 
-		// Professional Profiles subsystem (Section 33 — Professional Profiles).
-		professionalService := professional.NewService(database)
-		professionalHandlers := professional.NewHandlers(professionalService)
+	// Professional Profiles subsystem (Section 33 — Professional Profiles).
+	professionalService := professional.NewService(database)
+	professionalHandlers := professional.NewHandlers(professionalService)
 
-// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
+	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
 	walletHandlers := wallet.NewHandlers(walletService)
 
@@ -180,11 +191,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// GDPR / NDPR Compliance subsystem (Section 19).
 	gdprService := gdpr.NewService(database)
+	gdprService.SetHonchoEraser(honcho.NewClient(cfg.HonchoURL))
 	gdprHandlers := gdpr.NewHandlers(gdprService)
 
 	// Register GDPR processor with worker for background tasks.
 	gdprAdapter := gdpr.NewWorkerAdapter(gdprService)
 	worker.RegisterGDPRProcessor(gdprAdapter)
+
+	// Media subsystem (Section 34 — Media System).
+	mediaService := media.NewService(database)
+
+	// ClamAV virus scanner — connects to the ClamAV daemon for media
+	// scanning. The ScanProcessor orchestrates the full scan flow: read
+	// media record → open file → send to ClamAV → update status.
+	clamavClient := media.NewClamAVClient(cfg.ClamAVAddr)
+	mediaScanProcessor := media.NewScanProcessor(mediaService, clamavClient)
+	worker.RegisterMediaScanProcessor(mediaScanProcessor)
+
+	// Webhook Delivery subsystem — registers the processor so the Asynq
+	// webhook_delivery handler can fetch, sign, and deliver outgoing webhooks.
+	webhookService := webhooks.NewService(database)
+	webhookAdapter := webhooks.NewWorkerAdapter(webhookService)
+	worker.RegisterWebhookProcessor(webhookAdapter)
 
 	// Documentation System subsystem (Section 44).
 	docsService := docs.NewService(database)
@@ -202,19 +230,51 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	analyticsService := analytics.NewService(database)
 	analyticsHandlers := analytics.NewHandlers(analyticsService)
 
+	// Learning Platform subsystem (Section 36).
+	learningStore := learning.NewStore(database)
+	learningHandlers := learning.NewHandlers(learningStore)
+
 	// Register analytics processor with worker for background tasks.
 	analyticsAdapter := analytics.NewWorkerAdapter(analyticsService)
 	worker.RegisterAnalyticsProcessor(analyticsAdapter)
 
+	// AI Core subsystem (Section 20 — AI Core).
+	aiDispatcher := ai.NewDispatcher()
+	aiStore := ai.NewStore(database.Reader, database.Writer)
+	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
+
 	// Cache flusher for admin-only cache invalidation.
 	cacheFlusher := analytics.NewCacheFlusher(vkClient)
+
+	// Admin Impersonation subsystem (Section 46).
+	impersonationStore := impersonation.NewStore(vkClient.Redis())
+	impersonationService := impersonation.NewService(impersonationStore, database.Writer)
+	impersonationHandlers := impersonation.NewHandlers(impersonationService)
+
+	// Public API & Developer Portal subsystem (Section 47).
+	publicAPIStore := publicapi.NewStore(database.Writer)
+	publicAPIService := publicapi.NewService(publicAPIStore)
+	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
 
 	// User Profile & Preferences subsystem.
 	usersService := users.NewService(database)
 	usersHandlers := users.NewHandlers(usersService)
 
+	// Meilisearch client for search (graceful if unreachable — NewClient
+	// logs a warning and returns a usable client so the server boots even
+	// when the search engine is down).
+	meiliClient, err := search.NewClient(cfg.MeilisearchURL, cfg.MeilisearchKey)
+	if err != nil {
+		slog.Warn("meilisearch client not created", "error", err)
+	}
+
 	// Search subsystem.
-	searchHandlers := search.NewHandlers()
+	// The indexer syncs content rows into the posts index from the reader
+	// pool; it is registered with the worker so the search_index_sync task
+	// can upsert documents asynchronously.
+	searchIndexer := search.NewIndexer(meiliClient, gen.New(database.Reader))
+	worker.RegisterSearchIndexer(searchIndexer)
+	searchHandlers := search.NewHandlers(meiliClient)
 
 	// Onboarding subsystem (Section 09).
 	onboardingService := onboarding.NewService(database)
@@ -244,8 +304,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	r.Group(func(r chi.Router) {
 		r.Use(tenant.Middleware(tenantStore))
 		r.Route("/api/v1", func(r chi.Router) {
+			// Baseline rate limit for all API routes (ADR-022).
+			// Tighter tiers are applied to specific subgroups below.
+			r.Use(mw.RateLimit(vkClient.Redis(), "loose"))
+
 			// Auth routes (public - no auth required, tenant-scoped)
+			// Tight rate limit to throttle brute-force attempts.
 			r.Route("/auth", func(r chi.Router) {
+				r.Use(mw.RateLimit(vkClient.Redis(), "tight"))
 				r.Post("/register", authHandlers.Register)
 				r.Post("/login", authHandlers.Login)
 				r.Post("/refresh", authHandlers.Refresh)
@@ -351,8 +417,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Put("/space-permission-presets/{name}", spaceHandlers.UpdatePermissionPreset)
 
 			// Content routes (Section 14 — Content Type System)
-			// Create (require auth + permission)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "content.create")).
+			// Create (require auth + moderate rate limit + permission)
+			r.With(auth.RequireAuth(kr), mw.RateLimit(vkClient.Redis(), "moderate"), rbac.RequirePermission(rbacResolver, "content.create")).
 				Post("/content", contentHandlers.CreateContent)
 			// Read (require auth)
 			r.With(auth.RequireAuth(kr)).Get("/content", contentHandlers.ListContent)
@@ -430,22 +496,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			wsDMService := websocket.NewDMService(wsDMStore, wsHub)
 			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
 
-			// WebSocket
-			r.With(auth.RequireAuth(kr)).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
-			r.Get("/ws", wsHandlers.HandleWebSocket) // ticket auth, not Bearer
-			r.With(auth.RequireAuth(kr)).Get("/ws/online", wsHandlers.GetOnlineUsers)
+			// WebSocket + DM routes — gated by feature.dm (Section 10)
+			r.With(features.Gate(featureChecker, "feature.dm")).Group(func(r chi.Router) {
+				// WebSocket
+				r.With(auth.RequireAuth(kr)).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
+				r.Get("/ws", wsHandlers.HandleWebSocket) // ticket auth, not Bearer
+				r.With(auth.RequireAuth(kr)).Get("/ws/online", wsHandlers.GetOnlineUsers)
 
-			// Direct Messaging
-			r.With(auth.RequireAuth(kr)).Get("/dm/conversations", wsHandlers.ListConversations)
-			r.With(auth.RequireAuth(kr)).Get("/dm/conversations/{id}/messages", wsHandlers.ListMessages)
-			r.With(auth.RequireAuth(kr)).Post("/dm/conversations/{id}/messages", wsHandlers.SendMessage)
-			r.With(auth.RequireAuth(kr)).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
-			r.With(auth.RequireAuth(kr)).Post("/dm/message-requests/{id}/accept", wsHandlers.AcceptMessageRequest)
-			r.With(auth.RequireAuth(kr)).Post("/dm/message-requests/{id}/decline", wsHandlers.DeclineMessageRequest)
-			r.With(auth.RequireAuth(kr)).Put("/dm/privacy", wsHandlers.UpdateDMPrivacy)
+				// Direct Messaging
+				r.With(auth.RequireAuth(kr)).Get("/dm/conversations", wsHandlers.ListConversations)
+				r.With(auth.RequireAuth(kr)).Get("/dm/conversations/{id}/messages", wsHandlers.ListMessages)
+				r.With(auth.RequireAuth(kr)).Post("/dm/conversations/{id}/messages", wsHandlers.SendMessage)
+				r.With(auth.RequireAuth(kr)).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
+				r.With(auth.RequireAuth(kr)).Post("/dm/message-requests/{id}/accept", wsHandlers.AcceptMessageRequest)
+				r.With(auth.RequireAuth(kr)).Post("/dm/message-requests/{id}/decline", wsHandlers.DeclineMessageRequest)
+				r.With(auth.RequireAuth(kr)).Put("/dm/privacy", wsHandlers.UpdateDMPrivacy)
+			})
 
 			// Media routes (Section 34 — Media System)
-			mediaService := media.NewService(database)
 			mediaHandlers := media.NewHandlers(mediaService)
 
 			r.With(auth.RequireAuth(kr)).Post("/media/upload", mediaHandlers.InitiateUpload)
@@ -456,175 +524,208 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr)).Get("/media", mediaHandlers.ListMedia)
 			r.With(auth.RequireAuth(kr)).Post("/media/bulk-delete", mediaHandlers.BulkDelete)
 
-			// Forum Q&A / Solved routes (Section 08)
+			// Forum Q&A / Solved routes — gated by feature.forum (Section 08)
 			forumService := forum.NewService(database)
 			forumHandlers := forum.NewHandlers(forumService)
 
-			// Thread routes
-			r.With(auth.RequireAuth(kr)).Post("/forum/threads", forumHandlers.CreateThread)
-			r.With(auth.RequireAuth(kr)).Get("/forum/threads", forumHandlers.ListThreads)
-			r.With(auth.RequireAuth(kr)).Get("/forum/threads/{slug}", forumHandlers.GetThread)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.thread.edit_own")).
-				Patch("/forum/threads/{id}", forumHandlers.UpdateThread)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.thread.delete_own")).
-				Delete("/forum/threads/{id}", forumHandlers.DeleteThread)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.thread.solve")).
-				Post("/forum/threads/{id}/solve", forumHandlers.SolveThread)
+			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
+				// Thread routes
+				r.With(auth.RequireAuth(kr)).Post("/forum/threads", forumHandlers.CreateThread)
+				r.With(auth.RequireAuth(kr)).Get("/forum/threads", forumHandlers.ListThreads)
+				r.With(auth.RequireAuth(kr)).Get("/forum/threads/{slug}", forumHandlers.GetThread)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.thread.edit_own")).
+					Patch("/forum/threads/{id}", forumHandlers.UpdateThread)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.thread.delete_own")).
+					Delete("/forum/threads/{id}", forumHandlers.DeleteThread)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.thread.solve")).
+					Post("/forum/threads/{id}/solve", forumHandlers.SolveThread)
 
-			// Reply routes
-			r.With(auth.RequireAuth(kr)).Post("/forum/threads/{id}/replies", forumHandlers.CreateReply)
-			r.With(auth.RequireAuth(kr)).Get("/forum/threads/{id}/replies", forumHandlers.ListReplies)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.reply.edit_own")).
-				Patch("/forum/replies/{id}", forumHandlers.UpdateReply)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.reply.delete_own")).
-				Delete("/forum/replies/{id}", forumHandlers.DeleteReply)
+				// Reply routes
+				r.With(auth.RequireAuth(kr)).Post("/forum/threads/{id}/replies", forumHandlers.CreateReply)
+				r.With(auth.RequireAuth(kr)).Get("/forum/threads/{id}/replies", forumHandlers.ListReplies)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.reply.edit_own")).
+					Patch("/forum/replies/{id}", forumHandlers.UpdateReply)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.reply.delete_own")).
+					Delete("/forum/replies/{id}", forumHandlers.DeleteReply)
 
-			// Vote route
-			r.With(auth.RequireAuth(kr)).Post("/forum/vote", forumHandlers.Vote)
+				// Vote route
+				r.With(auth.RequireAuth(kr)).Post("/forum/vote", forumHandlers.Vote)
 
-			// Poll routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
-				Post("/forum/polls", forumHandlers.CreatePoll)
-			r.With(auth.RequireAuth(kr)).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
-			r.With(auth.RequireAuth(kr)).Get("/forum/polls/{id}", forumHandlers.GetPoll)
+				// Poll routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
+					Post("/forum/polls", forumHandlers.CreatePoll)
+				r.With(auth.RequireAuth(kr)).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
+				r.With(auth.RequireAuth(kr)).Get("/forum/polls/{id}", forumHandlers.GetPoll)
 
-			// Tag routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.tag.create")).
-				Post("/forum/tags", forumHandlers.CreateTag)
-			r.With(auth.RequireAuth(kr)).Get("/forum/tags", forumHandlers.ListTags)
-			r.With(auth.RequireAuth(kr)).Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
-			r.With(auth.RequireAuth(kr)).Post("/forum/threads/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
-			r.With(auth.RequireAuth(kr)).Delete("/forum/threads/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
+				// Tag routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "forum.tag.create")).
+					Post("/forum/tags", forumHandlers.CreateTag)
+				r.With(auth.RequireAuth(kr)).Get("/forum/tags", forumHandlers.ListTags)
+				r.With(auth.RequireAuth(kr)).Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
+				r.With(auth.RequireAuth(kr)).Post("/forum/threads/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
+				r.With(auth.RequireAuth(kr)).Delete("/forum/threads/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
 
-			// Bookmark routes
-			r.With(auth.RequireAuth(kr)).Post("/forum/bookmarks", forumHandlers.AddBookmark)
-			r.With(auth.RequireAuth(kr)).Delete("/forum/bookmarks/{id}", forumHandlers.RemoveBookmark)
-			r.With(auth.RequireAuth(kr)).Get("/forum/bookmarks", forumHandlers.ListBookmarks)
+				// Bookmark routes
+				r.With(auth.RequireAuth(kr)).Post("/forum/bookmarks", forumHandlers.AddBookmark)
+				r.With(auth.RequireAuth(kr)).Delete("/forum/bookmarks/{id}", forumHandlers.RemoveBookmark)
+				r.With(auth.RequireAuth(kr)).Get("/forum/bookmarks", forumHandlers.ListBookmarks)
+			})
 
-			// Blog Extension routes (Section 24 — Blog Extension)
-			// Series routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.create")).
-				Post("/blog/series", blogHandlers.CreateSeries)
-			r.With(auth.RequireAuth(kr)).Get("/blog/series", blogHandlers.ListSeries)
-			r.With(auth.RequireAuth(kr)).Get("/blog/series/{slug}", blogHandlers.GetSeries)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
-				Patch("/blog/series/{id}", blogHandlers.UpdateSeries)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.delete")).
-				Delete("/blog/series/{id}", blogHandlers.DeleteSeries)
+			// Blog Extension routes — gated by feature.blog (Section 24)
+			r.With(features.Gate(featureChecker, "feature.blog")).Group(func(r chi.Router) {
+				// Series routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.create")).
+					Post("/blog/series", blogHandlers.CreateSeries)
+				r.With(auth.RequireAuth(kr)).Get("/blog/series", blogHandlers.ListSeries)
+				r.With(auth.RequireAuth(kr)).Get("/blog/series/{slug}", blogHandlers.GetSeries)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
+					Patch("/blog/series/{id}", blogHandlers.UpdateSeries)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.delete")).
+					Delete("/blog/series/{id}", blogHandlers.DeleteSeries)
 
-			// Series post routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
-				Post("/blog/series/{id}/posts", blogHandlers.AddPostToSeries)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
-				Delete("/blog/series/{id}/posts/{postId}", blogHandlers.RemovePostFromSeries)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
-				Patch("/blog/series/{id}/posts/reorder", blogHandlers.ReorderSeriesPosts)
+				// Series post routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
+					Post("/blog/series/{id}/posts", blogHandlers.AddPostToSeries)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
+					Delete("/blog/series/{id}/posts/{postId}", blogHandlers.RemovePostFromSeries)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
+					Patch("/blog/series/{id}/posts/reorder", blogHandlers.ReorderSeriesPosts)
 
-			// Review routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.review.create")).
-				Post("/blog/reviews", blogHandlers.CreateReview)
-			r.With(auth.RequireAuth(kr)).Get("/blog/reviews", blogHandlers.ListReviews)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
-				Patch("/blog/reviews/{id}", blogHandlers.UpdateReview)
+				// Review routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.review.create")).
+					Post("/blog/reviews", blogHandlers.CreateReview)
+				r.With(auth.RequireAuth(kr)).Get("/blog/reviews", blogHandlers.ListReviews)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+					Patch("/blog/reviews/{id}", blogHandlers.UpdateReview)
 
-			// Featured routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.feature")).
-				Post("/blog/featured", blogHandlers.FeaturePost)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.feature")).
-				Delete("/blog/featured/{contentId}", blogHandlers.UnfeaturePost)
-			r.With(auth.RequireAuth(kr)).Get("/blog/featured", blogHandlers.ListFeatured)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.feature")).
-				Patch("/blog/featured/reorder", blogHandlers.ReorderFeatured)
+				// Featured routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.feature")).
+					Post("/blog/featured", blogHandlers.FeaturePost)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.feature")).
+					Delete("/blog/featured/{contentId}", blogHandlers.UnfeaturePost)
+				r.With(auth.RequireAuth(kr)).Get("/blog/featured", blogHandlers.ListFeatured)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "blog.feature")).
+					Patch("/blog/featured/reorder", blogHandlers.ReorderFeatured)
 
-			// RSS feed (public — no auth required)
-			r.Get("/blog/feed.xml", blogHandlers.GetRSSFeed)
+				// RSS feed (public — no auth required)
+				r.Get("/blog/feed.xml", blogHandlers.GetRSSFeed)
+			})
 
-			// Universal Ratings & Reviews routes (Section 29)
-			r.With(auth.RequireAuth(kr)).Post("/reviews", reviewHandlers.CreateReview)
-			r.With(auth.RequireAuth(kr)).Get("/reviews", reviewHandlers.ListReviews)
-			r.With(auth.RequireAuth(kr)).Get("/reviews/aggregate", reviewHandlers.GetAggregate)
-			r.With(auth.RequireAuth(kr)).Get("/reviews/{id}", reviewHandlers.GetReview)
-			r.With(auth.RequireAuth(kr)).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
-			r.With(auth.RequireAuth(kr)).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
-			r.With(auth.RequireAuth(kr)).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
+			// Universal Ratings & Reviews routes — gated by feature.ratings_reviews (Section 29)
+			r.With(features.Gate(featureChecker, "feature.ratings_reviews")).Group(func(r chi.Router) {
+				r.With(auth.RequireAuth(kr)).Post("/reviews", reviewHandlers.CreateReview)
+				r.With(auth.RequireAuth(kr)).Get("/reviews", reviewHandlers.ListReviews)
+				r.With(auth.RequireAuth(kr)).Get("/reviews/aggregate", reviewHandlers.GetAggregate)
+				r.With(auth.RequireAuth(kr)).Get("/reviews/{id}", reviewHandlers.GetReview)
+				r.With(auth.RequireAuth(kr)).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
+				r.With(auth.RequireAuth(kr)).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
+				r.With(auth.RequireAuth(kr)).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
+			})
 
-			// Generic Comparison System routes (Section 30)
-			// Type definition routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.create")).
-				Post("/comparison/types", comparisonHandlers.CreateComparisonType)
-			r.With(auth.RequireAuth(kr)).Get("/comparison/types", comparisonHandlers.ListComparisonTypes)
-			r.With(auth.RequireAuth(kr)).Get("/comparison/types/{slug}", comparisonHandlers.GetComparisonType)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.edit")).
-				Patch("/comparison/types/{id}", comparisonHandlers.UpdateComparisonType)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.delete")).
-				Delete("/comparison/types/{id}", comparisonHandlers.DeleteComparisonType)
+			// Generic Comparison System routes — gated by feature.comparison (Section 30)
+			r.With(features.Gate(featureChecker, "feature.comparison")).Group(func(r chi.Router) {
+				// Type definition routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.create")).
+					Post("/comparison/types", comparisonHandlers.CreateComparisonType)
+				r.With(auth.RequireAuth(kr)).Get("/comparison/types", comparisonHandlers.ListComparisonTypes)
+				r.With(auth.RequireAuth(kr)).Get("/comparison/types/{slug}", comparisonHandlers.GetComparisonType)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.edit")).
+					Patch("/comparison/types/{id}", comparisonHandlers.UpdateComparisonType)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.delete")).
+					Delete("/comparison/types/{id}", comparisonHandlers.DeleteComparisonType)
 
-			// Type access routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.access.manage")).
-				Put("/comparison/types/{id}/access", comparisonHandlers.SetComparisonTypeAccess)
-			r.With(auth.RequireAuth(kr)).Get("/comparison/types/{id}/access", comparisonHandlers.ListComparisonTypeAccess)
+				// Type access routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.type.access.manage")).
+					Put("/comparison/types/{id}/access", comparisonHandlers.SetComparisonTypeAccess)
+				r.With(auth.RequireAuth(kr)).Get("/comparison/types/{id}/access", comparisonHandlers.ListComparisonTypeAccess)
 
-			// Comparison CRUD routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.create")).
-				Post("/comparison", comparisonHandlers.CreateComparison)
-			r.With(auth.RequireAuth(kr)).Get("/comparison/{id}", comparisonHandlers.GetComparison)
-			r.With(auth.RequireAuth(kr)).Get("/comparison/{id}/matrix", comparisonHandlers.GetComparisonMatrix)
+				// Comparison CRUD routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.create")).
+					Post("/comparison", comparisonHandlers.CreateComparison)
+				r.With(auth.RequireAuth(kr)).Get("/comparison/{id}", comparisonHandlers.GetComparison)
+				r.With(auth.RequireAuth(kr)).Get("/comparison/{id}/matrix", comparisonHandlers.GetComparisonMatrix)
 
-			// Item routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
-				Post("/comparison/{id}/items", comparisonHandlers.CreateComparisonItem)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
-				Patch("/comparison/items/{id}", comparisonHandlers.UpdateComparisonItem)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
-				Delete("/comparison/items/{id}", comparisonHandlers.DeleteComparisonItem)
+				// Item routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
+					Post("/comparison/{id}/items", comparisonHandlers.CreateComparisonItem)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
+					Patch("/comparison/items/{id}", comparisonHandlers.UpdateComparisonItem)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
+					Delete("/comparison/items/{id}", comparisonHandlers.DeleteComparisonItem)
 
-			// Dimension routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
-				Post("/comparison/{id}/dimensions", comparisonHandlers.CreateComparisonDimension)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
-				Patch("/comparison/dimensions/{id}", comparisonHandlers.UpdateComparisonDimension)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
-				Delete("/comparison/dimensions/{id}", comparisonHandlers.DeleteComparisonDimension)
+				// Dimension routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
+					Post("/comparison/{id}/dimensions", comparisonHandlers.CreateComparisonDimension)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
+					Patch("/comparison/dimensions/{id}", comparisonHandlers.UpdateComparisonDimension)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
+					Delete("/comparison/dimensions/{id}", comparisonHandlers.DeleteComparisonDimension)
 
-			// Value routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.value.manage")).
-				Put("/comparison/dimensions/{id}/values", comparisonHandlers.UpsertComparisonValues)
+				// Value routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "comparison.value.manage")).
+					Put("/comparison/dimensions/{id}/values", comparisonHandlers.UpsertComparisonValues)
+			})
 
-			// Professional Profiles routes (Section 33 — Professional Profiles)
-			// Profile type routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.type.create")).
-				Post("/professional-profiles/types", professionalHandlers.CreateProfessionalProfileType)
-			r.With(auth.RequireAuth(kr)).Get("/professional-profiles/types", professionalHandlers.ListProfessionalProfileTypes)
-			r.With(auth.RequireAuth(kr)).Get("/professional-profiles/types/{slug}", professionalHandlers.GetProfessionalProfileType)
+			// Professional Profiles routes — gated by feature.professional (Section 33)
+			r.With(features.Gate(featureChecker, "feature.professional")).Group(func(r chi.Router) {
+				// Profile type routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.type.create")).
+					Post("/professional-profiles/types", professionalHandlers.CreateProfessionalProfileType)
+				r.With(auth.RequireAuth(kr)).Get("/professional-profiles/types", professionalHandlers.ListProfessionalProfileTypes)
+				r.With(auth.RequireAuth(kr)).Get("/professional-profiles/types/{slug}", professionalHandlers.GetProfessionalProfileType)
 
-			// Profile CRUD routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.create")).
-				Post("/professional-profiles", professionalHandlers.CreateProfessionalProfile)
-			r.With(auth.RequireAuth(kr)).Get("/professional-profiles", professionalHandlers.ListProfessionalProfiles)
-			r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{slug}", professionalHandlers.GetProfessionalProfile)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
-				Patch("/professional-profiles/{id}", professionalHandlers.UpdateProfessionalProfile)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
-				Delete("/professional-profiles/{id}", professionalHandlers.DeleteProfessionalProfile)
+				// Profile CRUD routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.create")).
+					Post("/professional-profiles", professionalHandlers.CreateProfessionalProfile)
+				r.With(auth.RequireAuth(kr)).Get("/professional-profiles", professionalHandlers.ListProfessionalProfiles)
+				r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{slug}", professionalHandlers.GetProfessionalProfile)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
+					Patch("/professional-profiles/{id}", professionalHandlers.UpdateProfessionalProfile)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
+					Delete("/professional-profiles/{id}", professionalHandlers.DeleteProfessionalProfile)
 
-			// Member management routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
-				Post("/professional-profiles/{id}/members", professionalHandlers.AddMember)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
-				Delete("/professional-profiles/{id}/members/{userId}", professionalHandlers.RemoveMember)
-			r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{id}/members", professionalHandlers.ListMembers)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
-				Patch("/professional-profiles/{id}/members/{userId}", professionalHandlers.UpdateMemberRole)
+				// Member management routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
+					Post("/professional-profiles/{id}/members", professionalHandlers.AddMember)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
+					Delete("/professional-profiles/{id}/members/{userId}", professionalHandlers.RemoveMember)
+				r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{id}/members", professionalHandlers.ListMembers)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
+					Patch("/professional-profiles/{id}/members/{userId}", professionalHandlers.UpdateMemberRole)
 
-			// Invitation routes
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.invite")).
-				Post("/professional-profiles/{id}/invitations", professionalHandlers.CreateInvitation)
-			r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{id}/invitations", professionalHandlers.ListInvitations)
-			r.With(auth.RequireAuth(kr)).Post("/professional-profiles/invitations/{token}/accept", professionalHandlers.AcceptInvitation)
+				// Invitation routes
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.invite")).
+					Post("/professional-profiles/{id}/invitations", professionalHandlers.CreateInvitation)
+				r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{id}/invitations", professionalHandlers.ListInvitations)
+				r.With(auth.RequireAuth(kr)).Post("/professional-profiles/invitations/{token}/accept", professionalHandlers.AcceptInvitation)
 
-			// Author context route
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.author.switch")).
-				Get("/professional-profiles/{id}/author-context", professionalHandlers.GetAuthorContext)
+				// Author context route
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.author.switch")).
+					Get("/professional-profiles/{id}/author-context", professionalHandlers.GetAuthorContext)
+
+				// Relocation routes (Section 33 — Professional Profiles extras)
+				r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{id}/relocations", professionalHandlers.ListRelocations)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
+					Post("/professional-profiles/{id}/relocations", professionalHandlers.CreateRelocation)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
+					Patch("/professional-profiles/relocations/{relocationId}", professionalHandlers.UpdateRelocation)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
+					Delete("/professional-profiles/relocations/{relocationId}", professionalHandlers.DeleteRelocation)
+
+				// Document routes
+				r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{id}/documents", professionalHandlers.ListDocuments)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
+					Post("/professional-profiles/{id}/documents", professionalHandlers.CreateDocument)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
+					Patch("/professional-profiles/documents/{documentId}", professionalHandlers.UpdateDocument)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
+					Delete("/professional-profiles/documents/{documentId}", professionalHandlers.DeleteDocument)
+
+				// Verifier routes
+				r.With(auth.RequireAuth(kr)).Get("/professional-profiles/{id}/verifiers", professionalHandlers.ListVerifiers)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
+					Post("/professional-profiles/{id}/verifiers", professionalHandlers.CreateVerifier)
+			})
 
 			// Payment Core routes (Section 17 — Payment Core)
 			// Payment initiation
@@ -654,32 +755,34 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
 				Delete("/discount-codes/{id}", paymentHandlers.DeleteDiscountCode)
 
-			// Wallet & Credits routes (Section 28 — Wallet & Credits)
-			// Balance and ledger
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
-				Get("/wallet/balance", walletHandlers.GetBalance)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
-				Get("/wallet/ledger", walletHandlers.GetLedger)
-			// Conversion
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.points.convert")).
-				Post("/wallet/convert", walletHandlers.ConvertPoints)
-			// Settings (admin)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
-				Get("/wallet/settings", walletHandlers.GetSettings)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
-				Put("/wallet/settings", walletHandlers.UpdateSettings)
-			// Activity rules (admin)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
-				Get("/wallet/rules", walletHandlers.ListRules)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
-				Post("/wallet/rules", walletHandlers.CreateOrUpdateRule)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
-				Patch("/wallet/rules/{id}/toggle", walletHandlers.ToggleRule)
-			// Admin adjustments
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
-				Post("/wallet/admin/adjust", walletHandlers.AdminAdjust)
-			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
-				Get("/wallet/admin/user/{userId}/balance", walletHandlers.AdminGetUserBalance)
+			// Wallet & Credits routes — gated by feature.wallet (Section 28)
+			r.With(features.Gate(featureChecker, "feature.wallet")).Group(func(r chi.Router) {
+				// Balance and ledger
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
+					Get("/wallet/balance", walletHandlers.GetBalance)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
+					Get("/wallet/ledger", walletHandlers.GetLedger)
+				// Conversion
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.points.convert")).
+					Post("/wallet/convert", walletHandlers.ConvertPoints)
+				// Settings (admin)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
+					Get("/wallet/settings", walletHandlers.GetSettings)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
+					Put("/wallet/settings", walletHandlers.UpdateSettings)
+				// Activity rules (admin)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
+					Get("/wallet/rules", walletHandlers.ListRules)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
+					Post("/wallet/rules", walletHandlers.CreateOrUpdateRule)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
+					Patch("/wallet/rules/{id}/toggle", walletHandlers.ToggleRule)
+				// Admin adjustments
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
+					Post("/wallet/admin/adjust", walletHandlers.AdminAdjust)
+				r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
+					Get("/wallet/admin/user/{userId}/balance", walletHandlers.AdminGetUserBalance)
+			})
 
 			// Advertising routes (Section 25 — Ad Placement)
 			// Admin campaign management
@@ -826,58 +929,125 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					})
 				})
 
-		// User Profile & Preferences routes
-		r.With(auth.RequireAuth(kr)).Get("/users/me", usersHandlers.GetMyProfile)
-		r.With(auth.RequireAuth(kr)).Patch("/users/me", usersHandlers.UpdateMyProfile)
-		r.With(auth.RequireAuth(kr)).Get("/users/me/preferences", usersHandlers.GetMyPreferences)
-		r.With(auth.RequireAuth(kr)).Put("/users/me/preferences", usersHandlers.UpdateMyPreferences)
-		r.With(auth.RequireAuth(kr)).Get("/users", usersHandlers.ListUsers)
-		r.With(auth.RequireAuth(kr)).Get("/users/{username}", usersHandlers.GetUserByUsername)
+			// Admin Impersonation routes (Section 46)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.impersonate")).
+				Post("/admin/impersonate", impersonationHandlers.StartImpersonation)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.impersonate")).
+				Delete("/admin/impersonate", impersonationHandlers.EndImpersonation)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.impersonate")).
+				Get("/admin/impersonate/status", impersonationHandlers.GetImpersonationStatus)
 
-		// Onboarding routes (Section 09)
-		r.With(auth.RequireAuth(kr)).Get("/onboarding/status", onboardingHandlers.GetStatus)
-		r.With(auth.RequireAuth(kr)).Put("/onboarding/step", onboardingHandlers.UpdateStep)
-		r.With(auth.RequireAuth(kr)).Post("/onboarding/complete", onboardingHandlers.Complete)
-		r.With(auth.RequireAuth(kr)).Get("/onboarding/recommendations", onboardingHandlers.GetRecommendations)
-		r.With(auth.RequireAuth(kr)).Post("/onboarding/tour/dismiss", onboardingHandlers.DismissTour)
+			// Developer Portal — API Key management (Section 47)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
+				Get("/developer/keys", publicAPIHandlers.ListKeys)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
+				Post("/developer/keys", publicAPIHandlers.CreateKey)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
+				Delete("/developer/keys/{id}", publicAPIHandlers.RevokeKey)
 
-		// Search routes
-		r.With(auth.RequireAuth(kr)).Get("/search", searchHandlers.Search)
+			// Admin API Key management (Section 47)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Get("/admin/api-keys", publicAPIHandlers.ListAllKeys)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Post("/admin/api-keys/{id}/suspend", publicAPIHandlers.SuspendKey)
 
-		// Documentation System routes (Section 44)
-		// Public: read published pages for an audience
-		r.Get("/docs/{audience}", docsHandlers.ListDocPages)
-		r.Get("/docs/{audience}/{slug}", docsHandlers.GetDocPage)
+			// User Profile & Preferences routes
+			r.With(auth.RequireAuth(kr)).Get("/users/me", usersHandlers.GetMyProfile)
+			r.With(auth.RequireAuth(kr)).Patch("/users/me", usersHandlers.UpdateMyProfile)
+			r.With(auth.RequireAuth(kr)).Get("/users/me/preferences", usersHandlers.GetMyPreferences)
+			r.With(auth.RequireAuth(kr)).Put("/users/me/preferences", usersHandlers.UpdateMyPreferences)
+			r.With(auth.RequireAuth(kr)).Get("/users", usersHandlers.ListUsers)
+			r.With(auth.RequireAuth(kr)).Get("/users/{username}", usersHandlers.GetUserByUsername)
 
-		// Admin: manage documentation pages
-		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
-			Get("/admin/docs/{audience}", docsHandlers.ListAllDocPages)
-		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
-			Post("/admin/docs", docsHandlers.CreateDocPage)
-		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
-			Patch("/admin/docs/{id}", docsHandlers.UpdateDocPage)
-		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
-			Delete("/admin/docs/{id}", docsHandlers.DeleteDocPage)
+			// Onboarding routes (Section 09)
+			r.With(auth.RequireAuth(kr)).Get("/onboarding/status", onboardingHandlers.GetStatus)
+			r.With(auth.RequireAuth(kr)).Put("/onboarding/step", onboardingHandlers.UpdateStep)
+			r.With(auth.RequireAuth(kr)).Post("/onboarding/complete", onboardingHandlers.Complete)
+			r.With(auth.RequireAuth(kr)).Get("/onboarding/recommendations", onboardingHandlers.GetRecommendations)
+			r.With(auth.RequireAuth(kr)).Post("/onboarding/tour/dismiss", onboardingHandlers.DismissTour)
 
-		// Platform Settings (admin)
-		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.settings")).
-			Get("/admin/settings", adminHandlers.ListSettings)
-		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.settings")).
-			Put("/admin/settings/{category}", adminHandlers.UpdateSettings)
+			// Search routes
+			r.With(auth.RequireAuth(kr), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/search", searchHandlers.Search)
 
-		// Admin Moderation routes (stubs)
-		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.moderation")).
-			Get("/admin/moderation", adminHandlers.ListModeration)
-		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.moderation")).
-			Post("/admin/moderation/bulk", adminHandlers.BulkModeration)
-		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.moderation")).
-			Post("/admin/moderation/{id}/appeal", adminHandlers.AppealModeration)
+			// AI Core routes (Section 20 — AI Core)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ai.generate")).
+				Post("/ai/generate", aiHandlers.HandleGenerate)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
+				Post("/ai/hitl", aiHandlers.HandleCreateHITL)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
+				Get("/ai/hitl/pending", aiHandlers.HandleListPendingHITL)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
+				Post("/ai/hitl/{id}/approve", aiHandlers.HandleApproveHITL)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
+				Post("/ai/hitl/{id}/reject", aiHandlers.HandleRejectHITL)
 
-		// Admin Broadcast route (stub)
-		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
-			Post("/admin/broadcast", adminHandlers.Broadcast)
+			// Documentation System routes (Section 44)
+			// Public: read published pages for an audience
+			r.Get("/docs/{audience}", docsHandlers.ListDocPages)
+			r.Get("/docs/{audience}/{slug}", docsHandlers.GetDocPage)
+
+			// Admin: manage documentation pages
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Get("/admin/docs/{audience}", docsHandlers.ListAllDocPages)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Post("/admin/docs", docsHandlers.CreateDocPage)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Patch("/admin/docs/{id}", docsHandlers.UpdateDocPage)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Delete("/admin/docs/{id}", docsHandlers.DeleteDocPage)
+
+			// Learning Platform routes (Section 36)
+			// Public: view published tracks
+			r.Get("/learning/tracks", learningHandlers.ListPublishedTracks)
+			r.Get("/learning/tracks/{slug}", learningHandlers.GetTrackDetail)
+			r.Get("/learning/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}", learningHandlers.GetLesson)
+
+			// Authenticated: progress and certificates
+			r.With(auth.RequireAuth(kr)).Post("/learning/lessons/{id}/progress", learningHandlers.UpdateProgress)
+			r.With(auth.RequireAuth(kr)).Get("/learning/progress/{trackId}", learningHandlers.GetTrackProgress)
+			r.With(auth.RequireAuth(kr)).Get("/learning/certificates", learningHandlers.GetMyCertificates)
+
+			// Admin: CRUD for tracks, modules, lessons
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Get("/admin/learning/tracks", learningHandlers.ListAllTracks)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Post("/admin/learning/tracks", learningHandlers.CreateTrack)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Patch("/admin/learning/tracks/{id}", learningHandlers.UpdateTrack)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Delete("/admin/learning/tracks/{id}", learningHandlers.DeleteTrack)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Post("/admin/learning/tracks/{trackId}/modules", learningHandlers.CreateModule)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Patch("/admin/learning/modules/{id}", learningHandlers.UpdateModule)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Delete("/admin/learning/modules/{id}", learningHandlers.DeleteModule)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Post("/admin/learning/modules/{moduleId}/lessons", learningHandlers.CreateLesson)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Patch("/admin/learning/lessons/{id}", learningHandlers.UpdateLesson)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Delete("/admin/learning/lessons/{id}", learningHandlers.DeleteLesson)
+
+			// Platform Settings (admin)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Get("/admin/settings", adminHandlers.ListSettings)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Put("/admin/settings/{category}", adminHandlers.UpdateSettings)
+
+			// Admin Moderation routes (stubs)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/moderation", adminHandlers.ListModeration)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/moderation/bulk", adminHandlers.BulkModeration)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/moderation/{id}/appeal", adminHandlers.AppealModeration)
+
+			// Admin Broadcast route (stub)
+			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
+				Post("/admin/broadcast", adminHandlers.Broadcast)
+		})
 	})
-})
 
 	return r
 }
@@ -1067,12 +1237,28 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "analytics.cache.flush", Description: "Flush platform caches (admin-only)"},
 		// Documentation System (Section 44)
 		{Key: "docs.admin", Description: "Manage documentation pages (create, edit, delete, review)"},
+		// Learning Platform (Section 36)
+		{Key: "learning.view", Description: "View published learning tracks and lessons"},
+		{Key: "learning.progress.update", Description: "Update lesson progress"},
+		{Key: "learning.certificate.issue", Description: "Issue learning certificates"},
+		{Key: "learning.admin.manage", Description: "Manage learning tracks, modules, and lessons"},
+		// AI Core (Section 20)
+		{Key: "ai.generate", Description: "Generate AI content via the AI gateway"},
+		{Key: "ai.hitl.review", Description: "Review and approve/reject AI-generated output"},
+		{Key: "ai.context.points_balance", Description: "View AI credit/points balance"},
+		{Key: "ai.context.admin_view", Description: "View AI usage analytics (admin)"},
 		// Platform Settings (admin)
 		{Key: "admin.settings", Description: "Manage platform settings"},
 		// Admin Moderation
 		{Key: "admin.moderation", Description: "Manage content moderation queue"},
 		// Admin Broadcast
 		{Key: "admin.broadcast", Description: "Send broadcast messages to users"},
+		// Admin Impersonation (Section 46)
+		{Key: "admin.impersonate", Description: "Impersonate other users for support/debugging"},
+		// Public API & Developer Portal (Section 47)
+		{Key: "api.keys.self_manage", Description: "Create, list, and revoke own API keys"},
+		{Key: "api.keys.view.all", Description: "View all API keys across all users (admin)"},
+		{Key: "api.keys.manage", Description: "Suspend and manage API keys (admin)"},
 	}
 
 	var defaultTenantID pgtype.UUID
@@ -1162,7 +1348,7 @@ func (a *walletCreditAdapter) SpendCredits(
 // StartWorker creates an Asynq worker server from the provided config,
 // registers all task handlers, and starts processing in a background goroutine.
 // The returned shutdown function must be called during application shutdown to
-// gracefully drain in-flight tasks and close the Redis connection.
+// gracefully drain in-flight tasks and close the Valkey connection.
 func StartWorker(cfg *worker.Config) (shutdown func(), err error) {
 	srv := worker.NewServer(cfg)
 	mux := worker.NewMux()
