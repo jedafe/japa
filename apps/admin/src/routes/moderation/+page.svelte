@@ -22,6 +22,7 @@
 	let filterType = $state('');
 	let filterStatus = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
+	let errorMessage = $state('');
 
 	// Appeal modal
 	let showAppeal = $state(false);
@@ -39,9 +40,11 @@
 		if (filterType) params.set('type', filterType);
 		if (filterStatus) params.set('status', filterStatus);
 		try {
-			const data = await api<{ items: ModItem[]; page: number; total_pages: number }>(`/admin/moderation?${params}`);
-			items = data.items;
-			totalPages = data.total_pages;
+			const result = await api<{ items: ModItem[]; page: number; total_pages: number }>(`/admin/moderation?${params}`);
+			if (result.ok) {
+				items = result.data.items;
+				totalPages = result.data.total_pages;
+			}
 		} catch {
 			// API not available
 		} finally {
@@ -75,9 +78,14 @@
 
 	async function bulkAction(action: 'dismiss' | 'resolve') {
 		const ids = Array.from(selectedIds);
-		await api('/admin/moderation/bulk', { method: 'POST', body: { ids, action } });
-		selectedIds = new Set();
-		load();
+		errorMessage = '';
+		try {
+			await api('/admin/moderation/bulk', { method: 'POST', body: { ids, action } });
+			selectedIds = new Set();
+			load();
+		} catch {
+			errorMessage = 'Failed to perform bulk action. Please try again.';
+		}
 	}
 
 	function openAppeal(item: ModItem) {
@@ -88,9 +96,14 @@
 
 	async function submitAppeal() {
 		if (!appealItem) return;
-		await api(`/admin/moderation/${appealItem.id}/appeal`, { method: 'POST', body: { note: appealNote } });
-		showAppeal = false;
-		load();
+		errorMessage = '';
+		try {
+			await api(`/admin/moderation/${appealItem.id}/appeal`, { method: 'POST', body: { note: appealNote } });
+			showAppeal = false;
+			load();
+		} catch {
+			errorMessage = 'Failed to submit appeal. Please try again.';
+		}
 	}
 
 	function handlePageChange(p: number) {
@@ -106,6 +119,12 @@
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">Content Moderation</h1>
+
+{#if errorMessage}
+	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+		{errorMessage}
+	</div>
+{/if}
 <p class="mb-4 text-sm" style="color: var(--color-muted)">Unified queue: user reports and AI flags</p>
 
 <FilterBar filters={filterDefs} onApply={handleFilter} />

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Search, ChevronDown } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 
 	let {
 		country = $bindable(''),
@@ -34,7 +34,7 @@
 	let searchQuery = $state('');
 
 	function updateFilters() {
-		const params = new URLSearchParams($page.url.searchParams);
+		const params = new URLSearchParams(page.url.searchParams);
 		if (country) params.set('country', country);
 		else params.delete('country');
 		if (sort) params.set('sort', sort);

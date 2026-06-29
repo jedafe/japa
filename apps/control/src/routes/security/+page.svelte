@@ -28,30 +28,39 @@
 		{ key: 'resolved', label: 'Status' }
 	];
 
+	let apiAvailable = $state(true);
+	let errorMessage = $state('');
+
 	async function load() {
 		loading = true;
 		const sev = filterSeverity !== 'all' ? `&severity=${filterSeverity}` : '';
 		try {
-			const data = await api<{
+			const result = await api<{
 				results: ScanResult[];
 				page: number;
 				total_pages: number;
-			}>(`/control/security?page=${page}${sev}`);
-			results = data.results;
-			totalPages = data.total_pages;
+			}>(`/admin/analytics/security?page=${page}${sev}`);
+			if (result.ok) {
+				results = result.data.results;
+				totalPages = result.data.total_pages;
+				apiAvailable = true;
+			} else {
+				apiAvailable = false;
+			}
 		} catch {
-			// API not available
+			apiAvailable = false;
 		} finally {
 			loading = false;
 		}
 	}
 
 	async function resolveFinding(id: string) {
+		errorMessage = '';
 		try {
-			await api(`/control/security/${id}/resolve`, { method: 'POST' });
+			await api(`/admin/analytics/security/${id}/resolve`, { method: 'POST' });
 			await load();
 		} catch {
-			// ignore
+			errorMessage = 'Failed to resolve finding. Please try again.';
 		}
 	}
 
@@ -64,6 +73,18 @@
 </script>
 
 <PageHeader title="Security" description="Scan findings and security posture" />
+
+{#if errorMessage}
+	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+		{errorMessage}
+	</div>
+{/if}
+
+{#if !apiAvailable}
+	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">
+		Security analytics API is not available.
+	</div>
+{/if}
 
 <div class="mb-4 flex items-center gap-3">
 	<label for="severity-filter" class="text-xs font-medium" style="color: var(--color-muted)">Filter severity:</label>

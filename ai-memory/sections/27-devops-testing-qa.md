@@ -13,12 +13,13 @@ VPS deployment via Coolify or Dokploy. Provider-agnostic — Hetzner CX31 was th
 | sveltekit-admin | 3001 | Admin SPA |
 | sveltekit-control | 3002 | Control Panel SPA |
 | sveltekit-learn | 3003 | Learning Platform (SSR) |
+| sveltekit-docs | 3004 | Documentation site (SSR) |
 | postgres | 5432 | PostgreSQL 18.x + pgvector |
 | valkey | 6379 | Valkey (Redis-compatible) |
 | meilisearch | 7700 | Search |
-| minio | 9000/9001 | Object storage |
-| imgproxy | 8080 | Image transformations (internal) |
-| honcho | 8000 | AI memory (own `honcho` DB on Postgres) |
+| seaweedfs | 8333/23646 | Object storage (weed mini) |
+| imgproxy | 8099 | Image transformations (internal-only; 8080 reserved for go-api) |
+| honcho | 8001 | AI memory (own `honcho` DB on Postgres; 8000 reserved for glitchtip) |
 | glitchtip | 8000 | Self-hosted error tracking |
 | mailpit | 1025/8025 | Local email dev only |
 
@@ -40,13 +41,17 @@ defer sentry.Flush(2 * time.Second)
 ```
 
 ```ts
-// SvelteKit (+layout.ts or hooks.client.ts)
+// SvelteKit (hooks.client.ts) — client-side: must use PUBLIC_ prefix via $env/static/public
 import * as Sentry from '@sentry/sveltekit';
+import { PUBLIC_JC_GLITCHTIP_DSN, PUBLIC_JC_RELEASE_SHA, PUBLIC_JC_ENV } from '$env/static/public';
 Sentry.init({
-  dsn: import.meta.env.JC_GLITCHTIP_DSN,
-  release: import.meta.env.JC_RELEASE_SHA,
+  dsn: PUBLIC_JC_GLITCHTIP_DSN,
+  release: PUBLIC_JC_RELEASE_SHA,
+  environment: PUBLIC_JC_ENV,
   tracesSampleRate: 1.0,
 });
+// Docker Compose env: PUBLIC_JC_GLITCHTIP_DSN, PUBLIC_JC_RELEASE_SHA, PUBLIC_JC_ENV
+// Server-side (hooks.server.ts): use $env/static/private for JC_* vars without PUBLIC_ prefix
 ```
 
 GlitchTip PostgreSQL connects to a separate `glitchtip` database on the same Postgres 18.x instance (same pattern as Honcho).
@@ -109,7 +114,7 @@ type DB struct {
 
 ## Backups
 
-Nightly automated to MinIO (or S3-compatible provider), 30 daily + 12 monthly retention. Restore runbook is a documented procedure — never a one-click UI action:
+Nightly automated to SeaweedFS (or S3-compatible provider), 30 daily + 12 monthly retention. Restore runbook is a documented procedure — never a one-click UI action:
 
 ```bash
 # restore-runbook.sh

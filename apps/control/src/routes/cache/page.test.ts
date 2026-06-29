@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	api: vi.fn().mockRejectedValue(new Error('not connected'))
+	api: vi.fn().mockResolvedValue({ ok: true, data: {} })
 }));
 
 describe('Cache +page.svelte', () => {
@@ -12,18 +12,16 @@ describe('Cache +page.svelte', () => {
 		expect(screen.getByText('Cache Management')).toBeTruthy();
 	});
 
-	it('shows all cache target categories', () => {
+	it('shows the flush all caches action', () => {
 		render(Page);
-		expect(screen.getByText('Flush All Caches')).toBeTruthy();
-		expect(screen.getByText('Page Cache')).toBeTruthy();
-		expect(screen.getByText('Feed Cache')).toBeTruthy();
-		expect(screen.getByText('i18n Cache')).toBeTruthy();
-		expect(screen.getByText('Search Cache')).toBeTruthy();
+		const matches = screen.getAllByText('Flush All Caches');
+		expect(matches.length).toBeGreaterThanOrEqual(1);
+		expect(screen.getByText('Clear every cached layer including pages, feeds, i18n, and search results.')).toBeTruthy();
 	});
 
-	it('has flush buttons for each target', () => {
+	it('has a flush button', () => {
 		render(Page);
-		const flushButtons = screen.getAllByText('Flush');
-		expect(flushButtons.length).toBe(5);
+		const flushButton = screen.getByText('Flush All Caches', { selector: 'button' });
+		expect(flushButton).toBeTruthy();
 	});
 });

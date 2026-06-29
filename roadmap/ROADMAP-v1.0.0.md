@@ -22,17 +22,23 @@
 
 ## Stack Versions (authoritative — AGENTS.md is the single source of truth)
 
-| Component | Version |
-|---|---|
-| Go | 1.26.x |
-| SvelteKit | 2.57.x |
-| Bun | 1.3.x |
-| PostgreSQL | 18.x |
-| Valkey | 9.x |
-| Meilisearch | 1.45.x |
-| Tailwind CSS | v4 |
-| Bits UI | latest stable |
+| Component | Version | Notes |
+|---|---|---|
+| Go | **1.26.x** (1.26.4 at time of writing) | Chi router, sqlc, pgx/v5, Asynq |
+| Bun | **1.3.x** (1.3.14 at time of writing) | Runtime for all three SvelteKit apps |
+| SvelteKit | **2.57.x** | TypeScript 6.0 support, remote functions |
+| PostgreSQL | **18.x** (18.4 at time of writing) | pgvector extension. PG19 is in beta as of mid-2026 — do not use for production until GA. |
+| Valkey (Redis Protocol cache/queue layer) | **Valkey 9.x** | |
+| Meilisearch | **1.45.x** | |
+| Nginx | latest stable from distro/official repo | |
+| imgproxy | latest stable | |
+| SeaweedFS | 4.x (weed mini for dev) — Apache 2.0 | |
+| Tailwind CSS | v4 | CSS custom properties for theming tokens |
+| Bits UI | latest stable | Headless, accessible Svelte component primitives (Dialog, Dropdown, Tooltip, Select, etc.) |
 | Lucide Svelte | latest stable |
+| AutoAnimate | @formkit/auto-animate latest |
+| Docker Compose | v2.x (Compose Specification) | |
+
 
 ---
 
@@ -201,6 +207,21 @@ r.Use(GeoIPMiddleware(db))
 // Post bubbling: posts flow up max 2 hierarchy levels (configurable: spaces.bubble_depth)
 // Space auto-population: space:auto_populate Asynq task (Wikipedia + flagcdn.com + Pexels)
 // Space unread counter: jc:space_unread:{user_id}:{space_id} in Valkey, reset on visit
+
+// NEW (session 5):
+// spaces.creator_user_id — tracks who created each custom space (for quota enforcement)
+// space_parent_spaces(space_id, parent_space_id) — multi-parent junction table (replaces single parent_id)
+//   Custom spaces must belong to ≥1 primary space (country/state/city); enforced at handler
+// space_members(space_id, user_id, joined_at, invited_by) — explicit join tracking (separate from follows)
+//   Location selection in onboarding auto-joins all matching hierarchy levels
+// space_moderators(space_id, user_id, assigned_by, assigned_by_user_id)
+//   assigned_by: 'site_admin' (no membership required) | 'space_owner' (must be member)
+//   Moderators can be bot users (users.is_bot = true)
+// user_groups.max_spaces_creatable: quota per UserGroup (0=none, -1=unlimited, N=capped)
+//   Permission node: spaces.create — gated + quota-checked at handler
+// GET /api/v1/spaces/suggest-parents?q=... — Meilisearch, level IN [country,state,city]
+// GET /api/v1/spaces/search?q=...&filter=... — powers <SpaceCombobox> across all forms
+// content_spaces(content_id, space_id, is_primary) — multi-space post assignment (Section 14)
 ```
 
 ### 09. Content Type System (Section 14)
@@ -247,7 +268,7 @@ Edit lock: jc:editor_lock:{content_type}:{content_id} Valkey key, TTL 120s
 
 ## Phase 3 — Social & Real-Time
 
-**Sections: 10, 31, 32, 34, 35**
+**Sections: 10, 31, 32, 34, 35, 48**
 
 ### 12. Follow System (Section 31)
 
@@ -269,10 +290,16 @@ CREATE TABLE follows (
 ### 13. Activity Feed (Section 32)
 
 ```go
-// Four timelines: explore (guests), primary (logged-in), space, profile
+// Timelines: explore (guests/logged-out → Explore page), primary (logged-in → Home/default),
+//            space (Space feed), profile (User Timeline)
+// Homepage routing: authenticated → primary; unauthenticated → explore (server-rendered, no redirect)
 // Four sort modes: latest (keyset cursor), top (7-day vote_score), rising (HN formula), relevant (pgvector)
 // Rising: velocity = engagement / (hours_old + 2)^1.8   — gravity constant in system_settings
-// Hybrid fan-out: push to feeds table for spaces ≤ 5000 members, pull for larger
+// Sort bar: sticky on scroll (position: sticky, clears nav header); active mode in per-tab session state
+// Multi-space fan-out (session 5): one post → fan-out fires per content_spaces row (one per assigned space)
+//   content:fan_out_author_followers — author's followers
+//   content:fan_out_space           — per-space push (≤5000 members) or pull_index
+//   content:fan_out_bubble          — bubble up to parent primary spaces with 'from [Space]' label
 // feeds(user_id, content_id, space_id, content_type, score, created_at) — UNIQUE(user_id, content_id)
 // content_scores: maintained by Asynq tasks (maintenance:update_velocity_scores every 10 min)
 // Onboarding bootstrap: wizard forces minimum follows before completion (Section 09)
@@ -291,14 +318,14 @@ CREATE TABLE follows (
 ### 15. Media System (Section 34)
 
 ```go
-// Two-step upload: pre-sign → client uploads direct to MinIO → confirm (server moves temp/ → media/)
+// Two-step upload: pre-sign → client uploads direct to SeaweedFS → confirm (server moves temp/ → media/)
 // imgproxy HMAC-SHA256 signed URL: ALWAYS generated server-side, NEVER cached in DB
 // Video uploads: RBAC-gated (media.video.upload), ffmpeg processing via video_processing Asynq task
 // ClamAV scan via media_scan task — BLOCKS persistence until clean (not best-effort)
 // Media Library: /dashboard/media — browsable grid, searchable, per-user scoped (admin sees all)
 // Modal Picker: shared Svelte store/portal, opens in TipTap and Page Builder without navigation
 // CDN: admin-configurable via system_settings media.cdn.base_url
-// S3-compatible: MinIO default, configurable to R2/Backblaze/AWS in Admin Settings → Media
+// S3-compatible: SeaweedFS default, configurable to R2/Backblaze/AWS in Admin Settings → Media
 ```
 
 ### 16. Notification System (Section 35)
@@ -310,6 +337,23 @@ CREATE TABLE follows (
 // "Alice and 9 others reacted" — not 10 separate notifications
 // Delivery: in_app (WS notification event) + optional email + push per user preference
 // Admin Panel: add/remove notification_types without code deploy
+```
+
+### 17. Direct Messages (Section 48)
+
+```go
+// feature.dm flag (Default: true) — full DM UI hidden + routes 404 when disabled
+// dm_conversations(participant_a, participant_b) — CHECK(a < b) + UNIQUE prevents duplicate rows
+// dm_messages(conversation_id, sender_id, body jsonb, media_id, edited_at, deleted_at)
+// dm_requests(requester_id, recipient_id, preview_message, status) — pending approval flow
+// users.dm_privacy: 'everyone'|'followers_only'|'nobody' — gates who can open new conversations
+// Mutual followers bypass dm_requests and go direct; mentions fire regardless of dm_privacy
+// Unread: jc:dm_total_unread:{user_id} in Valkey + unread_a/unread_b columns in DB
+// WS: channel dm:{conversation_id}; events dm_message + typing (existing event type, scoped to conv)
+// Routes: GET/POST /dm/conversations, GET/POST /dm/conversations/:id/messages
+//         POST /dm/conversations/:id/read, GET/POST /dm/requests, POST /dm/requests/:id/accept|decline|block
+// Edit window: 15 minutes after send; soft delete (body nulled)
+// Frontend: /messages list + /messages/:id thread (sidebar on desktop, full-page on mobile)
 ```
 
 ---
@@ -433,7 +477,7 @@ func PayWithCredit(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amount int6
 // learn.japaconnect.com — fourth SvelteKit SSR app
 // learning_tracks → learning_modules → learning_lessons (article|video|quiz|checklist)
 // Dual access: Pro subscription = all tracks | course_access payment = individual track
-// Certificate: learning:issue_certificate Asynq task generates PDF, stored in MinIO
+// Certificate: learning:issue_certificate Asynq task generates PDF, stored in SeaweedFS
 // Quiz: lesson_quizzes table, quiz_passed flag on lesson_progress
 ```
 
@@ -517,7 +561,7 @@ func PayWithCredit(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amount int6
 
 ## Phase 7 — Frontend Polish
 
-**Sections: 09, 23, 26, 39, 44**
+**Sections: 09, 23, 26, 39, 44, 47**
 
 ### 32. Main Site Frontend (Section 23)
 
@@ -565,6 +609,42 @@ func PayWithCredit(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amount int6
 // AI-generated with HITL review — same pipeline as all AI content
 // API Playground at /docs/api/playground — live API execution with user's API key
 // Deployed same Docker Compose setup, Nginx virtual host
+```
+
+### 36. Frontend Animation & Instant Navigation (Section 23 — ADR-051)
+
+```svelte
+<!-- AutoAnimate (@formkit/auto-animate, 2.5KB) — applied via `use:autoAnimate` on all reactive lists -->
+<!-- Feed cards, notifications, comments, search results, space member lists — animate in/out/reorder -->
+<!-- Svelte built-in transitions (svelte/transition, svelte/animate) — modals, drawers, toasts, skeletons -->
+<!-- Motion (motion.dev) — per-component micro-interactions, tree-shaken, not in base bundle -->
+<!-- Reduced motion: prefersReducedMotion store gates all durations to 0 globally -->
+
+<!-- Instant navigation — SvelteKit native, no external library: -->
+<!-- data-sveltekit-preload-data="hover"  → load() fires on hover, click is already done by click time -->
+<!-- data-sveltekit-preload-code="viewport" → JS chunks preloaded as links enter viewport -->
+<!-- View Transitions API via onNavigate() → 120ms cross-fade; named view-transition-name for hero morphs -->
+<!-- Graceful fallback: startViewTransition not supported → instant DOM swap, no error -->
+```
+
+### 37. Public API & Developer Portal (Section 47)
+
+```go
+// api.japaconnect.com — sixth Nginx virtual host; same Go service, dedicated sub-router
+// oapi-codegen: spec-first; api/openapi/api.yaml → go generate → api/openapi/generated/api.gen.go
+// Middleware stack: APIKeyMiddleware → RateLimitMiddleware (Valkey) → ScopeMiddleware → OapiRequestValidator
+// api_keys table: key_prefix (visible), key_hash (SHA-256), scopes (text[]), rate_limit_tier, status
+// Key format: jc_live_<32hex> | jc_test_<32hex>; full key shown once, never stored plain
+// Rate tiers: basic=100/min, standard=1000/min, premium=10000/min, unlimited (Valkey sliding window)
+// Rate-limit key: jc:api_rate:{key_prefix}:{minute_bucket} — INCR+EXPIRE 70s
+// Response headers: X-RateLimit-Limit, X-RateLimit-Remaining, Retry-After (on 429)
+// Swagger UI: go:embed openapi/swagger-ui → served at api.japaconnect.com/docs; no CDN dependency
+// CSP for /docs: 'self' + 'unsafe-inline'; production API routes: strict CSP
+// Developer self-service: /dashboard/developer in main site (max keys = system_settings api.keys.max_per_user)
+// Admin Control Panel: /control/api-keys — view/suspend/revoke/tier-change/create; rate tier hot-reload
+// Permission nodes: api.keys.view.all | api.keys.manage | api.keys.analytics.view
+// Error format: { "error": { "code": "...", "message": "...", "status": N, "docs": "..." } }
+// V1 scope family: api.read.* (default); api.write.* (admin-approved per key)
 ```
 
 ---
@@ -633,13 +713,16 @@ func EraseUserAccount(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error {
 // GlitchTip DB: separate logical database 'glitchtip' on same Postgres 18.x instance
 ```
 
-### Impersonation
+### 46. Admin Impersonation (Section 46)
 
 ```go
-// Admin (or permitted UserGroup) can impersonate any user for support purposes
-// Impersonation session: jc:impersonate:{admin_id} → {target_user_id}, TTL 30min
-// Every action during impersonation is logged to audit_logs with actor_user_id = admin AND impersonated_user_id
-// Impersonation visible in header (yellow banner "Viewing as [username]")
+// Permission node: admin.impersonate — not in any default role including super_admin; manually granted
+// Valkey key: jc:impersonate:{admin_id} → {target_user_id}, TTL 30min (non-renewable)
+// API: POST /api/v1/admin/impersonate, DELETE, GET /status
+// Middleware injects impersonated identity into context; preserves real admin ID for audit
+// audit_logs.impersonated_user_id — non-null only during impersonation; actor_user_id = real admin
+// No admin-on-admin impersonation; no 2FA inheritance; no TTL renewal
+// UI: yellow sticky banner "Viewing as [username]" with countdown + End Session button
 // RULES.md: impersonation sessions MUST be logged — no silent impersonation
 ```
 
@@ -652,9 +735,9 @@ services:
   postgres:    # PostgreSQL 18.x, databases: japa, honcho, glitchtip
   valkey:      # Valkey 9.x
   meilisearch: # Meilisearch 1.45.x
-  minio:       # MinIO, R2-compatible mode
-  imgproxy:    # Internal only
-  honcho:      # Plastic Labs, port 8000, uses 'honcho' DB
+  seaweedfs:   # SeaweedFS (weed mini — all-in-one), S3 port 8333, admin UI port 23646
+  imgproxy:    # Internal only, port 8099 (avoids conflict with go-api:8080)
+  honcho:      # Plastic Labs, port 8001 (internal; avoids conflict with glitchtip:8000), uses 'honcho' DB
   glitchtip:   # Port 8000 (internal), uses 'glitchtip' DB
   go-api:      # Port 8080
   main:        # SvelteKit SSR, port 3000
@@ -679,7 +762,13 @@ JC_GLITCHTIP_DSN=http://...@glitchtip:8000/1
 JC_IMGPROXY_KEY=...
 JC_IMGPROXY_SALT=...
 JC_IMGPROXY_BASE_URL=https://img.japaconnect.com
-JC_HONCHO_URL=http://honcho:8000
+JC_IMGPROXY_INTERNAL_URL=http://imgproxy:8099  # internal Docker port (avoids conflict with go-api:8080)
+JC_HONCHO_URL=http://honcho:8001
 JC_RELEASE_SHA=...
 JC_ENV=production
+JC_S3_ENDPOINT=http://seaweedfs:8333  # SeaweedFS S3-compatible endpoint (weed mini)
+JC_S3_ACCESS_KEY=...
+JC_S3_SECRET_KEY=...
+JC_S3_BUCKET=japaconnect
+JC_S3_REGION=us-east-1              # Placeholder; SeaweedFS ignores region
 ```

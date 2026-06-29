@@ -6,13 +6,14 @@
 -- =====================
 -- Forum Threads
 -- =====================
+-- NOTE: parent_reply_id FK to forum_replies added via ALTER below,
+-- because forum_replies does not exist yet at CREATE TABLE time.
 CREATE TABLE forum_threads (
     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id           uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     content_id          uuid REFERENCES contents(id) ON DELETE SET NULL,
     space_id            uuid REFERENCES spaces(id) ON DELETE SET NULL,
     author_user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    parent_reply_id     uuid REFERENCES forum_replies(id) ON DELETE SET NULL,
     title               text NOT NULL,
     slug                text NOT NULL,
     body                jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -55,6 +56,15 @@ CREATE TABLE forum_replies (
 );
 CREATE INDEX idx_forum_replies_thread ON forum_replies(tenant_id, thread_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_forum_replies_parent ON forum_replies(tenant_id, parent_reply_id) WHERE deleted_at IS NULL;
+
+-- =====================
+-- Add forward-ref FK: forum_threads.parent_reply_id -> forum_replies
+-- =====================
+ALTER TABLE forum_threads
+    ADD COLUMN parent_reply_id uuid;
+ALTER TABLE forum_threads
+    ADD CONSTRAINT fk_forum_threads_parent_reply
+    FOREIGN KEY (parent_reply_id) REFERENCES forum_replies(id) ON DELETE SET NULL;
 
 -- =====================
 -- Forum Votes (upvote/downvote)

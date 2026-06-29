@@ -164,7 +164,7 @@ FROM users u
 JOIN user_group_memberships ugm ON ugm.user_id = u.id
 WHERE ugm.group_id = @group_id
     AND u.tenant_id = @tenant_id
-    AND u.is_active = true
+    AND u.status = 'active'
 ORDER BY (
     SELECT COUNT(*) FROM tickets t
     WHERE t.assigned_to = u.id AND t.status NOT IN ('resolved', 'closed', 'spam')

@@ -10,7 +10,7 @@
 - **Erasure** (Section 19, ADR-014): the erasure job gains a step that calls Honcho's deletion API for the erased user's ID, alongside the existing same-row PII wipe.
 
 **Rationale:**
-- Health monitoring follows the exact pattern already established for every other external/self-hosted dependency (Meilisearch, MinIO) — no new pattern needed, just a new entry in an existing list.
+- Health monitoring follows the exact pattern already established for every other external/self-hosted dependency (Meilisearch, SeaweedFS) — no new pattern needed, just a new entry in an existing list.
 - Per-user visibility serves two concrete needs: support ("why did JapaBot say that to me") and trust & safety review, both already-established Admin Panel responsibilities for other systems (moderation queue, appeals).
 - No-edit, delete-only avoids a subtler problem than it looks: letting an admin hand-edit what an AI system "believes" about a user is a different and riskier capability than letting them delete and let it re-derive naturally from future interaction. Delete-only keeps the intervention simple and auditable.
 - Honcho's separate database (Section 01, ADR-002 addendum) means erasure cannot reach it via the existing row-anonymization SQL — it structurally requires a separate deletion call, the same way any other external service integration would.

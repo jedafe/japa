@@ -43,6 +43,17 @@ build/
 .DS_Store
 Thumbs.db
 
+# Binaries (download or build, never commit)
+meilisearch
+seed
+
+# Meilisearch runtime data
+data.ms/
+
+# Playwright / test artifacts
+.playwright-mcp/
+test-results/
+
 # sqlc generated files are committed, so they are NOT ignored.
 # Uncomment the line below if you prefer to generate at build time instead:
 # internal/db/generated/

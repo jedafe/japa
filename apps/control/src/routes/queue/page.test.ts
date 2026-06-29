@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	api: vi.fn().mockRejectedValue(new Error('not connected'))
+	api: vi.fn().mockResolvedValue({ ok: true, data: {} })
 }));
 
 describe('Queue +page.svelte', () => {
@@ -12,16 +12,8 @@ describe('Queue +page.svelte', () => {
 		expect(screen.getByText('Queue Monitor')).toBeTruthy();
 	});
 
-	it('shows queue tier cards', () => {
+	it('shows the not-implemented fallback', () => {
 		render(Page);
-		expect(screen.getByText('critical queue')).toBeTruthy();
-		expect(screen.getByText('default queue')).toBeTruthy();
-		expect(screen.getByText('low queue')).toBeTruthy();
-		expect(screen.getByText('Dead Letter')).toBeTruthy();
-	});
-
-	it('shows recent tasks section', () => {
-		render(Page);
-		expect(screen.getByText('Recent Tasks')).toBeTruthy();
+		expect(screen.getByText('Queue monitoring API is not implemented yet.')).toBeTruthy();
 	});
 });

@@ -1,0 +1,19 @@
+# ADR-050: Public API — oapi-codegen + Chi, API Key Auth, Developer Portal
+
+**Status:** Accepted
+
+**Context:** JapaConnect needs a public API for external developers and partner integrations. The existing Go monolith using Chi already serves the internal SvelteKit apps. Three architectural questions required decisions: (1) how to implement and document the OpenAPI contract, (2) how to authenticate and rate-limit external access, (3) whether to add a separate API gateway service.
+
+**Decision 1 — No separate API gateway.** The same Go service handles both internal SvelteKit traffic and the public developer API. Dedicated middleware layers (API key auth → rate limit → scope check → OapiRequestValidator) are applied to a sub-router mounted only for `api.japaconnect.com` traffic, resolved at the Nginx virtual host level. Adding Kong, AWS API Gateway, or any dedicated proxy would introduce infra complexity inconsistent with the lean, Docker-Compose-first philosophy.
+
+**Decision 2 — oapi-codegen (spec-first) over Goa.** Chi is locked. oapi-codegen generates a `ServerInterface` that Chi handler structs implement, giving compile-time proof that all spec-defined routes are handled. `OapiRequestValidator` drops malformed payloads before they reach business logic. Goa was rejected: it is a full framework imposing its own DSL, routing, and transport model — replacing Chi is not acceptable. The spec-first approach (write OpenAPI YAML → generate Go) is preferred over code-first because the public spec is a contract commitment to external developers and must be authored intentionally, not inferred from handler signatures.
+
+**Decision 3 — Embedded Swagger UI (go:embed), not CDN.** The Swagger UI static assets are committed to the repository and embedded in the binary via `go:embed`. CDN delivery was rejected: the platform is self-hosted and may be deployed in environments with restricted outbound internet access. The binary size impact (~8MB) is acceptable. The CSP is `'self' + 'unsafe-inline'` for the docs sub-router; the production API routes apply a stricter policy.
+
+**Decision 4 — SHA-256 key hashing, not bcrypt.** API keys are long random strings (256 bits of entropy); they are not passwords and do not benefit from bcrypt's cost factor. SHA-256 is fast, sufficient, and avoids adding latency to every API request's auth check. The key prefix (first 12 chars) enables quick pre-filter lookups before hitting the hash comparison.
+
+**Decision 5 — V1 scopes are read-heavy.** Write scopes (`api.write.*`) are available but require admin approval per key. This limits the blast radius of a leaked key in V1 while the audit logging and monitoring infrastructure matures.
+
+**Decision 6 — `api.japaconnect.com` as the sixth subdomain.** Justified as a genuinely distinct product surface: the public developer API has a different audience (developers vs users), a different auth mechanism (API keys vs session cookies), a different SLA/rate-limiting context, and a dedicated documentation surface. This is consistent with the subdomain policy (subdomains for distinct product surfaces, path routing otherwise).
+
+**Consequences:** The `api/openapi/generated/` directory is committed to version control (generated code is not gitignored here — it's a contract artifact, not an intermediate build artifact). `go generate ./api/openapi/...` must be run when `api.yaml` changes. The `OapiRequestValidator` middleware runs for every public API request, adding a validation pass; this is acceptable overhead for an external-facing API where strict contract enforcement matters more than microseconds. Internal SvelteKit calls continue to use session cookie auth and are NOT subject to the OapiRequestValidator. Rate limit tiers stored in `system_settings` are hot-reloadable without redeploy.

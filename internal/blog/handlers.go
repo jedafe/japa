@@ -10,6 +10,7 @@ package blog
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -80,7 +81,9 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Warn("json encode error", "error", err)
+	}
 }
 
 // writeError writes a JSON error response following the JapaConnect API format.
@@ -394,16 +397,21 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, p := range input.Posts {
-		var contentID pgtype.UUID
-		if err := contentID.Scan(p.ContentID); err != nil {
+	posts := make([]struct {
+		ContentID pgtype.UUID
+		Position  int32
+	}, len(input.Posts))
+	for i, p := range input.Posts {
+		if err := posts[i].ContentID.Scan(p.ContentID); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id in posts array")
 			return
 		}
-		if err := h.Service.ReorderPostsInSeries(r.Context(), seriesID, contentID, p.Position); err != nil {
-			handleServiceError(w, err)
-			return
-		}
+		posts[i].Position = p.Position
+	}
+
+	if err := h.Service.BulkReorderSeriesPosts(r.Context(), seriesID, posts); err != nil {
+		handleServiceError(w, err)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})

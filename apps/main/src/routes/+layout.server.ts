@@ -21,6 +21,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
 	return {
 		user: locals.user,
 		flags,
-		notificationCount
+		notificationCount,
+		token: token ?? null
 	};
 };

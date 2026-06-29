@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { getToken } from '$lib/api';
 	import StepWelcome from '$lib/onboarding/StepWelcome.svelte';
 	import StepDestination from '$lib/onboarding/StepDestination.svelte';
 	import StepInterests from '$lib/onboarding/StepInterests.svelte';
@@ -9,9 +10,17 @@
 
 	let { data } = $props();
 
+	function authHeaders(): Record<string, string> {
+		const h: Record<string, string> = { 'Content-Type': 'application/json' };
+		const token = getToken();
+		if (token) h['Authorization'] = `Bearer ${token}`;
+		return h;
+	}
+
 	let currentStep = $state(data.onboarding.current_step);
 	let stepData = $state<Record<string, unknown>>(data.onboarding.step_data || {});
 	let submitting = $state(false);
+	let errorMessage = $state('');
 
 	const steps = [
 		{ number: 1, label: 'Identity' },
@@ -27,14 +36,17 @@
 
 	async function nextStep() {
 		submitting = true;
+		errorMessage = '';
 		try {
 			await fetch('/api/v1/onboarding/step', {
 				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
+				headers: authHeaders(),
 				body: JSON.stringify({ step: currentStep + 1, step_data: stepData })
 			});
 
 			currentStep = Math.min(currentStep + 1, 5);
+		} catch {
+			errorMessage = 'Failed to save step. Please try again.';
 		} finally {
 			submitting = false;
 		}
@@ -46,13 +58,16 @@
 
 	async function completeOnboarding() {
 		submitting = true;
+		errorMessage = '';
 		try {
 			await fetch('/api/v1/onboarding/complete', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' }
+				headers: authHeaders()
 			});
 
 			goto('/');
+		} catch {
+			errorMessage = 'Failed to complete onboarding. Please try again.';
 		} finally {
 			submitting = false;
 		}

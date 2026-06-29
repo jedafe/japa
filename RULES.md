@@ -2,17 +2,6 @@
 
 Hard rules for any agent or developer working on this codebase. Where a rule conflicts with convenience, the rule wins. Pinned tech stack versions live in `AGENTS.md` — don't duplicate version numbers here, reference that file so there's one place to update them.
 
-## Take Note
-- I'm a non-coder. I won't read source code to verify your work. After any change, give me a 3-step manual test I can run in the browser.
-
-- Before touching files, list every file you plan to modify. If the list is >5, stop and propose splitting the task.
-
-- If three consecutive fix attempts fail, STOP. Propose: (a) revert, (b) what we know vs don't know, (c) a different approach.
-
-- This project uses only [stack list]. Do not introduce new libraries, frameworks, or services without asking me first.
-
-- Before writing code for any non-trivial change, explain in plain language what you understand the goal is and your planned approach. Wait for my 'go.'
-
 ## Never Do
 
 **Never hardcode a role name or permission check.** Every access decision routes through the dynamic RBAC permission system.
@@ -22,6 +11,15 @@ if user.Role == "editor" { allowPublish() }
 // RIGHT
 if rbac.HasPermission(ctx, user, "blog.publish") { allowPublish() }
 ```
+
+## Important Note
+- I'm a non-coder. I won't read source code to verify your work. After any change, give me a 3-step manual test I can run in the browser.
+
+- Before touching files, list every file you plan to modify. If the list is >5, stop and propose splitting the task.
+
+- If three consecutive fix attempts fail, STOP. Propose: (a) revert, (b) what we know vs don't know, (c) a different approach.
+
+- Before writing code for any non-trivial change, explain in plain language what you understand the goal is and your planned approach. Wait for my 'go.'
 
 **Never store raw card data on our own servers.** All card collection happens through Stripe Elements or Paystack's hosted popup — payments code only ever handles tokens/references, never PANs.
 
@@ -51,7 +49,7 @@ if rbac.HasPermission(ctx, user, "blog.publish") { allowPublish() }
 
 **Never expose an endpoint without an assigned rate-limit tier.** Every new endpoint gets an explicit tier at design time (tight/moderate/loose — see `ai-memory/skills/abuse-protection-patterns.md`), not the application default by accident. AI Gateway calls specifically are capped by a hard per-user quota, not just the admin-facing budget alert — a single account shouldn't be able to run up real provider costs unnoticed.
 
-**Never accept a file upload without server-side validation.** MIME type by content inspection (not the client header or extension), per-context size limit, and a clean ClamAV scan via `media_scan` before the file is persisted to MinIO — see ADR-023.
+**Never accept a file upload without server-side validation.** MIME type by content inspection (not the client header or extension), per-context size limit, and a clean ClamAV scan via `media_scan` before the file is persisted to SeaweedFS — see ADR-023.
 
 **Never update a Points or Credits balance as a column mutation.** Every change is a new row in the immutable `wallet_ledger` — see `ai-memory/skills/wallet-ledger-pattern.md`. Current balance is the latest row's `resulting_balance`, not a counter maintained separately.
 
@@ -63,23 +61,15 @@ if rbac.HasPermission(ctx, user, "blog.publish") { allowPublish() }
 
 **Never automate Group membership changes based on Points/Karma.** Crossing a Points threshold must never trigger an automatic Group promotion — Group assignment is always a manual admin action. See Section 28, Section 03, and ADR-028.
 
-**Never include emojis in code**
-
-**Never use n+1 query**
-
-**NEVER bypass safety checks or hardcode credentials:** Agents should be forbidden from exposing sensitive data, bypassing security protocols, or hardcoding API keys and passwords in scripts.
-
-**NEVER execute destructive database actions:** Agents must be barred from altering or dropping data schemas without explicit human approval.
-
-**NEVER proceed without user authorization on major changes:** For non-trivial modifications (such as production deployments or architectural refactoring), the agent must stop and ask for explicit confirmation.
-
-**NEVER use placeholder or test data in committed code:** Agents should not ship placeholder image URLs, incomplete strings, or untested stubs to production.
-
-**NEVER introduce unapproved libraries:** An agent should be restricted to a pre-defined tech stack and must never introduce new, unvetted packages or frameworks without permission.
-
-**NEVER hallucinate error handling:** When faced with edge cases (empty lists, missing permissions), the agent must not invent arbitrary logic; it must be instructed to fail safely or ask for clarification.
-
-**NEVER fall into endless loops of the same mistake:** If the agent triggers consecutive errors or failures, it must stop, flag the issue, and wait for human intervention rather than iterating blindly.
+- Never include emojis in code
+- Never use n+1 query
+- NEVER bypass safety checks or hardcode credentials: Agents should be forbidden from exposing sensitive data, bypassing security protocols, or hardcoding API keys and passwords in scripts.
+- NEVER execute destructive database actions: Agents must be barred from altering or dropping data schemas without explicit human approval.
+- NEVER proceed without user authorization on major changes: For non-trivial modifications (such as production deployments or architectural refactoring), the agent must stop and ask for explicit confirmation.
+- NEVER use placeholder or test data in committed code: Agents should not ship placeholder image URLs, incomplete strings, or untested stubs to production.
+- NEVER introduce unapproved libraries: An agent should be restricted to a pre-defined tech stack and must never introduce new, unvetted packages or frameworks without permission.
+- NEVER hallucinate error handling: When faced with edge cases (empty lists, missing permissions), the agent must not invent arbitrary logic; it must be instructed to fail safely or ask for clarification.
+- NEVER fall into endless loops of the same mistake: If the agent triggers consecutive errors or failures, it must stop, flag the issue, and wait for human intervention rather than iterating blindly.
 
 **Always write against the standard Valkey/Redis-protocol command set, never a vendor-specific extension.** This was deliberately kept generic while the Redis-vs-Valkey decision was open (now resolved — see ADR-021, Valkey is the locked choice) and remains good practice regardless, since it's what keeps the abstraction honest.
 
@@ -88,7 +78,7 @@ if rbac.HasPermission(ctx, user, "blog.publish") { allowPublish() }
 - Always namespace Valkey keys with `jc:` and environment variables with `JC_`.
 - Always version cache keys by content's `updated_at` (or an explicit version field) rather than explicitly invalidating on every edit — let stale keys age out via TTL.
 - Always run DB migrations as a distinct deploy step before the new app version serves traffic. Breaking schema changes use the two-phase pattern (deploy code supporting both shapes → migrate → deploy code using only the new shape).
-- Always validate uploaded files server-side (MIME sniffing, size limits) and route them through the malware scan task before persisting to MinIO.
+- Always validate uploaded files server-side (MIME sniffing, size limits) and route them through the malware scan task before persisting to SeaweedFS.
 - Always log sensitive admin actions (impersonation, manual payment approval, erasure, language pack publish, moderation actions) to `audit_logs`.
 - Always treat payment webhook delivery as the source of truth for payment status — never the client-side success callback.
 - Always check idempotency (`event_id` already processed) before acting on any inbound webhook.
@@ -99,7 +89,6 @@ if rbac.HasPermission(ctx, user, "blog.publish") { allowPublish() }
 - Always apply exponential backoff lockout on repeated failed login attempts, keyed by account and IP — see `ai-memory/skills/abuse-protection-patterns.md`.
 - Always apply Activity Point Rule value changes forward-only — never retroactively rescore historical `wallet_ledger` entries when an admin edits a rule's point value.
 - Always check the `reference` idempotency key before writing a `wallet_ledger` entry for an activity event or a Credit purchase — the same discipline as inbound webhooks.
-- Always ask for clarifications if you run into a state of dilemma: Never assumes and come to conclusion on your own.
 - Always isolate execution: Never run code directly on the host system. Always use a secure, sandboxed container (like Docker) or virtual environment.
 - Always block destructive commands: Never execute high-risk commands (e.g., rm -rf /, drop database) without explicit, multi-factor human confirmation.
 - Always scrub secrets: Never commit or expose API keys, passwords, tokens, or hardcoded credentials. Automatically route them to environment variables. 

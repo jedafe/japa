@@ -388,6 +388,48 @@ func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValue
 	return i, err
 }
 
+const getComparisonValuesByContent = `-- name: GetComparisonValuesByContent :many
+SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
+       cv.value_boolean, cv.created_at
+FROM comparison_values cv
+JOIN comparison_items ci ON ci.id = cv.item_id
+JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
+WHERE ci.content_id = $1 AND cv.tenant_id = $2
+`
+
+type GetComparisonValuesByContentParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetComparisonValuesByContent(ctx context.Context, arg GetComparisonValuesByContentParams) ([]ComparisonValue, error) {
+	rows, err := q.db.Query(ctx, getComparisonValuesByContent, arg.ContentID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ComparisonValue
+	for rows.Next() {
+		var i ComparisonValue
+		if err := rows.Scan(
+			&i.DimensionID,
+			&i.ItemID,
+			&i.TenantID,
+			&i.Value,
+			&i.ValueRating,
+			&i.ValueBoolean,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listComparisonDimensionsByContent = `-- name: ListComparisonDimensionsByContent :many
 SELECT id, content_id, tenant_id, label, dimension_type, position, created_at
 FROM comparison_dimensions

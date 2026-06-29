@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -627,6 +628,67 @@ func (h *Handlers) DeleteSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// ---------------------------------------------------------------------------
+// Space Membership Handlers
+// ---------------------------------------------------------------------------
+
+// ToggleSpaceMembership handles POST /api/v1/spaces/{slug}/join.
+// Toggles membership: joins if not a member, leaves if already a member.
+func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	isMember, err := h.Service.IsMember(r.Context(), space.ID, user.UserID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if isMember {
+		if err := h.Service.Leave(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, -1); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+	} else {
+		if err := h.Service.Join(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, 1); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+	}
+
+	memberCount, err := h.Service.CountMembers(r.Context(), space.ID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"joined":       !isMember,
+			"member_count": memberCount,
+		},
+	})
 }
 
 // ---------------------------------------------------------------------------

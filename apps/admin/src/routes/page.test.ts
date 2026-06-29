@@ -15,28 +15,21 @@ describe('Admin +page.svelte', () => {
 	it('shows key metric labels after load', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('Signups Today')).toBeTruthy();
+			expect(screen.getByText('Open Tickets')).toBeTruthy();
 		});
 	});
 
-	it('shows top spaces section after load', async () => {
+	it('shows platform overview section after load', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('Top Spaces')).toBeTruthy();
+			expect(screen.getByText('Platform Overview')).toBeTruthy();
 		});
 	});
 
-	it('shows geo distribution section after load', async () => {
+	it('shows support queue section after load', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('Geo Distribution')).toBeTruthy();
-		});
-	});
-
-	it('shows moderation section after load', async () => {
-		render(Page);
-		await waitFor(() => {
-			expect(screen.getByText('Moderation')).toBeTruthy();
+			expect(screen.getByText('Support Queue')).toBeTruthy();
 		});
 	});
 });

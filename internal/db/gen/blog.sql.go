@@ -143,6 +143,16 @@ func (q *Queries) DeleteBlogSeries(ctx context.Context, arg DeleteBlogSeriesPara
 	return err
 }
 
+const deleteSeriesPosts = `-- name: DeleteSeriesPosts :exec
+DELETE FROM blog_series_posts
+WHERE series_id = $1
+`
+
+func (q *Queries) DeleteSeriesPosts(ctx context.Context, seriesID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSeriesPosts, seriesID)
+	return err
+}
+
 const expireFeaturedPosts = `-- name: ExpireFeaturedPosts :exec
 UPDATE content_featured
 SET featured_until = now()

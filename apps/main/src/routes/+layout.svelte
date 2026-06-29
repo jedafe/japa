@@ -2,7 +2,8 @@
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { Header, MobileNav, Footer, SideNav } from '$lib/components/nav';
-	import { theme } from '$lib/stores/theme';
+	import { theme } from '$lib/stores/theme.svelte';
+	import { setToken } from '$lib/api';
 
 	let { children, data } = $props();
 
@@ -10,6 +11,10 @@
 
 	$effect(() => {
 		theme.init('system');
+	});
+
+	$effect(() => {
+		setToken(data.token ?? null);
 	});
 </script>
 

@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8080/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
 
 type FetchOptions = {
 	method?: string;
@@ -6,13 +6,15 @@ type FetchOptions = {
 	signal?: AbortSignal;
 };
 
+type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
 let jwtToken: string | null = null;
 
 export function setToken(token: string | null) {
 	jwtToken = token;
 }
 
-export async function api<T>(path: string, opts: FetchOptions = {}): Promise<T> {
+export async function api<T>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/json'
 	};
@@ -20,17 +22,22 @@ export async function api<T>(path: string, opts: FetchOptions = {}): Promise<T> 
 		headers['Authorization'] = `Bearer ${jwtToken}`;
 	}
 
-	const res = await fetch(`${API_BASE}${path}`, {
-		method: opts.method ?? 'GET',
-		headers,
-		body: opts.body ? JSON.stringify(opts.body) : undefined,
-		signal: opts.signal
-	});
+	try {
+		const res = await fetch(`${API_BASE}${path}`, {
+			method: opts.method ?? 'GET',
+			headers,
+			body: opts.body ? JSON.stringify(opts.body) : undefined,
+			signal: opts.signal
+		});
 
-	if (!res.ok) {
-		const text = await res.text().catch(() => '');
-		throw new Error(`API ${res.status}: ${text || res.statusText}`);
+		if (!res.ok) {
+			const text = await res.text().catch(() => '');
+			return { ok: false, error: `API ${res.status}: ${text || res.statusText}` };
+		}
+
+		const data = await res.json();
+		return { ok: true, data };
+	} catch (e) {
+		return { ok: false, error: e instanceof Error ? e.message : 'Network error' };
 	}
-
-	return res.json();
 }

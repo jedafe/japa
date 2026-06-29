@@ -577,7 +577,6 @@ type ForumThread struct {
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
 	Title             string             `json:"title"`
 	Slug              string             `json:"slug"`
 	Body              []byte             `json:"body"`
@@ -594,6 +593,7 @@ type ForumThread struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
 }
 
 type ForumThreadTag struct {
@@ -988,6 +988,15 @@ type Space struct {
 	Status         string             `json:"status"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type SpaceMember struct {
+	ID       pgtype.UUID        `json:"id"`
+	SpaceID  pgtype.UUID        `json:"space_id"`
+	UserID   pgtype.UUID        `json:"user_id"`
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	Role     string             `json:"role"`
+	JoinedAt pgtype.Timestamptz `json:"joined_at"`
 }
 
 type SpacePermissionPreset struct {

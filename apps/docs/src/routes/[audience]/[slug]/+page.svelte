@@ -51,8 +51,10 @@
 			case 'code_block': return '<pre><code>' + children + '</code></pre>';
 			case 'blockquote': return '<blockquote>' + children + '</blockquote>';
 			case 'horizontal_rule': return '<hr />';
-			case 'image':
-				return '<img src="' + String(attrs.src) + '" alt="' + String(attrs.alt ?? '') + '" />';
+		case 'image':
+			const safeSrc = escapeHtml(String(attrs.src ?? ''));
+			const safeAlt = escapeHtml(String(attrs.alt ?? ''));
+			return '<img src="' + safeSrc + '" alt="' + safeAlt + '" loading="lazy" />';
 			default: return children;
 		}
 	}

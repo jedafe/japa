@@ -82,6 +82,10 @@ UPDATE blog_series_posts
 SET position = @position
 WHERE series_id = @series_id AND content_id = @content_id;
 
+-- name: DeleteSeriesPosts :exec
+DELETE FROM blog_series_posts
+WHERE series_id = @series_id;
+
 -- =====================
 -- Content Reviews
 -- =====================

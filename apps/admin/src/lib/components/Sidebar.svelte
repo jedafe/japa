@@ -6,6 +6,8 @@
 		Settings,
 		Ticket,
 		Radio,
+		Bot,
+		Megaphone,
 		Menu,
 		X
 	} from 'lucide-svelte';
@@ -22,9 +24,11 @@
 		{ label: 'Dashboard', href: '/', icon: LayoutDashboard },
 		{ label: 'Users', href: '/users', icon: Users },
 		{ label: 'Moderation', href: '/moderation', icon: ShieldCheck },
-		{ label: 'Settings', href: '/settings', icon: Settings },
+		{ label: 'Bots', href: '/bots', icon: Bot },
+		{ label: 'Advertising', href: '/ads', icon: Megaphone },
 		{ label: 'Tickets', href: '/tickets', icon: Ticket },
-		{ label: 'Broadcast', href: '/broadcast', icon: Radio }
+		{ label: 'Broadcast', href: '/broadcast', icon: Radio },
+		{ label: 'Settings', href: '/settings', icon: Settings }
 	];
 </script>
 

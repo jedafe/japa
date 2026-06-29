@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import PostCreateLayout from '$lib/create/PostCreateLayout.svelte';
+	import { api } from '$lib/api';
 
 	const contentTypes: Record<string, { slug: string; label: string; icon: string }> = {
 		blog_post: { slug: 'blog_post', label: 'Blog Post', icon: 'file-text' },
@@ -12,15 +14,63 @@
 		comparison: { slug: 'comparison', label: 'Comparison', icon: 'scale' }
 	};
 
-	let contentType = $derived($page.params.content_type ? contentTypes[$page.params.content_type] : undefined);
+	let contentType = $derived(page.params.content_type ? contentTypes[page.params.content_type] : undefined);
 	let pageTitle = $derived(contentType ? `Create ${contentType.label} | JapaConnect` : 'Content Type Not Found | JapaConnect');
 
-	function handleSave(data: { title: string; content: string; metadata: Record<string, unknown> }) {
-		console.log('Saving draft:', data);
+	let saveError = $state<string | null>(null);
+	let lastSavedId = $state<string | null>(null);
+
+	async function handleSave(data: { title: string; content: string; metadata: Record<string, unknown> }) {
+		const ct = page.params.content_type;
+		if (!ct) return;
+		saveError = null;
+		try {
+			if (lastSavedId) {
+				await api.updateContent(lastSavedId, {
+					title: data.title,
+					content: data.content,
+					field_values: data.metadata
+				});
+			} else {
+				const result = await api.createContent({
+					content_type: ct,
+					title: data.title,
+					content: data.content,
+					status: 'draft',
+					field_values: data.metadata
+				});
+				lastSavedId = result.id;
+			}
+		} catch (e) {
+			saveError = e instanceof Error ? e.message : 'Failed to save';
+		}
 	}
 
-	function handlePublish(data: { title: string; content: string; metadata: Record<string, unknown> }) {
-		console.log('Publishing:', data);
+	async function handlePublish(data: { title: string; content: string; metadata: Record<string, unknown> }) {
+		const ct = page.params.content_type;
+		if (!ct) return;
+		saveError = null;
+		try {
+			if (lastSavedId) {
+				await api.updateContent(lastSavedId, {
+					title: data.title,
+					content: data.content,
+					field_values: data.metadata,
+					status: 'published'
+				});
+			} else {
+				await api.createContent({
+					content_type: ct,
+					title: data.title,
+					content: data.content,
+					status: 'published',
+					field_values: data.metadata
+				});
+			}
+			goto('/');
+		} catch (e) {
+			saveError = e instanceof Error ? e.message : 'Failed to publish';
+		}
 	}
 </script>
 
@@ -35,7 +85,7 @@
 		<div class="text-center">
 			<h1 class="text-2xl font-bold">Content type not found</h1>
 			<p class="mt-2" style="color: var(--color-muted)">
-				The content type "{$page.params.content_type}" does not exist.
+				The content type "{page.params.content_type}" does not exist.
 			</p>
 			<a
 				href="/create"

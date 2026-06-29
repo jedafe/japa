@@ -9,7 +9,7 @@ Tags only, no categories. Granular permission nodes (`blog.create`, `blog.edit_o
 
 ```sql
 blog_series (
-  id, site_id, title, slug, description, cover_image_id FK NULL,
+  id, tenant_id FK tenants, title, slug, description, cover_image_id FK NULL,
   author_user_id FK, status TEXT NOT NULL DEFAULT 'active',
   created_at, updated_at
 )

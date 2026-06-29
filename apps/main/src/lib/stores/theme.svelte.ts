@@ -23,7 +23,7 @@ export function getTheme() {
 			currentTheme = theme;
 			if (browser) {
 				applyTheme(theme);
-				fetch('/api/v1/users/me/preferences', {
+				fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'}/users/me/preferences`, {
 					method: 'PUT',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ dark_mode: theme })

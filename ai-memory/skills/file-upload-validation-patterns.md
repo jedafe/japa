@@ -49,7 +49,7 @@ func HandleUpload(ctx context.Context, file UploadedFile) (*MediaRecord, error) 
     if _, err := DetectAndValidateMIME(file.Reader, allowedTypesFor(file.Context)); err != nil {
         return nil, err
     }
-    // Stage to a temp location, NOT MinIO yet — media_scan must clear first
+    // Stage to a temp location, NOT SeaweedFS yet — media_scan must clear first
     tempPath := stageTempFile(file)
     record := createPendingMediaRecord(ctx, tempPath, file.Context)
     asynqClient.Enqueue(tasks.NewMediaScanTask(record.ID), asynq.Queue("default"))
@@ -68,7 +68,7 @@ func HandleMediaScan(ctx context.Context, t *asynq.Task) error {
         rejectUpload(ctx, p.MediaID) // notify uploader, delete temp file, never persist
         return nil
     }
-    persistToMinIO(ctx, p.MediaID, p.TempPath) // only now does it become servable
+    persistToSeaweedFS(ctx, p.MediaID, p.TempPath) // only now does it become servable
     return nil
 }
 ```

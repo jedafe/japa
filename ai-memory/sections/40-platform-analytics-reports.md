@@ -95,13 +95,15 @@ Control Panel → Tools → Cache:
 func FlushCache(ctx context.Context, scope string) error {
   switch scope {
   case "all":
-    flushValkey(ctx)       // FLUSHDB on the jc: namespace (not full Redis, just our keys)
+    flushValkey(ctx)       // FLUSHDB on the jc: namespace (not full DB, just our keys)
     clearCFCache(ctx)      // Cloudflare Cache-Tag purge (if Cloudflare configured)
     clearDBQueryCache(ctx) // pg_stat_statements reset (optional)
   case "pages":
     clearCFCache(ctx, "cf-cache-tag: pages")
   case "feeds":
-    flushValkeyPattern(ctx, "jc:feed:*")
+    // jc:feed:* is not a documented key — remove this flush or document what it covers
+    // (feeds data lives in Postgres; no Valkey feed cache exists in V1)
+    // flushValkeyPattern(ctx, "jc:feed:*")  -- REMOVED: erroneous key pattern
   case "i18n":
     flushValkeyPattern(ctx, "jc:i18n:*")
   case "search":

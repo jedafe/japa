@@ -1,45 +1,88 @@
 # Section 32 — Activity Feed / Timeline
 
-**Status:** ✅ Locked
+**Status:** ✅ Locked (updated session 5 — multi-space fan-out, homepage routing clarified, sticky filter bar)
 
 ## Four Timelines
 
-| Timeline | Who | Source |
-|---|---|---|
-| `explore` | Guests + logged-in | Trending/top content sitewide; pull-at-read |
-| `primary` | Logged-in | Followed users, Spaces, Tags; hybrid push/pull |
-| `space` | Logged-in, in a Space | Posts in that specific Space |
-| `profile` | Anyone | All public posts by a specific user |
+| Timeline | Label | Who | Source |
+|---|---|---|---|
+| `explore` | Explore | Guests (logged-out) | Trending/top content sitewide; pull-at-read |
+| `primary` | Home / Primary | Logged-in users | Followed users, Spaces, Tags; hybrid push/pull |
+| `space` | Space Feed | Logged-in, viewing a Space | Posts assigned to that specific Space |
+| `profile` | User Timeline | Anyone | All public posts by a specific user |
+
+**Homepage routing:** Authenticated users land on the `primary` timeline. Unauthenticated users land on the `explore` timeline. This is enforced at the SvelteKit root layout — no redirect; the correct layout is server-rendered directly.
+
+## Sticky Sort Filter Bar
+
+All four timelines expose a four-mode sort selector that is **sticky on scroll** — it stays pinned at the top of the viewport as the user scrolls through the feed. The active sort mode is persisted per-timeline in the user's session store (not server-side preferences — per-tab state is fine here).
+
+```
+[ Relevant ]  [ Latest ]  [ Popular ]  [ Rising ]   ← sticky on scroll, pinned below header
+```
 
 ## Hybrid Fan-Out Strategy
 
 ```go
 const FanOutThreshold = 5000 // members
 
-func FanOutPost(ctx context.Context, post *Content) error {
-    space, _ := getSpace(ctx, post.GeoSpaceID)
-    if space.MemberCount <= FanOutThreshold {
-        // Push: write a feeds row for every follower now (Asynq default tier)
-        return enqueueFanOut(ctx, post.ID, "push")
-    }
-    // Pull: mark post in hot cache; followers pull it on next timeline request
-    return enqueueFanOut(ctx, post.ID, "pull_index")
-}
+// A post can be assigned to multiple spaces (content_spaces table, Section 14).
+// Fan-out fires once per assigned space, plus once for the author's followers.
 
-// feeds table (push side)
-// CREATE TABLE feeds (
-//   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-//   tenant_id    uuid NOT NULL REFERENCES tenants(id),
-//   user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-//   content_id   uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
-//   space_id     uuid REFERENCES spaces(id),
-//   content_type text NOT NULL,
-//   score        numeric NOT NULL DEFAULT 0,   -- pre-computed for sort
-//   created_at   timestamptz NOT NULL DEFAULT now(),
-//   UNIQUE(user_id, content_id)
-// );
-// CREATE INDEX idx_feeds_user_created ON feeds (user_id, created_at DESC);
-// CREATE INDEX idx_feeds_user_score   ON feeds (user_id, score DESC);
+func FanOutPost(ctx context.Context, post *Content) error {
+    // 1. Fan out to author's followers
+    enqueueTask(ctx, "content:fan_out_author_followers", FanOutPayload{
+        ContentID: post.ID,
+        AuthorID:  post.AuthorUserID,
+    })
+
+    // 2. Fan out to each assigned space
+    spaces, _ := queries.GetContentSpaces(ctx, post.ID) // from content_spaces
+    for _, space := range spaces {
+        if space.MemberCount <= FanOutThreshold {
+            // Push: write a feeds row for every member now (Asynq default tier)
+            enqueueTask(ctx, "content:fan_out_space", FanOutPayload{
+                ContentID: post.ID,
+                SpaceID:   space.ID,
+                Strategy:  "push",
+            })
+        } else {
+            // Pull: mark post in hot cache; members pull it on next timeline request
+            enqueueTask(ctx, "content:fan_out_space", FanOutPayload{
+                ContentID: post.ID,
+                SpaceID:   space.ID,
+                Strategy:  "pull_index",
+            })
+        }
+
+        // 3. Post bubbling: fan out to parent primary spaces (up to spaces.bubble_depth levels)
+        if space.Level == "custom" || space.Level == "city" {
+            enqueueTask(ctx, "content:fan_out_bubble", FanOutPayload{
+                ContentID: post.ID,
+                SpaceID:   space.ID,
+                Label:     "from " + space.Name,
+            })
+        }
+    }
+    return nil
+}
+```
+
+```sql
+-- feeds table (push side)
+CREATE TABLE feeds (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid NOT NULL REFERENCES tenants(id),
+  user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  content_id   uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  space_id     uuid REFERENCES spaces(id),   -- NULL = came from author follow, not space
+  content_type text NOT NULL,
+  score        numeric NOT NULL DEFAULT 0,   -- pre-computed for sort
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, content_id)
+);
+CREATE INDEX idx_feeds_user_created ON feeds (user_id, created_at DESC);
+CREATE INDEX idx_feeds_user_score   ON feeds (user_id, score DESC);
 ```
 
 ## Content Scoring (content_scores table)
@@ -88,10 +131,13 @@ New users have an empty `feeds` table. The onboarding wizard (Section 09) requir
 
 ## Asynq Tasks
 
-- `content:fan_out_to_feeds` (default tier) — pushes post to follower feeds
-- `maintenance:update_velocity_scores` (low tier, every 10 min) — recalculates velocity for all posts < 7 days old
+- `content:fan_out_author_followers` (default tier) — pushes post to all followers of the author
+- `content:fan_out_space` (default tier) — pushes post to members of a single assigned space
+- `content:fan_out_bubble` (low tier) — bubbles post up to parent primary spaces with "from [Space]" label
+- `maintenance:update_velocity_scores` (low tier, every 10 min) — recalculates velocity for posts < 7 days old
+- `maintenance:prune_old_feeds` (low tier, weekly) — prunes feeds rows older than configured retention
 - `ai:generate_content_embedding` (default tier) — generates and stores `relevance_embedding` after publish
 
 ## See Also
 
-Section 31 (follows drives fan-out), Section 13 (Meilisearch for Explore), Section 09 (onboarding follow minimums). ADR-031.
+Section 31 (follows drives author fan-out), Section 05 (space hierarchy, bubbling), Section 13 (Meilisearch for Explore), Section 09 (onboarding follow minimums), Section 14 (content_spaces — multiple spaces per post). ADR-031, ADR-032, ADR-049.

@@ -11,6 +11,65 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addSpaceMember = `-- name: AddSpaceMember :exec
+INSERT INTO space_members (space_id, user_id, tenant_id, role)
+VALUES ($1, $2, $3, 'member')
+ON CONFLICT (space_id, user_id) DO NOTHING
+`
+
+type AddSpaceMemberParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) AddSpaceMember(ctx context.Context, arg AddSpaceMemberParams) error {
+	_, err := q.db.Exec(ctx, addSpaceMember, arg.SpaceID, arg.UserID, arg.TenantID)
+	return err
+}
+
+const checkSpaceMembership = `-- name: CheckSpaceMembership :one
+
+SELECT EXISTS(
+    SELECT 1 FROM space_members
+    WHERE space_id = $1 AND user_id = $2 AND tenant_id = $3
+) AS is_member
+`
+
+type CheckSpaceMembershipParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================
+// Space Members
+// =====================
+func (q *Queries) CheckSpaceMembership(ctx context.Context, arg CheckSpaceMembershipParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkSpaceMembership, arg.SpaceID, arg.UserID, arg.TenantID)
+	var is_member bool
+	err := row.Scan(&is_member)
+	return is_member, err
+}
+
+const countSpaceMembers = `-- name: CountSpaceMembers :one
+SELECT COUNT(*) AS count
+FROM space_members
+WHERE space_id = $1 AND tenant_id = $2
+`
+
+type CountSpaceMembersParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) CountSpaceMembers(ctx context.Context, arg CountSpaceMembersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSpaceMembers, arg.SpaceID, arg.TenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSpace = `-- name: CreateSpace :one
 INSERT INTO spaces (
     tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
@@ -765,6 +824,22 @@ func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypePara
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeSpaceMember = `-- name: RemoveSpaceMember :exec
+DELETE FROM space_members
+WHERE space_id = $1 AND user_id = $2 AND tenant_id = $3
+`
+
+type RemoveSpaceMemberParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) RemoveSpaceMember(ctx context.Context, arg RemoveSpaceMemberParams) error {
+	_, err := q.db.Exec(ctx, removeSpaceMember, arg.SpaceID, arg.UserID, arg.TenantID)
+	return err
 }
 
 const updatePermissionPreset = `-- name: UpdatePermissionPreset :one
