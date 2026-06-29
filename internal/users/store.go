@@ -44,6 +44,18 @@ func (s *Store) getUser(ctx context.Context, tenantID, userID pgtype.UUID) (gen.
 	return row, nil
 }
 
+// getUserByUsername returns the user profile joined with users table data, looked up by username.
+func (s *Store) getUserByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (gen.GetUserByUsernameRow, error) {
+	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{
+		TenantID: tenantID,
+		Username: username,
+	})
+	if err != nil {
+		return gen.GetUserByUsernameRow{}, fmt.Errorf("getting user by username: %w", err)
+	}
+	return row, nil
+}
+
 // upsertProfile inserts or updates the user profile.
 func (s *Store) upsertProfile(ctx context.Context, tenantID, userID pgtype.UUID, displayName, avatarURL, bio, timezone *string) error {
 	if err := s.write.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
@@ -82,4 +94,30 @@ func (s *Store) upsertPreferences(ctx context.Context, tenantID, userID pgtype.U
 		return fmt.Errorf("upserting user preferences: %w", err)
 	}
 	return nil
+}
+
+// listUsers returns a paginated list of users for a tenant, optionally filtered by search.
+func (s *Store) listUsers(ctx context.Context, tenantID pgtype.UUID, search string, limit, offset int32) ([]gen.ListUsersRow, error) {
+	rows, err := s.read.ListUsers(ctx, gen.ListUsersParams{
+		TenantID:   tenantID,
+		Search:     search,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing users: %w", err)
+	}
+	return rows, nil
+}
+
+// countUsers returns the total count of users for a tenant, optionally filtered by search.
+func (s *Store) countUsers(ctx context.Context, tenantID pgtype.UUID, search string) (int32, error) {
+	count, err := s.read.CountUsers(ctx, gen.CountUsersParams{
+		TenantID: tenantID,
+		Search:   search,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting users: %w", err)
+	}
+	return count, nil
 }

@@ -1,3 +1,5 @@
+const SITE_URL = import.meta.env.VITE_SITE_URL || 'https://japaconnect.com';
+
 export interface PageMetadata {
 	id?: string;
 	title: string;
@@ -43,7 +45,7 @@ export function createArticleSchema(metadata: PageMetadata): JsonLdSchema {
 		dateModified: metadata.updated_at,
 		mainEntityOfPage: {
 			'@type': 'WebPage',
-			'@id': metadata.canonical_url || `https://japaconnect.com/${metadata.slug}`
+			'@id': metadata.canonical_url || `${SITE_URL}/${metadata.slug}`
 		}
 	};
 }
@@ -57,8 +59,8 @@ export function createOrganizationSchema(): JsonLdSchema {
 		'@type': 'Organization',
 		name: 'JapaConnect',
 		description: 'Community platform for the Nigerian diaspora',
-		url: 'https://japaconnect.com',
-		logo: 'https://japaconnect.com/logo.png',
+		url: SITE_URL,
+		logo: `${SITE_URL}/logo.png`,
 		sameAs: [
 			'https://twitter.com/japaconnect',
 			'https://facebook.com/japaconnect',
@@ -94,10 +96,10 @@ export function createWebsiteSchema(): JsonLdSchema {
 		'@type': 'WebSite',
 		name: 'JapaConnect',
 		description: 'Community platform for the Nigerian diaspora',
-		url: 'https://japaconnect.com',
+		url: SITE_URL,
 		potentialAction: {
 			'@type': 'SearchAction',
-			target: 'https://japaconnect.com/search?q={search_term_string}',
+			target: `${SITE_URL}/search?q={search_term_string}`,
 			'query-input': 'required name=search_term_string'
 		}
 	};

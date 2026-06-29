@@ -182,3 +182,11 @@ WHERE cv.dimension_id IN (
 -- name: DeleteComparisonValuesByDimension :exec
 DELETE FROM comparison_values
 WHERE dimension_id = @dimension_id AND tenant_id = @tenant_id;
+
+-- name: GetComparisonValuesByContent :many
+SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
+       cv.value_boolean, cv.created_at
+FROM comparison_values cv
+JOIN comparison_items ci ON ci.id = cv.item_id
+JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
+WHERE ci.content_id = @content_id AND cv.tenant_id = @tenant_id;

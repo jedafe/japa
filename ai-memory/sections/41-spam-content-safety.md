@@ -97,13 +97,20 @@ When user A blocks user B:
 
 ```go
 // Applied to every content list query for authenticated users:
-func ExcludeBlockedUsers(ctx context.Context, userID uuid.UUID, q sq.SelectBuilder) sq.SelectBuilder {
-  return q.Where(`
-    NOT EXISTS (
+// ExcludeBlockedUsers returns a SQL WHERE clause fragment for content list queries.
+// Append to the base query and pass userID as the corresponding positional parameter.
+// Enforces mutual invisibility: neither party sees the other's content.
+// In sqlc: embed this via a named query variant; in raw pgx: append directly to the SQL string.
+func ExcludeBlockedUsers(userID uuid.UUID) string {
+  uid := userID.String()
+  return fmt.Sprintf(`
+    AND NOT EXISTS (
       SELECT 1 FROM user_blocks ub
-      WHERE (ub.blocker_id = ? AND ub.blocked_id = c.author_user_id)
-         OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = ?)
-    )`, userID, userID)
+      WHERE (ub.blocker_id = '%[1]s'::uuid AND ub.blocked_id = c.author_user_id)
+         OR (ub.blocker_id = c.author_user_id AND ub.blocked_id = '%[1]s'::uuid)
+    )`, uid)
+  // Production note: use positional $N parameters via pgx rather than string interpolation.
+  // This pattern is for documentation clarity only — real implementation uses parameterized queries.
 }
 ```
 

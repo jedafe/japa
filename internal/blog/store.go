@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -13,11 +14,12 @@ import (
 type Store struct {
 	write *gen.Queries
 	read  *gen.Queries
+	pool  *pgxpool.Pool
 }
 
-// NewStore creates a Store backed by the given gen.Queries instances.
-func NewStore(read, write *gen.Queries) *Store {
-	return &Store{read: read, write: write}
+// NewStore creates a Store backed by the given gen.Queries instances and pool.
+func NewStore(read, write *gen.Queries, pool *pgxpool.Pool) *Store {
+	return &Store{read: read, write: write, pool: pool}
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +134,37 @@ func (s *Store) reorderSeriesPosts(ctx context.Context, seriesID, contentID pgty
 		return fmt.Errorf("reordering series posts: %w", err)
 	}
 	return nil
+}
+
+// bulkReorderSeriesPosts replaces all posts in a series with the given
+// ordered list inside a single transaction, eliminating the N+1 pattern.
+func (s *Store) bulkReorderSeriesPosts(ctx context.Context, seriesID pgtype.UUID, posts []struct {
+	ContentID pgtype.UUID
+	Position  int32
+}) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning bulk reorder transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	q := s.write.WithTx(tx)
+
+	if err := q.DeleteSeriesPosts(ctx, seriesID); err != nil {
+		return fmt.Errorf("deleting series posts for reorder: %w", err)
+	}
+
+	for _, p := range posts {
+		if err := q.AddPostToSeries(ctx, gen.AddPostToSeriesParams{
+			SeriesID:  seriesID,
+			ContentID: p.ContentID,
+			Position:  p.Position,
+		}); err != nil {
+			return fmt.Errorf("inserting post during bulk reorder: %w", err)
+		}
+	}
+
+	return tx.Commit(ctx)
 }
 
 // ---------------------------------------------------------------------------

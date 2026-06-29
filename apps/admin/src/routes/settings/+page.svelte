@@ -13,6 +13,7 @@
 	let loading = $state(true);
 	let saving = $state(false);
 	let saveMsg = $state('');
+	let apiAvailable = $state(true);
 
 	const tabs = [
 		'general', 'appearance', 'features', 'users', 'content',
@@ -22,10 +23,15 @@
 
 	async function load() {
 		try {
-			categories = await api<SettingsCategory[]>('/admin/settings');
-			if (categories.length > 0) activeTab = categories[0].key;
+			const result = await api<SettingsCategory[]>('/admin/settings');
+			if (result.ok) {
+				categories = result.data;
+				if (categories.length > 0) activeTab = categories[0].key;
+			} else {
+				apiAvailable = false;
+			}
 		} catch {
-			// API not available
+			apiAvailable = false;
 		} finally {
 			loading = false;
 		}
@@ -86,7 +92,11 @@
 	</div>
 
 	<!-- Settings form -->
-	{#if categories.length === 0}
+	{#if !apiAvailable}
+		<div class="rounded-lg border p-6 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
+			<p class="text-sm" style="color: var(--color-muted)">Settings API not implemented yet. This section will be available when the backend settings endpoint is ready.</p>
+		</div>
+	{:else if categories.length === 0}
 		<div class="rounded-lg border p-6 text-center" style="border-color: var(--color-border)">
 			<p style="color: var(--color-muted)">No settings available. Connect to the API to load configuration.</p>
 		</div>
@@ -136,13 +146,13 @@
 									oninput={(e) => updateSetting(setting.key, Number((e.target as HTMLInputElement).value))}
 								/>
 							{:else}
-								<input
-									id="setting-{setting.key}"
-									type="text"
-									class="w-64 rounded-md border px-3 py-1.5 text-sm"
-									style="border-color: var(--color-border); background-color: var(--color-background)"
-									value={String(setting.value)}
-									oninput={(e) => updateSetting(setting.key, (e.target as HTMLInputElement).value)}
+							<input
+								id="setting-{setting.key}"
+								type="text"
+								class="w-64 rounded-md border px-3 py-1.5 text-sm"
+								style="border-color: var(--color-border); background-color: var(--color-background)"
+								value={String(setting.value ?? '')}
+								oninput={(e) => updateSetting(setting.key, (e.target as HTMLInputElement).value)}
 								/>
 							{/if}
 						</div>

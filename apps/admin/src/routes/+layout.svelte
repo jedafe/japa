@@ -1,8 +1,16 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { setToken } from '$lib/api';
 	import '../app.css';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 
-	let { children } = $props();
+	let { children, data } = $props();
+
+	onMount(() => {
+		if (data.token) {
+			setToken(data.token);
+		}
+	});
 </script>
 
 <svelte:head>

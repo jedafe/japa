@@ -3,9 +3,12 @@ package users
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -46,7 +49,9 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Warn("json encode error", "error", err)
+	}
 }
 
 // writeError writes a JSON error response following the JapaConnect API format.
@@ -69,6 +74,40 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	}
 }
 
+const (
+	defaultPageSize = 20
+	maxPageSize     = 100
+)
+
+// parsePageSize extracts and clamps the page_size query parameter.
+func parsePageSize(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_size")
+	if s == "" {
+		return defaultPageSize
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return defaultPageSize
+	}
+	if n > maxPageSize {
+		return maxPageSize
+	}
+	return int32(n)
+}
+
+// parsePageOffset extracts the page_offset query parameter.
+func parsePageOffset(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_offset")
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return int32(n)
+}
+
 // ---------------------------------------------------------------------------
 // Profile Handlers
 // ---------------------------------------------------------------------------
@@ -80,6 +119,25 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	profile, err := h.Service.GetProfile(r.Context(), user.TenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+}
+
+// GetUserByUsername handles GET /api/v1/users/{username}.
+func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	username := chi.URLParam(r, "username")
+	if username == "" {
+		writeError(w, http.StatusBadRequest, "missing_username", "Username is required")
+		return
+	}
+	profile, err := h.Service.GetProfileByUsername(r.Context(), tenantID, username)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -103,6 +161,32 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+}
+
+// ListUsers handles GET /api/v1/users for admin user listing.
+// Query params: search, page_size (default 20, max 100), page_offset (default 0).
+func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	// Admin-only: only super_admin group members may list users.
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+	search := r.URL.Query().Get("search")
+
+	result, err := h.Service.ListUsers(r.Context(), tenantID, search, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ---------------------------------------------------------------------------

@@ -38,9 +38,11 @@ import { api } from '$lib/api';
 			if (v) params.set(k, v);
 		}
 		try {
-			const data = await api<{ tickets: Ticket[]; page: number; total_pages: number }>(`/admin/tickets?${params}`);
-			tickets = data.tickets;
-			totalPages = data.total_pages;
+			const result = await api<{ tickets: Ticket[]; page: number; total_pages: number }>(`/admin/tickets?${params}`);
+			if (result.ok) {
+				tickets = result.data.tickets;
+				totalPages = result.data.total_pages;
+			}
 		} catch {
 			// API not available
 		} finally {

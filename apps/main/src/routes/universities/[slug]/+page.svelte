@@ -4,12 +4,14 @@
 	import { UniversityHeader, UniversityTabs, UniversitySidebar } from '$lib/universities';
 	import { ErrorState } from '$lib/components/ui';
 	import { UserPlus, UserMinus } from 'lucide-svelte';
+	import { getToken } from '$lib/api';
 
 	let { data }: { data: PageData } = $props();
 
 	let activeTab = $state('overview');
 	let isFollowing = $state(false);
 	let isLoading = $state(false);
+	let errorMessage = $state('');
 
 	const universitySchema = $derived({
 		'@context': 'https://schema.org',
@@ -32,10 +34,14 @@
 	async function toggleFollow() {
 		if (isLoading) return;
 		isLoading = true;
+		errorMessage = '';
 		try {
+			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+			const token = getToken();
+			if (token) headers['Authorization'] = `Bearer ${token}`;
 			const response = await fetch('/api/v1/follows', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers,
 				body: JSON.stringify({
 					entity_type: 'space',
 					entity_id: data.university.id
@@ -43,7 +49,11 @@
 			});
 			if (response.ok) {
 				isFollowing = !isFollowing;
+			} else {
+				errorMessage = 'Failed to update follow status. Please try again.';
 			}
+		} catch {
+			errorMessage = 'Failed to update follow status. Please try again.';
 		} finally {
 			isLoading = false;
 		}
@@ -69,7 +79,7 @@
 		}}
 	/>
 
-	<div class="mt-6 flex flex-wrap gap-3">
+	<div class="mt-6 flex flex-wrap items-center gap-3">
 		<button
 			onclick={toggleFollow}
 			disabled={isLoading}
@@ -84,6 +94,9 @@
 				Follow
 			{/if}
 		</button>
+		{#if errorMessage}
+			<span class="text-sm" style="color: var(--color-danger)">{errorMessage}</span>
+		{/if}
 	</div>
 
 	<div class="mt-6">

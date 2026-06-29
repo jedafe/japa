@@ -281,3 +281,56 @@ func (s *Service) DeleteSpaceRule(ctx context.Context, id, spaceID pgtype.UUID) 
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// Space Members
+// ---------------------------------------------------------------------------
+
+// IsMember returns true if the user is a member of the space.
+func (s *Service) IsMember(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error) {
+	isMember, err := s.read.CheckSpaceMembership(ctx, gen.CheckSpaceMembershipParams{
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking space membership: %w", err)
+	}
+	return isMember, nil
+}
+
+// Join adds the user as a member of the space.
+func (s *Service) Join(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
+	if err := s.write.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("adding space member: %w", err)
+	}
+	return nil
+}
+
+// Leave removes the user from the space membership.
+func (s *Service) Leave(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
+	if err := s.write.RemoveSpaceMember(ctx, gen.RemoveSpaceMemberParams{
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("removing space member: %w", err)
+	}
+	return nil
+}
+
+// CountMembers returns the number of members in the space.
+func (s *Service) CountMembers(ctx context.Context, spaceID, tenantID pgtype.UUID) (int64, error) {
+	count, err := s.read.CountSpaceMembers(ctx, gen.CountSpaceMembersParams{
+		SpaceID:  spaceID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting space members: %w", err)
+	}
+	return count, nil
+}

@@ -100,3 +100,19 @@ Every 30 seconds, the editor posts a PATCH to save a draft revision. A Valkey ke
 ## See Also
 
 Section 14 (content types), Section 15 (TipTap extensions), Section 16 (Page Builder for pages — distinct from this editor), Section 34 (Media Library modal). ADR-045.
+
+## Space Assignment (session 5 update — required, not optional)
+
+Space assignment in the right sidebar is **required** for user-created content, not optional:
+
+**Rules enforced at the API layer (not just UI):**
+1. At least one **Primary Space** (country/state/city level) must be selected — this becomes the `is_primary = true` row in `content_spaces` and sets `geo_space_id` on `contents` for query compatibility.
+2. Zero or more additional spaces may be selected — only spaces the user is a member of appear in the multi-select. Users cannot assign content to spaces they haven't joined.
+3. A post is rejected (HTTP 422) if published with no space assignment.
+
+**UI Behavior in the Space selector (right sidebar):**
+- Uses `<SpaceCombobox multiple=true>` (Section 05)
+- First group shown: "Your Primary Spaces" (country/state/city the user is in)
+- Second group: "Your Spaces" (custom spaces the user has joined, sorted by activity)
+- Search: Meilisearch-backed, filtered to spaces the user is a member of
+- Primary space selection is required before the Publish button is enabled

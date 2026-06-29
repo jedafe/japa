@@ -1,0 +1,17 @@
+{
+  "name": "japaconnect-e2e",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:main": "playwright test --project=main",
+    "test:e2e:admin": "playwright test --project=admin",
+    "test:e2e:control": "playwright test --project=control",
+    "test:e2e:docs": "playwright test --project=docs",
+    "test:e2e:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}

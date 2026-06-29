@@ -12,7 +12,7 @@
 		ChevronDown
 	} from 'lucide-svelte';
 	import { DropdownMenu } from 'bits-ui';
-	import { theme } from '$lib/stores/theme';
+	import { theme } from '$lib/stores/theme.svelte';
 
 	let {
 		user = null,

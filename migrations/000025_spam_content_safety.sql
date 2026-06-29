@@ -35,7 +35,8 @@ CREATE TABLE censored_words (
 CREATE INDEX idx_censored_words_tenant ON censored_words(tenant_id);
 
 -- Duplicate Content Detection
--- content_hash column and unique index will be added to contents table
+-- content_hash column and unique index already exist from migration 000010
 -- (contents table already exists from earlier sections)
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS content_hash text;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_contents_hash ON contents (tenant_id, content_hash) WHERE content_hash IS NOT NULL;
+-- Index idx_contents_tenant_content_hash already created in migration 000010;
+-- no duplicate index needed here.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/admin"
 	"github.com/jedafe/japa/internal/analytics"
 	"github.com/jedafe/japa/internal/advertising"
 	"github.com/jedafe/japa/internal/auth"
@@ -40,6 +41,7 @@ import (
 	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/renderer"
+	"github.com/jedafe/japa/internal/search"
 	"github.com/jedafe/japa/internal/spaces"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
@@ -188,6 +190,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	docsService := docs.NewService(database)
 	docsHandlers := docs.NewHandlers(docsService)
 
+	// Admin Settings subsystem.
+	adminHandlers := admin.NewHandlers(database)
+
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
 	botService := bots.NewServiceFromStore(botStore)
@@ -207,6 +212,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// User Profile & Preferences subsystem.
 	usersService := users.NewService(database)
 	usersHandlers := users.NewHandlers(usersService)
+
+	// Search subsystem.
+	searchHandlers := search.NewHandlers()
 
 	// Onboarding subsystem (Section 09).
 	onboardingService := onboarding.NewService(database)
@@ -323,6 +331,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/spaces/{id}", spaceHandlers.UpdateSpace)
 			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "spaces.delete")).
 				Delete("/spaces/{id}", spaceHandlers.DeleteSpace)
+			// Space membership (join/leave toggle)
+			r.With(auth.RequireAuth(kr), spaces.SpaceResolver(spaceService)).
+				Post("/spaces/{slug}/join", spaceHandlers.ToggleSpaceMembership)
 
 			// Space rule routes (slug-resolved via SpaceResolver middleware)
 			r.With(auth.RequireAuth(kr), spaces.SpaceResolver(spaceService)).
@@ -812,14 +823,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 							"scope":   scope,
 							"deleted": deleted,
 						},
+					})
 				})
-		})
 
 		// User Profile & Preferences routes
 		r.With(auth.RequireAuth(kr)).Get("/users/me", usersHandlers.GetMyProfile)
 		r.With(auth.RequireAuth(kr)).Patch("/users/me", usersHandlers.UpdateMyProfile)
 		r.With(auth.RequireAuth(kr)).Get("/users/me/preferences", usersHandlers.GetMyPreferences)
 		r.With(auth.RequireAuth(kr)).Put("/users/me/preferences", usersHandlers.UpdateMyPreferences)
+		r.With(auth.RequireAuth(kr)).Get("/users", usersHandlers.ListUsers)
+		r.With(auth.RequireAuth(kr)).Get("/users/{username}", usersHandlers.GetUserByUsername)
 
 		// Onboarding routes (Section 09)
 		r.With(auth.RequireAuth(kr)).Get("/onboarding/status", onboardingHandlers.GetStatus)
@@ -827,6 +840,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.With(auth.RequireAuth(kr)).Post("/onboarding/complete", onboardingHandlers.Complete)
 		r.With(auth.RequireAuth(kr)).Get("/onboarding/recommendations", onboardingHandlers.GetRecommendations)
 		r.With(auth.RequireAuth(kr)).Post("/onboarding/tour/dismiss", onboardingHandlers.DismissTour)
+
+		// Search routes
+		r.With(auth.RequireAuth(kr)).Get("/search", searchHandlers.Search)
 
 		// Documentation System routes (Section 44)
 		// Public: read published pages for an audience
@@ -842,6 +858,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			Patch("/admin/docs/{id}", docsHandlers.UpdateDocPage)
 		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "docs.admin")).
 			Delete("/admin/docs/{id}", docsHandlers.DeleteDocPage)
+
+		// Platform Settings (admin)
+		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.settings")).
+			Get("/admin/settings", adminHandlers.ListSettings)
+		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.settings")).
+			Put("/admin/settings/{category}", adminHandlers.UpdateSettings)
+
+		// Admin Moderation routes (stubs)
+		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			Get("/admin/moderation", adminHandlers.ListModeration)
+		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			Post("/admin/moderation/bulk", adminHandlers.BulkModeration)
+		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			Post("/admin/moderation/{id}/appeal", adminHandlers.AppealModeration)
+
+		// Admin Broadcast route (stub)
+		r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
+			Post("/admin/broadcast", adminHandlers.Broadcast)
 	})
 })
 
@@ -1033,6 +1067,12 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "analytics.cache.flush", Description: "Flush platform caches (admin-only)"},
 		// Documentation System (Section 44)
 		{Key: "docs.admin", Description: "Manage documentation pages (create, edit, delete, review)"},
+		// Platform Settings (admin)
+		{Key: "admin.settings", Description: "Manage platform settings"},
+		// Admin Moderation
+		{Key: "admin.moderation", Description: "Manage content moderation queue"},
+		// Admin Broadcast
+		{Key: "admin.broadcast", Description: "Send broadcast messages to users"},
 	}
 
 	var defaultTenantID pgtype.UUID

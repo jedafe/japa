@@ -3,7 +3,7 @@
 **Status:** ✅ Locked
 
 ## Decided
-WebSocket hub with Redis pub/sub bridge for multi-instance scaling. Seven event types: `notification`, `presence`, `typing`, `space_activity`, `feed_update`, `dm_message`, `moderation_alert`. Layered presence: platform-wide via a heartbeat-TTL Redis key, space-level derived from pub/sub channel subscription (no separate storage), thread-level pure ephemeral broadcast (never persisted). Auth via a short-lived WS ticket minted by an authenticated REST call, not a long-lived credential in the handshake. Client-side exponential backoff reconnection; missed-event catch-up happens via REST fetch, not WS replay — the real-time layer is a live-update enhancement, never the source of truth, since Redis pub/sub has no durability/replay by design.
+WebSocket hub with Valkey pub/sub bridge for multi-instance scaling. Seven event types: `notification`, `presence`, `typing`, `space_activity`, `feed_update`, `dm_message`, `moderation_alert`. Layered presence: platform-wide via a heartbeat-TTL Valkey key, space-level derived from pub/sub channel subscription (no separate storage), thread-level pure ephemeral broadcast (never persisted). Auth via a short-lived WS ticket minted by an authenticated REST call, not a long-lived credential in the handshake. Client-side exponential backoff reconnection; missed-event catch-up happens via REST fetch, not WS replay — the real-time layer is a live-update enhancement, never the source of truth, since Valkey pub/sub has no durability/replay by design.
 
 ## Direct Messaging (restored post-audit)
 

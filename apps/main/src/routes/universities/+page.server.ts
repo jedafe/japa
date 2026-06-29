@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiFetch } from '$lib/server/api';
+import type { Space, PaginatedResponse } from '$lib/types';
 
 export const load: PageServerLoad = async ({ url, cookies }) => {
 	const token = cookies.get('jc_token');
@@ -17,10 +18,10 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 	const page = url.searchParams.get('page') || '1';
 	params.set('page', page);
 
-	const result = await apiFetch<any>(`/spaces?${params.toString()}`, { headers });
+	const result = await apiFetch<PaginatedResponse<Space>>(`/spaces?${params.toString()}`, { headers });
 
 	return {
-		universities: result.ok && result.data ? result.data : [],
+		universities: result.ok && result.data ? result.data.data : [],
 		filters: { country, sort, page }
 	};
 };

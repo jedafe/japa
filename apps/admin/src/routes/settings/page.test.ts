@@ -26,7 +26,7 @@ describe('Settings +page.svelte', () => {
 	it('shows empty state when no settings loaded', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('No settings available. Connect to the API to load configuration.')).toBeTruthy();
+			expect(screen.getByText('Settings API not implemented yet. This section will be available when the backend settings endpoint is ready.')).toBeTruthy();
 		});
 	});
 });

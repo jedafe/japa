@@ -43,18 +43,25 @@
 		return params.toString();
 	}
 
+	let apiAvailable = $state(true);
+
 	async function load() {
 		loading = true;
 		try {
-			const data = await api<{
+			const result = await api<{
 				entries: AuditEntry[];
 				page: number;
 				total_pages: number;
-			}>(`/control/audit?${buildQuery()}`);
-			entries = data.entries;
-			totalPages = data.total_pages;
+			}>(`/admin/audit-logs?${buildQuery()}`);
+			if (result.ok) {
+				entries = result.data.entries;
+				totalPages = result.data.total_pages;
+				apiAvailable = true;
+			} else {
+				apiAvailable = false;
+			}
 		} catch {
-			// API not available
+			apiAvailable = false;
 		} finally {
 			loading = false;
 		}
@@ -74,6 +81,12 @@
 </script>
 
 <PageHeader title="Audit Log" description="Append-only system audit trail (super_admin only)" />
+
+{#if !apiAvailable}
+	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">
+		Audit log API is not available.
+	</div>
+{/if}
 
 <!-- Filters -->
 <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

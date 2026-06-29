@@ -15,6 +15,7 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -93,7 +94,30 @@ func corsMiddleware(next http.Handler) http.Handler {
 // would be restricted to known domains, but for the foundation we allow
 // everything and rely on the reverse proxy for origin filtering.
 func isOriginAllowed(origin string) bool {
-	return origin != ""
+	if origin == "" {
+		return false
+	}
+	// In development, allow all origins for local dev convenience.
+	// In production, only allow configured origins.
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("JC_ENV")))
+	if env == "" || env == "development" {
+		return true
+	}
+	// Production: allow the site itself and common localhost ports for admin tools.
+	allowed := []string{
+		"https://japaconnect.com",
+		"https://www.japaconnect.com",
+		"https://admin.japaconnect.com",
+		"https://control.japaconnect.com",
+		"https://docs.japaconnect.com",
+		"https://learn.japaconnect.com",
+	}
+	for _, a := range allowed {
+		if origin == a {
+			return true
+		}
+	}
+	return false
 }
 
 // requestIDFromContext extracts the Chi request ID from the context for

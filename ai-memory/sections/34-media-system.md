@@ -7,10 +7,10 @@
 ```
 1. Client → POST /api/v1/media/upload  (multipart, metadata only on first call)
    Server: validate MIME (content inspection), size check, ClamAV scan (media_scan task)
-   Server: store to MinIO at temp/{tenant_id}/{media_id}.{ext}
+   Server: store to SeaweedFS at temp/{tenant_id}/{media_id}.{ext}
    Server: return media_id + presigned upload URL
 
-2. Client: upload file bytes to presigned URL (direct to MinIO, no server bandwidth)
+2. Client: upload file bytes to presigned URL (direct to SeaweedFS, no server bandwidth)
 
 3. Client → POST /api/v1/media/confirm/:id
    Server: move temp/{id}.ext → media/{tenant_id}/{id}.{ext}
@@ -29,7 +29,7 @@ CREATE TABLE media (
   width_px        int,
   height_px       int,
   duration_secs   numeric,             -- for video/audio
-  storage_path    text NOT NULL,       -- MinIO object key
+  storage_path    text NOT NULL,       -- SeaweedFS object key
   storage_bucket  text NOT NULL DEFAULT 'media',
   alt_text        text,
   caption         text,
@@ -57,7 +57,7 @@ func MediaURL(m *Media, opts imgproxyOpts) string {
   mac := hmac.New(sha256.New, hexDecode(key))
   mac.Write(append(hexDecode(salt), []byte(path)...))
   sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-  return imgproxyBaseURL + "/" + sig + path
+  return MediaBaseURL() + "/" + sig + path
 }
 ```
 
@@ -65,7 +65,7 @@ func MediaURL(m *Media, opts imgproxyOpts) string {
 
 - MP4 and GIF uploads gated by `media.video.upload` RBAC permission node
 - `ffmpeg` processing via `video_processing` Asynq task (default tier): generate thumbnail frame at 5s, extract duration, transcode to web-optimized H.264 if > 50MB
-- Video served via imgproxy streaming or direct MinIO presigned URL depending on size
+- Video served via imgproxy streaming or direct SeaweedFS presigned URL depending on size
 - GIFs auto-converted to WebM/MP4 for bandwidth efficiency (GIF served as fallback for email)
 
 ## Media Library (WordPress-style)
@@ -102,7 +102,7 @@ The modal is a shared Svelte store/portal — opening it from any editor context
 ## CDN & S3-Compatible Object Storage
 
 Admin-configurable in Control Panel under Settings > Media:
-- Storage backend: MinIO (default self-hosted) or any S3-compatible provider (AWS S3, Cloudflare R2, Backblaze B2) — configured via `system_settings` keys `media.storage.provider`, `media.storage.endpoint`, `media.storage.bucket`, `media.storage.region`, `media.storage.access_key`, `media.storage.secret_key`
+- Storage backend: SeaweedFS (default self-hosted) or any S3-compatible provider (AWS S3, Cloudflare R2, Backblaze B2) — configured via `system_settings` keys `media.storage.provider`, `media.storage.endpoint`, `media.storage.bucket`, `media.storage.region`, `media.storage.access_key`, `media.storage.secret_key`
 - CDN prefix: optional `media.cdn.base_url` — if set, all `MediaURL()` calls use this prefix instead of imgproxy's own hostname; used to front imgproxy with Cloudflare
 
 ```go
@@ -122,4 +122,4 @@ func MediaBaseURL() string {
 
 ## See Also
 
-Section 01 (MinIO + imgproxy stack entries), Section 15 (TipTap media insertion), Section 16 (Page Builder media blocks), ADR-023 (file upload validation). ADR-034.
+Section 01 (SeaweedFS + imgproxy stack entries), Section 15 (TipTap media insertion), Section 16 (Page Builder media blocks), ADR-023 (file upload validation). ADR-034.

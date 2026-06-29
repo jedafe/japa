@@ -11,6 +11,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countUsers = `-- name: CountUsers :one
+SELECT COUNT(*)::int AS count
+FROM users
+WHERE tenant_id = $1
+  AND ($2::text = '' OR username ILIKE '%' || $2 || '%' OR email ILIKE '%' || $2 || '%')
+`
+
+type CountUsersParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Search   string      `json:"search"`
+}
+
+func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countUsers, arg.TenantID, arg.Search)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getUserByID = `-- name: GetUserByID :one
 SELECT id, tenant_id, email, username, profile_type, status, follower_count, created_at, updated_at
 FROM users
@@ -47,6 +66,59 @@ func (q *Queries) GetUserByID(ctx context.Context, arg GetUserByIDParams) (GetUs
 		&i.FollowerCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserByUsername = `-- name: GetUserByUsername :one
+SELECT up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
+       up.timezone, up.created_at, up.updated_at,
+       u.email, u.username, u.profile_type, u.status, u.follower_count
+FROM user_profiles up
+JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+WHERE up.tenant_id = $1 AND u.username = $2
+`
+
+type GetUserByUsernameParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Username string      `json:"username"`
+}
+
+type GetUserByUsernameRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	DisplayName   *string            `json:"display_name"`
+	AvatarUrl     *string            `json:"avatar_url"`
+	Bio           *string            `json:"bio"`
+	Timezone      *string            `json:"timezone"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Email         string             `json:"email"`
+	Username      string             `json:"username"`
+	ProfileType   string             `json:"profile_type"`
+	Status        string             `json:"status"`
+	FollowerCount int32              `json:"follower_count"`
+}
+
+func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernameParams) (GetUserByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, getUserByUsername, arg.TenantID, arg.Username)
+	var i GetUserByUsernameRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Bio,
+		&i.Timezone,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.Username,
+		&i.ProfileType,
+		&i.Status,
+		&i.FollowerCount,
 	)
 	return i, err
 }
@@ -128,6 +200,69 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 		&i.FollowerCount,
 	)
 	return i, err
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT id, tenant_id, email, username, profile_type, status, follower_count, created_at, updated_at
+FROM users
+WHERE tenant_id = $1
+  AND ($2::text = '' OR username ILIKE '%' || $2 || '%' OR email ILIKE '%' || $2 || '%')
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListUsersParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Search     string      `json:"search"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListUsersRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	Email         string             `json:"email"`
+	Username      string             `json:"username"`
+	ProfileType   string             `json:"profile_type"`
+	Status        string             `json:"status"`
+	FollowerCount int32              `json:"follower_count"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
+	rows, err := q.db.Query(ctx, listUsers,
+		arg.TenantID,
+		arg.Search,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUsersRow
+	for rows.Next() {
+		var i ListUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Email,
+			&i.Username,
+			&i.ProfileType,
+			&i.Status,
+			&i.FollowerCount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const upsertUserPreferences = `-- name: UpsertUserPreferences :exec

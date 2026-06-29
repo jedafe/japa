@@ -2,51 +2,53 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { api } from '$lib/api';
 
-	const cacheTargets = [
-		{ key: 'all', label: 'Flush All Caches', description: 'Clear every cached layer' },
-		{ key: 'pages', label: 'Page Cache', description: 'Rendered page fragments' },
-		{ key: 'feeds', label: 'Feed Cache', description: 'Content feed results' },
-		{ key: 'i18n', label: 'i18n Cache', description: 'Language pack translations' },
-		{ key: 'search', label: 'Search Cache', description: 'Meilisearch result cache' }
-	];
+	let flushing = $state(false);
+	let message = $state('');
+	let messageType = $state<'success' | 'error' | ''>('');
 
-	let flushing = $state<Record<string, boolean>>({});
-	let messages = $state<Record<string, string>>({});
-
-	async function flush(target: string) {
-		flushing[target] = true;
-		messages[target] = '';
+	async function flush() {
+		flushing = true;
+		message = '';
+		messageType = '';
 		try {
-			await api(`/control/cache/${target}`, { method: 'POST' });
-			messages[target] = 'Flushed';
+			const result = await api('/admin/analytics/cache/flush', { method: 'POST' });
+			if (result.ok) {
+				message = 'All caches flushed successfully';
+				messageType = 'success';
+			} else {
+				message = result.error || 'Failed to flush caches';
+				messageType = 'error';
+			}
 		} catch {
-			messages[target] = 'Failed';
+			message = 'Failed to flush caches';
+			messageType = 'error';
 		} finally {
-			flushing[target] = false;
+			flushing = false;
 		}
 	}
 </script>
 
-<PageHeader title="Cache Management" description="Clear cached layers independently" />
+<PageHeader title="Cache Management" description="Flush all cached layers" />
 
-<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-	{#each cacheTargets as target}
-		<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<h3 class="text-sm font-semibold">{target.label}</h3>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">{target.description}</p>
-			<div class="mt-4 flex items-center gap-2">
-				<button
-					class="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
-					style="border-color: var(--color-border)"
-					disabled={flushing[target.key]}
-					onclick={() => flush(target.key)}
-				>
-					{flushing[target.key] ? 'Flushing...' : 'Flush'}
-				</button>
-				{#if messages[target.key]}
-					<span class="text-xs" style="color: var(--color-muted)">{messages[target.key]}</span>
-				{/if}
-			</div>
-		</div>
-	{/each}
+<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
+	<h3 class="text-sm font-semibold">Flush All Caches</h3>
+	<p class="mt-1 text-xs" style="color: var(--color-muted)">Clear every cached layer including pages, feeds, i18n, and search results.</p>
+	<div class="mt-4 flex items-center gap-3">
+		<button
+			class="rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
+			style="border-color: var(--color-border)"
+			disabled={flushing}
+			onclick={flush}
+		>
+			{flushing ? 'Flushing...' : 'Flush All Caches'}
+		</button>
+		{#if message}
+			<span
+				class="text-xs font-medium"
+				style="color: {messageType === 'success' ? 'var(--color-success)' : 'var(--color-danger)'}"
+			>
+				{message}
+			</span>
+		{/if}
+	</div>
 </div>

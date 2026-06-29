@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { setToken } from '$lib/api';
 	import '../app.css';
 	import {
 	 LayoutDashboard,
@@ -8,12 +10,25 @@
 	 Shield,
 	 Trash2,
 	 Menu,
-	 X
+	 X,
+	 LogOut
 	} from 'lucide-svelte';
 
-	let { children } = $props();
+	let { children, data } = $props();
 
 	let sidebarOpen = $state(false);
+
+	onMount(() => {
+		if (data.token) {
+			setToken(data.token);
+		}
+	});
+
+	function logout() {
+		document.cookie = 'control_token=; path=/; max-age=0';
+		setToken(null);
+		window.location.href = '/login';
+	}
 
 	const nav = [
 	 { label: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -66,7 +81,14 @@
 			{/each}
 		</nav>
 		<div class="border-t p-3" style="border-color: var(--color-border)">
-			<p class="text-xs" style="color: var(--color-muted)">super_admin</p>
+			<p class="mb-2 text-xs" style="color: var(--color-muted)">{data.user?.displayName ?? 'super_admin'}</p>
+			<button
+				class="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+				onclick={logout}
+			>
+				<LogOut class="h-3.5 w-3.5" style="color: var(--color-muted)" />
+				Sign Out
+			</button>
 		</div>
 	</aside>
 

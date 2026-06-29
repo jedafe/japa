@@ -42,6 +42,7 @@ func NewService(database *db.DB) *Service {
 		store: &Store{
 			read:  gen.New(database.Reader),
 			write: gen.New(database.Writer),
+			pool:  database.Writer,
 		},
 		db: database,
 	}

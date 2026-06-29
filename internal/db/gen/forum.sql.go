@@ -260,11 +260,36 @@ type CreateForumThreadParams struct {
 	EditWindowMinutes int32       `json:"edit_window_minutes"`
 }
 
+type CreateForumThreadRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              []byte             `json:"body"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	Solved            bool               `json:"solved"`
+	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore         int32              `json:"vote_score"`
+	ReplyCount        int32              `json:"reply_count"`
+	ViewCount         int32              `json:"view_count"`
+	BookmarkCount     int32              `json:"bookmark_count"`
+	EditWindowMinutes int32              `json:"edit_window_minutes"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+}
+
 // Forum Q&A / Solved — threads, replies, votes, polls, tags, bookmarks, reply views.
 // =====================
 // Threads
 // =====================
-func (q *Queries) CreateForumThread(ctx context.Context, arg CreateForumThreadParams) (ForumThread, error) {
+func (q *Queries) CreateForumThread(ctx context.Context, arg CreateForumThreadParams) (CreateForumThreadRow, error) {
 	row := q.db.QueryRow(ctx, createForumThread,
 		arg.TenantID,
 		arg.ContentID,
@@ -277,7 +302,7 @@ func (q *Queries) CreateForumThread(ctx context.Context, arg CreateForumThreadPa
 		arg.IsAnonymous,
 		arg.EditWindowMinutes,
 	)
-	var i ForumThread
+	var i CreateForumThreadRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -538,9 +563,34 @@ type GetForumThreadByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetForumThreadByID(ctx context.Context, arg GetForumThreadByIDParams) (ForumThread, error) {
+type GetForumThreadByIDRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              []byte             `json:"body"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	Solved            bool               `json:"solved"`
+	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore         int32              `json:"vote_score"`
+	ReplyCount        int32              `json:"reply_count"`
+	ViewCount         int32              `json:"view_count"`
+	BookmarkCount     int32              `json:"bookmark_count"`
+	EditWindowMinutes int32              `json:"edit_window_minutes"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) GetForumThreadByID(ctx context.Context, arg GetForumThreadByIDParams) (GetForumThreadByIDRow, error) {
 	row := q.db.QueryRow(ctx, getForumThreadByID, arg.ID, arg.TenantID)
-	var i ForumThread
+	var i GetForumThreadByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -582,9 +632,34 @@ type GetForumThreadBySlugParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetForumThreadBySlug(ctx context.Context, arg GetForumThreadBySlugParams) (ForumThread, error) {
+type GetForumThreadBySlugRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              []byte             `json:"body"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	Solved            bool               `json:"solved"`
+	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore         int32              `json:"vote_score"`
+	ReplyCount        int32              `json:"reply_count"`
+	ViewCount         int32              `json:"view_count"`
+	BookmarkCount     int32              `json:"bookmark_count"`
+	EditWindowMinutes int32              `json:"edit_window_minutes"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) GetForumThreadBySlug(ctx context.Context, arg GetForumThreadBySlugParams) (GetForumThreadBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getForumThreadBySlug, arg.Slug, arg.TenantID)
-	var i ForumThread
+	var i GetForumThreadBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -905,7 +980,32 @@ type ListForumThreadsByAuthorParams struct {
 	PageLimit       int32              `json:"page_limit"`
 }
 
-func (q *Queries) ListForumThreadsByAuthor(ctx context.Context, arg ListForumThreadsByAuthorParams) ([]ForumThread, error) {
+type ListForumThreadsByAuthorRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              []byte             `json:"body"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	Solved            bool               `json:"solved"`
+	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore         int32              `json:"vote_score"`
+	ReplyCount        int32              `json:"reply_count"`
+	ViewCount         int32              `json:"view_count"`
+	BookmarkCount     int32              `json:"bookmark_count"`
+	EditWindowMinutes int32              `json:"edit_window_minutes"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) ListForumThreadsByAuthor(ctx context.Context, arg ListForumThreadsByAuthorParams) ([]ListForumThreadsByAuthorRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadsByAuthor,
 		arg.TenantID,
 		arg.AuthorUserID,
@@ -916,9 +1016,9 @@ func (q *Queries) ListForumThreadsByAuthor(ctx context.Context, arg ListForumThr
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ForumThread
+	var items []ListForumThreadsByAuthorRow
 	for rows.Next() {
-		var i ForumThread
+		var i ListForumThreadsByAuthorRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -973,7 +1073,32 @@ type ListForumThreadsBySpaceParams struct {
 	PageLimit       int32              `json:"page_limit"`
 }
 
-func (q *Queries) ListForumThreadsBySpace(ctx context.Context, arg ListForumThreadsBySpaceParams) ([]ForumThread, error) {
+type ListForumThreadsBySpaceRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              []byte             `json:"body"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	Solved            bool               `json:"solved"`
+	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore         int32              `json:"vote_score"`
+	ReplyCount        int32              `json:"reply_count"`
+	ViewCount         int32              `json:"view_count"`
+	BookmarkCount     int32              `json:"bookmark_count"`
+	EditWindowMinutes int32              `json:"edit_window_minutes"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) ListForumThreadsBySpace(ctx context.Context, arg ListForumThreadsBySpaceParams) ([]ListForumThreadsBySpaceRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadsBySpace,
 		arg.TenantID,
 		arg.SpaceID,
@@ -984,9 +1109,9 @@ func (q *Queries) ListForumThreadsBySpace(ctx context.Context, arg ListForumThre
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ForumThread
+	var items []ListForumThreadsBySpaceRow
 	for rows.Next() {
-		var i ForumThread
+		var i ListForumThreadsBySpaceRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1044,7 +1169,32 @@ type ListForumThreadsByTagParams struct {
 	PageLimit       int32              `json:"page_limit"`
 }
 
-func (q *Queries) ListForumThreadsByTag(ctx context.Context, arg ListForumThreadsByTagParams) ([]ForumThread, error) {
+type ListForumThreadsByTagRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              []byte             `json:"body"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	Solved            bool               `json:"solved"`
+	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore         int32              `json:"vote_score"`
+	ReplyCount        int32              `json:"reply_count"`
+	ViewCount         int32              `json:"view_count"`
+	BookmarkCount     int32              `json:"bookmark_count"`
+	EditWindowMinutes int32              `json:"edit_window_minutes"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) ListForumThreadsByTag(ctx context.Context, arg ListForumThreadsByTagParams) ([]ListForumThreadsByTagRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadsByTag,
 		arg.TenantID,
 		arg.TagID,
@@ -1055,9 +1205,9 @@ func (q *Queries) ListForumThreadsByTag(ctx context.Context, arg ListForumThread
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ForumThread
+	var items []ListForumThreadsByTagRow
 	for rows.Next() {
-		var i ForumThread
+		var i ListForumThreadsByTagRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1244,7 +1394,32 @@ type UpdateForumThreadParams struct {
 	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateForumThread(ctx context.Context, arg UpdateForumThreadParams) (ForumThread, error) {
+type UpdateForumThreadRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              []byte             `json:"body"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	Solved            bool               `json:"solved"`
+	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore         int32              `json:"vote_score"`
+	ReplyCount        int32              `json:"reply_count"`
+	ViewCount         int32              `json:"view_count"`
+	BookmarkCount     int32              `json:"bookmark_count"`
+	EditWindowMinutes int32              `json:"edit_window_minutes"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) UpdateForumThread(ctx context.Context, arg UpdateForumThreadParams) (UpdateForumThreadRow, error) {
 	row := q.db.QueryRow(ctx, updateForumThread,
 		arg.Title,
 		arg.Body,
@@ -1252,7 +1427,7 @@ func (q *Queries) UpdateForumThread(ctx context.Context, arg UpdateForumThreadPa
 		arg.ID,
 		arg.TenantID,
 	)
-	var i ForumThread
+	var i UpdateForumThreadRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,

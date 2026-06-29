@@ -24,10 +24,11 @@ Pin these exactly in `go.mod`, `package.json`, and `docker-compose.yml`. Do not 
 | Meilisearch | **1.45.x** | |
 | Nginx | latest stable from distro/official repo | |
 | imgproxy | latest stable | |
-| MinIO | latest stable, R2-compatible mode | |
+| SeaweedFS | 4.x (weed mini for dev) — Apache 2.0 | |
 | Tailwind CSS | v4 | CSS custom properties for theming tokens |
 | Bits UI | latest stable | Headless, accessible Svelte component primitives (Dialog, Dropdown, Tooltip, Select, etc.) |
-| Lucide Svelte | latest stable | Icon set |
+| Lucide Svelte | latest stable |
+| AutoAnimate | @formkit/auto-animate latest |
 | Docker Compose | v2.x (Compose Specification) | |
 
 ### Resolved: Valkey Over Redis 8

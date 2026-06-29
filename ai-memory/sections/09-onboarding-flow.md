@@ -18,3 +18,12 @@ A lightweight contextual walkthrough (Driver.js or equivalent) triggers immediat
 
 ## See Also
 Reuses Section 13's Meilisearch indexes for ranking. Admin Panel needs an Onboarding Settings surface for the minimum-count fields and the promoted-entities picker. ADR-029.
+
+## Space Auto-Join on Location Selection (session 5 update)
+
+In Step 1 (Welcome & Core Identity), when a user selects their current location, they are **automatically joined** to all matching primary spaces at every hierarchy level:
+
+- Selecting "London, England, United Kingdom" auto-joins: United Kingdom (country) + England (state) + London (city, if the city-level space exists).
+- Joining each space auto-follows it (Section 31 rule) and writes a row to `space_members` for each.
+- If the city-level space doesn't exist yet, only country + state spaces are joined. City spaces are admin-created on demand.
+- During onboarding Step 4 (Recommended Spaces), the `<SpaceCombobox>` is used for additional space discovery. The user's primary spaces are pre-filled; they can join more from the recommendations.

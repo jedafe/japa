@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
-	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
 
 	type User = {
@@ -20,20 +19,12 @@
 	let searchQuery = $state('');
 	let filterGroup = $state('');
 
-	// Warning/ban modal
-	let showModal = $state(false);
-	let modalMode = $state<'warn' | 'ban'>('warn');
-	let selectedUser = $state<User | null>(null);
-	let warnMessage = $state('');
-	let banDuration = $state('7d');
-
 	const columns = [
 		{ key: 'username', label: 'Username' },
 		{ key: 'email', label: 'Email' },
 		{ key: 'groups', label: 'Groups' },
 		{ key: 'status', label: 'Status' },
-		{ key: 'created_at', label: 'Joined' },
-		{ key: 'actions', label: '' }
+		{ key: 'created_at', label: 'Joined' }
 	];
 
 	const filterDefs = [
@@ -47,9 +38,11 @@
 		if (searchQuery) params.set('search', searchQuery);
 		if (filterGroup) params.set('group', filterGroup);
 		try {
-			const data = await api<{ users: User[]; page: number; total_pages: number }>(`/admin/users?${params}`);
-			users = data.users;
-			totalPages = data.total_pages;
+			const result = await api<{ users: User[]; page: number; total_pages: number }>(`/users?${params}`);
+			if (result.ok) {
+				users = result.data.users;
+				totalPages = result.data.total_pages;
+			}
 		} catch {
 			// API not available
 		} finally {
@@ -61,31 +54,6 @@
 		searchQuery = values.search ?? '';
 		filterGroup = values.group ?? '';
 		page = 0;
-		load();
-	}
-
-	function openWarn(user: User) {
-		selectedUser = user;
-		modalMode = 'warn';
-		warnMessage = '';
-		showModal = true;
-	}
-
-	function openBan(user: User) {
-		selectedUser = user;
-		modalMode = 'ban';
-		banDuration = '7d';
-		showModal = true;
-	}
-
-	async function submitAction() {
-		if (!selectedUser) return;
-		if (modalMode === 'warn') {
-			await api(`/admin/users/${selectedUser.id}/warn`, { method: 'POST', body: { message: warnMessage } });
-		} else {
-			await api(`/admin/users/${selectedUser.id}/ban`, { method: 'POST', body: { duration: banDuration } });
-		}
-		showModal = false;
 		load();
 	}
 
@@ -102,7 +70,7 @@
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">Users</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage users, warnings, and bans</p>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">View and manage user accounts</p>
 
 <FilterBar filters={filterDefs} onApply={handleFilter} />
 
@@ -136,24 +104,6 @@
 							</span>
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{user.created_at}</td>
-						<td class="px-4 py-3">
-							<div class="flex gap-1">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-warning)"
-									onclick={() => openWarn(user)}
-								>
-									Warn
-								</button>
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => openBan(user)}
-								>
-									Ban
-								</button>
-							</div>
-						</td>
 					</tr>
 				{:else}
 					<tr>
@@ -183,31 +133,4 @@
 	</div>
 {/if}
 
-<!-- Warn/Ban Modal -->
-<Modal bind:open={showModal} title={modalMode === 'warn' ? 'Warn User' : 'Ban User'} onConfirm={submitAction} confirmLabel={modalMode === 'warn' ? 'Send Warning' : 'Apply Ban'}>
-	{#if selectedUser}
-		<p class="text-sm mb-3">Action for <strong>{selectedUser.username}</strong></p>
-		{#if modalMode === 'warn'}
-			<textarea
-				class="w-full rounded-md border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface)"
-				rows="3"
-				placeholder="Warning message..."
-				bind:value={warnMessage}
-			></textarea>
-		{:else}
-			<label for="ban-duration" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Duration</label>
-			<select
-				id="ban-duration"
-				class="w-full rounded-md border px-3 py-1.5 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface)"
-				bind:value={banDuration}
-			>
-				<option value="1d">1 day</option>
-				<option value="7d">7 days</option>
-				<option value="30d">30 days</option>
-				<option value="permanent">Permanent</option>
-			</select>
-		{/if}
-	{/if}
-</Modal>
+

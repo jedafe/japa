@@ -116,6 +116,15 @@ func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID 
 	return s.store.reorderSeriesPosts(ctx, seriesID, contentID, position)
 }
 
+// BulkReorderSeriesPosts atomically replaces all posts in a series with the
+// given ordered list, eliminating the N+1 round-trip of per-post updates.
+func (s *Service) BulkReorderSeriesPosts(ctx context.Context, seriesID pgtype.UUID, posts []struct {
+	ContentID pgtype.UUID
+	Position  int32
+}) error {
+	return s.store.bulkReorderSeriesPosts(ctx, seriesID, posts)
+}
+
 // ---------------------------------------------------------------------------
 // Content Reviews
 // ---------------------------------------------------------------------------

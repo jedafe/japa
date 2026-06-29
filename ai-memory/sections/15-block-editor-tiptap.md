@@ -3,7 +3,7 @@
 **Status:** ✅ Locked
 
 ## Decided
-ProseMirror JSON storage, `@tiptap/html` SSR rendering on Bun, Redis-cached output keyed by `content_id:updated_at` (no explicit invalidation needed — see `ai-memory/skills/valkey-cache-key-versioning.md`). Extension list: Heading, Bold, Italic, Strike, Underline, lists, Blockquote, CodeBlock with syntax highlighting, Link, Image, HorizontalRule, Placeholder, Embed. Table extension deliberately excluded — the Generic Comparison System covers structured tabular needs.
+ProseMirror JSON storage, `@tiptap/html` SSR rendering on Bun, Valkey-cached output keyed by `content_id:updated_at` (no explicit invalidation needed — see `ai-memory/skills/valkey-cache-key-versioning.md`). Extension list: Heading, Bold, Italic, Strike, Underline, lists, Blockquote, CodeBlock with syntax highlighting, Link, Image, HorizontalRule, Placeholder, Embed. Table extension deliberately excluded — the Generic Comparison System covers structured tabular needs.
 
 Trigger mapping (corrected mid-session, see ADR notes): `/` slash commands, `@` user mentions, `#` tags, `[[` content/space interlinking. All reference nodes store `{ id, entity_type, label }`, never raw text — render-time resolves current state, falling back to a "deleted content" placeholder if the referenced entity is gone.
 

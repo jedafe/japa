@@ -51,21 +51,28 @@
 	let wsConnections = $state(0);
 	let lastRefresh = $state(new Date().toLocaleTimeString());
 
+	let apiAvailable = $state(true);
+
 	async function refresh() {
 		try {
-			const data = await api<{
+			const result = await api<{
 				health: HealthGroup[];
 				metrics: { throughput: string; latency: string; errorRate: string; queueDepth: string; wsConnections: number };
-			}>('/control/health');
-			groups = data.health;
-			throughput = data.metrics.throughput;
-			latency = data.metrics.latency;
-			errorRate = data.metrics.errorRate;
-			queueDepth = data.metrics.queueDepth;
-			wsConnections = data.metrics.wsConnections;
-			lastRefresh = new Date().toLocaleTimeString();
+			}>('/admin/analytics/overview');
+			if (result.ok) {
+				groups = result.data.health;
+				throughput = result.data.metrics.throughput;
+				latency = result.data.metrics.latency;
+				errorRate = result.data.metrics.errorRate;
+				queueDepth = result.data.metrics.queueDepth;
+				wsConnections = result.data.metrics.wsConnections;
+				lastRefresh = new Date().toLocaleTimeString();
+				apiAvailable = true;
+			} else {
+				apiAvailable = false;
+			}
 		} catch {
-			// API not available — show static state
+			apiAvailable = false;
 		}
 	}
 
@@ -78,6 +85,12 @@
 </script>
 
 <PageHeader title="Dashboard" description="System health overview with live polling" />
+
+{#if !apiAvailable}
+	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">
+		Analytics API is not available. Showing default health state.
+	</div>
+{/if}
 
 <div class="mb-4 flex items-center justify-between">
 	<p class="text-xs" style="color: var(--color-muted)">Last refresh: {lastRefresh}</p>

@@ -24,3 +24,68 @@
 
 ADR-029. Section 10 (WebSocket events for live poll/vote updates), Section 14 (polymorphic reactions/bookmarks for non-forum content), Section 20 (AI agents as tag moderators), Section 26 (QAPage structured data), Section 29 (Ratings & Reviews — same one-vote-per-user enforcement pattern).
 
+
+## Tags Schema (audit pass 2 — referenced 10× across docs, never defined)
+
+```sql
+CREATE TABLE tags (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      uuid NOT NULL REFERENCES tenants(id),
+  name           text NOT NULL,
+  slug           text NOT NULL,
+  description    text,
+  rules          text,
+  cover_media_id uuid REFERENCES media(id) ON DELETE SET NULL,
+  follower_count int NOT NULL DEFAULT 0,
+  content_count  int NOT NULL DEFAULT 0,
+  is_system      boolean NOT NULL DEFAULT false,  -- cannot be deleted; e.g. 'visa', 'jobs'
+  field_values   jsonb NOT NULL DEFAULT '{}',     -- custom field group for tags (Section 06)
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(tenant_id, slug)
+);
+CREATE INDEX idx_tags_tenant ON tags (tenant_id, follower_count DESC);
+
+-- Many-to-many: content ↔ tags (max 5 tags per post enforced at handler)
+CREATE TABLE content_tags (
+  content_id uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  tag_id     uuid NOT NULL REFERENCES tags(id)     ON DELETE CASCADE,
+  PRIMARY KEY (content_id, tag_id)
+);
+CREATE INDEX idx_content_tags_tag ON content_tags (tag_id);
+
+-- Tag moderators (assigned by admin or tag creator, must be community members)
+CREATE TABLE tag_moderators (
+  tag_id     uuid NOT NULL REFERENCES tags(id)   ON DELETE CASCADE,
+  user_id    uuid NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tag_id, user_id)
+);
+```
+
+## Bookmarks Schema (audit pass 2 — referenced 3× across docs, never defined)
+
+```sql
+-- Optional folder organisation for bookmarks
+CREATE TABLE bookmark_folders (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       text NOT NULL,
+  position   int NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, name)
+);
+
+-- Polymorphic bookmarks: works across content, spaces, tags, comments
+CREATE TABLE bookmarks (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  entity_type text NOT NULL,   -- 'content'|'space'|'tag'|'comment'
+  entity_id   uuid NOT NULL,
+  folder_id   uuid REFERENCES bookmark_folders(id) ON DELETE SET NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, entity_type, entity_id)
+);
+CREATE INDEX idx_bookmarks_user   ON bookmarks (user_id, entity_type, created_at DESC);
+CREATE INDEX idx_bookmarks_entity ON bookmarks (entity_type, entity_id);
+-- bookmark_count on contents is a denormalized counter; maintained via DB trigger on bookmarks inserts/deletes
+```

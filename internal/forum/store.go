@@ -21,6 +21,200 @@ func NewStore(read, write *gen.Queries) *Store {
 }
 
 // ---------------------------------------------------------------------------
+// Thread type conversions — sqlc generates *Row types for queries with JOINs;
+// these helpers convert them to the canonical ForumThread model.
+// ---------------------------------------------------------------------------
+
+func forumThreadFromCreateRow(r gen.CreateForumThreadRow) gen.ForumThread {
+	return gen.ForumThread{
+		ID:                r.ID,
+		TenantID:          r.TenantID,
+		ContentID:         r.ContentID,
+		SpaceID:           r.SpaceID,
+		AuthorUserID:      r.AuthorUserID,
+		ParentReplyID:     r.ParentReplyID,
+		Title:             r.Title,
+		Slug:              r.Slug,
+		Body:              r.Body,
+		IsAnonymous:       r.IsAnonymous,
+		Solved:            r.Solved,
+		SolvedAt:          r.SolvedAt,
+		SolvedByUserID:    r.SolvedByUserID,
+		VoteScore:         r.VoteScore,
+		ReplyCount:        r.ReplyCount,
+		ViewCount:         r.ViewCount,
+		BookmarkCount:     r.BookmarkCount,
+		EditWindowMinutes: r.EditWindowMinutes,
+		IsEdited:          r.IsEdited,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
+		DeletedAt:         r.DeletedAt,
+	}
+}
+
+func forumThreadFromByIDRow(r gen.GetForumThreadByIDRow) gen.ForumThread {
+	return gen.ForumThread{
+		ID:                r.ID,
+		TenantID:          r.TenantID,
+		ContentID:         r.ContentID,
+		SpaceID:           r.SpaceID,
+		AuthorUserID:      r.AuthorUserID,
+		ParentReplyID:     r.ParentReplyID,
+		Title:             r.Title,
+		Slug:              r.Slug,
+		Body:              r.Body,
+		IsAnonymous:       r.IsAnonymous,
+		Solved:            r.Solved,
+		SolvedAt:          r.SolvedAt,
+		SolvedByUserID:    r.SolvedByUserID,
+		VoteScore:         r.VoteScore,
+		ReplyCount:        r.ReplyCount,
+		ViewCount:         r.ViewCount,
+		BookmarkCount:     r.BookmarkCount,
+		EditWindowMinutes: r.EditWindowMinutes,
+		IsEdited:          r.IsEdited,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
+		DeletedAt:         r.DeletedAt,
+	}
+}
+
+func forumThreadFromBySlugRow(r gen.GetForumThreadBySlugRow) gen.ForumThread {
+	return gen.ForumThread{
+		ID:                r.ID,
+		TenantID:          r.TenantID,
+		ContentID:         r.ContentID,
+		SpaceID:           r.SpaceID,
+		AuthorUserID:      r.AuthorUserID,
+		ParentReplyID:     r.ParentReplyID,
+		Title:             r.Title,
+		Slug:              r.Slug,
+		Body:              r.Body,
+		IsAnonymous:       r.IsAnonymous,
+		Solved:            r.Solved,
+		SolvedAt:          r.SolvedAt,
+		SolvedByUserID:    r.SolvedByUserID,
+		VoteScore:         r.VoteScore,
+		ReplyCount:        r.ReplyCount,
+		ViewCount:         r.ViewCount,
+		BookmarkCount:     r.BookmarkCount,
+		EditWindowMinutes: r.EditWindowMinutes,
+		IsEdited:          r.IsEdited,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
+		DeletedAt:         r.DeletedAt,
+	}
+}
+
+func forumThreadFromListSpaceRow(r gen.ListForumThreadsBySpaceRow) gen.ForumThread {
+	return gen.ForumThread{
+		ID:                r.ID,
+		TenantID:          r.TenantID,
+		ContentID:         r.ContentID,
+		SpaceID:           r.SpaceID,
+		AuthorUserID:      r.AuthorUserID,
+		ParentReplyID:     r.ParentReplyID,
+		Title:             r.Title,
+		Slug:              r.Slug,
+		Body:              r.Body,
+		IsAnonymous:       r.IsAnonymous,
+		Solved:            r.Solved,
+		SolvedAt:          r.SolvedAt,
+		SolvedByUserID:    r.SolvedByUserID,
+		VoteScore:         r.VoteScore,
+		ReplyCount:        r.ReplyCount,
+		ViewCount:         r.ViewCount,
+		BookmarkCount:     r.BookmarkCount,
+		EditWindowMinutes: r.EditWindowMinutes,
+		IsEdited:          r.IsEdited,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
+		DeletedAt:         r.DeletedAt,
+	}
+}
+
+func forumThreadFromListAuthorRow(r gen.ListForumThreadsByAuthorRow) gen.ForumThread {
+	return gen.ForumThread{
+		ID:                r.ID,
+		TenantID:          r.TenantID,
+		ContentID:         r.ContentID,
+		SpaceID:           r.SpaceID,
+		AuthorUserID:      r.AuthorUserID,
+		ParentReplyID:     r.ParentReplyID,
+		Title:             r.Title,
+		Slug:              r.Slug,
+		Body:              r.Body,
+		IsAnonymous:       r.IsAnonymous,
+		Solved:            r.Solved,
+		SolvedAt:          r.SolvedAt,
+		SolvedByUserID:    r.SolvedByUserID,
+		VoteScore:         r.VoteScore,
+		ReplyCount:        r.ReplyCount,
+		ViewCount:         r.ViewCount,
+		BookmarkCount:     r.BookmarkCount,
+		EditWindowMinutes: r.EditWindowMinutes,
+		IsEdited:          r.IsEdited,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
+		DeletedAt:         r.DeletedAt,
+	}
+}
+
+func forumThreadFromListTagRow(r gen.ListForumThreadsByTagRow) gen.ForumThread {
+	return gen.ForumThread{
+		ID:                r.ID,
+		TenantID:          r.TenantID,
+		ContentID:         r.ContentID,
+		SpaceID:           r.SpaceID,
+		AuthorUserID:      r.AuthorUserID,
+		ParentReplyID:     r.ParentReplyID,
+		Title:             r.Title,
+		Slug:              r.Slug,
+		Body:              r.Body,
+		IsAnonymous:       r.IsAnonymous,
+		Solved:            r.Solved,
+		SolvedAt:          r.SolvedAt,
+		SolvedByUserID:    r.SolvedByUserID,
+		VoteScore:         r.VoteScore,
+		ReplyCount:        r.ReplyCount,
+		ViewCount:         r.ViewCount,
+		BookmarkCount:     r.BookmarkCount,
+		EditWindowMinutes: r.EditWindowMinutes,
+		IsEdited:          r.IsEdited,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
+		DeletedAt:         r.DeletedAt,
+	}
+}
+
+func forumThreadFromUpdateRow(r gen.UpdateForumThreadRow) gen.ForumThread {
+	return gen.ForumThread{
+		ID:                r.ID,
+		TenantID:          r.TenantID,
+		ContentID:         r.ContentID,
+		SpaceID:           r.SpaceID,
+		AuthorUserID:      r.AuthorUserID,
+		ParentReplyID:     r.ParentReplyID,
+		Title:             r.Title,
+		Slug:              r.Slug,
+		Body:              r.Body,
+		IsAnonymous:       r.IsAnonymous,
+		Solved:            r.Solved,
+		SolvedAt:          r.SolvedAt,
+		SolvedByUserID:    r.SolvedByUserID,
+		VoteScore:         r.VoteScore,
+		ReplyCount:        r.ReplyCount,
+		ViewCount:         r.ViewCount,
+		BookmarkCount:     r.BookmarkCount,
+		EditWindowMinutes: r.EditWindowMinutes,
+		IsEdited:          r.IsEdited,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
+		DeletedAt:         r.DeletedAt,
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Threads
 // ---------------------------------------------------------------------------
 
@@ -30,7 +224,7 @@ func (s *Store) createThread(ctx context.Context, p gen.CreateForumThreadParams)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("creating forum thread: %w", err)
 	}
-	return t, nil
+	return forumThreadFromCreateRow(t), nil
 }
 
 // getThreadByID returns a thread by ID and tenant.
@@ -39,7 +233,7 @@ func (s *Store) getThreadByID(ctx context.Context, id, tenantID pgtype.UUID) (ge
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting forum thread by ID: %w", err)
 	}
-	return t, nil
+	return forumThreadFromByIDRow(t), nil
 }
 
 // getThreadBySlug returns a thread by slug and tenant.
@@ -48,7 +242,7 @@ func (s *Store) getThreadBySlug(ctx context.Context, slug string, tenantID pgtyp
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting forum thread by slug: %w", err)
 	}
-	return t, nil
+	return forumThreadFromBySlugRow(t), nil
 }
 
 // listThreadsBySpace returns paginated threads for a space.
@@ -65,7 +259,11 @@ func (s *Store) listThreadsBySpace(ctx context.Context, tenantID, spaceID pgtype
 	if err != nil {
 		return nil, fmt.Errorf("listing forum threads by space: %w", err)
 	}
-	return rows, nil
+	threads := make([]gen.ForumThread, len(rows))
+	for i, r := range rows {
+		threads[i] = forumThreadFromListSpaceRow(r)
+	}
+	return threads, nil
 }
 
 // listThreadsByAuthor returns paginated threads for an author.
@@ -74,15 +272,19 @@ func (s *Store) listThreadsByAuthor(ctx context.Context, tenantID, authorUserID 
 		limit = DefaultPageSize
 	}
 	rows, err := s.read.ListForumThreadsByAuthor(ctx, gen.ListForumThreadsByAuthorParams{
-		TenantID:       tenantID,
-		AuthorUserID:   authorUserID,
+		TenantID:        tenantID,
+		AuthorUserID:    authorUserID,
 		CursorCreatedAt: cursorCreatedAt,
-		PageLimit:      limit,
+		PageLimit:       limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing forum threads by author: %w", err)
 	}
-	return rows, nil
+	threads := make([]gen.ForumThread, len(rows))
+	for i, r := range rows {
+		threads[i] = forumThreadFromListAuthorRow(r)
+	}
+	return threads, nil
 }
 
 // listThreadsByTag returns paginated threads for a tag.
@@ -99,7 +301,11 @@ func (s *Store) listThreadsByTag(ctx context.Context, tenantID, tagID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("listing forum threads by tag: %w", err)
 	}
-	return rows, nil
+	threads := make([]gen.ForumThread, len(rows))
+	for i, r := range rows {
+		threads[i] = forumThreadFromListTagRow(r)
+	}
+	return threads, nil
 }
 
 // updateThread updates a forum thread's title, body, and anonymous flag.
@@ -108,7 +314,7 @@ func (s *Store) updateThread(ctx context.Context, p gen.UpdateForumThreadParams)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("updating forum thread: %w", err)
 	}
-	return t, nil
+	return forumThreadFromUpdateRow(t), nil
 }
 
 // softDeleteThread marks a thread as deleted.

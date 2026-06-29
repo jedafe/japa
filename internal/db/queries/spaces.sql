@@ -173,3 +173,27 @@ RETURNING id, space_id, title, body, position, created_at, updated_at;
 -- name: DeleteSpaceRule :exec
 DELETE FROM space_rules
 WHERE id = @id AND space_id = @space_id;
+
+-- =====================
+-- Space Members
+-- =====================
+
+-- name: CheckSpaceMembership :one
+SELECT EXISTS(
+    SELECT 1 FROM space_members
+    WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id
+) AS is_member;
+
+-- name: AddSpaceMember :exec
+INSERT INTO space_members (space_id, user_id, tenant_id, role)
+VALUES (@space_id, @user_id, @tenant_id, 'member')
+ON CONFLICT (space_id, user_id) DO NOTHING;
+
+-- name: RemoveSpaceMember :exec
+DELETE FROM space_members
+WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: CountSpaceMembers :one
+SELECT COUNT(*) AS count
+FROM space_members
+WHERE space_id = @space_id AND tenant_id = @tenant_id;

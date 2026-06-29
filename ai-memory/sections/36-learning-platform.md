@@ -95,7 +95,7 @@ func CanAccessTrack(ctx context.Context, userID, trackID uuid.UUID) (bool, error
 
 ## Certificate Generation
 
-On 100% track completion, the `issue_certificate` Asynq task (low tier) generates a PDF certificate using a Go HTML template + headless Chrome (or `go-wkhtmltopdf`), stores to MinIO, and inserts a `track_certificates` row. Notified via the Notification System (Section 35).
+On 100% track completion, the `issue_certificate` Asynq task (low tier) generates a PDF certificate using a Go HTML template + headless Chrome (or `go-wkhtmltopdf`), stores to SeaweedFS, and inserts a `track_certificates` row. Notified via the Notification System (Section 35).
 
 ## Asynq Tasks
 

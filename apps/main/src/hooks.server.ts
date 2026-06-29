@@ -1,5 +1,21 @@
-import type { Handle } from '@sveltejs/kit';
-import { API_BASE_URL } from '$lib/server/api';
+import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+import { API_BASE_URL, apiFetch } from '$lib/server/api';
+import type { FeatureFlags } from '$lib/types';
+
+/** Routes that require an authenticated user. */
+const PROTECTED_ROUTES = [
+	'/notifications',
+	'/settings',
+	'/create',
+	'/onboarding'
+];
+
+/** Check if a pathname requires authentication. */
+function isProtectedRoute(pathname: string): boolean {
+	return PROTECTED_ROUTES.some(
+		(route) => pathname === route || pathname.startsWith(`${route}/`)
+	);
+}
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const token = event.cookies.get('jc_token');
@@ -30,9 +46,31 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.locals.user = null;
 	}
 
-	event.locals.featureFlags = {};
+	// Redirect unauthenticated users away from protected routes.
+	if (isProtectedRoute(event.url.pathname) && !event.locals.user) {
+		throw redirect(303, '/login');
+	}
+
+	// Fetch feature flags from the backend.
+	let featureFlags: FeatureFlags = {};
+	try {
+		const flagsResult = await apiFetch<FeatureFlags>('/features');
+		if (flagsResult.ok && flagsResult.data) {
+			featureFlags = flagsResult.data;
+		}
+	} catch {
+		// Fall back to empty flags on error.
+	}
+	event.locals.featureFlags = featureFlags;
 	event.locals.notificationCount = 0;
 
 	const response = await resolve(event);
 	return response;
+};
+
+export const handleError: HandleServerError = ({ error }) => {
+	return {
+		code: 'INTERNAL_ERROR',
+		message: 'Internal error'
+	};
 };

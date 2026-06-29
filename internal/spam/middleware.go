@@ -207,5 +207,7 @@ func writeSpamError(w http.ResponseWriter, status int, code, message string) {
 			"message": message,
 		},
 	}
-	_ = json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Warn("json encode error", "error", err)
+	}
 }

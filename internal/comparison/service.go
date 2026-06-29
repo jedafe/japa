@@ -376,17 +376,32 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 		return nil, fmt.Errorf("listing dimensions for matrix: %w", err)
 	}
 
+	// Fetch all values in a single query instead of M×N individual lookups.
+	values, err := s.store.getComparisonValuesByContent(ctx, contentID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing values for matrix: %w", err)
+	}
+
+	// Index values by (itemID, dimensionID) for O(1) lookup.
+	type valueKey struct {
+		itemID      [16]byte
+		dimensionID [16]byte
+	}
+	valueIndex := make(map[valueKey]gen.ComparisonValue, len(values))
+	for _, v := range values {
+		valueIndex[valueKey{v.ItemID.Bytes, v.DimensionID.Bytes}] = v
+	}
+
 	matrix := make([]ComparisonMatrixItem, 0, len(items))
 	for _, item := range items {
 		mi := ComparisonMatrixItem{Item: item, Dimensions: make([]ComparisonMatrixDimension, 0, len(dimensions))}
 		for _, dim := range dimensions {
-			val, valErr := s.store.getComparisonValue(ctx, dim.ID, item.ID, tenantID)
 			md := ComparisonMatrixDimension{
 				DimensionID: dim.ID,
 				Label:       dim.Label,
 				Type:        dim.DimensionType,
 			}
-			if valErr == nil {
+			if val, ok := valueIndex[valueKey{item.ID.Bytes, dim.ID.Bytes}]; ok {
 				md.Value = val.Value
 				if val.ValueRating.Valid {
 					var r float64

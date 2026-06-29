@@ -19,16 +19,16 @@ export const load: PageServerLoad = async ({ locals, cookies }) => {
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-	const result = await apiFetch<{ data: OnboardingStatus }>('/onboarding/status', { headers });
+	const result = await apiFetch<OnboardingStatus>('/onboarding/status', { headers });
 
 	// If onboarding is already completed, redirect to home.
-	if (result.ok && result.data?.data?.completed) {
+	if (result.ok && result.data?.completed) {
 		throw redirect(303, '/');
 	}
 
 	return {
-		onboarding: result.ok && result.data?.data
-			? result.data.data
+		onboarding: result.ok && result.data
+			? result.data
 			: { current_step: 1, completed: false, step_data: {}, tour_dismissed: false }
 	};
 };

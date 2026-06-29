@@ -5,6 +5,12 @@
 	--color-foreground: #1a1a1a;
 	--color-primary: #1d4ed8;
 	--color-muted: #6b7280;
+	--color-border: #e5e7eb;
+	--color-surface: #f9fafb;
+	--color-success: #059669;
+	--color-warning: #d97706;
+	--color-danger: #dc2626;
+	--color-info: #2563eb;
 }
 
 .dark {
@@ -12,6 +18,12 @@
 	--color-foreground: #f8fafc;
 	--color-primary: #60a5fa;
 	--color-muted: #94a3b8;
+	--color-border: #1e293b;
+	--color-surface: #1e293b;
+	--color-success: #34d399;
+	--color-warning: #fbbf24;
+	--color-danger: #f87171;
+	--color-info: #60a5fa;
 }
 
 body {

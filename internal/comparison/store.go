@@ -277,3 +277,14 @@ func (s *Store) deleteComparisonValuesByDimension(ctx context.Context, dimension
 	}
 	return nil
 }
+
+func (s *Store) getComparisonValuesByContent(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ComparisonValue, error) {
+	rows, err := s.read.GetComparisonValuesByContent(ctx, gen.GetComparisonValuesByContentParams{
+		ContentID: contentID,
+		TenantID:  tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting comparison values by content: %w", err)
+	}
+	return rows, nil
+}
