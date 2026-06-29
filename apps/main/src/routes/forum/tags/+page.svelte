@@ -2,6 +2,7 @@
 	import { Tag, ArrowLeft, MessageSquare } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api';
+	import autoAnimate from '@formkit/auto-animate';
 	import { onMount } from 'svelte';
 
 	let tags = $state<Array<{ id: string; name: string; slug: string; thread_count: number }>>([]);
@@ -55,7 +56,7 @@
 			message="Tags will appear as threads are created."
 		/>
 	{:else}
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" use:autoAnimate>
 			{#each tags as tag (tag.id)}
 				<a
 					href="/forum?tag={tag.slug}"

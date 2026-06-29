@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { ArrowLeft, Send, Loader2 } from 'lucide-svelte';
 	import { api, type DMMessage, type DMConversation } from '$lib/api';
+	import { formatTimestampWithTime } from '$lib/utils/timezone';
 	import { onMount, tick } from 'svelte';
 
 	let messages = $state<DMMessage[]>([]);
@@ -89,12 +90,7 @@
 	}
 
 	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
+		return formatTimestampWithTime(dateStr);
 	}
 
 	onMount(() => loadMessages());

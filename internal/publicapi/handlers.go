@@ -90,7 +90,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
+		"error": map[string]any{
+			"code":    code,
+			"message": message,
+			"status":  status,
+			"docs":    "https://api.japaconnect.com/docs#section/Errors",
+		},
 	})
 }
 

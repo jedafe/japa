@@ -43,6 +43,7 @@ import (
 	"github.com/jedafe/japa/internal/professional"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
+	rsspkg "github.com/jedafe/japa/internal/rss"
 	"github.com/jedafe/japa/internal/renderer"
 	"github.com/jedafe/japa/internal/reviews"
 	"github.com/jedafe/japa/internal/search"
@@ -298,6 +299,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/llms-full.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
 		r.Get("/sitemap.xml", sitemapHandler.ServeSitemap)
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
+		// Universal RSS feeds (public — no auth required, tenant-scoped)
+		r.Get("/feed.xml", rsspkg.HandleFeed(database.Reader, "all"))
+		r.Get("/blog/feed.xml", rsspkg.HandleFeed(database.Reader, "blog"))
+		r.Get("/spaces/{slug}/feed.xml", rsspkg.HandleSpaceFeed(database.Reader))
+		r.Get("/tags/{slug}/feed.xml", rsspkg.HandleTagFeed(database.Reader))
 	})
 
 	// API routes go through tenant resolution
@@ -1259,6 +1265,7 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "api.keys.self_manage", Description: "Create, list, and revoke own API keys"},
 		{Key: "api.keys.view.all", Description: "View all API keys across all users (admin)"},
 		{Key: "api.keys.manage", Description: "Suspend and manage API keys (admin)"},
+		{Key: "api.keys.analytics.view", Description: "View API key usage analytics"},
 	}
 
 	var defaultTenantID pgtype.UUID

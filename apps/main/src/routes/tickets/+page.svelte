@@ -2,6 +2,7 @@
 	import { Headphones, Plus, Loader2, ChevronRight, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type Ticket } from '$lib/api';
+	import autoAnimate from '@formkit/auto-animate';
 	import { onMount } from 'svelte';
 
 	let tickets = $state<Ticket[]>([]);
@@ -86,12 +87,10 @@
 		}
 	}
 
+	import { formatTimestamp } from '$lib/utils/timezone';
+
 	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('en-US', {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric'
-		});
+		return formatTimestamp(dateStr);
 	}
 
 	onMount(loadTickets);
@@ -146,7 +145,7 @@
 			message="Need help? Create a support ticket and our team will assist you."
 		/>
 	{:else}
-		<div class="divide-y rounded-xl border" style="border-color: var(--color-border); divide-color: var(--color-border)">
+		<div class="divide-y rounded-xl border" style="border-color: var(--color-border); divide-color: var(--color-border)" use:autoAnimate>
 			{#each tickets as ticket (ticket.id)}
 				{@const SIcon = statusIcon(ticket.status)}
 				<a

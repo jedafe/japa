@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ArrowLeft, Clock, Eye, MessageCircle, Share2, ThumbsUp, ThumbsDown } from 'lucide-svelte';
 	import { getToken } from '$lib/api';
+	import { formatTimestampLong } from '$lib/utils/timezone';
 
 	let { data } = $props();
 	let post = $derived(data.post);
@@ -43,7 +44,7 @@
 	function formatDate(dateStr: string): string {
 		if (!dateStr) return '';
 		const d = new Date(dateStr);
-		return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+		return formatTimestampLong(d);
 	}
 </script>
 

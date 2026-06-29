@@ -4,6 +4,7 @@
 	import { Header, MobileNav, Footer, SideNav } from '$lib/components/nav';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { setToken } from '$lib/api';
+	import { onNavigate } from '$app/navigation';
 
 	let { children, data } = $props();
 
@@ -15,6 +16,16 @@
 
 	$effect(() => {
 		setToken(data.token ?? null);
+	});
+
+	onNavigate((nav) => {
+		if (!document.startViewTransition) return;
+		return new Promise<void>((resolve) => {
+			document.startViewTransition(async () => {
+				resolve();
+				await nav.complete;
+			});
+		});
 	});
 </script>
 

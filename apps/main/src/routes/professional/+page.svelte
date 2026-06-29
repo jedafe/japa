@@ -2,6 +2,7 @@
 	import { Briefcase, Plus, Search } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { page } from '$app/state';
+	import autoAnimate from '@formkit/auto-animate';
 
 	let { data } = $props();
 
@@ -71,7 +72,7 @@
 			message="Be the first to create a professional profile."
 		/>
 	{:else}
-		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" use:autoAnimate>
 			{#each data.profiles as profile (profile.id)}
 				<a
 					href="/professional/{profile.slug}"

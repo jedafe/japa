@@ -2,6 +2,7 @@
 	import { ArrowLeft, Plus, Vote, Users, BarChart3, Loader2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { getToken } from '$lib/api';
+	import { formatTimestamp } from '$lib/utils/timezone';
 
 	let { data } = $props();
 	let compType = $derived(data.type);
@@ -36,11 +37,7 @@ const res = await fetch(`/api/v1/comparison/${comparisonId}/matrix`, {
 	}
 
 	function formatDate(dateStr: string) {
-		return new Date(dateStr).toLocaleDateString('en-US', {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric'
-		});
+		return formatTimestamp(dateStr);
 	}
 </script>
 

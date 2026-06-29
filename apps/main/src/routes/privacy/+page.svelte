@@ -12,6 +12,7 @@
 	} from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { getToken } from '$lib/api';
+	import { formatTimestamp } from '$lib/utils/timezone';
 	import { onMount } from 'svelte';
 
 	let { data } = $props();
@@ -211,7 +212,7 @@
 									</p>
 									<p class="mt-0.5 text-xs" style="color: var(--color-muted)">
 										{consent.granted ? 'Granted' : 'Not granted'}
-										&middot; {new Date(consent.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+										&middot; {formatTimestamp(consent.updated_at)}
 									</p>
 								</div>
 							</div>

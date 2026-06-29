@@ -421,6 +421,26 @@ export const api = {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
+	},
+
+	// Developer API Keys
+	listDeveloperKeys() {
+		return request<DeveloperApiKey[]>('/developer/keys');
+	},
+	createDeveloperKey(data: { name: string; scopes: string[] }) {
+		return request<{ key: string; key_info: DeveloperApiKey }>('/developer/keys', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+	revokeDeveloperKey(id: string) {
+		return request<{ deleted: boolean }>('/developer/keys/' + id, { method: 'DELETE' });
+	},
+	updateDeveloperKey(id: string, data: { name?: string; scopes?: string[] }) {
+		return request<DeveloperApiKey>('/developer/keys/' + id, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		});
 	}
 };
 
@@ -561,5 +581,16 @@ export interface Verifier {
 	user_name: string;
 	role: string;
 	status: string;
+	created_at: string;
+}
+
+// Developer API Key types
+export interface DeveloperApiKey {
+	id: string;
+	name: string;
+	key_prefix: string;
+	scopes: string[];
+	status: string;
+	last_used_at?: string;
 	created_at: string;
 }

@@ -2,6 +2,7 @@
 	import { Grid3X3, Plus, Loader2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { getToken } from '$lib/api';
+	import autoAnimate from '@formkit/auto-animate';
 	import { onMount } from 'svelte';
 
 	interface Space {
@@ -99,7 +100,7 @@
 			message="Be the first to create a space in this category."
 		/>
 	{:else}
-		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" use:autoAnimate>
 			{#each filteredSpaces as space (space.id)}
 				<a
 					href="/spaces/{space.slug}"

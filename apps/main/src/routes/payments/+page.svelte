@@ -65,12 +65,10 @@
 		}).format(amount / 100);
 	}
 
+	import { formatTimestamp } from '$lib/utils/timezone';
+
 	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('en-US', {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric'
-		});
+		return formatTimestamp(dateStr);
 	}
 
 	function statusColor(status: string): string {

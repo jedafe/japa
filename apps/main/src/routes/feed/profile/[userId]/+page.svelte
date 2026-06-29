@@ -2,6 +2,8 @@
 	import { User, Clock, MessageCircle, Heart } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { onMount } from 'svelte';
+	import { formatTimestamp, formatRelativeTime } from '$lib/utils/timezone';
+	import autoAnimate from '@formkit/auto-animate';
 
 	let { data } = $props();
 
@@ -9,12 +11,6 @@
 	let feed = $state(data.feed ?? []);
 	let hasMore = $state(data.hasMore ?? false);
 	let loadingMore = $state(false);
-
-	function formatDate(dateStr: string): string {
-		if (!dateStr) return '';
-		const d = new Date(dateStr);
-		return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-	}
 
 	async function loadMore() {
 		if (loadingMore || !hasMore) return;
@@ -98,7 +94,7 @@
 			message="This user hasn't posted anything yet."
 		/>
 	{:else}
-		<div class="space-y-4">
+		<div class="space-y-4" use:autoAnimate>
 			{#each feed as item (item.id)}
 				<article
 					class="rounded-xl border p-5 transition-all hover:shadow-md"
@@ -120,7 +116,7 @@
 								{item.author_name}
 							</a>
 							<p class="text-xs" style="color: var(--color-muted)">
-								{formatDate(item.created_at)}
+								{formatRelativeTime(item.created_at)}
 							</p>
 						</div>
 					</div>
