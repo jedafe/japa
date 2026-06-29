@@ -49,5 +49,5 @@ func logAuditEvent(ctx context.Context, store *Store, tenantID pgtype.UUID, para
 		Metadata:           metadataJSON,
 		IpAddress:          ipAddress,
 	})
-	return err
+	return fmt.Errorf("create audit log: %w", err)
 }

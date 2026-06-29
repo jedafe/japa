@@ -44,8 +44,8 @@ func TestAllKeys(t *testing.T) {
 func TestChecker_ClearCache(t *testing.T) {
 	c := &Checker{
 		cache: &flagCache{
-			entries: map[string]map[string]bool{
-				"tenant1": {"feature.blog": true},
+			entries: map[string]map[string]*flagCacheEntry{
+				"tenant1": {"feature.blog": {enabled: true}},
 			},
 		},
 	}
@@ -58,7 +58,7 @@ func TestChecker_ClearCache(t *testing.T) {
 func TestChecker_CacheGetSet(t *testing.T) {
 	c := &Checker{
 		cache: &flagCache{
-			entries: make(map[string]map[string]bool),
+			entries: make(map[string]map[string]*flagCacheEntry),
 		},
 	}
 

@@ -7,12 +7,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 )
 
 // Dispatcher holds a priority-ordered list of providers per category and
 // implements circuit-breaker fallback: on failure, try the next provider
 // in order rather than failing the whole operation.
 type Dispatcher struct {
+	mu                  sync.RWMutex
 	providersByCategory map[string][]Provider
 }
 
@@ -27,6 +29,8 @@ func NewDispatcher() *Dispatcher {
 // RegisterProvider adds a provider to the priority list for the given
 // category. Providers registered first are tried first during dispatch.
 func (d *Dispatcher) RegisterProvider(category string, p Provider) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.providersByCategory[category] = append(d.providersByCategory[category], p)
 }
 
@@ -34,7 +38,9 @@ func (d *Dispatcher) RegisterProvider(category string, p Provider) {
 // category. On failure it logs the error and tries the next provider, returning
 // on the first success. If all providers fail, the last error is returned.
 func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request) (Response, error) {
+	d.mu.RLock()
 	providers := d.providersByCategory[category]
+	d.mu.RUnlock()
 	if len(providers) == 0 {
 		return Response{}, fmt.Errorf("ai: no providers registered for category %q", category)
 	}

@@ -141,7 +141,10 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Mark ticket as used in DB.
-	_, _ = h.service.store.UseWSTicket(ctx, ticketID, userID)
+	if _, err := h.service.store.UseWSTicket(ctx, ticketID, userID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to consume ticket")
+		return
+	}
 
 	// Upgrade to WebSocket.
 	conn, err := wsUpgrader.Upgrade(w, r, nil)

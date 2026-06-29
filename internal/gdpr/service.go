@@ -169,7 +169,9 @@ func (s *Service) RequestDataExport(ctx context.Context, tenantID, userID pgtype
 		"user_id":    userID.String(),
 	})
 	if marshalErr == nil {
-		_ = s.enqueuer.Enqueue(worker.TypeDataExport, payload)
+		if err := s.enqueuer.Enqueue(worker.TypeDataExport, payload); err != nil {
+			slog.Error("enqueue data export", "error", err)
+		}
 	}
 
 	return request, nil
@@ -200,20 +202,24 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 	// Collect user data from all relevant tables.
 	userData, err := s.collectUserData(ctx, request.UserID, request.TenantID)
 	if err != nil {
-		_, _ = s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
+		if _, statusErr := s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
 			ID:     requestID,
 			Status: string(ExportFailed),
-		})
+		}); statusErr != nil {
+			slog.Error("update data export status to failed", "error", statusErr)
+		}
 		return fmt.Errorf("collecting user data: %w", err)
 	}
 
 	// Generate JSON export.
 	exportJSON, err := json.MarshalIndent(userData, "", "  ")
 	if err != nil {
-		_, _ = s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
+		if _, statusErr := s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
 			ID:     requestID,
 			Status: string(ExportFailed),
-		})
+		}); statusErr != nil {
+			slog.Error("update data export status to failed", "error", statusErr)
+		}
 		return fmt.Errorf("marshaling export data: %w", err)
 	}
 
@@ -272,7 +278,9 @@ func (s *Service) RequestAccountDeletion(ctx context.Context, tenantID, userID p
 		"user_id":    userID.String(),
 	})
 	if marshalErr == nil {
-		_ = s.enqueuer.Enqueue(worker.TypeAccountDeletionCleanup, payload)
+		if err := s.enqueuer.Enqueue(worker.TypeAccountDeletionCleanup, payload); err != nil {
+			slog.Error("enqueue account deletion", "error", err)
+		}
 	}
 
 	return request, nil
@@ -306,10 +314,12 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		TenantID: request.TenantID,
 	})
 	if err != nil {
-		_, _ = s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
+		if _, statusErr := s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
 			ID:     requestID,
 			Status: string(DeletionFailed),
-		})
+		}); statusErr != nil {
+			slog.Error("update deletion status to failed", "error", statusErr)
+		}
 		return fmt.Errorf("anonymizing user: %w", err)
 	}
 
@@ -319,8 +329,8 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		TenantID: request.TenantID,
 	})
 	if err != nil {
-		// Log but don't fail — tokens may already be revoked.
-		_ = err
+		slog.Warn("failed to revoke user tokens during deletion",
+			"user_id", request.UserID.String(), "error", err)
 	}
 
 	// 3. Delete Valkey session keys.
@@ -337,10 +347,12 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	//    and return the error so Asynq retries the whole job.
 	if s.honchoEraser != nil {
 		if err := s.honchoEraser.DeleteUser(ctx, request.UserID.String()); err != nil {
-			_, _ = s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
+			if _, statusErr := s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
 				ID:     requestID,
 				Status: string(DeletionFailed),
-			})
+			}); statusErr != nil {
+				slog.Error("update deletion status to failed", "error", statusErr)
+			}
 			return fmt.Errorf("deleting honcho context for user %s: %w", request.UserID, err)
 		}
 	} else {

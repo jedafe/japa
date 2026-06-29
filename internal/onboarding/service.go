@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"strings"
 
@@ -148,22 +149,21 @@ func parseStepData(data json.RawMessage) stepDataFields {
 	if len(data) == 0 {
 		return fields
 	}
-	_ = json.Unmarshal(data, &fields)
+	if err := json.Unmarshal(data, &fields); err != nil {
+		slog.Warn("onboarding: corrupted step data", "error", err)
+	}
 	return fields
 }
 
 // mergeJSON merges two JSON objects, with the second overwriting the first.
 func mergeJSON(base, overlay json.RawMessage) json.RawMessage {
-	var baseMap, overlayMap map[string]any
+	baseMap := make(map[string]any)
 	if len(base) > 0 {
 		_ = json.Unmarshal(base, &baseMap)
-	} else {
-		baseMap = make(map[string]any)
 	}
+	overlayMap := make(map[string]any)
 	if len(overlay) > 0 {
 		_ = json.Unmarshal(overlay, &overlayMap)
-	} else {
-		overlayMap = make(map[string]any)
 	}
 	for k, v := range overlayMap {
 		baseMap[k] = v

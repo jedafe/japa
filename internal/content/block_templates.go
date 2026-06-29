@@ -188,7 +188,10 @@ func newDefaultRegistry() *BlockTemplateRegistry {
 // is a copy; callers may not mutate the registry through it.
 func GetBlockTemplates() []BlockTemplate {
 	out := make([]BlockTemplate, len(defaultRegistry.templates))
-	copy(out, defaultRegistry.templates)
+	for i, t := range defaultRegistry.templates {
+		out[i] = t
+		out[i].DefaultProps = deepCopyProps(t.DefaultProps)
+	}
 	return out
 }
 
@@ -197,6 +200,7 @@ func GetBlockTemplates() []BlockTemplate {
 func GetBlockTemplateByType(blockType string) (BlockTemplate, bool) {
 	for _, t := range defaultRegistry.templates {
 		if t.Type == blockType {
+			t.DefaultProps = deepCopyProps(t.DefaultProps)
 			return t, true
 		}
 	}
@@ -206,4 +210,17 @@ func GetBlockTemplateByType(blockType string) (BlockTemplate, bool) {
 // BlockTypeCount returns the number of registered block types.
 func BlockTypeCount() int {
 	return len(defaultRegistry.templates)
+}
+
+// deepCopyProps returns a shallow copy of the props map to prevent callers
+// from mutating the global registry's default values.
+func deepCopyProps(props map[string]any) map[string]any {
+	if props == nil {
+		return nil
+	}
+	cp := make(map[string]any, len(props))
+	for k, v := range props {
+		cp[k] = v
+	}
+	return cp
 }

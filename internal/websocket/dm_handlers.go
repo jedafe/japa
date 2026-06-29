@@ -12,7 +12,6 @@ import (
 
 // parseJSONBody reads the request body and decodes it into v.
 func parseJSONBody(r *http.Request, v any) error {
-	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(v)
 }
 

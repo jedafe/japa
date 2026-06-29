@@ -51,6 +51,7 @@ func FromContext(ctx context.Context) GeoContext {
 // stored atomically so database updates can swap it without locking.
 type Reader struct {
 	current atomic.Pointer[geoip2.Reader]
+	mu      sync.Mutex
 }
 
 // NewReader opens a GeoLite2 database file and returns a Reader.
@@ -117,6 +118,8 @@ func (r *Reader) Lookup(ipStr string) GeoContext {
 // a new .mmdb file. The old reader is closed and the new one takes effect
 // immediately for all subsequent lookups - no server restart needed.
 func (r *Reader) Swap(newReader *geoip2.Reader) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	old := r.current.Swap(newReader)
 	if old != nil {
 		old.Close()
@@ -135,6 +138,3 @@ func (r *Reader) Close() {
 func (r *Reader) IsLoaded() bool {
 	return r.current.Load() != nil
 }
-
-// mu is used only for the update operation to prevent concurrent swaps
-var mu sync.Mutex

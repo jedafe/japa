@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -57,7 +58,9 @@ const RefreshTokenTTL = 30 * 24 * time.Hour // 30 days
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Error("json encode response", "error", err)
+	}
 }
 
 // writeError writes a standardized error response.
@@ -196,19 +199,25 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.DB.GetUserByEmail(r.Context(), tenant.ID, req.Email)
 	if err != nil || user == nil {
-		_ = RecordFailedLogin(r.Context(), h.BruteForce, bruteKey)
+		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
+			slog.Warn("record failed login", "error", err)
+		}
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 		return
 	}
 
 	if !user.PasswordHash.Valid {
-		_ = RecordFailedLogin(r.Context(), h.BruteForce, bruteKey)
+		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
+			slog.Warn("record failed login", "error", err)
+		}
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 		return
 	}
 
 	if err := VerifyPassword(user.PasswordHash.String, req.Password); err != nil {
-		_ = RecordFailedLogin(r.Context(), h.BruteForce, bruteKey)
+		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
+			slog.Warn("record failed login", "error", err)
+		}
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 		return
 	}
@@ -219,7 +228,9 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reset brute-force counter on successful login
-	_ = ResetLoginAttempts(r.Context(), h.BruteForce, bruteKey)
+	if err := ResetLoginAttempts(r.Context(), h.BruteForce, bruteKey); err != nil {
+		slog.Warn("reset login attempts", "error", err)
+	}
 
 	accessToken, err := h.KeyRotation.MintAccessToken(user.ID, user.TenantID)
 	if err != nil {
@@ -307,7 +318,9 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("jc_refresh")
 	if err == nil {
 		tokenHash := hashRefreshToken(cookie.Value)
-		_ = h.DB.RevokeRefreshToken(r.Context(), tokenHash)
+		if err := h.DB.RevokeRefreshToken(r.Context(), tokenHash); err != nil {
+			slog.Error("revoke refresh token", "error", err)
+		}
 	}
 
 	http.SetCookie(w, &http.Cookie{
