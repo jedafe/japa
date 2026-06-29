@@ -3,6 +3,7 @@ package reviews
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -58,11 +59,13 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 	}
 
 	// Best-effort aggregate update (non-blocking failure).
-	_, _ = s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
+	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
 		TenantID:   tenantID,
 		EntityType: input.EntityType,
 		EntityID:   input.EntityID,
-	})
+	}); err != nil {
+		slog.Error("upsert review aggregate", "entity_type", input.EntityType, "error", err)
+	}
 
 	return review, nil
 }
@@ -110,11 +113,13 @@ func (s *Service) UpdateReview(ctx context.Context, id, tenantID, reviewerUserID
 	}
 
 	// Best-effort aggregate update.
-	_, _ = s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
+	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
 		TenantID:   tenantID,
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
-	})
+	}); err != nil {
+		slog.Error("upsert review aggregate", "entity_type", review.EntityType, "error", err)
+	}
 
 	return review, nil
 }
@@ -123,7 +128,7 @@ func (s *Service) UpdateReview(ctx context.Context, id, tenantID, reviewerUserID
 func (s *Service) DeleteReview(ctx context.Context, id, tenantID pgtype.UUID) error {
 	review, err := s.store.getReviewByID(ctx, id, tenantID)
 	if err != nil {
-		return err
+		return fmt.Errorf("get review for delete: %w", err)
 	}
 
 	_, err = s.store.updateReviewStatus(ctx, gen.UpdateReviewStatusParams{
@@ -132,15 +137,17 @@ func (s *Service) DeleteReview(ctx context.Context, id, tenantID pgtype.UUID) er
 		Status:   ReviewStatusRemoved,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("update review status: %w", err)
 	}
 
 	// Best-effort aggregate update.
-	_, _ = s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
+	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
 		TenantID:   tenantID,
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
-	})
+	}); err != nil {
+		slog.Error("upsert review aggregate", "entity_type", review.EntityType, "error", err)
+	}
 
 	return nil
 }
@@ -149,7 +156,7 @@ func (s *Service) DeleteReview(ctx context.Context, id, tenantID pgtype.UUID) er
 func (s *Service) FlagReview(ctx context.Context, id, tenantID pgtype.UUID) error {
 	review, err := s.store.getReviewByID(ctx, id, tenantID)
 	if err != nil {
-		return err
+		return fmt.Errorf("get review for flag: %w", err)
 	}
 
 	_, err = s.store.updateReviewStatus(ctx, gen.UpdateReviewStatusParams{
@@ -158,15 +165,17 @@ func (s *Service) FlagReview(ctx context.Context, id, tenantID pgtype.UUID) erro
 		Status:   ReviewStatusFlagged,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("flag review: %w", err)
 	}
 
 	// Best-effort aggregate update.
-	_, _ = s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
+	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
 		TenantID:   tenantID,
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
-	})
+	}); err != nil {
+		slog.Error("upsert review aggregate", "entity_type", review.EntityType, "error", err)
+	}
 
 	return nil
 }
@@ -186,15 +195,17 @@ func (s *Service) ModerateReview(ctx context.Context, id, tenantID pgtype.UUID, 
 		Status:   status,
 	})
 	if err != nil {
-		return gen.Review{}, err
+		return gen.Review{}, fmt.Errorf("update review status: %w", err)
 	}
 
 	// Best-effort aggregate update.
-	_, _ = s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
+	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
 		TenantID:   tenantID,
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
-	})
+	}); err != nil {
+		slog.Error("upsert review aggregate", "entity_type", review.EntityType, "error", err)
+	}
 
 	return review, nil
 }
@@ -207,12 +218,12 @@ func (s *Service) GetAggregate(ctx context.Context, tenantID pgtype.UUID, entity
 // RecalculateAggregate deletes and re-upserts the aggregate from scratch.
 func (s *Service) RecalculateAggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.store.recalculateReviewAggregate(ctx, tenantID, entityType, entityID); err != nil {
-		return err
+		return fmt.Errorf("recalculate review aggregate: %w", err)
 	}
 	_, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
 		TenantID:   tenantID,
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
-	return err
+	return fmt.Errorf("upsert review aggregate: %w", err)
 }

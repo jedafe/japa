@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -246,13 +247,15 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 	}
 
 	// Log creation event.
-	_, _ = s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
+	if _, err := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
 		TicketID:  ticket.ID,
 		UserID:    input.SubmitterUserID,
 		EventType: string(EventStatusChanged),
 		OldValue:  nil,
 		NewValue:  strPtr(string(StatusOpen)),
-	})
+	}); err != nil {
+		slog.Error("create ticket event", "ticket_id", ticket.ID, "error", err)
+	}
 
 	// Enqueue confirmation email.
 	s.enqueueTicketConfirmation(ticket)
@@ -328,13 +331,15 @@ func (s *Service) UpdateTicketStatus(ctx context.Context, id, tenantID pgtype.UU
 	}
 
 	// Log status change event.
-	_, _ = s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
+	if _, err := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
 		TicketID:  id,
 		UserID:    input.UserID,
 		EventType: string(EventStatusChanged),
 		OldValue:  strPtr(current.Status),
 		NewValue:  strPtr(input.Status),
-	})
+	}); err != nil {
+		slog.Error("create ticket event", "ticket_id", id, "error", err)
+	}
 
 	// Enqueue status update email.
 	s.enqueueTicketStatusUpdate(ticket)
@@ -365,13 +370,15 @@ func (s *Service) UpdateTicketPriority(ctx context.Context, id, tenantID pgtype.
 	}
 
 	// Log priority change event.
-	_, _ = s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
+	if _, err := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
 		TicketID:  id,
 		UserID:    input.UserID,
 		EventType: string(EventPriorityChanged),
 		OldValue:  strPtr(current.Priority),
 		NewValue:  strPtr(input.Priority),
-	})
+	}); err != nil {
+		slog.Error("create ticket event", "ticket_id", id, "error", err)
+	}
 
 	return ticket, nil
 }
@@ -396,13 +403,15 @@ func (s *Service) AssignTicket(ctx context.Context, id, tenantID pgtype.UUID, in
 	}
 
 	// Log assignment event.
-	_, _ = s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
+	if _, err := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
 		TicketID:  id,
 		UserID:    input.UserID,
 		EventType: string(EventAssigned),
 		OldValue:  nil,
 		NewValue:  strPtr(input.AssignedTo.String()),
-	})
+	}); err != nil {
+		slog.Error("create ticket event", "ticket_id", id, "error", err)
+	}
 
 	return ticket, nil
 }
@@ -440,13 +449,15 @@ func (s *Service) ResolveTicket(ctx context.Context, id, tenantID pgtype.UUID, i
 	}
 
 	// Log resolution event.
-	_, _ = s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
+	if _, err := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
 		TicketID:  id,
 		UserID:    input.UserID,
 		EventType: string(EventStatusChanged),
 		OldValue:  strPtr(current.Status),
 		NewValue:  strPtr(string(StatusResolved)),
-	})
+	}); err != nil {
+		slog.Error("create ticket event", "ticket_id", id, "error", err)
+	}
 
 	return ticket, nil
 }
@@ -464,13 +475,15 @@ func (s *Service) CloseTicket(ctx context.Context, id, tenantID pgtype.UUID, use
 	}
 
 	// Log close event.
-	_, _ = s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
+	if _, err := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
 		TicketID:  id,
 		UserID:    userID,
 		EventType: string(EventStatusChanged),
 		OldValue:  strPtr(current.Status),
 		NewValue:  strPtr(string(StatusClosed)),
-	})
+	}); err != nil {
+		slog.Error("create ticket event", "ticket_id", id, "error", err)
+	}
 
 	return ticket, nil
 }
@@ -503,13 +516,15 @@ func (s *Service) AddComment(ctx context.Context, ticketID pgtype.UUID, input Ad
 	}
 
 	// Log comment event.
-	_, _ = s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
+	if _, err := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
 		TicketID:  ticketID,
 		UserID:    input.UserID,
 		EventType: string(EventCommentAdded),
 		OldValue:  nil,
 		NewValue:  strPtr("comment_added"),
-	})
+	}); err != nil {
+		slog.Error("create ticket event", "ticket_id", ticketID, "error", err)
+	}
 
 	return comment, nil
 }
@@ -578,13 +593,15 @@ func (s *Service) CheckSLABreaches(ctx context.Context, tenantID pgtype.UUID) (i
 	for _, t := range tickets {
 		if t.SlaBreachAt.Valid && t.SlaBreachAt.Time.Before(now) &&
 			t.Status != string(StatusResolved) && t.Status != string(StatusClosed) && t.Status != string(StatusSpam) {
-			_, _ = s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
+			if _, err := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{
 				TicketID:  t.ID,
 				UserID:    pgtype.UUID{},
 				EventType: string(EventSLABreached),
 				OldValue:  nil,
 				NewValue:  strPtr("sla_breached"),
-			})
+			}); err != nil {
+				slog.Error("create ticket event", "ticket_id", t.ID, "error", err)
+			}
 			breached++
 		}
 	}
@@ -604,7 +621,9 @@ func (s *Service) enqueueTicketConfirmation(ticket gen.Ticket) {
 	if err != nil {
 		return
 	}
-	_ = s.enqueuer.Enqueue(worker.TypeTicketSendConfirmation, payload)
+	if err := s.enqueuer.Enqueue(worker.TypeTicketSendConfirmation, payload); err != nil {
+		slog.Error("enqueue ticket confirmation email", "ticket_id", ticket.ID, "error", err)
+	}
 }
 
 func (s *Service) enqueueTicketStatusUpdate(ticket gen.Ticket) {
@@ -617,7 +636,9 @@ func (s *Service) enqueueTicketStatusUpdate(ticket gen.Ticket) {
 	if err != nil {
 		return
 	}
-	_ = s.enqueuer.Enqueue(worker.TypeTicketSendStatusUpdate, payload)
+	if err := s.enqueuer.Enqueue(worker.TypeTicketSendStatusUpdate, payload); err != nil {
+		slog.Error("enqueue ticket status update email", "ticket_id", ticket.ID, "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

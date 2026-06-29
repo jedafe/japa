@@ -61,8 +61,8 @@ func TestUserContext_PermissionCheck(t *testing.T) {
 func TestRBAC_ClearCache(t *testing.T) {
 	r := &RBAC{
 		cache: &permissionCache{
-			entries: map[string]*UserContext{
-				"user1": {Permissions: map[string]bool{"test": true}},
+			entries: map[string]*cacheEntry{
+				"user1": {user: &UserContext{Permissions: map[string]bool{"test": true}}},
 			},
 		},
 	}

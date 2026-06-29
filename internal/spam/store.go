@@ -66,9 +66,13 @@ type CreateIPBlockInput struct {
 
 // CreateIPBlock inserts a new IP block record.
 func (s *Store) CreateIPBlock(ctx context.Context, input CreateIPBlockInput) (gen.IpBlock, error) {
+	addr, err := netipParseAddrOrCIDR(input.CIDR)
+	if err != nil {
+		return gen.IpBlock{}, fmt.Errorf("parsing CIDR: %w", err)
+	}
 	return s.queries.CreateIPBlock(ctx, gen.CreateIPBlockParams{
 		TenantID:  input.TenantID,
-		Cidr:      netipMustParseAddr(input.CIDR),
+		Cidr:      addr,
 		BlockType: input.BlockType,
 		Reason:    input.Reason,
 		BlockedBy: input.BlockedBy,
@@ -78,9 +82,13 @@ func (s *Store) CreateIPBlock(ctx context.Context, input CreateIPBlockInput) (ge
 
 // GetIPBlockByCIDR checks if a CIDR is blocked for the given tenant.
 func (s *Store) GetIPBlockByCIDR(ctx context.Context, tenantID pgtype.UUID, cidr string) (gen.IpBlock, error) {
+	addr, err := netipParseAddrOrCIDR(cidr)
+	if err != nil {
+		return gen.IpBlock{}, fmt.Errorf("parsing CIDR: %w", err)
+	}
 	return s.queries.GetIPBlockByCIDR(ctx, gen.GetIPBlockByCIDRParams{
 		TenantID: tenantID,
-		Cidr:     netipMustParseAddr(cidr),
+		Cidr:     addr,
 	})
 }
 
@@ -223,20 +231,20 @@ func (s *Store) CheckDuplicateHash(ctx context.Context, tenantID pgtype.UUID, ha
 
 // --- helpers ---
 
-// netipMustParseAddr parses a CIDR or IP string into a netip.Addr.
+// netipParseAddrOrCIDR parses a CIDR or IP string into a netip.Addr.
 // For CIDR notation like "192.168.0.0/24", it extracts just the address.
-// Panics on invalid input — use only for sqlc params where input is validated.
-func netipMustParseAddr(s string) netip.Addr {
+// Returns an error for invalid input instead of panicking.
+func netipParseAddrOrCIDR(s string) (netip.Addr, error) {
 	// Try parsing as a plain IP first
 	addr, err := netip.ParseAddr(s)
 	if err == nil {
-		return addr
+		return addr, nil
 	}
 
 	// Try parsing as CIDR and extract the address
-	prefix, err := netip.ParsePrefix(s)
+	cidr, err := netip.ParsePrefix(s)
 	if err != nil {
-		panic(fmt.Sprintf("invalid CIDR or IP: %s", s))
+		return netip.Addr{}, fmt.Errorf("invalid CIDR or IP: %s", s)
 	}
-	return prefix.Addr()
+	return cidr.Addr(), nil
 }

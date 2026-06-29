@@ -2,6 +2,7 @@ package payments
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -45,8 +46,17 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	// Extract event ID
-	eventID, _ := event["id"].(string)
+	// Extract event ID — Paystack uses numeric IDs.
+	var eventID string
+	switch v := event["id"].(type) {
+	case string:
+		eventID = v
+	case float64:
+		eventID = fmt.Sprintf("%.0f", v)
+	default:
+		writeError(w, http.StatusBadRequest, "missing_event_id", "Missing event ID")
+		return
+	}
 	if eventID == "" {
 		writeError(w, http.StatusBadRequest, "missing_event_id", "Missing event ID")
 		return

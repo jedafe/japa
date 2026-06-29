@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -13,26 +14,35 @@ import (
 )
 
 // Checker resolves whether a feature is enabled for a given tenant.
-// It caches results per-request to avoid repeated DB lookups.
+// It caches results with automatic TTL-based eviction to prevent stale flags.
 type Checker struct {
 	db    *db.DB
 	cache *flagCache
 }
 
-// flagCache provides per-request caching of feature flag lookups.
+// flagCacheEntry wraps a flag value with its creation time for TTL eviction.
+type flagCacheEntry struct {
+	enabled   bool
+	createdAt time.Time
+}
+
+// flagCache provides caching of feature flag lookups with TTL-based eviction.
 type flagCache struct {
 	mu      sync.RWMutex
-	entries map[string]map[string]bool // tenant_id -> key -> enabled
+	entries map[string]map[string]*flagCacheEntry // tenant_id -> key -> entry
 }
 
 // New creates a feature flag Checker backed by the given database.
+// A background goroutine evicts cache entries older than 60 seconds.
 func New(database *db.DB) *Checker {
-	return &Checker{
+	c := &Checker{
 		db: database,
 		cache: &flagCache{
-			entries: make(map[string]map[string]bool),
+			entries: make(map[string]map[string]*flagCacheEntry),
 		},
 	}
+	go c.cache.cleanupLoop(60 * time.Second)
+	return c
 }
 
 // IsEnabled checks if a feature is enabled for the tenant in context.
@@ -62,33 +72,57 @@ func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key st
 	return enabled
 }
 
-// cacheGet retrieves a cached flag value.
+// cacheGet retrieves a cached flag value if still valid.
 func (c *Checker) cacheGet(tenantKey, flagKey string) *bool {
 	c.cache.mu.RLock()
 	defer c.cache.mu.RUnlock()
 	if tenantFlags, ok := c.cache.entries[tenantKey]; ok {
-		if val, ok := tenantFlags[flagKey]; ok {
-			return &val
+		if entry, ok := tenantFlags[flagKey]; ok {
+			return &entry.enabled
 		}
 	}
 	return nil
 }
 
-// cacheSet stores a flag value in the cache.
+// cacheSet stores a flag value in the cache with current timestamp.
 func (c *Checker) cacheSet(tenantKey, flagKey string, enabled bool) {
 	c.cache.mu.Lock()
 	defer c.cache.mu.Unlock()
 	if _, ok := c.cache.entries[tenantKey]; !ok {
-		c.cache.entries[tenantKey] = make(map[string]bool)
+		c.cache.entries[tenantKey] = make(map[string]*flagCacheEntry)
 	}
-	c.cache.entries[tenantKey][flagKey] = enabled
+	c.cache.entries[tenantKey][flagKey] = &flagCacheEntry{
+		enabled:   enabled,
+		createdAt: time.Now(),
+	}
 }
 
-// ClearCache clears all cached flag values. Call at end of request.
+// ClearCache clears all cached flag values.
 func (c *Checker) ClearCache() {
 	c.cache.mu.Lock()
 	defer c.cache.mu.Unlock()
-	c.cache.entries = make(map[string]map[string]bool)
+	c.cache.entries = make(map[string]map[string]*flagCacheEntry)
+}
+
+// cleanupLoop periodically evicts cache entries older than maxAge.
+func (fc *flagCache) cleanupLoop(maxAge time.Duration) {
+	ticker := time.NewTicker(maxAge)
+	defer ticker.Stop()
+	for range ticker.C {
+		fc.mu.Lock()
+		now := time.Now()
+		for tenantKey, tenantFlags := range fc.entries {
+			for key, entry := range tenantFlags {
+				if now.Sub(entry.createdAt) > maxAge {
+					delete(tenantFlags, key)
+				}
+			}
+			if len(tenantFlags) == 0 {
+				delete(fc.entries, tenantKey)
+			}
+		}
+		fc.mu.Unlock()
+	}
 }
 
 // GetAllEnabled returns a map of all feature keys to their enabled state

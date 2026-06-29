@@ -139,7 +139,7 @@ func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription str
 
 		// Cache in Valkey
 		if rdb != nil {
-			if err := rdb.Redis().Set(context.Background(), cacheKey, txt, llmsCacheTTL).Err(); err != nil {
+			if err := rdb.Redis().Set(r.Context(), cacheKey, txt, llmsCacheTTL).Err(); err != nil {
 				slog.Warn("llms: failed to cache", "tenant_id", t.ID, "error", err)
 			}
 		}

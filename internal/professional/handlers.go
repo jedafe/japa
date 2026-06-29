@@ -708,12 +708,12 @@ func (h *Handlers) GetAuthorContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, err := h.Service.GetAuthorContext(r.Context(), profileID, user.UserID, tenantID)
+	authorCtx, err := h.Service.GetAuthorContext(r.Context(), profileID, user.UserID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": ctx})
+	writeJSON(w, http.StatusOK, map[string]any{"data": authorCtx})
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -521,7 +522,9 @@ func (h *Handlers) maybeIssueCertificate(ctx context.Context, tenantID, userID, 
 	// Generate a unique certificate number.
 	certNumber := fmt.Sprintf("JC-%d-%s", time.Now().Unix(), userID.Bytes[:8])
 
-	_, _ = h.store.IssueCertificate(ctx, tenantID, userID, mod.TrackID, certNumber)
+	if _, err := h.store.IssueCertificate(ctx, tenantID, userID, mod.TrackID, certNumber); err != nil {
+		slog.Error("issue certificate", "user_id", userID, "track_id", mod.TrackID, "error", err)
+	}
 }
 
 func calculatePercent(completed, total int) float64 {

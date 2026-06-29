@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -52,22 +53,30 @@ type RBAC struct {
 	cache *permissionCache
 }
 
+// cacheEntry wraps a UserContext with its creation time for TTL-based eviction.
+type cacheEntry struct {
+	user      *UserContext
+	createdAt time.Time
+}
+
 // permissionCache provides in-memory caching of resolved permissions
-// per user within a request lifecycle. The cache is per-request, not
-// global, so it doesn't need TTL management.
+// with automatic TTL-based eviction to prevent stale permissions.
 type permissionCache struct {
 	mu      sync.RWMutex
-	entries map[string]*UserContext
+	entries map[string]*cacheEntry
 }
 
 // New creates a new RBAC resolver backed by the given database.
+// A background goroutine evicts cache entries older than 60 seconds.
 func New(database *db.DB) *RBAC {
-	return &RBAC{
+	r := &RBAC{
 		db: database,
 		cache: &permissionCache{
-			entries: make(map[string]*UserContext),
+			entries: make(map[string]*cacheEntry),
 		},
 	}
+	go r.cache.cleanupLoop(60 * time.Second)
+	return r
 }
 
 // HasPermission checks if a user has a specific permission.
@@ -163,26 +172,48 @@ func (r *RBAC) loadUserContext(ctx context.Context, userID, tenantID pgtype.UUID
 	}, nil
 }
 
-// cacheGet retrieves a cached UserContext.
+// cacheGet retrieves a cached UserContext if still valid.
 func (r *RBAC) cacheGet(key string) *UserContext {
 	r.cache.mu.RLock()
 	defer r.cache.mu.RUnlock()
-	return r.cache.entries[key]
+	entry, ok := r.cache.entries[key]
+	if !ok {
+		return nil
+	}
+	return entry.user
 }
 
-// cacheSet stores a UserContext in the cache.
+// cacheSet stores a UserContext in the cache with current timestamp.
 func (r *RBAC) cacheSet(key string, uc *UserContext) {
 	r.cache.mu.Lock()
 	defer r.cache.mu.Unlock()
-	r.cache.entries[key] = uc
+	r.cache.entries[key] = &cacheEntry{
+		user:      uc,
+		createdAt: time.Now(),
+	}
 }
 
-// ClearCache clears the permission cache. Call this at the end of a request
-// or when permissions change.
+// ClearCache clears the permission cache.
 func (r *RBAC) ClearCache() {
 	r.cache.mu.Lock()
 	defer r.cache.mu.Unlock()
-	r.cache.entries = make(map[string]*UserContext)
+	r.cache.entries = make(map[string]*cacheEntry)
+}
+
+// cleanupLoop periodically evicts cache entries older than maxAge.
+func (c *permissionCache) cleanupLoop(maxAge time.Duration) {
+	ticker := time.NewTicker(maxAge)
+	defer ticker.Stop()
+	for range ticker.C {
+		c.mu.Lock()
+		now := time.Now()
+		for key, entry := range c.entries {
+			if now.Sub(entry.createdAt) > maxAge {
+				delete(c.entries, key)
+			}
+		}
+		c.mu.Unlock()
+	}
 }
 
 // IsSystemGroup checks if a group slug is one of the three system defaults.

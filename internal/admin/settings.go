@@ -364,6 +364,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(ctx)
 
 	// Upsert each setting. Only keys defined in the schema are accepted.
+	var valueJSON []byte
 	for key, value := range updates {
 		if !validKeys[key] {
 			writeError(w, http.StatusBadRequest, "invalid_key", fmt.Sprintf("Unknown setting key: %s", key))
@@ -371,7 +372,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		fullKey := category + "." + key
-		valueJSON, err := json.Marshal(value)
+		valueJSON, err = json.Marshal(value)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Cannot serialize value for key: %s", key))
 			return

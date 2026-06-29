@@ -241,10 +241,16 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch comments (excluding internal notes for non-staff).
-	comments, _ := h.Service.ListComments(r.Context(), id, false)
+	comments, err := h.Service.ListComments(r.Context(), id, false)
+	if err != nil {
+		slog.Error("listing ticket comments", "ticket_id", id, "error", err)
+	}
 
 	// Fetch attachments.
-	attachments, _ := h.Service.ListAttachments(r.Context(), id)
+	attachments, err := h.Service.ListAttachments(r.Context(), id)
+	if err != nil {
+		slog.Error("listing ticket attachments", "ticket_id", id, "error", err)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -366,9 +372,18 @@ func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch all comments including internal notes for staff.
-	comments, _ := h.Service.ListComments(r.Context(), id, true)
-	attachments, _ := h.Service.ListAttachments(r.Context(), id)
-	events, _ := h.Service.ListEvents(r.Context(), id)
+	comments, err := h.Service.ListComments(r.Context(), id, true)
+	if err != nil {
+		slog.Error("listing ticket comments", "ticket_id", id, "error", err)
+	}
+	attachments, err := h.Service.ListAttachments(r.Context(), id)
+	if err != nil {
+		slog.Error("listing ticket attachments", "ticket_id", id, "error", err)
+	}
+	events, err := h.Service.ListEvents(r.Context(), id)
+	if err != nil {
+		slog.Error("listing ticket events", "ticket_id", id, "error", err)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{

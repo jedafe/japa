@@ -110,12 +110,11 @@ func extractMMDB(r io.Reader, outputPath string) error {
 			if err != nil {
 				return fmt.Errorf("creating output file: %w", err)
 			}
-			defer out.Close()
-
 			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
 				return fmt.Errorf("writing mmdb: %w", err)
 			}
-			return nil
+			return out.Close()
 		}
 	}
 

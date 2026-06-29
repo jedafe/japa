@@ -1764,7 +1764,7 @@ func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
 		vacuumSQL += " " + payload.TableName
 	}
 
-	if _, err := dbPool.Writer.Exec(context.Background(), vacuumSQL); err != nil {
+	if _, err := dbPool.Writer.Exec(ctx, vacuumSQL); err != nil {
 		slog.Error("task:db_manual_vacuum: vacuum failed", "error", err)
 		return err
 	}

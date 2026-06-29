@@ -387,7 +387,7 @@ func (s *Service) ApplyDiscountCodeUse(ctx context.Context, codeID, userID, paym
 		UserID:    userID,
 		PaymentID: paymentID,
 	})
-	return err
+	return fmt.Errorf("record discount code use: %w", err)
 }
 
 // ---------------------------------------------------------------------------

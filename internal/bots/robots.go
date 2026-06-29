@@ -121,7 +121,7 @@ func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 
 		// Cache in Valkey
 		if rdb != nil {
-			if err := rdb.Redis().Set(context.Background(), cacheKey, txt, robotsCacheTTL).Err(); err != nil {
+			if err := rdb.Redis().Set(r.Context(), cacheKey, txt, robotsCacheTTL).Err(); err != nil {
 				slog.Warn("robots: failed to cache", "tenant_id", t.ID, "error", err)
 			}
 		}
