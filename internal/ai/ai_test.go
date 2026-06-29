@@ -1,0 +1,604 @@
+package ai
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// ---------------------------------------------------------------------------
+// Mock Provider
+// ---------------------------------------------------------------------------
+
+// mockProvider implements Provider for testing without external dependencies.
+type mockProvider struct {
+	name            string
+	sendFn          func(ctx context.Context, req Request) (Response, error)
+	verifySigFn     func(payload []byte, sig string) error
+	sendCallCount   int
+	verifyCallCount int
+}
+
+func (m *mockProvider) Name() string { return m.name }
+
+func (m *mockProvider) Send(ctx context.Context, req Request) (Response, error) {
+	m.sendCallCount++
+	if m.sendFn != nil {
+		return m.sendFn(ctx, req)
+	}
+	return Response{
+		ProviderRef: m.name + "-ref",
+		Status:      "success",
+		Raw:         map[string]any{"provider": m.name},
+	}, nil
+}
+
+func (m *mockProvider) VerifyWebhookSignature(payload []byte, sig string) error {
+	m.verifyCallCount++
+	if m.verifySigFn != nil {
+		return m.verifySigFn(payload, sig)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Provider Interface Compliance
+// ---------------------------------------------------------------------------
+
+func TestProviderInterfaceCompliance(t *testing.T) {
+	var _ Provider = (*mockProvider)(nil)
+}
+
+func TestMockProviderName(t *testing.T) {
+	p := &mockProvider{name: "test-provider"}
+	if got := p.Name(); got != "test-provider" {
+		t.Errorf("Name() = %q, want %q", got, "test-provider")
+	}
+}
+
+func TestMockProviderSendDefault(t *testing.T) {
+	p := &mockProvider{name: "default"}
+	resp, err := p.Send(context.Background(), Request{Category: "test"})
+	if err != nil {
+		t.Fatalf("Send() unexpected error: %v", err)
+	}
+	if resp.ProviderRef != "default-ref" {
+		t.Errorf("ProviderRef = %q, want %q", resp.ProviderRef, "default-ref")
+	}
+	if resp.Status != "success" {
+		t.Errorf("Status = %q, want %q", resp.Status, "success")
+	}
+	if resp.Raw["provider"] != "default" {
+		t.Errorf("Raw[provider] = %v, want %q", resp.Raw["provider"], "default")
+	}
+}
+
+func TestMockProviderSendCustom(t *testing.T) {
+	customErr := errors.New("custom error")
+	p := &mockProvider{
+		name: "failing",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{}, customErr
+		},
+	}
+	_, err := p.Send(context.Background(), Request{})
+	if !errors.Is(err, customErr) {
+		t.Errorf("Send() error = %v, want %v", err, customErr)
+	}
+}
+
+func TestMockProviderVerifyWebhookSignatureDefault(t *testing.T) {
+	p := &mockProvider{name: "sig"}
+	err := p.VerifyWebhookSignature([]byte("payload"), "sig123")
+	if err != nil {
+		t.Errorf("VerifyWebhookSignature() unexpected error: %v", err)
+	}
+	if p.verifyCallCount != 1 {
+		t.Errorf("verifyCallCount = %d, want 1", p.verifyCallCount)
+	}
+}
+
+func TestMockProviderVerifyWebhookSignatureCustom(t *testing.T) {
+	p := &mockProvider{
+		name: "sig-fail",
+		verifySigFn: func(payload []byte, sig string) error {
+			return errors.New("invalid signature")
+		},
+	}
+	err := p.VerifyWebhookSignature([]byte("data"), "bad")
+	if err == nil {
+		t.Error("VerifyWebhookSignature() expected error, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher — Construction and Registration
+// ---------------------------------------------------------------------------
+
+func TestNewDispatcher(t *testing.T) {
+	d := NewDispatcher()
+	if d == nil {
+		t.Fatal("NewDispatcher() returned nil")
+	}
+	if d.providersByCategory == nil {
+		t.Fatal("providersByCategory map not initialized")
+	}
+}
+
+func TestDispatcherRegisterProvider(t *testing.T) {
+	d := NewDispatcher()
+	p := &mockProvider{name: "provider-a"}
+	d.RegisterProvider("content_generation", p)
+	d.RegisterProvider("moderation", p)
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	if len(d.providersByCategory["content_generation"]) != 1 {
+		t.Errorf("content_generation providers = %d, want 1", len(d.providersByCategory["content_generation"]))
+	}
+	if len(d.providersByCategory["moderation"]) != 1 {
+		t.Errorf("moderation providers = %d, want 1", len(d.providersByCategory["moderation"]))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher — Routing by Category
+// ---------------------------------------------------------------------------
+
+func TestDispatcherDispatchRoutesToCorrectCategory(t *testing.T) {
+	d := NewDispatcher()
+
+	genProvider := &mockProvider{
+		name: "gen-provider",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{ProviderRef: "gen", Status: "success", Raw: map[string]any{"category": req.Category}}, nil
+		},
+	}
+	modProvider := &mockProvider{
+		name: "mod-provider",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{ProviderRef: "mod", Status: "success", Raw: map[string]any{"category": req.Category}}, nil
+		},
+	}
+
+	d.RegisterProvider("content_generation", genProvider)
+	d.RegisterProvider("moderation", modProvider)
+
+	// Dispatch to content_generation
+	resp, err := d.Dispatch(context.Background(), "content_generation", Request{Category: "content_generation"})
+	if err != nil {
+		t.Fatalf("Dispatch(content_generation) error: %v", err)
+	}
+	if resp.ProviderRef != "gen" {
+		t.Errorf("expected gen-provider, got %q", resp.ProviderRef)
+	}
+
+	// Dispatch to moderation
+	resp, err = d.Dispatch(context.Background(), "moderation", Request{Category: "moderation"})
+	if err != nil {
+		t.Fatalf("Dispatch(moderation) error: %v", err)
+	}
+	if resp.ProviderRef != "mod" {
+		t.Errorf("expected mod-provider, got %q", resp.ProviderRef)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher — Fallback on Provider Failure
+// ---------------------------------------------------------------------------
+
+func TestDispatcherFallbackOnFailure(t *testing.T) {
+	d := NewDispatcher()
+
+	failProvider := &mockProvider{
+		name: "primary",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{}, errors.New("primary provider down")
+		},
+	}
+	successProvider := &mockProvider{
+		name: "fallback",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{ProviderRef: "fallback-ref", Status: "success"}, nil
+		},
+	}
+
+	d.RegisterProvider("embedding", failProvider)
+	d.RegisterProvider("embedding", successProvider)
+
+	resp, err := d.Dispatch(context.Background(), "embedding", Request{Category: "embedding"})
+	if err != nil {
+		t.Fatalf("Dispatch() unexpected error: %v", err)
+	}
+	if resp.ProviderRef != "fallback-ref" {
+		t.Errorf("expected fallback-ref, got %q", resp.ProviderRef)
+	}
+	if failProvider.sendCallCount != 1 {
+		t.Errorf("primary sendCallCount = %d, want 1", failProvider.sendCallCount)
+	}
+	if successProvider.sendCallCount != 1 {
+		t.Errorf("fallback sendCallCount = %d, want 1", successProvider.sendCallCount)
+	}
+}
+
+func TestDispatcherAllProvidersFail(t *testing.T) {
+	d := NewDispatcher()
+
+	fail1 := &mockProvider{
+		name: "fail-1",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{}, errors.New("provider 1 error")
+		},
+	}
+	fail2 := &mockProvider{
+		name: "fail-2",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{}, errors.New("provider 2 error")
+		},
+	}
+
+	d.RegisterProvider("embedding", fail1)
+	d.RegisterProvider("embedding", fail2)
+
+	_, err := d.Dispatch(context.Background(), "embedding", Request{Category: "embedding"})
+	if err == nil {
+		t.Fatal("Dispatch() expected error when all providers fail, got nil")
+	}
+
+	expected := "ai: all providers for category \"embedding\" failed: provider 2 error"
+	if got := err.Error(); got != expected {
+		t.Errorf("error = %q, want %q", got, expected)
+	}
+}
+
+func TestDispatcherNoProvidersRegistered(t *testing.T) {
+	d := NewDispatcher()
+
+	_, err := d.Dispatch(context.Background(), "unknown_category", Request{Category: "unknown_category"})
+	if err == nil {
+		t.Fatal("Dispatch() expected error for missing category, got nil")
+	}
+
+	expected := "ai: no providers registered for category \"unknown_category\""
+	if got := err.Error(); got != expected {
+		t.Errorf("error = %q, want %q", got, expected)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher — Priority Order
+// ---------------------------------------------------------------------------
+
+func TestDispatcherPriorityOrder(t *testing.T) {
+	d := NewDispatcher()
+
+	provider1 := &mockProvider{
+		name: "first",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{ProviderRef: "first"}, nil
+		},
+	}
+	provider2 := &mockProvider{
+		name: "second",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{ProviderRef: "second"}, nil
+		},
+	}
+
+	d.RegisterProvider("test", provider1)
+	d.RegisterProvider("test", provider2)
+
+	resp, err := d.Dispatch(context.Background(), "test", Request{Category: "test"})
+	if err != nil {
+		t.Fatalf("Dispatch() error: %v", err)
+	}
+	if resp.ProviderRef != "first" {
+		t.Errorf("expected first provider to be tried first, got %q", resp.ProviderRef)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher — Context Propagation
+// ---------------------------------------------------------------------------
+
+func TestDispatcherContextPropagation(t *testing.T) {
+	type ctxKey struct{}
+	d := NewDispatcher()
+
+	var capturedCtx context.Context
+	p := &mockProvider{
+		name: "ctx-test",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			capturedCtx = ctx
+			return Response{ProviderRef: "ok"}, nil
+		},
+	}
+	d.RegisterProvider("test", p)
+
+	ctx := context.WithValue(context.Background(), ctxKey{}, "test-value")
+	_, err := d.Dispatch(ctx, "test", Request{Category: "test"})
+	if err != nil {
+		t.Fatalf("Dispatch() error: %v", err)
+	}
+	if capturedCtx.Value(ctxKey{}) != "test-value" {
+		t.Error("context value not propagated to provider")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher — Multiple Providers with Partial Failure
+// ---------------------------------------------------------------------------
+
+func TestDispatcherPartialFailureThenSuccess(t *testing.T) {
+	d := NewDispatcher()
+
+	fail1 := &mockProvider{
+		name: "fail-1",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{}, errors.New("first fails")
+		},
+	}
+	fail2 := &mockProvider{
+		name: "fail-2",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{}, errors.New("second fails")
+		},
+	}
+	success := &mockProvider{
+		name: "success",
+		sendFn: func(ctx context.Context, req Request) (Response, error) {
+			return Response{ProviderRef: "third-ok"}, nil
+		},
+	}
+
+	d.RegisterProvider("test", fail1)
+	d.RegisterProvider("test", fail2)
+	d.RegisterProvider("test", success)
+
+	resp, err := d.Dispatch(context.Background(), "test", Request{Category: "test"})
+	if err != nil {
+		t.Fatalf("Dispatch() unexpected error: %v", err)
+	}
+	if resp.ProviderRef != "third-ok" {
+		t.Errorf("expected third-ok, got %q", resp.ProviderRef)
+	}
+	if fail1.sendCallCount != 1 || fail2.sendCallCount != 1 || success.sendCallCount != 1 {
+		t.Errorf("call counts: fail1=%d fail2=%d success=%d, want 1 each",
+			fail1.sendCallCount, fail2.sendCallCount, success.sendCallCount)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HITL Constants
+// ---------------------------------------------------------------------------
+
+func TestHITLStatusConstants(t *testing.T) {
+	tests := []struct {
+		name  string
+		got   string
+		want  string
+	}{
+		{"pending", HITLStatusPending, "pending"},
+		{"approved", HITLStatusApproved, "approved"},
+		{"rejected", HITLStatusRejected, "rejected"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Errorf("constant = %q, want %q", tt.got, tt.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HITL Business Logic — Validation (pre-store-call checks)
+// ---------------------------------------------------------------------------
+
+// These tests exercise the validation logic in the package-level functions.
+// Since the functions take *Store (concrete type), we cannot mock the DB.
+// Validation errors are returned before the store is called, so they work
+// with any *Store value — even nil won't be reached.
+
+func TestCreateHITLReview_MissingContentID(t *testing.T) {
+	_, err := CreateHITLReview(context.Background(), nil, HITLReview{
+		ContentType: "blog_post",
+		AIOutput:    []byte(`{"text":"hello"}`),
+	})
+	if err == nil || err.Error() != "content_id is required" {
+		t.Errorf("expected content_id error, got: %v", err)
+	}
+}
+
+func TestCreateHITLReview_MissingContentType(t *testing.T) {
+	_, err := CreateHITLReview(context.Background(), nil, HITLReview{
+		ContentID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
+		AIOutput:  []byte(`{"text":"hello"}`),
+	})
+	if err == nil || err.Error() != "content_type is required" {
+		t.Errorf("expected content_type error, got: %v", err)
+	}
+}
+
+func TestCreateHITLReview_MissingAIOutput(t *testing.T) {
+	_, err := CreateHITLReview(context.Background(), nil, HITLReview{
+		ContentID:   pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
+		ContentType: "blog_post",
+	})
+	if err == nil || err.Error() != "ai_output is required" {
+		t.Errorf("expected ai_output error, got: %v", err)
+	}
+}
+
+func TestApproveReview_MissingReviewID(t *testing.T) {
+	err := ApproveReview(context.Background(), nil, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true})
+	if err == nil || err.Error() != "review_id is required" {
+		t.Errorf("expected review_id error, got: %v", err)
+	}
+}
+
+func TestApproveReview_MissingReviewerID(t *testing.T) {
+	err := ApproveReview(context.Background(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{})
+	if err == nil || err.Error() != "reviewer_id is required" {
+		t.Errorf("expected reviewer_id error, got: %v", err)
+	}
+}
+
+func TestRejectReview_MissingReviewID(t *testing.T) {
+	err := RejectReview(context.Background(), nil, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, "bad content")
+	if err == nil || err.Error() != "review_id is required" {
+		t.Errorf("expected review_id error, got: %v", err)
+	}
+}
+
+func TestRejectReview_MissingReviewerID(t *testing.T) {
+	err := RejectReview(context.Background(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{}, "bad content")
+	if err == nil || err.Error() != "reviewer_id is required" {
+		t.Errorf("expected reviewer_id error, got: %v", err)
+	}
+}
+
+func TestRejectReview_MissingReason(t *testing.T) {
+	err := RejectReview(context.Background(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{Bytes: [16]byte{2}, Valid: true}, "")
+	if err == nil || err.Error() != "rejection reason is required" {
+		t.Errorf("expected rejection reason error, got: %v", err)
+	}
+}
+
+func TestListPendingReviews_MissingTenantID(t *testing.T) {
+	_, err := ListPendingReviews(context.Background(), nil, pgtype.UUID{}, 20, 0)
+	if err == nil || err.Error() != "tenant_id is required" {
+		t.Errorf("expected tenant_id error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HITL Review Type
+// ---------------------------------------------------------------------------
+
+func TestHITLReviewFields(t *testing.T) {
+	review := HITLReview{
+		ID:          pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
+		TenantID:    pgtype.UUID{Bytes: [16]byte{2}, Valid: true},
+		ContentID:   pgtype.UUID{Bytes: [16]byte{3}, Valid: true},
+		ContentType: "blog_post",
+		AIOutput:    []byte(`{"text":"hello"}`),
+		Status:      HITLStatusPending,
+	}
+
+	if review.ContentType != "blog_post" {
+		t.Errorf("ContentType = %q, want %q", review.ContentType, "blog_post")
+	}
+	if review.Status != HITLStatusPending {
+		t.Errorf("Status = %q, want %q", review.Status, HITLStatusPending)
+	}
+	if len(review.AIOutput) == 0 {
+		t.Error("AIOutput should not be empty")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Request / Response Types
+// ---------------------------------------------------------------------------
+
+func TestRequestFields(t *testing.T) {
+	req := Request{
+		Category: "content_generation",
+		Payload:  map[string]any{"prompt": "hello"},
+	}
+	if req.Category != "content_generation" {
+		t.Errorf("Category = %q, want %q", req.Category, "content_generation")
+	}
+	if req.Payload["prompt"] != "hello" {
+		t.Errorf("Payload[prompt] = %v, want %q", req.Payload["prompt"], "hello")
+	}
+}
+
+func TestResponseFields(t *testing.T) {
+	resp := Response{
+		ProviderRef: "ref-123",
+		Status:      "success",
+		Raw:         map[string]any{"tokens": 100},
+	}
+	if resp.ProviderRef != "ref-123" {
+		t.Errorf("ProviderRef = %q, want %q", resp.ProviderRef, "ref-123")
+	}
+	if resp.Status != "success" {
+		t.Errorf("Status = %q, want %q", resp.Status, "success")
+	}
+	if resp.Raw["tokens"] != 100 {
+		t.Errorf("Raw[tokens] = %v, want 100", resp.Raw["tokens"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Handlers — NewHandlers Constructor
+// ---------------------------------------------------------------------------
+
+func TestNewHandlers(t *testing.T) {
+	d := NewDispatcher()
+	h := NewHandlers(d, nil)
+	if h == nil {
+		t.Fatal("NewHandlers() returned nil")
+	}
+	if h.Dispatcher != d {
+		t.Error("Dispatcher not set correctly")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Handlers — parsePageSize / parsePageOffset
+// ---------------------------------------------------------------------------
+
+func TestParsePageSize(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		expect int32
+	}{
+		{"empty defaults to 20", "", 20},
+		{"valid value", "10", 10},
+		{"zero defaults to 20", "0", 20},
+		{"negative defaults to 20", "-5", 20},
+		{"non-numeric defaults to 20", "abc", 20},
+		{"max capped at 100", "200", 100},
+		{"exactly 100", "100", 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/?page_size="+tt.query, nil)
+			got := parsePageSize(req)
+			if got != tt.expect {
+				t.Errorf("parsePageSize() = %d, want %d", got, tt.expect)
+			}
+		})
+	}
+}
+
+func TestParsePageOffset(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		expect int32
+	}{
+		{"empty defaults to 0", "", 0},
+		{"valid value", "5", 5},
+		{"zero", "0", 0},
+		{"negative defaults to 0", "-3", 0},
+		{"non-numeric defaults to 0", "abc", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/?page_offset="+tt.query, nil)
+			got := parsePageOffset(req)
+			if got != tt.expect {
+				t.Errorf("parsePageOffset() = %d, want %d", got, tt.expect)
+			}
+		})
+	}
+}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { X, Home, Grid3X3, Search, Bell, User, Settings, LogOut } from 'lucide-svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let {
 		open = false,
@@ -12,12 +13,12 @@
 		onclose: () => void;
 	} = $props();
 
-	const navLinks = [
-		{ href: '/', icon: Home, label: 'Home' },
-		{ href: '/spaces', icon: Grid3X3, label: 'Spaces' },
-		{ href: '/search', icon: Search, label: 'Search' },
-		{ href: '/notifications', icon: Bell, label: 'Notifications' }
-	];
+	const navLinks = $derived([
+		{ href: '/', icon: Home, label: $t('nav.home') },
+		{ href: '/spaces', icon: Grid3X3, label: $t('nav.spaces') },
+		{ href: '/search', icon: Search, label: $t('nav.search') },
+		{ href: '/notifications', icon: Bell, label: $t('nav.notifications') }
+	]);
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') onclose();
@@ -76,7 +77,7 @@
 					onclick={onclose}
 				>
 					<Settings class="h-5 w-5" />
-					Settings
+					{$t('nav.settings')}
 				</a>
 				<a
 					href="/auth/logout"
@@ -85,7 +86,7 @@
 					onclick={onclose}
 				>
 					<LogOut class="h-5 w-5" />
-					Logout
+					{$t('nav.logout')}
 				</a>
 			{/if}
 		</nav>

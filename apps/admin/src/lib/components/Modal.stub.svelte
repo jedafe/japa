@@ -1,12 +1,13 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let {
 		open = $bindable(false),
 		title,
 		children,
 		onConfirm,
-		confirmLabel = 'Confirm'
+		confirmLabel = t('common.confirm')
 	}: {
 		open: boolean;
 		title: string;
@@ -22,7 +23,7 @@
 		{#if children}
 			{@render children()}
 		{/if}
-		<button onclick={() => (open = false)}>Cancel</button>
+		<button onclick={() => (open = false)}>{t('common.cancel')}</button>
 		{#if onConfirm}
 			<button onclick={() => { onConfirm(); open = false; }}>{confirmLabel}</button>
 		{/if}

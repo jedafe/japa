@@ -186,6 +186,18 @@ type scanMediaRow struct {
 	UploaderUserID   string
 }
 
+// UpdateMediaStoragePath updates the storage path for a media item.
+// Used after video processing to point to the new file location.
+func (s *Store) UpdateMediaStoragePath(ctx context.Context, id, tenantID pgtype.UUID, storagePath string) error {
+	_, err := s.writePool.Exec(ctx, `
+		UPDATE media SET storage_path = $1 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+	`, storagePath, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("updating media storage path: %w", err)
+	}
+	return nil
+}
+
 // GetMediaForScan retrieves a media item by ID without tenant filtering.
 // Used by background workers that operate across all tenants.
 func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (scanMediaRow, error) {

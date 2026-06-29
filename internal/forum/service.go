@@ -3,6 +3,7 @@ package forum
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -155,7 +156,7 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 	// Increment the parent thread's reply count.
 	if err := s.store.incrementReplyCount(ctx, threadID, tenantID, 1); err != nil {
 		// Log but don't fail the reply creation.
-		fmt.Printf("warning: failed to increment reply count for thread %s: %v\n", threadID, err)
+		slog.Warn("failed to increment reply count", "thread_id", threadID, "error", err)
 	}
 
 	return reply, nil
@@ -230,11 +231,11 @@ func (s *Service) Vote(ctx context.Context, tenantID, userID pgtype.UUID, input 
 	switch input.EntityType {
 	case EntityTypeThread:
 		if err := s.store.updateThreadVoteScore(ctx, input.EntityID); err != nil {
-			fmt.Printf("warning: failed to update thread vote score: %v\n", err)
+			slog.Warn("failed to update thread vote score", "error", err)
 		}
 	case EntityTypeReply:
 		if err := s.store.updateReplyVoteScore(ctx, input.EntityID); err != nil {
-			fmt.Printf("warning: failed to update reply vote score: %v\n", err)
+			slog.Warn("failed to update reply vote score", "error", err)
 		}
 	}
 
@@ -272,7 +273,7 @@ func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID,
 
 	// Increment the entity's bookmark count.
 	if err := s.store.incrementEntityBookmarkCount(ctx, entityID, 1); err != nil {
-		fmt.Printf("warning: failed to increment bookmark count: %v\n", err)
+		slog.Warn("failed to increment bookmark count", "error", err)
 	}
 
 	return bm, nil
@@ -285,7 +286,7 @@ func (s *Service) RemoveBookmark(ctx context.Context, userID pgtype.UUID, entity
 	}
 	// Decrement the entity's bookmark count.
 	if err := s.store.incrementEntityBookmarkCount(ctx, entityID, -1); err != nil {
-		fmt.Printf("warning: failed to decrement bookmark count: %v\n", err)
+		slog.Warn("failed to decrement bookmark count", "error", err)
 	}
 	return nil
 }

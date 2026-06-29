@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let name = $state('');
 	let creativeTitle = $state('');
@@ -17,9 +18,9 @@
 	let errorMessage = $state('');
 
 	const bidStrategies = [
-		{ value: 'cpc', label: 'Cost Per Click (CPC)' },
-		{ value: 'cpm', label: 'Cost Per Mille (CPM)' },
-		{ value: 'cpa', label: 'Cost Per Action (CPA)' }
+		{ value: 'cpc', label: t('ads.bid.cpc') },
+		{ value: 'cpm', label: t('ads.bid.cpm') },
+		{ value: 'cpa', label: t('ads.bid.cpa') }
 	];
 
 	async function createCampaign() {
@@ -55,7 +56,7 @@
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = 'Failed to create campaign';
+			errorMessage = t('ads.create_error');
 		} finally {
 			creating = false;
 		}
@@ -66,8 +67,8 @@
 	<title>Create Campaign — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Create Campaign</h1>
-<p class="mb-6 text-sm" style="color: var(--color-muted)">Set up a new advertising campaign</p>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('ads.create_title')}</h1>
+<p class="mb-6 text-sm" style="color: var(--color-muted)">{t('ads.create_description')}</p>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -78,9 +79,9 @@
 <div class="mx-auto max-w-2xl space-y-6">
 	<!-- Campaign Name -->
 	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Campaign</h2>
+		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.sections.campaign')}</h2>
 		<div>
-			<label for="campaign-name" class="mb-1 block text-sm font-medium">Name <span style="color: var(--color-danger)">*</span></label>
+			<label for="campaign-name" class="mb-1 block text-sm font-medium">{t('ads.fields.name')} <span style="color: var(--color-danger)">*</span></label>
 			<input
 				id="campaign-name"
 				type="text"
@@ -94,10 +95,10 @@
 
 	<!-- Creative -->
 	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Creative</h2>
+		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.sections.creative')}</h2>
 		<div class="space-y-4">
 			<div>
-				<label for="creative-title" class="mb-1 block text-sm font-medium">Headline</label>
+				<label for="creative-title" class="mb-1 block text-sm font-medium">{t('ads.fields.headline')}</label>
 				<input
 					id="creative-title"
 					type="text"
@@ -108,7 +109,7 @@
 				/>
 			</div>
 			<div>
-				<label for="creative-body" class="mb-1 block text-sm font-medium">Body</label>
+				<label for="creative-body" class="mb-1 block text-sm font-medium">{t('ads.fields.body')}</label>
 				<textarea
 					id="creative-body"
 					class="w-full rounded-md border px-3 py-2 text-sm"
@@ -119,7 +120,7 @@
 				></textarea>
 			</div>
 			<div>
-				<label for="creative-image" class="mb-1 block text-sm font-medium">Image URL</label>
+				<label for="creative-image" class="mb-1 block text-sm font-medium">{t('ads.fields.image_url')}</label>
 				<input
 					id="creative-image"
 					type="url"
@@ -130,7 +131,7 @@
 				/>
 			</div>
 			<div>
-				<label for="creative-url" class="mb-1 block text-sm font-medium">Destination URL</label>
+				<label for="creative-url" class="mb-1 block text-sm font-medium">{t('ads.fields.dest_url')}</label>
 				<input
 					id="creative-url"
 					type="url"
@@ -145,10 +146,10 @@
 
 	<!-- Budget & Bidding -->
 	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Budget & Bidding</h2>
+		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.sections.budget')}</h2>
 		<div class="grid gap-4 sm:grid-cols-2">
 			<div>
-				<label for="budget" class="mb-1 block text-sm font-medium">Budget ($)</label>
+				<label for="budget" class="mb-1 block text-sm font-medium">{t('ads.fields.budget')}</label>
 				<input
 					id="budget"
 					type="number"
@@ -159,7 +160,7 @@
 				/>
 			</div>
 			<div>
-				<label for="bid-strategy" class="mb-1 block text-sm font-medium">Bid Strategy</label>
+				<label for="bid-strategy" class="mb-1 block text-sm font-medium">{t('ads.fields.bid_strategy')}</label>
 				<select
 					id="bid-strategy"
 					class="w-full rounded-md border px-3 py-2 text-sm"
@@ -176,10 +177,10 @@
 
 	<!-- Targeting -->
 	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Targeting</h2>
+		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.sections.targeting')}</h2>
 		<div class="space-y-4">
 			<div>
-				<label for="targeting-geo" class="mb-1 block text-sm font-medium">Countries</label>
+				<label for="targeting-geo" class="mb-1 block text-sm font-medium">{t('ads.fields.countries')}</label>
 				<input
 					id="targeting-geo"
 					type="text"
@@ -188,10 +189,10 @@
 					placeholder="NG, US, GB (comma-separated)"
 					bind:value={targetingGeo}
 				/>
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">ISO 3166-1 alpha-2 codes, comma-separated</p>
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ads.countries_helper')}</p>
 			</div>
 			<div>
-				<label for="targeting-interests" class="mb-1 block text-sm font-medium">Interests</label>
+				<label for="targeting-interests" class="mb-1 block text-sm font-medium">{t('ads.fields.interests')}</label>
 				<input
 					id="targeting-interests"
 					type="text"
@@ -206,10 +207,10 @@
 
 	<!-- Schedule -->
 	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Schedule</h2>
+		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.sections.schedule')}</h2>
 		<div class="grid gap-4 sm:grid-cols-2">
 			<div>
-				<label for="start-date" class="mb-1 block text-sm font-medium">Start Date</label>
+				<label for="start-date" class="mb-1 block text-sm font-medium">{t('ads.fields.start_date')}</label>
 				<input
 					id="start-date"
 					type="date"
@@ -219,7 +220,7 @@
 				/>
 			</div>
 			<div>
-				<label for="end-date" class="mb-1 block text-sm font-medium">End Date</label>
+				<label for="end-date" class="mb-1 block text-sm font-medium">{t('ads.fields.end_date')}</label>
 				<input
 					id="end-date"
 					type="date"
@@ -227,7 +228,7 @@
 					style="border-color: var(--color-border); background-color: var(--color-background)"
 					bind:value={endDate}
 				/>
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">Leave empty for no end date</p>
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ads.end_helper')}</p>
 			</div>
 		</div>
 	</div>
@@ -239,10 +240,10 @@
 			disabled={creating || !name.trim()}
 			onclick={createCampaign}
 		>
-			{creating ? 'Creating...' : 'Create Campaign'}
+			{creating ? t('ads.creating') : t('ads.create_campaign')}
 		</button>
 		<a href="/ads" class="rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10" style="color: var(--color-muted)">
-			Cancel
+			{t('common.cancel')}
 		</a>
 	</div>
 </div>

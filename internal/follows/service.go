@@ -3,6 +3,7 @@ package follows
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -44,7 +45,7 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 	}
 	if err := s.updateFollowerCount(ctx, entityType, entityID, delta); err != nil {
 		// Log but don't fail the follow operation.
-		fmt.Printf("warning: failed to update follower count for %s/%s: %v\n", entityType, entityID, err)
+		slog.Warn("failed to update follower count", "entity_type", entityType, "entity_id", entityID, "error", err)
 	}
 
 	return followed, nil

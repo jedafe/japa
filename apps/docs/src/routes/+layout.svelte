@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import { t } from '$lib/stores/i18n.svelte';
 	import DocSidebar from '$lib/components/DocSidebar.svelte';
 	import { page } from '$app/state';
 
@@ -20,10 +21,10 @@
 		<header class="border-b px-8 py-4" style="border-color: var(--color-border)">
 			<div class="flex items-center justify-between">
 				<h1 class="text-sm font-semibold" style="color: var(--color-muted)">
-					JapaConnect Documentation
+					{$t('docs.brand')}
 				</h1>
 				<div class="flex items-center gap-4 text-sm" style="color: var(--color-muted)">
-					<a href="/" class="hover:underline">Home</a>
+					<a href="/" class="hover:underline">{$t('nav.home')}</a>
 				</div>
 			</div>
 		</header>
@@ -35,7 +36,7 @@
 
 		<!-- Footer -->
 		<footer class="border-t px-8 py-4 text-center text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
-			JapaConnect Documentation &copy; 2026
+			{$t('footer.copyright')}
 		</footer>
 	</div>
 </div>

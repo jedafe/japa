@@ -764,3 +764,105 @@ func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": preset})
 }
+
+// ---------------------------------------------------------------------------
+// Space Moderator Handlers
+// ---------------------------------------------------------------------------
+
+// AssignModerator handles POST /api/v1/spaces/{slug}/moderators.
+// Adds a user as a moderator of the space.
+func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	var req struct {
+		UserID string `json:"user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+	if strings.TrimSpace(req.UserID) == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "user_id is required")
+		return
+	}
+
+	var targetUserID pgtype.UUID
+	if err := targetUserID.Scan(req.UserID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
+		return
+	}
+
+	// Determine who is assigning: site_admin or space_owner.
+	assignedBy := "space_owner"
+	assignedByID := user.UserID
+
+	if err := h.Service.AssignModerator(r.Context(), gen.AssignSpaceModeratorParams{
+		TenantID:         tenantID,
+		SpaceID:          space.ID,
+		UserID:           targetUserID,
+		AssignedBy:       assignedBy,
+		AssignedByUserID: assignedByID,
+	}); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"data": map[string]any{
+			"space_id":  space.ID,
+			"user_id":   targetUserID,
+			"assigned_by": assignedBy,
+		},
+	})
+}
+
+// RemoveModerator handles DELETE /api/v1/spaces/{slug}/moderators/{userId}.
+// Removes a user from the space moderator list.
+func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	userID, err := parseUUIDParam(r, "userId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID format")
+		return
+	}
+
+	if err := h.Service.RemoveModerator(r.Context(), space.ID, userID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
+}
+
+// ListModerators handles GET /api/v1/spaces/{slug}/moderators.
+// Returns all moderators assigned to the space.
+func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	mods, err := h.Service.ListModerators(r.Context(), space.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": mods})
+}

@@ -24,10 +24,11 @@ var TenantContextKey = contextKey{"tenant"}
 
 // Tenant represents a resolved tenant from the database.
 type Tenant struct {
-	ID     pgtype.UUID
-	Name   string
-	Slug   string
-	Domain pgtype.Text
+	ID      pgtype.UUID
+	Name    string
+	Slug    string
+	Domain  pgtype.Text
+	BaseURL string
 }
 
 // FromContext extracts the Tenant from the request context.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Search } from 'lucide-svelte';
 
 	let query = $state('');
@@ -9,7 +10,7 @@
 	<input
 		type="text"
 		bind:value={query}
-		placeholder="Search documentation..."
+		placeholder={$t('search.placeholder')}
 		class="w-full rounded-lg border py-3 pl-10 pr-4 text-base outline-none focus:ring-2 focus:ring-blue-500"
 		style="border-color: var(--color-border); background: var(--color-surface)"
 	/>

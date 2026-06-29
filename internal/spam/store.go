@@ -156,6 +156,11 @@ func (s *Store) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]gen
 	return s.queries.GetUserBlocks(ctx, blockerID)
 }
 
+// ListAllUserBlocks returns paginated user blocks across all users.
+func (s *Store) ListAllUserBlocks(ctx context.Context, limit int32) ([]gen.UserBlock, error) {
+	return s.queries.ListAllUserBlocks(ctx, limit)
+}
+
 // IsBlocked checks whether user A has blocked user B or vice versa.
 func (s *Store) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
 	result, err := s.queries.IsBlocked(ctx, gen.IsBlockedParams{

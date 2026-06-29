@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type FieldDefinition = {
 		id: string;
@@ -52,33 +53,33 @@
 
 <div class="mb-6 flex items-center justify-between">
 	<div>
-		<h1 class="text-2xl font-bold tracking-tight">Custom Fields</h1>
-		<p class="mt-1 text-sm" style="color: var(--color-muted)">Manage field definitions for entities</p>
+		<h1 class="text-2xl font-bold tracking-tight">{t('custom_fields.title')}</h1>
+		<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('custom_fields.description')}</p>
 	</div>
 	<a
 		href="/custom-fields/new"
 		class="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
 		style="background-color: var(--color-primary)"
 	>
-		Create Field
+		{t('custom_fields.create')}
 	</a>
 </div>
 
 <div class="mb-4 flex flex-wrap items-end gap-3">
 	<div>
-		<label for="search" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Search</label>
+		<label for="search" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.search')}</label>
 		<input
 			id="search"
 			type="text"
 			class="rounded-md border px-3 py-1.5 text-sm"
 			style="border-color: var(--color-border); background-color: var(--color-surface)"
-			placeholder="Name or slug"
+			placeholder={t('custom_fields.search')}
 			bind:value={searchQuery}
 			onkeydown={(e) => e.key === 'Enter' && handleFilter()}
 		/>
 	</div>
 	<div>
-		<label for="entity-type" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Entity Type</label>
+		<label for="entity-type" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('custom_fields.entity_type')}</label>
 		<select
 			id="entity-type"
 			class="rounded-md border px-3 py-1.5 text-sm"
@@ -86,7 +87,7 @@
 			bind:value={filterEntityType}
 			onchange={handleFilter}
 		>
-			<option value="">All</option>
+			<option value="">{t('common.all')}</option>
 			{#each entityTypes as et}
 				<option value={et}>{et}</option>
 			{/each}
@@ -97,24 +98,24 @@
 		style="border-color: var(--color-border)"
 		onclick={handleFilter}
 	>
-		Apply
+		{t('common.apply')}
 	</button>
 </div>
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 		<table class="w-full text-sm">
 			<thead>
 				<tr>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Name</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Slug</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Type</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Entity</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Required</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Searchable</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Sortable</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.name')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.slug')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.type')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.entity')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.required')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.searchable')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.sortable')}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -157,7 +158,7 @@
 				{:else}
 					<tr>
 						<td colspan="7" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							No custom fields defined
+							{t('custom_fields.empty')}
 						</td>
 					</tr>
 				{/each}

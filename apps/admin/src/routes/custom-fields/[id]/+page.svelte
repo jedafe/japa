@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { onMount } from 'svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type FieldOption = { id?: string; label: string; sort_order: number };
 
@@ -58,7 +59,7 @@
 				error = result.error;
 			}
 		} catch {
-			error = 'Failed to load field definition';
+			error = t('custom_fields.load_error');
 		} finally {
 			loading = false;
 		}
@@ -92,7 +93,7 @@
 
 	async function save() {
 		if (!name.trim()) {
-			error = 'Name is required';
+			error = t('custom_fields.name_required');
 			return;
 		}
 		saving = true;
@@ -116,20 +117,20 @@
 				body
 			});
 			if (result.ok) {
-				success = 'Field updated successfully';
+				success = t('custom_fields.updated');
 				loadField();
 			} else {
 				error = result.error;
 			}
 		} catch {
-			error = 'Failed to save';
+			error = t('common.error');
 		} finally {
 			saving = false;
 		}
 	}
 
 	async function deleteField() {
-		if (!confirm('Delete this field definition? This cannot be undone.')) return;
+		if (!confirm(t('custom_fields.delete_confirm'))) return;
 		deleting = true;
 		error = '';
 		try {
@@ -140,7 +141,7 @@
 				error = result.error;
 			}
 		} catch {
-			error = 'Failed to delete';
+			error = t('custom_fields.delete_error');
 		} finally {
 			deleting = false;
 		}
@@ -153,8 +154,8 @@
 	<title>Edit Custom Field — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Edit Custom Field</h1>
-<p class="mb-6 text-sm" style="color: var(--color-muted)">Update field definition</p>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('custom_fields.edit_title')}</h1>
+<p class="mb-6 text-sm" style="color: var(--color-muted)">{t('custom_fields.edit_description')}</p>
 
 {#if error}
 	<div class="mb-4 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
@@ -169,18 +170,18 @@
 {/if}
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading field definition...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else if field}
 	<div class="max-w-xl space-y-5">
 		<!-- Name -->
 		<div>
-			<label for="name" class="mb-1 block text-sm font-medium">Name</label>
+			<label for="name" class="mb-1 block text-sm font-medium">{t('custom_fields.name')}</label>
 			<input
 				id="name"
 				type="text"
 				class="w-full rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-surface)"
-				placeholder="e.g. Experience Level"
+				placeholder={t('custom_fields.name_placeholder')}
 				bind:value={name}
 				onblur={autoSlug}
 			/>
@@ -188,7 +189,7 @@
 
 		<!-- Slug -->
 		<div>
-			<label for="slug" class="mb-1 block text-sm font-medium">Slug</label>
+			<label for="slug" class="mb-1 block text-sm font-medium">{t('custom_fields.slug')}</label>
 			<input
 				id="slug"
 				type="text"
@@ -200,7 +201,7 @@
 
 		<!-- Field Type -->
 		<div>
-			<label for="field-type" class="mb-1 block text-sm font-medium">Field Type</label>
+			<label for="field-type" class="mb-1 block text-sm font-medium">{t('custom_fields.type')}</label>
 			<select
 				id="field-type"
 				class="w-full rounded-md border px-3 py-2 text-sm"
@@ -215,7 +216,7 @@
 
 		<!-- Entity Type -->
 		<div>
-			<label for="entity-type" class="mb-1 block text-sm font-medium">Entity Type</label>
+			<label for="entity-type" class="mb-1 block text-sm font-medium">{t('custom_fields.entity_type')}</label>
 			<select
 				id="entity-type"
 				class="w-full rounded-md border px-3 py-2 text-sm"
@@ -232,29 +233,29 @@
 		<div class="flex flex-wrap gap-6">
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" bind:checked={required} class="rounded" />
-				Required
+				{t('custom_fields.required')}
 			</label>
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" bind:checked={searchable} class="rounded" />
-				Searchable
+				{t('custom_fields.searchable')}
 			</label>
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" bind:checked={sortable} class="rounded" />
-				Sortable
+				{t('custom_fields.sortable')}
 			</label>
 		</div>
 
 		<!-- Options (for select type) -->
 		{#if fieldType === 'select'}
 			<div>
-				<label for="new-option" class="mb-1 block text-sm font-medium">Options</label>
+				<label for="new-option" class="mb-1 block text-sm font-medium">{t('custom_fields.add_option')}</label>
 				<div class="flex gap-2">
 					<input
 						id="new-option"
 						type="text"
 						class="flex-1 rounded-md border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background-color: var(--color-surface)"
-						placeholder="Add an option"
+						placeholder={t('custom_fields.add_option')}
 						bind:value={newOption}
 						onkeydown={handleOptionKeydown}
 					/>
@@ -288,14 +289,14 @@
 				disabled={saving}
 				onclick={save}
 			>
-				{saving ? 'Saving...' : 'Save Changes'}
+				{saving ? t('common.saving') : t('common.save')}
 			</button>
 			<a
 				href="/custom-fields"
 				class="rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 				style="border-color: var(--color-border)"
 			>
-				Cancel
+				{t('common.cancel')}
 			</a>
 			<div class="flex-1"></div>
 			<button
@@ -303,10 +304,10 @@
 				disabled={deleting}
 				onclick={deleteField}
 			>
-				{deleting ? 'Deleting...' : 'Delete'}
+				{deleting ? t('common.saving') : t('common.delete')}
 			</button>
 		</div>
 	</div>
 {:else}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Field definition not found</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('custom_fields.not_found')}</p>
 {/if}

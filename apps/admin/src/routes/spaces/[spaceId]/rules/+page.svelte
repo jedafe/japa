@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type Rule = {
 		id: string;
@@ -38,7 +39,7 @@
 				rules = result.data.sort((a, b) => a.sort_order - b.sort_order);
 			}
 		} catch {
-			errorMessage = 'Failed to load rules.';
+			errorMessage = t('space_rules.load_error');
 		} finally {
 			loading = false;
 		}
@@ -77,7 +78,7 @@
 			showModal = false;
 			load();
 		} catch {
-			errorMessage = 'Failed to save rule.';
+			errorMessage = t('space_rules.save_error');
 		} finally {
 			saving = false;
 		}
@@ -95,7 +96,7 @@
 			showDelete = false;
 			load();
 		} catch {
-			errorMessage = 'Failed to delete rule.';
+			errorMessage = t('space_rules.delete_error');
 		}
 	}
 
@@ -107,7 +108,7 @@
 			await api(`/spaces/${spaceId}/rules/${prev.id}`, { method: 'PATCH', body: { sort_order: rule.sort_order } });
 			load();
 		} catch {
-			errorMessage = 'Failed to reorder.';
+			errorMessage = t('space_rules.reorder_error');
 		}
 	}
 
@@ -119,7 +120,7 @@
 			await api(`/spaces/${spaceId}/rules/${next.id}`, { method: 'PATCH', body: { sort_order: rule.sort_order } });
 			load();
 		} catch {
-			errorMessage = 'Failed to reorder.';
+			errorMessage = t('space_rules.reorder_error');
 		}
 	}
 
@@ -132,15 +133,15 @@
 
 <div class="mb-4 flex items-center justify-between">
 	<div>
-		<h1 class="text-2xl font-bold tracking-tight">Space Rules</h1>
-		<p class="mt-1 text-sm" style="color: var(--color-muted)">Manage rules for this space</p>
+		<h1 class="text-2xl font-bold tracking-tight">{t('space_rules.title')}</h1>
+		<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('space_rules.description')}</p>
 	</div>
 	<button
 		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
 		style="background-color: var(--color-primary)"
 		onclick={openCreate}
 	>
-		+ Add Rule
+		{t('space_rules.add')}
 	</button>
 </div>
 
@@ -151,10 +152,10 @@
 {/if}
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else if rules.length === 0}
 	<div class="rounded-lg border p-8 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<p class="text-sm" style="color: var(--color-muted)">No rules yet. Add the first rule for this space.</p>
+		<p class="text-sm" style="color: var(--color-muted)">{t('space_rules.empty')}</p>
 	</div>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
@@ -162,9 +163,9 @@
 			<thead>
 				<tr style="border-color: var(--color-border)">
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">#</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Title</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Description</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Order</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_rules.title_label')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_rules.description_label')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_rules.order')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 				</tr>
 			</thead>
@@ -197,14 +198,14 @@
 									style="color: var(--color-info)"
 									onclick={() => openEdit(rule)}
 								>
-									Edit
-								</button>
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete(rule)}
-								>
-									Delete
+								{t('common.edit')}
+							</button>
+							<button
+								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+								style="color: var(--color-danger)"
+								onclick={() => confirmDelete(rule)}
+							>
+								{t('common.delete')}
 								</button>
 							</div>
 						</td>
@@ -216,27 +217,27 @@
 {/if}
 
 <!-- Create / Edit Modal -->
-<Modal bind:open={showModal} title={editingRule ? 'Edit Rule' : 'Add Rule'} onConfirm={saveRule} confirmLabel={saving ? 'Saving...' : 'Save'}>
+<Modal bind:open={showModal} title={editingRule ? t('space_rules.edit_title') : t('space_rules.add_title')} onConfirm={saveRule} confirmLabel={saving ? t('common.saving') : t('common.save')}>
 	<div class="space-y-4">
 		<div>
-			<label for="rule-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Title</label>
+			<label for="rule-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_rules.title_label')}</label>
 			<input
 				id="rule-title"
 				type="text"
 				class="w-full rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-surface)"
-				placeholder="e.g. Be respectful"
+				placeholder={t('space_rules.title_placeholder')}
 				bind:value={formTitle}
 			/>
 		</div>
 		<div>
-			<label for="rule-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Description</label>
+			<label for="rule-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_rules.description_label')}</label>
 			<textarea
 				id="rule-desc"
 				class="w-full rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-surface)"
 				rows="3"
-				placeholder="Optional description or explanation"
+				placeholder={t('space_rules.desc_placeholder')}
 				bind:value={formDescription}
 			></textarea>
 		</div>
@@ -244,6 +245,6 @@
 </Modal>
 
 <!-- Delete Confirmation -->
-<Modal bind:open={showDelete} title="Delete Rule" onConfirm={deleteRule} confirmLabel="Delete">
-	<p class="text-sm">Are you sure you want to delete <strong>{deletingRule?.title}</strong>? This cannot be undone.</p>
+<Modal bind:open={showDelete} title={t('space_rules.delete_title')} onConfirm={deleteRule} confirmLabel={t('common.delete')}>
+	<p class="text-sm">{t('space_rules.delete_text').replace('{title}', deletingRule?.title ?? '')}</p>
 </Modal>

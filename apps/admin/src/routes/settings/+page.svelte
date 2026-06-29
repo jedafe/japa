@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type SettingsCategory = {
 		key: string;
@@ -48,10 +49,10 @@
 		}
 		try {
 			await api(`/admin/settings/${activeTab}`, { method: 'PUT', body: payload });
-			saveMsg = 'Saved';
+			saveMsg = t('common.saved');
 			setTimeout(() => (saveMsg = ''), 3000);
 		} catch {
-			saveMsg = 'Failed to save';
+			saveMsg = t('settings.save_error');
 		} finally {
 			saving = false;
 		}
@@ -72,11 +73,11 @@
 	<title>Settings — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Settings</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Platform configuration by category</p>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('settings.title')}</h1>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('settings.description')}</p>
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
 	<!-- Tabs -->
 	<div class="mb-6 flex flex-wrap gap-1 border-b" style="border-color: var(--color-border)">
@@ -94,11 +95,11 @@
 	<!-- Settings form -->
 	{#if !apiAvailable}
 		<div class="rounded-lg border p-6 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<p class="text-sm" style="color: var(--color-muted)">Settings API not implemented yet. This section will be available when the backend settings endpoint is ready.</p>
+			<p class="text-sm" style="color: var(--color-muted)">{t('settings.unavailable')}</p>
 		</div>
 	{:else if categories.length === 0}
 		<div class="rounded-lg border p-6 text-center" style="border-color: var(--color-border)">
-			<p style="color: var(--color-muted)">No settings available. Connect to the API to load configuration.</p>
+			<p style="color: var(--color-muted)">{t('settings.empty')}</p>
 		</div>
 	{:else}
 		{@const active = categories.find((c) => c.key === activeTab)}
@@ -165,7 +166,7 @@
 						disabled={saving}
 						onclick={save}
 					>
-						{saving ? 'Saving...' : 'Save Changes'}
+						{saving ? t('common.saving') : t('common.save')}
 					</button>
 					{#if saveMsg}
 						<span class="text-xs" style="color: var(--color-muted)">{saveMsg}</span>

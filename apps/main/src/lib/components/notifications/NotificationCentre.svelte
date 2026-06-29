@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Bell, Check, CheckCheck } from 'lucide-svelte';
 	import { DropdownMenu } from 'bits-ui';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let {
 		notifications = [],
@@ -41,14 +42,14 @@
 		style="background-color: var(--color-background); border-color: var(--color-border)"
 	>
 		<div class="flex items-center justify-between px-3 py-2">
-			<span class="text-sm font-semibold">Notifications</span>
+			<span class="text-sm font-semibold">{$t('notifications.title')}</span>
 			{#if unreadCount > 0}
 				<button
 					class="text-xs font-medium hover:underline"
 					style="color: var(--color-primary)"
 					onclick={() => onmarkread('all')}
 				>
-					Mark all read
+					{$t('notifications.mark_all_read')}
 				</button>
 			{/if}
 		</div>
@@ -57,7 +58,7 @@
 		{#if notifications.length === 0}
 			<div class="px-3 py-8 text-center">
 				<Bell class="mx-auto mb-2 h-8 w-8" style="color: var(--color-muted); opacity: 0.4" />
-				<p class="text-sm" style="color: var(--color-muted)">No notifications yet</p>
+				<p class="text-sm" style="color: var(--color-muted)">{$t('notifications.empty')}</p>
 			</div>
 		{:else}
 			<div class="max-h-80 overflow-y-auto">
@@ -90,7 +91,7 @@
 				class="block px-3 py-2 text-center text-sm font-medium hover:underline"
 				style="color: var(--color-primary)"
 			>
-				View all notifications
+				{$t('notifications.view_all')}
 			</a>
 		{/if}
 	</DropdownMenu.Content>

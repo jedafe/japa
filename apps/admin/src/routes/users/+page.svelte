@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type User = {
 		id: string;
@@ -20,16 +21,16 @@
 	let filterGroup = $state('');
 
 	const columns = [
-		{ key: 'username', label: 'Username' },
-		{ key: 'email', label: 'Email' },
-		{ key: 'groups', label: 'Groups' },
-		{ key: 'status', label: 'Status' },
-		{ key: 'created_at', label: 'Joined' }
+		{ key: 'username', label: 'users.username' },
+		{ key: 'email', label: 'users.email' },
+		{ key: 'groups', label: 'users.groups' },
+		{ key: 'status', label: 'users.status' },
+		{ key: 'created_at', label: 'users.joined' }
 	];
 
 	const filterDefs = [
-		{ key: 'search', label: 'Search', type: 'text' as const },
-		{ key: 'group', label: 'Group', type: 'select' as const, options: ['user', 'moderator', 'admin', 'super_admin'] }
+		{ key: 'search', label: 'users.search', type: 'text' as const },
+		{ key: 'group', label: 'users.group_filter', type: 'select' as const, options: ['user', 'moderator', 'admin', 'super_admin'] }
 	];
 
 	async function load() {
@@ -69,13 +70,13 @@
 	<title>Users — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Users</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">View and manage user accounts</p>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('users.title')}</h1>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('users.description')}</p>
 
 <FilterBar filters={filterDefs} onApply={handleFilter} />
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 		<table class="w-full text-sm">
@@ -108,7 +109,7 @@
 				{:else}
 					<tr>
 						<td colspan={columns.length} class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							No users found
+							{t('users.empty')}
 						</td>
 					</tr>
 				{/each}

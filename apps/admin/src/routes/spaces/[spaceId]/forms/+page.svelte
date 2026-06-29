@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	type FormDef = {
 		id: string;
@@ -26,7 +27,7 @@
 				forms = result.data;
 			}
 		} catch {
-			errorMessage = 'Failed to load forms.';
+			errorMessage = t('space_forms.load_error');
 		} finally {
 			loading = false;
 		}
@@ -41,15 +42,15 @@
 
 <div class="mb-4 flex items-center justify-between">
 	<div>
-		<h1 class="text-2xl font-bold tracking-tight">Space Forms</h1>
-		<p class="mt-1 text-sm" style="color: var(--color-muted)">Manage forms for this space</p>
+		<h1 class="text-2xl font-bold tracking-tight">{t('space_forms.title')}</h1>
+		<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('space_forms.description')}</p>
 	</div>
 	<a
 		href="/spaces/{spaceId}/forms/new"
 		class="inline-flex items-center rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
 		style="background-color: var(--color-primary)"
 	>
-		+ Create Form
+		{t('space_forms.create')}
 	</a>
 </div>
 
@@ -60,20 +61,20 @@
 {/if}
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else if forms.length === 0}
 	<div class="rounded-lg border p-8 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<p class="text-sm" style="color: var(--color-muted)">No forms yet. Create the first form for this space.</p>
+		<p class="text-sm" style="color: var(--color-muted)">{t('space_forms.empty')}</p>
 	</div>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 		<table class="w-full text-sm">
 			<thead>
 				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Name</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Description</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Submissions</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Created</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_forms.name')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_forms.description_label')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_forms.submissions')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_forms.created')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 				</tr>
 			</thead>
@@ -99,7 +100,7 @@
 				{:else}
 					<tr>
 						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							No forms found
+							{t('space_forms.no_results')}
 						</td>
 					</tr>
 				{/each}

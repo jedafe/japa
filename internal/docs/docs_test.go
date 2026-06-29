@@ -2,6 +2,9 @@ package docs
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -153,4 +156,106 @@ func uuidPtrFromBytes(b [16]byte) *string {
 		return nil
 	}
 	return &s
+}
+
+func TestGetOpenAPISpec(t *testing.T) {
+	spec := GetOpenAPISpec()
+	if spec == nil {
+		t.Fatal("expected non-nil spec")
+	}
+	version, ok := spec["openapi"].(string)
+	if !ok || version != "3.0.3" {
+		t.Errorf("expected openapi version '3.0.3', got %v", spec["openapi"])
+	}
+	paths, ok := spec["paths"].(map[string]any)
+	if !ok {
+		t.Fatal("expected paths to be a map")
+	}
+	if _, ok := paths["/spaces"]; !ok {
+		t.Error("expected /spaces path in spec")
+	}
+	if _, ok := paths["/content"]; !ok {
+		t.Error("expected /content path in spec")
+	}
+	if _, ok := paths["/users/me"]; !ok {
+		t.Error("expected /users/me path in spec")
+	}
+	components, ok := spec["components"].(map[string]any)
+	if !ok {
+		t.Fatal("expected components to be a map")
+	}
+	schemas, ok := components["schemas"].(map[string]any)
+	if !ok {
+		t.Fatal("expected components.schemas to be a map")
+	}
+	for _, name := range []string{"Space", "Content", "User", "Error"} {
+		if _, ok := schemas[name]; !ok {
+			t.Errorf("expected schema %q in components.schemas", name)
+		}
+	}
+}
+
+func TestGetOpenAPISpecJSON(t *testing.T) {
+	spec := GetOpenAPISpec()
+	data, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("failed to marshal OpenAPI spec: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal OpenAPI spec: %v", err)
+	}
+	if decoded["openapi"] != "3.0.3" {
+		t.Errorf("expected openapi '3.0.3' after round-trip, got %v", decoded["openapi"])
+	}
+}
+
+func TestAPIPlaygroundHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/docs/api/playground", nil)
+	w := httptest.NewRecorder()
+	h := &Handlers{Service: &Service{}}
+	h.APIPlaygroundHandler(w, req)
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("expected Content-Type text/html, got %q", ct)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "API Playground") {
+		t.Error("expected playground HTML to contain 'API Playground'")
+	}
+	if !strings.Contains(body, "Send Request") {
+		t.Error("expected playground HTML to contain 'Send Request' button")
+	}
+	if !strings.Contains(body, "/api/v1/spaces") {
+		t.Error("expected playground HTML to contain pre-populated /api/v1/spaces endpoint")
+	}
+}
+
+func TestOpenAPIHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/docs/api/openapi.json", nil)
+	w := httptest.NewRecorder()
+	h := &Handlers{Service: &Service{}}
+	h.OpenAPIHandler(w, req)
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+	ct := resp.Header.Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %q", ct)
+	}
+	var decoded map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+	if decoded["openapi"] != "3.0.3" {
+		t.Errorf("expected openapi '3.0.3', got %v", decoded["openapi"])
+	}
+	if decoded["info"] == nil {
+		t.Error("expected info field in response")
+	}
 }

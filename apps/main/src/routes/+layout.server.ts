@@ -18,10 +18,19 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
 		}
 	}
 
+	const locale = cookies.get('jc_locale')
+		?? (locals.user as any)?.language
+		?? 'en';
+
+	const translationsResult = await apiFetch<Record<string, string>>(`/translations/${locale}`);
+	const translations = translationsResult.ok && translationsResult.data ? translationsResult.data : {};
+
 	return {
 		user: locals.user,
 		flags,
 		notificationCount,
-		token: token ?? null
+		token: token ?? null,
+		locale,
+		translations
 	};
 };

@@ -4,6 +4,7 @@
 	import { getToken } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
 	import { onMount } from 'svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	interface Notification {
 		id: string;
@@ -75,7 +76,7 @@
 </script>
 
 <svelte:head>
-	<title>Notifications | JapaConnect</title>
+	<title>{$t('notifications.title')} | JapaConnect</title>
 	<meta name="description" content="View your notifications." />
 </svelte:head>
 
@@ -83,11 +84,11 @@
 	<header class="mb-6 flex items-center justify-between">
 		<div>
 			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">
-				Notifications
+				{$t('notifications.title')}
 			</h1>
 			{#if unreadCount > 0}
 				<p class="mt-1 text-sm" style="color: var(--color-muted)">
-					{unreadCount} unread
+					{$t('notifications.unread').replace('{count}', String(unreadCount))}
 				</p>
 			{/if}
 		</div>
@@ -98,7 +99,7 @@
 				style="color: var(--color-primary)"
 			>
 				<CheckCheck class="h-4 w-4" />
-				Mark all read
+				{$t('notifications.mark_all_read')}
 			</button>
 		{/if}
 	</header>
@@ -115,8 +116,8 @@
 	{:else if notifications.length === 0}
 		<EmptyState
 			icon={Bell}
-			title="No notifications"
-			message="You're all caught up! New notifications will appear here."
+			title={$t('notifications.empty_title')}
+			message={$t('notifications.empty_message')}
 		/>
 	{:else}
 		{#if errorMessage}

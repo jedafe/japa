@@ -2,8 +2,10 @@ package spaces
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -333,4 +335,53 @@ func (s *Service) CountMembers(ctx context.Context, spaceID, tenantID pgtype.UUI
 		return 0, fmt.Errorf("counting space members: %w", err)
 	}
 	return count, nil
+}
+
+// ---------------------------------------------------------------------------
+// Space Moderators
+// ---------------------------------------------------------------------------
+
+// AssignModerator adds a user as a moderator of the space. Duplicate
+// assignments are silently ignored via ON CONFLICT DO NOTHING.
+func (s *Service) AssignModerator(ctx context.Context, params gen.AssignSpaceModeratorParams) error {
+	if err := s.write.AssignSpaceModerator(ctx, params); err != nil {
+		return fmt.Errorf("assigning space moderator: %w", err)
+	}
+	return nil
+}
+
+// RemoveModerator removes a user from the space moderator list.
+func (s *Service) RemoveModerator(ctx context.Context, spaceID, userID pgtype.UUID) error {
+	if err := s.write.RemoveSpaceModerator(ctx, gen.RemoveSpaceModeratorParams{
+		SpaceID: spaceID,
+		UserID:  userID,
+	}); err != nil {
+		return fmt.Errorf("removing space moderator: %w", err)
+	}
+	return nil
+}
+
+// ListModerators returns every moderator assigned to the given space,
+// including their username and display name.
+func (s *Service) ListModerators(ctx context.Context, spaceID pgtype.UUID) ([]gen.ListSpaceModeratorsRow, error) {
+	mods, err := s.read.ListSpaceModerators(ctx, spaceID)
+	if err != nil {
+		return nil, fmt.Errorf("listing space moderators: %w", err)
+	}
+	return mods, nil
+}
+
+// IsModerator returns true if the user is a moderator of the space.
+func (s *Service) IsModerator(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+	_, err := s.read.GetSpaceModerator(ctx, gen.GetSpaceModeratorParams{
+		SpaceID: spaceID,
+		UserID:  userID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("checking space moderator: %w", err)
+	}
+	return true, nil
 }

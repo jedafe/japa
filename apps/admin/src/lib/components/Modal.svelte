@@ -1,12 +1,13 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let {
 		open = $bindable(false),
 		title,
 		children,
 		onConfirm,
-		confirmLabel = 'Confirm'
+		confirmLabel = t('common.confirm')
 	}: {
 		open: boolean;
 		title: string;
@@ -47,7 +48,7 @@
 					style="border-color: var(--color-border)"
 					onclick={() => (open = false)}
 				>
-					Cancel
+					{t('common.cancel')}
 				</button>
 				{#if onConfirm}
 					<button

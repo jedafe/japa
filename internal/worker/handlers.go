@@ -38,6 +38,30 @@ func RegisterRedis(client interface{ Ping(ctx context.Context) error }) {
 	rdb = client
 }
 
+// videoProcessor holds the video processor for background video processing.
+var videoProcessor interface {
+	Transcode(ctx context.Context, inputPath, outputPath string) error
+	GenerateThumbnail(ctx context.Context, inputPath, outputPath, timestamp string) error
+	Compress(ctx context.Context, inputPath, outputPath string) error
+}
+
+// RegisterVideoProcessor sets the video processor for the video_processing handler.
+func RegisterVideoProcessor(p interface {
+	Transcode(ctx context.Context, inputPath, outputPath string) error
+	GenerateThumbnail(ctx context.Context, inputPath, outputPath, timestamp string) error
+	Compress(ctx context.Context, inputPath, outputPath string) error
+}) {
+	videoProcessor = p
+}
+
+// geoipUpdater holds the GeoIP database updater for the maintenance task.
+var geoipUpdater interface{ DownloadAndUpdate() error }
+
+// RegisterGeoIPUpdater sets the GeoIP database updater for the maintenance task.
+func RegisterGeoIPUpdater(u interface{ DownloadAndUpdate() error }) {
+	geoipUpdater = u
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -287,7 +311,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 	body := fmt.Sprintf("Your support ticket \"%s\" has been received. Ticket ID: %s",
 		ticket.Subject, ticketID.String())
 
-	if err := sendEmail(payload.Email, "Ticket Confirmation - "+ticket.Subject, body); err != nil {
+	if err := sendEmail(payload.Email, "Ticket Confirmation - "+ticket.Subject, body, false); err != nil {
 		slog.Error("task:ticket:send_confirmation: email failed",
 			"ticket_id", payload.TicketID, "error", err)
 		return err
@@ -320,7 +344,7 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:email_send: to and subject are required")
 	}
 
-	if err := sendEmail(payload.To, payload.Subject, payload.Body); err != nil {
+	if err := sendEmail(payload.To, payload.Subject, payload.Body, payload.HTML); err != nil {
 		slog.Error("task:email_send: failed", "to", payload.To, "error", err)
 		return err
 	}
@@ -923,7 +947,7 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 	body := fmt.Sprintf("Your ticket \"%s\" status has been updated from %s to %s.",
 		ticket.Subject, payload.OldStatus, payload.NewStatus)
 
-	if err := sendEmail(payload.Email, "Ticket Status Update - "+ticket.Subject, body); err != nil {
+	if err := sendEmail(payload.Email, "Ticket Status Update - "+ticket.Subject, body, false); err != nil {
 		slog.Error("task:ticket:send_status_update: email failed",
 			"ticket_id", payload.TicketID, "error", err)
 		return err
@@ -968,9 +992,81 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
+	if videoProcessor == nil {
+		slog.Warn("task:video_processing: no video processor registered, skipping")
+		return nil
+	}
+
+	queries, err := requireDB()
+	if err != nil {
+		slog.Warn("task:video_processing: no database, skipping", "error", err)
+		return nil
+	}
+
+	mediaID, err := scanUUID(payload.MediaID)
+	if err != nil {
+		return fmt.Errorf("task:video_processing: %w", err)
+	}
+	tenantID, err := scanUUID(payload.TenantID)
+	if err != nil {
+		return fmt.Errorf("task:video_processing: %w", err)
+	}
+
+	// Look up the media record to get the current storage path.
+	media, err := queries.GetMediaByID(ctx, gen.GetMediaByIDParams{
+		ID:       mediaID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		slog.Error("task:video_processing: media not found",
+			"media_id", payload.MediaID, "error", err)
+		return fmt.Errorf("task:video_processing: media not found: %w", err)
+	}
+
+	inputPath := media.StoragePath
+
+	// Route to the appropriate processing operation.
+	var outputPath string
+	switch payload.Operation {
+	case "transcode":
+		outputPath = inputPath + ".transcoded.mp4"
+		if err := videoProcessor.Transcode(ctx, inputPath, outputPath); err != nil {
+			slog.Error("task:video_processing: transcode failed",
+				"media_id", payload.MediaID, "error", err)
+			return fmt.Errorf("task:video_processing: transcode: %w", err)
+		}
+	case "thumbnail":
+		outputPath = inputPath + ".thumb.jpg"
+		if err := videoProcessor.GenerateThumbnail(ctx, inputPath, outputPath, "00:00:01"); err != nil {
+			slog.Error("task:video_processing: thumbnail failed",
+				"media_id", payload.MediaID, "error", err)
+			return fmt.Errorf("task:video_processing: thumbnail: %w", err)
+		}
+	case "compress":
+		outputPath = inputPath + ".compressed.mp4"
+		if err := videoProcessor.Compress(ctx, inputPath, outputPath); err != nil {
+			slog.Error("task:video_processing: compress failed",
+				"media_id", payload.MediaID, "error", err)
+			return fmt.Errorf("task:video_processing: compress: %w", err)
+		}
+	default:
+		return fmt.Errorf("task:video_processing: unknown operation %q", payload.Operation)
+	}
+
+	// Update the media record to point to the processed file.
+	_, err = dbPool.Writer.Exec(ctx,
+		`UPDATE media SET storage_path = $1 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL`,
+		outputPath, mediaID, tenantID)
+	if err != nil {
+		slog.Error("task:video_processing: failed to update storage path",
+			"media_id", payload.MediaID, "new_path", outputPath, "error", err)
+		return fmt.Errorf("task:video_processing: update storage path: %w", err)
+	}
+
 	slog.Info("task:video_processing: completed",
 		"media_id", payload.MediaID,
-		"operation", payload.Operation)
+		"operation", payload.Operation,
+		"output_path", outputPath)
 	return nil
 }
 
@@ -1133,7 +1229,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	sent := 0
 	failed := 0
 	for _, recipient := range payload.Recipients {
-		if err := sendEmail(recipient, payload.Subject, payload.HTMLBody); err != nil {
+		if err := sendEmail(recipient, payload.Subject, payload.HTMLBody, true); err != nil {
 			slog.Error("task:newsletter_send: email failed",
 				"recipient", recipient, "error", err)
 			failed++
@@ -1227,7 +1323,7 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 
 	if err := sendEmail(payload.Email,
 		fmt.Sprintf("Your %s Digest", strings.Title(payload.Period)),
-		body.String()); err != nil {
+		body.String(), true); err != nil {
 		slog.Error("task:digest_email: email failed",
 			"user_id", payload.UserID, "error", err)
 		return err
@@ -1594,7 +1690,18 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 
 func HandleMaintenanceUpdateGeoIPDB(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:maintenance:update_geoip_db", "payload", t.Payload())
-	slog.Info("task:maintenance:update_geoip_db: update check complete")
+
+	if geoipUpdater == nil {
+		slog.Warn("task:maintenance:update_geoip_db: updater not registered, skipping")
+		return nil
+	}
+
+	if err := geoipUpdater.DownloadAndUpdate(); err != nil {
+		slog.Error("task:maintenance:update_geoip_db: update failed", "error", err)
+		return fmt.Errorf("geoip database update: %w", err)
+	}
+
+	slog.Info("task:maintenance:update_geoip_db: update complete")
 	return nil
 }
 
@@ -1824,12 +1931,172 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 }
 
 // ---------------------------------------------------------------------------
+// Push notification handler
+// ---------------------------------------------------------------------------
+
+func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:push:delivery", "payload", t.Payload())
+
+	if pushDelivery == nil {
+		slog.Warn("task:push:delivery: no push delivery registered, skipping")
+		return nil
+	}
+
+	if !pushDelivery.IsEnabled() {
+		slog.Warn("task:push:delivery: VAPID keys not configured, skipping")
+		return nil
+	}
+
+	var payload struct {
+		UserID    string `json:"user_id"`
+		Title     string `json:"title"`
+		Body      string `json:"body"`
+		ActionURL string `json:"action_url"`
+	}
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:push:delivery: invalid payload", "error", err)
+		return err
+	}
+
+	userID, err := scanUUID(payload.UserID)
+	if err != nil {
+		return fmt.Errorf("task:push:delivery: %w", err)
+	}
+
+	if dbPool == nil {
+		slog.Warn("task:push:delivery: no database, skipping")
+		return nil
+	}
+
+	// Fetch user's push subscriptions.
+	rows, err := dbPool.Reader.Query(ctx,
+		`SELECT id, endpoint, p256dh, auth_key FROM push_subscriptions WHERE user_id = $1`,
+		userID)
+	if err != nil {
+		slog.Error("task:push:delivery: failed to query subscriptions",
+			"user_id", payload.UserID, "error", err)
+		return nil // non-fatal: subscriptions may not exist yet
+	}
+	defer rows.Close()
+
+	// Build the push payload.
+	type pushPayload struct {
+		Title     string `json:"title"`
+		Body      string `json:"body"`
+		ActionURL string `json:"action_url,omitempty"`
+	}
+	pushJSON, err := json.Marshal(pushPayload{
+		Title:     payload.Title,
+		Body:      payload.Body,
+		ActionURL: payload.ActionURL,
+	})
+	if err != nil {
+		return fmt.Errorf("task:push:delivery: marshal payload: %w", err)
+	}
+
+	sent := 0
+	failed := 0
+	for rows.Next() {
+		var id pgtype.UUID
+		var endpoint, p256dh, authKey string
+		if err := rows.Scan(&id, &endpoint, &p256dh, &authKey); err != nil {
+			slog.Error("task:push:delivery: scan error", "error", err)
+			failed++
+			continue
+		}
+
+		if err := pushDelivery.Send(ctx, endpoint, p256dh, authKey, pushJSON); err != nil {
+			slog.Error("task:push:delivery: send failed",
+				"user_id", payload.UserID, "endpoint", endpoint[:min(30, len(endpoint))], "error", err)
+			failed++
+			// If subscription expired (410), remove it.
+			if isSubscriptionExpired(err) {
+				slog.Info("task:push:delivery: removing expired subscription",
+					"user_id", payload.UserID)
+				_, _ = dbPool.Writer.Exec(ctx,
+					`DELETE FROM push_subscriptions WHERE id = $1`, id)
+			}
+			continue
+		}
+		sent++
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.Error("task:push:delivery: row iteration error", "error", err)
+	}
+
+	slog.Info("task:push:delivery: complete",
+		"user_id", payload.UserID, "sent", sent, "failed", failed)
+	return nil
+}
+
+// isSubscriptionExpired checks if an error indicates a 410 Gone response.
+func isSubscriptionExpired(err error) bool {
+	return err != nil && (strings.Contains(err.Error(), "410 Gone") ||
+		strings.Contains(err.Error(), "subscription expired"))
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// pushDelivery holds the push notification delivery dependency.
+// Set via RegisterPushDelivery before task processing starts.
+var pushDelivery interface {
+	IsEnabled() bool
+	Send(ctx context.Context, endpoint, p256dh, auth string, payload []byte) error
+}
+
+// RegisterPushDelivery sets the push delivery implementation for the worker.
+func RegisterPushDelivery(d interface {
+	IsEnabled() bool
+	Send(ctx context.Context, endpoint, p256dh, auth string, payload []byte) error
+}) {
+	pushDelivery = d
+}
+
+// ---------------------------------------------------------------------------
 // Email helper
 // ---------------------------------------------------------------------------
 
+// wrapHTMLEmail wraps an HTML body in a minimal responsive email template.
+func wrapHTMLEmail(body string) string {
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title></title>
+<style>
+  body { margin: 0; padding: 0; background-color: #f4f4f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+  .wrapper { width: 100%; background-color: #f4f4f7; padding: 40px 0; }
+  .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .content { padding: 32px; color: #333333; font-size: 15px; line-height: 1.6; }
+  .footer { padding: 24px 32px; text-align: center; font-size: 12px; color: #999999; border-top: 1px solid #eeeeee; }
+  a { color: #2563eb; text-decoration: none; }
+  @media only screen and (max-width: 600px) {
+    .container { margin: 0 16px; }
+    .content { padding: 24px 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="container">
+    <div class="content">` + body + `</div>
+    <div class="footer">JapaConnect &mdash; Your journey, connected.</div>
+  </div>
+</div>
+</body>
+</html>`
+}
+
 // sendEmail sends an email via SMTP. If SMTP is not configured, it logs
 // a warning and returns nil (graceful degradation).
-func sendEmail(to, subject, body string) error {
+func sendEmail(to, subject, body string, isHTML bool) error {
 	host := os.Getenv("JC_SMTP_HOST")
 	if host == "" {
 		slog.Warn("email_send: SMTP not configured (JC_SMTP_HOST is empty), skipping")
@@ -1849,8 +2116,16 @@ func sendEmail(to, subject, body string) error {
 	}
 
 	addr := host + ":" + port
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
-		from, to, subject, body)
+
+	contentType := "text/plain; charset=UTF-8"
+	contentBody := body
+	if isHTML {
+		contentType = "text/html; charset=UTF-8"
+		contentBody = wrapHTMLEmail(body)
+	}
+
+	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: %s\r\n\r\n%s",
+		from, to, subject, contentType, contentBody)
 
 	var auth smtp.Auth
 	if user != "" && pass != "" {

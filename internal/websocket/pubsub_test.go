@@ -1,0 +1,367 @@
+package websocket
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+// ---------------------------------------------------------------------------
+// PubSubMessage
+// ---------------------------------------------------------------------------
+
+func TestPubSubMessageJSONRoundTrip(t *testing.T) {
+	msg := PubSubMessage{
+		Type:          EventNotification,
+		TargetUserID:  "user-1",
+		TargetSpaceID: "",
+		Payload:       map[string]string{"hello": "world"},
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got PubSubMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.Type != EventNotification {
+		t.Errorf("type = %q, want %q", got.Type, EventNotification)
+	}
+	if got.TargetUserID != "user-1" {
+		t.Errorf("target_user_id = %q, want user-1", got.TargetUserID)
+	}
+	if got.TargetSpaceID != "" {
+		t.Errorf("target_space_id = %q, want empty", got.TargetSpaceID)
+	}
+}
+
+func TestPubSubMessageOmitsEmptyFields(t *testing.T) {
+	msg := PubSubMessage{
+		Type:    EventFeedUpdate,
+		Payload: "data",
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal raw: %v", err)
+	}
+
+	if _, ok := raw["target_user_id"]; ok {
+		t.Error("target_user_id should be omitted when empty")
+	}
+	if _, ok := raw["target_space_id"]; ok {
+		t.Error("target_space_id should be omitted when empty")
+	}
+}
+
+func TestPubSubMessageWithSpaceTarget(t *testing.T) {
+	msg := PubSubMessage{
+		Type:          EventSpaceActivity,
+		TargetSpaceID: "space-42",
+		Payload:       map[string]string{"action": "post"},
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got PubSubMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.TargetSpaceID != "space-42" {
+		t.Errorf("target_space_id = %q, want space-42", got.TargetSpaceID)
+	}
+	if got.TargetUserID != "" {
+		t.Errorf("target_user_id = %q, want empty", got.TargetUserID)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PubSubBridge type existence
+// ---------------------------------------------------------------------------
+
+func TestPubSubBridgeTypeExists(t *testing.T) {
+	// Verify PubSubBridge is accessible from test code.
+	var b *PubSubBridge
+	if b != nil {
+		t.Error("expected nil PubSubBridge")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// dispatch
+// ---------------------------------------------------------------------------
+
+func TestDispatchToUser(t *testing.T) {
+	hub := NewHub()
+	bridge := &PubSubBridge{hub: hub}
+
+	client := &Client{
+		Hub:      hub,
+		UserID:   "user-dispatch",
+		TenantID: "t1",
+		Send:     make(chan []byte, 256),
+		SpaceIDs: make(map[string]bool),
+	}
+	hub.Register(client)
+
+	msg := PubSubMessage{
+		Type:          EventNotification,
+		TargetUserID:  "user-dispatch",
+		Payload:       map[string]string{"key": "val"},
+	}
+	bridge.dispatch(msg)
+
+	select {
+	case raw := <-client.Send:
+		var ev WSEvent
+		if err := json.Unmarshal(raw, &ev); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if ev.Type != EventNotification {
+			t.Errorf("type = %q, want %q", ev.Type, EventNotification)
+		}
+	default:
+		t.Error("no message dispatched to user")
+	}
+}
+
+func TestDispatchToSpace(t *testing.T) {
+	hub := NewHub()
+	bridge := &PubSubBridge{hub: hub}
+
+	c1 := &Client{Hub: hub, UserID: "u1", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	c2 := &Client{Hub: hub, UserID: "u2", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	hub.Register(c1)
+	hub.Register(c2)
+	hub.SubscribeToSpace(c1, "s-dispatch")
+	hub.SubscribeToSpace(c2, "s-dispatch")
+
+	msg := PubSubMessage{
+		Type:          EventSpaceActivity,
+		TargetSpaceID: "s-dispatch",
+		Payload:       "space-data",
+	}
+	bridge.dispatch(msg)
+
+	for _, c := range []*Client{c1, c2} {
+		select {
+		case raw := <-c.Send:
+			var ev WSEvent
+			if err := json.Unmarshal(raw, &ev); err != nil {
+				t.Fatalf("unmarshal for %s: %v", c.UserID, err)
+			}
+			if ev.Type != EventSpaceActivity {
+				t.Errorf("%s: type = %q, want %q", c.UserID, ev.Type, EventSpaceActivity)
+			}
+		default:
+			t.Errorf("no message dispatched to %s", c.UserID)
+		}
+	}
+}
+
+func TestDispatchToAll(t *testing.T) {
+	hub := NewHub()
+	bridge := &PubSubBridge{hub: hub}
+
+	c1 := &Client{Hub: hub, UserID: "u1", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	c2 := &Client{Hub: hub, UserID: "u2", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	hub.Register(c1)
+	hub.Register(c2)
+
+	msg := PubSubMessage{
+		Type:    EventFeedUpdate,
+		Payload: "feed-data",
+	}
+	bridge.dispatch(msg)
+
+	for _, c := range []*Client{c1, c2} {
+		select {
+		case raw := <-c.Send:
+			var ev WSEvent
+			if err := json.Unmarshal(raw, &ev); err != nil {
+				t.Fatalf("unmarshal for %s: %v", c.UserID, err)
+			}
+			if ev.Type != EventFeedUpdate {
+				t.Errorf("%s: type = %q, want %q", c.UserID, ev.Type, EventFeedUpdate)
+			}
+		default:
+			t.Errorf("no message dispatched to %s", c.UserID)
+		}
+	}
+}
+
+func TestDispatchEmptyTargetBroadcastsToAll(t *testing.T) {
+	hub := NewHub()
+	bridge := &PubSubBridge{hub: hub}
+
+	client := &Client{Hub: hub, UserID: "u-broadcast", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	hub.Register(client)
+
+	msg := PubSubMessage{
+		Type:    EventModerationAlert,
+		Payload: "alert",
+	}
+	bridge.dispatch(msg)
+
+	select {
+	case <-client.Send:
+		// message received — correct path
+	default:
+		t.Error("no message dispatched to all clients")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Hub.SetPubSub
+// ---------------------------------------------------------------------------
+
+func TestHubSetPubSub(t *testing.T) {
+	hub := NewHub()
+	bridge := &PubSubBridge{hub: hub}
+
+	hub.SetPubSub(bridge)
+
+	hub.mu.RLock()
+	got := hub.pubsub
+	hub.mu.RUnlock()
+
+	if got != bridge {
+		t.Error("SetPubSub did not store the bridge")
+	}
+}
+
+func TestHubBroadcastWithoutBridge(t *testing.T) {
+	hub := NewHub()
+	client := &Client{Hub: hub, UserID: "u-nobs", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	hub.Register(client)
+
+	event := WSEvent{Type: EventNotification, Payload: "no-bridge"}
+	hub.BroadcastToUser("u-nobs", event)
+
+	select {
+	case <-client.Send:
+		// local delivery works without bridge
+	default:
+		t.Error("local delivery failed without bridge")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Hub broadcast triggers Publish
+// ---------------------------------------------------------------------------
+
+func TestHubBroadcastTriggersPublish(t *testing.T) {
+	hub := NewHub()
+	client := &Client{Hub: hub, UserID: "u-pub", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	hub.Register(client)
+
+	bridge := &mockBridge{hub: hub}
+	hub.SetPubSub(bridge)
+
+	event := WSEvent{Type: EventDMMessage, Payload: "hello"}
+	hub.BroadcastToUser("u-pub", event)
+
+	// Verify local delivery.
+	select {
+	case <-client.Send:
+	default:
+		t.Error("local delivery failed")
+	}
+
+	// Verify publish was called.
+	if bridge.lastEvent.Type != EventDMMessage {
+		t.Errorf("publish type = %q, want %q", bridge.lastEvent.Type, EventDMMessage)
+	}
+	if bridge.lastUserID != "u-pub" {
+		t.Errorf("publish user = %q, want u-pub", bridge.lastUserID)
+	}
+}
+
+func TestHubSpaceBroadcastTriggersPublish(t *testing.T) {
+	hub := NewHub()
+	client := &Client{Hub: hub, UserID: "u-sp", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	hub.Register(client)
+	hub.SubscribeToSpace(client, "s-pub")
+
+	bridge := &mockBridge{hub: hub}
+	hub.SetPubSub(bridge)
+
+	event := WSEvent{Type: EventSpaceActivity, Payload: "space-data"}
+	hub.BroadcastToSpace("s-pub", event)
+
+	select {
+	case <-client.Send:
+	default:
+		t.Error("local delivery failed")
+	}
+
+	if bridge.lastSpaceID != "s-pub" {
+		t.Errorf("publish space = %q, want s-pub", bridge.lastSpaceID)
+	}
+}
+
+func TestHubAllBroadcastTriggersPublish(t *testing.T) {
+	hub := NewHub()
+	client := &Client{Hub: hub, UserID: "u-all", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	hub.Register(client)
+
+	bridge := &mockBridge{hub: hub}
+	hub.SetPubSub(bridge)
+
+	event := WSEvent{Type: EventFeedUpdate, Payload: "all-data"}
+	hub.BroadcastToAll(event)
+
+	select {
+	case <-client.Send:
+	default:
+		t.Error("local delivery failed")
+	}
+
+	if bridge.lastEvent.Type != EventFeedUpdate {
+		t.Errorf("publish type = %q, want %q", bridge.lastEvent.Type, EventFeedUpdate)
+	}
+	// BroadcastToAll publishes with no target.
+	if bridge.lastUserID != "" || bridge.lastSpaceID != "" {
+		t.Error("BroadcastToAll should publish with no target")
+	}
+}
+
+// mockBridge is a lightweight stand-in for PubSubBridge that records the
+// last Publish call without requiring a real Valkey connection.
+type mockBridge struct {
+	hub          *Hub
+	lastEvent    WSEvent
+	lastUserID   string
+	lastSpaceID  string
+}
+
+func (m *mockBridge) Publish(event WSEvent, userID, spaceID string) {
+	m.lastEvent = event
+	m.lastUserID = userID
+	m.lastSpaceID = spaceID
+}
+
+// Ensure mockBridge satisfies the implicit interface at compile time.
+var _ = (*mockBridge)(nil)
+
+// ---------------------------------------------------------------------------
+// PubSubChannel constant
+// ---------------------------------------------------------------------------
+
+func TestPubSubChannelConstant(t *testing.T) {
+	if PubSubChannel != "jc:ws:broadcast" {
+		t.Errorf("PubSubChannel = %q, want jc:ws:broadcast", PubSubChannel)
+	}
+}

@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	const spaceId = $derived($page.params.spaceId);
 
@@ -45,12 +46,12 @@
 
 	async function save() {
 		if (!formName.trim()) {
-			errorMessage = 'Form name is required.';
+			errorMessage = t('space_forms.name_required');
 			return;
 		}
 		const validFields = fields.filter((f) => f.label.trim());
 		if (validFields.length === 0) {
-			errorMessage = 'Add at least one field with a label.';
+			errorMessage = t('space_forms.fields_required');
 			return;
 		}
 
@@ -74,10 +75,10 @@
 			if (result.ok) {
 				goto(`/spaces/${spaceId}/forms/${result.data.id}`);
 			} else {
-				errorMessage = result.error || 'Failed to create form.';
+				errorMessage = result.error || t('space_forms.create_error');
 			}
 		} catch {
-			errorMessage = 'Failed to create form.';
+			errorMessage = t('space_forms.create_error');
 		} finally {
 			saving = false;
 		}
@@ -89,8 +90,8 @@
 </svelte:head>
 
 <div class="mb-6">
-	<h1 class="text-2xl font-bold tracking-tight">Create Form</h1>
-	<p class="mt-1 text-sm" style="color: var(--color-muted)">Build a new form for this space</p>
+	<h1 class="text-2xl font-bold tracking-tight">{t('space_forms.create_title')}</h1>
+	<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('space_forms.create_description')}</p>
 </div>
 
 {#if errorMessage}
@@ -102,27 +103,27 @@
 <div class="space-y-6">
 	<!-- Form metadata -->
 	<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Form Details</h2>
+		<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.details')}</h2>
 		<div class="space-y-4">
 			<div>
-				<label for="form-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Name *</label>
+				<label for="form-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_label')} *</label>
 				<input
 					id="form-name"
 					type="text"
 					class="w-full rounded-md border px-3 py-2 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-background)"
-					placeholder="e.g. Application Form"
+					placeholder={t('space_forms.name_placeholder')}
 					bind:value={formName}
 				/>
 			</div>
 			<div>
-				<label for="form-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Description</label>
+				<label for="form-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.description_label')}</label>
 				<textarea
 					id="form-desc"
 					class="w-full rounded-md border px-3 py-2 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-background)"
 					rows="2"
-					placeholder="Optional description"
+					placeholder={t('space_forms.desc_placeholder')}
 					bind:value={formDescription}
 				></textarea>
 			</div>
@@ -132,46 +133,46 @@
 	<!-- Fields -->
 	<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
 		<div class="mb-4 flex items-center justify-between">
-			<h2 class="text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">Fields</h2>
+			<h2 class="text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.fields')}</h2>
 			<button
 				class="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 				style="border-color: var(--color-border)"
 				onclick={addField}
 			>
-				+ Add Field
-			</button>
+			{t('space_forms.add_field')}
+		</button>
 		</div>
 
 		<div class="space-y-4">
 			{#each fields as field, i}
 				<div class="rounded-md border p-4" style="border-color: var(--color-border); background-color: var(--color-background)">
 					<div class="mb-3 flex items-center justify-between">
-						<span class="text-xs font-medium" style="color: var(--color-muted)">Field {i + 1}</span>
+						<span class="text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_counter').replace('{i}', String(i + 1))}</span>
 						{#if fields.length > 1}
 							<button
 								class="text-xs hover:underline"
 								style="color: var(--color-danger)"
 								onclick={() => removeField(i)}
 							>
-								Remove
-							</button>
+							{t('space_forms.remove')}
+										</button>
 						{/if}
 					</div>
 
 					<div class="grid gap-3 sm:grid-cols-2">
 						<div>
-							<label for="field-label-{i}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Label *</label>
+							<label for="field-label-{i}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_label')} *</label>
 							<input
 								id="field-label-{i}"
 								type="text"
 								class="w-full rounded-md border px-3 py-1.5 text-sm"
 								style="border-color: var(--color-border); background-color: var(--color-surface)"
-								placeholder="e.g. Full Name"
+								placeholder={t('space_forms.label_placeholder')}
 								bind:value={field.label}
 							/>
 						</div>
 						<div>
-							<label for="field-type-{i}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Type</label>
+							<label for="field-type-{i}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_type')}</label>
 							<select
 								id="field-type-{i}"
 								class="w-full rounded-md border px-3 py-1.5 text-sm"
@@ -188,20 +189,20 @@
 					<div class="mt-3 flex items-center gap-4">
 						<label class="flex items-center gap-2 text-xs" style="color: var(--color-muted)">
 							<input type="checkbox" bind:checked={field.required} class="rounded" />
-							Required
-						</label>
+						{t('space_forms.field_required')}
+					</label>
 					</div>
 
 					{#if field.type === 'radio'}
 						<div class="mt-3">
 							<div class="mb-2 flex items-center justify-between">
-								<span class="text-xs font-medium" style="color: var(--color-muted)">Options</span>
+								<span class="text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_options')}</span>
 								<button
 									class="text-xs hover:underline"
 									style="color: var(--color-info)"
 									onclick={() => addOption(i)}
 								>
-									+ Add Option
+									{t('space_forms.add_option')}
 								</button>
 							</div>
 							<div class="space-y-2">
@@ -211,7 +212,7 @@
 											type="text"
 											class="flex-1 rounded-md border px-3 py-1.5 text-sm"
 											style="border-color: var(--color-border); background-color: var(--color-surface)"
-											placeholder="Option text"
+											placeholder={t('space_forms.option_placeholder')}
 											value={opt}
 											oninput={(e) => updateOption(i, oi, (e.target as HTMLInputElement).value)}
 										/>
@@ -220,7 +221,7 @@
 											style="color: var(--color-danger)"
 											onclick={() => removeOption(i, oi)}
 										>
-											Remove
+							{t('space_forms.remove')}
 										</button>
 									</div>
 								{/each}
@@ -240,14 +241,14 @@
 			disabled={saving}
 			onclick={save}
 		>
-			{saving ? 'Creating...' : 'Create Form'}
+			{saving ? t('space_forms.creating') : t('space_forms.create_form')}
 		</button>
 		<a
 			href="/spaces/{spaceId}/forms"
 			class="rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 			style="border-color: var(--color-border)"
 		>
-			Cancel
+			{t('common.cancel')}
 		</a>
 	</div>
 </div>

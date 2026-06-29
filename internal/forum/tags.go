@@ -3,6 +3,7 @@ package forum
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -72,7 +73,7 @@ func (s *Service) AddThreadTag(ctx context.Context, threadID, tagID pgtype.UUID)
 	}
 	// Increment the tag's follower count.
 	if err := s.store.updateTagFollowerCount(ctx, tagID, pgtype.UUID{}, 1); err != nil {
-		fmt.Printf("warning: failed to increment tag follower count: %v\n", err)
+		slog.Warn("failed to increment tag follower count", "error", err)
 	}
 	return nil
 }
@@ -84,7 +85,7 @@ func (s *Service) RemoveThreadTag(ctx context.Context, threadID, tagID pgtype.UU
 	}
 	// Decrement the tag's follower count.
 	if err := s.store.updateTagFollowerCount(ctx, tagID, pgtype.UUID{}, -1); err != nil {
-		fmt.Printf("warning: failed to decrement tag follower count: %v\n", err)
+		slog.Warn("failed to decrement tag follower count", "error", err)
 	}
 	return nil
 }

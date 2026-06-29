@@ -541,7 +541,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		// Log encoding errors — the header is already sent so we cannot
 		// change the status code, but we should not silently swallow it.
-		fmt.Printf("learning: encode response: %v\n", err)
+		slog.Error("learning: encode response", "error", err)
 	}
 }
 

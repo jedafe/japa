@@ -5,6 +5,13 @@
 package notifications
 
 import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"os"
+
+	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -38,8 +45,10 @@ const MaxPageSize = 100
 
 // Service provides notification operations with reader/writer pool separation.
 type Service struct {
-	store *Store
-	db    *db.DB
+	store  *Store
+	db     *db.DB
+	client *asynq.Client
+	push   *PushDelivery
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -49,6 +58,66 @@ func NewService(database *db.DB) *Service {
 			read:  gen.New(database.Reader),
 			write: gen.New(database.Writer),
 		},
-		db: database,
+		db:   database,
+		push: NewPushDelivery(),
 	}
+}
+
+// SetAsynqClient injects the Asynq client for enqueuing push delivery tasks.
+func (s *Service) SetAsynqClient(client *asynq.Client) {
+	s.client = client
+}
+
+// PushDelivery returns the push delivery instance for subscription management.
+func (s *Service) PushDelivery() *PushDelivery {
+	return s.push
+}
+
+// enqueuePushDelivery enqueues a background push delivery task for a recipient.
+func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, actionURL string) {
+	if s.client == nil || s.push == nil || !s.push.IsEnabled() {
+		return
+	}
+
+	payload, err := json.Marshal(PushDeliveryPayload{
+		UserID:    recipientID.String(),
+		Title:     title,
+		Body:      body,
+		ActionURL: actionURL,
+	})
+	if err != nil {
+		slog.Error("notifications: failed to marshal push payload", "error", err)
+		return
+	}
+
+	task := asynq.NewTask(TaskPushDelivery, payload)
+	info, err := s.client.Enqueue(task, asynq.Queue("default"))
+	if err != nil {
+		slog.Error("notifications: failed to enqueue push delivery",
+			"recipient_id", recipientID.String(), "error", err)
+		return
+	}
+
+	slog.Info("notifications: push delivery enqueued",
+		"recipient_id", recipientID.String(), "task_id", info.ID)
+}
+
+// checkAndEnqueuePush checks user preferences and enqueues push if enabled.
+func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UUID, nType, title, body, actionURL string) {
+	pref, err := s.store.getNotificationPreferences(ctx, recipientID)
+	if err != nil {
+		return
+	}
+	for _, p := range pref {
+		if p.NotificationType == nType && p.Push {
+			s.enqueuePushDelivery(recipientID, title, body, actionURL)
+			return
+		}
+	}
+}
+
+// isPushGloballyEnabled checks if push is enabled for any notification type.
+// This avoids enqueueing when VAPID keys are not configured.
+func isPushGloballyEnabled() bool {
+	return os.Getenv("JC_VAPID_PRIVATE_KEY") != "" && os.Getenv("JC_VAPID_PUBLIC_KEY") != ""
 }

@@ -5,6 +5,7 @@
 	import { EmptyState } from '$lib/components/ui';
 	import { getToken } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let query = $state(page.url.searchParams.get('q') || '');
 	let results = $state<Array<{ id: string; title: string; type: string; excerpt: string }>>([]);
@@ -46,15 +47,15 @@
 </script>
 
 <svelte:head>
-	<title>Search | JapaConnect</title>
-	<meta name="description" content="Search JapaConnect for communities, posts, and people." />
+	<title>{$t('search.results')} | JapaConnect</title>
+	<meta name="description" content="{$t('search.find')}" />
 </svelte:head>
 
 <main class="mx-auto max-w-3xl px-4 py-8">
 	<header class="mb-8">
-		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Search</h1>
+		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{$t('search.results')}</h1>
 		<p class="mt-2 text-sm" style="color: var(--color-muted)">
-			Find communities, posts, and people on JapaConnect.
+			{$t('search.find')}
 		</p>
 	</header>
 
@@ -66,7 +67,7 @@
 			/>
 			<input
 				type="search"
-				placeholder="Search for topics, people, spaces..."
+				placeholder={$t('search.placeholder_short')}
 				bind:value={query}
 				class="w-full rounded-xl border py-3 pl-10 pr-4 text-sm outline-none transition-colors focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
@@ -81,8 +82,8 @@
 	{:else if searched && results.length === 0}
 		<EmptyState
 			icon={Search}
-			title="No results found"
-			message="Try different keywords or check your spelling."
+			title={$t('search.no_results')}
+			message={$t('search.no_results_hint')}
 		/>
 	{:else if results.length > 0}
 		<div class="divide-y rounded-xl border" style="border-color: var(--color-border); divide-color: var(--color-border)" use:autoAnimate>
@@ -113,7 +114,7 @@
 		<div class="py-12 text-center">
 			<Search class="mx-auto h-12 w-12" style="color: var(--color-border)" />
 			<p class="mt-4 text-sm" style="color: var(--color-muted)">
-				Enter a search term to get started.
+				{$t('search.enter_term')}
 			</p>
 		</div>
 	{/if}

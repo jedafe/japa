@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { ArrowLeft, Clock, Tag } from 'lucide-svelte';
 	import DocContent from '$lib/components/DocContent.svelte';
@@ -61,14 +62,14 @@
 </script>
 
 <svelte:head>
-	<title>{docPage?.title ?? 'Not Found'} — JapaConnect Docs</title>
+	<title>{docPage?.title ?? t('article.not_found')} — JapaConnect Docs</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl">
 	{#if docPage}
 		<a href="/{currentAudience}" class="mb-6 inline-flex items-center gap-1 text-sm hover:underline" style="color: var(--color-muted)">
 			<ArrowLeft class="h-3 w-3" />
-			Back to docs
+			{$t('article.back')}
 		</a>
 
 		<h1 class="text-3xl font-bold tracking-tight">{docPage.title}</h1>
@@ -76,7 +77,7 @@
 		<div class="mt-2 flex items-center gap-4 text-xs" style="color: var(--color-muted)">
 			<span class="flex items-center gap-1">
 				<Clock class="h-3 w-3" />
-				Updated {new Date(docPage.updated_at).toLocaleDateString()}
+				{$t('article.updated').replace('{date}', new Date(docPage.updated_at).toLocaleDateString())}
 			</span>
 			<span class="flex items-center gap-1">
 				<Tag class="h-3 w-3" />
@@ -90,7 +91,7 @@
 			</DocContent>
 		</div>
 	{:else}
-		<h1 class="text-3xl font-bold tracking-tight">Page Not Found</h1>
-		<p class="mt-4" style="color: var(--color-muted)">The documentation page you're looking for doesn't exist or isn't published yet.</p>
+		<h1 class="text-3xl font-bold tracking-tight">{$t('article.not_found')}</h1>
+		<p class="mt-4" style="color: var(--color-muted)">{$t('article.not_found_desc')}</p>
 	{/if}
 </div>

@@ -158,5 +158,5 @@ func InvalidateLLMsCache(ctx context.Context, rdb *valkey.Client, tenantID pgtyp
 			slog.Warn("llms: failed to invalidate cache", "key", key, "error", err)
 		}
 	}
-	_ = fmt.Sprintf("invalidated llms cache for tenant %s", tenantID.String())
+	slog.Info("invalidated llms cache", "tenant_id", tenantID.String())
 }

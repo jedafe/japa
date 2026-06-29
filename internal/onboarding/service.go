@@ -159,11 +159,15 @@ func parseStepData(data json.RawMessage) stepDataFields {
 func mergeJSON(base, overlay json.RawMessage) json.RawMessage {
 	baseMap := make(map[string]any)
 	if len(base) > 0 {
-		_ = json.Unmarshal(base, &baseMap)
+		if err := json.Unmarshal(base, &baseMap); err != nil {
+			slog.Warn("failed to unmarshal base onboarding data", "error", err)
+		}
 	}
 	overlayMap := make(map[string]any)
 	if len(overlay) > 0 {
-		_ = json.Unmarshal(overlay, &overlayMap)
+		if err := json.Unmarshal(overlay, &overlayMap); err != nil {
+			slog.Warn("failed to unmarshal overlay onboarding data", "error", err)
+		}
 	}
 	for k, v := range overlayMap {
 		baseMap[k] = v

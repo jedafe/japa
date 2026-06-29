@@ -36,6 +36,9 @@ SET alt_text = COALESCE(@alt_text, alt_text),
     duration_secs = COALESCE(@duration_secs, duration_secs)
 WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: UpdateMediaStoragePath :exec
+UPDATE media SET storage_path = @storage_path WHERE id = @id AND tenant_id = @tenant_id;
+
 -- name: SoftDeleteMedia :exec
 UPDATE media SET deleted_at = now() WHERE id = @id AND tenant_id = @tenant_id;
 
