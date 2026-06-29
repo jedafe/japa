@@ -1,0 +1,9 @@
+# oapi-codegen configuration for JapaConnect Public API
+# Generate Go server stubs from the OpenAPI spec.
+# Usage: oapi-codegen -config config.yaml api.yaml > gen/server.go
+package: openapi
+output: gen/server.go
+generate:
+ chi-server: true
+  models: true
+  embedded-spec: true

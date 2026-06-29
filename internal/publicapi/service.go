@@ -255,10 +255,12 @@ func (s *Service) ValidateAPIKey(ctx context.Context, key string) (*APIKeyContex
 	_ = s.store.incrementUsage(ctx, row.ID)
 
 	return &APIKeyContext{
-		KeyID:    row.ID,
-		UserID:   row.UserID,
-		TenantID: row.TenantID,
-		Scopes:   row.Scopes,
+		KeyID:         row.ID,
+		UserID:        row.UserID,
+		TenantID:      row.TenantID,
+		Scopes:        row.Scopes,
+		KeyPrefix:     row.KeyPrefix,
+		RateLimitTier: row.RateLimitTier,
 	}, nil
 }
 

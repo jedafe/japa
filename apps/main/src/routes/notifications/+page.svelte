@@ -2,6 +2,7 @@
 	import { Bell, Check, CheckCheck, Loader2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { getToken } from '$lib/api';
+	import autoAnimate from '@formkit/auto-animate';
 	import { onMount } from 'svelte';
 
 	interface Notification {
@@ -123,7 +124,7 @@
 				{errorMessage}
 			</div>
 		{/if}
-		<div class="divide-y rounded-xl border" style="border-color: var(--color-border); divide-color: var(--color-border)">
+		<div class="divide-y rounded-xl border" style="border-color: var(--color-border); divide-color: var(--color-border)" use:autoAnimate>
 			{#each notifications as notification (notification.id)}
 				<div
 					class="flex items-start gap-3 p-4 transition-colors hover:bg-black/5 dark:hover:bg-white/5"

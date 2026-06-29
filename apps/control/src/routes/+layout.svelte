@@ -9,6 +9,7 @@
 	 ScrollText,
 	 Shield,
 	 Trash2,
+	 Key,
 	 Menu,
 	 X,
 	 LogOut
@@ -36,6 +37,7 @@
 	 { label: 'DB Health', href: '/db', icon: Database },
 	 { label: 'Audit Log', href: '/audit', icon: ScrollText },
 	 { label: 'Security', href: '/security', icon: Shield },
+	 { label: 'API Keys', href: '/api-keys', icon: Key },
 	 { label: 'Cache', href: '/cache', icon: Trash2 }
 	];
 </script>

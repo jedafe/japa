@@ -2,9 +2,14 @@ package publicapi
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/redis/go-redis/v9"
 
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -74,4 +79,60 @@ func hasScope(scopes []string, required string) bool {
 		}
 	}
 	return false
+}
+
+// RateLimitMiddleware enforces per-API-key rate limiting using a fixed-window
+// counter backed by Valkey. Keys without a validated context (no X-API-Key header)
+// are passed through — they are already covered by the loose tier on /api/v1.
+// Keys with an "unlimited" tier bypass the limiter. When Valkey is unreachable
+// the middleware degrades gracefully and allows the request through.
+func RateLimitMiddleware(rdb *redis.Client) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			key := APIKeyFromContext(r.Context())
+			if key == nil || key.RateLimitTier == "unlimited" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if rdb == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			limit := getTierLimit(key.RateLimitTier)
+			bucket := fmt.Sprintf("jc:api_rate:%s:%d", key.KeyPrefix, time.Now().Unix()/60)
+
+			count, err := rdb.Incr(r.Context(), bucket).Result()
+			if err != nil {
+				slog.Warn("api rate limiter: valkey error, allowing request", "error", err)
+				next.ServeHTTP(w, r)
+				return
+			}
+			if count == 1 {
+				rdb.Expire(r.Context(), bucket, 70*time.Second)
+			}
+
+			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))
+			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(max(0, limit-int(count))))
+
+			if int(count) > limit {
+				w.Header().Set("Retry-After", "60")
+				writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Rate limit exceeded")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// getTierLimit returns the per-minute request limit for a rate limit tier.
+func getTierLimit(tier string) int {
+	switch tier {
+	case "standard":
+		return 1000
+	case "premium":
+		return 10000
+	default:
+		return 100 // basic
+	}
 }

@@ -4,6 +4,7 @@
 	import { Search, Loader2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { getToken } from '$lib/api';
+	import autoAnimate from '@formkit/auto-animate';
 
 	let query = $state(page.url.searchParams.get('q') || '');
 	let results = $state<Array<{ id: string; title: string; type: string; excerpt: string }>>([]);
@@ -84,7 +85,7 @@
 			message="Try different keywords or check your spelling."
 		/>
 	{:else if results.length > 0}
-		<div class="divide-y rounded-xl border" style="border-color: var(--color-border); divide-color: var(--color-border)">
+		<div class="divide-y rounded-xl border" style="border-color: var(--color-border); divide-color: var(--color-border)" use:autoAnimate>
 			{#each results as result (result.id)}
 				<a
 					href={result.type === 'user' ? `/profile/${result.id}` : `/content/${result.id}`}

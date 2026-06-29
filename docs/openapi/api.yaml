@@ -1,0 +1,210 @@
+openapi: 3.0.3
+info:
+  title: JapaConnect Public API
+  version: 1.0.0
+  description: Public API for JapaConnect platform integrations
+  contact:
+    name: JapaConnect API Support
+    email: api-support@japaconnect.com
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.japaconnect.com/v1
+    description: Production
+  - url: http://localhost:8080/v1
+    description: Local development
+security:
+  - ApiKeyAuth: []
+paths:
+  /spaces:
+    get:
+      summary: List spaces
+      description: Retrieve a paginated list of spaces visible to the API key's tenant.
+      tags: [Spaces]
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search query to filter spaces by name or description.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: Number of results to return.
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Number of results to skip.
+      responses:
+        '200':
+          description: List of spaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Space'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /content:
+    get:
+      summary: List content
+      description: Retrieve a paginated list of published content items.
+      tags: [Content]
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search query to filter content.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: Number of results to return.
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Number of results to skip.
+      responses:
+        '200':
+          description: List of content items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Content'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /users/me:
+    get:
+      summary: Get authenticated user
+      description: Returns the user profile associated with the validated API key.
+      tags: [Users]
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: >
+        API key obtained from the Developer Portal.
+        Keys are prefixed with `jc_live_` for production or `jc_test_` for sandbox.
+  schemas:
+    Space:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    Content:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content_type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+            message:
+              type: string
+              description: Human-readable error message
+            status:
+              type: integer
+              description: HTTP status code
+            docs:
+              type: string
+              format: uri
+              description: Link to API documentation for this error
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+          description: Maximum requests per minute for this tier
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+          description: Remaining requests in the current window
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

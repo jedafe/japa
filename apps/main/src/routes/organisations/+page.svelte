@@ -1,0 +1,147 @@
+<script lang="ts">
+	import { Building2, Search, BadgeCheck } from 'lucide-svelte';
+	import { EmptyState } from '$lib/components/ui';
+	import { getToken } from '$lib/api';
+	import autoAnimate from '@formkit/auto-animate';
+	import { onMount } from 'svelte';
+
+	interface Organisation {
+		id: string;
+		slug: string;
+		name: string;
+		headline: string;
+		skills: string[];
+		is_public: boolean;
+	}
+
+	let organisations = $state<Organisation[]>([]);
+	let loading = $state(true);
+	let searchQuery = $state('');
+
+	async function fetchOrganisations(query?: string) {
+		loading = true;
+		try {
+			const params = new URLSearchParams({ limit: '50' });
+			if (query) params.set('search', query);
+			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+			const token = getToken();
+			if (token) headers['Authorization'] = `Bearer ${token}`;
+			const res = await fetch(`/api/v1/professional-profiles?${params.toString()}`, { headers });
+			const body = await res.json();
+			const data = body.data ?? {};
+			organisations = data.profiles ?? [];
+		} catch {
+			organisations = [];
+		} finally {
+			loading = false;
+		}
+	}
+
+	function handleSearch(e: Event) {
+		e.preventDefault();
+		fetchOrganisations(searchQuery.trim() || undefined);
+	}
+
+	onMount(() => fetchOrganisations());
+</script>
+
+<svelte:head>
+	<title>Organisations | JapaConnect</title>
+	<meta name="description" content="Browse professional organisations and verified profiles on JapaConnect." />
+</svelte:head>
+
+<main class="mx-auto max-w-6xl px-4 py-8">
+	<header class="mb-8">
+		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Organisations</h1>
+		<p class="mt-2 text-sm" style="color: var(--color-muted)">
+			Browse professional organisations and verified profiles.
+		</p>
+	</header>
+
+	<form onsubmit={handleSearch} class="mb-6 flex gap-2">
+		<div class="relative flex-1">
+			<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
+			<input
+				type="text"
+				bind:value={searchQuery}
+				placeholder="Search organisations..."
+				class="w-full rounded-lg border py-2 pl-10 pr-4 text-sm outline-none focus:border-[var(--color-primary)]"
+				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+			/>
+		</div>
+		<button
+			type="submit"
+			class="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+			style="background-color: var(--color-primary)"
+		>
+			Search
+		</button>
+	</form>
+
+	{#if loading}
+		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			{#each Array(6) as _}
+				<div
+					class="h-36 animate-pulse rounded-xl"
+					style="background-color: var(--color-surface)"
+				></div>
+			{/each}
+		</div>
+	{:else if organisations.length === 0}
+		<EmptyState
+			icon={Building2}
+			title="No organisations found"
+			message={searchQuery ? 'Try a different search term.' : 'Organisations will appear here.'}
+		/>
+	{:else}
+		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" use:autoAnimate>
+			{#each organisations as org (org.id)}
+				<a
+					href="/professional/{org.slug}"
+					class="group rounded-xl border p-5 transition-all hover:shadow-md"
+					style="border-color: var(--color-border); background: var(--color-surface)"
+				>
+					<div class="flex items-center gap-3">
+						<div
+							class="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white"
+							style="background-color: var(--color-primary)"
+						>
+							{org.name?.charAt(0)?.toUpperCase() ?? '?'}
+						</div>
+						<div class="min-w-0 flex-1">
+							<div class="flex items-center gap-1.5">
+								<h3
+									class="truncate text-base font-semibold group-hover:underline"
+									style="color: var(--color-foreground)"
+								>
+									{org.name}
+								</h3>
+								{#if org.is_public}
+									<BadgeCheck class="h-4 w-4 shrink-0" style="color: var(--color-primary)" />
+								{/if}
+							</div>
+							<p class="truncate text-sm" style="color: var(--color-muted)">
+								{org.headline}
+							</p>
+						</div>
+					</div>
+					{#if org.skills.length > 0}
+						<div class="mt-3 flex flex-wrap gap-1">
+							{#each org.skills.slice(0, 4) as skill}
+								<span
+									class="rounded-full px-2 py-0.5 text-xs"
+									style="background-color: var(--color-background); color: var(--color-muted)"
+								>
+									{skill}
+								</span>
+							{/each}
+							{#if org.skills.length > 4}
+								<span class="text-xs" style="color: var(--color-muted)">+{org.skills.length - 4}</span>
+							{/if}
+						</div>
+					{/if}
+				</a>
+			{/each}
+		</div>
+	{/if}
+</main>

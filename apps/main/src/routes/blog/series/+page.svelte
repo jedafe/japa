@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { BookOpen, Layers } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import { formatTimestamp } from '$lib/utils/timezone';
 
 	let { data } = $props();
 
@@ -9,7 +10,7 @@
 	function formatDate(dateStr: string): string {
 		if (!dateStr) return '';
 		const d = new Date(dateStr);
-		return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+		return formatTimestamp(d);
 	}
 </script>
 
