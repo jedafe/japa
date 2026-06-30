@@ -1,21 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api, type Track } from '$lib/api';
+	import type { Track } from '$lib/api';
 	import { GraduationCap, BookOpen, Clock, ArrowRight, Layers } from 'lucide-svelte';
 
-	let tracks = $state<Track[]>([]);
-	let loading = $state(true);
-	let error = $state('');
-
-	onMount(async () => {
-		try {
-			tracks = await api.listTracks();
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load tracks';
-		} finally {
-			loading = false;
-		}
-	});
+	let { data } = $props();
+	let tracks = $derived(data.tracks as Track[]);
 
 	const difficultyColor: Record<string, string> = {
 		beginner: 'var(--color-success)',
@@ -64,42 +52,7 @@
 			<h2 class="text-xl font-semibold tracking-tight">Learning Tracks</h2>
 		</div>
 
-		{#if loading}
-			<div class="mt-6 grid gap-4 sm:grid-cols-2">
-				{#each Array(4) as _, i}
-					<div
-						class="rounded-2xl border p-6"
-						style="border-color: var(--color-border); animation: slide-up 0.3s ease-out {i * 50}ms both"
-					>
-						<div class="flex items-start gap-3">
-							<div class="skeleton h-12 w-12 rounded-xl"></div>
-							<div class="flex-1 space-y-2">
-								<div class="skeleton h-5 w-3/4 rounded-lg"></div>
-								<div class="skeleton h-3 w-1/4 rounded-lg"></div>
-							</div>
-						</div>
-						<div class="mt-4 space-y-2">
-							<div class="skeleton h-3 w-full rounded-lg"></div>
-							<div class="skeleton h-3 w-5/6 rounded-lg"></div>
-						</div>
-						<div class="mt-4 flex gap-4">
-							<div class="skeleton h-3 w-16 rounded-lg"></div>
-							<div class="skeleton h-3 w-16 rounded-lg"></div>
-						</div>
-					</div>
-				{/each}
-			</div>
-		{:else if error}
-			<div class="mt-6 rounded-2xl border px-6 py-12 text-center" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 5%, transparent)">
-				<p class="text-sm font-medium" style="color: var(--color-danger)">{error}</p>
-				<button
-					onclick={() => window.location.reload()}
-					class="btn btn-primary mt-4"
-				>
-					Try again
-				</button>
-			</div>
-		{:else if tracks.length === 0}
+	{#if tracks.length === 0}
 			<div class="mt-6 rounded-2xl border px-6 py-16 text-center" style="border-color: var(--color-border); background: var(--gradient-surface)">
 				<div
 					class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl"

@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { Headphones, Plus, Loader2, ChevronRight, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-svelte';
+	import { Headphones, Plus, ChevronRight, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type Ticket } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
-	import { onMount } from 'svelte';
 
-	let tickets = $state<Ticket[]>([]);
-	let loading = $state(true);
+	let { data } = $props();
+
+	let tickets = $state(data.tickets);
+	let loading = $state(false);
 	let filter = $state<'all' | 'open' | 'in_progress' | 'resolved' | 'closed'>('all');
 	let currentPage = $state(0);
 	let totalPages = $state(1);
@@ -41,7 +42,7 @@
 			tickets = result;
 			totalPages = 1;
 		} catch {
-			tickets = [];
+			tickets = data.tickets;
 		} finally {
 			loading = false;
 		}
@@ -92,8 +93,6 @@
 	function formatDate(dateStr: string): string {
 		return formatTimestamp(dateStr);
 	}
-
-	onMount(loadTickets);
 </script>
 
 <svelte:head>

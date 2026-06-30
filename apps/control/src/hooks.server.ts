@@ -54,6 +54,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 export const handleError: HandleServerError = ({ error }) => {
 	return {
+		code: 'INTERNAL_ERROR',
 		message: 'Internal error'
 	};
 };

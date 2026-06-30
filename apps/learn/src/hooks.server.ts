@@ -28,6 +28,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 					displayName: data.display_name,
 					avatarUrl: data.avatar_url
 				};
+				event.locals.token = token;
 			} else {
 				event.locals.user = null;
 			}

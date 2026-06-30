@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { Lock, Eye, EyeOff, Loader2, Check } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -30,7 +30,7 @@
 	);
 
 	function getToken(): string {
-		return $page.url.searchParams.get('token') ?? '';
+		return page.url.searchParams.get('token') ?? '';
 	}
 
 	async function handleSubmit(e: Event) {

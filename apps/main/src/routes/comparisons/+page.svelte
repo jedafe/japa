@@ -1,23 +1,10 @@
 <script lang="ts">
-	import { GitCompare, ArrowRight, Loader2 } from 'lucide-svelte';
+	import { GitCompare, ArrowRight } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { api } from '$lib/api';
 	import { isFeatureEnabled } from '$lib/stores/features.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { onMount } from 'svelte';
 
-	let types = $state<Array<{ id: string; name: string; slug: string; description: string; comparison_count: number }>>([]);
-	let loading = $state(true);
-
-	onMount(async () => {
-		try {
-			types = await api.getComparisonTypes({ limit: 50 });
-		} catch {
-			types = [];
-		} finally {
-			loading = false;
-		}
-	});
+	let { data } = $props();
 </script>
 
 <svelte:head>
@@ -44,16 +31,7 @@
 		</p>
 	</header>
 
-	{#if loading}
-		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-			{#each Array(6) as _}
-				<div
-					class="h-40 animate-pulse rounded-xl"
-					style="background-color: var(--color-surface)"
-				></div>
-			{/each}
-		</div>
-	{:else if types.length === 0}
+	{#if data.types.length === 0}
 		<EmptyState
 			icon={GitCompare}
 			title={t('comparisons.none')}
@@ -61,7 +39,7 @@
 		/>
 	{:else}
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-			{#each types as compType (compType.id)}
+			{#each data.types as compType (compType.id)}
 				<a
 					href="/comparisons/{compType.slug}"
 					class="group rounded-xl border p-5 transition-all hover:shadow-md"

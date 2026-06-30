@@ -33,18 +33,28 @@ vi.mock('$lib/components/ui', async () => {
 });
 
 describe('Comparisons +page.svelte', () => {
+	const defaultData = {
+		user: null,
+		flags: {},
+		notificationCount: 0,
+		token: null,
+		locale: 'en',
+		translations: {},
+		types: []
+	};
+
 	it('renders the Comparisons heading', () => {
-		render(Page);
-		expect(screen.getByRole('heading', { name: /Comparisons/i })).toBeTruthy();
+		render(Page, { props: { data: defaultData } });
+		expect(screen.getByRole('heading', { name: 'Comparisons' })).toBeTruthy();
 	});
 
 	it('shows the subtitle text', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		expect(screen.getByText('Make informed decisions by comparing options side by side.')).toBeTruthy();
 	});
 
 	it('renders the page structure with main element', () => {
-		const { container } = render(Page);
+		const { container } = render(Page, { props: { data: defaultData } });
 		expect(container.querySelector('main')).toBeTruthy();
 	});
 });

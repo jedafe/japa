@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { ArrowLeft, Loader2, Plus, X } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
-	let slug = $derived($page.params.slug);
+	let slug = $derived(page.params.slug);
 	let title = $state('');
 	let items = $state<string[]>(['', '']);
 	let error = $state('');

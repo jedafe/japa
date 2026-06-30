@@ -1,5 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
 
+let jwtToken: string | null = null;
+
+export function setToken(token: string | null) {
+	jwtToken = token;
+}
+
+export function getToken(): string | null {
+	return jwtToken;
+}
+
 interface ApiOk<T> {
 	data: T;
 }
@@ -38,6 +48,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 		...init,
 		headers: {
 			'Content-Type': 'application/json',
+			...(jwtToken ? { Authorization: `Bearer ${jwtToken}` } : {}),
 			...init?.headers,
 		},
 	});

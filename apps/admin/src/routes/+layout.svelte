@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { setToken } from '$lib/api';
 	import { locale } from '$lib/stores/i18n.svelte';
 	import '../app.css';
@@ -7,10 +6,8 @@
 
 	let { children, data } = $props();
 
-	onMount(() => {
-		if (data.token) {
-			setToken(data.token);
-		}
+	$effect(() => {
+		setToken(data.token ?? null);
 	});
 </script>
 

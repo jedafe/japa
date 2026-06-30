@@ -4,7 +4,7 @@
 	import { spamApi } from '$lib/api';
 
 	type IpBlock = { id: string; ip_cidr: string; reason: string; created_by: string; expires_at: string };
-	type CensoredWord = { id: string; word: string; replacement: string; created_at: string };
+	type CensoredWord = { id: string; pattern: string; action: string; replacement: string; created_at: string };
 	type UserBlock = { id: string; username: string; reason: string; blocked_at: string };
 
 	type Tab = 'ip-blocks' | 'censored-words' | 'user-blocks';
@@ -40,7 +40,7 @@
 	let ipSaving = $state(false);
 
 	// Censored Word form
-	let cwForm = $state({ word: '', replacement: '' });
+	let cwForm = $state({ pattern: '', replacement: '' });
 	let cwSaving = $state(false);
 
 	let errorMessage = $state('');
@@ -116,15 +116,18 @@
 	}
 
 	async function submitCensoredWord() {
-		if (!cwForm.word.trim()) return;
+		if (!cwForm.pattern.trim()) return;
 		cwSaving = true;
 		errorMessage = '';
-		const body: { word: string; replacement?: string } = { word: cwForm.word.trim() };
+		const body: { pattern: string; action: string; replacement?: string } = {
+			pattern: cwForm.pattern.trim(),
+			action: 'block'
+		};
 		if (cwForm.replacement.trim()) body.replacement = cwForm.replacement.trim();
 		const result = await spamApi.createCensoredWord(body);
 		if (result.ok) {
 			showCwModal = false;
-			cwForm = { word: '', replacement: '' };
+			cwForm = { pattern: '', replacement: '' };
 			loadCensoredWords();
 		} else {
 			errorMessage = result.error;
@@ -254,9 +257,9 @@
 		<button
 			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
 			style="background-color: var(--color-primary)"
-			onclick={() => { cwForm = { word: '', replacement: '' }; showCwModal = true; }}
+			onclick={() => { cwForm = { pattern: '', replacement: '' }; showCwModal = true; }}
 		>
-			Add Word
+			Add Pattern
 		</button>
 	</div>
 
@@ -267,7 +270,7 @@
 			<table class="w-full text-sm">
 				<thead>
 					<tr style="border-color: var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Word</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Pattern</th>
 						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Replacement</th>
 						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Created</th>
 						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
@@ -276,7 +279,7 @@
 				<tbody>
 					{#each censoredWords as cw}
 						<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
-							<td class="px-4 py-3 font-medium font-mono text-xs">{cw.word}</td>
+							<td class="px-4 py-3 font-medium font-mono text-xs">{cw.pattern}</td>
 							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{cw.replacement || '—'}</td>
 							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{cw.created_at}</td>
 							<td class="px-4 py-3">
@@ -377,11 +380,11 @@
 </Modal>
 
 <!-- Add Censored Word Modal -->
-<Modal bind:open={showCwModal} title="Add Censored Word" onConfirm={submitCensoredWord} confirmLabel={cwSaving ? 'Saving...' : 'Add Word'}>
+<Modal bind:open={showCwModal} title="Add Censored Pattern" onConfirm={submitCensoredWord} confirmLabel={cwSaving ? 'Saving...' : 'Add Pattern'}>
 	<div class="space-y-3">
 		<div>
-			<label for="cw-word" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Word</label>
-			<input id="cw-word" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="badword" bind:value={cwForm.word} />
+			<label for="cw-word" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Pattern</label>
+			<input id="cw-word" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="badword" bind:value={cwForm.pattern} />
 		</div>
 		<div>
 			<label for="cw-replacement" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Replacement (optional)</label>

@@ -16,6 +16,7 @@ declare global {
 				profileType: string;
 				status: string;
 			} | null;
+			token?: string;
 			featureFlags: Record<string, boolean>;
 			notificationCount: number;
 		}

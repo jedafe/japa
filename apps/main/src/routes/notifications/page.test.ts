@@ -44,20 +44,30 @@ vi.mock('$lib/components/ui', async () => {
 });
 
 describe('Notifications +page.svelte', () => {
+	const defaultData = {
+		user: null,
+		flags: {},
+		notificationCount: 0,
+		token: null,
+		locale: 'en',
+		translations: {},
+		notifications: []
+	};
+
 	it('renders the Notifications heading', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		expect(screen.getByRole('heading', { name: 'Notifications' })).toBeTruthy();
 	});
 
 	it('shows empty state after load with no notifications', async () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		await waitFor(() => {
 			expect(screen.getByText('All caught up!')).toBeTruthy();
 		});
 	});
 
 	it('shows the empty state message', async () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		await waitFor(() => {
 			expect(screen.getByText("You'll see notifications here when there's activity.")).toBeTruthy();
 		});

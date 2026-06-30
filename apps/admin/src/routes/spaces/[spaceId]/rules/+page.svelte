@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -13,7 +13,7 @@
 		created_at: string;
 	};
 
-	const spaceId = $derived($page.params.spaceId);
+	const spaceId = $derived(page.params.spaceId);
 
 	let rules = $state<Rule[]>([]);
 	let loading = $state(true);

@@ -3,7 +3,9 @@ import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	api: vi.fn().mockRejectedValue(new Error('not connected'))
+	api: vi.fn().mockRejectedValue(new Error('not connected')),
+	impersonationApi: { status: vi.fn().mockResolvedValue({ ok: false, error: 'not connected' }) },
+	setToken: vi.fn()
 }));
 
 describe('Users +page.svelte', () => {
@@ -19,6 +21,6 @@ describe('Users +page.svelte', () => {
 
 	it('has search input', () => {
 		render(Page);
-		expect(screen.getByPlaceholderText('Search')).toBeTruthy();
+		expect(screen.getByPlaceholderText('users.search')).toBeTruthy();
 	});
 });

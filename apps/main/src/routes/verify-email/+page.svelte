@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { Mail, Check, X, Loader2, RefreshCw } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -13,7 +13,7 @@
 	let resendError = $state('');
 
 	function getToken(): string {
-		return $page.url.searchParams.get('token') ?? '';
+		return page.url.searchParams.get('token') ?? '';
 	}
 
 	onMount(async () => {

@@ -76,7 +76,7 @@
 		}
 	});
 
-	const displayAmount = $derived(() => {
+	const displayAmount = $derived.by(() => {
 		if (amount === 0) return '₦0';
 		return new Intl.NumberFormat('en-US', {
 			style: 'currency',
@@ -85,7 +85,7 @@
 		}).format(amount / 100);
 	});
 
-	const discountedAmount = $derived(() => {
+	const discountedAmount = $derived.by(() => {
 		const raw = amount;
 		if (!discountValid || !discountInfo || raw === 0) return raw;
 		if (discountInfo.type === 'percentage') {
@@ -94,10 +94,10 @@
 		return Math.max(0, raw - discountInfo.value * 100);
 	});
 
-	const hasDiscount = $derived(discountValid && discountedAmount() < amount);
+	const hasDiscount = $derived(discountValid && discountedAmount < amount);
 
 	const insufficientCredits = $derived(
-		selectedProvider === 'credit' && discountedAmount() > walletBalance
+		selectedProvider === 'credit' && discountedAmount > walletBalance
 	);
 
 	function formatKobo(kobo: number): string {
@@ -143,7 +143,7 @@
 
 		try {
 			const result = await api.initiatePayment({
-				amount: discountedAmount(),
+				amount: discountedAmount,
 				currency: currency.toLowerCase(),
 				provider: selectedProvider,
 				purpose,
@@ -213,29 +213,29 @@
 					<div class="flex justify-between">
 						<span style="color: var(--color-muted)">Amount</span>
 						<span class="font-semibold" style="color: var(--color-foreground)">
-							{formatKobo(discountedAmount())}
-						</span>
-					</div>
+						{formatKobo(discountedAmount)}
+					</span>
 				</div>
 			</div>
-
-			<div class="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-				<button
-					class="rounded-lg px-6 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-					style="background-color: var(--color-primary)"
-					onclick={() => goto('/payments')}
-				>
-					{t('checkout.view_payments')}
-				</button>
-				<button
-					class="rounded-lg border px-6 py-2.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-					style="border-color: var(--color-border); color: var(--color-foreground)"
-					onclick={() => goto('/dashboard')}
-				>
-					{t('checkout.back_dashboard')}
-				</button>
-			</div>
 		</div>
+
+		<div class="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+			<button
+				class="rounded-lg px-6 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+				style="background-color: var(--color-primary)"
+				onclick={() => goto('/payments')}
+			>
+				{t('checkout.view_payments')}
+			</button>
+			<button
+				class="rounded-lg border px-6 py-2.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+				style="border-color: var(--color-border); color: var(--color-foreground)"
+				onclick={() => goto('/dashboard')}
+			>
+				{t('checkout.back_dashboard')}
+			</button>
+		</div>
+	</div>
 
 	{:else if checkoutState === 'error'}
 		<!-- Error State -->
@@ -295,13 +295,13 @@
 					</div>
 					<div class="flex justify-between text-sm">
 						<span style="color: var(--color-muted)">{t('checkout.amount')}</span>
-						<span style="color: var(--color-foreground)">{displayAmount()}</span>
+						<span style="color: var(--color-foreground)">{displayAmount}</span>
 					</div>
 					{#if hasDiscount}
 						<div class="flex justify-between text-sm">
 							<span style="color: var(--color-success)">{t('checkout.discount')}</span>
 							<span style="color: var(--color-success)">
-								-{formatKobo(amount - discountedAmount())}
+								-{formatKobo(amount - discountedAmount)}
 							</span>
 						</div>
 					{/if}
@@ -312,7 +312,7 @@
 						<div class="flex justify-between">
 							<span class="font-semibold" style="color: var(--color-foreground)">{t('checkout.total')}</span>
 							<span class="text-lg font-bold" style="color: var(--color-foreground)">
-								{formatKobo(discountedAmount())}
+								{formatKobo(discountedAmount)}
 							</span>
 						</div>
 					</div>
@@ -439,7 +439,7 @@
 						{t('wallet.processing')}
 					{:else}
 						<ArrowRight class="h-5 w-5" />
-						{t('wallet.pay')} {formatKobo(discountedAmount())}
+						{t('wallet.pay')} {formatKobo(discountedAmount)}
 					{/if}
 				</button>
 			</div>

@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { getToken } from '$lib/api';
 
 type Locale = string;
 
@@ -16,9 +17,13 @@ export function getLocale() {
 			if (browser) {
 				document.documentElement.lang = locale;
 				document.cookie = `jc_locale=${locale};path=/;max-age=31536000;samesite=lax`;
+				const token = getToken();
 				fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'}/users/me/preferences`, {
 					method: 'PUT',
-					headers: { 'Content-Type': 'application/json' },
+					headers: {
+						'Content-Type': 'application/json',
+						...(token ? { Authorization: `Bearer ${token}` } : {})
+					},
 					body: JSON.stringify({ language: locale })
 				}).catch(() => {});
 			}

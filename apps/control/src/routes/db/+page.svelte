@@ -17,9 +17,11 @@
 		Activity
 	} from 'lucide-svelte';
 
-	let dbHealth = $state<DbHealth | null>(null);
-	let loading = $state(true);
-	let apiAvailable = $state(true);
+	let { data = {} as any } = $props();
+
+	let dbHealth = $state<DbHealth | null>(data.dbHealth ?? null);
+	let loading = $state(false);
+	let apiAvailable = $state(data.dbHealth !== null || data.error === null);
 	let lastRefresh = $state(new Date());
 	let secondsAgo = $state(0);
 	let refreshing = $state(false);
@@ -95,8 +97,6 @@
 	}
 
 	onMount(() => {
-		refresh();
-
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
 				refresh();

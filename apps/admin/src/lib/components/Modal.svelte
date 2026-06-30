@@ -30,10 +30,12 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if open}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+		role="dialog"
+		tabindex="-1"
 		onclick={handleBackdropClick}
+		onkeydown={(e) => { if (e.key === 'Escape') open = false; }}
 	>
 		<div class="w-full max-w-md rounded-lg border p-6 shadow-lg" style="border-color: var(--color-border); background-color: var(--color-background)">
 			<h2 class="text-lg font-semibold">{title}</h2>

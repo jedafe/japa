@@ -21,12 +21,14 @@ export interface ApiResponse<T> {
  */
 export async function apiFetch<T>(
 	path: string,
-	init: RequestInit = {}
+	init: RequestInit = {},
+	token?: string
 ): Promise<ApiResponse<T>> {
 	const res = await fetch(`${API_BASE_URL}${path}`, {
 		...init,
 		headers: {
 			'content-type': 'application/json',
+			...(token ? { Authorization: `Bearer ${token}` } : {}),
 			...((init.headers as Record<string, string>) ?? {})
 		}
 	});

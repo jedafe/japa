@@ -15,14 +15,14 @@
 	import { api } from '$lib/api';
 	import { isFeatureEnabled } from '$lib/stores/features.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 
 	const presetAmounts = [100000, 500000, 1000000]; // in kobo: ₦1,000, ₦5,000, ₦10,000
 
-	let balance = $state<{ points: number; credits: number }>({ points: 0, credits: 0 });
-	let ledger = $state<Array<{ id: string; amount: number; balance_after: number; type: string; description: string; created_at: string }>>([]);
-	let loading = $state(true);
+	let { data } = $props();
+
+	let balance = $state(data.balance);
+	let ledger = $state(data.ledger);
 	let converting = $state(false);
 	let errorMessage = $state('');
 	let successMessage = $state('');
@@ -34,31 +34,6 @@
 	let useCustom = $state(false);
 	let topUpProcessing = $state(false);
 	let topUpError = $state('');
-
-	onMount(async () => {
-		await loadWalletData();
-	});
-
-	async function loadWalletData() {
-		try {
-			const [balanceRes, ledgerRes] = await Promise.allSettled([
-				api.getWalletBalance(),
-				api.getWalletLedger({ limit: 30 })
-			]);
-
-			if (balanceRes.status === 'fulfilled') {
-				balance = balanceRes.value;
-			}
-
-			if (ledgerRes.status === 'fulfilled') {
-				ledger = ledgerRes.value;
-			}
-		} catch {
-			// use defaults
-		} finally {
-			loading = false;
-		}
-	}
 
 	function formatNumber(n: number): string {
 		return new Intl.NumberFormat('en-US').format(n);
@@ -148,7 +123,17 @@
 				window.location.href = result.checkout_url;
 			} else {
 				closeTopUpModal();
-				await loadWalletData();
+				// Re-fetch wallet data
+				try {
+					const [balanceRes, ledgerRes] = await Promise.allSettled([
+						api.getWalletBalance(),
+						api.getWalletLedger({ limit: 30 })
+					]);
+					if (balanceRes.status === 'fulfilled') balance = balanceRes.value;
+					if (ledgerRes.status === 'fulfilled') ledger = ledgerRes.value;
+				} catch {
+					// use defaults
+				}
 				successMessage = 'Wallet topped up successfully!';
 			}
 		} catch (err) {
@@ -188,12 +173,6 @@
 		</button>
 	</div>
 
-	{#if loading}
-		<div class="mt-8 space-y-4">
-			<div class="h-40 animate-pulse rounded-xl" style="background-color: var(--color-surface)"></div>
-			<div class="h-72 animate-pulse rounded-xl" style="background-color: var(--color-surface)"></div>
-		</div>
-	{:else}
 		<!-- Balance Cards -->
 		<div class="mt-8 grid gap-4 sm:grid-cols-2">
 			<div
@@ -333,7 +312,6 @@
 				</div>
 			{/if}
 		</div>
-	{/if}
 	</main>
 {/if}
 

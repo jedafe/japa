@@ -32,6 +32,6 @@ describe('Edit Custom Field +page.svelte', () => {
 
 	it('shows loading state initially', () => {
 		render(Page);
-		expect(screen.getByText('Loading field definition...')).toBeTruthy();
+		expect(screen.getByText('Loading...')).toBeTruthy();
 	});
 });

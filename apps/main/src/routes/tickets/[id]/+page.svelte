@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import {
 		ArrowLeft,
@@ -9,20 +8,18 @@
 		Clock,
 		CheckCircle2,
 		XCircle,
-		AlertCircle,
-		ExternalLink
+		AlertCircle
 	} from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type Ticket, type TicketComment } from '$lib/api';
-	import { onMount } from 'svelte';
 
-	let ticket = $state<Ticket | null>(null);
-	let comments = $state<TicketComment[]>([]);
-	let loading = $state(true);
+	let { data } = $props();
+
+	let ticket = $state(data.ticket as Ticket | null);
+	let comments = $state(data.comments as TicketComment[]);
 	let error = $state('');
 	let commentBody = $state('');
 	let submittingComment = $state(false);
-	const ticketId = $derived(page.params.id);
 
 	const statusColors: Record<string, string> = {
 		open: 'var(--color-primary)',
@@ -50,21 +47,6 @@
 		}
 	}
 
-	async function loadTicket() {
-		if (!ticketId) return;
-		loading = true;
-		error = '';
-		try {
-			const result = await api.getTicket(ticketId);
-			ticket = result.ticket;
-			comments = result.comments;
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load ticket.';
-		} finally {
-			loading = false;
-		}
-	}
-
 	async function handleSubmitComment(e: Event) {
 		e.preventDefault();
 		if (!ticket || !commentBody.trim()) return;
@@ -85,8 +67,6 @@
 	function formatDate(dateStr: string): string {
 		return formatTimestampWithTime(dateStr);
 	}
-
-	onMount(loadTicket);
 </script>
 
 <svelte:head>
@@ -103,12 +83,7 @@
 		Back to Tickets
 	</a>
 
-	{#if loading}
-		<div class="space-y-4">
-			<div class="h-8 w-3/4 animate-pulse rounded-lg" style="background-color: var(--color-surface)"></div>
-			<div class="h-32 animate-pulse rounded-xl" style="background-color: var(--color-surface)"></div>
-		</div>
-	{:else if error}
+	{#if error}
 		<div
 			class="rounded-lg border px-4 py-3 text-sm"
 			style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)"

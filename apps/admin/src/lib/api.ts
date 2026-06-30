@@ -54,7 +54,7 @@ export const spamApi = {
 		api(`/admin/spam/ip-blocks/${id}`, { method: 'DELETE' }),
 
 	getCensoredWords: (params?: string) => api<unknown>(`/admin/spam/censored-words${params ? `?${params}` : ''}`),
-	createCensoredWord: (body: { word: string; replacement?: string }) =>
+	createCensoredWord: (body: { pattern: string; action: string; replacement?: string }) =>
 		api('/admin/spam/censored-words', { method: 'POST', body }),
 	deleteCensoredWord: (id: string) =>
 		api(`/admin/spam/censored-words/${id}`, { method: 'DELETE' }),

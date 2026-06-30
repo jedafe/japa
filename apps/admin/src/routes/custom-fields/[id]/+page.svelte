@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { onMount } from 'svelte';
@@ -39,7 +39,7 @@
 	const fieldTypes = ['text', 'number', 'select', 'boolean'];
 	const entityTypes = ['content', 'user', 'space', 'tag'];
 
-	const fieldId = $derived($page.params.id);
+	const fieldId = $derived(page.params.id);
 
 	async function loadField() {
 		loading = true;

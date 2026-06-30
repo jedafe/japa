@@ -1,30 +1,9 @@
 <script lang="ts">
 	import { Tag, Hash, MessageSquare } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { api } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
-	import { onMount } from 'svelte';
 
-	interface TagItem {
-		id: string;
-		name: string;
-		slug: string;
-		thread_count: number;
-	}
-
-	let tags = $state<TagItem[]>([]);
-	let loading = $state(true);
-
-	onMount(async () => {
-		try {
-			const result = await api.getForumTags();
-			tags = result ?? [];
-		} catch {
-			tags = [];
-		} finally {
-			loading = false;
-		}
-	});
+	let { data } = $props();
 </script>
 
 <svelte:head>
@@ -40,16 +19,7 @@
 		</p>
 	</header>
 
-	{#if loading}
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-			{#each Array(9) as _}
-				<div
-					class="h-24 animate-pulse rounded-xl"
-					style="background-color: var(--color-surface)"
-				></div>
-			{/each}
-		</div>
-	{:else if tags.length === 0}
+	{#if data.tags.length === 0}
 		<EmptyState
 			icon={Tag}
 			title="No tags yet"
@@ -57,7 +27,7 @@
 		/>
 	{:else}
 		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" use:autoAnimate>
-			{#each tags as tag (tag.id)}
+			{#each data.tags as tag (tag.id)}
 				<a
 					href="/forum/tags"
 					class="group flex items-center gap-3 rounded-xl border p-4 transition-all hover:shadow-md"

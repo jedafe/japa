@@ -26,6 +26,44 @@
 		max_connections: number;
 	};
 
+	let { data = {} as any } = $props();
+
+	function applyOverview(overview: {
+		health: HealthGroup[];
+		metrics: { throughput: string; latency: string; errorRate: string; queueDepth: string; wsConnections: number };
+		queues?: QueueSummary;
+		database?: {
+			connected: boolean;
+			size_bytes: number;
+			slow_queries?: unknown[];
+			connection_pool?: { active: number; max: number };
+		};
+	}) {
+		groups = overview.health;
+		throughput = overview.metrics.throughput;
+		latency = overview.metrics.latency;
+		errorRate = overview.metrics.errorRate;
+		queueDepth = overview.metrics.queueDepth;
+		wsConnections = overview.metrics.wsConnections;
+		lastRefresh = new Date().toLocaleTimeString();
+		apiAvailable = true;
+
+		if (overview.queues) {
+			queueSummary = overview.queues;
+		}
+
+		if (overview.database) {
+			const db = overview.database;
+			dbSummary = {
+				connected: db.connected,
+				size_bytes: db.size_bytes,
+				slow_queries_count: db.slow_queries?.length ?? 0,
+				active_connections: db.connection_pool?.active ?? 0,
+				max_connections: db.connection_pool?.max ?? 0
+			};
+		}
+	}
+
 	let groups = $state<HealthGroup[]>([
 		{
 			name: t('dashboard.groups.infra'),
@@ -73,6 +111,11 @@
 	let queueSummary = $state<QueueSummary | null>(null);
 	let dbSummary = $state<DbSummary | null>(null);
 
+	// Apply server-provided initial data
+	if (data.initial) {
+		applyOverview(data.initial);
+	}
+
 	function formatBytes(bytes: number): string {
 		if (bytes >= 1_073_741_824) return (bytes / 1_073_741_824).toFixed(1) + ' GB';
 		if (bytes >= 1_048_576) return (bytes / 1_048_576).toFixed(1) + ' MB';
@@ -100,31 +143,7 @@
 				};
 			}>('/admin/analytics/overview');
 			if (result.ok) {
-				groups = result.data.health;
-				throughput = result.data.metrics.throughput;
-				latency = result.data.metrics.latency;
-				errorRate = result.data.metrics.errorRate;
-				queueDepth = result.data.metrics.queueDepth;
-				wsConnections = result.data.metrics.wsConnections;
-				lastRefresh = new Date().toLocaleTimeString();
-				apiAvailable = true;
-
-				// Extract queue summary
-				if (result.data.queues) {
-					queueSummary = result.data.queues;
-				}
-
-				// Extract DB summary
-				if (result.data.database) {
-					const db = result.data.database;
-					dbSummary = {
-						connected: db.connected,
-						size_bytes: db.size_bytes,
-						slow_queries_count: db.slow_queries?.length ?? 0,
-						active_connections: db.connection_pool?.active ?? 0,
-						max_connections: db.connection_pool?.max ?? 0
-					};
-				}
+				applyOverview(result.data);
 			} else {
 				apiAvailable = false;
 			}
@@ -135,7 +154,6 @@
 
 	let interval: ReturnType<typeof setInterval>;
 	onMount(() => {
-		refresh();
 		interval = setInterval(refresh, 30_000);
 		return () => clearInterval(interval);
 	});

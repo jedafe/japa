@@ -18,7 +18,7 @@ describe('Create Bot +page.svelte', () => {
 
 	it('renders the subtitle', () => {
 		render(Page);
-		expect(screen.getByText('Set up a new automated bot for the platform')).toBeTruthy();
+		expect(screen.getByText('Manage automated bots and their messaging capabilities')).toBeTruthy();
 	});
 
 	it('shows form fields and Create Bot button', () => {

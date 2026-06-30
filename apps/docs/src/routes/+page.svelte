@@ -37,7 +37,7 @@
 						class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition-colors"
 						style="background: color-mix(in srgb, var(--color-primary) 10%, transparent)"
 					>
-						<svelte:component this={Icon} class="h-6 w-6" style="color: var(--color-primary)" />
+						<Icon class="h-6 w-6" style="color: var(--color-primary)" />
 					</div>
 					<div class="min-w-0 flex-1">
 						<div class="flex items-center gap-2">

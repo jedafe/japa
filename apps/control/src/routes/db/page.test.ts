@@ -9,17 +9,16 @@ vi.mock('$lib/api', () => ({
 describe('DB Health +page.svelte', () => {
 	it('renders the db health heading', () => {
 		render(Page);
-		// In test env, i18n returns the key since translations are not loaded
-		expect(screen.getByText('db.title')).toBeTruthy();
+		expect(screen.getByText('DB Health')).toBeTruthy();
 	});
 
 	it('shows the auto-refresh indicator', () => {
 		render(Page);
-		expect(screen.getByText('db.auto_refresh')).toBeTruthy();
+		expect(screen.getByText('Auto-refresh every 60s')).toBeTruthy();
 	});
 
 	it('shows the refresh button', () => {
 		render(Page);
-		expect(screen.getByText('common.refresh')).toBeTruthy();
+		expect(screen.getByText('Refresh')).toBeTruthy();
 	});
 });

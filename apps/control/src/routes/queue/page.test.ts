@@ -9,17 +9,16 @@ vi.mock('$lib/api', () => ({
 describe('Queue +page.svelte', () => {
 	it('renders the queue monitor heading', () => {
 		render(Page);
-		// In test env, i18n returns the key since translations are not loaded
-		expect(screen.getByText('queue.title')).toBeTruthy();
+		expect(screen.getByText('Queue Monitor')).toBeTruthy();
 	});
 
 	it('shows the auto-refresh indicator', () => {
 		render(Page);
-		expect(screen.getByText('queue.auto_refresh')).toBeTruthy();
+		expect(screen.getByText('Auto-refresh every 30s')).toBeTruthy();
 	});
 
 	it('shows the refresh button', () => {
 		render(Page);
-		expect(screen.getByText('common.refresh')).toBeTruthy();
+		expect(screen.getByText('Refresh')).toBeTruthy();
 	});
 });
