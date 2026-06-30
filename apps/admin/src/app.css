@@ -1,6 +1,12 @@
 @import 'tailwindcss';
 
+/*
+ * Theme tokens — JapaConnect Admin.
+ * Purple-accented design system for the admin dashboard.
+ */
+
 :root {
+	/* Base Colors */
 	--color-background: #ffffff;
 	--color-foreground: #0f172a;
 	--color-primary: #7c3aed;
@@ -12,6 +18,34 @@
 	--color-warning: #d97706;
 	--color-danger: #dc2626;
 	--color-info: #0284c7;
+
+	/* Gradients */
+	--gradient-primary: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+	--gradient-primary-hover: linear-gradient(135deg, #6d28d9 0%, #9333ea 100%);
+	--gradient-surface: linear-gradient(180deg, var(--color-surface) 0%, var(--color-background) 100%);
+	--gradient-accent: linear-gradient(135deg, #c084fc 0%, #e879f9 100%);
+
+	/* Shadows */
+	--shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+	--shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+	--shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+	--shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+	--shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+	--shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+	--shadow-glow: 0 0 20px rgb(124 58 237 / 0.3);
+
+	/* Border Radius */
+	--radius-sm: 0.375rem;
+	--radius-md: 0.5rem;
+	--radius-lg: 0.75rem;
+	--radius-xl: 1rem;
+	--radius-2xl: 1.5rem;
+	--radius-full: 9999px;
+
+	/* Transitions */
+	--transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+	--transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+	--transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dark {
@@ -26,10 +60,151 @@
 	--color-warning: #fbbf24;
 	--color-danger: #ef4444;
 	--color-info: #38bdf8;
+
+	--shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+	--shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+	--shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+	--shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+	--shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.3);
 }
 
 body {
 	background-color: var(--color-background);
 	color: var(--color-foreground);
 	font-family: system-ui, -apple-system, sans-serif;
+	font-feature-settings: 'cv11', 'ss01';
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Animations */
+@keyframes shimmer {
+	0% { background-position: -200% 0; }
+	100% { background-position: 200% 0; }
+}
+
+@keyframes fade-in {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+@keyframes slide-up {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes scale-in {
+	from {
+		opacity: 0;
+		transform: scale(0.95);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+/* Utility Classes */
+.skeleton {
+	background: linear-gradient(
+		90deg,
+		var(--color-surface) 25%,
+		var(--color-border) 50%,
+		var(--color-surface) 75%
+	);
+	background-size: 200% 100%;
+	animation: shimmer 1.5s infinite;
+}
+
+.animate-fade-in {
+	animation: fade-in var(--transition-base) ease-out;
+}
+
+.animate-slide-up {
+	animation: slide-up var(--transition-slow) ease-out;
+}
+
+.animate-scale-in {
+	animation: scale-in var(--transition-base) ease-out;
+}
+
+/* Card Hover Effects */
+.card-interactive {
+	transition: all var(--transition-base);
+}
+
+.card-interactive:hover {
+	transform: translateY(-2px);
+	box-shadow: var(--shadow-lg);
+}
+
+/* Button Base */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	border-radius: var(--radius-lg);
+	padding: 0.5rem 1rem;
+	font-size: 0.875rem;
+	font-weight: 500;
+	transition: all var(--transition-base);
+	cursor: pointer;
+	border: none;
+	outline: none;
+}
+
+.btn:hover {
+	transform: translateY(-1px);
+}
+
+.btn:active {
+	transform: translateY(0);
+}
+
+.btn:focus-visible {
+	box-shadow: 0 0 0 3px rgb(124 58 237 / 0.3);
+}
+
+.btn-primary {
+	background: var(--gradient-primary);
+	color: white;
+	box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:hover {
+	background: var(--gradient-primary-hover);
+	box-shadow: var(--shadow-md);
+}
+
+.btn-secondary {
+	border: 1px solid var(--color-border);
+	background: var(--color-surface);
+	color: var(--color-foreground);
+}
+
+.btn-secondary:hover {
+	background: var(--color-border);
+	box-shadow: var(--shadow-sm);
+}
+
+.btn-ghost {
+	background: transparent;
+	color: var(--color-foreground);
+}
+
+.btn-ghost:hover {
+	background: var(--color-surface);
+}
+
+/* Focus Ring */
+.focus-ring:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
 }

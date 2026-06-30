@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api, type DeveloperApiKey } from '$lib/api';
-	import { Key, Plus, Trash2, Copy, Check, Shield, AlertTriangle } from 'lucide-svelte';
+	import { Key, Plus, Trash2, Copy, Check, Shield, AlertTriangle, Webhook as WebhookIcon } from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -97,6 +97,25 @@
 			</div>
 		</div>
 	</header>
+
+	<nav class="mb-6 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border); background: var(--color-surface)">
+		<a
+			href="/dashboard/developer"
+			class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium"
+			style="background-color: var(--color-primary); color: white"
+		>
+			<Key class="h-3.5 w-3.5" />
+			API Keys
+		</a>
+		<a
+			href="/dashboard/webhooks"
+			class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+			style="color: var(--color-muted)"
+		>
+			<WebhookIcon class="h-3.5 w-3.5" />
+			Webhooks
+		</a>
+	</nav>
 
 	{#if errorMessage}
 		<div

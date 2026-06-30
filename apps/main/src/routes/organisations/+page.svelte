@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Building2, Search, BadgeCheck } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
 	import { onMount } from 'svelte';
 
@@ -21,15 +21,8 @@
 	async function fetchOrganisations(query?: string) {
 		loading = true;
 		try {
-			const params = new URLSearchParams({ limit: '50' });
-			if (query) params.set('search', query);
-			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-			const token = getToken();
-			if (token) headers['Authorization'] = `Bearer ${token}`;
-			const res = await fetch(`/api/v1/professional-profiles?${params.toString()}`, { headers });
-			const body = await res.json();
-			const data = body.data ?? {};
-			organisations = data.profiles ?? [];
+			const result = await api.listProfessionalProfiles({ limit: 50, search: query });
+			organisations = result.profiles;
 		} catch {
 			organisations = [];
 		} finally {

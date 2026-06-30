@@ -11,6 +11,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -184,12 +186,18 @@ func (p *PaystackProvider) ProcessWebhookEvent(ctx context.Context, event Webhoo
 
 // StripeProvider implements the Provider interface for Stripe.
 type StripeProvider struct {
-	secretKey string
+	secretKey     string
+	webhookSecret string // webhook signing secret (whsec_...)
 }
 
 // NewStripeProvider creates a new Stripe provider.
 func NewStripeProvider(secretKey string) *StripeProvider {
 	return &StripeProvider{secretKey: secretKey}
+}
+
+// SetWebhookSecret configures the webhook signing secret for signature verification.
+func (p *StripeProvider) SetWebhookSecret(secret string) {
+	p.webhookSecret = secret
 }
 
 func (p *StripeProvider) Name() string {
@@ -209,13 +217,64 @@ func (p *StripeProvider) InitiatePayment(ctx context.Context, req PaymentRequest
 }
 
 func (p *StripeProvider) VerifyWebhookSignature(payload []byte, signature string) error {
-	// Stripe uses HMAC-SHA256 with the webhook signing secret.
-	// Placeholder: accept all signatures until Stripe is fully configured.
-	slog.Warn("stripe webhook verification is a placeholder")
+	if p.webhookSecret == "" {
+		return fmt.Errorf("stripe webhook secret not configured (JC_STRIPE_WEBHOOK_SECRET)")
+	}
 	if signature == "" {
 		return fmt.Errorf("missing stripe webhook signature")
 	}
+
+	// Stripe-Signature header format: t=<timestamp>,v1=<signature>[,v1=<signature>...]
+	timestamp, sig, err := parseStripeSignatureHeader(signature)
+	if err != nil {
+		return fmt.Errorf("parsing stripe signature: %w", err)
+	}
+
+	// Reject payloads older than 5 minutes to prevent replay attacks.
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid stripe timestamp: %w", err)
+	}
+	if age := time.Now().Unix() - ts; age > 300 || age < -300 {
+		return fmt.Errorf("stripe webhook timestamp too old or in the future (age=%ds)", age)
+	}
+
+	// Compute expected signature: HMAC-SHA256(webhook_secret, timestamp + "." + payload)
+	signedPayload := timestamp + "." + string(payload)
+	mac := hmac.New(sha256.New, []byte(p.webhookSecret))
+	mac.Write([]byte(signedPayload))
+	expected := hex.EncodeToString(mac.Sum(nil))
+
+	if !hmac.Equal([]byte(sig), []byte(expected)) {
+		return fmt.Errorf("invalid stripe webhook signature")
+	}
 	return nil
+}
+
+// parseStripeSignatureHeader extracts the timestamp and first v1 signature
+// from the Stripe-Signature header value.
+func parseStripeSignatureHeader(header string) (timestamp, signature string, err error) {
+	for _, part := range strings.Split(header, ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		switch kv[0] {
+		case "t":
+			timestamp = kv[1]
+		case "v1":
+			if signature == "" {
+				signature = kv[1]
+			}
+		}
+	}
+	if timestamp == "" {
+		return "", "", fmt.Errorf("missing timestamp (t=) in signature header")
+	}
+	if signature == "" {
+		return "", "", fmt.Errorf("missing v1 signature in signature header")
+	}
+	return timestamp, signature, nil
 }
 
 func (p *StripeProvider) ProcessWebhookEvent(ctx context.Context, event WebhookEvent) error {
@@ -253,10 +312,21 @@ func (p *NOWPaymentsProvider) InitiatePayment(ctx context.Context, req PaymentRe
 }
 
 func (p *NOWPaymentsProvider) VerifyWebhookSignature(payload []byte, signature string) error {
-	// NOWPayments uses IPN (Instant Payment Notification) with IPN callback verification.
-	slog.Warn("nowpayments webhook verification is a placeholder")
+	if p.apiKey == "" {
+		return fmt.Errorf("nowpayments API key not configured (JC_NOWPAYMENTS_IPN_SECRET)")
+	}
 	if signature == "" {
 		return fmt.Errorf("missing nowpayments webhook signature")
+	}
+
+	// NOWPayments IPN sends HMAC-SHA256 of the payload using the IPN secret.
+	// The signature is sent in the x-nowpayments-sig header as a hex-encoded hash.
+	mac := hmac.New(sha256.New, []byte(p.apiKey))
+	mac.Write(payload)
+	expected := hex.EncodeToString(mac.Sum(nil))
+
+	if !hmac.Equal([]byte(signature), []byte(expected)) {
+		return fmt.Errorf("invalid nowpayments webhook signature")
 	}
 	return nil
 }

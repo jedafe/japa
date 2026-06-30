@@ -4,6 +4,7 @@
 
 	let { data, form } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let prefs = $state(data.prefs);
 	let saving = $state(false);
 

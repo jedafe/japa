@@ -3,7 +3,11 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	getToken: vi.fn().mockReturnValue(null)
+	getToken: vi.fn().mockReturnValue(null),
+	api: {
+		getUser: vi.fn().mockRejectedValue(new Error('Not found')),
+		toggleFollow: vi.fn().mockResolvedValue({ following: false })
+	}
 }));
 
 vi.mock('$app/state', () => ({
@@ -14,6 +18,11 @@ vi.mock('$app/state', () => ({
 
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn()
+}));
+
+vi.mock('$lib/analytics', () => ({
+	trackEvent: vi.fn(),
+	AnalyticsEvents: { FOLLOW: 'follow', UNFOLLOW: 'unfollow' }
 }));
 
 describe('Profile +page.svelte', () => {

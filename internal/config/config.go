@@ -34,12 +34,17 @@ type Config struct {
 	JWTSecret         string // JC_JWT_SECRET — signing secret for JWT access tokens (empty = random in dev)
 	JWTKeyID          string // JC_JWT_KEY_ID — key ID for JWT kid header, defaults to "key-dev"
 	SiteName          string // JC_SITE_NAME — site name for LLMS.txt and branding
+	SiteURL           string // JC_SITE_URL — public-facing base URL (e.g. https://japaconnect.com)
 	SiteDescription   string // JC_SITE_DESCRIPTION — site description for LLMS.txt
 	OAuthGoogleID     string // JC_OAUTH_GOOGLE_CLIENT_ID — Google OAuth client ID
 	OAuthGoogleSecret string // JC_OAUTH_GOOGLE_CLIENT_SECRET — Google OAuth client secret
 	OAuthGitHubID     string // JC_OAUTH_GITHUB_CLIENT_ID — GitHub OAuth client ID
 	OAuthGitHubSecret string // JC_OAUTH_GITHUB_CLIENT_SECRET — GitHub OAuth client secret
-	OAuthRedirectBase string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.japaconnect.com)
+	OAuthRedirectBase   string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.japaconnect.com)
+	TOTPEncryptionKey   string // JC_TOTP_ENCRYPTION_KEY — AES-256 key for encrypting TOTP secrets at rest (32-byte hex or base64)
+	StripeWebhookSecret string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret (whsec_...)
+	NOWPaymentsIPNSecret string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC secret
+	CORSOrigins         string // JC_CORS_ORIGINS — comma-separated allowed CORS origins for production
 }
 
 // Load reads all JC_ environment variables and returns a populated Config.
@@ -71,12 +76,17 @@ func Load() (Config, error) {
 		JWTSecret:         os.Getenv("JC_JWT_SECRET"),
 		JWTKeyID:          os.Getenv("JC_JWT_KEY_ID"),
 		SiteName:          os.Getenv("JC_SITE_NAME"),
+		SiteURL:           os.Getenv("JC_SITE_URL"),
 		SiteDescription:   os.Getenv("JC_SITE_DESCRIPTION"),
 		OAuthGoogleID:     os.Getenv("JC_OAUTH_GOOGLE_CLIENT_ID"),
 		OAuthGoogleSecret: os.Getenv("JC_OAUTH_GOOGLE_CLIENT_SECRET"),
 		OAuthGitHubID:     os.Getenv("JC_OAUTH_GITHUB_CLIENT_ID"),
 		OAuthGitHubSecret: os.Getenv("JC_OAUTH_GITHUB_CLIENT_SECRET"),
-		OAuthRedirectBase: os.Getenv("JC_OAUTH_REDIRECT_BASE"),
+		OAuthRedirectBase:    os.Getenv("JC_OAUTH_REDIRECT_BASE"),
+		TOTPEncryptionKey:    os.Getenv("JC_TOTP_ENCRYPTION_KEY"),
+		StripeWebhookSecret:  os.Getenv("JC_STRIPE_WEBHOOK_SECRET"),
+		NOWPaymentsIPNSecret: os.Getenv("JC_NOWPAYMENTS_IPN_SECRET"),
+		CORSOrigins:          os.Getenv("JC_CORS_ORIGINS"),
 	}
 
 	applyDefaults(&cfg)
@@ -120,6 +130,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.SiteName == "" {
 		cfg.SiteName = "JapaConnect"
+	}
+	if cfg.SiteURL == "" {
+		cfg.SiteURL = "http://localhost:8080"
 	}
 	if cfg.SiteDescription == "" {
 		cfg.SiteDescription = "A community platform for the Nigerian diaspora and Nigerians planning to relocate abroad"

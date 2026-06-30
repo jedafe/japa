@@ -43,6 +43,44 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+	// Auth
+	forgotPassword(email: string) {
+		return request<{ sent: boolean }>('/auth/forgot-password', {
+			method: 'POST',
+			body: JSON.stringify({ email })
+		});
+	},
+	resetPassword(token: string, password: string) {
+		return request<{ success: boolean }>('/auth/reset-password', {
+			method: 'POST',
+			body: JSON.stringify({ token, password })
+		});
+	},
+	verifyEmail(token: string) {
+		return request<{ verified: boolean }>('/auth/verify-email?token=' + encodeURIComponent(token));
+	},
+	resendVerification(email: string) {
+		return request<{ sent: boolean }>('/auth/resend-verification', {
+			method: 'POST',
+			body: JSON.stringify({ email })
+		});
+	},
+	setupTOTP() {
+		return request<{ secret: string; qr_uri: string }>('/auth/totp/setup', { method: 'POST' });
+	},
+	verifyTOTP(code: string) {
+		return request<{ verified: boolean; backup_codes: string[] }>('/auth/totp/verify', {
+			method: 'POST',
+			body: JSON.stringify({ code })
+		});
+	},
+	disableTOTP(password: string) {
+		return request<{ disabled: boolean }>('/auth/totp/disable', {
+			method: 'POST',
+			body: JSON.stringify({ password })
+		});
+	},
+
 	// Content
 	createContent(data: {
 		content_type: string;
@@ -441,6 +479,391 @@ export const api = {
 			method: 'PUT',
 			body: JSON.stringify(data)
 		});
+	},
+
+	// Reviews & Ratings
+	createReview(data: { entity_type: string; entity_id: string; rating: number; title?: string; body?: string }) {
+		return request<Review>('/reviews', { method: 'POST', body: JSON.stringify(data) });
+	},
+	listReviews(params: { entity_type: string; entity_id: string; limit?: number; offset?: number }) {
+		const p = new URLSearchParams({ entity_type: params.entity_type, entity_id: params.entity_id });
+		if (params.limit) p.set('limit', String(params.limit));
+		if (params.offset) p.set('offset', String(params.offset));
+		return request<{ reviews: Review[]; total: number }>('/reviews?' + p.toString());
+	},
+	getReviewAggregate(params: { entity_type: string; entity_id: string }) {
+		const p = new URLSearchParams(params);
+		return request<{ average: number; count: number; distribution: number[] }>('/reviews/aggregate?' + p.toString());
+	},
+	updateReview(id: string, data: { rating?: number; title?: string; body?: string }) {
+		return request<Review>('/reviews/' + id, { method: 'PATCH', body: JSON.stringify(data) });
+	},
+	deleteReview(id: string) {
+		return request<{ deleted: boolean }>('/reviews/' + id, { method: 'DELETE' });
+	},
+	flagReview(id: string, data: { reason: string }) {
+		return request<{ flagged: boolean }>('/reviews/' + id + '/flag', { method: 'POST', body: JSON.stringify(data) });
+	},
+
+	// Space membership
+	joinSpace(slug: string) {
+		return request<{ joined: boolean; member_count: number }>('/spaces/' + slug + '/join', { method: 'POST' });
+	},
+
+	// Followers / Following
+	getFollowers(userId: string, params?: { limit?: number; offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.offset) p.set('offset', String(params.offset));
+		const q = p.toString();
+		return request<{ followers: FollowUser[]; total: number }>('/users/' + userId + '/followers' + (q ? '?' + q : ''));
+	},
+	getFollowing(userId: string, params?: { limit?: number; offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.offset) p.set('offset', String(params.offset));
+		const q = p.toString();
+		return request<{ following: FollowUser[]; total: number }>('/users/' + userId + '/following' + (q ? '?' + q : ''));
+	},
+	checkMutualFollow(userId: string, otherUserId: string) {
+		return request<{ mutual: boolean }>('/users/' + userId + '/mutual/' + otherUserId);
+	},
+
+	// Content Reactions
+	addReaction(contentId: string, reactionTypeId: string) {
+		return request<{ id: string }>('/content/' + contentId + '/reactions', {
+			method: 'POST', body: JSON.stringify({ reaction_type_id: reactionTypeId })
+		});
+	},
+	removeReaction(contentId: string, reactionId: string) {
+		return request<{ removed: boolean }>('/content/' + contentId + '/reactions/' + reactionId, { method: 'DELETE' });
+	},
+	getReactions(contentId: string) {
+		return request<Array<{ id: string; reaction_type: { id: string; name: string; emoji: string }; user_id: string; created_at: string }>>('/content/' + contentId + '/reactions');
+	},
+	listReactionTypes() {
+		return request<Array<{ id: string; name: string; emoji: string }>>('/reaction-types');
+	},
+
+	// GDPR / Consent
+	getConsents() {
+		return request<Array<{ category: string; granted: boolean; granted_at?: string }>>('/consent');
+	},
+	updateConsent(data: { category: string; granted: boolean }) {
+		return request<{ category: string; granted: boolean }>('/consent', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	revokeConsent(consentType: string) {
+		return request<{ revoked: boolean }>('/consent/' + consentType, { method: 'DELETE' });
+	},
+	requestDataExport() {
+		return request<{ request_id: string }>('/account/export', { method: 'POST' });
+	},
+	requestAccountDeletion() {
+		return request<{ request_id: string }>('/account/delete', { method: 'POST' });
+	},
+
+	// Content Pinning
+	pinContent(id: string) {
+		return request<{ pinned: boolean }>('/content/' + id + '/pin', { method: 'POST' });
+	},
+	unpinContent(id: string) {
+		return request<{ pinned: boolean }>('/content/' + id + '/unpin', { method: 'POST' });
+	},
+
+	// Content Revisions
+	getRevisions(contentId: string) {
+		return request<Array<{ id: string; version: number; created_at: string; author_name: string; summary?: string }>>('/content/' + contentId + '/revisions');
+	},
+
+	// Payments
+	initiatePayment(data: {
+		amount: number;
+		currency: string;
+		provider: 'paystack' | 'stripe' | 'nowpayments' | 'credit';
+		purpose: string;
+		metadata?: Record<string, unknown>;
+	}) {
+		return request<{ payment_id: string; checkout_url?: string; reference: string; provider: string }>(
+			'/payments/initiate',
+			{ method: 'POST', body: JSON.stringify(data) }
+		);
+	},
+	getPayment(id: string) {
+		return request<PaymentDetail>('/payments/' + id);
+	},
+	requestRefund(id: string, data: { reason: string }) {
+		return request<{ refund_id: string; status: string }>(
+			'/payments/' + id + '/refund',
+			{ method: 'POST', body: JSON.stringify(data) }
+		);
+	},
+
+	// Subscriptions
+	createSubscription(data: {
+		plan_id: string;
+		discount_code?: string;
+		payment_provider: string;
+	}) {
+		return request<{ subscription_id: string; checkout_url?: string }>(
+			'/subscriptions',
+			{ method: 'POST', body: JSON.stringify(data) }
+		);
+	},
+
+	// Discount Codes
+	validateDiscountCode(code: string) {
+		return request<{
+			valid: boolean;
+			discount_type: string;
+			discount_value: number;
+			expires_at?: string;
+		}>('/discount-codes/validate', {
+			method: 'POST',
+			body: JSON.stringify({ code })
+		});
+	},
+
+	// Wallet
+	getWalletBalance() {
+		return request<{ points: number; credits: number }>('/wallet/balance');
+	},
+
+	// WebSocket
+	getWsTicket() {
+		return request<{ ticket: string }>('/auth/ws-ticket', { method: 'POST' });
+	},
+	getOnlineUsers() {
+		return request<{ users: Array<{ user_id: string; username: string; last_seen: string }> }>('/ws/online');
+	},
+
+	// Wallet
+	getWalletLedger(params?: { limit?: number }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		const q = p.toString();
+		return request<WalletLedgerEntry[]>('/wallet/ledger' + (q ? '?' + q : ''));
+	},
+	convertWallet(data: { points: number }) {
+		return request<{ points: number; credits: number }>('/wallet/convert', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
+	// Payments (list)
+	listPayments(params?: { limit?: number }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		const q = p.toString();
+		return request<PaymentListItem[]>('/payments' + (q ? '?' + q : ''));
+	},
+
+	// Subscriptions
+	getActiveSubscription() {
+		return request<SubscriptionDetail | null>('/subscriptions/active');
+	},
+	cancelSubscription(id: string) {
+		return request<{ success: boolean }>('/subscriptions/' + id + '/cancel', { method: 'PATCH' });
+	},
+
+	// Search
+	search(query: string, params?: { limit?: number }) {
+		const p = new URLSearchParams({ q: query });
+		if (params?.limit) p.set('limit', String(params.limit));
+		return request<SearchResult[]>('/search?' + p.toString());
+	},
+
+	// Users
+	getUser(username: string) {
+		return request<UserProfile>('/users/' + username);
+	},
+	listUsers(params?: { limit?: number; search?: string }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.search) p.set('search', params.search);
+		const q = p.toString();
+		return request<UserProfile[]>('/users' + (q ? '?' + q : ''));
+	},
+	getMe() {
+		return request<UserProfile>('/users/me');
+	},
+	updateMe(data: { display_name?: string; bio?: string; location?: string }) {
+		return request<UserProfile>('/users/me', {
+			method: 'PATCH',
+			body: JSON.stringify(data)
+		});
+	},
+
+	// Comparisons
+	getComparisonTypes(params?: { limit?: number }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		const q = p.toString();
+		return request<ComparisonType[]>('/comparison/types' + (q ? '?' + q : ''));
+	},
+
+	// Media
+	listMedia(params?: { limit?: number }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		const q = p.toString();
+		return request<MediaItem[]>('/media' + (q ? '?' + q : ''));
+	},
+	uploadMedia(file: File) {
+		const formData = new FormData();
+		formData.append('file', file);
+		const headers: Record<string, string> = {};
+		if (jwtToken) headers['Authorization'] = `Bearer ${jwtToken}`;
+		return fetch(`${API_BASE}/media/upload`, {
+			method: 'POST',
+			headers,
+			body: formData
+		}).then(async (res) => {
+			const body = (await res.json()) as ApiOk<MediaItem> | ApiErr;
+			if (!res.ok || 'error' in body) {
+				const err = 'error' in body ? body.error : { code: 'unknown', message: res.statusText };
+				throw new Error(`${err.code}: ${err.message}`);
+			}
+			return (body as ApiOk<MediaItem>).data;
+		});
+	},
+	deleteMedia(id: string) {
+		return request<{ deleted: boolean }>('/media/' + id, { method: 'DELETE' });
+	},
+
+	// Analytics
+	getDashboardAnalytics() {
+		return request<DashboardData>('/analytics/dashboard');
+	},
+	trackAnalyticsEvent(data: { event: string; data: Record<string, unknown>; timestamp: string }) {
+		return request<{ tracked: boolean }>('/analytics/events', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
+	// Auth (login/register)
+	login(email: string, password: string) {
+		return request<{ token: string; user: UserProfile }>('/auth/login', {
+			method: 'POST',
+			body: JSON.stringify({ email, password })
+		});
+	},
+	register(data: { username: string; email: string; password: string }) {
+		return request<{ success: boolean }>('/auth/register', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+
+	// Link Preview
+	getLinkPreview(url: string) {
+		return request<LinkPreviewData>('/link-preview?url=' + encodeURIComponent(url));
+	},
+
+	// Content Render
+	renderContent(html: string) {
+		return request<{ rendered: string }>('/content/render', {
+			method: 'POST',
+			body: JSON.stringify({ html })
+		});
+	},
+
+	// Ads
+	renderAd(slot: string) {
+		return request<AdRender>('/ads/render?slot=' + encodeURIComponent(slot));
+	},
+	trackAdEvent(adId: string, event: 'impression' | 'click') {
+		return request<{ tracked: boolean }>('/ads/events/ingest', {
+			method: 'POST',
+			body: JSON.stringify({ ad_id: adId, event })
+		});
+	},
+
+	// Feed
+	getFeedPrimary(params?: { limit?: number; cursor?: string }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.cursor) p.set('cursor', params.cursor);
+		const q = p.toString();
+		return request<{ items: FeedItem[]; has_more: boolean }>('/feed/primary' + (q ? '?' + q : ''));
+	},
+	getSpaceFeed(spaceId: string, params?: { limit?: number; offset?: number; cursor?: string }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.offset) p.set('offset', String(params.offset));
+		if (params?.cursor) p.set('cursor', params.cursor);
+		const q = p.toString();
+		return request<{ items: FeedItem[]; has_more: boolean }>('/feed/space/' + spaceId + (q ? '?' + q : ''));
+	},
+	getProfileFeed(userId: string, params?: { limit?: number; offset?: number; cursor?: string }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.offset) p.set('offset', String(params.offset));
+		if (params?.cursor) p.set('cursor', params.cursor);
+		const q = p.toString();
+		return request<{ items: FeedItem[]; has_more: boolean }>('/feed/profile/' + userId + (q ? '?' + q : ''));
+	},
+	getExploreFeed(params?: { limit?: number; offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.offset) p.set('offset', String(params.offset));
+		const q = p.toString();
+		return request<{ items: FeedItem[]; has_more: boolean }>('/feed/explore' + (q ? '?' + q : ''));
+	},
+
+	// Onboarding recommendations
+	getOnboardingRecommendations() {
+		return request<Array<{ id: string; name: string; slug: string; description: string }>>('/onboarding/recommendations');
+	},
+
+	// Comparison create + matrix
+	createComparison(data: { type_id: string; title: string; items: Array<{ name: string; values: Record<string, string> }> }) {
+		return request<{ id: string; slug: string }>('/comparison', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	getComparisonMatrix(id: string) {
+		return request<{ dimensions: Array<{ id: string; name: string }>; items: Array<{ id: string; name: string; values: Record<string, string> }> }>('/comparison/' + id + '/matrix');
+	},
+
+	// Space creation
+	createSpace(data: { name: string; slug: string; description: string; space_type_id?: string; is_public?: boolean }) {
+		return request<{ id: string; slug: string }>('/spaces', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+
+	// Notification preferences
+	getNotificationPreferences() {
+		return request<Array<{ type: string; email: boolean; push: boolean; in_app: boolean }>>('/notification-preferences');
+	},
+	updateNotificationPreference(type: string, data: { email?: boolean; push?: boolean; in_app?: boolean }) {
+		return request<{ type: string }>('/notification-preferences/' + type, {
+			method: 'PUT', body: JSON.stringify(data)
+		});
+	},
+	getNotificationTypes() {
+		return request<Array<{ key: string; label: string; description: string }>>('/notification-types');
+	},
+
+	// Webhooks
+	listWebhooks() {
+		return request<Webhook[]>('/webhooks');
+	},
+	createWebhook(data: { url: string; events: string[]; secret?: string }) {
+		return request<Webhook>('/webhooks', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+	deleteWebhook(id: string) {
+		return request<{ deleted: boolean }>('/webhooks/' + id, { method: 'DELETE' });
+	},
+	getWebhookDeliveries(id: string) {
+		return request<WebhookDelivery[]>('/webhooks/' + id + '/deliveries');
 	}
 };
 
@@ -593,4 +1016,213 @@ export interface DeveloperApiKey {
 	status: string;
 	last_used_at?: string;
 	created_at: string;
+}
+
+// Review types
+export interface Review {
+	id: string;
+	entity_type: string;
+	entity_id: string;
+	author_id: string;
+	author_name: string;
+	author_avatar?: string;
+	rating: number;
+	title?: string;
+	body?: string;
+	flagged: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+// Follow types
+export interface FollowUser {
+	id: string;
+	username: string;
+	display_name: string;
+	avatar_url?: string;
+	mutual?: boolean;
+	following?: boolean;
+}
+
+// Content Reaction types
+export interface ReactionType {
+	id: string;
+	name: string;
+	emoji: string;
+}
+
+export interface ContentReaction {
+	id: string;
+	reaction_type: ReactionType;
+	user_id: string;
+	created_at: string;
+}
+
+// Consent types
+export interface ConsentCategory {
+	category: string;
+	granted: boolean;
+	granted_at?: string;
+}
+
+// Content Revision types
+export interface ContentRevision {
+	id: string;
+	version: number;
+	created_at: string;
+	author_name: string;
+	summary?: string;
+}
+
+// Payment types
+export interface PaymentDetail {
+	id: string;
+	amount: number;
+	currency: string;
+	status: string;
+	provider: string;
+	reference: string;
+	purpose: string;
+	created_at: string;
+	updated_at: string;
+	refundable: boolean;
+	refunded_at?: string;
+}
+
+export interface PaymentListItem {
+	id: string;
+	amount: number;
+	currency: string;
+	status: string;
+	description: string;
+	provider: string;
+	created_at: string;
+	refundable?: boolean;
+	refunded_at?: string;
+}
+
+export interface SubscriptionDetail {
+	id: string;
+	plan: string;
+	status: string;
+	current_period_end: string;
+	cancel_at: string | null;
+}
+
+// Wallet types
+export interface WalletLedgerEntry {
+	id: string;
+	amount: number;
+	balance_after: number;
+	type: string;
+	description: string;
+	created_at: string;
+}
+
+// Search types
+export interface SearchResult {
+	id: string;
+	title: string;
+	type: string;
+	excerpt: string;
+}
+
+// User types
+export interface UserProfile {
+	id: string;
+	username: string;
+	display_name: string;
+	avatar_url: string | null;
+	bio: string | null;
+	location: string | null;
+	following?: boolean;
+	follower_count?: number;
+	following_count?: number;
+	content_count?: number;
+}
+
+// Comparison types
+export interface ComparisonType {
+	id: string;
+	name: string;
+	slug: string;
+	description: string;
+	comparison_count: number;
+}
+
+// Media types
+export interface MediaItem {
+	id: string;
+	filename: string;
+	url: string;
+	mime_type: string;
+	file_size: number;
+	alt_text: string;
+	created_at: string;
+}
+
+// Analytics types
+export interface DashboardData {
+	top_content: Array<{
+		content_id: string;
+		total_views: number;
+		total_reactions: number;
+		total_comments: number;
+		total_unique_viewers: number;
+	}>;
+	user_engagement: Record<string, unknown>[];
+	content_over_time: Record<string, unknown>[];
+}
+
+// Link Preview types
+export interface LinkPreviewData {
+	title: string;
+	description: string;
+	image_url: string;
+	favicon_url: string;
+	site_name: string;
+}
+
+// Ad types
+export interface AdRender {
+	id: string;
+	title: string;
+	image_url: string;
+	click_url: string;
+	provider: string;
+}
+
+// Feed types
+export interface FeedItem {
+	id: string;
+	title: string;
+	slug?: string;
+	excerpt?: string;
+	author_id: string;
+	author_name: string;
+	author_avatar?: string;
+	space_name?: string;
+	content_type: string;
+	reaction_count: number;
+	comment_count: number;
+	created_at: string;
+}
+
+// Webhook types
+export interface Webhook {
+	id: string;
+	url: string;
+	events: string[];
+	secret?: string;
+	status: string;
+	created_at: string;
+}
+
+export interface WebhookDelivery {
+	id: string;
+	webhook_id: string;
+	event_type: string;
+	status_code: number;
+	delivered_at: string;
+	response_body?: string;
 }

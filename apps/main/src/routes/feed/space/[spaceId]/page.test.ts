@@ -18,6 +18,12 @@ beforeEach(() => {
 });
 
 const defaultData = {
+	user: null,
+	flags: {},
+	notificationCount: 0,
+	token: null,
+	locale: 'en',
+	translations: {},
 	space: { id: '1', name: 'Test Space', slug: 'test-space', description: 'A test space' },
 	feed: [],
 	hasMore: false

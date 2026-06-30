@@ -25,12 +25,18 @@ import (
 
 // Handlers holds dependencies for analytics HTTP handlers.
 type Handlers struct {
-	Service *Service
+	Service      *Service
+	CacheFlusher *CacheFlusher
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// SetCacheFlusher attaches a CacheFlusher for the admin cache flush endpoint.
+func (h *Handlers) SetCacheFlusher(flusher *CacheFlusher) {
+	h.CacheFlusher = flusher
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +324,43 @@ func (h *Handlers) RunSecurityScan(w http.ResponseWriter, r *http.Request) {
 
 	_ = tenantID
 	writeJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "scan_queued"}})
+}
+
+// HandleCacheFlush handles POST /api/v1/admin/analytics/cache/flush.
+// Accepts an optional {"scope": "..."} body to limit which cache partition
+// is flushed. Defaults to FlushAll when scope is empty or missing.
+func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
+	if h.CacheFlusher == nil {
+		writeError(w, http.StatusServiceUnavailable, "cache_unavailable", "Cache flusher not configured")
+		return
+	}
+
+	var input struct {
+		Scope string `json:"scope"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	scope := FlushScope(input.Scope)
+	if scope == "" {
+		scope = FlushAll
+	}
+
+	deleted, err := h.CacheFlusher.FlushCache(r.Context(), scope)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "flush_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"status":  "flushed",
+			"scope":   scope,
+			"deleted": deleted,
+		},
+	})
 }
 
 // ---------------------------------------------------------------------------

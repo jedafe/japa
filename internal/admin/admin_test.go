@@ -362,10 +362,10 @@ func TestListModeration_TenantUnavailable(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ListModeration — stub returns 200
+// ListModeration — returns 503 when DB is unavailable
 // ---------------------------------------------------------------------------
 
-func TestListModeration_StubOK(t *testing.T) {
+func TestListModeration_DBUnavailable(t *testing.T) {
 	h := newHandlers()
 	req := httptest.NewRequest(http.MethodGet, "/admin/moderation", nil)
 	req = withAuthAndTenant(req, t)
@@ -373,29 +373,9 @@ func TestListModeration_StubOK(t *testing.T) {
 
 	h.ListModeration(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
-	}
-	var body map[string]any
-	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal body: %v", err)
-	}
-	data, ok := body["data"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected data object, got %v", body)
-	}
-	items, ok := data["items"].([]any)
-	if !ok {
-		t.Fatalf("expected items array, got %v", data)
-	}
-	if len(items) != 0 {
-		t.Errorf("expected empty items array, got %d", len(items))
-	}
-	if data["page"] != float64(0) {
-		t.Errorf("page = %v, want 0", data["page"])
-	}
-	if data["total_pages"] != float64(0) {
-		t.Errorf("total_pages = %v, want 0", data["total_pages"])
+	// With nil DB, the handler returns 503.
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
 	}
 }
 
@@ -433,27 +413,20 @@ func TestBulkModeration_TenantUnavailable(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// BulkModeration — stub returns 200
+// BulkModeration — empty actions returns 400
 // ---------------------------------------------------------------------------
 
-func TestBulkModeration_StubOK(t *testing.T) {
+func TestBulkModeration_EmptyActions(t *testing.T) {
 	h := newHandlers()
-	req := httptest.NewRequest(http.MethodPost, "/admin/moderation/bulk", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/moderation/bulk",
+		strings.NewReader(`{"actions":[]}`))
 	req = withAuthAndTenant(req, t)
 	rr := httptest.NewRecorder()
 
 	h.BulkModeration(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
-	}
-	var body map[string]any
-	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal body: %v", err)
-	}
-	data := body["data"].(map[string]any)
-	if data["processed"] != float64(0) {
-		t.Errorf("processed = %v, want 0", data["processed"])
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
 }
 
@@ -491,27 +464,20 @@ func TestAppealModeration_TenantUnavailable(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AppealModeration — stub returns 200
+// AppealModeration — missing ID returns 400
 // ---------------------------------------------------------------------------
 
-func TestAppealModeration_StubOK(t *testing.T) {
+func TestAppealModeration_MissingID(t *testing.T) {
 	h := newHandlers()
-	req := httptest.NewRequest(http.MethodPost, "/admin/moderation/abc123/appeal", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/moderation/abc123/appeal",
+		strings.NewReader(`{"type":"review"}`))
 	req = withAuthAndTenant(req, t)
 	rr := httptest.NewRecorder()
 
 	h.AppealModeration(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
-	}
-	var body map[string]any
-	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal body: %v", err)
-	}
-	data := body["data"].(map[string]any)
-	if data["status"] != "submitted" {
-		t.Errorf("status = %v, want submitted", data["status"])
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
 }
 
@@ -575,36 +541,25 @@ func TestBroadcast_InvalidJSON(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Broadcast — valid stub returns 200
+// Broadcast — missing subject returns 400
 // ---------------------------------------------------------------------------
 
-func TestBroadcast_StubOK(t *testing.T) {
+func TestBroadcast_MissingSubject(t *testing.T) {
 	h := newHandlers()
-	payload := `{"subject":"Update","body":"New features available!","target":"all","schedule":"now"}`
-	req := httptest.NewRequest(http.MethodPost, "/admin/broadcast", strings.NewReader(payload))
+	req := httptest.NewRequest(http.MethodPost, "/admin/broadcast",
+		strings.NewReader(`{"body":"hello"}`))
 	req = withAuthAndTenant(req, t)
 	rr := httptest.NewRecorder()
 
 	h.Broadcast(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
-	}
-	var body map[string]any
-	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal body: %v", err)
-	}
-	data := body["data"].(map[string]any)
-	if data["sent"] != float64(0) {
-		t.Errorf("sent = %v, want 0", data["sent"])
-	}
-	if data["scheduled"] != false {
-		t.Errorf("scheduled = %v, want false", data["scheduled"])
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Broadcast — empty body
+// Broadcast — empty body returns 400 (missing required fields)
 // ---------------------------------------------------------------------------
 
 func TestBroadcast_EmptyBody(t *testing.T) {
@@ -615,9 +570,9 @@ func TestBroadcast_EmptyBody(t *testing.T) {
 
 	h.Broadcast(rr, req)
 
-	// Empty body is valid JSON with zero-value fields → stub 200
-	if rr.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
+	// Empty body is valid JSON but missing required subject and body → 400
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
 }
 
@@ -680,12 +635,14 @@ func TestDefaultSettingsGeneralKeys(t *testing.T) {
 
 func TestModerationItemJSON(t *testing.T) {
 	item := ModerationItem{
-		ID:       "abc-123",
-		Type:     "content",
-		Status:   "pending",
-		Content:  "Some content",
-		Reporter: "user-1",
-		Created:  "2026-01-01T00:00:00Z",
+		ID:        "abc-123",
+		Type:      "review",
+		Status:    "flagged",
+		Content:   "Some content",
+		Reporter:  "system",
+		AuthorID:  "user-1",
+		Created:   "2026-01-01T00:00:00Z",
+		EntityRef: "review:abc-123",
 	}
 	data, err := json.Marshal(item)
 	if err != nil {
@@ -700,6 +657,9 @@ func TestModerationItemJSON(t *testing.T) {
 	}
 	if got.Status != item.Status {
 		t.Errorf("Status = %q, want %q", got.Status, item.Status)
+	}
+	if got.EntityRef != item.EntityRef {
+		t.Errorf("EntityRef = %q, want %q", got.EntityRef, item.EntityRef)
 	}
 }
 

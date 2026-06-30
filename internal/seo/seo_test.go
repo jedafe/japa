@@ -284,8 +284,8 @@ func TestHreflangAlternate_CustomLanguages(t *testing.T) {
 // --- OG Image Handler tests ---
 
 func TestServeOGImage(t *testing.T) {
-	h := NewHandlers()
-	req := httptest.NewRequest(http.MethodGet, "/og-image?url=x&title=Test", nil)
+	h := NewOGImageHandler(nil)
+	req := httptest.NewRequest(http.MethodGet, "/og/00000000-0000-0000-0000-000000000001.png", nil)
 	rec := httptest.NewRecorder()
 
 	h.ServeOGImage(rec, req)
@@ -306,9 +306,9 @@ func TestServeOGImage(t *testing.T) {
 	}
 }
 
-func TestNewHandlers(t *testing.T) {
-	h := NewHandlers()
+func TestNewOGImageHandler(t *testing.T) {
+	h := NewOGImageHandler(nil)
 	if h == nil {
-		t.Fatal("NewHandlers should return non-nil")
+		t.Fatal("NewOGImageHandler should return non-nil")
 	}
 }

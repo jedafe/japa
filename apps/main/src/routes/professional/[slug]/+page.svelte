@@ -1,13 +1,18 @@
 <script lang="ts">
 	import { ArrowLeft, Pencil, Briefcase, MapPin, FileText, Shield, Plus, Loader2, Trash2 } from 'lucide-svelte';
-	import { api, getToken } from '$lib/api';
+	import { api } from '$lib/api';
+	import { isFeatureEnabled } from '$lib/stores/features.svelte';
+	import Reviews from '$lib/components/Reviews.svelte';
 
 	let { data } = $props();
 	let profile = $derived(data.profile);
 	let currentUser = $state<string | null>(null);
 
+	// svelte-ignore state_referenced_locally
 	let relocations = $state(profile.relocations || []);
+	// svelte-ignore state_referenced_locally
 	let documents = $state(profile.documents || []);
+	// svelte-ignore state_referenced_locally
 	let verifiers = $state(profile.verifiers || []);
 
 	let showRelocationForm = $state(false);
@@ -29,13 +34,6 @@
 		{ value: 'relocated', label: 'Relocated' }
 	];
 
-	function authHeaders(): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json' };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
-
 	const isOwner = $derived(currentUser === profile.author_user_id);
 
 	async function addRelocation(e: Event) {
@@ -43,31 +41,22 @@
 		formLoading = true;
 		formError = '';
 		try {
-			const body: Record<string, unknown> = {
+			const reloData: { country: string; status: string; city?: string; year?: number } = {
 				country: relocationCountry,
 				status: relocationStatus
 			};
-			if (relocationCity.trim()) body.city = relocationCity.trim();
-			if (relocationYear.trim()) body.year = parseInt(relocationYear, 10);
+			if (relocationCity.trim()) reloData.city = relocationCity.trim();
+			if (relocationYear.trim()) reloData.year = parseInt(relocationYear, 10);
 
-			const res = await fetch(`/api/v1/professional-profiles/${profile.id}/relocations`, {
-				method: 'POST',
-				headers: authHeaders(),
-				body: JSON.stringify(body)
-			});
-			const json = await res.json();
-			if (!res.ok || json.error) {
-				formError = json.error?.message || 'Failed to add relocation.';
-				return;
-			}
-			relocations = [...relocations, json.data];
+			const result = await api.addRelocation(profile.id, reloData);
+			relocations = [...relocations, result];
 			showRelocationForm = false;
 			relocationCountry = '';
 			relocationCity = '';
 			relocationStatus = 'planning';
 			relocationYear = '';
-		} catch {
-			formError = 'Network error. Please try again.';
+		} catch (err) {
+			formError = err instanceof Error ? err.message : 'Network error. Please try again.';
 		} finally {
 			formLoading = false;
 		}
@@ -78,29 +67,20 @@
 		formLoading = true;
 		formError = '';
 		try {
-			const body: Record<string, unknown> = {
+			const docData: { document_type: string; title: string; description?: string } = {
 				document_type: docType,
 				title: docTitle
 			};
-			if (docDescription.trim()) body.description = docDescription.trim();
+			if (docDescription.trim()) docData.description = docDescription.trim();
 
-			const res = await fetch(`/api/v1/professional-profiles/${profile.id}/documents`, {
-				method: 'POST',
-				headers: authHeaders(),
-				body: JSON.stringify(body)
-			});
-			const json = await res.json();
-			if (!res.ok || json.error) {
-				formError = json.error?.message || 'Failed to add document.';
-				return;
-			}
-			documents = [...documents, json.data];
+			const result = await api.addDocument(profile.id, docData);
+			documents = [...documents, result];
 			showDocumentForm = false;
 			docType = '';
 			docTitle = '';
 			docDescription = '';
-		} catch {
-			formError = 'Network error. Please try again.';
+		} catch (err) {
+			formError = err instanceof Error ? err.message : 'Network error. Please try again.';
 		} finally {
 			formLoading = false;
 		}
@@ -112,7 +92,16 @@
 	<meta name="description" content={profile.headline} />
 </svelte:head>
 
-<main class="mx-auto max-w-3xl px-4 py-8">
+{#if !isFeatureEnabled('feature.professional')}
+	<main class="mx-auto max-w-2xl px-6 py-16">
+		<div class="text-center">
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Professional Profiles is not available</h1>
+			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+		</div>
+	</main>
+{:else}
+	<main class="mx-auto max-w-3xl px-4 py-8">
 	<a
 		href="/professional"
 		class="mb-6 inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
@@ -455,4 +444,7 @@
 			{/if}
 		</section>
 	{/if}
-</main>
+
+	<Reviews entityType="professional_profile" entityId={profile.id} />
+	</main>
+{/if}

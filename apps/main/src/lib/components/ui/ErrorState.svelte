@@ -12,8 +12,8 @@
 		onretry?: () => void;
 	} = $props();
 
-	const displayTitle = $derived(title ?? $t('error.title'));
-	const displayMessage = $derived(message ?? $t('error.message'));
+	const displayTitle = $derived(title ?? t('error.title'));
+	const displayMessage = $derived(message ?? t('error.message'));
 </script>
 
 <div class="flex flex-col items-center justify-center py-16 text-center">
@@ -26,7 +26,7 @@
 			style="background-color: var(--color-primary)"
 			onclick={onretry}
 		>
-			{$t('error.try_again')}
+			{t('error.try_again')}
 		</button>
 	{/if}
 </div>

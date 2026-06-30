@@ -10,7 +10,15 @@ vi.mock('$app/navigation', () => ({
 	goto: vi.fn()
 }));
 
-const defaultData = { onboarding: { current_step: 1, step_data: {} } };
+const defaultData = {
+	user: null,
+	flags: {},
+	notificationCount: 0,
+	token: null,
+	locale: 'en',
+	translations: {},
+	onboarding: { current_step: 1, completed: false, step_data: {}, tour_dismissed: false }
+};
 
 describe('Onboarding +page.svelte', () => {
 	it('shows the Skip for now button', () => {

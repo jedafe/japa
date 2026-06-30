@@ -11,13 +11,15 @@
 		Info
 	} from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
 	import { formatTimestamp } from '$lib/utils/timezone';
 	import { onMount } from 'svelte';
 
 	let { data } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let consents = $state(data.consents ?? []);
+	// svelte-ignore state_referenced_locally
 	let isAuthenticated = $state(data.isAuthenticated);
 
 	let exporting = $state(false);
@@ -26,13 +28,6 @@
 	let togglingConsent = $state<string | null>(null);
 	let errorMessage = $state('');
 	let successMessage = $state('');
-
-	function authHeaders(extra?: Record<string, string>): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json', ...extra };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
 
 	const consentLabels: Record<string, string> = {
 		analytics: 'Analytics & Performance',
@@ -58,18 +53,12 @@
 		errorMessage = '';
 		successMessage = '';
 		try {
-		const consentType = consents.find((c) => c.id === consentId)?.consent_type ?? consentId;
-		const method = currentGranted ? 'DELETE' : 'POST';
-		const url = currentGranted
-			? `/api/v1/consent/${consentType}`
-			: '/api/v1/consent';
-		const body = currentGranted ? undefined : JSON.stringify({ consent_type: consentType });
-
-			await fetch(url, {
-				method,
-				headers: authHeaders(),
-				body
-			});
+			const consentType = consents.find((c) => c.id === consentId)?.consent_type ?? consentId;
+			if (currentGranted) {
+				await api.revokeConsent(consentType);
+			} else {
+				await api.updateConsent({ category: consentType, granted: true });
+			}
 
 			consents = consents.map((c) =>
 				c.id === consentId ? { ...c, granted: !currentGranted } : c
@@ -87,10 +76,7 @@
 		errorMessage = '';
 		successMessage = '';
 		try {
-		await fetch('/api/v1/account/export', {
-			method: 'POST',
-			headers: authHeaders()
-		});
+			await api.requestDataExport();
 			successMessage = 'Data export request submitted. You will receive an email when ready.';
 		} catch {
 			errorMessage = 'Failed to request data export. Please try again.';
@@ -103,10 +89,7 @@
 		deactivating = true;
 		errorMessage = '';
 		try {
-		await fetch('/api/v1/account/delete', {
-			method: 'POST',
-			headers: authHeaders()
-		});
+			await api.requestAccountDeletion();
 			successMessage = 'Account deactivation request submitted. Your account will be reviewed.';
 			showDeactivateConfirm = false;
 		} catch {

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
+
 	interface Props {
 		mediaId?: string;
 		url?: string;
@@ -82,7 +84,7 @@
 		</a>
 	{:else}
 		<div class="placeholder">
-			<span>No media provided</span>
+			<span>{t('editor.no_media')}</span>
 		</div>
 	{/if}
 </div>

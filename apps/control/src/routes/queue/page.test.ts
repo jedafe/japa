@@ -9,11 +9,17 @@ vi.mock('$lib/api', () => ({
 describe('Queue +page.svelte', () => {
 	it('renders the queue monitor heading', () => {
 		render(Page);
-		expect(screen.getByText('Queue Monitor')).toBeTruthy();
+		// In test env, i18n returns the key since translations are not loaded
+		expect(screen.getByText('queue.title')).toBeTruthy();
 	});
 
-	it('shows the not-implemented fallback', () => {
+	it('shows the auto-refresh indicator', () => {
 		render(Page);
-		expect(screen.getByText('Queue monitoring API is not implemented yet.')).toBeTruthy();
+		expect(screen.getByText('queue.auto_refresh')).toBeTruthy();
+	});
+
+	it('shows the refresh button', () => {
+		render(Page);
+		expect(screen.getByText('common.refresh')).toBeTruthy();
 	});
 });

@@ -4,7 +4,9 @@
 	import { UniversityHeader, UniversityTabs, UniversitySidebar } from '$lib/universities';
 	import { ErrorState } from '$lib/components/ui';
 	import { UserPlus, UserMinus } from 'lucide-svelte';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
+	import Reviews from '$lib/components/Reviews.svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -36,22 +38,11 @@
 		isLoading = true;
 		errorMessage = '';
 		try {
-			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-			const token = getToken();
-			if (token) headers['Authorization'] = `Bearer ${token}`;
-			const response = await fetch('/api/v1/follows', {
-				method: 'POST',
-				headers,
-				body: JSON.stringify({
-					entity_type: 'space',
-					entity_id: data.university.id
-				})
+			await api.toggleFollow({
+				entity_type: 'space',
+				entity_id: data.university.id
 			});
-			if (response.ok) {
-				isFollowing = !isFollowing;
-			} else {
-				errorMessage = 'Failed to update follow status. Please try again.';
-			}
+			isFollowing = !isFollowing;
 		} catch {
 			errorMessage = 'Failed to update follow status. Please try again.';
 		} finally {
@@ -75,7 +66,7 @@
 		university={{
 			...data.university,
 			rating: data.reviewAggregate?.average_rating,
-			reviewCount: data.reviewAggregate?.review_count
+			review_count: data.reviewAggregate?.review_count
 		}}
 	/>
 
@@ -111,21 +102,19 @@
 						<p>{data.university.description}</p>
 					{:else}
 						<p style="color: var(--color-muted)">
-							No description available for this university.
+							{t('university.no_description')}
 						</p>
 					{/if}
 				</div>
 			{:else if activeTab === 'reviews'}
-				<div class="text-center py-8" style="color: var(--color-muted)">
-					<p>Reviews section coming soon.</p>
-				</div>
+				<Reviews entityType="university" entityId={data.university.id} />
 			{:else if activeTab === 'compare'}
 				<div class="text-center py-8" style="color: var(--color-muted)">
-					<p>Select universities to compare.</p>
+					<p>{t('university.compare_select')}</p>
 				</div>
 			{:else}
 				<div class="text-center py-8" style="color: var(--color-muted)">
-					<p>This section is coming soon.</p>
+					<p>{t('university.coming_soon')}</p>
 				</div>
 			{/if}
 		</div>

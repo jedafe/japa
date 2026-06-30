@@ -2,8 +2,12 @@
 	import { page } from '$app/state';
 	import { ArrowLeft, Send, Loader2 } from 'lucide-svelte';
 	import { api, type DMMessage, type DMConversation } from '$lib/api';
+	import { isFeatureEnabled } from '$lib/stores/features.svelte';
 	import { formatTimestampWithTime } from '$lib/utils/timezone';
 	import { onMount, tick } from 'svelte';
+	import { wsClient } from '$lib/websocket';
+	import TypingIndicator from '$lib/components/TypingIndicator.svelte';
+	import autoAnimate from '@formkit/auto-animate';
 
 	let messages = $state<DMMessage[]>([]);
 	let loading = $state(true);
@@ -13,7 +17,12 @@
 	let sending = $state(false);
 	let error = $state('');
 	let messageContainer = $state<HTMLDivElement | null>(null);
+	let messagesList: HTMLDivElement | undefined = $state();
 	let otherUserName = $state('');
+	let typingUser = $state<string | null>(null);
+	let typingTimeout: ReturnType<typeof setTimeout> | null = null;
+	let typingSendTimer: ReturnType<typeof setTimeout> | null = null;
+	let isTyping = $state(false);
 
 	const channelId = $derived(page.params.channelId);
 
@@ -68,6 +77,7 @@
 			// Reload messages to get the new one with proper sender info
 			await loadMessages();
 			newMessage = '';
+			stopTyping();
 		} catch {
 			error = 'Failed to send message.';
 		} finally {
@@ -82,6 +92,31 @@
 		}
 	}
 
+	function handleInput() {
+		// Send typing event (debounced)
+		if (!typingSendTimer) {
+			wsClient.send('typing', { conversation_id: channelId });
+			isTyping = true;
+		}
+
+		// Clear existing timer
+		if (typingSendTimer) clearTimeout(typingSendTimer);
+
+		// Stop sending typing events after 3 seconds of no input
+		typingSendTimer = setTimeout(() => {
+			isTyping = false;
+			typingSendTimer = null;
+		}, 3000);
+	}
+
+	function stopTyping() {
+		isTyping = false;
+		if (typingSendTimer) {
+			clearTimeout(typingSendTimer);
+			typingSendTimer = null;
+		}
+	}
+
 	function formatTime(dateStr: string): string {
 		return new Date(dateStr).toLocaleTimeString('en-US', {
 			hour: '2-digit',
@@ -93,14 +128,80 @@
 		return formatTimestampWithTime(dateStr);
 	}
 
-	onMount(() => loadMessages());
+	onMount(() => {
+		loadMessages();
+	});
+
+	$effect(() => {
+		if (!channelId) return;
+		// Reset state when channel changes
+		messages = [];
+		typingUser = null;
+		loadMessages();
+	});
+
+	$effect(() => {
+		if (messagesList) {
+			autoAnimate(messagesList);
+		}
+	});
+
+	// Listen for incoming DM messages
+	$effect(() => {
+		if (!channelId) return;
+		const unsub = wsClient.on('dm_message', (message: { conversation_id?: string; id?: string; sender_id?: string; sender_display_name?: string; sender_username?: string; body?: string; created_at?: string }) => {
+			if (message.conversation_id !== channelId) return;
+			// Don't add if we already have this message
+			const exists = messages.some((m) => m.id === message.id);
+			if (exists || !message.id) return;
+
+			messages = [...messages, {
+				id: message.id,
+				sender_id: message.sender_id ?? '',
+				sender_username: message.sender_username ?? '',
+				sender_display_name: message.sender_display_name ?? '',
+				body: message.body ?? '',
+				created_at: message.created_at ?? new Date().toISOString(),
+				read_at: undefined
+			}];
+			tick().then(() => scrollToBottom());
+		});
+		return unsub;
+	});
+
+	// Listen for typing events
+	$effect(() => {
+		if (!channelId) return;
+		const unsub = wsClient.on('typing', (data: { conversation_id?: string; username?: string }) => {
+			if (data.conversation_id !== channelId) return;
+			typingUser = data.username ?? otherUserName;
+
+			// Clear existing timeout
+			if (typingTimeout) clearTimeout(typingTimeout);
+
+			// Hide typing indicator after 3 seconds
+			typingTimeout = setTimeout(() => {
+				typingUser = null;
+			}, 3000);
+		});
+		return unsub;
+	});
 </script>
 
 <svelte:head>
 	<title>{otherUserName || 'Chat'} | Messages | JapaConnect</title>
 </svelte:head>
 
-<div class="flex h-screen flex-col">
+{#if !isFeatureEnabled('feature.dm')}
+	<main class="mx-auto max-w-2xl px-6 py-16">
+		<div class="text-center">
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Messages is not available</h1>
+			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+		</div>
+	</main>
+{:else}
+	<div class="flex h-screen flex-col">
 	<!-- Header -->
 	<header
 		class="flex items-center gap-3 border-b px-4 py-3"
@@ -155,7 +256,7 @@
 				</button>
 			{/if}
 
-			<div class="space-y-3">
+			<div bind:this={messagesList} class="space-y-3">
 				{#each messages as msg (msg.id)}
 					<div class="flex justify-start">
 						<div
@@ -172,6 +273,13 @@
 				{/each}
 			</div>
 		{/if}
+
+		<!-- Typing indicator -->
+		{#if typingUser}
+			<div class="mt-3">
+				<TypingIndicator username={typingUser} />
+			</div>
+		{/if}
 	</div>
 
 	<!-- Input -->
@@ -184,6 +292,7 @@
 				placeholder="Type a message..."
 				bind:value={newMessage}
 				onkeydown={handleKeydown}
+				oninput={handleInput}
 				rows="1"
 				class="flex-1 resize-none rounded-xl border px-4 py-2.5 text-sm outline-none transition-colors focus:ring-2"
 				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
@@ -202,4 +311,5 @@
 			</button>
 		</form>
 	</div>
-</div>
+	</div>
+{/if}

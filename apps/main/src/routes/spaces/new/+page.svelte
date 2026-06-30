@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Loader2, Plus } from 'lucide-svelte';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
 
 	let name = $state('');
 	let description = $state('');
@@ -16,34 +16,22 @@
 		{ value: 'university', label: 'University' }
 	];
 
-	function authHeaders(): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json' };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
-
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		error = '';
 		loading = true;
 
 		try {
-			const res = await fetch('/api/v1/spaces', {
-				method: 'POST',
-				headers: authHeaders(),
-				body: JSON.stringify({ name, description, space_type: spaceType })
+			const result = await api.createSpace({
+				name,
+				slug: name.toLowerCase().replace(/\s+/g, '-'),
+				description,
+				space_type_id: spaceType
 			});
 
-			const body = await res.json();
-			if (!res.ok || body.error) {
-				error = body.error?.message || 'Failed to create space.';
-				return;
-			}
-
-			goto(`/spaces/${body.data.slug}`);
-		} catch {
-			error = 'Network error. Please try again.';
+			goto(`/spaces/${result.slug}`);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Network error. Please try again.';
 		} finally {
 			loading = false;
 		}

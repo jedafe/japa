@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { ArrowLeft, ArrowRight, Tag } from 'lucide-svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let { stepData, onupdate, onnext, onback, submitting } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let selectedInterests = $state<string[]>((stepData.interests as string[]) || []);
 	const minInterests = 3;
 
@@ -43,8 +45,8 @@
 			<Tag size={20} />
 		</div>
 		<div>
-			<h2 class="text-xl font-semibold">What are you interested in?</h2>
-			<p class="text-sm" style="color: var(--color-muted)">Select at least {minInterests} topics</p>
+			<h2 class="text-xl font-semibold">{t('onboarding.interests')}</h2>
+			<p class="text-sm" style="color: var(--color-muted)">{t('onboarding.interests_subtitle').replace('{count}', String(minInterests))}</p>
 		</div>
 	</div>
 
@@ -63,7 +65,7 @@
 	</div>
 
 	<p class="text-xs" style="color: var(--color-muted)">
-		{selectedInterests.length} of {minInterests} minimum selected
+		{t('onboarding.selected_count').replace('{selected}', String(selectedInterests.length)).replace('{min}', String(minInterests))}
 	</p>
 
 	<div class="flex gap-3 mt-6">
@@ -73,7 +75,7 @@
 			onclick={onback}
 		>
 			<ArrowLeft size={16} />
-			Back
+			{t('onboarding.back')}
 		</button>
 		<button
 			class="flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
@@ -81,7 +83,7 @@
 			onclick={handleNext}
 			disabled={!canProceed || submitting}
 		>
-			Continue
+			{t('onboarding.continue')}
 			<ArrowRight size={16} />
 		</button>
 	</div>

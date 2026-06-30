@@ -6,18 +6,18 @@
 	let { notificationCount = 0 }: { notificationCount: number } = $props();
 
 	const tabs = $derived([
-		{ href: '/', icon: Home, label: $t('nav.home') },
-		{ href: '/spaces', icon: Grid3X3, label: $t('nav.spaces') },
-		{ href: '/search', icon: Search, label: $t('nav.search') },
-		{ href: '/notifications', icon: Bell, label: $t('nav.notifications'), badge: true },
-		{ href: '/profile', icon: User, label: $t('nav.profile') }
+		{ href: '/', icon: Home, label: t('nav.home') },
+		{ href: '/spaces', icon: Grid3X3, label: t('nav.spaces') },
+		{ href: '/search', icon: Search, label: t('nav.search') },
+		{ href: '/notifications', icon: Bell, label: t('nav.notifications'), badge: true },
+		{ href: '/profile', icon: User, label: t('nav.profile') }
 	]);
 </script>
 
 <nav
 	class="fixed bottom-0 left-0 right-0 z-40 border-t md:hidden"
 	style="background-color: var(--color-background); border-color: var(--color-border)"
-	aria-label={$t('nav.mobile_navigation')}
+	aria-label={t('nav.mobile_navigation')}
 >
 	<div class="flex items-center justify-around py-2">
 		{#each tabs as tab}

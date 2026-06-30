@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Loader2, Plus, X } from 'lucide-svelte';
-	import { api, getToken } from '$lib/api';
+	import { api } from '$lib/api';
 
 	let name = $state('');
 	let headline = $state('');
@@ -30,34 +30,22 @@
 		}
 	}
 
-	function authHeaders(): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json' };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
-
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		error = '';
 		loading = true;
 
 		try {
-			const res = await fetch('/api/v1/professional-profiles', {
-				method: 'POST',
-				headers: authHeaders(),
-				body: JSON.stringify({ name, headline, skills, is_public: isPublic })
+			const result = await api.createProfessionalProfile({
+				name,
+				headline,
+				skills,
+				is_public: isPublic
 			});
 
-			const body = await res.json();
-			if (!res.ok || body.error) {
-				error = body.error?.message || 'Failed to create profile.';
-				return;
-			}
-
-			goto(`/professional/${body.data.slug}`);
-		} catch {
-			error = 'Network error. Please try again.';
+			goto(`/professional/${result.slug}`);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Network error. Please try again.';
 		} finally {
 			loading = false;
 		}

@@ -14,7 +14,11 @@
 	} from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, getToken, type ForumThread, type ForumReply, type ForumPoll } from '$lib/api';
+	import { isFeatureEnabled } from '$lib/stores/features.svelte';
 	import { onMount } from 'svelte';
+	import ReactionBar from '$lib/components/ReactionBar.svelte';
+	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
+	import PinButton from '$lib/components/PinButton.svelte';
 
 	let thread = $state<ForumThread | null>(null);
 	let replies = $state<ForumReply[]>([]);
@@ -151,7 +155,16 @@
 	<title>{thread?.title ?? 'Thread'} | Forum | JapaConnect</title>
 </svelte:head>
 
-<main class="mx-auto max-w-3xl px-4 py-8">
+{#if !isFeatureEnabled('feature.forum')}
+	<main class="mx-auto max-w-2xl px-6 py-16">
+		<div class="text-center">
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Forum is not available</h1>
+			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+		</div>
+	</main>
+{:else}
+	<main class="mx-auto max-w-3xl px-4 py-8">
 	<a
 		href="/forum"
 		class="mb-6 inline-flex items-center gap-1 text-sm transition-colors hover:underline"
@@ -207,6 +220,7 @@
 							{thread.title}
 						</h1>
 						<div class="flex items-center gap-2 shrink-0">
+							<PinButton contentId={thread.id} />
 							{#if thread.solved}
 								<span
 									class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
@@ -413,6 +427,9 @@
 				</div>
 			</form>
 		</section>
+
+		<ReactionBar contentId={thread.id} />
+		<RevisionHistory contentId={thread.id} />
 	{:else}
 		<EmptyState
 			icon={MessageSquare}
@@ -420,4 +437,5 @@
 			message="This thread may have been deleted or the link is invalid."
 		/>
 	{/if}
-</main>
+	</main>
+{/if}

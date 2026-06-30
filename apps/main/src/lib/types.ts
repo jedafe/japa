@@ -21,6 +21,7 @@ export interface Space {
 	description?: string;
 	country?: string;
 	cover_image?: string;
+	logo_url?: string;
 	world_ranking?: number;
 	created_at: string;
 }

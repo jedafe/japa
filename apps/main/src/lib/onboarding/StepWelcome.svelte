@@ -1,10 +1,14 @@
 <script lang="ts">
 	import { Globe, MapPin, User } from 'lucide-svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let { stepData, onupdate, onnext, submitting } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let name = $state((stepData.name as string) || '');
+	// svelte-ignore state_referenced_locally
 	let japaStatus = $state((stepData.japa_status as string) || '');
+	// svelte-ignore state_referenced_locally
 	let currentLocation = $state((stepData.current_location as string) || '');
 
 	const japaOptions = [
@@ -25,26 +29,26 @@
 			<User size={20} />
 		</div>
 		<div>
-			<h2 class="text-xl font-semibold">Welcome to JapaConnect</h2>
-			<p class="text-sm" style="color: var(--color-muted)">Tell us a bit about yourself</p>
+			<h2 class="text-xl font-semibold">{t('onboarding.welcome')}</h2>
+			<p class="text-sm" style="color: var(--color-muted)">{t('onboarding.tell_about')}</p>
 		</div>
 	</div>
 
 	<div class="space-y-4">
 		<div>
-			<label for="name" class="mb-1 block text-sm font-medium">Your name</label>
+			<label for="name" class="mb-1 block text-sm font-medium">{t('onboarding.your_name')}</label>
 			<input
 				id="name"
 				type="text"
 				bind:value={name}
-				placeholder="How should we call you?"
+				placeholder={t('onboarding.name_placeholder')}
 				class="w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2"
 				style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary);"
 			/>
 		</div>
 
 		<div>
-			<label for="japa-status" class="mb-1 block text-sm font-medium">Your Japa status</label>
+			<label for="japa-status" class="mb-1 block text-sm font-medium">{t('onboarding.japa_status')}</label>
 			<div class="relative">
 				<select
 					id="japa-status"
@@ -52,7 +56,7 @@
 					class="w-full appearance-none rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2"
 					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary);"
 				>
-					<option value="">Select your status...</option>
+					<option value="">{t('onboarding.status_placeholder')}</option>
 					{#each japaOptions as option}
 						<option value={option.value}>{option.label}</option>
 					{/each}
@@ -62,13 +66,13 @@
 		</div>
 
 		<div>
-			<label for="location" class="mb-1 block text-sm font-medium">Current location</label>
+			<label for="location" class="mb-1 block text-sm font-medium">{t('onboarding.current_location')}</label>
 			<div class="relative">
 				<input
 					id="location"
 					type="text"
 					bind:value={currentLocation}
-					placeholder="e.g., Lagos, Nigeria"
+					placeholder={t('onboarding.location_placeholder')}
 					class="w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2"
 					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary);"
 				/>
@@ -83,6 +87,6 @@
 		onclick={handleNext}
 		disabled={!name || !japaStatus || !currentLocation || submitting}
 	>
-		Continue
+		{t('onboarding.continue')}
 	</button>
 </div>

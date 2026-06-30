@@ -1,10 +1,14 @@
+<script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
+</script>
+
 <svelte:head>
-	<title>Terms of Service | JapaConnect</title>
+	<title>{t('terms.title')} | JapaConnect</title>
 	<meta name="description" content="JapaConnect Terms of Service." />
 </svelte:head>
 
 <main class="mx-auto max-w-3xl px-6 py-16">
-	<h1 class="text-3xl font-bold" style="color: var(--color-foreground)">Terms of Service</h1>
+	<h1 class="text-3xl font-bold" style="color: var(--color-foreground)">{t('terms.title')}</h1>
 	<p class="mt-2 text-sm" style="color: var(--color-muted)">Last updated: June 2026</p>
 	<div class="mt-6 space-y-4 text-base" style="color: var(--color-muted)">
 		<h2 class="pt-4 text-xl font-semibold" style="color: var(--color-foreground)">1. Acceptance of Terms</h2>

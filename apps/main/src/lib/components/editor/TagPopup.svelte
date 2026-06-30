@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	interface Props {
 		position: { top: number; left: number };
@@ -58,7 +59,7 @@
 	<input
 		type="text"
 		bind:value={query}
-		placeholder="Search tags..."
+		placeholder={t('editor.search_tags')}
 		class="tag-input"
 	/>
 	
@@ -75,7 +76,7 @@
 			{/each}
 		</div>
 	{:else if query}
-		<div class="no-results">No tags found</div>
+		<div class="no-results">{t('editor.no_tags')}</div>
 	{/if}
 </div>
 

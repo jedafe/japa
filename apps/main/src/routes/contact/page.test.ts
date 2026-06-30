@@ -1,6 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
+
+vi.mock('$lib/stores/i18n.svelte', () => {
+	const translations: Record<string, string> = {
+		'contact.title': 'Contact Us',
+		'search.find': 'Have a question, suggestion, or need support? Reach out to us.',
+		'tickets.category': 'General Inquiries',
+		'tickets.account': 'For account and general questions',
+		'tickets.technical': 'Support',
+		'tickets.billing': 'For technical issues and billing',
+		'tickets.feature_request': 'Partnerships',
+		'tickets.content': 'For partnership opportunities',
+		'tickets.other': 'Security',
+	};
+	return { t: (key: string) => translations[key] ?? key };
+});
 
 describe('Contact +page.svelte', () => {
 	it('renders the Contact Us heading', () => {
@@ -33,7 +48,7 @@ describe('Contact +page.svelte', () => {
 
 	it('shows the Security card', () => {
 		render(Page);
-		expect(screen.getByText('Security')).toBeTruthy();
+		expect(screen.getAllByText('Security').length).toBeGreaterThanOrEqual(1);
 		expect(screen.getByText('security@japaconnect.com')).toBeTruthy();
 	});
 });

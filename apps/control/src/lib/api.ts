@@ -41,3 +41,64 @@ export async function api<T>(path: string, opts: FetchOptions = {}): Promise<Api
 		return { ok: false, error: e instanceof Error ? e.message : 'Network error' };
 	}
 }
+
+// ── Queue Monitoring Types ──
+
+export interface QueueInfo {
+	name: string;
+	pending: number;
+	active: number;
+	completed_24h: number;
+	failed_24h: number;
+	latency_ms: number;
+}
+
+export interface QueueStats {
+	queues: QueueInfo[];
+	total_pending: number;
+	total_active: number;
+	total_completed_24h: number;
+	total_failed_24h: number;
+}
+
+// ── Database Health Types ──
+
+export interface SlowQuery {
+	query: string;
+	duration_ms: number;
+	timestamp: string;
+}
+
+export interface TableStat {
+	name: string;
+	row_count: number;
+	size_bytes: number;
+	index_count: number;
+	last_vacuum: string | null;
+}
+
+export interface ConnectionPool {
+	active: number;
+	idle: number;
+	waiting: number;
+	max: number;
+}
+
+export interface ReplicationStatus {
+	lag_seconds: number;
+	state: string;
+}
+
+export interface DbHealth {
+	connected: boolean;
+	version: string;
+	latency_ms: number;
+	size_bytes: number;
+	table_count: number;
+	index_count: number;
+	tables: TableStat[];
+	slow_queries: SlowQuery[];
+	avg_query_time_ms: number;
+	connection_pool: ConnectionPool;
+	replication: ReplicationStatus | null;
+}

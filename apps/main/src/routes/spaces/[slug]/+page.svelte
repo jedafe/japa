@@ -1,37 +1,26 @@
 <script lang="ts">
-	import { ArrowLeft, Users, Shield, Loader2 } from 'lucide-svelte';
-	import { getToken } from '$lib/api';
+	import { ArrowLeft, Users, Shield, Loader2, Rss } from 'lucide-svelte';
+	import { api } from '$lib/api';
+	import Reviews from '$lib/components/Reviews.svelte';
 
 	let { data } = $props();
 	let space = $derived(data.space);
 
 	let joining = $state(false);
+	let isJoined = $state(false);
+	// svelte-ignore state_referenced_locally
 	let memberCount = $state(space.member_count);
 	let errorMessage = $state('');
-
-	function authHeaders(): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json' };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
 
 	async function handleJoinLeave() {
 		joining = true;
 		errorMessage = '';
 		try {
-			const res = await fetch(`/api/v1/spaces/${space.slug}/join`, {
-				method: 'POST',
-				headers: authHeaders()
-			});
-			const body = await res.json();
-			if (res.ok && body.data) {
-				memberCount = body.data.member_count ?? memberCount;
-			} else {
-				errorMessage = 'Failed to join space. Please try again.';
-			}
+			const result = await api.joinSpace(space.slug);
+			isJoined = result.joined;
+			memberCount = result.member_count ?? memberCount;
 		} catch {
-			errorMessage = 'Failed to join space. Please try again.';
+			errorMessage = 'Failed to update space membership. Please try again.';
 		} finally {
 			joining = false;
 		}
@@ -70,17 +59,30 @@
 					>
 						{space.space_type}
 					</span>
+					<a
+						href="/api/v1/spaces/{space.slug}/feed.xml"
+						class="flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors hover:opacity-80"
+						style="border-color: var(--color-border); color: var(--color-muted)"
+						target="_blank"
+						rel="noopener noreferrer"
+						title="Subscribe via RSS"
+					>
+						<Rss class="h-3 w-3" />
+						RSS
+					</a>
 				</div>
 			</div>
 
 			<button
 				onclick={handleJoinLeave}
 				disabled={joining}
-				class="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-				style="background-color: var(--color-primary)"
+				class="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+				style="background-color: {isJoined ? 'var(--color-surface)' : 'var(--color-primary)'}; color: {isJoined ? 'var(--color-foreground)' : 'white'}; border: 1px solid {isJoined ? 'var(--color-border)' : 'transparent'}"
 			>
 				{#if joining}
 					<Loader2 class="h-4 w-4 animate-spin" />
+				{:else if isJoined}
+					Leave
 				{:else}
 					Join
 				{/if}
@@ -114,4 +116,6 @@
 			</ul>
 		</section>
 	{/if}
+
+	<Reviews entityType="space" entityId={space.id} />
 </main>

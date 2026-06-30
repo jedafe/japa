@@ -1,6 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
+
+vi.mock('$lib/stores/i18n.svelte', () => {
+	const translations: Record<string, string> = {
+		'terms.title': 'Terms of Service'
+	};
+	return { t: (key: string) => translations[key] ?? key };
+});
 
 describe('Terms of Service +page.svelte', () => {
 	it('renders the Terms of Service heading', () => {

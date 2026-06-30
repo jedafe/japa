@@ -19,12 +19,12 @@
 </script>
 
 <svelte:head>
-	<title>{$t(labelKey)} — JapaConnect Docs</title>
+	<title>{t(labelKey)} — JapaConnect Docs</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl">
-	<h1 class="text-3xl font-bold tracking-tight">{$t(labelKey)}</h1>
-	<p class="mt-2 text-sm" style="color: var(--color-muted)">{$t('audience.description').replace('{audience}', t(labelKey).toLowerCase())}</p>
+	<h1 class="text-3xl font-bold tracking-tight">{t(labelKey)}</h1>
+	<p class="mt-2 text-sm" style="color: var(--color-muted)">{t('audience.description').replace('{audience}', t(labelKey).toLowerCase())}</p>
 
 	<div class="mt-8 space-y-3">
 		{#each data.pages as docPage}
@@ -40,7 +40,7 @@
 				<ChevronRight class="h-4 w-4" style="color: var(--color-muted)" />
 			</a>
 		{:else}
-			<p class="py-8 text-center" style="color: var(--color-muted)">{$t('audience.empty')}</p>
+			<p class="py-8 text-center" style="color: var(--color-muted)">{t('audience.empty')}</p>
 		{/each}
 	</div>
 </div>

@@ -46,7 +46,13 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store the encrypted secret (not enabled yet)
-	if err := h.Store.UpsertTOTPSecret(r.Context(), user.UserID, encryptSecret(secret)); err != nil {
+	encrypted, err := encryptSecret(secret)
+	if err != nil {
+		slog.Error("encrypt TOTP secret", "error", err)
+		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to encrypt 2FA secret")
+		return
+	}
+	if err := h.Store.UpsertTOTPSecret(r.Context(), user.UserID, encrypted); err != nil {
 		slog.Error("store TOTP secret", "error", err)
 		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to save 2FA secret")
 		return

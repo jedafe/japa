@@ -10,11 +10,12 @@
 		Loader2
 	} from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
 	import { onMount } from 'svelte';
 
 	let { data } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let dashboard = $state(data.dashboard);
 	let loading = $state(false);
 	let errorMessage = $state('');
@@ -27,28 +28,11 @@
 		total_unique_viewers: number;
 	}
 
-	interface UserDashboard {
-		top_content: TopContentItem[];
-		user_engagement: Record<string, unknown>[];
-		content_over_time: Record<string, unknown>[];
-	}
-
-	function authHeaders(extra?: Record<string, string>): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json', ...extra };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
-
 	onMount(async () => {
 		if (dashboard) return;
 		loading = true;
 		try {
-			const res = await fetch('/api/v1/analytics/dashboard', { headers: authHeaders() });
-			const body = await res.json();
-			if (body.data) {
-				dashboard = body.data;
-			}
+			dashboard = await api.getDashboardAnalytics();
 		} catch {
 			errorMessage = 'Failed to load analytics data.';
 		} finally {

@@ -2,6 +2,8 @@
 	import { MessageCircle, Plus, Loader2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type DMConversation } from '$lib/api';
+	import { isFeatureEnabled } from '$lib/stores/features.svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
 
 	let channels = $state<DMConversation[]>([]);
@@ -33,12 +35,21 @@
 	<meta name="description" content="Your direct messages." />
 </svelte:head>
 
-<main class="mx-auto max-w-2xl px-4 py-8">
+{#if !isFeatureEnabled('feature.dm')}
+	<main class="mx-auto max-w-2xl px-6 py-16">
+		<div class="text-center">
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('messages.not_available')}</h1>
+			<p class="mt-2" style="color: var(--color-muted)">{t('forum.feature_disabled')}</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">{t('forum.go_home')}</a>
+		</div>
+	</main>
+{:else}
+	<main class="mx-auto max-w-2xl px-4 py-8">
 	<header class="mb-8 flex items-start justify-between">
 		<div>
-			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Messages</h1>
+			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{t('messages.title')}</h1>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
-				Private conversations with other members.
+				{t('messages.subtitle')}
 			</p>
 		</div>
 	</header>
@@ -52,8 +63,8 @@
 	{:else if channels.length === 0}
 		<EmptyState
 			icon={MessageCircle}
-			title="No conversations yet"
-			message="Start a conversation by visiting someone's profile and clicking 'Message'."
+			title={t('messages.no_conversations')}
+			message={t('messages.no_conversations_msg')}
 		/>
 	{:else}
 		<div class="divide-y rounded-xl border" style="border-color: var(--color-border); divide-color: var(--color-border)">
@@ -87,7 +98,7 @@
 					</div>
 					<div class="mt-0.5 flex items-center gap-2">
 						<p class="text-sm truncate" style="color: var(--color-muted)">
-							{channel.last_message_preview ?? 'No messages yet'}
+							{channel.last_message_preview ?? t('messages.no_messages')}
 						</p>
 							{#if channel.unread_count > 0}
 								<span
@@ -103,4 +114,5 @@
 			{/each}
 		</div>
 	{/if}
-</main>
+	</main>
+{/if}

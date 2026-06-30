@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { BookOpen, Clock, Eye, MessageCircle, Rss, Star } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import AdSlot from '$lib/components/AdSlot.svelte';
+	import { isFeatureEnabled } from '$lib/stores/features.svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { formatTimestamp } from '$lib/utils/timezone';
 
 	let { data } = $props();
@@ -22,15 +25,24 @@
 	<link rel="alternate" type="application/rss+xml" title="JapaConnect Blog RSS" href="/api/v1/blog/feed.xml" />
 </svelte:head>
 
-<main class="mx-auto max-w-6xl px-4 py-8">
+{#if !isFeatureEnabled('feature.blog')}
+	<main class="mx-auto max-w-2xl px-6 py-16">
+		<div class="text-center">
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('blog.not_available')}</h1>
+			<p class="mt-2" style="color: var(--color-muted)">{t('forum.feature_disabled')}</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">{t('forum.go_home')}</a>
+		</div>
+	</main>
+{:else}
+	<main class="mx-auto max-w-6xl px-4 py-8">
 	<!-- Header -->
 	<header class="mb-10 flex items-start justify-between">
 		<div>
 			<h1 class="text-3xl font-bold tracking-tight sm:text-4xl" style="color: var(--color-foreground)">
-				Blog
+				{t('blog.title')}
 			</h1>
 			<p class="mt-2 text-base" style="color: var(--color-muted)">
-				Stories, guides, and insights from the community.
+				{t('blog.subtitle')}
 			</p>
 		</div>
 		<a
@@ -53,7 +65,7 @@
 				<section class="mb-10">
 					<h2 class="mb-4 flex items-center gap-2 text-lg font-semibold" style="color: var(--color-foreground)">
 						<Star class="h-5 w-5" style="color: var(--color-primary)" />
-						Featured
+						{t('blog.featured')}
 					</h2>
 					<div class="grid gap-4 sm:grid-cols-2">
 						{#each featured as feat (feat.id)}
@@ -64,7 +76,7 @@
 							>
 								<div class="flex items-center gap-2 text-xs" style="color: var(--color-primary)">
 									<Star class="h-3.5 w-3.5" />
-									Featured
+									{t('blog.featured')}
 								</div>
 								<p class="mt-2 text-sm font-medium line-clamp-2" style="color: var(--color-foreground)">
 									Post #{feat.featured_order}
@@ -77,12 +89,12 @@
 
 			<!-- Recent Posts -->
 			<section>
-				<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">Recent Posts</h2>
+				<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('blog.recent_posts')}</h2>
 				{#if posts.length === 0}
 					<EmptyState
 						icon={BookOpen}
-						title="No posts yet"
-						message="Be the first to share a story with the community."
+						title={t('blog.no_posts')}
+						message={t('blog.no_posts_msg')}
 					/>
 				{:else}
 					<div class="space-y-4">
@@ -107,7 +119,7 @@
 									{#if post.read_time_minutes > 0}
 										<span class="flex items-center gap-1">
 											<Clock class="h-3.5 w-3.5" />
-											{post.read_time_minutes} min read
+											{post.read_time_minutes} {t('blog.min_read')}
 										</span>
 									{/if}
 									{#if post.view_count > 0}
@@ -132,11 +144,14 @@
 
 		<!-- Sidebar -->
 		<aside class="space-y-6">
+			<!-- Ad slot -->
+			<AdSlot slotName="blog_sidebar" />
+
 			<!-- Series -->
 			{#if series.length > 0}
 				<div class="rounded-xl border p-5" style="border-color: var(--color-border); background: var(--color-surface)">
 					<h3 class="mb-3 text-sm font-semibold uppercase tracking-wide" style="color: var(--color-muted)">
-						Blog Series
+						{t('blog.series')}
 					</h3>
 					<ul class="space-y-3">
 						{#each series as s (s.id)}
@@ -161,16 +176,16 @@
 						class="mt-4 block text-xs font-medium hover:underline"
 						style="color: var(--color-primary)"
 					>
-						View all series &rarr;
+						{t('blog.view_all_series')} &rarr;
 					</a>
 				</div>
 			{/if}
 
 			<!-- Subscribe -->
 			<div class="rounded-xl border p-5" style="border-color: var(--color-border); background: var(--color-surface)">
-				<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">Stay updated</h3>
+				<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">{t('blog.stay_updated')}</h3>
 				<p class="mt-1 text-xs" style="color: var(--color-muted)">
-					Subscribe to the RSS feed for new posts.
+					{t('blog.subscribe_msg')}
 				</p>
 				<a
 					href="/api/v1/blog/feed.xml"
@@ -180,9 +195,10 @@
 					rel="noopener noreferrer"
 				>
 					<Rss class="h-3.5 w-3.5" />
-					Subscribe via RSS
+					{t('blog.subscribe_rss')}
 				</a>
 			</div>
 		</aside>
 	</div>
-</main>
+	</main>
+{/if}

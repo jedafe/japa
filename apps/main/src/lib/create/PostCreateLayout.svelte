@@ -18,7 +18,9 @@
 		onPublish,
 	}: Props = $props();
 
+	// svelte-ignore state_referenced_locally
 	let title = $state(initialTitle);
+	// svelte-ignore state_referenced_locally
 	let content = $state(initialContent);
 	let tags = $state<string[]>([]);
 	let featuredImage = $state<string | null>(null);

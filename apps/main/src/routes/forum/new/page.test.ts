@@ -14,6 +14,11 @@ vi.mock('$lib/api', () => ({
 	}
 }));
 
+vi.mock('$lib/stores/features.svelte', () => ({
+	isFeatureEnabled: () => true,
+	setFeatureFlags: () => {}
+}));
+
 describe('Forum New Thread +page.svelte', () => {
 	it('renders the New Thread heading', () => {
 		render(Page);

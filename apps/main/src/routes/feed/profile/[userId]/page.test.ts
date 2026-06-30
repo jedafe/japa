@@ -18,6 +18,12 @@ beforeEach(() => {
 });
 
 const defaultData = {
+	user: null,
+	flags: {},
+	notificationCount: 0,
+	token: null,
+	locale: 'en',
+	translations: {},
 	profile: { id: '1', username: 'testuser', display_name: 'Test User', bio: 'Hello' },
 	feed: [],
 	hasMore: false

@@ -8,7 +8,9 @@
 
 	let { data }: { data: PageData } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let selectedCountry = $state(data.filters.country || '');
+	// svelte-ignore state_referenced_locally
 	let sortBy = $state(data.filters.sort || 'world_ranking');
 
 	const organizationSchema = createOrganizationSchema();

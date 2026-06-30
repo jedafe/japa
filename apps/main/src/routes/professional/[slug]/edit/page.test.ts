@@ -3,7 +3,12 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	getToken: vi.fn().mockReturnValue(null)
+	getToken: vi.fn().mockReturnValue(null),
+	api: {
+		getProfessionalProfile: vi.fn().mockRejectedValue(new Error('Not found')),
+		updateProfessionalProfile: vi.fn().mockResolvedValue({}),
+		deleteProfessionalProfile: vi.fn().mockResolvedValue({})
+	}
 }));
 
 vi.mock('$app/navigation', () => ({

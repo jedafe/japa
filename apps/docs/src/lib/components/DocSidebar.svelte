@@ -18,7 +18,7 @@
 	<!-- Brand -->
 	<div class="mb-6">
 		<a href="/" class="text-lg font-bold tracking-tight" style="color: var(--color-primary)">
-			{$t('docs.brand')}
+			{t('docs.brand')}
 		</a>
 	</div>
 
@@ -27,7 +27,7 @@
 		<Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />
 		<input
 			type="text"
-			placeholder={$t('sidebar.search')}
+			placeholder={t('sidebar.search')}
 			class="w-full rounded-md border py-2 pl-9 pr-3 text-sm outline-none focus:ring-2"
 			style="border-color: var(--color-border); background: var(--color-surface)"
 		/>
@@ -45,7 +45,7 @@
 				style={audience !== section.slug ? 'color: var(--color-muted)' : ''}
 			>
 				<Icon class="h-4 w-4" />
-				{$t(section.labelKey)}
+				{t(section.labelKey)}
 			</a>
 		{/each}
 	</nav>
