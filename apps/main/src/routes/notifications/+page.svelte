@@ -3,7 +3,6 @@
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
-	import { onMount } from 'svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { wsClient } from '$lib/websocket';
 	import { realtime } from '$lib/stores/realtime.svelte';
@@ -16,23 +15,14 @@
 		created_at: string;
 	}
 
-	let notifications = $state<Notification[]>([]);
-	let loading = $state(true);
+	let { data } = $props();
+
+	let notifications = $state(data.notifications);
 	let markingRead = $state<string | null>(null);
 	let errorMessage = $state('');
 	let listContainer: HTMLDivElement | undefined = $state();
 
 	const unreadCount = $derived(notifications.filter((n) => !n.read).length);
-
-	onMount(async () => {
-		try {
-			notifications = await api.getNotifications({ limit: 50 });
-		} catch {
-			notifications = [];
-		} finally {
-			loading = false;
-		}
-	});
 
 	$effect(() => {
 		if (!listContainer) return;
@@ -117,16 +107,7 @@
 		{/if}
 	</header>
 
-	{#if loading}
-		<div class="space-y-3">
-			{#each Array(5) as _}
-				<div
-					class="h-20 animate-pulse rounded-lg"
-					style="background-color: var(--color-surface)"
-				></div>
-			{/each}
-		</div>
-	{:else if notifications.length === 0}
+	{#if notifications.length === 0}
 		<EmptyState
 			icon={Bell}
 			title={t('notifications.empty_title')}

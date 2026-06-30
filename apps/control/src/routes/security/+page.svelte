@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
@@ -14,11 +13,13 @@
 		resolved: boolean;
 	};
 
-	let results = $state<ScanResult[]>([]);
+	let { data = {} as any } = $props();
+
+	let results = $state<ScanResult[]>(data.initial?.results ?? []);
 	let filterSeverity = $state<string>('all');
 	let page = $state(0);
-	let totalPages = $state(1);
-	let loading = $state(true);
+	let totalPages = $state(data.initial?.total_pages ?? 1);
+	let loading = $state(false);
 
 	const columns = [
 		{ key: 'severity', label: 'Severity' },
@@ -28,7 +29,7 @@
 		{ key: 'resolved', label: 'Status' }
 	];
 
-	let apiAvailable = $state(true);
+	let apiAvailable = $state(data.initial !== null);
 	let errorMessage = $state('');
 
 	async function load() {
@@ -68,8 +69,6 @@
 		page = p;
 		load();
 	}
-
-	onMount(load);
 </script>
 
 <PageHeader title="Security" description="Scan findings and security posture" />

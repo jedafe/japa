@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+
 	import { page } from '$app/state';
 	import { setToken } from '$lib/api';
 	import { locale, t } from '$lib/stores/i18n.svelte';
@@ -27,10 +27,8 @@
 		locale.init(data.locale, data.translations);
 	});
 
-	onMount(() => {
-		if (data.token) {
-			setToken(data.token);
-		}
+	$effect(() => {
+		setToken(data.token ?? null);
 	});
 
 	function logout() {

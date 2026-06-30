@@ -28,6 +28,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 			});
 			if (res.ok) {
 				const { data } = await res.json();
+				event.locals.token = token;
 				event.locals.user = {
 					id: data.id,
 					email: data.email,

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
@@ -10,6 +10,7 @@
 		name: string;
 		avatar_url: string;
 		description: string;
+		rate_limit: number;
 		created_at: string;
 	};
 
@@ -22,9 +23,10 @@
 	let editName = $state('');
 	let editAvatarUrl = $state('');
 	let editDescription = $state('');
+	let rateLimitValue = $state(100);
 	let saving = $state(false);
 
-	const botId = $derived($page.params.id);
+	const botId = $derived(page.params.id);
 
 	async function load() {
 		loading = true;

@@ -25,7 +25,7 @@ describe('Create Custom Field +page.svelte', () => {
 		render(Page);
 		expect(screen.getByLabelText('Name')).toBeTruthy();
 		expect(screen.getByLabelText('Slug')).toBeTruthy();
-		expect(screen.getByLabelText('Field Type')).toBeTruthy();
+		expect(screen.getByLabelText('Type')).toBeTruthy();
 		expect(screen.getByLabelText('Entity Type')).toBeTruthy();
 		expect(screen.getByText('Create Field')).toBeTruthy();
 	});

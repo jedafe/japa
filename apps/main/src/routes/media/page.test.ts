@@ -7,18 +7,28 @@ vi.mock('$lib/api', () => ({
 }));
 
 describe('Media Library +page.svelte', () => {
+	const defaultData = {
+		user: null,
+		flags: {},
+		notificationCount: 0,
+		token: null,
+		locale: 'en',
+		translations: {},
+		media: []
+	};
+
 	it('renders the Media Library heading', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		expect(screen.getByRole('heading', { name: 'Media Library' })).toBeTruthy();
 	});
 
 	it('shows the Upload button', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		expect(screen.getByText('Upload')).toBeTruthy();
 	});
 
 	it('shows empty state when no media', async () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		await waitFor(() => {
 			expect(screen.getByText('No media yet')).toBeTruthy();
 		});

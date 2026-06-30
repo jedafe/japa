@@ -7,9 +7,11 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { ListTodo, Clock, Play, CheckCircle, XCircle, RefreshCw, X, Loader2 } from 'lucide-svelte';
 
-	let queueStats = $state<QueueStats | null>(null);
-	let loading = $state(true);
-	let apiAvailable = $state(true);
+	let { data = {} as any } = $props();
+
+	let queueStats = $state<QueueStats | null>(data.queueStats ?? null);
+	let loading = $state(false);
+	let apiAvailable = $state(data.queueStats !== null || data.error === null);
 	let lastRefresh = $state(new Date());
 	let selectedQueue = $state<QueueInfo | null>(null);
 	let refreshing = $state(false);
@@ -75,8 +77,6 @@
 	}
 
 	onMount(() => {
-		refresh();
-
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
 				refresh();

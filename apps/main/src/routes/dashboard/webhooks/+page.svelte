@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api, type Webhook, type WebhookDelivery } from '$lib/api';
 	import {
 		Webhook as WebhookIcon,
@@ -16,8 +15,9 @@
 	} from 'lucide-svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 
-	let webhooks = $state<Webhook[]>([]);
-	let loading = $state(true);
+	let { data } = $props();
+
+	let webhooks = $state(data.webhooks);
 	let showCreate = $state(false);
 	let errorMessage = $state('');
 	let creating = $state(false);
@@ -46,19 +46,12 @@
 		'review.flagged'
 	];
 
-	onMount(async () => {
-		await loadWebhooks();
-	});
-
 	async function loadWebhooks() {
-		loading = true;
 		errorMessage = '';
 		try {
 			webhooks = await api.listWebhooks();
 		} catch {
 			errorMessage = t('webhooks.load_error');
-		} finally {
-			loading = false;
 		}
 	}
 
@@ -197,16 +190,7 @@
 		</button>
 	</div>
 
-	{#if loading}
-		<div class="mt-4 space-y-3">
-			{#each Array(3) as _}
-				<div
-					class="h-20 animate-pulse rounded-xl"
-					style="background-color: var(--color-surface)"
-				></div>
-			{/each}
-		</div>
-	{:else if webhooks.length === 0}
+	{#if webhooks.length === 0}
 		<div
 			class="mt-4 rounded-xl border p-8 text-center"
 			style="border-color: var(--color-border); background: var(--color-surface)"

@@ -1,21 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api, type Certificate } from '$lib/api';
+	import type { Certificate } from '$lib/api';
 	import { Award, Download, ExternalLink, GraduationCap, ArrowRight } from 'lucide-svelte';
 
-	let certificates = $state<Certificate[]>([]);
-	let loading = $state(true);
-	let error = $state('');
-
-	onMount(async () => {
-		try {
-			certificates = await api.getCertificates();
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load certificates';
-		} finally {
-			loading = false;
-		}
-	});
+	let { data } = $props();
+	let certificates = $derived(data.certificates as Certificate[]);
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleDateString('en-US', {
@@ -43,32 +31,7 @@
 		</div>
 	</div>
 
-	{#if loading}
-		<div class="mt-8 space-y-4">
-			{#each Array(2) as _}
-				<div class="animate-pulse rounded-lg border p-6" style="border-color: var(--color-border)">
-					<div class="flex items-start gap-4">
-						<div class="h-12 w-12 rounded-lg" style="background-color: var(--color-surface)"></div>
-						<div class="flex-1 space-y-2">
-							<div class="h-4 w-1/2 rounded" style="background-color: var(--color-surface)"></div>
-							<div class="h-3 w-1/4 rounded" style="background-color: var(--color-surface)"></div>
-						</div>
-					</div>
-				</div>
-			{/each}
-		</div>
-	{:else if error}
-		<div class="mt-8 rounded-lg border px-6 py-12 text-center" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 5%, transparent)">
-			<p class="text-sm" style="color: var(--color-danger)">{error}</p>
-			<button
-				onclick={() => window.location.reload()}
-				class="mt-4 rounded-md px-4 py-2 text-sm font-medium text-white"
-				style="background-color: var(--color-primary)"
-			>
-				Try again
-			</button>
-		</div>
-	{:else if certificates.length === 0}
+	{#if certificates.length === 0}
 		<div class="mt-8 rounded-lg border px-6 py-16 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
 			<GraduationCap class="mx-auto h-16 w-16" style="color: var(--color-muted)" />
 			<h2 class="mt-4 text-lg font-semibold" style="color: var(--color-foreground)">No certificates yet</h2>

@@ -3,19 +3,11 @@
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
-	import { onMount } from 'svelte';
 
-	interface Organisation {
-		id: string;
-		slug: string;
-		name: string;
-		headline: string;
-		skills: string[];
-		is_public: boolean;
-	}
+	let { data } = $props();
 
-	let organisations = $state<Organisation[]>([]);
-	let loading = $state(true);
+	let organisations = $state(data.organisations);
+	let loading = $state(false);
 	let searchQuery = $state('');
 
 	async function fetchOrganisations(query?: string) {
@@ -24,7 +16,7 @@
 			const result = await api.listProfessionalProfiles({ limit: 50, search: query });
 			organisations = result.profiles;
 		} catch {
-			organisations = [];
+			organisations = data.organisations;
 		} finally {
 			loading = false;
 		}
@@ -34,8 +26,6 @@
 		e.preventDefault();
 		fetchOrganisations(searchQuery.trim() || undefined);
 	}
-
-	onMount(() => fetchOrganisations());
 </script>
 
 <svelte:head>

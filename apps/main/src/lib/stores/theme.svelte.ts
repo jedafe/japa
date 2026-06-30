@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { getToken } from '$lib/api';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -23,9 +24,13 @@ export function getTheme() {
 			currentTheme = theme;
 			if (browser) {
 				applyTheme(theme);
+				const token = getToken();
 				fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'}/users/me/preferences`, {
 					method: 'PUT',
-					headers: { 'Content-Type': 'application/json' },
+					headers: {
+						'Content-Type': 'application/json',
+						...(token ? { Authorization: `Bearer ${token}` } : {})
+					},
 					body: JSON.stringify({ dark_mode: theme })
 				}).catch(() => {});
 			}

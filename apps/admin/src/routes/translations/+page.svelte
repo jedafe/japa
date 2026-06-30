@@ -48,9 +48,9 @@
 	let filteredTranslations = $derived(
 		searchQuery
 			? translations.filter(
-					(t) =>
-						t.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
-						t.value.toLowerCase().includes(searchQuery.toLowerCase())
+					(tr) =>
+						tr.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						tr.value.toLowerCase().includes(searchQuery.toLowerCase())
 			  )
 			: translations
 	);
@@ -98,14 +98,14 @@
 	}
 
 	async function saveEdit(id: string) {
-		const t = translations.find((t) => t.id === id);
-		if (!t) return;
+		const translation = translations.find((tr) => tr.id === id);
+		if (!translation) return;
 		const result = await api<Translation>('/admin/translations', {
 			method: 'POST',
-			body: { locale: t.locale, key: t.key, value: editValue, context: t.context }
+			body: { locale: translation.locale, key: translation.key, value: editValue, context: translation.context }
 		});
 		if (result.ok) {
-			translations = translations.map((t) => (t.id === id ? { ...t, value: editValue } : t));
+			translations = translations.map((tr) => (tr.id === id ? { ...tr, value: editValue } : tr));
 			editingId = null;
 		}
 	}
@@ -115,7 +115,7 @@
 			method: 'DELETE'
 		});
 		if (result.ok) {
-			translations = translations.filter((t) => t.id !== id);
+			translations = translations.filter((tr) => tr.id !== id);
 			deleteConfirmId = null;
 			await loadLocales();
 		}
@@ -234,92 +234,92 @@
 						</td>
 					</tr>
 				{:else}
-					{#each filteredTranslations as t (t.id)}
-						<tr
-							class="border-t"
+				{#each filteredTranslations as translation (translation.id)}
+					<tr
+						class="border-t"
+						style="border-color: var(--color-border)"
+					>
+						<td
+							class="px-4 py-3 font-mono text-xs"
 							style="border-color: var(--color-border)"
 						>
-							<td
-								class="px-4 py-3 font-mono text-xs"
-								style="border-color: var(--color-border)"
-							>
-								{t.key}
-							</td>
-							<td class="px-4 py-3" style="border-color: var(--color-border)">
-								{#if editingId === t.id}
-									<input
-										class="w-full rounded border px-2 py-1 text-sm"
-										style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-foreground)"
-										bind:value={editValue}
-										onkeydown={(e) => {
-											if (e.key === 'Enter') saveEdit(t.id);
-											if (e.key === 'Escape') editingId = null;
-										}}
-									/>
-								{:else}
-									<button
-										class="text-left hover:underline"
-										onclick={() => {
-											editingId = t.id;
-											editValue = t.value;
-										}}
-									>
-										{t.value}
-									</button>
-								{/if}
-							</td>
-							<td class="px-4 py-3" style="border-color: var(--color-border)">
-								<span
-									class="inline-block rounded px-2 py-0.5 text-xs font-medium"
-									style="background-color: var(--color-surface); color: var(--color-muted)"
+							{translation.key}
+						</td>
+						<td class="px-4 py-3" style="border-color: var(--color-border)">
+							{#if editingId === translation.id}
+								<input
+									class="w-full rounded border px-2 py-1 text-sm"
+									style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-foreground)"
+									bind:value={editValue}
+									onkeydown={(e) => {
+										if (e.key === 'Enter') saveEdit(translation.id);
+										if (e.key === 'Escape') editingId = null;
+									}}
+								/>
+							{:else}
+								<button
+									class="text-left hover:underline"
+									onclick={() => {
+										editingId = translation.id;
+										editValue = translation.value;
+									}}
 								>
-									{t.context || '\u2014'}
-								</span>
-							</td>
-							<td class="px-4 py-3 text-right" style="border-color: var(--color-border)">
-								{#if editingId === t.id}
-									<button
-										class="text-sm font-medium hover:underline"
-										style="color: var(--color-primary)"
-										onclick={() => saveEdit(t.id)}
-									>
-									{t('common.save')}
+									{translation.value}
+								</button>
+							{/if}
+						</td>
+						<td class="px-4 py-3" style="border-color: var(--color-border)">
+							<span
+								class="inline-block rounded px-2 py-0.5 text-xs font-medium"
+								style="background-color: var(--color-surface); color: var(--color-muted)"
+							>
+								{translation.context || '\u2014'}
+							</span>
+						</td>
+						<td class="px-4 py-3 text-right" style="border-color: var(--color-border)">
+							{#if editingId === translation.id}
+								<button
+									class="text-sm font-medium hover:underline"
+									style="color: var(--color-primary)"
+									onclick={() => saveEdit(translation.id)}
+								>
+								{t('common.save')}
+							</button>
+							<button
+								class="ml-2 text-sm hover:underline"
+								style="color: var(--color-muted)"
+								onclick={() => (editingId = null)}
+							>
+								{t('common.cancel')}
+								</button>
+							{:else if deleteConfirmId === translation.id}
+								<span class="text-sm" style="color: var(--color-danger)">{t('translations.delete_confirm')}</span>
+								<button
+									class="ml-2 text-sm font-medium hover:underline"
+									style="color: var(--color-danger)"
+									onclick={() => deleteTranslation(translation.id)}
+								>
+									Yes
 								</button>
 								<button
 									class="ml-2 text-sm hover:underline"
 									style="color: var(--color-muted)"
-									onclick={() => (editingId = null)}
+									onclick={() => (deleteConfirmId = null)}
 								>
-									{t('common.cancel')}
-									</button>
-								{:else if deleteConfirmId === t.id}
-									<span class="text-sm" style="color: var(--color-danger)">{t('translations.delete_confirm')}</span>
-									<button
-										class="ml-2 text-sm font-medium hover:underline"
-										style="color: var(--color-danger)"
-										onclick={() => deleteTranslation(t.id)}
-									>
-										Yes
-									</button>
-									<button
-										class="ml-2 text-sm hover:underline"
-										style="color: var(--color-muted)"
-										onclick={() => (deleteConfirmId = null)}
-									>
-										No
-									</button>
-								{:else}
-									<button
-										class="p-1 hover:opacity-75"
-										onclick={() => (deleteConfirmId = t.id)}
-										aria-label={t('translations.delete_aria')}
-									>
-										<Trash2 class="h-4 w-4" style="color: var(--color-danger)" />
-									</button>
-								{/if}
-							</td>
-						</tr>
-					{/each}
+									No
+								</button>
+							{:else}
+								<button
+									class="p-1 hover:opacity-75"
+									onclick={() => (deleteConfirmId = translation.id)}
+									aria-label={t('translations.delete_aria')}
+								>
+									<Trash2 class="h-4 w-4" style="color: var(--color-danger)" />
+								</button>
+							{/if}
+						</td>
+					</tr>
+				{/each}
 				{/if}
 			</tbody>
 		</table>

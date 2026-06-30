@@ -7,14 +7,14 @@
 	let { children } = $props();
 
 	// Derive audience from URL params (top-level segment after /docs or root)
-	let audience = $derived(() => {
+	let audience = $derived.by(() => {
 		const segs = page.url.pathname.split('/').filter(Boolean);
 		return segs[0] || '';
 	});
 </script>
 
 <div class="flex min-h-screen">
-	<DocSidebar audience={audience()} />
+	<DocSidebar audience={audience} />
 
 	<div class="flex-1 overflow-auto">
 		<!-- Header -->

@@ -15,23 +15,33 @@ vi.mock('$lib/components/ui', async () => {
 });
 
 describe('Tickets +page.svelte', () => {
+	const defaultData = {
+		user: null,
+		flags: {},
+		notificationCount: 0,
+		token: null,
+		locale: 'en',
+		translations: {},
+		tickets: []
+	};
+
 	it('renders the My Tickets heading', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		expect(screen.getByRole('heading', { name: /My Tickets/i })).toBeTruthy();
 	});
 
 	it('shows the subtitle text', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		expect(screen.getByText('Get help from our support team.')).toBeTruthy();
 	});
 
 	it('renders the New Ticket button', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		expect(screen.getByText('New Ticket')).toBeTruthy();
 	});
 
 	it('shows filter buttons', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		const filters = ['All', 'Open', 'In Progress', 'Resolved', 'Closed'];
 		for (const label of filters) {
 			expect(screen.getByText(label)).toBeTruthy();
@@ -39,7 +49,7 @@ describe('Tickets +page.svelte', () => {
 	});
 
 	it('renders the page structure with main element', () => {
-		const { container } = render(Page);
+		const { container } = render(Page, { props: { data: defaultData } });
 		expect(container.querySelector('main')).toBeTruthy();
 	});
 });

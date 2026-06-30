@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import { api } from '$lib/api';
@@ -14,10 +13,13 @@
 		created_at: string;
 	};
 
-	let entries = $state<AuditEntry[]>([]);
+	let { data = {} as any } = $props();
+
+	let entries = $state<AuditEntry[]>(data.initial?.entries ?? []);
 	let page = $state(0);
-	let totalPages = $state(1);
-	let loading = $state(true);
+	let totalPages = $state(data.initial?.total_pages ?? 1);
+	let loading = $state(false);
+	let apiAvailable = $state(data.initial !== null);
 
 	// Filters
 	let filterActor = $state('');
@@ -43,8 +45,6 @@
 		if (filterTo) params.set('to', filterTo);
 		return params.toString();
 	}
-
-	let apiAvailable = $state(true);
 
 	async function load() {
 		loading = true;
@@ -77,8 +77,6 @@
 		page = p;
 		load();
 	}
-
-	onMount(load);
 </script>
 
 <PageHeader title={t('audit.title')} description={t('audit.description')} />

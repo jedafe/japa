@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
-	const spaceId = $derived($page.params.spaceId);
+	const spaceId = $derived(page.params.spaceId);
 
 	type FieldDef = {
 		label: string;

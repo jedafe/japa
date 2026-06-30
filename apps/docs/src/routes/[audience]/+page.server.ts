@@ -1,10 +1,10 @@
 import type { PageServerLoad } from './$types';
-import { api } from '$lib/api';
+import { listDocPages } from '$lib/server/api';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const { audience } = params;
 	try {
-		const pages = await api.listDocPages(audience);
+		const pages = await listDocPages(audience);
 		return { pages };
 	} catch {
 		return { pages: [] };

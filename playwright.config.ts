@@ -27,6 +27,11 @@ export default defineConfig({
 			use: { baseURL: 'http://localhost:3002' }
 		},
 		{
+			name: 'learn',
+			testMatch: 'learn.spec.ts',
+			use: { baseURL: 'http://localhost:3003' }
+		},
+		{
 			name: 'docs',
 			testMatch: 'docs.spec.ts',
 			use: { baseURL: 'http://localhost:3004' }
@@ -53,6 +58,12 @@ export default defineConfig({
 		{
 			command: 'cd apps/control && bun run dev',
 			port: 3002,
+			reuseExistingServer: true,
+			timeout: 30_000
+		},
+		{
+			command: 'cd apps/learn && bun run dev',
+			port: 3003,
 			reuseExistingServer: true,
 			timeout: 30_000
 		},

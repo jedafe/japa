@@ -2,25 +2,15 @@
 	import { Image, Upload, Trash2, Loader2, Eye, X } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type MediaItem } from '$lib/api';
-	import { onMount } from 'svelte';
 
-	let media = $state<MediaItem[]>([]);
-	let loading = $state(true);
+	let { data } = $props();
+
+	let media = $state(data.media);
 	let uploading = $state(false);
 	let deleting = $state<string | null>(null);
 	let errorMessage = $state('');
 	let fileInput = $state<HTMLInputElement>();
 	let previewItem = $state<MediaItem | null>(null);
-
-	onMount(async () => {
-		try {
-			media = await api.listMedia({ limit: 50 });
-		} catch {
-			media = [];
-		} finally {
-			loading = false;
-		}
-	});
 
 	function formatFileSize(bytes: number): string {
 		if (bytes < 1024) return bytes + ' B';
@@ -116,16 +106,7 @@
 		</div>
 	{/if}
 
-	{#if loading}
-		<div class="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-			{#each Array(8) as _}
-				<div
-					class="aspect-square animate-pulse rounded-xl"
-					style="background-color: var(--color-surface)"
-				></div>
-			{/each}
-		</div>
-	{:else if media.length === 0}
+	{#if media.length === 0}
 		<EmptyState
 			icon={Image}
 			title="No media yet"

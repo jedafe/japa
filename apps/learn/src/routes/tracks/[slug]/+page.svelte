@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api, type TrackDetail } from '$lib/api';
+	import type { TrackDetail } from '$lib/api';
 	import {
 		BookOpen,
 		Clock,
@@ -17,18 +16,12 @@
 	let { data } = $props();
 
 	let track = $derived(data.track as TrackDetail);
-	let progress = $state<{ progress: number; completed_lessons: string[] } | null>(null);
+	let progress = $derived(data.progress as { progress: number; completed_lessons: string[] } | null);
 	let expandedModules = $state<Set<string>>(new Set());
-	let mounted = $state(false);
+	let mounted = $state(true);
 
-	onMount(async () => {
-		mounted = true;
-		try {
-			progress = await api.getProgress(track.id);
-		} catch {
-			progress = null;
-		}
-		if (track.modules.length > 0) {
+	$effect(() => {
+		if (track && track.modules.length > 0 && expandedModules.size === 0) {
 			expandedModules = new Set([track.modules[0].id]);
 		}
 	});

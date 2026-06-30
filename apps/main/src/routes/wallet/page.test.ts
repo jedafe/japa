@@ -54,20 +54,31 @@ vi.mock('$lib/components/ui', async () => {
 });
 
 describe('Wallet +page.svelte', () => {
+	const defaultData = {
+		user: null,
+		flags: {},
+		notificationCount: 0,
+		token: null,
+		locale: 'en',
+		translations: {},
+		balance: { points: 0, credits: 0 },
+		ledger: []
+	};
+
 	it('renders the Wallet heading', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		expect(screen.getByRole('heading', { name: 'Wallet' })).toBeTruthy();
 	});
 
 	it('shows the Points label', async () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		await waitFor(() => {
 			expect(screen.getByText('Points')).toBeTruthy();
 		});
 	});
 
 	it('shows the Credits label', async () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		await waitFor(() => {
 			expect(screen.getByText('Credits')).toBeTruthy();
 		});

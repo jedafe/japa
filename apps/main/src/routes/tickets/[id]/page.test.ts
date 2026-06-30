@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
@@ -26,25 +26,34 @@ vi.mock('$lib/components/ui', async () => {
 });
 
 describe('Ticket Detail +page.svelte', () => {
+	const defaultData = {
+		user: null,
+		flags: {},
+		notificationCount: 0,
+		token: null,
+		locale: 'en',
+		translations: {},
+		ticket: null,
+		comments: []
+	};
+
 	it('renders the back to tickets link', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		expect(screen.getByText('Back to Tickets')).toBeTruthy();
 	});
 
-	it('shows loading skeleton initially', () => {
-		const { container } = render(Page);
-		expect(container.querySelector('.animate-pulse')).toBeTruthy();
+	it('shows empty state when ticket is null', () => {
+		render(Page, { props: { data: defaultData } });
+		expect(screen.getByText('Ticket not found')).toBeTruthy();
 	});
 
-	it('shows error state after failed load', async () => {
-		render(Page);
-		await waitFor(() => {
-			expect(screen.getByText('Not connected')).toBeTruthy();
-		});
+	it('shows empty state message when ticket is null', () => {
+		render(Page, { props: { data: defaultData } });
+		expect(screen.getByText('This ticket may have been deleted or the link is invalid.')).toBeTruthy();
 	});
 
 	it('has a link back to tickets list', () => {
-		render(Page);
+		render(Page, { props: { data: defaultData } });
 		const backLink = screen.getByRole('link');
 		expect(backLink.getAttribute('href')).toBe('/tickets');
 	});

@@ -14,6 +14,7 @@ declare global {
 				displayName: string | null;
 				avatarUrl: string | null;
 			} | null;
+			token: string | null;
 		}
 		// interface PageData {}
 		// interface PageState {}

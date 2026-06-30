@@ -1,20 +1,21 @@
 <script lang="ts">
-	import { Users, Search, User } from 'lucide-svelte';
+	import { Users, Search } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { api, type UserProfile } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
-	import { onMount } from 'svelte';
+	import { api } from '$lib/api';
 
-	let members = $state<UserProfile[]>([]);
-	let loading = $state(true);
+	let { data } = $props();
+
+	let members = $state(data.members);
 	let searchQuery = $state('');
+	let loading = $state(false);
 
 	async function fetchMembers(query?: string) {
 		loading = true;
 		try {
 			members = await api.listUsers({ limit: 50, search: query });
 		} catch {
-			members = [];
+			members = data.members;
 		} finally {
 			loading = false;
 		}
@@ -24,8 +25,6 @@
 		e.preventDefault();
 		fetchMembers(searchQuery.trim() || undefined);
 	}
-
-	onMount(() => fetchMembers());
 </script>
 
 <svelte:head>
