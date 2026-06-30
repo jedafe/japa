@@ -9,6 +9,25 @@ vi.mock('$lib/api', () => ({
 	}
 }));
 
+vi.mock('$lib/stores/i18n.svelte', () => {
+	const translations: Record<string, string> = {
+		'messages.title': 'Messages',
+		'messages.subtitle': 'Private conversations with other members.',
+		'messages.no_conversations': 'No conversations yet',
+		'messages.no_conversations_msg': 'Start a conversation.',
+		'messages.not_available': 'Messages is not available',
+		'messages.no_messages': 'No messages',
+		'forum.feature_disabled': 'This feature is currently disabled.',
+		'forum.go_home': 'Go home'
+	};
+	return { t: (key: string) => translations[key] ?? key };
+});
+
+vi.mock('$lib/stores/features.svelte', () => ({
+	isFeatureEnabled: () => true,
+	setFeatureFlags: () => {}
+}));
+
 vi.mock('$lib/components/ui', async () => {
 	const { default: Comp } = await import('$lib/components/EmptyStateMock.svelte');
 	return { EmptyState: Comp };

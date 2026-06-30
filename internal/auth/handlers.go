@@ -11,7 +11,11 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/redis/go-redis/v9"
+
+	"github.com/jedafe/japa/internal/email"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -22,6 +26,9 @@ type AuthHandlers struct {
 	BruteForce  BruteForceStore
 	Policy      PasswordPolicy
 	AsynqClient *asynq.Client
+	VKClient    *valkey.Client // Valkey client for per-email rate limiting
+	SiteName    string         // Brand name for email templates (e.g. "JapaConnect")
+	SupportURL  string         // Support page URL for email footers
 }
 
 // Querier is the interface for database operations needed by auth handlers.
@@ -371,6 +378,28 @@ func clientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
+// rateLimitCheck performs a fixed-window rate limit check against Valkey using
+// INCR + EXPIRE. Returns true when the request is allowed (count <= maxRequests),
+// false when the limit has been exceeded. When Valkey is unreachable, the check
+// degrades gracefully and allows the request through — a missing cache layer
+// should never block a legitimate password reset or verification email.
+func rateLimitCheck(ctx context.Context, rdb *redis.Client, key string, maxRequests int, window time.Duration) (bool, error) {
+	if rdb == nil {
+		return true, nil
+	}
+
+	pipe := rdb.Pipeline()
+	incrCmd := pipe.Incr(ctx, key)
+	pipe.Expire(ctx, key, window+time.Second)
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		// Valkey unreachable — degrade gracefully, allow the request.
+		return true, err
+	}
+
+	return incrCmd.Val() <= int64(maxRequests), nil
+}
+
 // HandleForgotPassword handles POST /api/v1/auth/forgot-password.
 // Always returns 200 to prevent email enumeration. Rate limited to 3 requests per 10 minutes per email.
 func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Request) {
@@ -386,6 +415,17 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	if req.Email == "" {
 		writeError(w, http.StatusBadRequest, "missing_fields", "Email is required")
 		return
+	}
+
+	// Per-email rate limit: 3 requests per 10 minutes. Prevents a single
+	// email address from being used to flood the reset-email queue.
+	if h.VKClient != nil {
+		emailKey := fmt.Sprintf("jc:ratelimit:forgot_password:%s", req.Email)
+		ok, _ := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 3, 10*time.Minute)
+		if !ok {
+			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many password reset requests. Please try again later.")
+			return
+		}
 	}
 
 	t := tenant.FromContext(r.Context())
@@ -433,11 +473,30 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	}
 	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
 
+	// Render the HTML email body.
+	siteName := h.SiteName
+	if siteName == "" {
+		siteName = "JapaConnect"
+	}
+	supportURL := h.SupportURL
+	if supportURL == "" {
+		supportURL = baseURL + "/support"
+	}
+	htmlBody, err := email.RenderPasswordResetEmail(email.TemplateData{
+		SiteName:   siteName,
+		SiteURL:    baseURL,
+		UserName:   user.Username,
+		ActionURL:  fmt.Sprintf("%s/auth/reset-password?token=%s", baseURL, token),
+		Expiry:     "1 hour",
+		SupportURL: supportURL,
+	})
+	if err != nil {
+		slog.Error("forgot-password: failed to render email template", "error", err)
+		return
+	}
+
 	// Enqueue email delivery — best effort, failures are logged.
-	h.enqueueEmail(user.Email, "Password Reset", fmt.Sprintf(
-		"Click the link to reset your password: %s/auth/reset-password?token=%s\n\nThis link expires in 1 hour.",
-		baseURL, token,
-	))
+	h.enqueueEmail(user.Email, "Reset Your Password", htmlBody, true)
 }
 
 // HandleResetPasswordPage handles GET /api/v1/auth/reset-password.
@@ -599,6 +658,17 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Per-email rate limit: 1 request per 5 minutes. Prevents a single
+	// email address from being used to flood the verification-email queue.
+	if h.VKClient != nil {
+		emailKey := fmt.Sprintf("jc:ratelimit:resend_verification:%s", req.Email)
+		ok, _ := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 1, 5*time.Minute)
+		if !ok {
+			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many verification email requests. Please try again later.")
+			return
+		}
+	}
+
 	t := tenant.FromContext(r.Context())
 	if t == nil {
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
@@ -643,24 +713,49 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	}
 	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
 
-	h.enqueueEmail(user.Email, "Verify Your Email", fmt.Sprintf(
-		"Click the link to verify your email: %s/auth/verify-email?token=%s\n\nThis link expires in 24 hours.",
-		baseURL, token,
-	))
+	// Render the HTML email body.
+	siteName := h.SiteName
+	if siteName == "" {
+		siteName = "JapaConnect"
+	}
+	supportURL := h.SupportURL
+	if supportURL == "" {
+		supportURL = baseURL + "/support"
+	}
+	htmlBody, err := email.RenderEmailVerification(email.TemplateData{
+		SiteName:   siteName,
+		SiteURL:    baseURL,
+		UserName:   user.Username,
+		ActionURL:  fmt.Sprintf("%s/auth/verify-email?token=%s", baseURL, token),
+		Expiry:     "24 hours",
+		SupportURL: supportURL,
+	})
+	if err != nil {
+		slog.Error("resend-verification: failed to render email template", "error", err)
+		return
+	}
+
+	h.enqueueEmail(user.Email, "Verify Your Email", htmlBody, true)
 }
 
 // enqueueEmail enqueues an email delivery task via Asynq. Failures are logged but not returned.
-func (h *AuthHandlers) enqueueEmail(to, subject, body string) {
+// When isHTML is true, the worker sends the body as text/html; otherwise as text/plain.
+func (h *AuthHandlers) enqueueEmail(to, subject, body string, isHTML bool) {
 	if h.AsynqClient == nil {
 		slog.Warn("auth: enqueueEmail called without asynq client", "to", to)
 		return
+	}
+
+	htmlStr := "false"
+	if isHTML {
+		htmlStr = "true"
 	}
 
 	payload, err := json.Marshal(map[string]string{
 		"to":      to,
 		"subject": subject,
 		"body":    body,
-		"html":    "false",
+		"html":    htmlStr,
 	})
 	if err != nil {
 		slog.Error("auth: failed to marshal email payload", "error", err)

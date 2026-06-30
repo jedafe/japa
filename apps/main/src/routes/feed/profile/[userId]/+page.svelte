@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { User, Clock, MessageCircle, Heart } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import { api, type FeedItem } from '$lib/api';
 	import { onMount } from 'svelte';
 	import { formatTimestamp, formatRelativeTime } from '$lib/utils/timezone';
 	import autoAnimate from '@formkit/auto-animate';
@@ -8,7 +9,9 @@
 	let { data } = $props();
 
 	const profile = $derived(data.profile);
-	let feed = $state(data.feed ?? []);
+	// svelte-ignore state_referenced_locally
+	let feed = $state<FeedItem[]>(data.feed ?? []);
+	// svelte-ignore state_referenced_locally
 	let hasMore = $state(data.hasMore ?? false);
 	let loadingMore = $state(false);
 
@@ -16,15 +19,12 @@
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
 		try {
-			const token = document.cookie.match(/jc_token=([^;]+)/)?.[1];
-			const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 			const lastItem = feed[feed.length - 1];
-			const cursor = lastItem ? `&cursor=${lastItem.id}` : '';
-			const res = await fetch(`/api/v1/feed/profile/${profile.id}?limit=20${cursor}`, { headers });
-			const body = await res.json();
-			if (body.data?.items) {
-				feed = [...feed, ...body.data.items];
-				hasMore = body.data.hasMore;
+			const cursor = lastItem ? lastItem.id : undefined;
+			const result = await api.getProfileFeed(profile.id, { limit: 20, cursor });
+			if (result.items) {
+				feed = [...feed, ...result.items];
+				hasMore = result.has_more;
 			}
 		} catch {
 			// silent

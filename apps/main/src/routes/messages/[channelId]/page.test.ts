@@ -17,6 +17,30 @@ vi.mock('$app/state', () => ({
 	}
 }));
 
+vi.mock('$lib/stores/features.svelte', () => ({
+	isFeatureEnabled: () => true,
+	setFeatureFlags: () => {}
+}));
+
+vi.mock('$lib/websocket', () => ({
+	wsClient: {
+		on: vi.fn().mockReturnValue(() => {}),
+		send: vi.fn()
+	}
+}));
+
+vi.mock('$lib/utils/timezone', () => ({
+	formatTimestampWithTime: () => 'Jan 15, 2026 10:00 AM'
+}));
+
+vi.mock('$lib/components/TypingIndicator.svelte', () => ({
+	default: () => null
+}));
+
+vi.mock('@formkit/auto-animate', () => ({
+	default: () => {}
+}));
+
 describe('Message Channel +page.svelte', () => {
 	it('renders the chat header with default name', () => {
 		render(Page);

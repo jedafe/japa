@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { Rss, Clock, MessageCircle, Heart } from 'lucide-svelte';
+	import { Rss, Clock, MessageCircle, Heart, RefreshCw } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import { api } from '$lib/api';
+	import AdSlot from '$lib/components/AdSlot.svelte';
 	import { onMount } from 'svelte';
 	import { formatTimestamp, formatRelativeTime } from '$lib/utils/timezone';
 	import autoAnimate from '@formkit/auto-animate';
@@ -8,29 +10,36 @@
 
 	let { data } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let feed = $state(data.feed ?? []);
+	// svelte-ignore state_referenced_locally
 	let hasMore = $state(data.hasMore ?? false);
 	let loadingMore = $state(false);
+	let refreshing = $state(false);
 
 	async function loadMore() {
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
 		try {
-			const token = document.cookie.match(/jc_token=([^;]+)/)?.[1];
-			const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 			const lastItem = feed[feed.length - 1];
-			const cursor = lastItem ? `&cursor=${lastItem.id}` : '';
-			const res = await fetch(`/api/v1/feed/primary?limit=20${cursor}`, { headers });
-			const body = await res.json();
-			if (body.data?.items) {
-				feed = [...feed, ...body.data.items];
-				hasMore = body.data.hasMore;
+			const cursor = lastItem?.id;
+			const result = await api.getFeedPrimary({ limit: 20, cursor });
+			if (result.items) {
+				feed = [...feed, ...result.items];
+				hasMore = result.has_more;
 			}
 		} catch {
 			// silent
 		} finally {
 			loadingMore = false;
 		}
+	}
+
+	async function handleRefresh() {
+		refreshing = true;
+		await new Promise(r => setTimeout(r, 600));
+		refreshing = false;
+		window.location.reload();
 	}
 
 	onMount(() => {
@@ -47,110 +56,120 @@
 </script>
 
 <svelte:head>
-	<title>{$t('feed.title')} | JapaConnect</title>
-	<meta name="description" content="{$t('feed.subtitle')}" />
+	<title>{t('feed.title')} | JapaConnect</title>
+	<meta name="description" content="{t('feed.subtitle')}" />
 </svelte:head>
 
 <main class="mx-auto max-w-3xl px-4 py-8">
 	<header class="mb-8 flex items-start justify-between">
 		<div>
-			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{$t('feed.title')}</h1>
+			<h1 class="text-2xl font-bold tracking-tight sm:text-3xl" style="color: var(--color-foreground)">
+				{t('feed.title')}
+			</h1>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
-				{$t('feed.subtitle')}
+				{t('feed.subtitle')}
 			</p>
 		</div>
-		<a
-			href="/feed"
-			class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
-			style="border-color: var(--color-border); color: var(--color-muted)"
+		<button
+			class="btn btn-secondary group gap-2"
+			onclick={handleRefresh}
+			disabled={refreshing}
 		>
-			<Rss class="h-4 w-4" />
-			{$t('feed.refresh')}
-		</a>
+			<RefreshCw class="h-4 w-4 transition-transform group-hover:rotate-45 {refreshing ? 'animate-spin' : ''}" />
+			{t('feed.refresh')}
+		</button>
 	</header>
 
 	{#if feed.length === 0}
 		<EmptyState
 			icon={Rss}
-			title={$t('feed.empty')}
-			message={$t('feed.empty_hint')}
+			title={t('feed.empty')}
+			message={t('feed.empty_hint')}
 		/>
 	{:else}
 		<div class="space-y-4" use:autoAnimate>
-			{#each feed as item (item.id)}
+			{#each feed as item, i (item.id)}
 				<article
-					class="rounded-xl border p-5 transition-all hover:shadow-md"
-					style="border-color: var(--color-border); background: var(--color-surface)"
+					class="card-interactive group rounded-2xl border p-5"
+					style="border-color: var(--color-border); background: var(--color-surface); animation: slide-up 0.3s ease-out {i * 50}ms both"
 				>
 					<div class="flex items-center gap-3">
 						<div
-							class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
-							style="background-color: var(--color-primary)"
+							class="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white shadow-sm"
+							style="background: var(--gradient-primary)"
 						>
 							{item.author_name?.charAt(0)?.toUpperCase() ?? '?'}
 						</div>
-						<div>
+						<div class="min-w-0 flex-1">
 							<a
 								href="/profile/{item.author_id}"
-								class="text-sm font-medium hover:underline"
+								class="text-sm font-semibold hover:underline"
 								style="color: var(--color-foreground)"
 							>
 								{item.author_name}
 							</a>
-						<p class="text-xs" style="color: var(--color-muted)">
-							{formatRelativeTime(item.created_at)}
-						</p>
+							<p class="flex items-center gap-1.5 text-xs" style="color: var(--color-muted)">
+								<Clock class="h-3 w-3" />
+								{formatRelativeTime(item.created_at)}
+							</p>
 						</div>
 					</div>
 
-					<a href="/blog/{item.slug ?? item.id}" class="mt-3 block">
+					<a href="/blog/{item.slug ?? item.id}" class="mt-4 block">
 						<h2
-							class="text-base font-semibold hover:underline sm:text-lg"
+							class="text-base font-semibold leading-snug transition-colors group-hover:opacity-80 sm:text-lg"
 							style="color: var(--color-foreground)"
 						>
 							{item.title}
 						</h2>
 						{#if item.excerpt}
-							<p class="mt-2 text-sm line-clamp-3" style="color: var(--color-muted)">
+							<p class="mt-2 text-sm leading-relaxed line-clamp-3" style="color: var(--color-muted)">
 								{item.excerpt}
 							</p>
 						{/if}
 					</a>
 
 					<div
-						class="mt-4 flex items-center gap-4 text-xs"
-						style="color: var(--color-muted)"
+						class="mt-4 flex items-center gap-5 border-t pt-4 text-sm"
+						style="border-color: var(--color-border); color: var(--color-muted)"
 					>
-						<span class="flex items-center gap-1">
-							<Heart class="h-3.5 w-3.5" />
-							{item.reaction_count}
-						</span>
-						<span class="flex items-center gap-1">
-							<MessageCircle class="h-3.5 w-3.5" />
-							{item.comment_count}
-						</span>
+						<button class="flex items-center gap-1.5 transition-colors hover:text-red-500">
+							<Heart class="h-4 w-4" />
+							<span class="text-xs font-medium">{item.reaction_count}</span>
+						</button>
+						<button class="flex items-center gap-1.5 transition-colors hover:text-blue-500">
+							<MessageCircle class="h-4 w-4" />
+							<span class="text-xs font-medium">{item.comment_count}</span>
+						</button>
 						<span
-							class="rounded-full px-2 py-0.5"
-							style="background-color: var(--color-background)"
+							class="ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium"
+							style="background: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)"
 						>
 							{item.content_type}
 						</span>
 					</div>
 				</article>
+
+				<!-- Ad slot every 5 items -->
+				{#if (i + 1) % 5 === 0}
+					<AdSlot slotName="feed_inline" />
+				{/if}
 			{/each}
 		</div>
 
 		{#if hasMore}
 			<div id="feed-sentinel" class="flex justify-center py-8">
 				{#if loadingMore}
-					<p class="text-sm" style="color: var(--color-muted)">{$t('feed.loading')}</p>
+					<div class="flex items-center gap-3">
+						<div class="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" style="border-color: var(--color-primary); border-top-color: transparent"></div>
+						<p class="text-sm font-medium" style="color: var(--color-muted)">{t('feed.loading')}</p>
+					</div>
 				{:else}
 					<button
 						onclick={loadMore}
-						class="rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:opacity-80"
-						style="border-color: var(--color-border); color: var(--color-foreground)"
+						class="btn btn-secondary"
 					>
-						{$t('feed.load_more')}
+						{t('feed.load_more')}
 					</button>
 				{/if}
 			</div>

@@ -18,6 +18,7 @@ require (
 	github.com/pquerna/otp v1.5.0
 	github.com/redis/go-redis/v9 v9.21.0
 	golang.org/x/crypto v0.53.0
+	golang.org/x/image v0.43.0
 	golang.org/x/net v0.56.0
 )
 

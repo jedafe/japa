@@ -9,7 +9,7 @@ interface FeedItem {
 	author_id: string;
 	author_name: string;
 	author_avatar?: string;
-	excerpt: string;
+	excerpt?: string;
 	reaction_count: number;
 	comment_count: number;
 	created_at: string;
@@ -34,12 +34,12 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 	]);
 
 	if (!profileResult.ok || !profileResult.data) {
-		throw error(404, 'User not found');
+		throw error(404, { code: 'NOT_FOUND', message: 'User not found' });
 	}
 
 	return {
 		profile: profileResult.data,
 		feed: feedResult.ok && feedResult.data ? feedResult.data.items : [],
-		hasMore: feedResult.ok && feedResult.data ? feedResult.data.hasMore : false
+		hasMore: feedResult.ok && feedResult.data ? feedResult.data.has_more : false
 	};
 };

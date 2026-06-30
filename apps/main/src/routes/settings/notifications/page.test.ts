@@ -11,15 +11,21 @@ vi.mock('$app/forms', () => ({
 }));
 
 const mockData = {
+	user: null,
+	flags: {},
+	notificationCount: 0,
+	token: null,
+	locale: 'en',
+	translations: {},
 	prefs: {
-		email_notifications: true,
-		push_notifications: false,
-		follow_notifications: true,
-		comment_notifications: true,
-		mention_notifications: false,
-		dm_notifications: true,
-		group_notifications: false,
-		marketing_emails: false
+		email_notifications: { in_app: true, email: true, push: false },
+		push_notifications: { in_app: true, email: false, push: true },
+		follow_notifications: { in_app: true, email: false, push: false },
+		comment_notifications: { in_app: true, email: false, push: false },
+		mention_notifications: { in_app: true, email: false, push: false },
+		dm_notifications: { in_app: true, email: false, push: false },
+		group_notifications: { in_app: true, email: false, push: false },
+		marketing_emails: { in_app: false, email: false, push: false }
 	}
 };
 

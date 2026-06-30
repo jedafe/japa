@@ -29,7 +29,7 @@
 			const ticket = await api.createTicket({
 				subject: subject.trim(),
 				description: description.trim(),
-				category
+				type_id: category
 			});
 			goto(`/tickets/${ticket.id}`);
 		} catch (err) {

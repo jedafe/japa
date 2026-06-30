@@ -1,136 +1,180 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import { GraduationCap, BookOpen, Clock, ArrowRight, Users } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { api, type Track } from '$lib/api';
+	import { GraduationCap, BookOpen, Clock, ArrowRight, Layers } from 'lucide-svelte';
 
-	type Track = {
-		id: string;
-		titleKey: string;
-		descriptionKey: string;
-		lessons: number;
-		duration: string;
-		enrolled: number;
-		level: 'Beginner' | 'Intermediate' | 'Advanced';
-	};
+	let tracks = $state<Track[]>([]);
+	let loading = $state(true);
+	let error = $state('');
 
-	const tracks: Track[] = [
-		{
-			id: 'relocation-basics',
-			titleKey: 'tracks.relocation.title',
-			descriptionKey: 'tracks.relocation.description',
-			lessons: 12,
-			duration: '3h 20m',
-			enrolled: 1240,
-			level: 'Beginner'
-		},
-		{
-			id: 'student-pathway',
-			titleKey: 'tracks.student.title',
-			descriptionKey: 'tracks.student.description',
-			lessons: 18,
-			duration: '5h 10m',
-			enrolled: 890,
-			level: 'Beginner'
-		},
-		{
-			id: 'skilled-worker',
-			titleKey: 'tracks.skilled.title',
-			descriptionKey: 'tracks.skilled.description',
-			lessons: 15,
-			duration: '4h 05m',
-			enrolled: 1560,
-			level: 'Intermediate'
-		},
-		{
-			id: 'entrepreneur-route',
-			titleKey: 'tracks.entrepreneur.title',
-			descriptionKey: 'tracks.entrepreneur.description',
-			lessons: 10,
-			duration: '2h 45m',
-			enrolled: 320,
-			level: 'Advanced'
+	onMount(async () => {
+		try {
+			tracks = await api.listTracks();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load tracks';
+		} finally {
+			loading = false;
 		}
-	];
+	});
 
-	const levelColor: Record<Track['level'], string> = {
-		Beginner: 'var(--color-success)',
-		Intermediate: 'var(--color-warning)',
-		Advanced: 'var(--color-danger)'
+	const difficultyColor: Record<string, string> = {
+		beginner: 'var(--color-success)',
+		intermediate: 'var(--color-warning)',
+		advanced: 'var(--color-danger)'
 	};
+
+	function formatDifficulty(d: string): string {
+		return d.charAt(0).toUpperCase() + d.slice(1);
+	}
 </script>
 
 <svelte:head>
-	<title>{$t('landing.title')}</title>
+	<title>Learning Tracks | JapaConnect Learn</title>
 </svelte:head>
 
-<main class="mx-auto max-w-6xl px-6 py-8">
-	<section class="rounded-xl p-8" style="background-color: var(--color-surface)">
-		<h1 class="text-3xl font-bold tracking-tight">{$t('landing.title')}</h1>
-		<p class="mt-2 max-w-2xl" style="color: var(--color-muted)">
-			{$t('landing.description')}
-		</p>
+<main class="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+	<!-- Hero -->
+	<section class="relative overflow-hidden rounded-2xl p-6 sm:p-8" style="background: var(--gradient-surface); border: 1px solid var(--color-border)">
+		<!-- Background decoration -->
+		<div
+			class="absolute -right-10 -top-10 h-40 w-40 rounded-full opacity-[0.07]"
+			style="background: var(--gradient-primary)"
+		></div>
+
+		<div class="relative flex items-center gap-4">
+			<div
+				class="flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm"
+				style="background: var(--gradient-primary)"
+			>
+				<GraduationCap class="h-7 w-7 text-white" />
+			</div>
+			<div>
+				<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">Learn & Grow</h1>
+				<p class="mt-1 max-w-2xl text-sm leading-relaxed sm:text-base" style="color: var(--color-muted)">
+					Structured learning tracks for your journey abroad. From first steps to advanced pathways, guided by community experts.
+				</p>
+			</div>
+		</div>
 	</section>
 
-	<section id="tracks" class="mt-10">
+	<!-- Tracks -->
+	<section class="mt-8">
 		<div class="flex items-center gap-2">
-			<GraduationCap class="h-5 w-5" style="color: var(--color-primary)" />
-			<h2 class="text-xl font-semibold">{$t('tracks.title')}</h2>
+			<Layers class="h-5 w-5" style="color: var(--color-primary)" />
+			<h2 class="text-xl font-semibold tracking-tight">Learning Tracks</h2>
 		</div>
 
-		<div class="mt-6 grid gap-4 sm:grid-cols-2">
-			{#each tracks as track (track.id)}
-				<article
-					class="group rounded-lg border p-6 transition-all hover:shadow-md"
-					style="border-color: var(--color-border)"
-				>
-					<div class="flex items-start justify-between">
-						<div class="flex items-center gap-3">
-							<div
-								class="rounded-md p-2"
-								style="background-color: var(--color-surface)"
-							>
-								<BookOpen class="h-5 w-5" style="color: var(--color-primary)" />
-							</div>
-							<div>
-								<h3 class="font-semibold">{$t(track.titleKey)}</h3>
-								<span
-									class="text-xs font-medium"
-									style="color: {levelColor[track.level]}"
-								>
-									{$t('levels.' + track.level.toLowerCase())}
-								</span>
+		{#if loading}
+			<div class="mt-6 grid gap-4 sm:grid-cols-2">
+				{#each Array(4) as _, i}
+					<div
+						class="rounded-2xl border p-6"
+						style="border-color: var(--color-border); animation: slide-up 0.3s ease-out {i * 50}ms both"
+					>
+						<div class="flex items-start gap-3">
+							<div class="skeleton h-12 w-12 rounded-xl"></div>
+							<div class="flex-1 space-y-2">
+								<div class="skeleton h-5 w-3/4 rounded-lg"></div>
+								<div class="skeleton h-3 w-1/4 rounded-lg"></div>
 							</div>
 						</div>
+						<div class="mt-4 space-y-2">
+							<div class="skeleton h-3 w-full rounded-lg"></div>
+							<div class="skeleton h-3 w-5/6 rounded-lg"></div>
+						</div>
+						<div class="mt-4 flex gap-4">
+							<div class="skeleton h-3 w-16 rounded-lg"></div>
+							<div class="skeleton h-3 w-16 rounded-lg"></div>
+						</div>
 					</div>
-
-					<p class="mt-3 text-sm" style="color: var(--color-muted)">
-						{$t(track.descriptionKey)}
-					</p>
-
-					<div class="mt-4 flex items-center gap-4 text-xs" style="color: var(--color-muted)">
-						<span class="flex items-center gap-1">
-							<BookOpen class="h-3.5 w-3.5" />
-							{$t('stats.lessons').replace('{count}', String(track.lessons))}
-						</span>
-						<span class="flex items-center gap-1">
-							<Clock class="h-3.5 w-3.5" />
-							{track.duration}
-						</span>
-						<span class="flex items-center gap-1">
-							<Users class="h-3.5 w-3.5" />
-							{$t('stats.enrolled').replace('{count}', track.enrolled.toLocaleString())}
-						</span>
-					</div>
-
+				{/each}
+			</div>
+		{:else if error}
+			<div class="mt-6 rounded-2xl border px-6 py-12 text-center" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 5%, transparent)">
+				<p class="text-sm font-medium" style="color: var(--color-danger)">{error}</p>
+				<button
+					onclick={() => window.location.reload()}
+					class="btn btn-primary mt-4"
+				>
+					Try again
+				</button>
+			</div>
+		{:else if tracks.length === 0}
+			<div class="mt-6 rounded-2xl border px-6 py-16 text-center" style="border-color: var(--color-border); background: var(--gradient-surface)">
+				<div
+					class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl"
+					style="background: color-mix(in srgb, var(--color-muted) 10%, transparent)"
+				>
+					<GraduationCap class="h-8 w-8" style="color: var(--color-muted)" />
+				</div>
+				<p class="mt-4 text-lg font-semibold" style="color: var(--color-foreground)">No tracks available yet</p>
+				<p class="mt-1 text-sm" style="color: var(--color-muted)">Check back soon for new learning content.</p>
+			</div>
+		{:else}
+			<div class="mt-6 grid gap-4 sm:grid-cols-2">
+				{#each tracks as track, i (track.id)}
 					<a
-						href="/{track.id}"
-						class="mt-4 flex items-center gap-1 text-sm font-medium transition-all group-hover:gap-2"
-						style="color: var(--color-primary)"
+						href="/tracks/{track.slug}"
+						class="card-interactive group block rounded-2xl border p-6"
+						style="border-color: var(--color-border); background: var(--color-surface); animation: slide-up 0.3s ease-out {i * 75}ms both"
 					>
-						{$t('tracks.start')}
-						<ArrowRight class="h-4 w-4" />
+						<div class="flex items-start justify-between">
+							<div class="flex items-center gap-3">
+								{#if track.thumbnail_url}
+									<img
+										src={track.thumbnail_url}
+										alt=""
+										class="h-12 w-12 rounded-xl object-cover shadow-sm"
+									/>
+								{:else}
+									<div
+										class="flex h-12 w-12 items-center justify-center rounded-xl shadow-sm"
+										style="background: var(--gradient-primary)"
+									>
+										<BookOpen class="h-6 w-6 text-white" />
+									</div>
+								{/if}
+								<div>
+									<h3 class="font-semibold leading-snug" style="color: var(--color-foreground)">{track.title}</h3>
+									<span
+										class="mt-0.5 inline-block text-xs font-semibold capitalize"
+										style="color: {difficultyColor[track.difficulty] ?? 'var(--color-muted)'}"
+									>
+										{formatDifficulty(track.difficulty)}
+									</span>
+								</div>
+							</div>
+						</div>
+
+						<p class="mt-3 text-sm leading-relaxed" style="color: var(--color-muted)">
+							{track.description}
+						</p>
+
+						<div class="mt-4 flex items-center gap-4 text-xs font-medium" style="color: var(--color-muted)">
+							<span class="flex items-center gap-1">
+								<Layers class="h-3.5 w-3.5" />
+								{track.module_count} modules
+							</span>
+							<span class="flex items-center gap-1">
+								<BookOpen class="h-3.5 w-3.5" />
+								{track.lesson_count} lessons
+							</span>
+							<span class="flex items-center gap-1">
+								<Clock class="h-3.5 w-3.5" />
+								{track.estimated_hours}h
+							</span>
+						</div>
+
+						<div
+							class="mt-4 flex items-center gap-1 text-sm font-semibold transition-all group-hover:gap-2"
+							style="color: var(--color-primary)"
+						>
+							Start track
+							<ArrowRight class="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+						</div>
 					</a>
-				</article>
-			{/each}
-		</div>
+				{/each}
+			</div>
+		{/if}
 	</section>
 </main>

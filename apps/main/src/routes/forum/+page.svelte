@@ -1,7 +1,10 @@
 <script lang="ts">
-	import { MessageSquare, Plus, CheckCircle2, Tag, Loader2 } from 'lucide-svelte';
+	import { MessageSquare, Plus, CheckCircle2, Tag, Loader2, Rss } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { api, getToken, type ForumThread } from '$lib/api';
+	import { api, type ForumThread } from '$lib/api';
+	import AdSlot from '$lib/components/AdSlot.svelte';
+	import { isFeatureEnabled } from '$lib/stores/features.svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
 
 	let threads = $state<ForumThread[]>([]);
@@ -13,9 +16,9 @@
 	let totalPages = $state(1);
 
 	const filterOptions = [
-		{ value: 'all' as const, label: 'All Threads' },
-		{ value: 'unsolved' as const, label: 'Open' },
-		{ value: 'solved' as const, label: 'Solved' }
+		{ value: 'all' as const, label: t('forum.all_threads') },
+		{ value: 'unsolved' as const, label: t('forum.open') },
+		{ value: 'solved' as const, label: t('forum.solved') }
 	];
 
 	async function loadThreads() {
@@ -94,22 +97,43 @@
 	<meta name="description" content="Ask questions, share experiences, and help fellow Nigerians navigate life abroad." />
 </svelte:head>
 
-<main class="mx-auto max-w-4xl px-4 py-8">
+{#if !isFeatureEnabled('feature.forum')}
+	<main class="mx-auto max-w-2xl px-6 py-16">
+		<div class="text-center">
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('forum.not_available')}</h1>
+			<p class="mt-2" style="color: var(--color-muted)">{t('forum.feature_disabled')}</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">{t('forum.go_home')}</a>
+		</div>
+	</main>
+{:else}
+	<main class="mx-auto max-w-4xl px-4 py-8">
 	<header class="mb-8 flex items-start justify-between">
 		<div>
-			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Forum</h1>
+			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{t('forum.title')}</h1>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
-				Ask questions, share experiences, and help others.
+				{t('forum.subtitle')}
 			</p>
 		</div>
-		<a
-			href="/forum/new"
-			class="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-			style="background-color: var(--color-primary)"
-		>
-			<Plus class="h-4 w-4" />
-			New Thread
-		</a>
+		<div class="flex items-center gap-2">
+			<a
+				href="/api/v1/feed.xml"
+				class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
+				style="border-color: var(--color-border); color: var(--color-muted)"
+				target="_blank"
+				rel="noopener noreferrer"
+				title="Subscribe via RSS"
+			>
+				<Rss class="h-4 w-4" />
+			</a>
+			<a
+				href="/forum/new"
+				class="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+				style="background-color: var(--color-primary)"
+			>
+				<Plus class="h-4 w-4" />
+				{t('forum.new_thread')}
+			</a>
+		</div>
 	</header>
 
 	<!-- Filters -->
@@ -154,10 +178,15 @@
 	{:else if threads.length === 0}
 		<EmptyState
 			icon={MessageSquare}
-			title="No threads yet"
-			message="Be the first to start a conversation in the forum."
+			title={t('forum.no_threads')}
+			message={t('forum.no_threads_msg')}
 		/>
 	{:else}
+		<!-- Ad slot between filters and threads -->
+		<div class="mb-4">
+			<AdSlot slotName="forum_top" />
+		</div>
+
 		<div class="divide-y rounded-xl border" style="border-color: var(--color-border); divide-color: var(--color-border)">
 			{#each threads as thread (thread.id)}
 				<a
@@ -169,7 +198,7 @@
 						<span class="text-sm font-semibold" style="color: var(--color-foreground)">
 							{thread.score}
 						</span>
-						<span class="text-[10px] uppercase tracking-wide" style="color: var(--color-muted)">votes</span>
+						<span class="text-[10px] uppercase tracking-wide" style="color: var(--color-muted)">{t('forum.votes')}</span>
 					</div>
 
 					<!-- Reply count -->
@@ -177,7 +206,7 @@
 						<span class="text-sm font-semibold" style="color: var(--color-foreground)">
 							{thread.reply_count}
 						</span>
-						<span class="text-[10px] uppercase tracking-wide" style="color: var(--color-muted)">replies</span>
+						<span class="text-[10px] uppercase tracking-wide" style="color: var(--color-muted)">{t('forum.replies')}</span>
 					</div>
 
 					<!-- Content -->
@@ -230,10 +259,10 @@
 					class="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40"
 					style="color: var(--color-foreground); background-color: var(--color-surface); border: 1px solid var(--color-border)"
 				>
-					Previous
+					{t('common.previous')}
 				</button>
 				<span class="text-sm" style="color: var(--color-muted)">
-					Page {currentPage + 1} of {totalPages}
+					{t('forum.page_of').replace('{current}', String(currentPage + 1)).replace('{total}', String(totalPages))}
 				</span>
 				<button
 					onclick={nextPage}
@@ -241,9 +270,10 @@
 					class="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40"
 					style="color: var(--color-foreground); background-color: var(--color-surface); border: 1px solid var(--color-border)"
 				>
-					Next
+					{t('common.next')}
 				</button>
 			</div>
 		{/if}
 	{/if}
-</main>
+	</main>
+{/if}

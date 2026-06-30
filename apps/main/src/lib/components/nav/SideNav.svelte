@@ -14,10 +14,10 @@
 	} = $props();
 
 	const navLinks = $derived([
-		{ href: '/', icon: Home, label: $t('nav.home') },
-		{ href: '/spaces', icon: Grid3X3, label: $t('nav.spaces') },
-		{ href: '/search', icon: Search, label: $t('nav.search') },
-		{ href: '/notifications', icon: Bell, label: $t('nav.notifications') }
+		{ href: '/', icon: Home, label: t('nav.home') },
+		{ href: '/spaces', icon: Grid3X3, label: t('nav.spaces') },
+		{ href: '/search', icon: Search, label: t('nav.search') },
+		{ href: '/notifications', icon: Bell, label: t('nav.notifications') }
 	]);
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -77,7 +77,7 @@
 					onclick={onclose}
 				>
 					<Settings class="h-5 w-5" />
-					{$t('nav.settings')}
+					{t('nav.settings')}
 				</a>
 				<a
 					href="/auth/logout"
@@ -86,7 +86,7 @@
 					onclick={onclose}
 				>
 					<LogOut class="h-5 w-5" />
-					{$t('nav.logout')}
+					{t('nav.logout')}
 				</a>
 			{/if}
 		</nav>

@@ -2,20 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { ArrowLeft, Loader2, Plus, X } from 'lucide-svelte';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
 
 	let slug = $derived($page.params.slug);
 	let title = $state('');
 	let items = $state<string[]>(['', '']);
 	let error = $state('');
 	let loading = $state(false);
-
-	function authHeaders(): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json' };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
 
 	function addItem() {
 		items = [...items, ''];
@@ -43,25 +36,15 @@
 		}
 
 		try {
-			const res = await fetch('/api/v1/comparison', {
-				method: 'POST',
-				headers: authHeaders(),
-				body: JSON.stringify({
-					type_slug: slug,
-					title,
-					items: validItems
-				})
+			await api.createComparison({
+				type_id: slug ?? '',
+				title,
+				items: validItems.map((name) => ({ name, values: {} }))
 			});
 
-			const body = await res.json();
-			if (!res.ok || body.error) {
-				error = body.error?.message || 'Failed to create comparison.';
-				return;
-			}
-
 			goto(`/comparisons/${slug}`);
-		} catch {
-			error = 'Network error. Please try again.';
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Network error. Please try again.';
 		} finally {
 			loading = false;
 		}

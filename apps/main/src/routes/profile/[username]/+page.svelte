@@ -1,51 +1,30 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { UserPlus, UserCheck, Loader2, MapPin, Calendar } from 'lucide-svelte';
-	import { getToken } from '$lib/api';
+	import { UserPlus, UserCheck, Loader2, MapPin, Calendar, Rss } from 'lucide-svelte';
+	import { api, type UserProfile } from '$lib/api';
+	import { trackEvent, AnalyticsEvents } from '$lib/analytics';
 
-	let profile = $state<{
-		id: string;
-		username: string;
-		display_name: string;
-		avatar_url: string | null;
-		bio: string | null;
-		location: string | null;
-		following: boolean;
-		follower_count: number;
-		content_count: number;
-	} | null>(null);
+	let profile = $state<UserProfile | null>(null);
 
 	let loading = $state(true);
 	let followLoading = $state(false);
 	let error = $state('');
 	let followError = $state('');
 
-	const username = $derived(page.params.username);
+	const username = $derived(page.params.username ?? '');
 
 	$effect(() => {
 		loadProfile();
 	});
 
-	function authHeaders(extra?: Record<string, string>): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json', ...extra };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
-
 	async function loadProfile() {
 		loading = true;
 		error = '';
 		try {
-			const res = await fetch(`/api/v1/users/${username}`, { headers: authHeaders() });
-			const body = await res.json();
-			if (body.data) {
-				profile = body.data;
-			} else {
-				error = 'User not found.';
-			}
+			const user = await api.getUser(username);
+			profile = { following: false, follower_count: 0, following_count: 0, content_count: 0, ...user };
 		} catch {
-			error = 'Failed to load profile.';
+			error = 'User not found.';
 		} finally {
 			loading = false;
 		}
@@ -56,16 +35,10 @@
 		followLoading = true;
 		followError = '';
 		try {
-			const res = await fetch('/api/v1/follows', {
-				method: 'POST',
-				headers: authHeaders(),
-				body: JSON.stringify({ entity_type: 'user', entity_id: profile.id })
-			});
-			const body = await res.json();
-			if (body.data) {
-				profile.following = body.data.following;
-				profile.follower_count += body.data.following ? 1 : -1;
-			}
+			const result = await api.toggleFollow({ entity_type: 'user', entity_id: profile.id });
+			profile.following = result.following;
+			profile.follower_count = (profile.follower_count ?? 0) + (result.following ? 1 : -1);
+			trackEvent(result.following ? AnalyticsEvents.FOLLOW : AnalyticsEvents.UNFOLLOW, { user_id: profile.id });
 		} catch {
 			followError = 'Failed to update follow status. Please try again.';
 		} finally {
@@ -149,13 +122,35 @@
 								{profile.location}
 							</span>
 						{/if}
-						<span class="flex items-center gap-1">
+						<a
+							href="/profile/{profile.username}/followers"
+							class="flex items-center gap-1 hover:underline"
+							style="color: var(--color-muted)"
+						>
 							<UserPlus class="h-3.5 w-3.5" />
 							{profile.follower_count} followers
-						</span>
+						</a>
+						<a
+							href="/profile/{profile.username}/following"
+							class="hover:underline"
+							style="color: var(--color-muted)"
+						>
+							{profile.following_count ?? 0} following
+						</a>
 						<span>
 							{profile.content_count} posts
 						</span>
+						<a
+							href="/api/v1/users/{profile.username}/feed.xml"
+							class="flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors hover:opacity-80"
+							style="border-color: var(--color-border); color: var(--color-muted)"
+							target="_blank"
+							rel="noopener noreferrer"
+							title="Subscribe via RSS"
+						>
+							<Rss class="h-3 w-3" />
+							RSS
+						</a>
 					</div>
 				</div>
 			</div>

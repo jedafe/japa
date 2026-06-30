@@ -69,7 +69,7 @@
 	{#if docPage}
 		<a href="/{currentAudience}" class="mb-6 inline-flex items-center gap-1 text-sm hover:underline" style="color: var(--color-muted)">
 			<ArrowLeft class="h-3 w-3" />
-			{$t('article.back')}
+			{t('article.back')}
 		</a>
 
 		<h1 class="text-3xl font-bold tracking-tight">{docPage.title}</h1>
@@ -77,7 +77,7 @@
 		<div class="mt-2 flex items-center gap-4 text-xs" style="color: var(--color-muted)">
 			<span class="flex items-center gap-1">
 				<Clock class="h-3 w-3" />
-				{$t('article.updated').replace('{date}', new Date(docPage.updated_at).toLocaleDateString())}
+				{t('article.updated').replace('{date}', new Date(docPage.updated_at).toLocaleDateString())}
 			</span>
 			<span class="flex items-center gap-1">
 				<Tag class="h-3 w-3" />
@@ -91,7 +91,7 @@
 			</DocContent>
 		</div>
 	{:else}
-		<h1 class="text-3xl font-bold tracking-tight">{$t('article.not_found')}</h1>
-		<p class="mt-4" style="color: var(--color-muted)">{$t('article.not_found_desc')}</p>
+		<h1 class="text-3xl font-bold tracking-tight">{t('article.not_found')}</h1>
+		<p class="mt-4" style="color: var(--color-muted)">{t('article.not_found_desc')}</p>
 	{/if}
 </div>

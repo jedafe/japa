@@ -12,6 +12,14 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// Maximum request body sizes.
+const (
+	// MaxMediaUploadBody is the maximum body size for media upload initiation (50MB).
+	MaxMediaUploadBody int64 = 50 << 20
+	// MaxStandardBody is the maximum body size for standard POST/PATCH requests (10MB).
+	MaxStandardBody int64 = 10 << 20
+)
+
 // Handlers holds dependencies for media HTTP handlers.
 type Handlers struct {
 	service *Service
@@ -95,6 +103,9 @@ func parsePageOffset(r *http.Request) int32 {
 // Request body: { "filename": "photo.jpg", "mime_type": "image/jpeg", "file_size": 123456 }
 // Response: { "data": { "media_id": "...", "storage_path": "...", "presigned_url": "...", "expires_at": "..." } }
 func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
+	// Enforce 50MB body limit on media upload endpoints.
+	r.Body = http.MaxBytesReader(w, r.Body, MaxMediaUploadBody)
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -110,6 +121,11 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		FileSize int64  `json:"file_size"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		// MaxBytesError is returned when the body exceeds the limit.
+		if _, ok := err.(*http.MaxBytesError); ok {
+			writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 50MB limit")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
@@ -199,6 +215,9 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 // Request body: { "alt_text": "...", "caption": "...", "width": 100, "height": 200 }
 // Response: { "data": { "updated": true } }
 func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
+	// Enforce 10MB body limit on standard PATCH endpoints.
+	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
+
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -223,6 +242,10 @@ func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
 		Duration *float64 `json:"duration_secs"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		if _, ok := err.(*http.MaxBytesError); ok {
+			writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 10MB limit")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
@@ -308,6 +331,9 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 // Request body: { "media_ids": ["...", "..."] }
 // Response: { "data": { "deleted": 2 } }
 func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
+	// Enforce 10MB body limit on standard POST endpoints.
+	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
+
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -321,6 +347,10 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 		MediaIDs []string `json:"media_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		if _, ok := err.(*http.MaxBytesError); ok {
+			writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 10MB limit")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ArrowRight, CheckCircle, Compass, PenLine, Users } from 'lucide-svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let { oncomplete, onskip, submitting } = $props();
 
@@ -7,20 +8,20 @@
 		{
 			id: 'create',
 			icon: PenLine,
-			title: 'Create your first post',
-			description: 'Share your experience or ask a question'
+			title: t('onboarding.create_post'),
+			description: t('onboarding.create_post_desc')
 		},
 		{
 			id: 'explore',
 			icon: Compass,
-			title: 'Explore the feed',
-			description: 'Discover content from the community'
+			title: t('onboarding.explore_feed'),
+			description: t('onboarding.explore_feed_desc')
 		},
 		{
 			id: 'join',
 			icon: Users,
-			title: 'Join a space',
-			description: 'Find a community that matches your interests'
+			title: t('onboarding.join_space'),
+			description: t('onboarding.join_space_desc')
 		}
 	];
 </script>
@@ -31,8 +32,8 @@
 			<CheckCircle size={20} />
 		</div>
 		<div>
-			<h2 class="text-xl font-semibold">You're all set!</h2>
-			<p class="text-sm" style="color: var(--color-muted)">Here are some things you can do next</p>
+			<h2 class="text-xl font-semibold">{t('onboarding.all_set')}</h2>
+			<p class="text-sm" style="color: var(--color-muted)">{t('onboarding.next_actions')}</p>
 		</div>
 	</div>
 
@@ -65,7 +66,7 @@
 			onclick={oncomplete}
 			disabled={submitting}
 		>
-			Go to my feed
+			{t('onboarding.go_to_feed')}
 		</button>
 		<button
 			class="w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-colors hover:opacity-80"
@@ -73,7 +74,7 @@
 			onclick={onskip}
 			disabled={submitting}
 		>
-			Skip for now
+			{t('onboarding.skip')}
 		</button>
 	</div>
 </div>

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { ArrowLeft, Plus, Vote, Users, BarChart3, Loader2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
+	import { isFeatureEnabled } from '$lib/stores/features.svelte';
 	import { formatTimestamp } from '$lib/utils/timezone';
 
 	let { data } = $props();
@@ -12,22 +13,15 @@
 	let matrixData = $state<Record<string, Record<string, string>>>({});
 	let loadingMatrix = $state(false);
 
-	function authHeaders(): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json' };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
-
 	async function loadMatrix(comparisonId: string) {
 		loadingMatrix = true;
 		try {
-const res = await fetch(`/api/v1/comparison/${comparisonId}/matrix`, {
-	headers: authHeaders()
-});
-			const body = await res.json();
-			if (body.data) {
-				matrixData = body.data;
+			const result = await api.getComparisonMatrix(comparisonId);
+			if (result.items) {
+				matrixData = result.items.reduce((acc, item) => {
+					acc[item.name] = item.values;
+					return acc;
+				}, {} as Record<string, Record<string, string>>);
 			}
 		} catch {
 			matrixData = {};
@@ -46,7 +40,16 @@ const res = await fetch(`/api/v1/comparison/${comparisonId}/matrix`, {
 	<meta name="description" content={compType.description} />
 </svelte:head>
 
-<main class="mx-auto max-w-6xl px-4 py-8">
+{#if !isFeatureEnabled('feature.comparison')}
+	<main class="mx-auto max-w-2xl px-6 py-16">
+		<div class="text-center">
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Comparisons is not available</h1>
+			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+		</div>
+	</main>
+{:else}
+	<main class="mx-auto max-w-6xl px-4 py-8">
 	<a
 		href="/comparisons"
 		class="mb-6 inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
@@ -151,7 +154,8 @@ const res = await fetch(`/api/v1/comparison/${comparisonId}/matrix`, {
 			</div>
 		</section>
 	{/if}
-</main>
+	</main>
+{/if}
 
 <script module>
 	function getDimensions(matrix: Record<string, Record<string, string>>): string[] {

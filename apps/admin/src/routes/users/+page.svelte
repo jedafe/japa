@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
-	import { api } from '$lib/api';
+	import Modal from '$lib/components/Modal.svelte';
+	import { api, setToken, impersonationApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	type User = {
@@ -19,6 +20,13 @@
 	let loading = $state(true);
 	let searchQuery = $state('');
 	let filterGroup = $state('');
+
+	// Impersonation state
+	let impersonating = $state(false);
+	let impersonatingUsername = $state('');
+	let impersonateTarget = $state<User | null>(null);
+	let showImpersonateConfirm = $state(false);
+	let impersonateError = $state('');
 
 	const columns = [
 		{ key: 'username', label: 'users.username' },
@@ -63,8 +71,66 @@
 		load();
 	}
 
-	onMount(load);
+	async function checkImpersonationStatus() {
+		const result = await impersonationApi.status();
+		if (result.ok) {
+			const data = result.data as { impersonating: boolean; username?: string };
+			impersonating = data.impersonating;
+			impersonatingUsername = data.username ?? '';
+		}
+	}
+
+	function startImpersonate(user: User) {
+		impersonateTarget = user;
+		impersonateError = '';
+		showImpersonateConfirm = true;
+	}
+
+	async function confirmImpersonate() {
+		if (!impersonateTarget) return;
+		impersonateError = '';
+		const result = await impersonationApi.start(impersonateTarget.id);
+		if (result.ok) {
+			const data = result.data as { token: string };
+			setToken(data.token);
+			showImpersonateConfirm = false;
+			// Redirect to main app
+			window.location.href = '/';
+		} else {
+			impersonateError = result.error;
+		}
+	}
+
+	async function endImpersonation() {
+		const result = await impersonationApi.end();
+		if (result.ok) {
+			impersonating = false;
+			impersonatingUsername = '';
+			// Reload admin token from cookie
+			const tokenMatch = document.cookie.split('; ').find((c) => c.startsWith('admin_token='));
+			if (tokenMatch) setToken(tokenMatch.split('=')[1]);
+		}
+	}
+
+	onMount(() => {
+		load();
+		checkImpersonationStatus();
+	});
 </script>
+
+<!-- Impersonation Banner -->
+{#if impersonating}
+	<div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 10%, transparent)">
+		<span style="color: var(--color-warning)">You are impersonating <strong>{impersonatingUsername}</strong></span>
+		<button
+			class="rounded-md border px-3 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+			style="border-color: var(--color-warning); color: var(--color-warning)"
+			onclick={endImpersonation}
+		>
+			End Impersonation
+		</button>
+	</div>
+{/if}
 
 <svelte:head>
 	<title>Users — JapaConnect Admin</title>
@@ -72,6 +138,12 @@
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('users.title')}</h1>
 <p class="mb-4 text-sm" style="color: var(--color-muted)">{t('users.description')}</p>
+
+{#if impersonateError}
+	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+		{impersonateError}
+	</div>
+{/if}
 
 <FilterBar filters={filterDefs} onApply={handleFilter} />
 
@@ -87,6 +159,7 @@
 							{col.label}
 						</th>
 					{/each}
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Actions</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -105,10 +178,19 @@
 							</span>
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{user.created_at}</td>
+						<td class="px-4 py-3">
+							<button
+								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+								style="color: var(--color-warning)"
+								onclick={() => startImpersonate(user)}
+							>
+								Impersonate
+							</button>
+						</td>
 					</tr>
 				{:else}
 					<tr>
-						<td colspan={columns.length} class="px-4 py-8 text-center" style="color: var(--color-muted)">
+						<td colspan={columns.length + 1} class="px-4 py-8 text-center" style="color: var(--color-muted)">
 							{t('users.empty')}
 						</td>
 					</tr>
@@ -133,5 +215,14 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Impersonation Confirmation Modal -->
+<Modal bind:open={showImpersonateConfirm} title="Confirm Impersonation" onConfirm={confirmImpersonate} confirmLabel="Impersonate">
+	{#if impersonateTarget}
+		<p class="text-sm" style="color: var(--color-muted)">
+			You are about to impersonate <strong>{impersonateTarget.username}</strong>. You will be redirected to the main app as this user. Your admin session will be preserved.
+		</p>
+	{/if}
+</Modal>
 
 

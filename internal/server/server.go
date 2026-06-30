@@ -3,9 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -128,6 +126,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		KeyRotation: kr,
 		BruteForce:  bruteForce,
 		Policy:      auth.DefaultPasswordPolicy(),
+		VKClient:    vkClient,
+		SiteName:    cfg.SiteName,
+		SupportURL:  cfg.SiteURL + "/support",
 	}
 
 	// TOTP 2FA handlers — uses the same auth store for TOTP credential storage.
@@ -225,6 +226,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Payment Core subsystem (Section 17 — Payment Core).
 	paymentService := payments.NewService(database, &walletCreditAdapter{svc: walletService})
 	paymentHandlers := payments.NewHandlers(paymentService)
+	paymentHandlers.StripeWebhookSecret = cfg.StripeWebhookSecret
+	paymentHandlers.NOWPaymentsIPNKey = cfg.NOWPaymentsIPNSecret
 
 	// Advertising subsystem (Section 25 — Ad Placement).
 	adService := advertising.NewService(database)
@@ -306,6 +309,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Cache flusher for admin-only cache invalidation.
 	cacheFlusher := analytics.NewCacheFlusher(vkClient)
+	analyticsHandlers.SetCacheFlusher(cacheFlusher)
 
 	// Admin Impersonation subsystem (Section 46).
 	impersonationStore := impersonation.NewStore(vkClient.Redis())
@@ -409,17 +413,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Feature flags endpoint (public - frontend needs flags to
 			// render navigation, no auth required)
-			r.Get("/features", func(w http.ResponseWriter, r *http.Request) {
-				t := tenant.FromContext(r.Context())
-				if t == nil {
-					writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-					return
-				}
-				flags := featureChecker.GetAllEnabled(r.Context(), t.ID)
-				writeJSON(w, http.StatusOK, map[string]interface{}{
-					"data": flags,
-				})
-			})
+			featureHandlers := features.NewHandlers(featureChecker)
+			r.Get("/features", featureHandlers.HandleGetFeatures)
 
 			// Custom field group routes
 			// Read (require auth)
@@ -599,9 +594,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// WebSocket + DM routes — gated by feature.dm (Section 10)
 			r.With(features.Gate(featureChecker, "feature.dm")).Group(func(r chi.Router) {
-				// WebSocket
+				// WebSocket — tight rate limit on upgrade to prevent abuse
+				// (10 connections per minute per IP, per ADR-022).
+				r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/ws", wsHandlers.HandleWebSocket)
 				r.With(auth.RequireAuth(kr)).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
-				r.Get("/ws", wsHandlers.HandleWebSocket) // ticket auth, not Bearer
 				r.With(auth.RequireAuth(kr)).Get("/ws/online", wsHandlers.GetOnlineUsers)
 
 				// Direct Messaging
@@ -1040,31 +1036,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "analytics.admin")).
 				Post("/admin/analytics/security/scan", analyticsHandlers.RunSecurityScan)
 			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "analytics.cache.flush")).
-				Post("/admin/analytics/cache/flush", func(w http.ResponseWriter, r *http.Request) {
-					var input struct {
-						Scope string `json:"scope"`
-					}
-					if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-						writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
-						return
-					}
-					scope := analytics.FlushScope(input.Scope)
-					if scope == "" {
-						scope = analytics.FlushAll
-					}
-					deleted, err := cacheFlusher.FlushCache(r.Context(), scope)
-					if err != nil {
-						writeError(w, http.StatusInternalServerError, "flush_error", err.Error())
-						return
-					}
-					writeJSON(w, http.StatusOK, map[string]any{
-						"data": map[string]any{
-							"status":  "flushed",
-							"scope":   scope,
-							"deleted": deleted,
-						},
-					})
-				})
+				Post("/admin/analytics/cache/flush", analyticsHandlers.HandleCacheFlush)
 
 			// Admin Impersonation routes (Section 46)
 			r.With(auth.RequireAuth(kr), rbac.RequirePermission(rbacResolver, "admin.impersonate")).

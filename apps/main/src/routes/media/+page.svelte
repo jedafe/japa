@@ -1,18 +1,8 @@
 <script lang="ts">
 	import { Image, Upload, Trash2, Loader2, Eye, X } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { getToken } from '$lib/api';
+	import { api, type MediaItem } from '$lib/api';
 	import { onMount } from 'svelte';
-
-	interface MediaItem {
-		id: string;
-		filename: string;
-		url: string;
-		mime_type: string;
-		file_size: number;
-		alt_text: string;
-		created_at: string;
-	}
 
 	let media = $state<MediaItem[]>([]);
 	let loading = $state(true);
@@ -22,20 +12,9 @@
 	let fileInput = $state<HTMLInputElement>();
 	let previewItem = $state<MediaItem | null>(null);
 
-	function authHeaders(extra?: Record<string, string>): Record<string, string> {
-		const h: Record<string, string> = { ...extra };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
-
 	onMount(async () => {
 		try {
-			const res = await fetch('/api/v1/media?limit=50', { headers: authHeaders() });
-			const body = await res.json();
-			if (body.data) {
-				media = body.data;
-			}
+			media = await api.listMedia({ limit: 50 });
 		} catch {
 			media = [];
 		} finally {
@@ -62,23 +41,8 @@
 		errorMessage = '';
 
 		try {
-			const formData = new FormData();
-			formData.append('file', file);
-
-			const token = getToken();
-			const headers: Record<string, string> = {};
-			if (token) headers['Authorization'] = `Bearer ${token}`;
-
-			const res = await fetch('/api/v1/media/upload', {
-				method: 'POST',
-				headers,
-				body: formData
-			});
-
-			const body = await res.json();
-			if (body.data) {
-				media = [body.data, ...media];
-			}
+			const uploaded = await api.uploadMedia(file);
+			media = [uploaded, ...media];
 		} catch {
 			errorMessage = 'Upload failed. Please try again.';
 		} finally {
@@ -92,10 +56,7 @@
 		errorMessage = '';
 
 		try {
-			await fetch(`/api/v1/media/${id}`, {
-				method: 'DELETE',
-				headers: authHeaders()
-			});
+			await api.deleteMedia(id);
 			media = media.filter((m) => m.id !== id);
 			if (previewItem?.id === id) previewItem = null;
 		} catch {

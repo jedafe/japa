@@ -9,11 +9,17 @@ vi.mock('$lib/api', () => ({
 describe('DB Health +page.svelte', () => {
 	it('renders the db health heading', () => {
 		render(Page);
-		expect(screen.getByText('DB Health')).toBeTruthy();
+		// In test env, i18n returns the key since translations are not loaded
+		expect(screen.getByText('db.title')).toBeTruthy();
 	});
 
-	it('shows the not-implemented fallback', () => {
+	it('shows the auto-refresh indicator', () => {
 		render(Page);
-		expect(screen.getByText('DB health monitoring API is not implemented yet.')).toBeTruthy();
+		expect(screen.getByText('db.auto_refresh')).toBeTruthy();
+	});
+
+	it('shows the refresh button', () => {
+		render(Page);
+		expect(screen.getByText('common.refresh')).toBeTruthy();
 	});
 });

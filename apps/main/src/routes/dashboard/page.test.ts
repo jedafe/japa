@@ -6,7 +6,16 @@ vi.mock('$lib/api', () => ({
 	getToken: vi.fn().mockReturnValue(null)
 }));
 
-const defaultData = { isAuthenticated: false, summary: null };
+const defaultData = {
+	user: null,
+	flags: {},
+	notificationCount: 0,
+	token: null,
+	locale: 'en',
+	translations: {},
+	dashboard: null,
+	isAuthenticated: false
+};
 
 describe('Dashboard +page.svelte', () => {
 	it('renders the Dashboard heading', () => {

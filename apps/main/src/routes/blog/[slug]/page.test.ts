@@ -3,16 +3,53 @@ import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	getToken: vi.fn().mockReturnValue(null)
+	getToken: vi.fn().mockReturnValue(null),
+	api: {
+		addReaction: vi.fn().mockResolvedValue({})
+	}
+}));
+
+vi.mock('$lib/stores/features.svelte', () => ({
+	isFeatureEnabled: () => true,
+	setFeatureFlags: () => {}
+}));
+
+vi.mock('$lib/utils/timezone', () => ({
+	formatTimestampLong: () => 'January 15, 2026'
+}));
+
+vi.mock('$lib/components/ReactionBar.svelte', () => ({
+	default: () => null
+}));
+
+vi.mock('$lib/components/RevisionHistory.svelte', () => ({
+	default: () => null
+}));
+
+vi.mock('$lib/components/PinButton.svelte', () => ({
+	default: () => null
 }));
 
 describe('Blog [slug] +page.svelte', () => {
 	const defaultData = {
+		user: null,
+		flags: {},
+		notificationCount: 0,
+		token: null,
+		locale: 'en',
+		translations: {},
 		post: {
 			id: '1',
 			title: 'Test Post Title',
+			slug: 'test-post',
+			body: 'Test content',
 			body_html: '<p>Test content</p>',
+			content_type: 'blog_post',
+			status: 'published',
 			published_at: '2026-01-15T10:00:00Z',
+			created_at: '2026-01-15T10:00:00Z',
+			author_id: 'author-1',
+			field_values: '{}',
 			read_time_minutes: 5,
 			view_count: 42,
 			comment_count: 3,

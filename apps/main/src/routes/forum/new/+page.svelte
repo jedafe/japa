@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Loader2, Send } from 'lucide-svelte';
 	import { api, getToken } from '$lib/api';
+	import { isFeatureEnabled } from '$lib/stores/features.svelte';
 	import { onMount } from 'svelte';
 
 	let title = $state('');
@@ -77,7 +78,16 @@
 	<title>New Thread | Forum | JapaConnect</title>
 </svelte:head>
 
-<main class="mx-auto max-w-2xl px-4 py-8">
+{#if !isFeatureEnabled('feature.forum')}
+	<main class="mx-auto max-w-2xl px-6 py-16">
+		<div class="text-center">
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Forum is not available</h1>
+			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+		</div>
+	</main>
+{:else}
+	<main class="mx-auto max-w-2xl px-4 py-8">
 	<header class="mb-8">
 		<a
 			href="/forum"
@@ -251,4 +261,5 @@
 			{/if}
 		</button>
 	</form>
-</main>
+	</main>
+{/if}

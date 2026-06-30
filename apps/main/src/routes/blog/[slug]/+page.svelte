@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { ArrowLeft, Clock, Eye, MessageCircle, Share2, ThumbsUp, ThumbsDown } from 'lucide-svelte';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
+	import { isFeatureEnabled } from '$lib/stores/features.svelte';
 	import { formatTimestampLong } from '$lib/utils/timezone';
+	import ReactionBar from '$lib/components/ReactionBar.svelte';
+	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
+	import PinButton from '$lib/components/PinButton.svelte';
 
 	let { data } = $props();
 	let post = $derived(data.post);
@@ -10,29 +14,14 @@
 	let downvoting = $state(false);
 	let reactionMessage = $state('');
 
-	function authHeaders(): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json' };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
-
 	async function handleReaction(type: 'upvote' | 'downvote') {
 		if (type === 'upvote') upvoting = true;
 		else downvoting = true;
 		reactionMessage = '';
 
 		try {
-			const res = await fetch(`/api/v1/content/${post.id}/reactions`, {
-				method: 'POST',
-				headers: authHeaders(),
-				body: JSON.stringify({ reaction_type: type })
-			});
-			if (res.ok) {
-				reactionMessage = type === 'upvote' ? 'Upvoted!' : 'Downvoted!';
-			} else {
-				reactionMessage = 'Could not record reaction.';
-			}
+			await api.addReaction(post.id, type);
+			reactionMessage = type === 'upvote' ? 'Upvoted!' : 'Downvoted!';
 		} catch {
 			reactionMessage = 'Could not record reaction.';
 		} finally {
@@ -53,7 +42,16 @@
 	<meta name="description" content={post.title} />
 </svelte:head>
 
-<main class="mx-auto max-w-3xl px-4 py-8">
+{#if !isFeatureEnabled('feature.blog')}
+	<main class="mx-auto max-w-2xl px-6 py-16">
+		<div class="text-center">
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Blog is not available</h1>
+			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+		</div>
+	</main>
+{:else}
+	<main class="mx-auto max-w-3xl px-4 py-8">
 	<a
 		href="/blog"
 		class="mb-6 inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
@@ -65,9 +63,12 @@
 
 	<article>
 		<header class="mb-8">
-			<h1 class="text-3xl font-bold tracking-tight sm:text-4xl" style="color: var(--color-foreground)">
-				{post.title}
-			</h1>
+			<div class="flex items-start justify-between gap-4">
+				<h1 class="text-3xl font-bold tracking-tight sm:text-4xl" style="color: var(--color-foreground)">
+					{post.title}
+				</h1>
+				<PinButton contentId={post.id} />
+			</div>
 			<div class="mt-4 flex flex-wrap items-center gap-4 text-sm" style="color: var(--color-muted)">
 				{#if post.published_at}
 					<time datetime={post.published_at}>{formatDate(post.published_at)}</time>
@@ -134,8 +135,12 @@
 				<span class="text-xs" style="color: var(--color-muted)">{reactionMessage}</span>
 			{/if}
 		</div>
+
+		<ReactionBar contentId={post.id} />
+		<RevisionHistory contentId={post.id} />
 	</article>
-</main>
+	</main>
+{/if}
 
 <style>
 	.prose-custom :global(h2) {

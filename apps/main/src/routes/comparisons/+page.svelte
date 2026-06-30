@@ -1,30 +1,17 @@
 <script lang="ts">
 	import { GitCompare, ArrowRight, Loader2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
+	import { isFeatureEnabled } from '$lib/stores/features.svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
 
-	interface ComparisonType {
-		id: string;
-		name: string;
-		slug: string;
-		description: string;
-		comparison_count: number;
-	}
-
-	let types = $state<ComparisonType[]>([]);
+	let types = $state<Array<{ id: string; name: string; slug: string; description: string; comparison_count: number }>>([]);
 	let loading = $state(true);
 
 	onMount(async () => {
 		try {
-			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-			const token = getToken();
-			if (token) headers['Authorization'] = `Bearer ${token}`;
-			const res = await fetch('/api/v1/comparison/types?limit=50', { headers });
-			const body = await res.json();
-			if (body.data) {
-				types = body.data;
-			}
+			types = await api.getComparisonTypes({ limit: 50 });
 		} catch {
 			types = [];
 		} finally {
@@ -38,13 +25,22 @@
 	<meta name="description" content="Compare countries, universities, and more on JapaConnect." />
 </svelte:head>
 
-<main class="mx-auto max-w-6xl px-4 py-8">
+{#if !isFeatureEnabled('feature.comparison')}
+	<main class="mx-auto max-w-2xl px-6 py-16">
+		<div class="text-center">
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('comparisons.not_available')}</h1>
+			<p class="mt-2" style="color: var(--color-muted)">{t('forum.feature_disabled')}</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">{t('forum.go_home')}</a>
+		</div>
+	</main>
+{:else}
+	<main class="mx-auto max-w-6xl px-4 py-8">
 	<header class="mb-8">
 		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">
-			Comparisons
+			{t('comparisons.title')}
 		</h1>
 		<p class="mt-2 text-sm" style="color: var(--color-muted)">
-			Make informed decisions by comparing options side by side.
+			{t('comparisons.subtitle')}
 		</p>
 	</header>
 
@@ -60,8 +56,8 @@
 	{:else if types.length === 0}
 		<EmptyState
 			icon={GitCompare}
-			title="No comparisons yet"
-			message="Check back soon — comparisons will help you evaluate options side by side."
+			title={t('comparisons.none')}
+			message={t('comparisons.none_msg')}
 		/>
 	{:else}
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -93,4 +89,5 @@
 			{/each}
 		</div>
 	{/if}
-</main>
+	</main>
+{/if}

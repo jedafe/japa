@@ -12,15 +12,15 @@
 	} = $props();
 </script>
 
-<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-	<p class="text-sm font-medium" style="color: var(--color-muted)">{label}</p>
-	<p class="mt-1 text-2xl font-bold tracking-tight">{value}</p>
+<div class="card-interactive rounded-2xl border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
+	<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{label}</p>
+	<p class="mt-2 text-2xl font-bold tracking-tight" style="color: var(--color-foreground)">{value}</p>
 	{#if subtitle}
-		<p class="mt-1 text-xs" style="color: var(--color-muted)">
+		<p class="mt-1 flex items-center gap-1 text-xs font-medium" style="color: var(--color-muted)">
 			{#if trend === 'up'}
-				<span class="text-emerald-600 dark:text-emerald-400">&#8593;</span>
+				<span class="text-emerald-500">&#8593;</span>
 			{:else if trend === 'down'}
-				<span class="text-red-600 dark:text-red-400">&#8595;</span>
+				<span class="text-red-500">&#8595;</span>
 			{/if}
 			{subtitle}
 		</p>

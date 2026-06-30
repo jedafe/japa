@@ -3,7 +3,10 @@ import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
-	getToken: vi.fn().mockReturnValue(null)
+	getToken: vi.fn().mockReturnValue(null),
+	api: {
+		search: vi.fn().mockResolvedValue([])
+	}
 }));
 
 vi.mock('$app/navigation', () => ({
@@ -19,6 +22,32 @@ vi.mock('$app/state', () => ({
 		}
 	}
 }));
+
+vi.mock('$lib/stores/i18n.svelte', () => {
+	const translations: Record<string, string> = {
+		'search.results': 'Search',
+		'search.find': 'Find communities, posts, and people on JapaConnect.',
+		'search.placeholder_short': 'Search for topics, people, spaces...',
+		'search.no_results': 'No results found',
+		'search.no_results_hint': 'Try a different search term.',
+		'search.enter_term': 'Enter a search term to get started.'
+	};
+	return { t: (key: string) => translations[key] ?? key };
+});
+
+vi.mock('$lib/analytics', () => ({
+	trackEvent: vi.fn(),
+	AnalyticsEvents: { SEARCH: 'search' }
+}));
+
+vi.mock('@formkit/auto-animate', () => ({
+	default: () => {}
+}));
+
+vi.mock('$lib/components/ui', async () => {
+	const { default: Comp } = await import('$lib/components/EmptyStateMock.svelte');
+	return { EmptyState: Comp };
+});
 
 describe('Search +page.svelte', () => {
 	it('renders the Search heading', () => {

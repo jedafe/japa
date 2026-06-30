@@ -25,7 +25,7 @@
 </script>
 
 <span class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium {colors[status]}">
-	<span class="h-1.5 w-1.5 rounded-full {dots[status]}"></span>
+	<span class="h-1.5 w-1.5 rounded-full {dots[status]}" class:animate-pulse={status === 'healthy'}></span>
 	{#if children}
 		{@render children()}
 	{:else}

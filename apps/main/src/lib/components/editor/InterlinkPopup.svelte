@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	interface Props {
 		position: { top: number; left: number };
@@ -58,7 +59,7 @@
 	<input
 		type="text"
 		bind:value={query}
-		placeholder="Link to content or space..."
+		placeholder={t('editor.link_placeholder')}
 		class="interlink-input"
 	/>
 	
@@ -76,7 +77,7 @@
 			{/each}
 		</div>
 	{:else if query}
-		<div class="no-results">No results found</div>
+		<div class="no-results">{t('editor.no_results')}</div>
 	{/if}
 </div>
 

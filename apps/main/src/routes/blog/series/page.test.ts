@@ -7,7 +7,7 @@ vi.mock('$lib/api', () => ({
 }));
 
 describe('Blog Series +page.svelte', () => {
-	const defaultData = { series: [] };
+	const defaultData = { user: null, flags: {}, notificationCount: 0, token: null, locale: 'en', translations: {}, series: [] };
 
 	it('renders the Blog Series heading', () => {
 		render(Page, { props: { data: defaultData } });
@@ -31,8 +31,9 @@ describe('Blog Series +page.svelte', () => {
 
 	it('renders series cards when series exist', () => {
 		const dataWithSeries = {
+			...defaultData,
 			series: [
-				{ id: '1', title: 'My Series', slug: 'my-series', description: 'A series', created_at: '2026-01-01T00:00:00Z' }
+				{ id: '1', title: 'My Series', slug: 'my-series', description: 'A series', status: 'published', created_at: '2026-01-01T00:00:00Z' }
 			]
 		};
 		render(Page, { props: { data: dataWithSeries } });

@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ArrowLeft, Loader2, Save, X, Trash2 } from 'lucide-svelte';
-	import { api, getToken } from '$lib/api';
+	import { api } from '$lib/api';
 	import { onMount } from 'svelte';
 
 	let slug = $derived(page.params.slug);
@@ -24,26 +24,14 @@
 	let saving = $state(false);
 	let deleting = $state(false);
 
-	function authHeaders(): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json' };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
-
 	onMount(async () => {
 		try {
-			const res = await fetch(`/api/v1/professional-profiles/${slug}`, { headers: authHeaders() });
-			const body = await res.json();
-			if (body.data) {
-				profile = body.data;
-				name = body.data.name;
-				headline = body.data.headline;
-				skills = [...(body.data.skills || [])];
-				isPublic = body.data.is_public;
-			} else {
-				error = 'Profile not found.';
-			}
+			const result = await api.getProfessionalProfile(slug ?? '');
+			profile = result;
+			name = result.name;
+			headline = result.headline;
+			skills = [...(result.skills || [])];
+			isPublic = result.is_public;
 		} catch {
 			error = 'Failed to load profile.';
 		} finally {
@@ -77,19 +65,15 @@
 		error = '';
 
 		try {
-			const res = await fetch(`/api/v1/professional-profiles/${profile.id}`, {
-				method: 'PATCH',
-				headers: authHeaders(),
-				body: JSON.stringify({ name, headline, skills, is_public: isPublic })
+			await api.updateProfessionalProfile(profile.id, {
+				name,
+				headline,
+				skills,
+				is_public: isPublic
 			});
-			const body = await res.json();
-			if (!res.ok || body.error) {
-				error = body.error?.message || 'Failed to save changes.';
-				return;
-			}
 			goto(`/professional/${slug}`);
-		} catch {
-			error = 'Network error. Please try again.';
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Network error. Please try again.';
 		} finally {
 			saving = false;
 		}
@@ -102,18 +86,10 @@
 		error = '';
 
 		try {
-			const res = await fetch(`/api/v1/professional-profiles/${profile.id}`, {
-				method: 'DELETE',
-				headers: authHeaders()
-			});
-			const body = await res.json();
-			if (!res.ok || body.error) {
-				error = body.error?.message || 'Failed to delete profile.';
-				return;
-			}
+			await api.deleteProfessionalProfile(profile.id);
 			goto('/professional');
-		} catch {
-			error = 'Network error. Please try again.';
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Network error. Please try again.';
 		} finally {
 			deleting = false;
 		}

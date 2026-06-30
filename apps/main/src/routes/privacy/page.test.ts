@@ -6,7 +6,18 @@ vi.mock('$lib/api', () => ({
 	getToken: vi.fn().mockReturnValue(null)
 }));
 
-const defaultData = { isAuthenticated: false, consents: [], sources: [], bans: null };
+const defaultData = {
+	user: null,
+	flags: {},
+	notificationCount: 0,
+	token: null,
+	locale: 'en',
+	translations: {},
+	isAuthenticated: false,
+	consents: [],
+	sources: [],
+	bans: null
+};
 
 describe('Privacy & Data +page.svelte', () => {
 	it('renders the Privacy & Data heading', () => {

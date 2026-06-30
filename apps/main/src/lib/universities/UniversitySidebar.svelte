@@ -1,15 +1,11 @@
 <script lang="ts">
 	import { Globe, DollarSign, BookOpen, Award, ExternalLink } from 'lucide-svelte';
+	import type { CustomFieldValue } from '$lib/types';
 
 	let {
 		fields = []
 	}: {
-		fields: Array<{
-			id: string;
-			name: string;
-			value: any;
-			field_type?: string;
-		}>;
+		fields: CustomFieldValue[];
 	} = $props();
 
 	const fieldIcons: Record<string, any> = {
@@ -19,8 +15,8 @@
 		website: Globe
 	};
 
-	function getIcon(name: string) {
-		const lower = name.toLowerCase();
+	function getIcon(fieldId: string) {
+		const lower = fieldId.toLowerCase();
 		for (const [key, icon] of Object.entries(fieldIcons)) {
 			if (lower.includes(key)) return icon;
 		}
@@ -41,11 +37,11 @@
 	{#if fields.length > 0}
 		<div class="space-y-3">
 			{#each fields as field}
-				{@const Icon = getIcon(field.name)}
+				{@const Icon = getIcon(field.field_id)}
 				<div class="rounded-lg p-3" style="background-color: var(--color-background)">
 					<div class="flex items-center gap-2 text-sm" style="color: var(--color-muted)">
 						<Icon class="h-4 w-4" />
-						{field.name}
+						{field.field_id}
 					</div>
 					<div class="mt-1 font-medium" style="color: var(--color-foreground)">
 						{formatValue(field.value)}

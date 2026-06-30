@@ -1,9 +1,12 @@
 <script lang="ts">
-	import { User, Bell, Shield, Loader2, Save } from 'lucide-svelte';
-	import { getToken } from '$lib/api';
+	import { goto } from '$app/navigation';
+	import { User, Bell, Shield, Loader2, Save, Trash2, KeyRound, Lock } from 'lucide-svelte';
+	import { api } from '$lib/api';
 	import { onMount } from 'svelte';
 
-	let activeTab = $state<'profile' | 'notifications' | 'account'>('profile');
+	type TabId = 'profile' | 'notifications' | 'account';
+
+	let activeTab = $state<TabId>('profile');
 	let saving = $state(false);
 	let saved = $state(false);
 	let errorMessage = $state('');
@@ -21,20 +24,16 @@
 		comment_notifications: true
 	});
 
-	function authHeaders(extra?: Record<string, string>): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json', ...extra };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
+	// Delete account state
+	let showDeleteConfirm = $state(false);
+	let deleteConfirmText = $state('');
+	let deleteLoading = $state(false);
+	let deleteError = $state('');
 
 	onMount(async () => {
 		try {
-			const res = await fetch('/api/v1/users/me', { headers: authHeaders() });
-			const body = await res.json();
-			if (body.data) {
-				profile = { ...profile, ...body.data };
-			}
+			const me = await api.getMe();
+			profile = { ...profile, display_name: me.display_name ?? '', bio: me.bio ?? '', location: me.location ?? '' };
 		} catch {
 			// use defaults
 		}
@@ -45,17 +44,29 @@
 		saved = false;
 		errorMessage = '';
 		try {
-			await fetch('/api/v1/users/me', {
-				method: 'PATCH',
-				headers: authHeaders(),
-				body: JSON.stringify(profile)
-			});
+			await api.updateMe(profile);
 			saved = true;
 			setTimeout(() => (saved = false), 2000);
 		} catch {
 			errorMessage = 'Failed to save profile. Please try again.';
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function deleteAccount() {
+		if (deleteConfirmText !== 'DELETE') return;
+		deleteLoading = true;
+		deleteError = '';
+
+		try {
+			await api.requestAccountDeletion();
+			document.cookie = 'jc_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
+			goto('/');
+		} catch {
+			deleteError = 'Network error. Please try again.';
+		} finally {
+			deleteLoading = false;
 		}
 	}
 
@@ -88,11 +99,27 @@
 						{tab.label}
 					</button>
 				{/each}
+				<a
+					href="/settings/security"
+					class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+					style="color: var(--color-foreground)"
+				>
+					<KeyRound class="h-4 w-4" />
+					Security
+				</a>
+				<a
+					href="/settings/privacy"
+					class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+					style="color: var(--color-foreground)"
+				>
+					<Lock class="h-4 w-4" />
+					Privacy
+				</a>
 			</nav>
 		</aside>
 
 		<!-- Mobile Tabs -->
-		<div class="mb-4 flex gap-2 md:hidden">
+		<div class="mb-4 flex flex-wrap gap-2 md:hidden">
 			{#each tabs as tab}
 				<button
 					onclick={() => (activeTab = tab.id)}
@@ -103,6 +130,22 @@
 					{tab.label}
 				</button>
 			{/each}
+			<a
+				href="/settings/security"
+				class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+				style="color: var(--color-foreground); background-color: var(--color-surface)"
+			>
+				<KeyRound class="h-3.5 w-3.5" />
+				Security
+			</a>
+			<a
+				href="/settings/privacy"
+				class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+				style="color: var(--color-foreground); background-color: var(--color-surface)"
+			>
+				<Lock class="h-3.5 w-3.5" />
+				Privacy
+			</a>
 		</div>
 
 		<!-- Content -->
@@ -194,24 +237,88 @@
 						<p class="mt-1 text-sm" style="color: var(--color-muted)">
 							Update your password to keep your account secure.
 						</p>
-						<button
-							class="mt-3 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+						<a
+							href="/forgot-password"
+							class="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 							style="border-color: var(--color-border); color: var(--color-foreground)"
 						>
 							Change password
-						</button>
+						</a>
+					</div>
+					<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
+						<h3 class="flex items-center gap-2 text-sm font-medium" style="color: var(--color-foreground)">
+							<KeyRound class="h-4 w-4" />
+							Two-Factor Authentication
+						</h3>
+						<p class="mt-1 text-sm" style="color: var(--color-muted)">
+							Add an extra layer of security with 2FA.
+						</p>
+						<a
+							href="/settings/security"
+							class="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+							style="border-color: var(--color-border); color: var(--color-foreground)"
+						>
+							Manage 2FA
+						</a>
 					</div>
 					<div class="rounded-lg border p-4" style="border-color: var(--color-danger)">
 						<h3 class="text-sm font-medium" style="color: var(--color-danger)">Danger Zone</h3>
 						<p class="mt-1 text-sm" style="color: var(--color-muted)">
-							Permanently delete your account and all associated data.
+							Permanently delete your account and all associated data. This action cannot be undone.
 						</p>
-						<button
-							class="mt-3 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-							style="border-color: var(--color-danger); color: var(--color-danger)"
-						>
-							Delete account
-						</button>
+
+						{#if !showDeleteConfirm}
+							<button
+								onclick={() => (showDeleteConfirm = true)}
+								class="mt-3 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+								style="border-color: var(--color-danger); color: var(--color-danger)"
+							>
+								Delete account
+							</button>
+						{:else}
+							<div class="mt-3 space-y-3">
+								{#if deleteError}
+									<div
+										class="rounded-lg border px-4 py-3 text-sm"
+										style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+									>
+										{deleteError}
+									</div>
+								{/if}
+								<p class="text-sm" style="color: var(--color-danger)">
+									Type <strong>DELETE</strong> to confirm:
+								</p>
+								<input
+									type="text"
+									bind:value={deleteConfirmText}
+									placeholder="DELETE"
+									class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--color-danger)]"
+									style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+								/>
+								<div class="flex gap-2">
+									<button
+										onclick={deleteAccount}
+										disabled={deleteLoading || deleteConfirmText !== 'DELETE'}
+										class="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+										style="background-color: var(--color-danger)"
+									>
+										{#if deleteLoading}
+											<Loader2 class="h-4 w-4 animate-spin" />
+										{:else}
+											<Trash2 class="h-4 w-4" />
+										{/if}
+										Permanently delete
+									</button>
+									<button
+										onclick={() => { showDeleteConfirm = false; deleteConfirmText = ''; deleteError = ''; }}
+										class="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+										style="border-color: var(--color-border); color: var(--color-foreground)"
+									>
+										Cancel
+									</button>
+								</div>
+							</div>
+						{/if}
 					</div>
 				</div>
 			{/if}

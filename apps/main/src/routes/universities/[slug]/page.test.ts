@@ -13,16 +13,25 @@ vi.mock('$app/state', () => ({
 }));
 
 const mockData = {
+	user: null,
+	flags: {},
+	notificationCount: 0,
+	token: null,
+	locale: 'en',
+	translations: {},
 	university: {
 		id: '1',
 		name: 'University of Lagos',
 		description: 'A top university in Nigeria.',
 		country: 'Nigeria',
-		logo_url: null,
-		slug: 'university-of-lagos'
+		logo_url: undefined,
+		slug: 'university-of-lagos',
+		space_type: 'university',
+		created_at: '2026-01-01T00:00:00Z'
 	},
-	reviewAggregate: { average_rating: 4.5, review_count: 120 },
-	fields: []
+	reviewAggregate: { entity_type: 'space', entity_id: '1', average_rating: 4.5, review_count: 120, rating_distribution: {} },
+	fields: [],
+	followerCount: 0
 };
 
 describe('UniversityDetail +page.svelte', () => {

@@ -27,6 +27,28 @@ vi.mock('$lib/api', () => ({
 	}
 }));
 
+vi.mock('$lib/stores/features.svelte', () => ({
+	isFeatureEnabled: () => true,
+	setFeatureFlags: () => {}
+}));
+
+vi.mock('$lib/components/ReactionBar.svelte', () => ({
+	default: () => null
+}));
+
+vi.mock('$lib/components/RevisionHistory.svelte', () => ({
+	default: () => null
+}));
+
+vi.mock('$lib/components/PinButton.svelte', () => ({
+	default: () => null
+}));
+
+vi.mock('$lib/components/ui', async () => {
+	const { default: Comp } = await import('$lib/components/EmptyStateMock.svelte');
+	return { EmptyState: Comp };
+});
+
 describe('Forum [slug] +page.svelte', () => {
 	it('renders the Back to Forum link', () => {
 		render(Page);

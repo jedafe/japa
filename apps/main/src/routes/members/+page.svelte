@@ -1,33 +1,18 @@
 <script lang="ts">
 	import { Users, Search, User } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { getToken } from '$lib/api';
+	import { api, type UserProfile } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
 	import { onMount } from 'svelte';
 
-	interface Member {
-		id: string;
-		username: string;
-		name: string;
-		bio: string;
-		avatar_url: string;
-	}
-
-	let members = $state<Member[]>([]);
+	let members = $state<UserProfile[]>([]);
 	let loading = $state(true);
 	let searchQuery = $state('');
 
 	async function fetchMembers(query?: string) {
 		loading = true;
 		try {
-			const params = new URLSearchParams({ limit: '50' });
-			if (query) params.set('search', query);
-			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-			const token = getToken();
-			if (token) headers['Authorization'] = `Bearer ${token}`;
-			const res = await fetch(`/api/v1/users?${params.toString()}`, { headers });
-			const body = await res.json();
-			members = body.data ?? [];
+			members = await api.listUsers({ limit: 50, search: query });
 		} catch {
 			members = [];
 		} finally {
@@ -103,7 +88,7 @@
 						{#if member.avatar_url}
 							<img
 								src={member.avatar_url}
-								alt={member.name}
+								alt={member.display_name}
 								class="h-10 w-10 rounded-full object-cover"
 							/>
 						{:else}
@@ -111,7 +96,7 @@
 								class="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white"
 								style="background-color: var(--color-primary)"
 							>
-								{member.name?.charAt(0)?.toUpperCase() ?? member.username?.charAt(0)?.toUpperCase() ?? '?'}
+								{(member.display_name || member.username)?.charAt(0)?.toUpperCase() ?? '?'}
 							</div>
 						{/if}
 						<div class="min-w-0 flex-1">
@@ -119,7 +104,7 @@
 								class="truncate text-base font-semibold group-hover:underline"
 								style="color: var(--color-foreground)"
 							>
-								{member.name || member.username}
+								{member.display_name || member.username}
 							</h3>
 							<p class="truncate text-xs" style="color: var(--color-muted)">
 								@{member.username}
@@ -130,8 +115,7 @@
 						<p class="mt-3 text-sm line-clamp-2" style="color: var(--color-muted)">
 							{member.bio}
 						</p>
-					{/if}
-				</a>
+					{/if}				</a>
 			{/each}
 		</div>
 	{/if}

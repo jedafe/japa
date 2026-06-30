@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { Bell, Check, CheckCheck, Loader2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
 	import { onMount } from 'svelte';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { wsClient } from '$lib/websocket';
+	import { realtime } from '$lib/stores/realtime.svelte';
 
 	interface Notification {
 		id: string;
@@ -18,23 +20,13 @@
 	let loading = $state(true);
 	let markingRead = $state<string | null>(null);
 	let errorMessage = $state('');
+	let listContainer: HTMLDivElement | undefined = $state();
 
 	const unreadCount = $derived(notifications.filter((n) => !n.read).length);
 
-	function authHeaders(extra?: Record<string, string>): Record<string, string> {
-		const h: Record<string, string> = { 'Content-Type': 'application/json', ...extra };
-		const token = getToken();
-		if (token) h['Authorization'] = `Bearer ${token}`;
-		return h;
-	}
-
 	onMount(async () => {
 		try {
-			const res = await fetch('/api/v1/notifications?limit=50', { headers: authHeaders() });
-			const body = await res.json();
-			if (body.data) {
-				notifications = body.data;
-			}
+			notifications = await api.getNotifications({ limit: 50 });
 		} catch {
 			notifications = [];
 		} finally {
@@ -42,12 +34,32 @@
 		}
 	});
 
+	$effect(() => {
+		if (!listContainer) return;
+		autoAnimate(listContainer);
+	});
+
+	// Listen for real-time notifications
+	$effect(() => {
+		const unsub = wsClient.on('notification', (notification: Notification) => {
+			// Prepend new notification if not already in list
+			const exists = notifications.some((n) => n.id === notification.id);
+			if (!exists && notification.id) {
+				notifications = [notification, ...notifications];
+			}
+		});
+		return unsub;
+	});
+
 	async function markAsRead(id: string) {
 		markingRead = id;
 		errorMessage = '';
 		try {
-			await fetch(`/api/v1/notifications/${id}/read`, { method: 'PATCH', headers: authHeaders() });
+			await api.markNotificationRead(id);
 			notifications = notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
+			// Update realtime count
+			const newUnread = notifications.filter((n) => !n.read).length;
+			realtime.setNotificationCount(newUnread);
 		} catch {
 			errorMessage = 'Failed to mark notification as read. Please try again.';
 		} finally {
@@ -57,8 +69,9 @@
 
 	async function markAllAsRead() {
 		try {
-			await fetch('/api/v1/notifications/read-all', { method: 'POST', headers: authHeaders() });
+			await api.markAllRead();
 			notifications = notifications.map((n) => ({ ...n, read: true }));
+			realtime.setNotificationCount(0);
 		} catch {
 			// ignore
 		}
@@ -76,7 +89,7 @@
 </script>
 
 <svelte:head>
-	<title>{$t('notifications.title')} | JapaConnect</title>
+	<title>{t('notifications.title')} | JapaConnect</title>
 	<meta name="description" content="View your notifications." />
 </svelte:head>
 
@@ -84,11 +97,11 @@
 	<header class="mb-6 flex items-center justify-between">
 		<div>
 			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">
-				{$t('notifications.title')}
+				{t('notifications.title')}
 			</h1>
 			{#if unreadCount > 0}
 				<p class="mt-1 text-sm" style="color: var(--color-muted)">
-					{$t('notifications.unread').replace('{count}', String(unreadCount))}
+					{t('notifications.unread').replace('{count}', String(unreadCount))}
 				</p>
 			{/if}
 		</div>
@@ -99,7 +112,7 @@
 				style="color: var(--color-primary)"
 			>
 				<CheckCheck class="h-4 w-4" />
-				{$t('notifications.mark_all_read')}
+				{t('notifications.mark_all_read')}
 			</button>
 		{/if}
 	</header>
@@ -116,8 +129,8 @@
 	{:else if notifications.length === 0}
 		<EmptyState
 			icon={Bell}
-			title={$t('notifications.empty_title')}
-			message={$t('notifications.empty_message')}
+			title={t('notifications.empty_title')}
+			message={t('notifications.empty_message')}
 		/>
 	{:else}
 		{#if errorMessage}
@@ -125,7 +138,11 @@
 				{errorMessage}
 			</div>
 		{/if}
-		<div class="divide-y rounded-xl border" style="border-color: var(--color-border); divide-color: var(--color-border)" use:autoAnimate>
+		<div
+			bind:this={listContainer}
+			class="divide-y rounded-xl border"
+			style="border-color: var(--color-border); divide-color: var(--color-border)"
+		>
 			{#each notifications as notification (notification.id)}
 				<div
 					class="flex items-start gap-3 p-4 transition-colors hover:bg-black/5 dark:hover:bg-white/5"

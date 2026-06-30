@@ -7,6 +7,12 @@ vi.mock('$lib/api', () => ({
 }));
 
 const mockData = {
+	user: null,
+	flags: {},
+	notificationCount: 0,
+	token: null,
+	locale: 'en',
+	translations: {},
 	space: {
 		id: '1',
 		name: 'Nigerians in Toronto',
@@ -14,6 +20,7 @@ const mockData = {
 		slug: 'nigerians-in-toronto',
 		space_type: 'country',
 		member_count: 42,
+		created_by: 'user-1',
 		rules: [
 			{ id: '1', title: 'Be respectful', description: 'Treat everyone with respect.' }
 		]

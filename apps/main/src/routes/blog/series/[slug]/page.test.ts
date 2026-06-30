@@ -8,11 +8,18 @@ vi.mock('$lib/api', () => ({
 
 describe('Blog Series [slug] +page.svelte', () => {
 	const defaultData = {
+		user: null,
+		flags: {},
+		notificationCount: 0,
+		token: null,
+		locale: 'en',
+		translations: {},
 		series: {
 			id: '1',
 			title: 'Test Series',
 			slug: 'test-series',
 			description: 'Series description',
+			status: 'published',
 			created_at: '2026-01-01T00:00:00Z'
 		},
 		posts: []
@@ -47,8 +54,8 @@ describe('Blog Series [slug] +page.svelte', () => {
 		const dataWithPosts = {
 			...defaultData,
 			posts: [
-				{ content_id: 'c1', slug: 'post-1', title: 'First Post', created_at: '2026-01-01T00:00:00Z', status: 'published' },
-				{ content_id: 'c2', slug: 'post-2', title: 'Second Post', created_at: '2026-01-02T00:00:00Z', status: 'published' }
+				{ series_id: '1', content_id: 'c1', position: 1, content_id_2: 'c1', slug: 'post-1', title: 'First Post', created_at: '2026-01-01T00:00:00Z', status: 'published' },
+				{ series_id: '1', content_id: 'c2', position: 2, content_id_2: 'c2', slug: 'post-2', title: 'Second Post', created_at: '2026-01-02T00:00:00Z', status: 'published' }
 			]
 		};
 		render(Page, { props: { data: dataWithPosts } });

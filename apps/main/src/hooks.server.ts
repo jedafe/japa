@@ -6,6 +6,7 @@ import type { FeatureFlags } from '$lib/types';
 const PROTECTED_ROUTES = [
 	'/notifications',
 	'/settings',
+	'/settings/security',
 	'/create',
 	'/onboarding'
 ];

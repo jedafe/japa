@@ -90,20 +90,65 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 // isOriginAllowed returns true if the given origin should receive CORS
-// headers. In development all origins are allowed. In production the list
-// would be restricted to known domains, but for the foundation we allow
-// everything and rely on the reverse proxy for origin filtering.
+// headers. In development, localhost and 127.0.0.1 with any port are allowed.
+// In production, only origins from JC_CORS_ORIGINS (comma-separated) are
+// permitted. The wildcard "*" is never allowed in production.
 func isOriginAllowed(origin string) bool {
 	if origin == "" {
 		return false
 	}
-	// In development, allow all origins for local dev convenience.
-	// In production, only allow configured origins.
+
 	env := strings.ToLower(strings.TrimSpace(os.Getenv("JC_ENV")))
-	if env == "" || env == "development" {
-		return true
+	isProd := env == "production"
+
+	if !isProd {
+		// Development: allow localhost and 127.0.0.1 with any port.
+		return isLocalOrigin(origin)
 	}
-	// Production: allow the site itself and common localhost ports for admin tools.
+
+	// Production: only allow explicitly configured origins.
+	// Never allow wildcard "*".
+	if origin == "*" {
+		return false
+	}
+
+	allowedCSV := os.Getenv("JC_CORS_ORIGINS")
+	if allowedCSV == "" {
+		// Fall back to hardcoded production origins if env var not set.
+		return isDefaultProductionOrigin(origin)
+	}
+
+	for _, allowed := range strings.Split(allowedCSV, ",") {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "" || allowed == "*" {
+			continue // skip empty entries and never allow wildcard
+		}
+		if origin == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// isLocalOrigin returns true if the origin is localhost or 127.0.0.1
+// with any port, for development convenience.
+func isLocalOrigin(origin string) bool {
+	// Strip scheme for matching.
+	stripped := origin
+	if idx := strings.Index(origin, "://"); idx != -1 {
+		stripped = origin[idx+3:]
+	}
+	// Remove trailing port if present.
+	host := stripped
+	if idx := strings.LastIndex(stripped, ":"); idx != -1 {
+		host = stripped[:idx]
+	}
+	return host == "localhost" || host == "127.0.0.1" || host == "[::1]"
+}
+
+// isDefaultProductionOrigin checks against the hardcoded production origins
+// when JC_CORS_ORIGINS is not set.
+func isDefaultProductionOrigin(origin string) bool {
 	allowed := []string{
 		"https://japaconnect.com",
 		"https://www.japaconnect.com",

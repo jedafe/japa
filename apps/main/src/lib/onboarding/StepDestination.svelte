@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { ArrowLeft, ArrowRight, Plane, Target } from 'lucide-svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let { stepData, onupdate, onnext, onback, submitting } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let destination = $state((stepData.destination as string) || '');
+	// svelte-ignore state_referenced_locally
 	let primaryGoal = $state((stepData.primary_goal as string) || '');
 
 	const destinations = [
@@ -36,14 +39,14 @@
 			<Plane size={20} />
 		</div>
 		<div>
-			<h2 class="text-xl font-semibold">Where are you headed?</h2>
-			<p class="text-sm" style="color: var(--color-muted)">Help us personalize your experience</p>
+			<h2 class="text-xl font-semibold">{t('onboarding.destination')}</h2>
+			<p class="text-sm" style="color: var(--color-muted)">{t('onboarding.destination_subtitle')}</p>
 		</div>
 	</div>
 
 	<div class="space-y-4">
 		<div>
-			<label for="destination" class="mb-1 block text-sm font-medium">Destination country</label>
+			<label for="destination" class="mb-1 block text-sm font-medium">{t('onboarding.destination_country')}</label>
 			<div class="relative">
 				<select
 					id="destination"
@@ -51,7 +54,7 @@
 					class="w-full appearance-none rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2"
 					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary);"
 				>
-					<option value="">Select a destination...</option>
+					<option value="">{t('onboarding.destination_placeholder')}</option>
 					{#each destinations as dest}
 						<option value={dest.value}>{dest.label}</option>
 					{/each}
@@ -61,7 +64,7 @@
 		</div>
 
 		<div>
-			<label for="goal" class="mb-1 block text-sm font-medium">Primary goal</label>
+			<label for="goal" class="mb-1 block text-sm font-medium">{t('onboarding.primary_goal')}</label>
 			<div class="relative">
 				<select
 					id="goal"
@@ -69,7 +72,7 @@
 					class="w-full appearance-none rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2"
 					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary);"
 				>
-					<option value="">Select your primary goal...</option>
+					<option value="">{t('onboarding.goal_placeholder')}</option>
 					{#each goals as goal}
 						<option value={goal.value}>{goal.label}</option>
 					{/each}
@@ -86,7 +89,7 @@
 			onclick={onback}
 		>
 			<ArrowLeft size={16} />
-			Back
+			{t('onboarding.back')}
 		</button>
 		<button
 			class="flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
@@ -94,7 +97,7 @@
 			onclick={handleNext}
 			disabled={!destination || !primaryGoal || submitting}
 		>
-			Continue
+			{t('onboarding.continue')}
 			<ArrowRight size={16} />
 		</button>
 	</div>

@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { setToken } from '$lib/api';
 	import { locale, t } from '$lib/stores/i18n.svelte';
 	import '../app.css';
 	import {
 	 LayoutDashboard,
-	 Activity,
+	 ListTodo,
 	 Database,
 	 ScrollText,
 	 Shield,
@@ -19,6 +20,8 @@
 	let { children, data } = $props();
 
 	let sidebarOpen = $state(false);
+
+	const currentPath = $derived(page.url.pathname);
 
 	$effect(() => {
 		locale.init(data.locale, data.translations);
@@ -36,9 +39,9 @@
 		window.location.href = '/login';
 	}
 
-	const nav = $derived([
+	 const nav = $derived([
 	 { label: t('nav.dashboard'), href: '/', icon: LayoutDashboard },
-	 { label: t('nav.queue'), href: '/queue', icon: Activity },
+	 { label: t('nav.queue'), href: '/queue', icon: ListTodo },
 	 { label: t('nav.db_health'), href: '/db', icon: Database },
 	 { label: t('nav.audit'), href: '/audit', icon: ScrollText },
 	 { label: t('nav.security'), href: '/security', icon: Shield },
@@ -77,12 +80,14 @@
 		</div>
 		<nav class="flex-1 space-y-1 p-3">
 			{#each nav as item}
+				{@const isActive = item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href)}
 				<a
 					href={item.href}
-					class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+					class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors {isActive ? 'bg-black/5 dark:bg-white/10' : 'hover:bg-black/5 dark:hover:bg-white/10'}"
+					style={isActive ? `color: var(--color-primary)` : undefined}
 					onclick={() => (sidebarOpen = false)}
 				>
-					<item.icon class="h-4 w-4" style="color: var(--color-muted)" />
+					<item.icon class="h-4 w-4" style={isActive ? `color: var(--color-primary)` : `color: var(--color-muted)`} />
 					{item.label}
 				</a>
 			{/each}

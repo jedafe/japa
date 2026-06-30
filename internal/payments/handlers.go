@@ -8,8 +8,13 @@
 package payments
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -25,7 +30,10 @@ import (
 
 // Handlers holds dependencies for payment HTTP handlers.
 type Handlers struct {
-	Service *Service
+	Service             *Service
+	StripeWebhookSecret string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret
+	NOWPaymentsIPNKey   string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC key
+	PaystackSecretKey   string // Paystack secret key for webhook HMAC verification
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -190,11 +198,21 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Read raw body for signature verification
-	body, err := json.Marshal(r.Body)
+	// Read raw body for signature verification.
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		writeError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
 		return
+	}
+	defer r.Body.Close()
+
+	// Verify Paystack webhook signature (HMAC-SHA256 of body with secret key).
+	if h.PaystackSecretKey != "" {
+		sig := r.Header.Get("X-Paystack-Signature")
+		if err := verifyHMACSHA256(body, sig, h.PaystackSecretKey); err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid_signature", "Invalid webhook signature")
+			return
+		}
 	}
 
 	// Parse event
@@ -223,11 +241,21 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read raw body for signature verification
-	body, err := json.Marshal(r.Body)
+	// Read raw body for signature verification.
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		writeError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
 		return
+	}
+	defer r.Body.Close()
+
+	// Verify Stripe webhook signature (HMAC-SHA256 with webhook secret).
+	if h.StripeWebhookSecret != "" {
+		sig := r.Header.Get("Stripe-Signature")
+		if err := verifyStripeSignature(body, sig, h.StripeWebhookSecret); err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid_signature", "Invalid webhook signature")
+			return
+		}
 	}
 
 	// Parse event
@@ -602,4 +630,79 @@ func (h *Handlers) DeleteDiscountCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ---------------------------------------------------------------------------
+// Webhook Signature Verification Helpers
+// ---------------------------------------------------------------------------
+
+// verifyHMACSHA256 computes HMAC-SHA256 of payload with the given secret and
+// compares it against the provided signature using constant-time comparison.
+func verifyHMACSHA256(payload []byte, signature, secret string) error {
+	if signature == "" {
+		return fmt.Errorf("missing signature")
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(payload)
+	expected := hex.EncodeToString(mac.Sum(nil))
+
+	if !hmac.Equal([]byte(signature), []byte(expected)) {
+		return fmt.Errorf("invalid signature")
+	}
+	return nil
+}
+
+// verifyStripeSignature verifies a Stripe webhook signature.
+// Header format: t=<timestamp>,v1=<signature>[,v1=<signature>...]
+// Rejects payloads older than 5 minutes to prevent replay attacks.
+func verifyStripeSignature(payload []byte, header, secret string) error {
+	if secret == "" {
+		return fmt.Errorf("stripe webhook secret not configured")
+	}
+	if header == "" {
+		return fmt.Errorf("missing Stripe-Signature header")
+	}
+
+	var timestamp, sig string
+	for _, part := range strings.Split(header, ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		switch kv[0] {
+		case "t":
+			timestamp = kv[1]
+		case "v1":
+			if sig == "" {
+				sig = kv[1]
+			}
+		}
+	}
+
+	if timestamp == "" {
+		return fmt.Errorf("missing timestamp in Stripe-Signature header")
+	}
+	if sig == "" {
+		return fmt.Errorf("missing v1 signature in Stripe-Signature header")
+	}
+
+	// Reject payloads older than 5 minutes (replay protection).
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid timestamp: %w", err)
+	}
+	if age := time.Now().Unix() - ts; age > 300 || age < -300 {
+		return fmt.Errorf("timestamp too old or in the future (age=%ds)", age)
+	}
+
+	// Compute expected: HMAC-SHA256(secret, timestamp + "." + payload)
+	signedPayload := timestamp + "." + string(payload)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(signedPayload))
+	expected := hex.EncodeToString(mac.Sum(nil))
+
+	if !hmac.Equal([]byte(sig), []byte(expected)) {
+		return fmt.Errorf("invalid signature")
+	}
+	return nil
 }
