@@ -62,13 +62,15 @@ const MaxPageSize = 100
 // separation. Reads go through the reader pool; writes go through the
 // writer pool. This follows the same pattern as the existing db.DB struct.
 type Service struct {
-	read  *gen.Queries
-	write *gen.Queries
+	db     *db.DB
+	read   *gen.Queries
+	write  *gen.Queries
 }
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB) *Service {
 	return &Service{
+		db:    database,
 		read:  gen.New(database.Reader),
 		write: gen.New(database.Writer),
 	}

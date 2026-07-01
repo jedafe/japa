@@ -40,6 +40,12 @@ type Config struct {
 	OAuthGoogleSecret string // JC_OAUTH_GOOGLE_CLIENT_SECRET — Google OAuth client secret
 	OAuthGitHubID     string // JC_OAUTH_GITHUB_CLIENT_ID — GitHub OAuth client ID
 	OAuthGitHubSecret string // JC_OAUTH_GITHUB_CLIENT_SECRET — GitHub OAuth client secret
+	OAuthAppleClientID      string // JC_OAUTH_APPLE_CLIENT_ID — Apple Sign-In client ID (Service ID)
+	OAuthAppleTeamID        string // JC_OAUTH_APPLE_TEAM_ID — Apple Developer Team ID
+	OAuthAppleKeyID         string // JC_OAUTH_APPLE_KEY_ID — Apple private key ID for client secret JWT
+	OAuthApplePrivateKeyPath string // JC_OAUTH_APPLE_PRIVATE_KEY_PATH — path to .p8 private key file
+	OAuthFacebookAppID      string // JC_OAUTH_FACEBOOK_APP_ID — Facebook App ID
+	OAuthFacebookAppSecret  string // JC_OAUTH_FACEBOOK_APP_SECRET — Facebook App Secret
 	OAuthRedirectBase   string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.japaconnect.com)
 	TOTPEncryptionKey   string // JC_TOTP_ENCRYPTION_KEY — AES-256 key for encrypting TOTP secrets at rest (32-byte hex or base64)
 	StripeWebhookSecret string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret (whsec_...)
@@ -82,6 +88,12 @@ func Load() (Config, error) {
 		OAuthGoogleSecret: os.Getenv("JC_OAUTH_GOOGLE_CLIENT_SECRET"),
 		OAuthGitHubID:     os.Getenv("JC_OAUTH_GITHUB_CLIENT_ID"),
 		OAuthGitHubSecret: os.Getenv("JC_OAUTH_GITHUB_CLIENT_SECRET"),
+		OAuthAppleClientID:      os.Getenv("JC_OAUTH_APPLE_CLIENT_ID"),
+		OAuthAppleTeamID:        os.Getenv("JC_OAUTH_APPLE_TEAM_ID"),
+		OAuthAppleKeyID:         os.Getenv("JC_OAUTH_APPLE_KEY_ID"),
+		OAuthApplePrivateKeyPath: os.Getenv("JC_OAUTH_APPLE_PRIVATE_KEY_PATH"),
+		OAuthFacebookAppID:      os.Getenv("JC_OAUTH_FACEBOOK_APP_ID"),
+		OAuthFacebookAppSecret:  os.Getenv("JC_OAUTH_FACEBOOK_APP_SECRET"),
 		OAuthRedirectBase:    os.Getenv("JC_OAUTH_REDIRECT_BASE"),
 		TOTPEncryptionKey:    os.Getenv("JC_TOTP_ENCRYPTION_KEY"),
 		StripeWebhookSecret:  os.Getenv("JC_STRIPE_WEBHOOK_SECRET"),

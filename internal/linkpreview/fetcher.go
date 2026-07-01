@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,15 @@ import (
 
 	"github.com/jedafe/japa/internal/valkey"
 )
+
+// maxRedirectDepth is the maximum number of redirects allowed per fetch.
+// Prevents infinite redirect loops and limits the attack surface for
+// redirect-based SSRF.
+const maxRedirectDepth = 5
+
+// errRedirectToPrivateIP is returned when a redirect target resolves to
+// a private or reserved IP address.
+var errRedirectToPrivateIP = errors.New("redirect target resolves to private IP")
 
 // Preview represents the metadata extracted from a URL.
 type Preview struct {
@@ -34,17 +44,51 @@ type Fetcher struct {
 	blacklist []string
 }
 
-// NewFetcher creates a Fetcher with the given HTTP client and Valkey cache.
-// Pass nil for cache to disable caching.
+// NewFetcher creates a Fetcher with an SSRF-safe HTTP client and Valkey cache.
+// The client uses a custom Transport that validates each redirect hop against
+// the private IP blocklist and limits redirect depth. Pass nil for cache to
+// disable caching.
 func NewFetcher(client *http.Client, cache *valkey.Client) *Fetcher {
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+		client = newSSRFSafeClient()
 	}
 	return &Fetcher{
 		client:   client,
 		cache:    cache,
 		cacheTTL: 24 * time.Hour,
 	}
+}
+
+// newSSRFSafeClient returns an http.Client configured with a Transport that
+// validates every redirect target for private IP ranges and caps redirect depth.
+func newSSRFSafeClient() *http.Client {
+	transport := &ssrfSafeTransport{
+		inner: http.DefaultTransport,
+	}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= maxRedirectDepth {
+				return fmt.Errorf("stopped after %d redirects", maxRedirectDepth)
+			}
+			if err := ValidateRedirectURL(req.URL.String()); err != nil {
+				return errRedirectToPrivateIP
+			}
+			return nil
+		},
+	}
+}
+
+// ssrfSafeTransport wraps an inner RoundTripper. It exists so the Transport
+// type is not nil (required for the http.Client to use it), while all
+// SSRF logic lives in CheckRedirect which is evaluated per-hop.
+type ssrfSafeTransport struct {
+	inner http.RoundTripper
+}
+
+func (t *ssrfSafeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t.inner.RoundTrip(req)
 }
 
 // SetBlacklist sets the admin-configured domain blacklist.

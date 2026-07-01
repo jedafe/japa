@@ -34,6 +34,70 @@ func TestMintAndValidateAccessToken(t *testing.T) {
 	}
 }
 
+func TestMintAccessToken_JTIIsPresent(t *testing.T) {
+	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
+
+	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
+	tenantID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
+
+	token, err := kr.MintAccessToken(userID, tenantID)
+	if err != nil {
+		t.Fatalf("MintAccessToken failed: %v", err)
+	}
+
+	claims, err := kr.ValidateAccessToken(token)
+	if err != nil {
+		t.Fatalf("ValidateAccessToken failed: %v", err)
+	}
+
+	if claims.JTI == "" {
+		t.Error("expected non-empty JTI claim")
+	}
+	if len(claims.JTI) < 36 {
+		t.Errorf("JTI looks too short: %q", claims.JTI)
+	}
+}
+
+func TestMintAccessToken_UniqueJTIs(t *testing.T) {
+	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
+
+	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
+	tenantID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
+
+	token1, _ := kr.MintAccessToken(userID, tenantID)
+	token2, _ := kr.MintAccessToken(userID, tenantID)
+
+	claims1, _ := kr.ValidateAccessToken(token1)
+	claims2, _ := kr.ValidateAccessToken(token2)
+
+	if claims1.JTI == claims2.JTI {
+		t.Errorf("JTIs should be unique, got same JTI: %s", claims1.JTI)
+	}
+}
+
+func TestValidateAccessToken_MissingJTI(t *testing.T) {
+	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
+
+	// Create a token manually without JTI
+	claims := JWTClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+		UserID:   "user-123",
+		TenantID: "tenant-456",
+		// JTI intentionally empty
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token.Header["kid"] = "key-test"
+	signed, _ := token.SignedString([]byte("test-secret-key-32-bytes-long!!!"))
+
+	_, err := kr.ValidateAccessToken(signed)
+	if err == nil {
+		t.Error("expected error for token missing JTI, got nil")
+	}
+}
+
 func TestValidateAccessToken_ExpiredToken(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
@@ -47,6 +111,7 @@ func TestValidateAccessToken_ExpiredToken(t *testing.T) {
 		},
 		UserID:   userID.String(),
 		TenantID: tenantID.String(),
+		JTI:      "test-jti",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	token.Header["kid"] = "key-test"
@@ -111,5 +176,13 @@ func TestMintAccessToken_InvalidUUID(t *testing.T) {
 	_, err := kr.MintAccessToken(invalidID, invalidID)
 	if err == nil {
 		t.Error("expected error for invalid UUID")
+	}
+}
+
+func TestIsTokenRevoked_NilClient(t *testing.T) {
+	// With nil client, token should NOT be considered revoked (fail-open).
+	revoked := IsTokenRevoked(t.Context(), "any-jti", nil)
+	if revoked {
+		t.Error("expected false when Valkey client is nil")
 	}
 }

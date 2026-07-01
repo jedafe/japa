@@ -68,10 +68,22 @@ func run() error {
 	if workerErr != nil {
 		slog.Error("failed to start Asynq worker", "error", workerErr)
 	}
+
+	// Start the Asynq scheduler for periodic tasks (scheduled publishing,
+	// velocity score recalculation). Shares the same Redis connection.
+	scheduler := worker.NewScheduler(workerCfg)
+	go func() {
+		slog.Info("asynq scheduler starting", "addr", worker.Addr(workerCfg))
+		if err := scheduler.Run(); err != nil {
+			slog.Error("asynq scheduler stopped", "error", err)
+		}
+	}()
+
 	defer func() {
 		if workerShutdown != nil {
 			workerShutdown()
 		}
+		scheduler.Shutdown()
 	}()
 
 	// Start listening in a goroutine so we can handle shutdown signals.

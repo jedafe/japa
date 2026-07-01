@@ -313,3 +313,182 @@ func (s *Service) RevokeAPIKey(ctx context.Context, userID, keyID pgtype.UUID) e
 func (s *Service) SuspendAPIKey(ctx context.Context, keyID pgtype.UUID) error {
 	return s.store.setStatus(ctx, keyID, "suspended")
 }
+
+// ---------------------------------------------------------------------------
+// IP Allowlist CRUD
+// ---------------------------------------------------------------------------
+
+// AddAllowedIP adds an IP or CIDR range to an API key's allowlist.
+func (s *Service) AddAllowedIP(ctx context.Context, keyID pgtype.UUID, cidr, description string) error {
+	if cidr == "" {
+		return fmt.Errorf("cidr is required")
+	}
+	// Validate the CIDR/IP by attempting to parse it as inet.
+	var id pgtype.UUID
+	err := s.store.dbPool.QueryRow(ctx, `
+		INSERT INTO api_key_ip_allowlist (api_key_id, cidr, description)
+		VALUES ($1, $2::inet, $3)
+		RETURNING id
+	`, keyID, cidr, description).Scan(&id)
+	if err != nil {
+		return fmt.Errorf("add allowed IP: %w", err)
+	}
+	return nil
+}
+
+// RemoveAllowedIP removes an IP allowlist entry by its ID.
+func (s *Service) RemoveAllowedIP(ctx context.Context, keyID, ipID pgtype.UUID) error {
+	tag, err := s.store.dbPool.Exec(ctx, `
+		DELETE FROM api_key_ip_allowlist
+		WHERE id = $1 AND api_key_id = $2
+	`, ipID, keyID)
+	if err != nil {
+		return fmt.Errorf("remove allowed IP: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("allowlist entry not found")
+	}
+	return nil
+}
+
+// ListAllowedIPs returns all IP allowlist entries for a given API key.
+func (s *Service) ListAllowedIPs(ctx context.Context, keyID pgtype.UUID) ([]APIKeyIPAllowlist, error) {
+	rows, err := s.store.dbPool.Query(ctx, `
+		SELECT id, api_key_id, cidr::text, coalesce(description, ''), created_at
+		FROM api_key_ip_allowlist
+		WHERE api_key_id = $1
+		ORDER BY created_at ASC
+	`, keyID)
+	if err != nil {
+		return nil, fmt.Errorf("list allowed IPs: %w", err)
+	}
+	defer rows.Close()
+
+	var result []APIKeyIPAllowlist
+	for rows.Next() {
+		var entry APIKeyIPAllowlist
+		var id, apiKeyID pgtype.UUID
+		var createdAt pgtype.Timestamptz
+		if err := rows.Scan(&id, &apiKeyID, &entry.CIDR, &entry.Description, &createdAt); err != nil {
+			return nil, fmt.Errorf("scan allowed IP: %w", err)
+		}
+		entry.ID = id.String()
+		entry.APIKeyID = apiKeyID.String()
+		entry.CreatedAt = createdAt.Time.Format(time.RFC3339)
+		result = append(result, entry)
+	}
+	return result, rows.Err()
+}
+
+// hasIPAccess checks if a given IP address is permitted by the key's allowlist.
+// Returns true if the allowlist is empty (no restriction) or if the IP matches.
+func (s *Service) hasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP string) (bool, error) {
+	var count int
+	err := s.store.dbPool.QueryRow(ctx, `
+		SELECT count(*) FROM api_key_ip_allowlist WHERE api_key_id = $1
+	`, keyID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("check IP access: %w", err)
+	}
+	// No allowlist entries means unrestricted access.
+	if count == 0 {
+		return true, nil
+	}
+	// Check if the client IP falls within any of the CIDR ranges.
+	var allowed int
+	err = s.store.dbPool.QueryRow(ctx, `
+		SELECT count(*) FROM api_key_ip_allowlist
+		WHERE api_key_id = $1 AND $2::inet <<= cidr
+	`, keyID, clientIP).Scan(&allowed)
+	if err != nil {
+		return false, fmt.Errorf("check IP against allowlist: %w", err)
+	}
+	return allowed > 0, nil
+}
+
+// RotateAPIKey generates a new API key with the same name, scopes, and
+// rate_limit_tier as the old key, sets the old key's expires_at to now+24h
+// (grace period), and returns the new key with the full secret (shown once).
+func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (*CreateAPIKeyResponse, error) {
+	// Verify the key exists and belongs to the user.
+	var row apiKeyRow
+	err := s.store.dbPool.QueryRow(ctx, `
+		SELECT id, tenant_id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
+		FROM api_keys
+		WHERE id = $1
+	`, keyID).Scan(&row.ID, &row.TenantID, &row.UserID, &row.Name, &row.KeyPrefix,
+		&row.Scopes, &row.RateLimitTier, &row.Status, &row.LastUsedAt,
+		&row.RequestCount, &row.ExpiresAt, &row.CreatedAt, &row.UpdatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("api key not found")
+		}
+		return nil, fmt.Errorf("rotate api key: %w", err)
+	}
+	if row.UserID != userID {
+		return nil, fmt.Errorf("api key does not belong to user")
+	}
+
+	// Generate a new key with the same configuration.
+	rawBytes := make([]byte, 16)
+	if _, err := rand.Read(rawBytes); err != nil {
+		return nil, fmt.Errorf("generate key: %w", err)
+	}
+	fullKey := "jc_live_" + hex.EncodeToString(rawBytes)
+
+	hash := sha256.Sum256([]byte(fullKey))
+	keyHash := hex.EncodeToString(hash[:])
+
+	keyPrefix := fullKey[:12] + "..."
+
+	// Grace period: old key remains valid for 24 hours.
+	graceExpiry := time.Now().Add(24 * time.Hour)
+	graceTstz := &pgtype.Timestamptz{Time: graceExpiry, Valid: true}
+
+	// Create the new key and expire the old key in a single transaction.
+	tx, err := s.store.dbPool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rotate api key: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback is a no-op after commit
+
+	// Expire the old key.
+	_, err = tx.Exec(ctx, `
+		UPDATE api_keys
+		SET expires_at = $1, updated_at = now()
+		WHERE id = $2
+	`, graceTstz, keyID)
+	if err != nil {
+		return nil, fmt.Errorf("rotate api key: expire old key: %w", err)
+	}
+
+	// Insert the new key.
+	var newID pgtype.UUID
+	err = tx.QueryRow(ctx, `
+		INSERT INTO api_keys (tenant_id, user_id, name, key_prefix, key_hash, scopes, rate_limit_tier, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id
+	`, row.TenantID, userID, row.Name, keyPrefix, keyHash,
+		row.Scopes, row.RateLimitTier, row.ExpiresAt).Scan(&newID)
+	if err != nil {
+		return nil, fmt.Errorf("rotate api key: create new key: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("rotate api key: commit: %w", err)
+	}
+
+	return &CreateAPIKeyResponse{
+		APIKey: APIKey{
+			ID:            newID.String(),
+			Name:          row.Name,
+			KeyPrefix:     keyPrefix,
+			Scopes:        row.Scopes,
+			RateLimitTier: row.RateLimitTier,
+			Status:        "active",
+			CreatedAt:     pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			UpdatedAt:     pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		},
+		Key: fullKey,
+	}, nil
+}

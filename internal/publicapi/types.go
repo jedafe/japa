@@ -20,11 +20,21 @@ type APIKey struct {
 	Scopes        []string     `json:"scopes"`
 	RateLimitTier string       `json:"rate_limit_tier"`
 	Status        string       `json:"status"`
+	AllowedIPs    []string     `json:"allowed_ips,omitempty"`
 	LastUsedAt    *pgtype.Timestamptz `json:"last_used_at,omitempty"`
 	RequestCount  int64        `json:"request_count"`
 	ExpiresAt     *pgtype.Timestamptz `json:"expires_at,omitempty"`
 	CreatedAt     pgtype.Timestamptz  `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz  `json:"updated_at"`
+}
+
+// APIKeyIPAllowlist represents a single IP allowlist entry for an API key.
+type APIKeyIPAllowlist struct {
+	ID          string `json:"id"`
+	APIKeyID    string `json:"api_key_id"`
+	CIDR        string `json:"cidr"`
+	Description string `json:"description,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // CreateAPIKeyInput holds the fields needed to create a new API key.

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/redis/go-redis/v9"
 )
 
 // UserContextKey is the context key for the authenticated user.
@@ -26,9 +27,10 @@ func FromContext(ctx context.Context) *AuthenticatedUser {
 }
 
 // RequireAuth is middleware that requires a valid Bearer token.
-// It validates the JWT and stores the AuthenticatedUser in context.
-// Returns 401 if no token, invalid token, or wrong scheme.
-func RequireAuth(kr *KeyRotation) func(http.Handler) http.Handler {
+// It validates the JWT, checks if the JTI has been revoked via Valkey,
+// and stores the AuthenticatedUser in context.
+// Returns 401 if no token, invalid token, wrong scheme, or revoked token.
+func RequireAuth(kr *KeyRotation, vkClient *redis.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -46,6 +48,12 @@ func RequireAuth(kr *KeyRotation) func(http.Handler) http.Handler {
 			claims, err := kr.ValidateAccessToken(parts[1])
 			if err != nil {
 				writeError(w, http.StatusUnauthorized, "invalid_token", "Token is invalid or expired")
+				return
+			}
+
+			// Check if this specific token has been revoked.
+			if IsTokenRevoked(r.Context(), claims.JTI, vkClient) {
+				writeError(w, http.StatusUnauthorized, "token_revoked", "Token has been revoked")
 				return
 			}
 
@@ -74,8 +82,9 @@ func RequireAuth(kr *KeyRotation) func(http.Handler) http.Handler {
 
 // OptionalAuth is middleware that validates a Bearer token if present
 // but does not require it. Useful for endpoints that show different
-// content for authenticated vs anonymous users.
-func OptionalAuth(kr *KeyRotation) func(http.Handler) http.Handler {
+// content for authenticated vs anonymous users. Also checks JTI
+// revocation if a Valkey client is provided.
+func OptionalAuth(kr *KeyRotation, vkClient *redis.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -92,6 +101,12 @@ func OptionalAuth(kr *KeyRotation) func(http.Handler) http.Handler {
 
 			claims, err := kr.ValidateAccessToken(parts[1])
 			if err != nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Check if this specific token has been revoked.
+			if IsTokenRevoked(r.Context(), claims.JTI, vkClient) {
 				next.ServeHTTP(w, r)
 				return
 			}

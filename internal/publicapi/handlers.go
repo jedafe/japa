@@ -200,6 +200,30 @@ func (h *Handlers) RevokeKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RotateKey rotates an API key: generates a new key with the same configuration,
+// sets the old key to expire in 24h (grace period), and returns the new secret.
+// POST /api/v1/developer/keys/:id/rotate
+func (h *Handlers) RotateKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	keyID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		return
+	}
+
+	resp, err := h.Service.RotateAPIKey(r.Context(), user.UserID, keyID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": resp})
+}
+
 // ---------------------------------------------------------------------------
 // Admin Handlers — API Key Management
 // ---------------------------------------------------------------------------
@@ -245,5 +269,142 @@ func (h *Handlers) SuspendKey(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"status": "suspended"},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// IP Allowlist Handlers
+// ---------------------------------------------------------------------------
+
+// ListAllowedIPs returns all IP allowlist entries for an API key.
+// GET /api/v1/developer/keys/:id/ip-allowlist
+func (h *Handlers) ListAllowedIPs(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	keyID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		return
+	}
+
+	// Verify the key belongs to the user.
+	var ownerID pgtype.UUID
+	err = h.Service.store.dbPool.QueryRow(r.Context(), `
+		SELECT user_id FROM api_keys WHERE id = $1
+	`, keyID).Scan(&ownerID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if ownerID != user.UserID {
+		writeError(w, http.StatusForbidden, "forbidden", "API key does not belong to user")
+		return
+	}
+
+	entries, err := h.Service.ListAllowedIPs(r.Context(), keyID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
+}
+
+// AddAllowedIP adds an IP or CIDR range to an API key's allowlist.
+// POST /api/v1/developer/keys/:id/ip-allowlist
+func (h *Handlers) AddAllowedIP(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	keyID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		return
+	}
+
+	// Verify the key belongs to the user.
+	var ownerID pgtype.UUID
+	err = h.Service.store.dbPool.QueryRow(r.Context(), `
+		SELECT user_id FROM api_keys WHERE id = $1
+	`, keyID).Scan(&ownerID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if ownerID != user.UserID {
+		writeError(w, http.StatusForbidden, "forbidden", "API key does not belong to user")
+		return
+	}
+
+	var input struct {
+		CIDR        string `json:"cidr"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	if input.CIDR == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "cidr is required")
+		return
+	}
+
+	if err := h.Service.AddAllowedIP(r.Context(), keyID, input.CIDR, input.Description); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"data": map[string]string{"status": "added"},
+	})
+}
+
+// RemoveAllowedIP removes an IP allowlist entry from an API key.
+// DELETE /api/v1/developer/keys/:id/ip-allowlist/:ipId
+func (h *Handlers) RemoveAllowedIP(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	keyID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		return
+	}
+
+	ipID, err := parseUUIDParam(r, "ipId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_ip_id", "Invalid IP allowlist entry ID")
+		return
+	}
+
+	// Verify the key belongs to the user.
+	var ownerID pgtype.UUID
+	err = h.Service.store.dbPool.QueryRow(r.Context(), `
+		SELECT user_id FROM api_keys WHERE id = $1
+	`, keyID).Scan(&ownerID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if ownerID != user.UserID {
+		writeError(w, http.StatusForbidden, "forbidden", "API key does not belong to user")
+		return
+	}
+
+	if err := h.Service.RemoveAllowedIP(r.Context(), keyID, ipID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{"status": "removed"},
 	})
 }

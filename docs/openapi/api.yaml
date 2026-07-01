@@ -1,210 +1,499 @@
 openapi: 3.0.3
 info:
-  title: JapaConnect Public API
-  version: 1.0.0
-  description: Public API for JapaConnect platform integrations
-  contact:
-    name: JapaConnect API Support
-    email: api-support@japaconnect.com
-  license:
-    name: Proprietary
+  title: JapaConnect API
+  version: "1.0.0"
+  description: Backend API for the JapaConnect community platform
+  contact: { name: JapaConnect API Support, email: api-support@japaconnect.com }
+  license: { name: Proprietary }
 servers:
-  - url: https://api.japaconnect.com/v1
-    description: Production
-  - url: http://localhost:8080/v1
-    description: Local development
-security:
-  - ApiKeyAuth: []
+  - url: /api/v1
+    description: API v1 base path
+security: [{ bearerAuth: [] }, { apiKeyAuth: [] }]
+tags: [Auth, Users, Spaces, Content, Forum, Blog, Reviews, Comparison, Professional Profiles, Payments, Wallet, Advertising, Tickets, Media, Notifications, Follows, Feed, Search, AI, GDPR, Admin, Developer, Docs, Learning, i18n]
 paths:
-  /spaces:
-    get:
-      summary: List spaces
-      description: Retrieve a paginated list of spaces visible to the API key's tenant.
-      tags: [Spaces]
-      parameters:
-        - name: q
-          in: query
-          schema:
-            type: string
-          description: Search query to filter spaces by name or description.
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 20
-            maximum: 100
-          description: Number of results to return.
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-          description: Number of results to skip.
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, username, password]
+              properties:
+                email: { type: string, format: email }
+                username: { type: string, minLength: 3 }
+                password: { type: string, minLength: 8 }
+                display_name: { type: string }
+                referral_code: { type: string }
       responses:
-        '200':
-          description: List of spaces
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Space'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-  /content:
-    get:
-      summary: List content
-      description: Retrieve a paginated list of published content items.
-      tags: [Content]
-      parameters:
-        - name: q
-          in: query
-          schema:
-            type: string
-          description: Search query to filter content.
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 20
-            maximum: 100
-          description: Number of results to return.
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-          description: Number of results to skip.
+        '201': { description: User created, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in and receive tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string } } }
       responses:
-        '200':
-          description: List of content items
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Content'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/RateLimited'
+        '200': { description: Tokens issued, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh an access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [refresh_token], properties: { refresh_token: { type: string } } }
+      responses:
+        '200': { description: New tokens, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke refresh token
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Logged out }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /users/me:
     get:
-      summary: Get authenticated user
-      description: Returns the user profile associated with the validated API key.
       tags: [Users]
+      summary: Get current user profile
+      security: [{ bearerAuth: [] }]
       responses:
-        '200':
-          description: Current user profile
+        '200': { description: Current user, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/User' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [Users]
+      summary: Update current user profile
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UserUpdate' } } } }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/User' } } } } } }
+        '422': { $ref: '#/components/responses/Validation' }
+  /users:
+    get:
+      tags: [Users]
+      summary: List users
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200': { description: User list, content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedUsers' } } } }
+  /users/{username}:
+    get:
+      tags: [Users]
+      summary: Get user by username
+      parameters: [{ name: username, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: User profile, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/User' } } } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /spaces:
+    get:
+      tags: [Spaces]
+      summary: List spaces
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Space list, content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedSpaces' } } } }
+    post:
+      tags: [Spaces]
+      summary: Create a space
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SpaceCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Space' } } } } } }
+        '422': { $ref: '#/components/responses/Validation' }
+  /spaces/{slug}:
+    get:
+      tags: [Spaces]
+      summary: Get space by slug
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Space detail, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Space' } } } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Spaces]
+      summary: Update a space
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SpaceUpdate' } } } }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Space' } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [Spaces]
+      summary: Delete a space
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /spaces/{slug}/join:
+    post:
+      tags: [Spaces]
+      summary: Join a space
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Joined }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /content:
+    get:
+      tags: [Content]
+      summary: List content
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: content_type, in: query, schema: { type: string, enum: [post, article, media, poll] } }
+        - { name: space_slug, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Content list, content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedContent' } } } }
+    post:
+      tags: [Content]
+      summary: Create content
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ContentCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/ContentItem' } } } } } }
+        '422': { $ref: '#/components/responses/Validation' }
+  /content/{slug}:
+    get:
+      tags: [Content]
+      summary: Get content by slug
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Content detail, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/ContentItem' } } } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /content/{id}:
+    patch:
+      tags: [Content]
+      summary: Update content
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ContentUpdate' } } } }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/ContentItem' } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [Content]
+      summary: Delete content
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /forum/threads:
+    get:
+      tags: [Forum]
+      summary: List forum threads
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: space_slug, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Thread list, content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedThreads' } } } }
+    post:
+      tags: [Forum]
+      summary: Create a forum thread
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ThreadCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Thread' } } } } } }
+        '422': { $ref: '#/components/responses/Validation' }
+  /forum/threads/{slug}:
+    get:
+      tags: [Forum]
+      summary: Get thread with replies
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        '200': { description: Thread detail, content: { application/json: { schema: { $ref: '#/components/schemas/ThreadDetail' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /payments/initiate:
+    post:
+      tags: [Payments]
+      summary: Initiate a payment
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PaymentInitiate' } } } }
+      responses:
+        '201':
+          description: Payment created
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/User'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/RateLimited'
+              schema: { type: object, properties: { data: { $ref: '#/components/schemas/Payment' }, authorization_url: { type: string, format: uri } } }
+        '422': { $ref: '#/components/responses/Validation' }
+  /payments:
+    get:
+      tags: [Payments]
+      summary: List payments
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, success, failed, refunded] } }
+      responses:
+        '200': { description: Payment list, content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedPayments' } } } }
+  /payments/{id}:
+    get:
+      tags: [Payments]
+      summary: Get payment details
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Payment detail, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Payment' } } } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Payments]
+      summary: Refund a payment
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { reason: { type: string } } } } } }
+      responses:
+        '200': { description: Refund initiated, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Payment' } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /wallet/balance:
+    get:
+      tags: [Wallet]
+      summary: Get wallet balance
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Balance, content: { application/json: { schema: { $ref: '#/components/schemas/WalletBalance' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /wallet/ledger:
+    get:
+      tags: [Wallet]
+      summary: Get wallet ledger entries
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        '200': { description: Ledger, content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedLedger' } } } }
+  /wallet/convert:
+    post:
+      tags: [Wallet]
+      summary: Convert credits between types
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to, amount]
+              properties:
+                from: { type: string, enum: [fiat, credits] }
+                to: { type: string, enum: [fiat, credits] }
+                amount: { type: number, minimum: 0.01 }
+      responses:
+        '200': { description: Converted, content: { application/json: { schema: { $ref: '#/components/schemas/WalletBalance' } } } }
+        '422': { $ref: '#/components/responses/Validation' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /developer/keys:
+    get:
+      tags: [Developer]
+      summary: List API keys
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Keys, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/ApiKey' } } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Developer]
+      summary: Create an API key
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string }, scopes: { type: array, items: { type: string } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/ApiKeyCreated' } } } }
+        '422': { $ref: '#/components/responses/Validation' }
+  /developer/keys/{id}:
+    delete:
+      tags: [Developer]
+      summary: Revoke an API key
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Revoked }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /developer/keys/{id}/rotate:
+    post:
+      tags: [Developer]
+      summary: Rotate an API key
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Rotated, content: { application/json: { schema: { $ref: '#/components/schemas/ApiKeyCreated' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
 components:
   securitySchemes:
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
-      description: >
-        API key obtained from the Developer Portal.
-        Keys are prefixed with `jc_live_` for production or `jc_test_` for sandbox.
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+    apiKeyAuth: { type: apiKey, in: header, name: X-API-Key }
   schemas:
-    Space:
+    AuthResponse:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        slug:
-          type: string
-        description:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-    Content:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        title:
-          type: string
-        content_type:
-          type: string
-        created_at:
-          type: string
-          format: date-time
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_in: { type: integer }
+        user: { $ref: '#/components/schemas/User' }
     User:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        username:
-          type: string
-        email:
-          type: string
+        id: { type: string, format: uuid }
+        username: { type: string }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        avatar_url: { type: string, format: uri, nullable: true }
+        bio: { type: string, nullable: true }
+        role: { type: string, enum: [user, moderator, admin] }
+        created_at: { type: string, format: date-time }
+    UserUpdate:
+      type: object
+      properties: { display_name: { type: string }, bio: { type: string, maxLength: 500 }, avatar_url: { type: string, format: uri } }
+    PaginatedUsers:
+      type: object
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/User' } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } }
+    Space:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        cover_image: { type: string, format: uri, nullable: true }
+        member_count: { type: integer }
+        is_private: { type: boolean }
+        created_at: { type: string, format: date-time }
+    SpaceCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
+        is_private: { type: boolean, default: false }
+    SpaceUpdate:
+      type: object
+      properties: { name: { type: string }, description: { type: string }, cover_image: { type: string, format: uri }, is_private: { type: boolean } }
+    PaginatedSpaces:
+      type: object
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/Space' } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } }
+    ContentItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        content_type: { type: string, enum: [post, article, media, poll] }
+        body: { type: string }
+        author: { $ref: '#/components/schemas/User' }
+        space_slug: { type: string, nullable: true }
+        status: { type: string, enum: [draft, published, archived] }
+        likes_count: { type: integer }
+        comments_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ContentCreate:
+      type: object
+      required: [title, content_type]
+      properties: { title: { type: string, minLength: 1, maxLength: 300 }, content_type: { type: string, enum: [post, article, media, poll] }, body: { type: string }, space_slug: { type: string }, status: { type: string, enum: [draft, published], default: draft } }
+    ContentUpdate:
+      type: object
+      properties: { title: { type: string }, body: { type: string }, status: { type: string, enum: [draft, published, archived] } }
+    PaginatedContent:
+      type: object
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/ContentItem' } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } }
+    Thread:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        author: { $ref: '#/components/schemas/User' }
+        space_slug: { type: string }
+        replies_count: { type: integer }
+        is_pinned: { type: boolean }
+        created_at: { type: string, format: date-time }
+    ThreadCreate:
+      type: object
+      required: [title, body]
+      properties: { title: { type: string, minLength: 3, maxLength: 300 }, body: { type: string }, space_slug: { type: string } }
+    ThreadDetail:
+      allOf:
+        - $ref: '#/components/schemas/Thread'
+        - type: object
+          properties: { body: { type: string }, replies: { type: array, items: { $ref: '#/components/schemas/Reply' } } }
+    Reply:
+      type: object
+      properties: { id: { type: string, format: uuid }, body: { type: string }, author: { $ref: '#/components/schemas/User' }, created_at: { type: string, format: date-time } }
+    PaginatedThreads:
+      type: object
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/Thread' } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } }
+    Payment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        amount: { type: number }
+        currency: { type: string }
+        status: { type: string, enum: [pending, success, failed, refunded] }
+        provider: { type: string }
+        reference: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+    PaymentInitiate:
+      type: object
+      required: [amount, currency, description]
+      properties: { amount: { type: number, minimum: 100 }, currency: { type: string, default: NGN }, description: { type: string }, provider: { type: string, enum: [paystack, flutterwave] }, callback_url: { type: string, format: uri } }
+    PaginatedPayments:
+      type: object
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/Payment' } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } }
+    WalletBalance:
+      type: object
+      properties: { fiat_balance: { type: number }, credits_balance: { type: integer }, currency: { type: string } }
+    LedgerEntry:
+      type: object
+      properties: { id: { type: string, format: uuid }, type: { type: string, enum: [credit, debit, conversion, refund] }, amount: { type: number }, balance_after: { type: number }, description: { type: string }, reference: { type: string, nullable: true }, created_at: { type: string, format: date-time } }
+    PaginatedLedger:
+      type: object
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/LedgerEntry' } }, total: { type: integer }, limit: { type: integer }, offset: { type: integer } }
+    ApiKey:
+      type: object
+      properties: { id: { type: string, format: uuid }, name: { type: string }, prefix: { type: string }, scopes: { type: array, items: { type: string } }, last_used_at: { type: string, format: date-time, nullable: true }, created_at: { type: string, format: date-time }, expires_at: { type: string, format: date-time, nullable: true } }
+    ApiKeyCreated:
+      type: object
+      properties: { id: { type: string, format: uuid }, name: { type: string }, key: { type: string }, scopes: { type: array, items: { type: string } }, created_at: { type: string, format: date-time } }
     Error:
       type: object
       properties:
-        error:
-          type: object
-          properties:
-            code:
-              type: string
-              description: Machine-readable error code
-            message:
-              type: string
-              description: Human-readable error message
-            status:
-              type: integer
-              description: HTTP status code
-            docs:
-              type: string
-              format: uri
-              description: Link to API documentation for this error
+        error: { type: object, properties: { code: { type: string }, message: { type: string }, status: { type: integer }, details: { type: object } } }
   responses:
-    Unauthorized:
-      description: Missing or invalid API key
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+    Unauthorized: { description: Missing or invalid credentials, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Forbidden: { description: Insufficient permissions, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    NotFound: { description: Resource not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Conflict: { description: Resource conflict, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Validation: { description: Validation failed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     RateLimited:
       description: Rate limit exceeded
-      headers:
-        Retry-After:
-          schema:
-            type: integer
-          description: Seconds to wait before retrying
-        X-RateLimit-Limit:
-          schema:
-            type: integer
-          description: Maximum requests per minute for this tier
-        X-RateLimit-Remaining:
-          schema:
-            type: integer
-          description: Remaining requests in the current window
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+      headers: { Retry-After: { schema: { type: integer } }, X-RateLimit-Limit: { schema: { type: integer } }, X-RateLimit-Remaining: { schema: { type: integer } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }

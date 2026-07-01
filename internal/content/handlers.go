@@ -15,17 +15,30 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// Task type constant for embedding generation — matches worker.TypeAIGenerateContentEmbedding.
+const taskTypeAIGenerateContentEmbedding = "ai:generate_content_embedding"
+
+// TaskEnqueuer is the interface for enqueueing background tasks.
+// The Asynq client satisfies this interface. A nil client means tasks
+// are silently skipped (useful for tests and development).
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
+
 // Handlers holds dependencies for content HTTP handlers.
 type Handlers struct {
-	Service *Service
+	Service     *Service
+	AsynqClient TaskEnqueueClient
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -110,6 +123,41 @@ func parsePageSize(r *http.Request) int32 {
 	return int32(n)
 }
 
+// enqueueContentEmbedding enqueues an async task to generate a vector embedding
+// for the given content. The embedding text is a combination of title and body.
+// Fire-and-forget: errors are logged but never propagated to the caller.
+func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID, title, body string) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	text := title
+	if body != "" {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += body
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"content_id": contentID.String(),
+		"tenant_id":  tenantID.String(),
+		"text":       text,
+	})
+	if err != nil {
+		slog.Warn("content: failed to marshal embedding task payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(taskTypeAIGenerateContentEmbedding, payload),
+		asynq.Queue("default"),
+	); err != nil {
+		slog.Warn("content: failed to enqueue embedding task",
+			"content_id", contentID.String(), "error", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Content CRUD Handlers
 // ---------------------------------------------------------------------------
@@ -163,8 +211,8 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		ContentType:  input.ContentType,
 		Title:        input.Title,
 		Slug:         input.Slug,
-		Body:         input.Body,
-		BodyHtml:     input.BodyHtml,
+		Body:         SanitizeText(input.Body),
+		BodyHtml:     SanitizeHTML(input.BodyHtml),
 		FieldValues:  input.FieldValues,
 		CanonicalUrl: input.CanonicalUrl,
 		Status:       input.Status,
@@ -188,6 +236,11 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
 			return
 		}
+		// Validate that publish_at is in the future.
+		if createInput.PublishAt.Valid && createInput.PublishAt.Time.Before(time.Now()) {
+			writeError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
+			return
+		}
 	}
 
 	content, err := h.Service.CreateContent(r.Context(), tenantID, createInput)
@@ -195,6 +248,10 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Enqueue async embedding generation — fire-and-forget.
+	h.enqueueContentEmbedding(content.ID, tenantID, input.Title, createInput.Body)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": content})
 }
 
@@ -224,6 +281,9 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 
 	// Increment view count (fire-and-forget, don't fail the request on error).
 	_ = h.Service.IncrementContentView(r.Context(), content.ID, tenantID)
+
+	// Increment engagement view for velocity scoring (fire-and-forget).
+	_ = h.Service.IncrementEngagementView(r.Context(), content.ID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": content})
 }
@@ -305,8 +365,8 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	updateInput := UpdateContentInput{
 		Title:        input.Title,
 		Slug:         input.Slug,
-		Body:         input.Body,
-		BodyHtml:     input.BodyHtml,
+		Body:         SanitizeText(input.Body),
+		BodyHtml:     SanitizeHTML(input.BodyHtml),
 		FieldValues:  input.FieldValues,
 		CanonicalUrl: input.CanonicalUrl,
 		Status:       input.Status,
@@ -325,6 +385,11 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
 			return
 		}
+		// Validate that publish_at is in the future when setting a new schedule.
+		if updateInput.PublishAt.Valid && updateInput.PublishAt.Time.Before(time.Now()) {
+			writeError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
+			return
+		}
 	}
 
 	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput)
@@ -332,6 +397,10 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Enqueue async embedding generation — fire-and-forget.
+	h.enqueueContentEmbedding(id, tenantID, input.Title, updateInput.Body)
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 

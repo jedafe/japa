@@ -178,6 +178,32 @@ func (s *Store) BulkSoftDeleteMedia(ctx context.Context, tenantID pgtype.UUID, m
 	return nil
 }
 
+// QuarantinedMedia holds the full media row including quarantine fields.
+// Used by admin review endpoints since gen.Medium does not include the
+// new quarantine columns until sqlc is regenerated.
+type QuarantinedMedia struct {
+	ID               pgtype.UUID         `json:"id"`
+	TenantID         pgtype.UUID         `json:"tenant_id"`
+	UploaderUserID   pgtype.UUID         `json:"uploader_user_id"`
+	OriginalFilename string              `json:"original_filename"`
+	MimeType         string              `json:"mime_type"`
+	FileSizeBytes    int64               `json:"file_size_bytes"`
+	WidthPx          *int32              `json:"width_px,omitempty"`
+	HeightPx         *int32              `json:"height_px,omitempty"`
+	DurationSecs     *float64            `json:"duration_secs,omitempty"`
+	StoragePath      string              `json:"storage_path"`
+	StorageBucket    string              `json:"storage_bucket"`
+	AltText          *string             `json:"alt_text,omitempty"`
+	Caption          *string             `json:"caption,omitempty"`
+	Confirmed        bool                `json:"confirmed"`
+	DeletedAt        *pgtype.Timestamptz `json:"deleted_at,omitempty"`
+	QuarantineReason *string             `json:"quarantine_reason,omitempty"`
+	QuarantinedAt    *pgtype.Timestamptz `json:"quarantined_at,omitempty"`
+	ReviewedBy       *pgtype.UUID        `json:"reviewed_by,omitempty"`
+	ReviewedAt       *pgtype.Timestamptz `json:"reviewed_at,omitempty"`
+	CreatedAt        pgtype.Timestamptz  `json:"created_at"`
+}
+
 // scanMediaRow holds the minimal fields needed for virus scanning.
 type scanMediaRow struct {
 	StorageBucket    string
@@ -238,4 +264,117 @@ func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, virusName s
 		return fmt.Errorf("rejecting media by ID: %w", err)
 	}
 	return nil
+}
+
+// QuarantineMedia marks a media item as quarantined instead of soft-deleting it.
+// This allows admins to review false positives before permanent removal.
+func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, reason string) error {
+	_, err := s.writePool.Exec(ctx, `
+		UPDATE media
+		SET quarantine_reason = $2,
+		    quarantined_at = now()
+		WHERE id = $1 AND deleted_at IS NULL
+	`, mediaID, reason)
+	if err != nil {
+		return fmt.Errorf("quarantining media by ID: %w", err)
+	}
+	return nil
+}
+
+// ApproveQuarantined clears quarantine fields and confirms the media item.
+func (s *Store) ApproveQuarantined(ctx context.Context, mediaID pgtype.UUID, tenantID, reviewerID pgtype.UUID) error {
+	_, err := s.writePool.Exec(ctx, `
+		UPDATE media
+		SET quarantine_reason = NULL,
+		    quarantined_at = NULL,
+		    reviewed_by = $3,
+		    reviewed_at = now(),
+		    confirmed = true
+		WHERE id = $1 AND tenant_id = $2 AND quarantine_reason IS NOT NULL AND deleted_at IS NULL
+	`, mediaID, tenantID, reviewerID)
+	if err != nil {
+		return fmt.Errorf("approving quarantined media: %w", err)
+	}
+	return nil
+}
+
+// RejectQuarantined soft-deletes a quarantined media item after admin review.
+func (s *Store) RejectQuarantined(ctx context.Context, mediaID pgtype.UUID, tenantID, reviewerID pgtype.UUID) error {
+	_, err := s.writePool.Exec(ctx, `
+		UPDATE media
+		SET deleted_at = now(),
+		    reviewed_by = $3,
+		    reviewed_at = now()
+		WHERE id = $1 AND tenant_id = $2 AND quarantine_reason IS NOT NULL AND deleted_at IS NULL
+	`, mediaID, tenantID, reviewerID)
+	if err != nil {
+		return fmt.Errorf("rejecting quarantined media: %w", err)
+	}
+	return nil
+}
+
+// ListQuarantined returns all quarantined media items for a tenant.
+func (s *Store) ListQuarantined(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]QuarantinedMedia, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.readPool.Query(ctx, `
+		SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
+		       file_size_bytes, width_px, height_px, duration_secs, storage_path,
+		       storage_bucket, alt_text, caption, confirmed, deleted_at,
+		       quarantine_reason, quarantined_at, reviewed_by, reviewed_at,
+		       created_at
+		FROM media
+		WHERE tenant_id = $1
+		  AND quarantine_reason IS NOT NULL
+		  AND deleted_at IS NULL
+		ORDER BY quarantined_at DESC
+		LIMIT $2 OFFSET $3
+	`, tenantID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("listing quarantined media: %w", err)
+	}
+	defer rows.Close()
+
+	var items []QuarantinedMedia
+	for rows.Next() {
+		var m QuarantinedMedia
+		if err := rows.Scan(
+			&m.ID, &m.TenantID, &m.UploaderUserID, &m.OriginalFilename, &m.MimeType,
+			&m.FileSizeBytes, &m.WidthPx, &m.HeightPx, &m.DurationSecs, &m.StoragePath,
+			&m.StorageBucket, &m.AltText, &m.Caption, &m.Confirmed, &m.DeletedAt,
+			&m.QuarantineReason, &m.QuarantinedAt, &m.ReviewedBy, &m.ReviewedAt,
+			&m.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning quarantined media row: %w", err)
+		}
+		items = append(items, m)
+	}
+	return items, rows.Err()
+}
+
+// GetQuarantinedMedia returns a single quarantined media item by ID.
+func (s *Store) GetQuarantinedMedia(ctx context.Context, mediaID, tenantID pgtype.UUID) (QuarantinedMedia, error) {
+	var m QuarantinedMedia
+	err := s.readPool.QueryRow(ctx, `
+		SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
+		       file_size_bytes, width_px, height_px, duration_secs, storage_path,
+		       storage_bucket, alt_text, caption, confirmed, deleted_at,
+		       quarantine_reason, quarantined_at, reviewed_by, reviewed_at,
+		       created_at
+		FROM media
+		WHERE id = $1 AND tenant_id = $2
+		  AND quarantine_reason IS NOT NULL
+		  AND deleted_at IS NULL
+	`, mediaID, tenantID).Scan(
+		&m.ID, &m.TenantID, &m.UploaderUserID, &m.OriginalFilename, &m.MimeType,
+		&m.FileSizeBytes, &m.WidthPx, &m.HeightPx, &m.DurationSecs, &m.StoragePath,
+		&m.StorageBucket, &m.AltText, &m.Caption, &m.Confirmed, &m.DeletedAt,
+		&m.QuarantineReason, &m.QuarantinedAt, &m.ReviewedBy, &m.ReviewedAt,
+		&m.CreatedAt,
+	)
+	if err != nil {
+		return QuarantinedMedia{}, fmt.Errorf("getting quarantined media: %w", err)
+	}
+	return m, nil
 }

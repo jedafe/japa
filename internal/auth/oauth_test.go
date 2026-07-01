@@ -41,6 +41,38 @@ func TestOAuthConfig_SupportedProviders(t *testing.T) {
 			},
 			expected: []string{"google", "github"},
 		},
+		{
+			name: "apple only",
+			config: OAuthConfig{
+				AppleClientID: "apple-id",
+				AppleTeamID:   "team-id",
+				AppleKeyID:    "key-id",
+			},
+			expected: []string{"apple"},
+		},
+		{
+			name: "facebook only",
+			config: OAuthConfig{
+				FacebookAppID:     "fb-id",
+				FacebookAppSecret: "fb-secret",
+			},
+			expected: []string{"facebook"},
+		},
+		{
+			name: "all four providers",
+			config: OAuthConfig{
+				GoogleClientID:     "google-id",
+				GoogleClientSecret: "google-secret",
+				GitHubClientID:     "github-id",
+				GitHubClientSecret: "github-secret",
+				AppleClientID:      "apple-id",
+				AppleTeamID:        "team-id",
+				AppleKeyID:         "key-id",
+				FacebookAppID:      "fb-id",
+				FacebookAppSecret:  "fb-secret",
+			},
+			expected: []string{"google", "github", "apple", "facebook"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -65,6 +97,11 @@ func TestOAuthConfig_NewProvider(t *testing.T) {
 		GoogleClientSecret: "google-secret",
 		GitHubClientID:     "github-id",
 		GitHubClientSecret: "github-secret",
+		AppleClientID:      "apple-id",
+		AppleTeamID:        "team-id",
+		AppleKeyID:         "key-id",
+		FacebookAppID:      "fb-id",
+		FacebookAppSecret:  "fb-secret",
 		RedirectBase:       "http://localhost:8080",
 	}
 
@@ -85,6 +122,26 @@ func TestOAuthConfig_NewProvider(t *testing.T) {
 		}
 		if p.Name() != "github" {
 			t.Errorf("Name() = %q, want %q", p.Name(), "github")
+		}
+	})
+
+	t.Run("apple provider", func(t *testing.T) {
+		p := cfg.NewProvider("apple")
+		if p == nil {
+			t.Fatal("expected non-nil provider")
+		}
+		if p.Name() != "apple" {
+			t.Errorf("Name() = %q, want %q", p.Name(), "apple")
+		}
+	})
+
+	t.Run("facebook provider", func(t *testing.T) {
+		p := cfg.NewProvider("facebook")
+		if p == nil {
+			t.Fatal("expected non-nil provider")
+		}
+		if p.Name() != "facebook" {
+			t.Errorf("Name() = %q, want %q", p.Name(), "facebook")
 		}
 	})
 
@@ -114,6 +171,16 @@ func TestOAuthConfig_NewProvider_NotConfigured(t *testing.T) {
 	p = cfg.NewProvider("github")
 	if p != nil {
 		t.Error("expected nil when GitHub is not configured")
+	}
+
+	p = cfg.NewProvider("apple")
+	if p != nil {
+		t.Error("expected nil when Apple is not configured")
+	}
+
+	p = cfg.NewProvider("facebook")
+	if p != nil {
+		t.Error("expected nil when Facebook is not configured")
 	}
 }
 
@@ -239,6 +306,64 @@ func TestTokenResponse(t *testing.T) {
 	}
 	if resp.AccessToken != "test-token" {
 		t.Errorf("AccessToken = %q, want %q", resp.AccessToken, "test-token")
+	}
+}
+
+func TestAppleProvider_AuthURL(t *testing.T) {
+	p := &appleProvider{
+		clientID:    "test-apple-id",
+		teamID:      "test-team-id",
+		keyID:       "test-key-id",
+		privateKeyPEM: "test-key",
+		redirectURL: "http://localhost:8080/callback",
+	}
+
+	authURL := p.AuthURL("test-state")
+	if authURL == "" {
+		t.Error("expected non-empty auth URL")
+	}
+	if !contains(authURL, "client_id=test-apple-id") {
+		t.Error("auth URL should contain client_id")
+	}
+	if !contains(authURL, "state=test-state") {
+		t.Error("auth URL should contain state")
+	}
+	if !contains(authURL, "appleid.apple.com") {
+		t.Error("auth URL should point to Apple")
+	}
+	if !contains(authURL, "scope=name+email") {
+		t.Error("auth URL should contain name and email scopes")
+	}
+	if !contains(authURL, "response_mode=form_post") {
+		t.Error("auth URL should use form_post response mode")
+	}
+}
+
+func TestFacebookProvider_AuthURL(t *testing.T) {
+	p := &facebookProvider{
+		appID:      "test-fb-id",
+		appSecret:  "test-fb-secret",
+		redirectURL: "http://localhost:8080/callback",
+	}
+
+	authURL := p.AuthURL("test-state")
+	if authURL == "" {
+		t.Error("expected non-empty auth URL")
+	}
+	if !contains(authURL, "client_id=test-fb-id") {
+		t.Error("auth URL should contain client_id")
+	}
+	if !contains(authURL, "state=test-state") {
+		t.Error("auth URL should contain state")
+	}
+	if !contains(authURL, "facebook.com") {
+		t.Error("auth URL should point to Facebook")
+	}
+	if !contains(authURL, "email") {
+		t.Error("auth URL should contain email scope")
+	}
+	if !contains(authURL, "public_profile") {
+		t.Error("auth URL should contain public_profile scope")
 	}
 }
 

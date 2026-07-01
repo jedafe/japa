@@ -223,3 +223,43 @@ func (s *DBStore) MarkEmailVerified(ctx context.Context, userID pgtype.UUID) err
 	}
 	return nil
 }
+
+// InsertPasswordHistory records a password hash in the user's history.
+func (s *DBStore) InsertPasswordHistory(ctx context.Context, tenantID, userID pgtype.UUID, passwordHash string) error {
+	query := `
+		INSERT INTO password_history (tenant_id, user_id, password_hash)
+		VALUES ($1, $2, $3)
+	`
+	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID, passwordHash)
+	if err != nil {
+		return fmt.Errorf("inserting password history: %w", err)
+	}
+	return nil
+}
+
+// GetRecentPasswordHashes returns the most recent N password hashes for a user,
+// ordered by creation time descending (newest first).
+func (s *DBStore) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error) {
+	query := `
+		SELECT password_hash
+		FROM password_history
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2
+	`
+	rows, err := s.db.Reader.Query(ctx, query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying password history: %w", err)
+	}
+	defer rows.Close()
+
+	var hashes []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, fmt.Errorf("scanning password history: %w", err)
+		}
+		hashes = append(hashes, hash)
+	}
+	return hashes, rows.Err()
+}

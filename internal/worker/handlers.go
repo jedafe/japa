@@ -811,6 +811,11 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:ai:generate_content_embedding", "payload", t.Payload())
 
+	if contentEmbedder == nil {
+		slog.Warn("task:ai:generate_content_embedding: no content embedder registered, skipping")
+		return nil
+	}
+
 	var payload struct {
 		ContentID string `json:"content_id"`
 		TenantID  string `json:"tenant_id"`
@@ -821,12 +826,23 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 		return err
 	}
 
-	// In a real implementation, this would call an embedding model API
-	// and store the vector in content_scores.relevance_embedding.
-	slog.Info("task:ai:generate_content_embedding: embedding generated",
-		"content_id", payload.ContentID,
-		"text_length", len(payload.Text))
-	return nil
+	contentID, err := scanUUID(payload.ContentID)
+	if err != nil {
+		return fmt.Errorf("task:ai:generate_content_embedding: %w", err)
+	}
+
+	tenantID, err := scanUUID(payload.TenantID)
+	if err != nil {
+		return fmt.Errorf("task:ai:generate_content_embedding: %w", err)
+	}
+
+	if payload.Text == "" {
+		slog.Warn("task:ai:generate_content_embedding: empty text, skipping",
+			"content_id", payload.ContentID)
+		return nil
+	}
+
+	return contentEmbedder.EmbedContent(ctx, contentID.Bytes, tenantID.Bytes, payload.Text)
 }
 
 func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
@@ -2056,6 +2072,149 @@ func RegisterPushDelivery(d interface {
 	Send(ctx context.Context, endpoint, p256dh, auth string, payload []byte) error
 }) {
 	pushDelivery = d
+}
+
+// ---------------------------------------------------------------------------
+// Periodic sweep handlers (enqueued by Asynq scheduler)
+// ---------------------------------------------------------------------------
+
+// HandleScheduledPublishSweep finds draft content whose publish_at has passed
+// and transitions each to 'published'. This is the periodic sweep handler
+// invoked by the Asynq scheduler every 60 seconds.
+func HandleScheduledPublishSweep(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:scheduled_publish_sweep: starting sweep")
+
+	if dbPool == nil {
+		slog.Warn("task:scheduled_publish_sweep: no database, skipping")
+		return nil
+	}
+
+	// Find draft content ready to publish.
+	rows, err := dbPool.Reader.Query(ctx, `
+		SELECT id, tenant_id
+		FROM contents
+		WHERE status = 'draft'
+		  AND publish_at IS NOT NULL
+		  AND publish_at <= now()
+		ORDER BY publish_at ASC
+		LIMIT 100
+	`)
+	if err != nil {
+		slog.Error("task:scheduled_publish_sweep: query failed", "error", err)
+		return err
+	}
+	defer rows.Close()
+
+	type pendingContent struct {
+		id       pgtype.UUID
+		tenantID pgtype.UUID
+	}
+
+	var pending []pendingContent
+	for rows.Next() {
+		var pc pendingContent
+		if err := rows.Scan(&pc.id, &pc.tenantID); err != nil {
+			slog.Error("task:scheduled_publish_sweep: scan error", "error", err)
+			continue
+		}
+		pending = append(pending, pc)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	if len(pending) == 0 {
+		slog.Info("task:scheduled_publish_sweep: no content ready to publish")
+		return nil
+	}
+
+	published := 0
+	for _, pc := range pending {
+		_, err := dbPool.Writer.Exec(ctx, `
+			UPDATE contents
+			SET status = 'published',
+			    published_at = COALESCE(published_at, now()),
+			    updated_at = now()
+			WHERE id = $1
+			  AND tenant_id = $2
+			  AND status = 'draft'
+		`, pc.id, pc.tenantID)
+		if err != nil {
+			slog.Error("task:scheduled_publish_sweep: failed to publish",
+				"content_id", pc.id.String(), "error", err)
+			continue
+		}
+		published++
+		slog.Info("task:scheduled_publish_sweep: content published",
+			"content_id", pc.id.String())
+	}
+
+	slog.Info("task:scheduled_publish_sweep: sweep complete",
+		"published", published, "total", len(pending))
+	return nil
+}
+
+// HandleVelocityScoreRecalc recalculates velocity scores for recently
+// published content. The formula is:
+//
+//	velocity = (views*1 + comments*5 + votes*10 + bookmarks*3 + shares*8) / hours_since_publish
+//
+// This is the periodic sweep handler invoked by the Asynq scheduler every
+// 5 minutes.
+func HandleVelocityScoreRecalc(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:velocity_score_recalc: starting recalculation")
+
+	if dbPool == nil {
+		slog.Warn("task:velocity_score_recalc: no database, skipping")
+		return nil
+	}
+
+	// Ensure every published content from the last 30 days has an engagement row.
+	_, err := dbPool.Writer.Exec(ctx, `
+		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count)
+		SELECT c.id, 0, 0, 0, 0, 0
+		FROM contents c
+		LEFT JOIN content_engagement ce ON ce.content_id = c.id
+		WHERE c.status = 'published'
+		  AND c.created_at >= now() - INTERVAL '30 days'
+		  AND ce.content_id IS NULL
+		ON CONFLICT (content_id) DO NOTHING
+	`)
+	if err != nil {
+		slog.Error("task:velocity_score_recalc: failed to ensure engagement rows", "error", err)
+		return err
+	}
+
+	// Recalculate velocity scores.
+	result, err := dbPool.Writer.Exec(ctx, `
+		UPDATE content_engagement ce
+		SET velocity_score = CASE
+		      WHEN c.published_at IS NOT NULL
+		           AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
+		      THEN GREATEST(0,
+		           (ce.views * 1.0 +
+		            ce.comments_count * 5.0 +
+		            ce.votes_score * 10.0 +
+		            ce.bookmarks_count * 3.0 +
+		            ce.shares_count * 8.0) /
+		           (EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0))
+		      ELSE 0
+		    END,
+		    last_calculated_at = now(),
+		    updated_at = now()
+		FROM contents c
+		WHERE ce.content_id = c.id
+		  AND c.status = 'published'
+		  AND c.created_at >= now() - INTERVAL '30 days'
+	`)
+	if err != nil {
+		slog.Error("task:velocity_score_recalc: recalculation failed", "error", err)
+		return err
+	}
+
+	rowsAffected := result.RowsAffected()
+	slog.Info("task:velocity_score_recalc: complete", "updated", rowsAffected)
+	return nil
 }
 
 // ---------------------------------------------------------------------------

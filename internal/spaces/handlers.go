@@ -866,3 +866,93 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": mods})
 }
+
+// ---------------------------------------------------------------------------
+// Space Parent Spaces (Many-to-Many Hierarchy) Handlers
+// ---------------------------------------------------------------------------
+
+// AddParentSpace handles POST /api/v1/spaces/{slug}/parents.
+// Links the space to a parent space via the junction table.
+func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		ParentSpaceID string `json:"parent_space_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+	if strings.TrimSpace(req.ParentSpaceID) == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "parent_space_id is required")
+		return
+	}
+	var parentID pgtype.UUID
+	if err := parentID.Scan(req.ParentSpaceID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
+		return
+	}
+	// Verify the parent space exists and belongs to the same tenant.
+	if _, err := h.Service.GetSpace(r.Context(), parentID, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if err := h.Service.AddParentSpace(r.Context(), space.ID, parentID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"data": map[string]any{
+			"space_id":        space.ID,
+			"parent_space_id": parentID,
+		},
+	})
+}
+
+// RemoveParentSpace handles DELETE /api/v1/spaces/{slug}/parents/{parentId}.
+// Unlinks the space from the given parent.
+func (h *Handlers) RemoveParentSpace(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+	parentID, err := parseUUIDParam(r, "parentId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent ID format")
+		return
+	}
+	if err := h.Service.RemoveParentSpace(r.Context(), space.ID, parentID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Parent relationship not found")
+			return
+		}
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
+}
+
+// ListParentSpaces handles GET /api/v1/spaces/{slug}/parents.
+// Returns all parent spaces linked via the junction table.
+func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	parents, err := h.Service.GetParentSpaces(r.Context(), space.ID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": parents})
+}

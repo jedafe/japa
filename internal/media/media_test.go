@@ -382,6 +382,40 @@ func TestTaskPayloadsJSON(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// QuarantinedMedia struct
+// ---------------------------------------------------------------------------
+
+func TestQuarantinedMediaJSON(t *testing.T) {
+	m := QuarantinedMedia{
+		ID:               mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
+		TenantID:         mustUUID(t, "00000000-0000-0000-0000-000000000001"),
+		UploaderUserID:   mustUUID(t, "660e8400-e29b-41d4-a716-446655440001"),
+		OriginalFilename: "photo.jpg",
+		MimeType:         "image/jpeg",
+		FileSizeBytes:    1024,
+		StoragePath:      "media/tenant1/photo.jpg",
+		StorageBucket:    "media",
+		Confirmed:        false,
+	}
+	reason := "EICAR test virus"
+	m.QuarantineReason = &reason
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal QuarantinedMedia: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["original_filename"] != "photo.jpg" {
+		t.Errorf("original_filename = %v, want photo.jpg", got["original_filename"])
+	}
+	if got["mime_type"] != "image/jpeg" {
+		t.Errorf("mime_type = %v, want image/jpeg", got["mime_type"])
+	}
+}
+
+// ---------------------------------------------------------------------------
 // NewService constructor
 // ---------------------------------------------------------------------------
 

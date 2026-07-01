@@ -5,7 +5,96 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
+
+// --- Regex safety: ReDoS protection ---
+
+// regexCacheEntry stores a compiled regex with its expiration time.
+type regexCacheEntry struct {
+	re        *regexp.Regexp
+	expiresAt time.Time
+}
+
+var (
+	regexCacheMu sync.RWMutex
+	regexCache   = make(map[string]regexCacheEntry)
+)
+
+// regexCacheTTL controls how long compiled regexps stay in the in-memory
+// cache. A short TTL limits memory use while still avoiding recompilation
+// during burst traffic.
+const regexCacheTTL = 10 * time.Minute
+
+// defaultRegexTimeout is the maximum time allowed for regexp.Compile.
+// Patterns that exceed this are assumed to be catastrophic backtracking
+// (ReDoS) and are rejected.
+const defaultRegexTimeout = 100 * time.Millisecond
+
+// safeCompileRegex compiles a regular expression with a timeout to prevent
+// ReDoS attacks from catastrophic backtracking patterns. Compiled regexps
+// are cached to avoid repeated compilation overhead.
+//
+// If the pattern fails to compile within the timeout, an error is returned
+// and the caller should fall back to literal matching.
+func safeCompileRegex(pattern string, timeout time.Duration) (*regexp.Regexp, error) {
+	// Fast path: check the cache first.
+	regexCacheMu.RLock()
+	entry, ok := regexCache[pattern]
+	regexCacheMu.RUnlock()
+
+	if ok && time.Now().Before(entry.expiresAt) {
+		return entry.re, nil
+	}
+
+	// Slow path: compile with timeout.
+	type compileResult struct {
+		re  *regexp.Regexp
+		err error
+	}
+
+	ch := make(chan compileResult, 1)
+	go func() {
+		re, err := regexp.Compile(pattern)
+		ch <- compileResult{re: re, err: err}
+	}()
+
+	select {
+	case <-time.After(timeout):
+		// Compilation took too long — likely a ReDoS pattern.
+		return nil, fmt.Errorf("regex compilation timed out after %v (possible ReDoS pattern)", timeout)
+	case result := <-ch:
+		if result.err != nil {
+			return nil, result.err
+		}
+
+		// Cache the successful compilation.
+		regexCacheMu.Lock()
+		regexCache[pattern] = regexCacheEntry{
+			re:        result.re,
+			expiresAt: time.Now().Add(regexCacheTTL),
+		}
+		regexCacheMu.Unlock()
+
+		return result.re, nil
+	}
+}
+
+// EvictExpiredRegexCache removes entries whose TTL has expired. Call this
+// periodically (or on startup) to reclaim memory. It is safe to call from
+// any goroutine.
+func EvictExpiredRegexCache() {
+	now := time.Now()
+	regexCacheMu.Lock()
+	defer regexCacheMu.Unlock()
+
+	for key, entry := range regexCache {
+		if now.After(entry.expiresAt) {
+			delete(regexCache, key)
+		}
+	}
+}
 
 // CensorResult holds the outcome of a content filter check.
 type CensorResult struct {
@@ -63,10 +152,10 @@ func CheckCensoredWords(patterns []CensoredWord, text string) CensorResult {
 }
 
 // matchPattern tests whether pattern matches text. The pattern is treated
-// as a Go regular expression. If it fails to compile, it falls back to
-// literal substring matching.
+// as a Go regular expression. If it fails to compile or exceeds the ReDoS
+// timeout, it falls back to literal substring matching.
 func matchPattern(pattern, text string) (bool, error) {
-	re, err := regexp.Compile(pattern)
+	re, err := safeCompileRegex(pattern, defaultRegexTimeout)
 	if err != nil {
 		// Fall back to literal substring match
 		return strings.Contains(text, strings.ToLower(pattern)), nil
@@ -75,9 +164,10 @@ func matchPattern(pattern, text string) (bool, error) {
 }
 
 // applyReplacement replaces all occurrences of pattern in text with the
-// given replacement string. Uses Go regex for pattern matching.
+// given replacement string. Uses Go regex for pattern matching. Falls back
+// to literal replacement if the pattern exceeds the ReDoS timeout.
 func applyReplacement(pattern, replacement, text string) string {
-	re, err := regexp.Compile(pattern)
+	re, err := safeCompileRegex(pattern, defaultRegexTimeout)
 	if err != nil {
 		// Fall back to literal replacement
 		return strings.ReplaceAll(text, strings.ToLower(pattern), replacement)
