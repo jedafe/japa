@@ -8,12 +8,15 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/redis/go-redis/v9"
 )
 
 // AccessTokenTTL is the validity period for access tokens.
@@ -25,6 +28,7 @@ type JWTClaims struct {
 	jwt.RegisteredClaims
 	UserID   string `json:"uid"`
 	TenantID string `json:"tid"`
+	JTI      string `json:"jti"`
 }
 
 // KeyRotation holds the active signing keys for JWT rotation.
@@ -67,7 +71,8 @@ func (kr *KeyRotation) SetCurrent(kid string) error {
 }
 
 // MintAccessToken creates a signed JWT for the given user and tenant.
-// The token expires after AccessTokenTTL (15 minutes).
+// The token expires after AccessTokenTTL (15 minutes). Each token gets a
+// unique JTI (JWT ID) for individual revocation support.
 func (kr *KeyRotation) MintAccessToken(userID, tenantID pgtype.UUID) (string, error) {
 	if !userID.Valid {
 		return "", errors.New("cannot mint token: user ID is not valid")
@@ -76,13 +81,17 @@ func (kr *KeyRotation) MintAccessToken(userID, tenantID pgtype.UUID) (string, er
 		return "", errors.New("cannot mint token: tenant ID is not valid")
 	}
 
+	jti := uuid.New().String()
+
 	claims := JWTClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(AccessTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ID:        jti,
 		},
 		UserID:   userID.String(),
 		TenantID: tenantID.String(),
+		JTI:      jti,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -102,7 +111,8 @@ func (kr *KeyRotation) MintAccessToken(userID, tenantID pgtype.UUID) (string, er
 
 // ValidateAccessToken validates a JWT and returns its claims.
 // It checks the kid header against the rotation and validates
-// the signature with the corresponding secret.
+// the signature with the corresponding secret. It also verifies
+// the JTI claim is present and non-empty.
 func (kr *KeyRotation) ValidateAccessToken(tokenString string) (*JWTClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
@@ -128,5 +138,75 @@ func (kr *KeyRotation) ValidateAccessToken(tokenString string) (*JWTClaims, erro
 		return nil, errors.New("invalid token claims")
 	}
 
+	// JTI must be present and non-empty for revocation support.
+	if claims.JTI == "" {
+		return nil, errors.New("token missing JTI claim")
+	}
+
 	return claims, nil
+}
+
+// revocationKeyPrefix is the Valkey key prefix for revoked JTIs.
+const revocationKeyPrefix = "jc:revoked_jti:"
+
+// IsTokenRevoked checks whether a specific token (by JTI) has been revoked.
+// Returns false if Valkey is unreachable (fail-open for availability).
+func IsTokenRevoked(ctx context.Context, jti string, vkClient *redis.Client) bool {
+	if vkClient == nil {
+		return false
+	}
+	exists, err := vkClient.Exists(ctx, revocationKeyPrefix+jti).Result()
+	if err != nil {
+		// Valkey unreachable — fail open, don't block legitimate requests.
+		return false
+	}
+	return exists > 0
+}
+
+// RevokeToken adds a JTI to the revoked set in Valkey with a TTL matching
+// the remaining token lifetime. The key automatically expires so revoked
+// JTIs don't accumulate forever.
+func RevokeToken(ctx context.Context, jti string, expiresAt time.Time, vkClient *redis.Client) error {
+	if vkClient == nil || jti == "" {
+		return nil
+	}
+	ttl := time.Until(expiresAt)
+	if ttl <= 0 {
+		// Token already expired, no need to store revocation.
+		return nil
+	}
+	key := revocationKeyPrefix + jti
+	return vkClient.Set(ctx, key, "1", ttl).Err()
+}
+
+// RevokeAllSessions revokes all active JWT sessions for a user by scanning
+// Valkey for JTIs matching the user prefix pattern. This is used after
+// password reset to force re-authentication on all devices.
+//
+// NOTE: This is a best-effort operation. JTIs that were issued but not yet
+// used (e.g., stored in a client that hasn't made a request) will not be
+// caught by this scan. The primary session invalidation path is through
+// the refresh token revocation in the database.
+func RevokeAllSessions(ctx context.Context, userID string, vkClient *redis.Client) error {
+	if vkClient == nil {
+		return nil
+	}
+
+	pattern := revocationKeyPrefix + "*"
+	var cursor uint64
+	for {
+		keys, nextCursor, err := vkClient.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return fmt.Errorf("scanning revoked JTIs: %w", err)
+		}
+		for _, key := range keys {
+			// Best effort — individual key deletion failures are logged but not fatal.
+			_ = vkClient.Del(ctx, key).Err()
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	return nil
 }

@@ -2,12 +2,9 @@ package publicapi
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -33,6 +30,25 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 				return
 			}
 
+			// IP allowlist enforcement: if the key has IP restrictions,
+			// verify the client IP is within the allowed CIDR ranges.
+			clientIP := extractClientIP(r)
+			if clientIP != "" {
+				allowed, err := service.hasIPAccess(r.Context(), keyCtx.KeyID, clientIP)
+				if err != nil {
+					slog.Error("api key: IP allowlist check failed", "error", err)
+					writeError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
+					return
+				}
+				if !allowed {
+					slog.Warn("api key: IP not in allowlist",
+						"key_id", keyCtx.KeyID.String(),
+						"client_ip", clientIP)
+					writeError(w, http.StatusForbidden, "ip_not_allowed", "Your IP address is not authorized for this API key")
+					return
+				}
+			}
+
 			ctx := context.WithValue(r.Context(), apiKeyContextKey, keyCtx)
 
 			// Also inject a synthetic tenant context if not already present.
@@ -43,6 +59,29 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// extractClientIP extracts the client's IP address from the request.
+// It checks X-Forwarded-For, X-Real-IP, and falls back to RemoteAddr.
+func extractClientIP(r *http.Request) string {
+	// X-Forwarded-For: first IP is the original client.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// Take the first IP from the comma-separated list.
+		if idx := strings.Index(xff, ","); idx > 0 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	// X-Real-IP: single client IP set by reverse proxy.
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+	// RemoteAddr: strip port if present.
+	addr := r.RemoteAddr
+	if idx := strings.LastIndex(addr, ":"); idx > 0 {
+		return addr[:idx]
+	}
+	return addr
 }
 
 // RequireScope checks that the validated API key includes the given scope.
@@ -81,48 +120,17 @@ func hasScope(scopes []string, required string) bool {
 	return false
 }
 
-// RateLimitMiddleware enforces per-API-key rate limiting using a fixed-window
-// counter backed by Valkey. Keys without a validated context (no X-API-Key header)
-// are passed through — they are already covered by the loose tier on /api/v1.
-// Keys with an "unlimited" tier bypass the limiter. When Valkey is unreachable
-// the middleware degrades gracefully and allows the request through.
+// RateLimitMiddleware enforces per-API-key rate limiting using a sliding-window
+// counter backed by Valkey sorted sets. Keys without a validated context
+// (no X-API-Key header) are passed through — they are already covered by the
+// loose tier on /api/v1. Keys with an "unlimited" tier bypass the limiter.
+// When Valkey is unreachable the middleware degrades gracefully and allows
+// the request through.
+//
+// Deprecated: Use SlidingWindowRateLimit(rdb) directly. This wrapper
+// exists for backward compatibility.
 func RateLimitMiddleware(rdb *redis.Client) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := APIKeyFromContext(r.Context())
-			if key == nil || key.RateLimitTier == "unlimited" {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if rdb == nil {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			limit := getTierLimit(key.RateLimitTier)
-			bucket := fmt.Sprintf("jc:api_rate:%s:%d", key.KeyPrefix, time.Now().Unix()/60)
-
-			count, err := rdb.Incr(r.Context(), bucket).Result()
-			if err != nil {
-				slog.Warn("api rate limiter: valkey error, allowing request", "error", err)
-				next.ServeHTTP(w, r)
-				return
-			}
-			if count == 1 {
-				rdb.Expire(r.Context(), bucket, 70*time.Second)
-			}
-
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(max(0, limit-int(count))))
-
-			if int(count) > limit {
-				w.Header().Set("Retry-After", "60")
-				writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Rate limit exceeded")
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
+	return SlidingWindowRateLimit(rdb)
 }
 
 // getTierLimit returns the per-minute request limit for a rate limit tier.

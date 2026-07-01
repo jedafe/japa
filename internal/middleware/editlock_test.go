@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -513,5 +514,288 @@ func TestEditLock_ConflictResponseBody(t *testing.T) {
 	}
 	if errObj["message"] == "" {
 		t.Fatalf("expected non-empty error message")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Atomic SET NX: race condition prevention
+// ---------------------------------------------------------------------------
+
+func TestEditLock_AtomicAcquirePreventsRace(t *testing.T) {
+	_, rdb := editLockTestRedis(t)
+	mw := EditLockMiddleware(rdb)
+	h := handler()
+
+	// Two concurrent requests for the same content — only one should
+	// acquire the lock. The first wins, the second gets 409.
+	rr1 := httptest.NewRecorder()
+	mw(h).ServeHTTP(rr1, editLockRequest(http.MethodPost, "/api/v1/posts/race-123", testUser1))
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("first request: expected 200, got %d", rr1.Code)
+	}
+
+	rr2 := httptest.NewRecorder()
+	mw(h).ServeHTTP(rr2, editLockRequest(http.MethodPost, "/api/v1/posts/race-123", testUser2))
+	if rr2.Code != http.StatusConflict {
+		t.Fatalf("second request: expected 409, got %d", rr2.Code)
+	}
+
+	// Verify lock belongs to user1.
+	val, err := rdb.Get(context.Background(), "jc:editor_lock:posts:race-123").Result()
+	if err != nil {
+		t.Fatalf("lock not set: %v", err)
+	}
+	if val != testUser1 {
+		t.Fatalf("lock value mismatch: got %q, want %q", val, testUser1)
+	}
+}
+
+func TestEditLock_AtomicSetNXOnlySetsIfNotExists(t *testing.T) {
+	_, rdb := editLockTestRedis(t)
+
+	key := "jc:editor_lock:posts:nx-test"
+	ctx := context.Background()
+
+	// First SET NX — should succeed (key didn't exist).
+	set, err := rdb.SetNX(ctx, key, testUser1, editLockTTL).Result()
+	if err != nil {
+		t.Fatalf("SetNX error: %v", err)
+	}
+	if !set {
+		t.Fatal("expected SetNX to return true for new key")
+	}
+
+	// Second SET NX with different user — should fail (key exists).
+	set, err = rdb.SetNX(ctx, key, testUser2, editLockTTL).Result()
+	if err != nil {
+		t.Fatalf("SetNX error: %v", err)
+	}
+	if set {
+		t.Fatal("expected SetNX to return false for existing key")
+	}
+
+	// Verify original owner is preserved.
+	val, err := rdb.Get(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("Get error: %v", err)
+	}
+	if val != testUser1 {
+		t.Fatalf("lock value changed unexpectedly: got %q, want %q", val, testUser1)
+	}
+}
+
+func TestEditLock_AtomicSetNXRefreshesSameUser(t *testing.T) {
+	_, rdb := editLockTestRedis(t)
+	mw := EditLockMiddleware(rdb)
+	h := handler()
+
+	key := "jc:editor_lock:posts:refresh-test"
+	ctx := context.Background()
+
+	// User1 acquires the lock.
+	rr1 := httptest.NewRecorder()
+	mw(h).ServeHTTP(rr1, editLockRequest(http.MethodPost, "/api/v1/posts/refresh-test", testUser1))
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("first request: expected 200, got %d", rr1.Code)
+	}
+
+	// Verify lock exists.
+	val, err := rdb.Get(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("lock not set: %v", err)
+	}
+	if val != testUser1 {
+		t.Fatalf("lock value mismatch: got %q, want %q", val, testUser1)
+	}
+
+	// User1 edits again — should succeed (same user refreshing).
+	rr2 := httptest.NewRecorder()
+	mw(h).ServeHTTP(rr2, editLockRequest(http.MethodPut, "/api/v1/posts/refresh-test", testUser1))
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("second request: expected 200, got %d", rr2.Code)
+	}
+
+	// Lock should still belong to user1.
+	val, err = rdb.Get(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("lock missing after refresh: %v", err)
+	}
+	if val != testUser1 {
+		t.Fatalf("lock ownership changed: got %q, want %q", val, testUser1)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TTL expiry
+// ---------------------------------------------------------------------------
+
+func TestEditLock_LockExpiresAfterTTL(t *testing.T) {
+	mr, rdb := editLockTestRedis(t)
+	mw := EditLockMiddleware(rdb)
+	h := handler()
+
+	key := "jc:editor_lock:posts:ttl-test"
+
+	// Acquire the lock.
+	rr := httptest.NewRecorder()
+	mw(h).ServeHTTP(rr, editLockRequest(http.MethodPost, "/api/v1/posts/ttl-test", testUser1))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+
+	// Verify lock exists.
+	_, err := rdb.Get(context.Background(), key).Result()
+	if err != nil {
+		t.Fatalf("lock not set: %v", err)
+	}
+
+	// Fast-forward time past the TTL using miniredis.
+	mr.FastForward(editLockTTL + 1*time.Second)
+
+	// Lock should have expired.
+	_, err = rdb.Get(context.Background(), key).Result()
+	if err != redis.Nil {
+		t.Fatalf("expected lock to be expired (redis.Nil), got err=%v", err)
+	}
+
+	// A new user should now be able to acquire the lock.
+	rr2 := httptest.NewRecorder()
+	mw(h).ServeHTTP(rr2, editLockRequest(http.MethodPost, "/api/v1/posts/ttl-test", testUser2))
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("expected 200 after expiry, got %d", rr2.Code)
+	}
+
+	val, err := rdb.Get(context.Background(), key).Result()
+	if err != nil {
+		t.Fatalf("new lock not set: %v", err)
+	}
+	if val != testUser2 {
+		t.Fatalf("new lock value mismatch: got %q, want %q", val, testUser2)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Lua script: ownership verification on delete
+// ---------------------------------------------------------------------------
+
+func TestEditLock_DeleteOwnershipScript_DeletesWhenOwnerMatches(t *testing.T) {
+	_, rdb := editLockTestRedis(t)
+
+	key := "jc:editor_lock:posts:lua-test"
+	ctx := context.Background()
+
+	// Set up a lock.
+	rdb.Set(ctx, key, testUser1, editLockTTL)
+
+	// Run the Lua script as the owner.
+	result, err := deleteOwnershipScript.Run(ctx, rdb, []string{key}, testUser1).Int64()
+	if err != nil {
+		t.Fatalf("script error: %v", err)
+	}
+	if result != 1 {
+		t.Fatalf("expected script to return 1 (deleted), got %d", result)
+	}
+
+	// Verify key is gone.
+	_, err = rdb.Get(ctx, key).Result()
+	if err != redis.Nil {
+		t.Fatalf("expected key to be deleted, err=%v", err)
+	}
+}
+
+func TestEditLock_DeleteOwnershipScript_RejectsWhenOwnerMismatch(t *testing.T) {
+	_, rdb := editLockTestRedis(t)
+
+	key := "jc:editor_lock:posts:lua-test"
+	ctx := context.Background()
+
+	// Set up a lock owned by user1.
+	rdb.Set(ctx, key, testUser1, editLockTTL)
+
+	// Try to delete as user2.
+	result, err := deleteOwnershipScript.Run(ctx, rdb, []string{key}, testUser2).Int64()
+	if err != nil {
+		t.Fatalf("script error: %v", err)
+	}
+	if result != 0 {
+		t.Fatalf("expected script to return 0 (not deleted), got %d", result)
+	}
+
+	// Verify key still exists and belongs to user1.
+	val, err := rdb.Get(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("lock should still exist: %v", err)
+	}
+	if val != testUser1 {
+		t.Fatalf("lock ownership changed: got %q, want %q", val, testUser1)
+	}
+}
+
+func TestEditLock_DeleteOwnershipScript_NoKeyReturnsZero(t *testing.T) {
+	_, rdb := editLockTestRedis(t)
+
+	key := "jc:editor_lock:posts:lua-nonexistent"
+	ctx := context.Background()
+
+	// Run script against a non-existent key.
+	result, err := deleteOwnershipScript.Run(ctx, rdb, []string{key}, testUser1).Int64()
+	if err != nil {
+		t.Fatalf("script error: %v", err)
+	}
+	if result != 0 {
+		t.Fatalf("expected script to return 0 for non-existent key, got %d", result)
+	}
+}
+
+func TestEditLock_DeleteOwnLockViaMiddleware(t *testing.T) {
+	_, rdb := editLockTestRedis(t)
+	mw := EditLockMiddleware(rdb)
+	h := handler()
+
+	key := "jc:editor_lock:posts:lua-mw-test"
+	ctx := context.Background()
+
+	// Set up a lock owned by user1.
+	rdb.Set(ctx, key, testUser1, editLockTTL)
+
+	// User1 deletes — should succeed.
+	rr := httptest.NewRecorder()
+	mw(h).ServeHTTP(rr, editLockRequest(http.MethodDelete, "/api/v1/posts/lua-mw-test", testUser1))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+
+	// Verify key is gone.
+	_, err := rdb.Get(ctx, key).Result()
+	if err != redis.Nil {
+		t.Fatalf("expected lock to be deleted, err=%v", err)
+	}
+}
+
+func TestEditLock_DeleteOtherUsersLockViaMiddleware(t *testing.T) {
+	_, rdb := editLockTestRedis(t)
+	mw := EditLockMiddleware(rdb)
+	h := handler()
+
+	key := "jc:editor_lock:posts:lua-mw-test"
+	ctx := context.Background()
+
+	// Set up a lock owned by user1.
+	rdb.Set(ctx, key, testUser1, editLockTTL)
+
+	// User2 tries to delete — should get 403.
+	rr := httptest.NewRecorder()
+	mw(h).ServeHTTP(rr, editLockRequest(http.MethodDelete, "/api/v1/posts/lua-mw-test", testUser2))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rr.Code)
+	}
+
+	// Verify lock still exists.
+	val, err := rdb.Get(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("lock should still exist: %v", err)
+	}
+	if val != testUser1 {
+		t.Fatalf("lock ownership changed: got %q, want %q", val, testUser1)
 	}
 }

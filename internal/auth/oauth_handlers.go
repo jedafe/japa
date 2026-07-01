@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/redis/go-redis/v9"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -167,6 +168,6 @@ func RegisterOAuthRoutes(r chi.Router, handlers *OAuthHandlers, kr *KeyRotation)
 }
 
 // RequireAuthRoute wraps RequireAuth for convenience in route registration.
-func RequireAuthRoute(kr *KeyRotation) func(http.Handler) http.Handler {
-	return RequireAuth(kr)
+func RequireAuthRoute(kr *KeyRotation, vkClient *redis.Client) func(http.Handler) http.Handler {
+	return RequireAuth(kr, vkClient)
 }

@@ -10,7 +10,7 @@ import (
 
 func TestRequireAuth_NoToken(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
-	handler := RequireAuth(kr)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAuth(kr, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called without token")
 	}))
 
@@ -25,7 +25,7 @@ func TestRequireAuth_NoToken(t *testing.T) {
 
 func TestRequireAuth_InvalidScheme(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
-	handler := RequireAuth(kr)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAuth(kr, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called")
 	}))
 
@@ -47,7 +47,7 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 	token, _ := kr.MintAccessToken(userID, tenantID)
 
 	called := false
-	handler := RequireAuth(kr)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAuth(kr, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		user := FromContext(r.Context())
 		if user == nil {
@@ -74,7 +74,7 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 
 func TestRequireAuth_ExpiredToken(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
-	handler := RequireAuth(kr)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAuth(kr, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called")
 	}))
 
@@ -91,7 +91,7 @@ func TestRequireAuth_ExpiredToken(t *testing.T) {
 func TestOptionalAuth_NoToken(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 	called := false
-	handler := OptionalAuth(kr)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := OptionalAuth(kr, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		if user := FromContext(r.Context()); user != nil {
 			t.Error("expected no user without token")
@@ -113,7 +113,7 @@ func TestOptionalAuth_ValidToken(t *testing.T) {
 	tenantID := pgtype.UUID{Bytes: [16]byte{4, 5, 6}, Valid: true}
 	token, _ := kr.MintAccessToken(userID, tenantID)
 
-	handler := OptionalAuth(kr)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := OptionalAuth(kr, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := FromContext(r.Context())
 		if user == nil {
 			t.Error("expected user in context with valid token")

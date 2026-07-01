@@ -129,16 +129,15 @@ func (s *Service) ConfirmUpload(ctx context.Context, tenantID, mediaID pgtype.UU
 	}
 
 	if len(header) > 0 {
-		detected := http.DetectContentType(header)
-		claimed := NormalizeMIMEType(m.MimeType)
-
-		// DetectContentType returns "application/octet-stream" for unknown
-		// binary data. Allow that through — it means the content is valid
-		// but not identifiable from the first 512 bytes alone (e.g. large
-		// video files). Only reject when detected is a concrete type that
-		// conflicts with the claimed type.
-		if detected != "application/octet-stream" && NormalizeMIMEType(detected) != claimed {
-			return fmt.Errorf("MIME mismatch: client claimed %s but content is %s", claimed, detected)
+		detected, matches, verifyErr := VerifyMIMEType(header, m.MimeType)
+		if verifyErr != nil {
+			slog.Warn("mime inspection: verification error, confirming without check",
+				"media_id", mediaID.String(), "error", verifyErr)
+			return s.store.ConfirmMedia(ctx, mediaID, tenantID)
+		}
+		if !matches {
+			return fmt.Errorf("MIME mismatch: client claimed %s but content is %s",
+				CanonicalMIMEType(m.MimeType), detected)
 		}
 	}
 
@@ -233,10 +232,30 @@ func (s *Service) confirmMediaByID(ctx context.Context, mediaID []byte) error {
 	return s.store.ConfirmMediaByID(ctx, mediaID)
 }
 
-// rejectMediaByID soft-deletes a media item by ID and logs the virus name.
-// Used by the background scan processor when ClamAV detects malware.
+// rejectMediaByID quarantines a media item instead of soft-deleting it.
+// This gives admins a chance to review false positives before removal.
 func (s *Service) rejectMediaByID(ctx context.Context, mediaID []byte, virusName string) error {
-	return s.store.RejectMediaByID(ctx, mediaID, virusName)
+	return s.store.QuarantineMedia(ctx, mediaID, virusName)
+}
+
+// ApproveMedia clears quarantine and confirms the media item.
+func (s *Service) ApproveMedia(ctx context.Context, mediaID, tenantID, reviewerID pgtype.UUID) error {
+	return s.store.ApproveQuarantined(ctx, mediaID, tenantID, reviewerID)
+}
+
+// RejectMedia soft-deletes a quarantined media item after admin review.
+func (s *Service) RejectMedia(ctx context.Context, mediaID, tenantID, reviewerID pgtype.UUID) error {
+	return s.store.RejectQuarantined(ctx, mediaID, tenantID, reviewerID)
+}
+
+// ListQuarantined returns all quarantined media items for a tenant.
+func (s *Service) ListQuarantined(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]QuarantinedMedia, error) {
+	return s.store.ListQuarantined(ctx, tenantID, limit, offset)
+}
+
+// GetQuarantinedMedia returns a single quarantined media item by ID.
+func (s *Service) GetQuarantinedMedia(ctx context.Context, mediaID, tenantID pgtype.UUID) (QuarantinedMedia, error) {
+	return s.store.GetQuarantinedMedia(ctx, mediaID, tenantID)
 }
 
 // GetMedia returns a single media item by ID.

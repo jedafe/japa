@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -50,6 +51,10 @@ type Querier interface {
 	StoreEmailVerification(ctx context.Context, tenantID, userID pgtype.UUID, email, tokenHash string, expiresAt time.Time) error
 	GetValidVerificationToken(ctx context.Context, tokenHash string) (*VerificationTokenRecord, error)
 	MarkEmailVerified(ctx context.Context, userID pgtype.UUID) error
+
+	// Password history
+	InsertPasswordHistory(ctx context.Context, tenantID, userID pgtype.UUID, passwordHash string) error
+	GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error)
 }
 
 // User represents a user record from the database.
@@ -117,6 +122,17 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := ValidatePassword(req.Password, h.Policy); err != nil {
+		// Check if this is a breach error — different error code for monitoring.
+		var breached *BreachedError
+		if errors.As(err, &breached) {
+			slog.Warn("registration blocked: breached password",
+				"email", req.Email,
+				"breach_count", breached.Count,
+			)
+			writeError(w, http.StatusBadRequest, "password_breached",
+				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "weak_password", err.Error())
 		return
 	}
@@ -141,6 +157,11 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create user")
 		return
+	}
+
+	// Record the initial password in history so it cannot be reused later.
+	if err := h.DB.InsertPasswordHistory(r.Context(), tenant.ID, userID, passwordHash); err != nil {
+		slog.Warn("register: failed to record password history", "error", err)
 	}
 
 	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenant.ID)
@@ -335,13 +356,28 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 }
 
 // Logout handles POST /api/v1/auth/logout.
-// Revokes the refresh token and clears the cookie.
+// Revokes the refresh token, revokes the current access token's JTI,
+// and clears the cookie.
 func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("jc_refresh")
 	if err == nil {
 		tokenHash := hashRefreshToken(cookie.Value)
 		if err := h.DB.RevokeRefreshToken(r.Context(), tokenHash); err != nil {
 			slog.Error("revoke refresh token", "error", err)
+		}
+	}
+
+	// Revoke the current access token's JTI if present in the Authorization header.
+	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			if claims, err := h.KeyRotation.ValidateAccessToken(parts[1]); err == nil {
+				if h.VKClient != nil {
+					if err := RevokeToken(r.Context(), claims.JTI, claims.ExpiresAt.Time, h.VKClient.Redis()); err != nil {
+						slog.Error("revoke access token JTI", "error", err)
+					}
+				}
+			}
 		}
 	}
 
@@ -548,6 +584,17 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := ValidatePassword(req.NewPassword, h.Policy); err != nil {
+		// Check if this is a breach error — different error code for monitoring.
+		var breached *BreachedError
+		if errors.As(err, &breached) {
+			slog.Warn("password reset blocked: breached password",
+				"token_prefix", req.Token[:min(8, len(req.Token))],
+				"breach_count", breached.Count,
+			)
+			writeError(w, http.StatusBadRequest, "password_breached",
+				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "weak_password", err.Error())
 		return
 	}
@@ -569,6 +616,19 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Check password history before allowing the reset.
+	if err := CheckPasswordHistory(r.Context(), h.DB, rec.UserID, req.NewPassword, h.Policy); err != nil {
+		var reused *PasswordReusedError
+		if errors.As(err, &reused) {
+			slog.Warn("password reset blocked: reused password",
+				"token_prefix", req.Token[:min(8, len(req.Token))],
+			)
+			writeError(w, http.StatusBadRequest, "password_reused",
+				"New password cannot be the same as a recent password. Please choose a different password.")
+			return
+		}
+	}
+
 	// Mark the token as used before updating the password.
 	if err := h.DB.MarkResetTokenUsed(r.Context(), tokenHash); err != nil {
 		slog.Error("reset-password: failed to mark token used", "error", err)
@@ -586,6 +646,11 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		slog.Error("reset-password: failed to update password", "error", err)
 		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update password")
 		return
+	}
+
+	// Record the new password in history to prevent reuse.
+	if err := h.DB.InsertPasswordHistory(r.Context(), rec.TenantID, rec.UserID, passwordHash); err != nil {
+		slog.Warn("reset-password: failed to record password history", "error", err)
 	}
 
 	// Invalidate all sessions for this user.

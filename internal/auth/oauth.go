@@ -8,13 +8,17 @@ package auth
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -58,6 +62,12 @@ type OAuthConfig struct {
 	GoogleClientSecret string
 	GitHubClientID     string
 	GitHubClientSecret string
+	AppleClientID      string
+	AppleTeamID        string
+	AppleKeyID         string
+	ApplePrivateKeyPEM string // PEM-encoded private key content (or path resolved by caller)
+	FacebookAppID      string
+	FacebookAppSecret  string
 	RedirectBase       string
 }
 
@@ -69,6 +79,12 @@ func (c OAuthConfig) SupportedProviders() []string {
 	}
 	if c.GitHubClientID != "" {
 		providers = append(providers, "github")
+	}
+	if c.AppleClientID != "" {
+		providers = append(providers, "apple")
+	}
+	if c.FacebookAppID != "" {
+		providers = append(providers, "facebook")
 	}
 	return providers
 }
@@ -94,6 +110,26 @@ func (c OAuthConfig) NewProvider(provider string) OAuthProvider {
 			clientID:     c.GitHubClientID,
 			clientSecret: c.GitHubClientSecret,
 			redirectURL:  c.RedirectBase + "/api/v1/auth/oauth/github/callback",
+		}
+	case "apple":
+		if c.AppleClientID == "" || c.AppleTeamID == "" || c.AppleKeyID == "" {
+			return nil
+		}
+		return &appleProvider{
+			clientID:       c.AppleClientID,
+			teamID:         c.AppleTeamID,
+			keyID:          c.AppleKeyID,
+			privateKeyPEM: c.ApplePrivateKeyPEM,
+			redirectURL:    c.RedirectBase + "/api/v1/auth/oauth/apple/callback",
+		}
+	case "facebook":
+		if c.FacebookAppID == "" || c.FacebookAppSecret == "" {
+			return nil
+		}
+		return &facebookProvider{
+			appID:     c.FacebookAppID,
+			appSecret: c.FacebookAppSecret,
+			redirectURL: c.RedirectBase + "/api/v1/auth/oauth/facebook/callback",
 		}
 	default:
 		return nil
@@ -281,6 +317,254 @@ func fetchGitHubEmail(ctx context.Context, accessToken string) string {
 		return emails[0].Email
 	}
 	return ""
+}
+
+// --- Apple Provider (Sign in with Apple) ---
+
+type appleProvider struct {
+	clientID       string
+	teamID         string
+	keyID          string
+	privateKeyPEM  string
+	redirectURL    string
+}
+
+func (a *appleProvider) Name() string { return "apple" }
+
+func (a *appleProvider) AuthURL(state string) string {
+	params := url.Values{
+		"client_id":       {a.clientID},
+		"redirect_uri":    {a.redirectURL},
+		"response_type":   {"code id_token"},
+		"scope":           {"name email"},
+		"state":           {state},
+		"response_mode":   {"form_post"},
+	}
+	return "https://appleid.apple.com/auth/authorize?" + params.Encode()
+}
+
+func (a *appleProvider) Exchange(ctx context.Context, code string) (*OAuthUserInfo, error) {
+	clientSecret, err := a.generateClientSecret()
+	if err != nil {
+		return nil, fmt.Errorf("apple client secret generation: %w", err)
+	}
+
+	// Exchange code for tokens
+	tokenURL := "https://appleid.apple.com/auth/token"
+	params := url.Values{
+		"client_id":     {a.clientID},
+		"client_secret": {clientSecret},
+		"code":          {code},
+		"redirect_uri":  {a.redirectURL},
+		"grant_type":    {"authorization_code"},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(params.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("creating apple token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("executing apple token request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading apple token response: %w", err)
+	}
+
+	var tokenResp struct {
+		AccessToken  string `json:"access_token"`
+		IDToken      string `json:"id_token"`
+		TokenType    string `json:"token_type"`
+		Error        string `json:"error"`
+		ErrorDesc    string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, fmt.Errorf("decoding apple token response: %w", err)
+	}
+
+	if tokenResp.Error != "" {
+		return nil, fmt.Errorf("apple token exchange error: %s — %s", tokenResp.Error, tokenResp.ErrorDesc)
+	}
+
+	// Apple returns user info in the ID token JWT — decode it to extract email and sub
+	claims, err := a.parseIDToken(tokenResp.IDToken)
+	if err != nil {
+		return nil, fmt.Errorf("parsing apple id token: %w", err)
+	}
+
+	return &OAuthUserInfo{
+		Provider:       "apple",
+		ProviderUserID: claims.Subject,
+		Email:          claims.Email,
+		Name:           "", // Apple only provides name on first authorization; stored client-side
+	}, nil
+}
+
+// appleIDTokenClaims holds the claims we care about from Apple's ID token.
+type appleIDTokenClaims struct {
+	Subject string `json:"sub"`
+	Email   string `json:"email"`
+	jwt.RegisteredClaims
+}
+
+// parseIDToken parses Apple's ID token without signature verification.
+// Apple's public keys are available via JWKS; in production, verify against
+// https://appleid.apple.com/auth/keys. For this stub we decode the payload
+// only — signature verification should be added before production use.
+func (a *appleProvider) parseIDToken(idToken string) (*appleIDTokenClaims, error) {
+	parts := strings.Split(idToken, ".")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("invalid JWT format: expected 3 parts, got %d", len(parts))
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("decoding JWT payload: %w", err)
+	}
+
+	var claims appleIDTokenClaims
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, fmt.Errorf("unmarshalling JWT claims: %w", err)
+	}
+
+	return &claims, nil
+}
+
+// generateClientSecret creates a JWT signed with the Apple private key.
+// Apple requires a client_secret that is a JWT with specific claims.
+func (a *appleProvider) generateClientSecret() (string, error) {
+	key, err := parseECPrivateKey(a.privateKeyPEM)
+	if err != nil {
+		return "", fmt.Errorf("parsing Apple private key: %w", err)
+	}
+
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"iss":  a.teamID,
+		"iat":  now.Unix(),
+		"exp":  now.Add(time.Hour * 24 * 180).Unix(), // 6 months max
+		"aud":  "https://appleid.apple.com",
+		"sub":  a.clientID,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	token.Header["kid"] = a.keyID
+
+	signed, err := token.SignedString(key)
+	if err != nil {
+		return "", fmt.Errorf("signing Apple client secret JWT: %w", err)
+	}
+
+	return signed, nil
+}
+
+// parseECPrivateKey parses a PEM-encoded EC private key for Apple Sign-In.
+func parseECPrivateKey(pemContent string) (*ecdsa.PrivateKey, error) {
+	block, err := jwt.ParseECPrivateKeyFromPEM([]byte(pemContent))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse EC private key: %w", err)
+	}
+	return block, nil
+}
+
+// --- Facebook Provider ---
+
+type facebookProvider struct {
+	appID      string
+	appSecret  string
+	redirectURL string
+}
+
+func (f *facebookProvider) Name() string { return "facebook" }
+
+func (f *facebookProvider) AuthURL(state string) string {
+	params := url.Values{
+		"client_id":    {f.appID},
+		"redirect_uri": {f.redirectURL},
+		"scope":        {"email,public_profile"},
+		"state":        {state},
+		"response_type": {"code"},
+	}
+	return "https://www.facebook.com/v18.0/dialog/oauth?" + params.Encode()
+}
+
+func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUserInfo, error) {
+	// Exchange code for access token
+	tokenURL := "https://graph.facebook.com/v18.0/oauth/access_token"
+	params := url.Values{
+		"client_id":     {f.appID},
+		"client_secret": {f.appSecret},
+		"code":          {code},
+		"redirect_uri":  {f.redirectURL},
+		"grant_type":    {"authorization_code"},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(params.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("creating facebook token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("executing facebook token request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading facebook token response: %w", err)
+	}
+
+	var tokenResp tokenResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, fmt.Errorf("decoding facebook token response: %w", err)
+	}
+
+	if tokenResp.Error != "" {
+		return nil, fmt.Errorf("facebook token exchange error: %s — %s", tokenResp.Error, tokenResp.ErrorDesc)
+	}
+
+	// Fetch user info from Graph API
+	userURL := "https://graph.facebook.com/v18.0/me?fields=id,email,name&access_token=" + url.QueryEscape(tokenResp.AccessToken)
+	userReq, err := http.NewRequestWithContext(ctx, http.MethodGet, userURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating facebook user request: %w", err)
+	}
+
+	userResp, err := http.DefaultClient.Do(userReq)
+	if err != nil {
+		return nil, fmt.Errorf("fetching facebook user: %w", err)
+	}
+	defer userResp.Body.Close()
+
+	if userResp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(userResp.Body)
+		return nil, fmt.Errorf("facebook user returned %d: %s", userResp.StatusCode, respBody)
+	}
+
+	var user struct {
+		ID    string `json:"id"`
+		Email string `json:"email"`
+		Name  string `json:"name"`
+	}
+	if err := json.NewDecoder(userResp.Body).Decode(&user); err != nil {
+		return nil, fmt.Errorf("decoding facebook user: %w", err)
+	}
+
+	return &OAuthUserInfo{
+		Provider:       "facebook",
+		ProviderUserID: user.ID,
+		Email:          user.Email,
+		Name:           user.Name,
+	}, nil
 }
 
 // --- Shared helpers ---

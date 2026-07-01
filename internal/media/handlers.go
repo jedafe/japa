@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -140,6 +141,27 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 	if input.FileSize <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid_file_size", "file_size must be positive")
 		return
+	}
+
+	// MIME type validation: ensure declared type is in the allowed set.
+	// Uses canonical comparison so alias types (image/jpg, image/pjpeg)
+	// are accepted. The actual content inspection via http.DetectContentType
+	// happens at ConfirmUpload time when the file bytes are available.
+	if !IsAllowedMIMETypeForContext(input.MimeType, UploadContextMedia) {
+		writeError(w, http.StatusBadRequest, "unsupported_mime_type",
+			"MIME type '"+input.MimeType+"' is not allowed for media uploads")
+		return
+	}
+
+	// Cross-check: if the filename extension suggests a different type than
+	// declared, flag it. This catches obvious mismatches like declaring
+	// "image/png" for a file named "virus.exe".
+	if extMIME := MIMETypeFromExtension(input.Filename); extMIME != "" {
+		if CanonicalMIMEType(extMIME) != CanonicalMIMEType(input.MimeType) {
+			writeError(w, http.StatusBadRequest, "mime_extension_mismatch",
+				"Declared MIME type '"+input.MimeType+"' does not match file extension '"+filepath.Ext(input.Filename)+"'")
+			return
+		}
 	}
 
 	result, err := h.service.InitiateUpload(r.Context(), tenantID, user.UserID, input.Filename, input.MimeType, input.FileSize)
@@ -325,6 +347,85 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// ---------------------------------------------------------------------------
+// Admin Handlers — Media Quarantine
+// ---------------------------------------------------------------------------
+
+// ListQuarantined handles GET /admin/media/quarantined.
+// Returns all media items currently in quarantine for admin review.
+func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	items, err := h.service.ListQuarantined(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_quarantined_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// ApproveQuarantined handles POST /admin/media/{id}/approve.
+// Clears quarantine and confirms the media item as safe.
+func (h *Handlers) ApproveQuarantined(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	var mediaID pgtype.UUID
+	if err := mediaID.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+		return
+	}
+
+	if err := h.service.ApproveMedia(r.Context(), mediaID, tenantID, user.UserID); err != nil {
+		writeError(w, http.StatusInternalServerError, "approve_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
+}
+
+// RejectQuarantined handles POST /admin/media/{id}/reject.
+// Soft-deletes the quarantined media after admin review.
+func (h *Handlers) RejectQuarantined(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	var mediaID pgtype.UUID
+	if err := mediaID.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+		return
+	}
+
+	if err := h.service.RejectMedia(r.Context(), mediaID, tenantID, user.UserID); err != nil {
+		writeError(w, http.StatusInternalServerError, "reject_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "rejected"}})
 }
 
 // BulkDelete handles POST /api/v1/media/bulk-delete.

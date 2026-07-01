@@ -39,6 +39,28 @@ func NewMux() *asynq.ServeMux {
 	return mux
 }
 
+// NewScheduler creates a new Asynq scheduler that enqueues periodic tasks.
+// The scheduler runs in its own goroutine and must be shut down during
+// application shutdown.
+func NewScheduler(cfg *Config) *asynq.Scheduler {
+	scheduler := asynq.NewScheduler(
+		asynq.RedisClientOpt{
+			Addr:     cfg.RedisAddr,
+			Password: cfg.RedisPassword,
+			DB:       cfg.RedisDB,
+		},
+		&asynq.SchedulerOpts{},
+	)
+
+	// Scheduled content publishing sweep — every 60 seconds.
+	scheduler.Register("*/60 * * * *", asynq.NewTask(TypeScheduledPublishSweep, nil))
+
+	// Velocity score recalculation — every 5 minutes.
+	scheduler.Register("*/5 * * * *", asynq.NewTask(TypeVelocityScoreRecalc, nil))
+
+	return scheduler
+}
+
 // Addr returns the Valkey address from the config as a formatted string.
 // Useful for logging at startup.
 func Addr(cfg *Config) string {

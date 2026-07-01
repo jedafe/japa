@@ -1,9 +1,24 @@
 package auth
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 func TestValidatePassword(t *testing.T) {
-	policy := DefaultPasswordPolicy()
+	// Use a policy without breach checking — these tests verify
+	// structural password requirements (length, uppercase, etc.),
+	// not breach detection.
+	policy := PasswordPolicy{
+		MinLength:     8,
+		MaxLength:     128,
+		RequireUpper:  true,
+		RequireNumber: true,
+		RequireSymbol: false,
+		CheckBreach:   false,
+	}
 
 	tests := []struct {
 		name     string
@@ -58,4 +73,154 @@ func TestBcryptCost(t *testing.T) {
 	if BcryptCost != 12 {
 		t.Errorf("BcryptCost = %d, want 12", BcryptCost)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Password History
+// ---------------------------------------------------------------------------
+
+// mockHistoryStore is a minimal in-memory implementation of PasswordHistoryQuerier
+// used to test CheckPasswordHistory without a database.
+type mockHistoryStore struct {
+	hashes []string // most recent first
+}
+
+func (m *mockHistoryStore) GetRecentPasswordHashes(_ context.Context, _ pgtype.UUID, limit int) ([]string, error) {
+	if limit > len(m.hashes) {
+		limit = len(m.hashes)
+	}
+	out := make([]string, limit)
+	copy(out, m.hashes[:limit])
+	return out, nil
+}
+
+func (m *mockHistoryStore) InsertPasswordHistory(_ context.Context, _, _ pgtype.UUID, hash string) error {
+	// Prepend (newest first) to simulate real DB ordering.
+	m.hashes = append([]string{hash}, m.hashes...)
+	return nil
+}
+
+// mustTestUUID scans a UUID string into pgtype.UUID, failing the test on error.
+func mustTestUUID(t *testing.T, s string) pgtype.UUID {
+	t.Helper()
+	var id pgtype.UUID
+	if err := id.Scan(s); err != nil {
+		t.Fatalf("scan uuid %q: %v", s, err)
+	}
+	return id
+}
+
+func TestCheckPasswordHistory_ReusedPasswordRejected(t *testing.T) {
+	// Hash a password and put it in history.
+	hash, err := HashPassword("OldPassword1")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+
+	store := &mockHistoryStore{hashes: []string{hash}}
+	policy := PasswordPolicy{HistoryCount: 5}
+	ctx := context.Background()
+	userID := mustTestUUID(t, "550e8400-e29b-41d4-a716-446655440000")
+
+	err = CheckPasswordHistory(ctx, store, userID, "OldPassword1", policy)
+	if err == nil {
+		t.Fatal("expected error for reused password, got nil")
+	}
+
+	var reused *PasswordReusedError
+	if !is(err, &reused) {
+		t.Errorf("expected PasswordReusedError, got %T: %v", err, err)
+	}
+}
+
+func TestCheckPasswordHistory_UniquePasswordAccepted(t *testing.T) {
+	hash, err := HashPassword("OldPassword1")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+
+	store := &mockHistoryStore{hashes: []string{hash}}
+	policy := PasswordPolicy{HistoryCount: 5}
+	ctx := context.Background()
+	userID := mustTestUUID(t, "550e8400-e29b-41d4-a716-446655440000")
+
+	err = CheckPasswordHistory(ctx, store, userID, "BrandNewPassword99", policy)
+	if err != nil {
+		t.Errorf("expected nil for unique password, got: %v", err)
+	}
+}
+
+func TestCheckPasswordHistory_HistoryLimitRespected(t *testing.T) {
+	// Put 3 hashes in history, set limit to 2 — the oldest hash should be ignored.
+	hashes := make([]string, 3)
+	for i := range hashes {
+		h, err := HashPassword("Password" + string(rune('A'+i)) + "123")
+		if err != nil {
+			t.Fatalf("HashPassword: %v", err)
+		}
+		hashes[i] = h
+	}
+
+	store := &mockHistoryStore{hashes: hashes}
+	policy := PasswordPolicy{HistoryCount: 2} // Only check last 2
+	ctx := context.Background()
+	userID := mustTestUUID(t, "550e8400-e29b-41d4-a716-446655440000")
+
+	// The oldest password (index 2, "PasswordC123") should NOT be in the
+	// checked window, so reusing it should be accepted.
+	err := CheckPasswordHistory(ctx, store, userID, "PasswordC123", policy)
+	if err != nil {
+		t.Errorf("expected nil when oldest hash is outside history window, got: %v", err)
+	}
+
+	// The newest password (index 0, "PasswordA123") IS in the window, so
+	// reusing it should be rejected.
+	err = CheckPasswordHistory(ctx, store, userID, "PasswordA123", policy)
+	if err == nil {
+		t.Error("expected error when newest hash is inside history window, got nil")
+	}
+}
+
+func TestCheckPasswordHistory_ZeroHistoryCountSkipsCheck(t *testing.T) {
+	hash, err := HashPassword("OldPassword1")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+
+	store := &mockHistoryStore{hashes: []string{hash}}
+	policy := PasswordPolicy{HistoryCount: 0} // History check disabled
+	ctx := context.Background()
+	userID := mustTestUUID(t, "550e8400-e29b-41d4-a716-446655440000")
+
+	err = CheckPasswordHistory(ctx, store, userID, "OldPassword1", policy)
+	if err != nil {
+		t.Errorf("expected nil when history count is 0, got: %v", err)
+	}
+}
+
+func TestCheckPasswordHistory_EmptyHistoryAccepted(t *testing.T) {
+	store := &mockHistoryStore{hashes: nil}
+	policy := PasswordPolicy{HistoryCount: 5}
+	ctx := context.Background()
+	userID := mustTestUUID(t, "550e8400-e29b-41d4-a716-446655440000")
+
+	err := CheckPasswordHistory(ctx, store, userID, "AnyPassword1", policy)
+	if err != nil {
+		t.Errorf("expected nil with empty history, got: %v", err)
+	}
+}
+
+// is checks whether err wraps a target type (simplified errors.As).
+func is(err error, target interface{}) bool {
+	if err == nil {
+		return false
+	}
+	switch t := target.(type) {
+	case **PasswordReusedError:
+		if e, ok := err.(*PasswordReusedError); ok {
+			*t = e
+			return true
+		}
+	}
+	return false
 }

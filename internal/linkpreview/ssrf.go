@@ -86,6 +86,49 @@ func ValidateURL(rawURL string) error {
 	return nil
 }
 
+// ValidateRedirectURL checks whether a redirect target URL is safe.
+// It validates the scheme and resolves the hostname to ensure no redirect
+// leads to a private/reserved IP range. This prevents redirect-based SSRF
+// where the initial URL passes validation but redirects to an internal host.
+func ValidateRedirectURL(urlStr string) error {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return fmt.Errorf("invalid redirect URL: %w", err)
+	}
+
+	// Only allow http and https schemes on redirects.
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("invalid redirect scheme: %s (only http and https allowed)", u.Scheme)
+	}
+
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("redirect target has empty hostname")
+	}
+
+	// If hostname is already an IP, check it directly.
+	if ip := net.ParseIP(host); ip != nil {
+		if IsPrivateIP(ip) {
+			return fmt.Errorf("redirect target resolves to private IP: %s", ip)
+		}
+		return nil
+	}
+
+	// Resolve hostname via DNS and check all IPs.
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("DNS lookup failed for redirect target %s: %w", host, err)
+	}
+
+	for _, ip := range ips {
+		if IsPrivateIP(ip) {
+			return fmt.Errorf("redirect target resolves to private IP: %s -> %s", host, ip)
+		}
+	}
+
+	return nil
+}
+
 // IsBlockedDomain checks whether a domain is in the admin blacklist.
 // The blacklist is loaded from system_settings (content.link_preview.blacklist).
 func IsBlockedDomain(host string, blacklist []string) bool {

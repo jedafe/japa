@@ -126,6 +126,7 @@ func DefaultPermAxes() SpacePermAxes {
 type Service struct {
 	read  *gen.Queries
 	write *gen.Queries
+	db    *db.DB
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -133,5 +134,6 @@ func NewService(database *db.DB) *Service {
 	return &Service{
 		read:  gen.New(database.Reader),
 		write: gen.New(database.Writer),
+		db:    database,
 	}
 }

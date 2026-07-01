@@ -385,3 +385,104 @@ func (s *Service) IsModerator(ctx context.Context, spaceID, userID pgtype.UUID) 
 	}
 	return true, nil
 }
+
+// ---------------------------------------------------------------------------
+// Space Parent Spaces (Many-to-Many Hierarchy)
+// ---------------------------------------------------------------------------
+
+// AddParentSpace links a space to a parent space via the junction table.
+// The self-reference check is enforced at the database level (CHECK constraint).
+func (s *Service) AddParentSpace(ctx context.Context, spaceID, parentSpaceID pgtype.UUID) error {
+	_, err := s.db.Writer.Exec(ctx, `
+		INSERT INTO space_parent_spaces (space_id, parent_space_id)
+		VALUES ($1, $2)
+		ON CONFLICT DO NOTHING
+	`, spaceID, parentSpaceID)
+	if err != nil {
+		return fmt.Errorf("adding parent space: %w", err)
+	}
+	return nil
+}
+
+// RemoveParentSpace unlinks a space from a parent space.
+func (s *Service) RemoveParentSpace(ctx context.Context, spaceID, parentSpaceID pgtype.UUID) error {
+	tag, err := s.db.Writer.Exec(ctx, `
+		DELETE FROM space_parent_spaces
+		WHERE space_id = $1 AND parent_space_id = $2
+	`, spaceID, parentSpaceID)
+	if err != nil {
+		return fmt.Errorf("removing parent space: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// GetParentSpaces returns every parent space for the given space, resolved
+// through the junction table and scoped to the tenant.
+func (s *Service) GetParentSpaces(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.Space, error) {
+	rows, err := s.db.Reader.Query(ctx, `
+		SELECT s.id, s.tenant_id, s.space_type_id, s.parent_id, s.name, s.slug,
+		       s.description, s.wiki_content, s.geo_code, s.level, s.member_count,
+		       s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+		       s.joining_perm, s.status, s.created_at, s.updated_at
+		FROM spaces s
+		JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
+		WHERE sps.space_id = $1 AND s.tenant_id = $2
+		ORDER BY s.name
+	`, spaceID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("querying parent spaces: %w", err)
+	}
+	defer rows.Close()
+
+	var spaces []gen.Space
+	for rows.Next() {
+		var sp gen.Space
+		if err := rows.Scan(
+			&sp.ID, &sp.TenantID, &sp.SpaceTypeID, &sp.ParentID, &sp.Name, &sp.Slug,
+			&sp.Description, &sp.WikiContent, &sp.GeoCode, &sp.Level, &sp.MemberCount,
+			&sp.Visibility, &sp.PostingPerm, &sp.ReplyingPerm, &sp.CommentingPerm,
+			&sp.JoiningPerm, &sp.Status, &sp.CreatedAt, &sp.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning parent space: %w", err)
+		}
+		spaces = append(spaces, sp)
+	}
+	return spaces, rows.Err()
+}
+
+// GetChildSpaces returns every child space for the given space, resolved
+// through the junction table and scoped to the tenant.
+func (s *Service) GetChildSpaces(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.Space, error) {
+	rows, err := s.db.Reader.Query(ctx, `
+		SELECT s.id, s.tenant_id, s.space_type_id, s.parent_id, s.name, s.slug,
+		       s.description, s.wiki_content, s.geo_code, s.level, s.member_count,
+		       s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+		       s.joining_perm, s.status, s.created_at, s.updated_at
+		FROM spaces s
+		JOIN space_parent_spaces sps ON sps.space_id = s.id
+		WHERE sps.parent_space_id = $1 AND s.tenant_id = $2
+		ORDER BY s.name
+	`, spaceID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("querying child spaces: %w", err)
+	}
+	defer rows.Close()
+
+	var spaces []gen.Space
+	for rows.Next() {
+		var sp gen.Space
+		if err := rows.Scan(
+			&sp.ID, &sp.TenantID, &sp.SpaceTypeID, &sp.ParentID, &sp.Name, &sp.Slug,
+			&sp.Description, &sp.WikiContent, &sp.GeoCode, &sp.Level, &sp.MemberCount,
+			&sp.Visibility, &sp.PostingPerm, &sp.ReplyingPerm, &sp.CommentingPerm,
+			&sp.JoiningPerm, &sp.Status, &sp.CreatedAt, &sp.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning child space: %w", err)
+		}
+		spaces = append(spaces, sp)
+	}
+	return spaces, rows.Err()
+}

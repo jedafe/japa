@@ -59,6 +59,11 @@ const (
 	TypeLearningIssueCertificate             = "learning:issue_certificate"
 	TypeDBManualVacuum                       = "db_manual_vacuum"
 	TypeNewsletterDigest                     = "newsletter_digest"
+
+	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----
+
+	TypeScheduledPublishSweep = "scheduled_publish_sweep"
+	TypeVelocityScoreRecalc   = "velocity_score_recalc"
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -108,4 +113,8 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeLearningIssueCertificate, HandleLearningIssueCertificate)
 	mux.HandleFunc(TypeDBManualVacuum, HandleDBManualVacuum)
 	mux.HandleFunc(TypeNewsletterDigest, HandleNewsletterDigest)
+
+	// Periodic sweep handlers
+	mux.HandleFunc(TypeScheduledPublishSweep, HandleScheduledPublishSweep)
+	mux.HandleFunc(TypeVelocityScoreRecalc, HandleVelocityScoreRecalc)
 }
