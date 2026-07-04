@@ -10,6 +10,8 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestEventConstants(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		got  string
@@ -25,6 +27,8 @@ func TestEventConstants(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if tt.got != tt.want {
 				t.Errorf("%s = %q, want %q", tt.name, tt.got, tt.want)
 			}
@@ -33,6 +37,8 @@ func TestEventConstants(t *testing.T) {
 }
 
 func TestDMPrivacyConstants(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		got  string
@@ -44,6 +50,8 @@ func TestDMPrivacyConstants(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if tt.got != tt.want {
 				t.Errorf("%s = %q, want %q", tt.name, tt.got, tt.want)
 			}
@@ -52,6 +60,8 @@ func TestDMPrivacyConstants(t *testing.T) {
 }
 
 func TestMessageRequestConstants(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		got  string
@@ -63,6 +73,8 @@ func TestMessageRequestConstants(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if tt.got != tt.want {
 				t.Errorf("%s = %q, want %q", tt.name, tt.got, tt.want)
 			}
@@ -71,9 +83,12 @@ func TestMessageRequestConstants(t *testing.T) {
 }
 
 func TestPageSizeConstants(t *testing.T) {
+	t.Parallel()
+
 	if DefaultPageSize != 20 {
 		t.Errorf("DefaultPageSize = %d, want 20", DefaultPageSize)
 	}
+
 	if MaxPageSize != 100 {
 		t.Errorf("MaxPageSize = %d, want 100", MaxPageSize)
 	}
@@ -84,19 +99,25 @@ func TestPageSizeConstants(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewHub(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	if hub == nil {
 		t.Fatal("NewHub returned nil")
 	}
+
 	if hub.clients == nil {
 		t.Error("clients map not initialized")
 	}
+
 	if hub.spaceSubscribers == nil {
 		t.Error("spaceSubscribers map not initialized")
 	}
 }
 
 func TestHubRegisterAndUnregister(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	client := &Client{
 		Hub:      hub,
@@ -130,6 +151,8 @@ func TestHubRegisterAndUnregister(t *testing.T) {
 }
 
 func TestHubIsUserOnline(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 
 	if hub.IsUserOnline("nonexistent") {
@@ -151,6 +174,8 @@ func TestHubIsUserOnline(t *testing.T) {
 }
 
 func TestHubBroadcastToUser(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	client := &Client{
 		Hub:      hub,
@@ -173,6 +198,7 @@ func TestHubBroadcastToUser(t *testing.T) {
 		if err := json.Unmarshal(msg, &received); err != nil {
 			t.Fatalf("failed to unmarshal message: %v", err)
 		}
+
 		if received.Type != EventNotification {
 			t.Errorf("expected event type %q, got %q", EventNotification, received.Type)
 		}
@@ -182,6 +208,8 @@ func TestHubBroadcastToUser(t *testing.T) {
 }
 
 func TestHubBroadcastToUserNonexistent(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	event := WSEvent{Type: "test"}
 	// Should not panic.
@@ -189,6 +217,8 @@ func TestHubBroadcastToUserNonexistent(t *testing.T) {
 }
 
 func TestHubSubscribeToSpace(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	client := &Client{
 		Hub:      hub,
@@ -223,6 +253,8 @@ func TestHubSubscribeToSpace(t *testing.T) {
 }
 
 func TestHubBroadcastToSpace(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	client1 := &Client{
 		Hub:      hub,
@@ -238,6 +270,7 @@ func TestHubBroadcastToSpace(t *testing.T) {
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
+
 	hub.Register(client1)
 	hub.Register(client2)
 
@@ -258,6 +291,7 @@ func TestHubBroadcastToSpace(t *testing.T) {
 			if err := json.Unmarshal(msg, &received); err != nil {
 				t.Fatalf("failed to unmarshal message for %s: %v", client.UserID, err)
 			}
+
 			if received.Type != EventSpaceActivity {
 				t.Errorf("expected event type %q, got %q for %s", EventSpaceActivity, received.Type, client.UserID)
 			}
@@ -268,6 +302,8 @@ func TestHubBroadcastToSpace(t *testing.T) {
 }
 
 func TestHubUnregisterCleansUpSpaceSubscriptions(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	client := &Client{
 		Hub:      hub,
@@ -292,18 +328,23 @@ func TestHubUnregisterCleansUpSpaceSubscriptions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWSEventJSONTags(t *testing.T) {
+	t.Parallel()
+
 	event := WSEvent{
 		Type:    "notification",
 		Payload: map[string]interface{}{"key": "value"},
 	}
+
 	data, err := json.Marshal(event)
 	if err != nil {
 		t.Fatalf("failed to marshal WSEvent: %v", err)
 	}
+
 	var got map[string]interface{}
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
+
 	if got["type"] != "notification" {
 		t.Errorf("type = %v, want notification", got["type"])
 	}
@@ -314,53 +355,65 @@ func TestWSEventJSONTags(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestConversationInfoStructFields(t *testing.T) {
+	t.Parallel()
+
 	preview := "Hello world"
 	info := ConversationInfo{
-		ID:                "conv-1",
-		OtherUserID:       "user-2",
-		OtherUsername:     "alice",
-		OtherDisplayName:  "Alice Smith",
-		OtherAvatarURL:    "https://example.com/avatar.jpg",
-		LastMessageAt:     nil,
+		ID:                 "conv-1",
+		OtherUserID:        "user-2",
+		OtherUsername:      "alice",
+		OtherDisplayName:   "Alice Smith",
+		OtherAvatarURL:     "https://example.com/avatar.jpg",
+		LastMessageAt:      nil,
 		LastMessagePreview: &preview,
-		UnreadCount:       3,
-		CreatedAt:         "2026-01-01",
+		UnreadCount:        3,
+		CreatedAt:          "2026-01-01",
 	}
 
 	if info.ID != "conv-1" {
 		t.Errorf("ID = %q, want conv-1", info.ID)
 	}
+
 	if info.OtherUsername != "alice" {
 		t.Errorf("OtherUsername = %q, want alice", info.OtherUsername)
 	}
+
 	if info.UnreadCount != 3 {
 		t.Errorf("UnreadCount = %d, want 3", info.UnreadCount)
 	}
+
 	if info.LastMessagePreview == nil || *info.LastMessagePreview != "Hello world" {
 		t.Errorf("LastMessagePreview = %v, want Hello world", info.LastMessagePreview)
 	}
+
 	if info.LastMessageAt != nil {
 		t.Errorf("LastMessageAt should be nil, got %v", info.LastMessageAt)
 	}
 }
 
 func TestConversationInfoJSONTags(t *testing.T) {
+	t.Parallel()
+
 	info := ConversationInfo{
 		ID:            "conv-1",
 		OtherUsername: "alice",
 		UnreadCount:   3,
 	}
+
 	data, err := json.Marshal(info)
 	if err != nil {
 		t.Fatalf("failed to marshal ConversationInfo: %v", err)
 	}
+
 	var got map[string]interface{}
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
+
 	if got["id"] != "conv-1" {
 		t.Errorf("id = %v, want conv-1", got["id"])
 	}
+
 	if got["other_username"] != "alice" {
 		t.Errorf("other_username = %v, want alice", got["other_username"])
 	}
@@ -371,6 +424,8 @@ func TestConversationInfoJSONTags(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMessageInfoStructFields(t *testing.T) {
+	t.Parallel()
+
 	msg := MessageInfo{
 		ID:                "msg-1",
 		SenderID:          "user-1",
@@ -383,12 +438,15 @@ func TestMessageInfoStructFields(t *testing.T) {
 	if msg.ID != "msg-1" {
 		t.Errorf("ID = %q, want msg-1", msg.ID)
 	}
+
 	if msg.Body != "Hey there" {
 		t.Errorf("Body = %q, want Hey there", msg.Body)
 	}
 }
 
 func TestMessageInfoNilReadAt(t *testing.T) {
+	t.Parallel()
+
 	msg := MessageInfo{ID: "msg-1"}
 	if msg.ReadAt != nil {
 		t.Errorf("ReadAt should be nil, got %v", msg.ReadAt)
@@ -400,25 +458,32 @@ func TestMessageInfoNilReadAt(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDMSendNotificationPayloadJSONTags(t *testing.T) {
+	t.Parallel()
+
 	p := DMSendNotificationPayload{
 		ConversationID: "conv-1",
 		MessageID:      "msg-1",
 		SenderID:       "user-1",
 	}
+
 	data, err := json.Marshal(p)
 	if err != nil {
 		t.Fatalf("failed to marshal DMSendNotificationPayload: %v", err)
 	}
+
 	var got map[string]interface{}
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
+
 	if got["conversation_id"] != "conv-1" {
 		t.Errorf("conversation_id = %v, want conv-1", got["conversation_id"])
 	}
+
 	if got["message_id"] != "msg-1" {
 		t.Errorf("message_id = %v, want msg-1", got["message_id"])
 	}
+
 	if got["sender_id"] != "user-1" {
 		t.Errorf("sender_id = %v, want user-1", got["sender_id"])
 	}
@@ -429,6 +494,8 @@ func TestDMSendNotificationPayloadJSONTags(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDMPrivacyValidation(t *testing.T) {
+	t.Parallel()
+
 	valid := map[string]bool{
 		DMPrivacyEveryone:      true,
 		DMPrivacyFollowersOnly: true,
@@ -440,6 +507,7 @@ func TestDMPrivacyValidation(t *testing.T) {
 
 	for privacy, wantValid := range valid {
 		t.Run(privacy, func(t *testing.T) {
+			t.Parallel()
 			// Simulate the validation logic from DMService.UpdateDMPrivacy.
 			gotValid := privacy == DMPrivacyEveryone ||
 				privacy == DMPrivacyFollowersOnly ||
@@ -456,6 +524,8 @@ func TestDMPrivacyValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMessageRequestStatusValidation(t *testing.T) {
+	t.Parallel()
+
 	valid := map[string]bool{
 		MessageRequestPending:  true,
 		MessageRequestAccepted: true,
@@ -466,6 +536,8 @@ func TestMessageRequestStatusValidation(t *testing.T) {
 
 	for status, wantValid := range valid {
 		t.Run(status, func(t *testing.T) {
+			t.Parallel()
+
 			gotValid := status == MessageRequestPending ||
 				status == MessageRequestAccepted ||
 				status == MessageRequestDeclined
@@ -481,6 +553,8 @@ func TestMessageRequestStatusValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDMPrivacyResultStructFields(t *testing.T) {
+	t.Parallel()
+
 	result := DMPrivacyResult{Privacy: DMPrivacyFollowersOnly}
 	if result.Privacy != "followers_only" {
 		t.Errorf("Privacy = %q, want followers_only", result.Privacy)
@@ -492,6 +566,8 @@ func TestDMPrivacyResultStructFields(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestConversationResultStructFields(t *testing.T) {
+	t.Parallel()
+
 	result := ConversationResult{
 		IsNew: true,
 	}

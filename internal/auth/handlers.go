@@ -7,12 +7,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/email"
 	"github.com/jedafe/japa/internal/tenant"
@@ -21,7 +22,7 @@ import (
 )
 
 // AuthHandlers holds dependencies for auth HTTP handlers.
-type AuthHandlers struct {
+type AuthHandlers struct { //nolint:revive // stuttering type name preserved for API compatibility
 	DB          Querier
 	KeyRotation *KeyRotation
 	BruteForce  BruteForceStore
@@ -85,6 +86,7 @@ const RefreshTokenTTL = 30 * 24 * time.Hour // 30 days
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Error("json encode response", "error", err)
 	}
@@ -108,6 +110,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
@@ -125,15 +128,19 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		// Check if this is a breach error — different error code for monitoring.
 		var breached *BreachedError
 		if errors.As(err, &breached) {
-			slog.Warn("registration blocked: breached password",
+			slog.Warn(
+				"registration blocked: breached password",
 				"email", req.Email,
 				"breach_count", breached.Count,
 			)
 			writeError(w, http.StatusBadRequest, "password_breached",
 				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
+
 			return
 		}
+
 		writeError(w, http.StatusBadRequest, "weak_password", err.Error())
+
 		return
 	}
 
@@ -155,7 +162,9 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "email_exists", "Email or username already in use")
 			return
 		}
+
 		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create user")
+
 		return
 	}
 
@@ -178,6 +187,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 	tokenHash := hashRefreshToken(refreshToken)
 	expiresAt := time.Now().Add(RefreshTokenTTL)
+
 	if err := h.DB.StoreRefreshToken(r.Context(), tenant.ID, userID, tokenHash, expiresAt); err != nil {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -211,6 +221,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
@@ -235,8 +246,9 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	// Check brute-force lockout
 	allowed, retryAfter := CheckLoginAttempt(r.Context(), h.BruteForce, bruteKey)
 	if !allowed {
-		w.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())))
+		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed login attempts. Please try again later.")
+
 		return
 	}
 
@@ -245,7 +257,9 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
+
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
+
 		return
 	}
 
@@ -253,7 +267,9 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
+
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
+
 		return
 	}
 
@@ -261,7 +277,9 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
+
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
+
 		return
 	}
 
@@ -289,6 +307,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 	tokenHash := hashRefreshToken(refreshToken)
 	expiresAt := time.Now().Add(RefreshTokenTTL)
+
 	if err := h.DB.StoreRefreshToken(r.Context(), user.TenantID, user.ID, tokenHash, expiresAt); err != nil {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -326,6 +345,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tokenHash := hashRefreshToken(cookie.Value)
+
 	stored, err := h.DB.GetRefreshToken(r.Context(), tokenHash)
 	if err != nil || stored == nil {
 		writeError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token is invalid or expired")
@@ -403,6 +423,7 @@ func clientIP(r *http.Request) string {
 		parts := strings.SplitN(xff, ",", 2)
 		return strings.TrimSpace(parts[0])
 	}
+
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
 		return strings.TrimSpace(xri)
 	}
@@ -411,6 +432,7 @@ func clientIP(r *http.Request) string {
 	if idx > 0 {
 		return r.RemoteAddr[:idx]
 	}
+
 	return r.RemoteAddr
 }
 
@@ -419,7 +441,7 @@ func clientIP(r *http.Request) string {
 // false when the limit has been exceeded. When Valkey is unreachable, the check
 // degrades gracefully and allows the request through — a missing cache layer
 // should never block a legitimate password reset or verification email.
-func rateLimitCheck(ctx context.Context, rdb *redis.Client, key string, maxRequests int, window time.Duration) (bool, error) {
+func rateLimitCheck(ctx context.Context, rdb valkeycompat.Cmdable, key string, maxRequests int, window time.Duration) (bool, error) {
 	if rdb == nil {
 		return true, nil
 	}
@@ -442,6 +464,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	var req struct {
 		Email string `json:"email"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
@@ -456,7 +479,8 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	// Per-email rate limit: 3 requests per 10 minutes. Prevents a single
 	// email address from being used to flood the reset-email queue.
 	if h.VKClient != nil {
-		emailKey := fmt.Sprintf("jc:ratelimit:forgot_password:%s", req.Email)
+		emailKey := "jc:ratelimit:forgot_password:" + req.Email
+
 		ok, _ := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 3, 10*time.Minute)
 		if !ok {
 			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many password reset requests. Please try again later.")
@@ -507,6 +531,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	if r.TLS == nil && !strings.HasPrefix(r.Header.Get("X-Forwarded-Proto"), "https") {
 		scheme = "http"
 	}
+
 	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
 
 	// Render the HTML email body.
@@ -514,10 +539,12 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	if siteName == "" {
 		siteName = "JapaConnect"
 	}
+
 	supportURL := h.SupportURL
 	if supportURL == "" {
 		supportURL = baseURL + "/support"
 	}
+
 	htmlBody, err := email.RenderPasswordResetEmail(email.TemplateData{
 		SiteName:   siteName,
 		SiteURL:    baseURL,
@@ -545,11 +572,13 @@ func (h *AuthHandlers) HandleResetPasswordPage(w http.ResponseWriter, r *http.Re
 	}
 
 	tokenHash := hashRefreshToken(token)
+
 	rec, err := h.DB.GetValidResetToken(r.Context(), tokenHash)
 	if err != nil || rec == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]interface{}{"valid": false},
 		})
+
 		return
 	}
 
@@ -558,6 +587,7 @@ func (h *AuthHandlers) HandleResetPasswordPage(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]interface{}{"valid": false},
 		})
+
 		return
 	}
 
@@ -573,6 +603,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		Token       string `json:"token"`
 		NewPassword string `json:"new_password"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
@@ -587,19 +618,24 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		// Check if this is a breach error — different error code for monitoring.
 		var breached *BreachedError
 		if errors.As(err, &breached) {
-			slog.Warn("password reset blocked: breached password",
+			slog.Warn(
+				"password reset blocked: breached password",
 				"token_prefix", req.Token[:min(8, len(req.Token))],
 				"breach_count", breached.Count,
 			)
 			writeError(w, http.StatusBadRequest, "password_breached",
 				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
+
 			return
 		}
+
 		writeError(w, http.StatusBadRequest, "weak_password", err.Error())
+
 		return
 	}
 
 	tokenHash := hashRefreshToken(req.Token)
+
 	rec, err := h.DB.GetValidResetToken(r.Context(), tokenHash)
 	if err != nil || rec == nil {
 		writeError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired reset token")
@@ -620,11 +656,13 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	if err := CheckPasswordHistory(r.Context(), h.DB, rec.UserID, req.NewPassword, h.Policy); err != nil {
 		var reused *PasswordReusedError
 		if errors.As(err, &reused) {
-			slog.Warn("password reset blocked: reused password",
+			slog.Warn(
+				"password reset blocked: reused password",
 				"token_prefix", req.Token[:min(8, len(req.Token))],
 			)
 			writeError(w, http.StatusBadRequest, "password_reused",
 				"New password cannot be the same as a recent password. Please choose a different password.")
+
 			return
 		}
 	}
@@ -633,6 +671,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	if err := h.DB.MarkResetTokenUsed(r.Context(), tokenHash); err != nil {
 		slog.Error("reset-password: failed to mark token used", "error", err)
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to process reset token")
+
 		return
 	}
 
@@ -645,6 +684,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	if err := h.DB.UpdateUserPassword(r.Context(), rec.UserID, passwordHash); err != nil {
 		slog.Error("reset-password: failed to update password", "error", err)
 		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update password")
+
 		return
 	}
 
@@ -654,7 +694,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Invalidate all sessions for this user.
-	InvalidateAllUserSessions(r.Context(), h.DB, rec.UserID, rec.TenantID)
+	_ = InvalidateAllUserSessions(r.Context(), h.DB, rec.UserID, rec.TenantID)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{
@@ -673,6 +713,7 @@ func (h *AuthHandlers) HandleVerifyEmail(w http.ResponseWriter, r *http.Request)
 	}
 
 	tokenHash := hashRefreshToken(token)
+
 	rec, err := h.DB.GetValidVerificationToken(r.Context(), tokenHash)
 	if err != nil || rec == nil {
 		writeError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired verification token")
@@ -690,12 +731,14 @@ func (h *AuthHandlers) HandleVerifyEmail(w http.ResponseWriter, r *http.Request)
 				"message": "Email has already been verified.",
 			},
 		})
+
 		return
 	}
 
 	if err := h.DB.MarkEmailVerified(r.Context(), rec.UserID); err != nil {
 		slog.Error("verify-email: failed to mark verified", "error", err)
 		writeError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify email")
+
 		return
 	}
 
@@ -712,6 +755,7 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	var req struct {
 		Email string `json:"email"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
@@ -726,7 +770,8 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	// Per-email rate limit: 1 request per 5 minutes. Prevents a single
 	// email address from being used to flood the verification-email queue.
 	if h.VKClient != nil {
-		emailKey := fmt.Sprintf("jc:ratelimit:resend_verification:%s", req.Email)
+		emailKey := "jc:ratelimit:resend_verification:" + req.Email
+
 		ok, _ := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 1, 5*time.Minute)
 		if !ok {
 			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many verification email requests. Please try again later.")
@@ -776,6 +821,7 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	if r.TLS == nil && !strings.HasPrefix(r.Header.Get("X-Forwarded-Proto"), "https") {
 		scheme = "http"
 	}
+
 	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
 
 	// Render the HTML email body.
@@ -783,10 +829,12 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	if siteName == "" {
 		siteName = "JapaConnect"
 	}
+
 	supportURL := h.SupportURL
 	if supportURL == "" {
 		supportURL = baseURL + "/support"
 	}
+
 	htmlBody, err := email.RenderEmailVerification(email.TemplateData{
 		SiteName:   siteName,
 		SiteURL:    baseURL,

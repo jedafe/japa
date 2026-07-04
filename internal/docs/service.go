@@ -31,6 +31,7 @@ func (s *Service) GetDocPageBySlug(ctx context.Context, tenantID pgtype.UUID, au
 	if err != nil {
 		return nil, err
 	}
+
 	return toDocPage(page), nil
 }
 
@@ -40,6 +41,7 @@ func (s *Service) GetDocPageByID(ctx context.Context, tenantID, id pgtype.UUID) 
 	if err != nil {
 		return nil, err
 	}
+
 	return toDocPage(page), nil
 }
 
@@ -49,6 +51,7 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, tenantID pgtype.UU
 	if err != nil {
 		return nil, err
 	}
+
 	summaries := make([]DocPageSummary, len(rows))
 	for i, r := range rows {
 		summaries[i] = DocPageSummary{
@@ -62,6 +65,7 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, tenantID pgtype.UU
 			CreatedAt:    r.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
 		}
 	}
+
 	return summaries, nil
 }
 
@@ -71,6 +75,7 @@ func (s *Service) ListAllDocPagesByAudience(ctx context.Context, tenantID pgtype
 	if err != nil {
 		return nil, err
 	}
+
 	pages := make([]DocPage, len(rows))
 	for i, r := range rows {
 		pages[i] = DocPage{
@@ -88,6 +93,7 @@ func (s *Service) ListAllDocPagesByAudience(ctx context.Context, tenantID pgtype
 			UpdatedAt:      r.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
 		}
 	}
+
 	return pages, nil
 }
 
@@ -96,21 +102,26 @@ func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req C
 	if !ValidAudiences[req.Audience] {
 		return fmt.Errorf("invalid audience: %s", req.Audience)
 	}
+
 	status := req.ReviewStatus
 	if status == "" {
 		status = "draft"
 	}
+
 	if !ValidReviewStatuses[status] {
 		return fmt.Errorf("invalid review_status: %s", status)
 	}
+
 	contentBytes, err := json.Marshal(req.Content)
 	if err != nil {
 		return fmt.Errorf("marshaling content: %w", err)
 	}
+
 	var parentID pgtype.UUID
 	if req.ParentID != nil {
 		_ = parentID.Scan(*req.ParentID)
 	}
+
 	return s.store.create(ctx, gen.CreateDocPageParams{
 		TenantID:     tenantID,
 		Title:        req.Title,
@@ -130,19 +141,22 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 	if status == "" {
 		status = "draft"
 	}
+
 	if !ValidReviewStatuses[status] {
 		return fmt.Errorf("invalid review_status: %s", status)
 	}
+
 	contentBytes, err := json.Marshal(req.Content)
 	if err != nil {
 		return fmt.Errorf("marshaling content: %w", err)
 	}
+
 	return s.store.update(ctx, gen.UpdateDocPageParams{
-		ID:            id,
-		TenantID:      tenantID,
-		Title:         req.Title,
-		Content:       contentBytes,
-		ReviewStatus:  status,
+		ID:             id,
+		TenantID:       tenantID,
+		Title:          req.Title,
+		Content:        contentBytes,
+		ReviewStatus:   status,
 		LastReviewedBy: pgtype.UUID{},
 	})
 }
@@ -158,6 +172,7 @@ func toDocPage(p gen.DocPage) *DocPage {
 	if len(p.Content) > 0 {
 		content = p.Content
 	}
+
 	return &DocPage{
 		ID:             p.ID.String(),
 		Title:          p.Title,
@@ -180,7 +195,9 @@ func uuidPtr(u pgtype.UUID) *string {
 	if !u.Valid {
 		return nil
 	}
+
 	s := u.String()
+
 	return &s
 }
 
@@ -189,6 +206,8 @@ func timestamptzPtr(t pgtype.Timestamptz) *string {
 	if !t.Valid {
 		return nil
 	}
+
 	s := t.Time.Format("2006-01-02T15:04:05Z")
+
 	return &s
 }

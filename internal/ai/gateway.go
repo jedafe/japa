@@ -41,18 +41,22 @@ func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request)
 	d.mu.RLock()
 	providers := d.providersByCategory[category]
 	d.mu.RUnlock()
+
 	if len(providers) == 0 {
 		return Response{}, fmt.Errorf("ai: no providers registered for category %q", category)
 	}
 
 	var lastErr error
+
 	for _, p := range providers {
 		resp, err := p.Send(ctx, req)
 		if err == nil {
 			return resp, nil
 		}
+
 		lastErr = err
-		slog.Error("ai provider failed, trying next",
+		slog.Error(
+			"ai provider failed, trying next",
 			"provider", p.Name(),
 			"category", category,
 			"error", err,

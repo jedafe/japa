@@ -12,6 +12,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for notification HTTP handlers.
 type Handlers struct {
 	service *Service
@@ -29,6 +31,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -39,6 +42,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -46,6 +50,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -62,16 +67,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageOffset extracts the page_offset query parameter.
@@ -80,11 +88,13 @@ func parsePageOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +107,7 @@ func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -110,6 +121,7 @@ func (h *Handlers) ListNotifications(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get notifications")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": notifications})
 }
 
@@ -119,6 +131,7 @@ func (h *Handlers) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -129,6 +142,7 @@ func (h *Handlers) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get unread count")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int{"count": count},
 	})
@@ -142,7 +156,9 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var id pgtype.UUID
+
 	if err := id.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid notification ID format")
 		return
@@ -152,6 +168,7 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to mark notification as read")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"read": true}})
 }
 
@@ -161,6 +178,7 @@ func (h *Handlers) MarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -170,6 +188,7 @@ func (h *Handlers) MarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to mark all notifications as read")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"success": true}})
 }
 
@@ -185,6 +204,7 @@ func (h *Handlers) GetPreferences(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get preferences")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": prefs})
 }
 
@@ -206,6 +226,7 @@ func (h *Handlers) UpdatePreference(w http.ResponseWriter, r *http.Request) {
 		Email bool `json:"email"`
 		Push  bool `json:"push"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -215,6 +236,7 @@ func (h *Handlers) UpdatePreference(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update preference")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"success": true}})
 }
 
@@ -230,5 +252,86 @@ func (h *Handlers) ListNotificationTypes(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get notification types")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+}
+
+// ---------------------------------------------------------------------------
+// Push Subscription Handlers
+// ---------------------------------------------------------------------------
+
+// HandlePushSubscribe handles POST /api/v1/push/subscribe.
+func (h *Handlers) HandlePushSubscribe(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Endpoint string `json:"endpoint"`
+		P256DH   string `json:"p256dh"`
+		Auth     string `json:"auth"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Endpoint == "" {
+		writeError(w, http.StatusBadRequest, "missing_endpoint", "endpoint is required")
+		return
+	}
+
+	if input.P256DH == "" {
+		writeError(w, http.StatusBadRequest, "missing_p256dh", "p256dh is required")
+		return
+	}
+
+	if input.Auth == "" {
+		writeError(w, http.StatusBadRequest, "missing_auth", "auth is required")
+		return
+	}
+
+	if err := h.service.SavePushSubscription(r.Context(), user.UserID, input.Endpoint, input.P256DH, input.Auth); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to save push subscription")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"status": "subscribed"}})
+}
+
+// HandlePushUnsubscribe handles DELETE /api/v1/push/subscribe.
+func (h *Handlers) HandlePushUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Endpoint string `json:"endpoint"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Endpoint == "" {
+		writeError(w, http.StatusBadRequest, "missing_endpoint", "endpoint is required")
+		return
+	}
+
+	if err := h.service.DeletePushSubscription(r.Context(), user.UserID, input.Endpoint); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete push subscription")
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// HandleGetVAPIDKey handles GET /api/v1/push/vapid-key (public, no auth).
+func (h *Handlers) HandleGetVAPIDKey(w http.ResponseWriter, _ *http.Request) {
+	publicKey := h.service.GetVAPIDPublicKey()
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"publicKey": publicKey}})
 }

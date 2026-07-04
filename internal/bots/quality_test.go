@@ -5,13 +5,15 @@ import (
 )
 
 func TestIsSpaceIndexable(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name        string
-		members     int
-		posts       int
-		minMembers  int
-		minPosts    int
-		want        bool
+		name       string
+		members    int
+		posts      int
+		minMembers int
+		minPosts   int
+		want       bool
 	}{
 		{"meets defaults", 10, 5, 0, 0, true},
 		{"below min members", 2, 5, 0, 0, false},
@@ -27,6 +29,8 @@ func TestIsSpaceIndexable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := IsSpaceIndexable(tt.members, tt.posts, tt.minMembers, tt.minPosts)
 			if got != tt.want {
 				t.Errorf("IsSpaceIndexable(%d, %d, %d, %d) = %v, want %v",
@@ -37,14 +41,16 @@ func TestIsSpaceIndexable(t *testing.T) {
 }
 
 func TestIsContentIndexable(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name               string
-		status             string
-		visibility         string
-		wordCount          int
-		minWords           int
+		name                string
+		status              string
+		visibility          string
+		wordCount           int
+		minWords            int
 		allowSearchIndexing bool
-		want               bool
+		want                bool
 	}{
 		{"published public with indexing", "published", "public", 200, 0, true, true},
 		{"published private", "published", "private", 200, 0, true, false},
@@ -60,6 +66,8 @@ func TestIsContentIndexable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := IsContentIndexable(tt.status, tt.visibility, tt.wordCount, tt.minWords, tt.allowSearchIndexing)
 			if got != tt.want {
 				t.Errorf("IsContentIndexable(%q, %q, %d, %d, %v) = %v, want %v",
@@ -70,13 +78,17 @@ func TestIsContentIndexable(t *testing.T) {
 }
 
 func TestDefaultSitemapQualityConfig(t *testing.T) {
+	t.Parallel()
+
 	cfg := DefaultSitemapQualityConfig()
 	if cfg.MinMembers != 5 {
 		t.Errorf("expected MinMembers 5, got %d", cfg.MinMembers)
 	}
+
 	if cfg.MinPosts != 3 {
 		t.Errorf("expected MinPosts 3, got %d", cfg.MinPosts)
 	}
+
 	if cfg.MinWords != 100 {
 		t.Errorf("expected MinWords 100, got %d", cfg.MinWords)
 	}

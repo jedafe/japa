@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,11 +22,11 @@ const MaxFileSizeBytes int64 = 50 * 1024 * 1024
 
 // AllowedMIMETypes is the set of MIME types accepted for upload.
 var AllowedMIMETypes = map[string]bool{
-	"image/jpeg": true,
-	"image/png":  true,
-	"image/webp": true,
-	"image/gif":  true,
-	"image/svg+xml": true,
+	"image/jpeg":      true,
+	"image/png":       true,
+	"image/webp":      true,
+	"image/gif":       true,
+	"image/svg+xml":   true,
 	"video/mp4":       true,
 	"video/webm":      true,
 	"audio/mpeg":      true,
@@ -43,21 +44,25 @@ type UploadResult struct {
 }
 
 // InitiateUpload creates a media row and returns presigned URL details.
-// The client uploads directly to MinIO using the presigned URL.
+// The client uploads directly to SeaweedFS using the presigned URL.
 func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64) (UploadResult, error) {
 	// Guard: validate inputs early.
 	if filename == "" {
-		return UploadResult{}, fmt.Errorf("filename is required")
+		return UploadResult{}, errors.New("filename is required")
 	}
+
 	if mimeType == "" {
-		return UploadResult{}, fmt.Errorf("mime_type is required")
+		return UploadResult{}, errors.New("mime_type is required")
 	}
+
 	if fileSize <= 0 {
-		return UploadResult{}, fmt.Errorf("file_size_bytes must be positive")
+		return UploadResult{}, errors.New("file_size_bytes must be positive")
 	}
+
 	if fileSize > MaxFileSizeBytes {
 		return UploadResult{}, fmt.Errorf("file too large: %d bytes exceeds limit of %d bytes", fileSize, MaxFileSizeBytes)
 	}
+
 	if !AllowedMIMETypes[mimeType] {
 		return UploadResult{}, fmt.Errorf("unsupported MIME type: %s", mimeType)
 	}
@@ -86,7 +91,7 @@ func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtyp
 	// Generate presigned URL for client upload.
 	// Uses S3 client if configured, otherwise falls back to local path.
 	expiresAt := time.Now().Add(15 * time.Minute)
-	presignedURL := fmt.Sprintf("/minio/upload/%s", storagePath) // fallback
+	presignedURL := "/seaweedfs/upload/" + storagePath // fallback
 
 	if s.s3 != nil {
 		url, err := s.s3.PresignPut(ctx, storagePath, 15*time.Minute)
@@ -135,6 +140,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, tenantID, mediaID pgtype.UU
 				"media_id", mediaID.String(), "error", verifyErr)
 			return s.store.ConfirmMedia(ctx, mediaID, tenantID)
 		}
+
 		if !matches {
 			return fmt.Errorf("MIME mismatch: client claimed %s but content is %s",
 				CanonicalMIMEType(m.MimeType), detected)
@@ -170,6 +176,7 @@ func (s *Service) fetchFromS3(ctx context.Context, bucket, path string, n int64)
 	if err != nil {
 		return nil, fmt.Errorf("creating s3 request: %w", err)
 	}
+
 	req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", n-1))
 
 	resp, err := s.s3.httpClient.Do(req)
@@ -177,17 +184,20 @@ func (s *Service) fetchFromS3(ctx context.Context, bucket, path string, n int64)
 		// Fall back to local filesystem if S3 is unreachable
 		return s.fetchFromLocal(bucket, path, n)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		return s.fetchFromLocal(bucket, path, n)
 	}
 
 	buf := make([]byte, n)
+
 	read, err := io.ReadAtLeast(resp.Body, buf, 1)
 	if err != nil {
 		return nil, fmt.Errorf("reading s3 object header: %w", err)
 	}
+
 	return buf[:read], nil
 }
 
@@ -197,13 +207,16 @@ func (s *Service) fetchFromLocal(bucket, path string, n int64) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open file %s/%s: %w", bucket, path, err)
 	}
-	defer f.Close()
+
+	defer func() { _ = f.Close() }()
 
 	buf := make([]byte, n)
+
 	read, err := f.Read(buf)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("read file header: %w", err)
 	}
+
 	return buf[:read], nil
 }
 
@@ -217,12 +230,12 @@ func openLocalFile(bucket, path string) (io.ReadCloser, error) {
 var openFile = defaultOpenFile
 
 func defaultOpenFile(path string) (io.ReadCloser, error) {
-	return os.Open(path)
+	return os.Open(path) //nolint:gosec // G304: path derived from validated media storage config
 }
 
 // getMediaForScan retrieves a media item by ID without tenant filtering.
 // This is used by background workers that operate across all tenants.
-func (s *Service) getMediaForScan(ctx context.Context, mediaID []byte) (scanMediaRow, error) {
+func (s *Service) getMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaRow, error) {
 	return s.store.GetMediaForScan(ctx, mediaID)
 }
 
@@ -269,6 +282,7 @@ func (s *Service) UpdateMetadata(ctx context.Context, tenantID, mediaID pgtype.U
 	if duration != nil {
 		_ = durationNum.Scan(fmt.Sprintf("%f", *duration))
 	}
+
 	return s.store.UpdateMediaMetadata(ctx, gen.UpdateMediaMetadataParams{
 		ID:           mediaID,
 		TenantID:     tenantID,
@@ -286,10 +300,11 @@ func (s *Service) DeleteMedia(ctx context.Context, tenantID, mediaID pgtype.UUID
 }
 
 // ListMedia returns paginated media, optionally filtered by uploader, type, or search query.
-func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderID *pgtype.UUID, mimeType *string, query *string, limit, offset int32) ([]gen.Medium, error) {
+func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderID *pgtype.UUID, mimeType, query *string, limit, offset int32) ([]gen.Medium, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -298,12 +313,15 @@ func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderI
 	if query != nil && *query != "" {
 		return s.store.SearchMedia(ctx, tenantID, *query, limit, offset)
 	}
+
 	if mimeType != nil && *mimeType != "" {
 		return s.store.ListMediaByType(ctx, tenantID, *mimeType, limit, offset)
 	}
+
 	if uploaderID != nil {
 		return s.store.ListMediaByUploader(ctx, tenantID, *uploaderID, limit, offset)
 	}
+
 	return s.store.ListMediaByTenant(ctx, tenantID, limit, offset)
 }
 
@@ -313,6 +331,7 @@ func (s *Service) GetMediaURL(m *gen.Medium, opts ImageProxyOpts) string {
 	if m == nil {
 		return ""
 	}
+
 	return MediaURL(m.StorageBucket, m.StoragePath, opts)
 }
 
@@ -321,6 +340,7 @@ func (s *Service) BulkDelete(ctx context.Context, tenantID pgtype.UUID, mediaIDs
 	if len(mediaIDs) == 0 {
 		return nil
 	}
+
 	return s.store.BulkSoftDeleteMedia(ctx, tenantID, mediaIDs)
 }
 

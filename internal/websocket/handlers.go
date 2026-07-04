@@ -18,7 +18,7 @@ import (
 var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin:     func(_ *http.Request) bool { return true },
 }
 
 // Handlers holds dependencies for WebSocket and DM HTTP handlers.
@@ -47,6 +47,7 @@ func (h *Handlers) requireUser(r *http.Request) (*auth.AuthenticatedUser, bool) 
 	if user == nil {
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -54,6 +55,7 @@ func (h *Handlers) requireUser(r *http.Request) (*auth.AuthenticatedUser, bool) 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -67,7 +69,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 }
 
 // GetWSTicket mints a short-lived WS ticket.
-// POST /api/v1/auth/ws-ticket
+// POST /api/v1/auth/ws-ticket.
 func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(r)
 	if !ok {
@@ -88,6 +90,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.store.CreateWSTicket(ctx, user.UserID, user.TenantID); err != nil {
 		slog.Error("creating ws ticket", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
+
 		return
 	}
 
@@ -95,6 +98,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	if h.vkClient != nil {
 		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
+
 		_ = h.vkClient.Redis().Set(vctx, "jc:ws_ticket:"+ticketID.String(), user.UserID.String(), 60*time.Second).Err()
 	}
 
@@ -104,7 +108,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleWebSocket upgrades connection and authenticates via ticket.
-// GET /api/v1/ws?ticket={ticket_id}
+// GET /api/v1/ws?ticket={ticket_id}.
 func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ticketStr := r.URL.Query().Get("ticket")
 	if ticketStr == "" {
@@ -119,13 +123,16 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
 	var userID pgtype.UUID
+
 	var tenantID pgtype.UUID
 
 	// Try Valkey first for fast lookup.
 	if h.vkClient != nil {
 		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
+
 		val, err := h.vkClient.Redis().Get(vctx, "jc:ws_ticket:"+ticketStr).Result()
 		if err == nil {
 			_ = userID.Scan(val)
@@ -178,17 +185,17 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetOnlineUsers returns currently online users.
-// GET /api/v1/ws/online
-func (h *Handlers) GetOnlineUsers(w http.ResponseWriter, r *http.Request) {
+// GET /api/v1/ws/online.
+func (h *Handlers) GetOnlineUsers(w http.ResponseWriter, _ *http.Request) {
 	users := h.hub.GetOnlineUsers()
 	writeJSON(w, http.StatusOK, map[string]any{"data": users})
 }
 
 // readPump reads messages from the WebSocket connection.
-func (c *Client) readPump(dmSvc *DMService) {
+func (c *Client) readPump(_ *DMService) {
 	defer func() {
 		c.Hub.Unregister(c)
-		c.Conn.Close()
+		_ = c.Conn.Close()
 	}()
 
 	c.Conn.SetReadLimit(4096)
@@ -204,6 +211,7 @@ func (c *Client) readPump(dmSvc *DMService) {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				slog.Error("ws read error", "error", err)
 			}
+
 			break
 		}
 
@@ -219,6 +227,7 @@ func (c *Client) readPump(dmSvc *DMService) {
 			var payload struct {
 				SpaceID string `json:"space_id"`
 			}
+
 			if data, ok := event.Payload.(map[string]interface{}); ok {
 				if err := json.Unmarshal(mustMarshal(data), &payload); err == nil {
 					c.Hub.SubscribeToSpace(c, payload.SpaceID)
@@ -228,6 +237,7 @@ func (c *Client) readPump(dmSvc *DMService) {
 			var payload struct {
 				SpaceID string `json:"space_id"`
 			}
+
 			if data, ok := event.Payload.(map[string]interface{}); ok {
 				if err := json.Unmarshal(mustMarshal(data), &payload); err == nil {
 					c.Hub.UnsubscribeFromSpace(c, payload.SpaceID)
@@ -242,7 +252,8 @@ func (c *Client) writePump() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer func() {
 		ticker.Stop()
-		c.Conn.Close()
+
+		_ = c.Conn.Close()
 	}()
 
 	for {
@@ -258,11 +269,12 @@ func (c *Client) writePump() {
 			if err != nil {
 				return
 			}
+
 			_, _ = w.Write(message)
 
 			// Drain queued messages into current write.
 			n := len(c.Send)
-			for i := 0; i < n; i++ {
+			for range n {
 				_, _ = w.Write([]byte("\n"))
 				_, _ = w.Write(<-c.Send)
 			}
@@ -273,6 +285,7 @@ func (c *Client) writePump() {
 
 		case <-ticker.C:
 			_ = c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
@@ -286,6 +299,7 @@ func generateUUID() string {
 	_, _ = rand.Read(b)
 	b[6] = (b[6] & 0x0f) | 0x40 // Version 4
 	b[8] = (b[8] & 0x3f) | 0x80 // Variant 10
+
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

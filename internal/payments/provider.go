@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -74,6 +75,7 @@ func NewPaystackProvider(secretKey string) *PaystackProvider {
 	return &PaystackProvider{secretKey: secretKey}
 }
 
+// Name returns the provider name.
 func (p *PaystackProvider) Name() string {
 	return ProviderPaystack
 }
@@ -90,7 +92,7 @@ type paystackInitRequest struct {
 
 // paystackInitResponse is the Paystack API response for /initialize.
 type paystackInitResponse struct {
-	Status  bool `json:"status"`
+	Status  bool   `json:"status"`
 	Message string `json:"message"`
 	Data    struct {
 		AuthorizationURL string `json:"authorization_url"`
@@ -99,9 +101,10 @@ type paystackInitResponse struct {
 	} `json:"data"`
 }
 
+// InitiatePayment creates a Paystack checkout session.
 func (p *PaystackProvider) InitiatePayment(ctx context.Context, req PaymentRequest) (PaymentResponse, error) {
 	if p.secretKey == "" {
-		return PaymentResponse{}, fmt.Errorf("paystack secret key not configured")
+		return PaymentResponse{}, errors.New("paystack secret key not configured")
 	}
 
 	payload := paystackInitRequest{
@@ -122,6 +125,7 @@ func (p *PaystackProvider) InitiatePayment(ctx context.Context, req PaymentReque
 	if err != nil {
 		return PaymentResponse{}, fmt.Errorf("creating paystack request: %w", err)
 	}
+
 	httpReq.Header.Set("Authorization", "Bearer "+p.secretKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -129,7 +133,8 @@ func (p *PaystackProvider) InitiatePayment(ctx context.Context, req PaymentReque
 	if err != nil {
 		return PaymentResponse{}, fmt.Errorf("paystack initialize: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -151,14 +156,15 @@ func (p *PaystackProvider) InitiatePayment(ctx context.Context, req PaymentReque
 	}, nil
 }
 
-// Paystack webhook signature verification uses HMAC-SHA256.
+// VerifyWebhookSignature validates the Paystack webhook signature.
 // The signature is sent in the X-Paystack-Signature header as a hex-encoded hash.
 func (p *PaystackProvider) VerifyWebhookSignature(payload []byte, signature string) error {
 	if p.secretKey == "" {
-		return fmt.Errorf("paystack secret key not configured")
+		return errors.New("paystack secret key not configured")
 	}
+
 	if signature == "" {
-		return fmt.Errorf("missing paystack webhook signature")
+		return errors.New("missing paystack webhook signature")
 	}
 
 	mac := hmac.New(sha256.New, []byte(p.secretKey))
@@ -166,17 +172,20 @@ func (p *PaystackProvider) VerifyWebhookSignature(payload []byte, signature stri
 	expected := hex.EncodeToString(mac.Sum(nil))
 
 	if !hmac.Equal([]byte(signature), []byte(expected)) {
-		return fmt.Errorf("invalid paystack webhook signature")
+		return errors.New("invalid paystack webhook signature")
 	}
+
 	return nil
 }
 
-func (p *PaystackProvider) ProcessWebhookEvent(ctx context.Context, event WebhookEvent) error {
+// ProcessWebhookEvent processes a Paystack webhook event.
+func (p *PaystackProvider) ProcessWebhookEvent(_ context.Context, event WebhookEvent) error {
 	// Paystack event processing delegates to the service layer which
 	// updates payment status based on event.Data.Status.
 	slog.Info("paystack webhook event processed",
 		"event_id", event.EventID,
 		"event_type", event.Payload["event"])
+
 	return nil
 }
 
@@ -200,15 +209,18 @@ func (p *StripeProvider) SetWebhookSecret(secret string) {
 	p.webhookSecret = secret
 }
 
+// Name returns the provider name.
 func (p *StripeProvider) Name() string {
 	return ProviderStripe
 }
 
-func (p *StripeProvider) InitiatePayment(ctx context.Context, req PaymentRequest) (PaymentResponse, error) {
+// InitiatePayment creates a Stripe checkout session.
+func (p *StripeProvider) InitiatePayment(_ context.Context, req PaymentRequest) (PaymentResponse, error) {
 	// Stripe Checkout Session creation would go here.
 	// For now, log and return a reference so the payment flow doesn't break.
 	slog.Warn("stripe payment initiation is a placeholder",
 		"amount", req.Amount, "currency", req.Currency)
+
 	return PaymentResponse{
 		PaymentID:   "",
 		CheckoutURL: "",
@@ -216,12 +228,14 @@ func (p *StripeProvider) InitiatePayment(ctx context.Context, req PaymentRequest
 	}, nil
 }
 
+// VerifyWebhookSignature validates the Stripe webhook signature.
 func (p *StripeProvider) VerifyWebhookSignature(payload []byte, signature string) error {
 	if p.webhookSecret == "" {
-		return fmt.Errorf("stripe webhook secret not configured (JC_STRIPE_WEBHOOK_SECRET)")
+		return errors.New("stripe webhook secret not configured (JC_STRIPE_WEBHOOK_SECRET)")
 	}
+
 	if signature == "" {
-		return fmt.Errorf("missing stripe webhook signature")
+		return errors.New("missing stripe webhook signature")
 	}
 
 	// Stripe-Signature header format: t=<timestamp>,v1=<signature>[,v1=<signature>...]
@@ -235,6 +249,7 @@ func (p *StripeProvider) VerifyWebhookSignature(payload []byte, signature string
 	if err != nil {
 		return fmt.Errorf("invalid stripe timestamp: %w", err)
 	}
+
 	if age := time.Now().Unix() - ts; age > 300 || age < -300 {
 		return fmt.Errorf("stripe webhook timestamp too old or in the future (age=%ds)", age)
 	}
@@ -246,8 +261,9 @@ func (p *StripeProvider) VerifyWebhookSignature(payload []byte, signature string
 	expected := hex.EncodeToString(mac.Sum(nil))
 
 	if !hmac.Equal([]byte(sig), []byte(expected)) {
-		return fmt.Errorf("invalid stripe webhook signature")
+		return errors.New("invalid stripe webhook signature")
 	}
+
 	return nil
 }
 
@@ -259,6 +275,7 @@ func parseStripeSignatureHeader(header string) (timestamp, signature string, err
 		if len(kv) != 2 {
 			continue
 		}
+
 		switch kv[0] {
 		case "t":
 			timestamp = kv[1]
@@ -268,16 +285,20 @@ func parseStripeSignatureHeader(header string) (timestamp, signature string, err
 			}
 		}
 	}
+
 	if timestamp == "" {
-		return "", "", fmt.Errorf("missing timestamp (t=) in signature header")
+		return "", "", errors.New("missing timestamp (t=) in signature header")
 	}
+
 	if signature == "" {
-		return "", "", fmt.Errorf("missing v1 signature in signature header")
+		return "", "", errors.New("missing v1 signature in signature header")
 	}
+
 	return timestamp, signature, nil
 }
 
-func (p *StripeProvider) ProcessWebhookEvent(ctx context.Context, event WebhookEvent) error {
+// ProcessWebhookEvent processes a Stripe webhook event.
+func (p *StripeProvider) ProcessWebhookEvent(_ context.Context, event WebhookEvent) error {
 	slog.Info("stripe webhook event processed (placeholder)",
 		"event_id", event.EventID)
 	return nil
@@ -297,13 +318,16 @@ func NewNOWPaymentsProvider(apiKey string) *NOWPaymentsProvider {
 	return &NOWPaymentsProvider{apiKey: apiKey}
 }
 
+// Name returns the provider name.
 func (p *NOWPaymentsProvider) Name() string {
 	return ProviderNOWPayments
 }
 
-func (p *NOWPaymentsProvider) InitiatePayment(ctx context.Context, req PaymentRequest) (PaymentResponse, error) {
+// InitiatePayment creates a NOWPayments invoice.
+func (p *NOWPaymentsProvider) InitiatePayment(_ context.Context, req PaymentRequest) (PaymentResponse, error) {
 	slog.Warn("nowpayments payment initiation is a placeholder",
 		"amount", req.Amount, "currency", req.Currency)
+
 	return PaymentResponse{
 		PaymentID:   "",
 		CheckoutURL: "",
@@ -311,12 +335,14 @@ func (p *NOWPaymentsProvider) InitiatePayment(ctx context.Context, req PaymentRe
 	}, nil
 }
 
+// VerifyWebhookSignature validates the NOWPayments webhook signature.
 func (p *NOWPaymentsProvider) VerifyWebhookSignature(payload []byte, signature string) error {
 	if p.apiKey == "" {
-		return fmt.Errorf("nowpayments API key not configured (JC_NOWPAYMENTS_IPN_SECRET)")
+		return errors.New("nowpayments API key not configured (JC_NOWPAYMENTS_IPN_SECRET)")
 	}
+
 	if signature == "" {
-		return fmt.Errorf("missing nowpayments webhook signature")
+		return errors.New("missing nowpayments webhook signature")
 	}
 
 	// NOWPayments IPN sends HMAC-SHA256 of the payload using the IPN secret.
@@ -326,12 +352,14 @@ func (p *NOWPaymentsProvider) VerifyWebhookSignature(payload []byte, signature s
 	expected := hex.EncodeToString(mac.Sum(nil))
 
 	if !hmac.Equal([]byte(signature), []byte(expected)) {
-		return fmt.Errorf("invalid nowpayments webhook signature")
+		return errors.New("invalid nowpayments webhook signature")
 	}
+
 	return nil
 }
 
-func (p *NOWPaymentsProvider) ProcessWebhookEvent(ctx context.Context, event WebhookEvent) error {
+// ProcessWebhookEvent processes a NOWPayments webhook event.
+func (p *NOWPaymentsProvider) ProcessWebhookEvent(_ context.Context, event WebhookEvent) error {
 	slog.Info("nowpayments webhook event processed (placeholder)",
 		"event_id", event.EventID)
 	return nil
@@ -349,11 +377,13 @@ func NewManualTransferProvider() *ManualTransferProvider {
 	return &ManualTransferProvider{}
 }
 
+// Name returns the provider name.
 func (p *ManualTransferProvider) Name() string {
 	return ProviderManualTransfer
 }
 
-func (p *ManualTransferProvider) InitiatePayment(ctx context.Context, req PaymentRequest) (PaymentResponse, error) {
+// InitiatePayment creates a manual transfer payment reference.
+func (p *ManualTransferProvider) InitiatePayment(_ context.Context, _ PaymentRequest) (PaymentResponse, error) {
 	// Manual transfers don't initiate a checkout URL
 	// They return reference code and instructions
 	return PaymentResponse{
@@ -362,12 +392,14 @@ func (p *ManualTransferProvider) InitiatePayment(ctx context.Context, req Paymen
 	}, nil
 }
 
-func (p *ManualTransferProvider) VerifyWebhookSignature(payload []byte, signature string) error {
+// VerifyWebhookSignature is a no-op for manual transfers.
+func (p *ManualTransferProvider) VerifyWebhookSignature(_ []byte, _ string) error {
 	// Manual transfers don't have webhooks
 	return nil
 }
 
-func (p *ManualTransferProvider) ProcessWebhookEvent(ctx context.Context, event WebhookEvent) error {
+// ProcessWebhookEvent is a no-op for manual transfers.
+func (p *ManualTransferProvider) ProcessWebhookEvent(_ context.Context, _ WebhookEvent) error {
 	// Manual transfers don't have webhooks
 	return nil
 }

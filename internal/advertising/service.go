@@ -3,6 +3,7 @@ package advertising
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -25,10 +26,11 @@ type CreateCampaignInput struct {
 // CreateCampaign creates a new ad campaign (admin-only in V1).
 func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype.UUID, input CreateCampaignInput) (AdCampaign, error) {
 	if input.Name == "" {
-		return AdCampaign{}, fmt.Errorf("name is required")
+		return AdCampaign{}, errors.New("name is required")
 	}
+
 	if input.SlotTypeName == "" {
-		return AdCampaign{}, fmt.Errorf("slot_type_name is required")
+		return AdCampaign{}, errors.New("slot_type_name is required")
 	}
 
 	slotType, err := s.store.getAdSlotTypeByName(ctx, tenantID, input.SlotTypeName)
@@ -77,9 +79,11 @@ func (s *Service) ActivateCampaign(ctx context.Context, id, tenantID pgtype.UUID
 	if err != nil {
 		return AdCampaign{}, err
 	}
+
 	if campaign.Status != CampaignStatusDraft && campaign.Status != CampaignStatusPaused {
 		return AdCampaign{}, fmt.Errorf("campaign cannot be activated from status: %s", campaign.Status)
 	}
+
 	return s.store.updateAdCampaignStatus(ctx, id, tenantID, CampaignStatusActive)
 }
 
@@ -102,7 +106,7 @@ func (s *Service) RenderSlot(ctx context.Context, tenantID, userID pgtype.UUID, 
 	}
 
 	campaigns, err := s.store.listActiveCampaignsBySlot(ctx, tenantID, slotType.ID,
-		int32(slotType.MaxDisplayPerPage), 0)
+		slotType.MaxDisplayPerPage, 0)
 	if err != nil {
 		return nil, fmt.Errorf("listing active campaigns: %w", err)
 	}
@@ -114,16 +118,19 @@ func (s *Service) RenderSlot(ctx context.Context, tenantID, userID pgtype.UUID, 
 
 	// Apply frequency capping per user/day.
 	filtered := []AdCampaign{}
+
 	for _, c := range campaigns {
 		if c.FrequencyCapPerUser != nil && userID.Valid {
 			count, err := s.store.countImpressionsForUserToday(ctx, userID, c.ID)
 			if err != nil {
 				return nil, fmt.Errorf("checking frequency cap: %w", err)
 			}
+
 			if count >= *c.FrequencyCapPerUser {
 				continue
 			}
 		}
+
 		filtered = append(filtered, c)
 	}
 
@@ -151,6 +158,7 @@ func (s *Service) IngestAdEvents(ctx context.Context, tenantID pgtype.UUID, even
 	}
 
 	ingested := 0
+
 	for _, event := range events {
 		if event.EventType != EventTypeImpression && event.EventType != EventTypeClick {
 			continue
@@ -160,6 +168,7 @@ func (s *Service) IngestAdEvents(ctx context.Context, tenantID pgtype.UUID, even
 		if err := campaignID.Scan(event.CampaignID); err != nil {
 			continue
 		}
+
 		var userID pgtype.UUID
 		if err := userID.Scan(event.UserID); err != nil {
 			continue
@@ -174,6 +183,7 @@ func (s *Service) IngestAdEvents(ctx context.Context, tenantID pgtype.UUID, even
 		if err != nil {
 			return ingested, fmt.Errorf("inserting ad event at index %d: %w", ingested, err)
 		}
+
 		ingested++
 	}
 
@@ -205,10 +215,11 @@ type CreateBoostInput struct {
 // CreateBoost creates an organization boost linked to a campaign.
 func (s *Service) CreateBoost(ctx context.Context, tenantID pgtype.UUID, input CreateBoostInput) (OrganizationBoost, error) {
 	if !input.OrganizationID.Valid {
-		return OrganizationBoost{}, fmt.Errorf("organization_id is required")
+		return OrganizationBoost{}, errors.New("organization_id is required")
 	}
+
 	if !input.CampaignID.Valid {
-		return OrganizationBoost{}, fmt.Errorf("campaign_id is required")
+		return OrganizationBoost{}, errors.New("campaign_id is required")
 	}
 
 	boostType := input.BoostType

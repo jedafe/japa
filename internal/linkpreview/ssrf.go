@@ -1,6 +1,7 @@
 package linkpreview
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -36,10 +37,12 @@ func IsPrivateIP(ip net.IP) bool {
 		if err != nil {
 			continue
 		}
+
 		if network.Contains(ip) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -59,7 +62,7 @@ func ValidateURL(rawURL string) error {
 	// Resolve hostname to IP
 	host := u.Hostname()
 	if host == "" {
-		return fmt.Errorf("empty hostname")
+		return errors.New("empty hostname")
 	}
 
 	// Check if hostname is an IP address
@@ -67,6 +70,7 @@ func ValidateURL(rawURL string) error {
 		if IsPrivateIP(ip) {
 			return fmt.Errorf("private IP address not allowed: %s", ip)
 		}
+
 		return nil
 	}
 
@@ -103,7 +107,7 @@ func ValidateRedirectURL(urlStr string) error {
 
 	host := u.Hostname()
 	if host == "" {
-		return fmt.Errorf("redirect target has empty hostname")
+		return errors.New("redirect target has empty hostname")
 	}
 
 	// If hostname is already an IP, check it directly.
@@ -111,6 +115,7 @@ func ValidateRedirectURL(urlStr string) error {
 		if IsPrivateIP(ip) {
 			return fmt.Errorf("redirect target resolves to private IP: %s", ip)
 		}
+
 		return nil
 	}
 
@@ -133,11 +138,13 @@ func ValidateRedirectURL(urlStr string) error {
 // The blacklist is loaded from system_settings (content.link_preview.blacklist).
 func IsBlockedDomain(host string, blacklist []string) bool {
 	host = strings.ToLower(host)
+
 	for _, blocked := range blacklist {
 		blocked = strings.ToLower(blocked)
 		if host == blocked || strings.HasSuffix(host, "."+blocked) {
 			return true
 		}
 	}
+
 	return false
 }

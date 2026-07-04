@@ -11,6 +11,7 @@ package referral
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -41,6 +42,7 @@ func NewHandlers(service *Service) *Handlers {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -58,6 +60,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -66,22 +69,30 @@ func parsePageSize(r *http.Request) int32 {
 	if s == "" {
 		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
 		return defaultPageSize
 	}
+
 	if n > int(maxPageSize) {
 		return maxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			return int32(n)
+			if n > math.MaxInt32 {
+				return defaultPageSize
+			}
+
+			return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
+
 	return 0
 }
 
@@ -90,7 +101,7 @@ func parseOffset(r *http.Request) int32 {
 // ---------------------------------------------------------------------------
 
 // GetProgram returns the referral program settings for the tenant.
-// GET /admin/referral/program
+// GET /admin/referral/program.
 func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -101,6 +112,7 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("getting referral program", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get program")
+
 		return
 	}
 
@@ -108,7 +120,7 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateProgram updates the referral program settings.
-// PUT /admin/referral/program
+// PUT /admin/referral/program.
 func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -123,6 +135,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 		IsActive            *bool   `json:"is_active,omitempty"`
 		Description         *string `json:"description,omitempty"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -132,6 +145,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("updating referral program", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update program")
+
 		return
 	}
 
@@ -139,7 +153,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListReferrals returns all referrals for the tenant.
-// GET /admin/referral/referrals
+// GET /admin/referral/referrals.
 func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -153,6 +167,7 @@ func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing referrals", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list referrals")
+
 		return
 	}
 
@@ -160,7 +175,7 @@ func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetReferral returns a single referral by ID.
-// GET /admin/referral/referrals/{id}
+// GET /admin/referral/referrals/{id}.
 func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {

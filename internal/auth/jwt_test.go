@@ -9,6 +9,8 @@ import (
 )
 
 func TestMintAndValidateAccessToken(t *testing.T) {
+	t.Parallel()
+
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
@@ -18,6 +20,7 @@ func TestMintAndValidateAccessToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MintAccessToken failed: %v", err)
 	}
+
 	if token == "" {
 		t.Fatal("expected non-empty token")
 	}
@@ -26,15 +29,19 @@ func TestMintAndValidateAccessToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateAccessToken failed: %v", err)
 	}
+
 	if claims.UserID != userID.String() {
 		t.Errorf("UserID = %s, want %s", claims.UserID, userID.String())
 	}
+
 	if claims.TenantID != tenantID.String() {
 		t.Errorf("TenantID = %s, want %s", claims.TenantID, tenantID.String())
 	}
 }
 
 func TestMintAccessToken_JTIIsPresent(t *testing.T) {
+	t.Parallel()
+
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
@@ -53,12 +60,15 @@ func TestMintAccessToken_JTIIsPresent(t *testing.T) {
 	if claims.JTI == "" {
 		t.Error("expected non-empty JTI claim")
 	}
+
 	if len(claims.JTI) < 36 {
 		t.Errorf("JTI looks too short: %q", claims.JTI)
 	}
 }
 
 func TestMintAccessToken_UniqueJTIs(t *testing.T) {
+	t.Parallel()
+
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
@@ -76,6 +86,8 @@ func TestMintAccessToken_UniqueJTIs(t *testing.T) {
 }
 
 func TestValidateAccessToken_MissingJTI(t *testing.T) {
+	t.Parallel()
+
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	// Create a token manually without JTI
@@ -99,6 +111,8 @@ func TestValidateAccessToken_MissingJTI(t *testing.T) {
 }
 
 func TestValidateAccessToken_ExpiredToken(t *testing.T) {
+	t.Parallel()
+
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
@@ -124,10 +138,13 @@ func TestValidateAccessToken_ExpiredToken(t *testing.T) {
 }
 
 func TestKeyRotation_AddAndRemoveKey(t *testing.T) {
+	t.Parallel()
+
 	kr := NewKeyRotation("key-old", []byte("old-secret-key-32-bytes-long!!!"))
 
 	// Add new key
 	kr.AddKey("key-new", []byte("new-secret-key-32-bytes-long!!!"))
+
 	if len(kr.Keys) != 2 {
 		t.Errorf("expected 2 keys, got %d", len(kr.Keys))
 	}
@@ -150,6 +167,7 @@ func TestKeyRotation_AddAndRemoveKey(t *testing.T) {
 
 	// Remove old key
 	kr.RemoveKey("key-old")
+
 	_, err = kr.ValidateAccessToken(token)
 	if err == nil {
 		t.Error("expected error after removing old key, got nil")
@@ -157,6 +175,8 @@ func TestKeyRotation_AddAndRemoveKey(t *testing.T) {
 }
 
 func TestValidateAccessToken_WrongSigningMethod(t *testing.T) {
+	t.Parallel()
+
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 	// Create token with wrong method
 	token := jwt.NewWithClaims(jwt.SigningMethodNone, &JWTClaims{})
@@ -170,6 +190,8 @@ func TestValidateAccessToken_WrongSigningMethod(t *testing.T) {
 }
 
 func TestMintAccessToken_InvalidUUID(t *testing.T) {
+	t.Parallel()
+
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 	invalidID := pgtype.UUID{Valid: false}
 
@@ -180,6 +202,7 @@ func TestMintAccessToken_InvalidUUID(t *testing.T) {
 }
 
 func TestIsTokenRevoked_NilClient(t *testing.T) {
+	t.Parallel()
 	// With nil client, token should NOT be considered revoked (fail-open).
 	revoked := IsTokenRevoked(t.Context(), "any-jti", nil)
 	if revoked {

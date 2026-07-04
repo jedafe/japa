@@ -70,6 +70,7 @@ func (s *Store) CreateIPBlock(ctx context.Context, input CreateIPBlockInput) (ge
 	if err != nil {
 		return gen.IpBlock{}, fmt.Errorf("parsing CIDR: %w", err)
 	}
+
 	return s.queries.CreateIPBlock(ctx, gen.CreateIPBlockParams{
 		TenantID:  input.TenantID,
 		Cidr:      addr,
@@ -86,6 +87,7 @@ func (s *Store) GetIPBlockByCIDR(ctx context.Context, tenantID pgtype.UUID, cidr
 	if err != nil {
 		return gen.IpBlock{}, fmt.Errorf("parsing CIDR: %w", err)
 	}
+
 	return s.queries.GetIPBlockByCIDR(ctx, gen.GetIPBlockByCIDRParams{
 		TenantID: tenantID,
 		Cidr:     addr,
@@ -95,14 +97,14 @@ func (s *Store) GetIPBlockByCIDR(ctx context.Context, tenantID pgtype.UUID, cidr
 // ListIPBlocks returns paginated IP blocks for the given tenant.
 func (s *Store) ListIPBlocks(ctx context.Context, tenantID pgtype.UUID, limit int32, cursorCreatedAt pgtype.Timestamptz) ([]gen.IpBlock, error) {
 	return s.queries.ListIPBlocks(ctx, gen.ListIPBlocksParams{
-		TenantID:        tenantID,
-		Limit:           limit,
+		TenantID:  tenantID,
+		Limit:     limit,
 		CreatedAt: cursorCreatedAt,
 	})
 }
 
 // DeleteIPBlock removes an IP block by ID.
-func (s *Store) DeleteIPBlock(ctx context.Context, id pgtype.UUID, tenantID pgtype.UUID) error {
+func (s *Store) DeleteIPBlock(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.queries.DeleteIPBlock(ctx, gen.DeleteIPBlockParams{
 		ID:       id,
 		TenantID: tenantID,
@@ -120,7 +122,7 @@ func (s *Store) GetActiveIPBlocks(ctx context.Context, tenantID pgtype.UUID) ([]
 func (s *Store) IsIPBlocked(ctx context.Context, tenantID pgtype.UUID, ip string) (bool, error) {
 	parsedIP, err := netip.ParseAddr(ip)
 	if err != nil {
-		return false, nil // Invalid IPs are not blocked
+		return false, nil //nolint:nilerr // intentional: invalid IPs are not blocked
 	}
 
 	result, err := s.queries.IsIPBlocked(ctx, gen.IsIPBlockedParams{
@@ -130,6 +132,7 @@ func (s *Store) IsIPBlocked(ctx context.Context, tenantID pgtype.UUID, ip string
 	if err != nil {
 		return false, fmt.Errorf("checking IP block: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -170,6 +173,7 @@ func (s *Store) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, 
 	if err != nil {
 		return false, fmt.Errorf("checking block status: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -199,7 +203,7 @@ func (s *Store) ListCensoredWords(ctx context.Context, tenantID pgtype.UUID) ([]
 }
 
 // DeleteCensoredWord removes a censored word by ID.
-func (s *Store) DeleteCensoredWord(ctx context.Context, id pgtype.UUID, tenantID pgtype.UUID) error {
+func (s *Store) DeleteCensoredWord(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.queries.DeleteCensoredWord(ctx, gen.DeleteCensoredWordParams{
 		ID:       id,
 		TenantID: tenantID,
@@ -231,6 +235,7 @@ func (s *Store) CheckDuplicateHash(ctx context.Context, tenantID pgtype.UUID, ha
 	if err != nil {
 		return false, fmt.Errorf("checking duplicate hash: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -251,5 +256,6 @@ func netipParseAddrOrCIDR(s string) (netip.Addr, error) {
 	if err != nil {
 		return netip.Addr{}, fmt.Errorf("invalid CIDR or IP: %s", s)
 	}
+
 	return cidr.Addr(), nil
 }

@@ -13,8 +13,8 @@ type NotificationDispatchPayload struct {
 
 // PushDeliveryPayload is the payload for the push:delivery task.
 type PushDeliveryPayload struct {
-	UserID   string `json:"user_id"`
-	Title    string `json:"title"`
-	Body     string `json:"body"`
+	UserID    string `json:"user_id"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
 	ActionURL string `json:"action_url,omitempty"`
 }

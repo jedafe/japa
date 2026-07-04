@@ -63,11 +63,11 @@ const (
 // a text value enforced by the permission-checking logic. A space moderator
 // can override individual axes without changing the preset label.
 type SpacePermAxes struct {
-	Visibility  string
-	Posting     string
-	Replying    string
-	Commenting  string
-	Joining     string
+	Visibility string
+	Posting    string
+	Replying   string
+	Commenting string
+	Joining    string
 }
 
 // validLevels is the set of recognized space hierarchy levels.
@@ -112,11 +112,11 @@ func ValidPermissionAxes(a SpacePermAxes) bool {
 // posting/replying/commenting, and open joining.
 func DefaultPermAxes() SpacePermAxes {
 	return SpacePermAxes{
-		Visibility:  VisibilityPublic,
-		Posting:     PermMembers,
-		Replying:    PermMembers,
-		Commenting:  PermMembers,
-		Joining:     JoiningOpen,
+		Visibility: VisibilityPublic,
+		Posting:    PermMembers,
+		Replying:   PermMembers,
+		Commenting: PermMembers,
+		Joining:    JoiningOpen,
 	}
 }
 

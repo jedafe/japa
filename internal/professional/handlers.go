@@ -20,17 +20,21 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 )
+
+const defaultPageSize int32 = 20
 
 // Handlers holds dependencies for professional profile HTTP handlers.
 type Handlers struct {
 	Service *Service
+	RBAC    *rbac.RBAC
 }
 
-// NewHandlers creates Handlers with the given Service.
-func NewHandlers(service *Service) *Handlers {
-	return &Handlers{Service: service}
+// NewHandlers creates Handlers with the given Service and RBAC resolver.
+func NewHandlers(service *Service, rbacResolver *rbac.RBAC) *Handlers {
+	return &Handlers{Service: service, RBAC: rbacResolver}
 }
 
 // ---------------------------------------------------------------------------
@@ -43,6 +47,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("invalid %s: %w", param, err)
 	}
+
 	return id, nil
 }
 
@@ -53,6 +58,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -63,6 +69,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -90,6 +97,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -106,16 +114,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -124,11 +135,37 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+}
+
+// checkProfileOwnerOrAdmin verifies the user owns the profile or has the
+// professional_profile.edit_any permission. Returns true if authorized.
+// If not authorized, writes a 403 response and returns false.
+func (h *Handlers) checkProfileOwnerOrAdmin(w http.ResponseWriter, r *http.Request, profileID pgtype.UUID, user *auth.AuthenticatedUser, tenantID pgtype.UUID) bool {
+	isOwner, err := h.Service.IsOwner(r.Context(), profileID, user.UserID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check ownership")
+		return false
+	}
+
+	if isOwner {
+		return true
+	}
+
+	// Check for admin-level edit permission.
+	if h.RBAC != nil && h.RBAC.HasPermission(r.Context(), user.UserID, tenantID, "professional_profile.edit_any") {
+		return true
+	}
+
+	writeError(w, http.StatusForbidden, "forbidden", "You do not own this profile")
+
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +178,7 @@ func (h *Handlers) CreateProfessionalProfileType(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -152,14 +190,17 @@ func (h *Handlers) CreateProfessionalProfileType(w http.ResponseWriter, r *http.
 		Icon         string `json:"icon"`
 		FieldGroupID string `json:"field_group_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if input.Slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
@@ -183,6 +224,7 @@ func (h *Handlers) CreateProfessionalProfileType(w http.ResponseWriter, r *http.
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
@@ -192,6 +234,7 @@ func (h *Handlers) ListProfessionalProfileTypes(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -205,6 +248,7 @@ func (h *Handlers) ListProfessionalProfileTypes(w http.ResponseWriter, r *http.R
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
@@ -214,6 +258,7 @@ func (h *Handlers) GetProfessionalProfileType(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -230,6 +275,7 @@ func (h *Handlers) GetProfessionalProfileType(w http.ResponseWriter, r *http.Req
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -243,6 +289,7 @@ func (h *Handlers) CreateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -260,18 +307,22 @@ func (h *Handlers) CreateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 		VerificationType string `json:"verification_type"`
 		FieldValues      string `json:"field_values"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if input.Slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
 	}
+
 	if input.TypeID == "" {
 		writeError(w, http.StatusBadRequest, "missing_type_id", "type_id is required")
 		return
@@ -285,10 +336,17 @@ func (h *Handlers) CreateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 
 	var logoMediaID, headerMediaID pgtype.UUID
 	if input.LogoMediaID != "" {
-		_ = logoMediaID.Scan(input.LogoMediaID)
+		if err := logoMediaID.Scan(input.LogoMediaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo media ID format")
+			return
+		}
 	}
+
 	if input.HeaderMediaID != "" {
-		_ = headerMediaID.Scan(input.HeaderMediaID)
+		if err := headerMediaID.Scan(input.HeaderMediaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_header_media_id", "Invalid header media ID format")
+			return
+		}
 	}
 
 	fieldValues := input.FieldValues
@@ -312,6 +370,7 @@ func (h *Handlers) CreateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
@@ -321,6 +380,7 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -339,12 +399,15 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusBadRequest, "invalid_owner_user_id", "Invalid owner_user_id")
 			return
 		}
+
 		profiles, err := h.Service.ListProfessionalProfilesByOwner(r.Context(), oid, tenantID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": profiles})
+
 		return
 	}
 
@@ -354,12 +417,15 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
 			return
 		}
+
 		profiles, err := h.Service.ListProfessionalProfilesByType(r.Context(), tid, tenantID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": profiles})
+
 		return
 	}
 
@@ -369,11 +435,13 @@ func (h *Handlers) ListProfessionalProfiles(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
+
 	profiles, err := h.Service.ListProfessionalProfilesByOwner(r.Context(), user.UserID, tenantID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": profiles})
 }
 
@@ -395,22 +463,29 @@ func (h *Handlers) GetProfessionalProfile(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // UpdateProfessionalProfile handles PATCH /api/v1/professional-profiles/{id}.
 func (h *Handlers) UpdateProfessionalProfile(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, id, user, tenantID) {
 		return
 	}
 
@@ -425,10 +500,12 @@ func (h *Handlers) UpdateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 		Status           string `json:"status"`
 		FieldValues      string `json:"field_values"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
@@ -436,10 +513,17 @@ func (h *Handlers) UpdateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 
 	var logoMediaID, headerMediaID pgtype.UUID
 	if input.LogoMediaID != "" {
-		_ = logoMediaID.Scan(input.LogoMediaID)
+		if err := logoMediaID.Scan(input.LogoMediaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo media ID format")
+			return
+		}
 	}
+
 	if input.HeaderMediaID != "" {
-		_ = headerMediaID.Scan(input.HeaderMediaID)
+		if err := headerMediaID.Scan(input.HeaderMediaID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_header_media_id", "Invalid header media ID format")
+			return
+		}
 	}
 
 	result, err := h.Service.UpdateProfessionalProfile(r.Context(), id, tenantID, UpdateProfessionalProfileInput{
@@ -457,22 +541,29 @@ func (h *Handlers) UpdateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // DeleteProfessionalProfile handles DELETE /api/v1/professional-profiles/{id}.
 func (h *Handlers) DeleteProfessionalProfile(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, id, user, tenantID) {
 		return
 	}
 
@@ -480,6 +571,7 @@ func (h *Handlers) DeleteProfessionalProfile(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -493,9 +585,19 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -503,10 +605,12 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		UserID string `json:"user_id"`
 		Role   string `json:"role"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.UserID == "" {
 		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
@@ -525,6 +629,7 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
@@ -534,11 +639,13 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
+
 	userID, err := parseUUIDParam(r, "userId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
@@ -549,6 +656,7 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -558,6 +666,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
@@ -569,6 +678,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": members})
 }
 
@@ -578,11 +688,13 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
+
 	userID, err := parseUUIDParam(r, "userId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
@@ -592,10 +704,12 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Role string `json:"role"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Role == "" {
 		writeError(w, http.StatusBadRequest, "missing_role", "role is required")
 		return
@@ -605,6 +719,7 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
@@ -618,9 +733,19 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -628,10 +753,12 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 		Email string `json:"email"`
 		Role  string `json:"role"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Email == "" {
 		writeError(w, http.StatusBadRequest, "missing_email", "email is required")
 		return
@@ -645,6 +772,7 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": inv})
 }
 
@@ -654,6 +782,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
@@ -665,6 +794,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": invitations})
 }
 
@@ -685,6 +815,7 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "accepted"}})
 }
 
@@ -698,10 +829,12 @@ func (h *Handlers) GetAuthorContext(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
@@ -713,6 +846,7 @@ func (h *Handlers) GetAuthorContext(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": authorCtx})
 }
 
@@ -726,10 +860,12 @@ func (h *Handlers) ListRelocations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
@@ -744,6 +880,7 @@ func (h *Handlers) ListRelocations(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": relocations})
 }
 
@@ -753,10 +890,12 @@ func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
@@ -769,10 +908,12 @@ func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 		Status  string `json:"status"`
 		Year    int32  `json:"year"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Country == "" {
 		writeError(w, http.StatusBadRequest, "missing_country", "country is required")
 		return
@@ -788,22 +929,35 @@ func (h *Handlers) CreateRelocation(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": relocation})
 }
 
 // UpdateRelocation handles PATCH /api/v1/professional-profiles/relocations/{relocationId}.
 func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	relocationID, err := parseUUIDParam(r, "relocationId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_relocation_id", "Invalid relocation ID")
+		return
+	}
+
+	profileID, err := h.Service.GetRelocationProfileID(r.Context(), relocationID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -813,6 +967,7 @@ func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
 		Status  string `json:"status"`
 		Year    int32  `json:"year"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -828,22 +983,35 @@ func (h *Handlers) UpdateRelocation(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": relocation})
 }
 
 // DeleteRelocation handles DELETE /api/v1/professional-profiles/relocations/{relocationId}.
 func (h *Handlers) DeleteRelocation(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	relocationID, err := parseUUIDParam(r, "relocationId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_relocation_id", "Invalid relocation ID")
+		return
+	}
+
+	profileID, err := h.Service.GetRelocationProfileID(r.Context(), relocationID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -851,6 +1019,7 @@ func (h *Handlers) DeleteRelocation(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
@@ -864,10 +1033,12 @@ func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
@@ -882,6 +1053,7 @@ func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": documents})
 }
 
@@ -891,10 +1063,12 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
@@ -907,14 +1081,17 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 		Description  string `json:"description"`
 		FileURL      string `json:"file_url"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
 		return
 	}
+
 	if input.DocumentType == "" {
 		writeError(w, http.StatusBadRequest, "missing_document_type", "document_type is required")
 		return
@@ -930,22 +1107,35 @@ func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": document})
 }
 
 // UpdateDocument handles PATCH /api/v1/professional-profiles/documents/{documentId}.
 func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	documentID, err := parseUUIDParam(r, "documentId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_document_id", "Invalid document ID")
+		return
+	}
+
+	profileID, err := h.Service.GetDocumentProfileID(r.Context(), documentID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -955,6 +1145,7 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 		Description  string `json:"description"`
 		FileURL      string `json:"file_url"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -970,22 +1161,35 @@ func (h *Handlers) UpdateDocument(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": document})
 }
 
 // DeleteDocument handles DELETE /api/v1/professional-profiles/documents/{documentId}.
 func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	documentID, err := parseUUIDParam(r, "documentId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_document_id", "Invalid document ID")
+		return
+	}
+
+	profileID, err := h.Service.GetDocumentProfileID(r.Context(), documentID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -993,6 +1197,7 @@ func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
@@ -1006,10 +1211,12 @@ func (h *Handlers) ListVerifiers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
@@ -1024,22 +1231,29 @@ func (h *Handlers) ListVerifiers(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": verifiers})
 }
 
 // CreateVerifier handles POST /api/v1/professional-profiles/{id}/verifiers.
 func (h *Handlers) CreateVerifier(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
 		return
 	}
 
@@ -1047,10 +1261,12 @@ func (h *Handlers) CreateVerifier(w http.ResponseWriter, r *http.Request) {
 		UserID string `json:"user_id"`
 		Role   string `json:"role"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.UserID == "" {
 		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
@@ -1070,5 +1286,42 @@ func (h *Handlers) CreateVerifier(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": verifier})
+}
+
+// DeleteVerifier handles DELETE /api/v1/professional-profiles/verifiers/{verifierId}.
+func (h *Handlers) DeleteVerifier(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	verifierID, err := parseUUIDParam(r, "verifierId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_verifier_id", "Invalid verifier ID")
+		return
+	}
+
+	profileID, err := h.Service.GetVerifierProfileID(r.Context(), verifierID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
+		return
+	}
+
+	if err := h.Service.DeleteVerifier(r.Context(), verifierID, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
 }

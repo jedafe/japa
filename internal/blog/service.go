@@ -2,7 +2,7 @@ package blog
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -19,10 +19,11 @@ type CreateSeriesInput struct {
 // CreateSeries creates a new blog series.
 func (s *Service) CreateSeries(ctx context.Context, tenantID, authorUserID pgtype.UUID, input CreateSeriesInput) (gen.BlogSeries, error) {
 	if input.Title == "" {
-		return gen.BlogSeries{}, fmt.Errorf("title is required")
+		return gen.BlogSeries{}, errors.New("title is required")
 	}
+
 	if input.Slug == "" {
-		return gen.BlogSeries{}, fmt.Errorf("slug is required")
+		return gen.BlogSeries{}, errors.New("slug is required")
 	}
 
 	var description *string
@@ -31,12 +32,12 @@ func (s *Service) CreateSeries(ctx context.Context, tenantID, authorUserID pgtyp
 	}
 
 	return s.store.createBlogSeries(ctx, gen.CreateBlogSeriesParams{
-		TenantID:       tenantID,
-		Title:          input.Title,
-		Slug:           input.Slug,
-		Description:    description,
-		CoverImageID:   input.CoverImageID,
-		AuthorUserID:   authorUserID,
+		TenantID:     tenantID,
+		Title:        input.Title,
+		Slug:         input.Slug,
+		Description:  description,
+		CoverImageID: input.CoverImageID,
+		AuthorUserID: authorUserID,
 	})
 }
 
@@ -63,23 +64,25 @@ func (s *Service) ListSeriesByAuthor(ctx context.Context, tenantID, authorUserID
 // UpdateSeries updates a blog series.
 func (s *Service) UpdateSeries(ctx context.Context, id, tenantID pgtype.UUID, title, description string, coverImageID pgtype.UUID, status string) (gen.BlogSeries, error) {
 	if title == "" {
-		return gen.BlogSeries{}, fmt.Errorf("title is required")
+		return gen.BlogSeries{}, errors.New("title is required")
 	}
+
 	if status == "" {
 		status = SeriesStatusActive
 	}
+
 	var desc *string
 	if description != "" {
 		desc = &description
 	}
 
 	return s.store.updateBlogSeries(ctx, gen.UpdateBlogSeriesParams{
-		ID:             id,
-		TenantID:       tenantID,
-		Title:          title,
-		Description:    desc,
-		CoverImageID:   coverImageID,
-		Status:         status,
+		ID:           id,
+		TenantID:     tenantID,
+		Title:        title,
+		Description:  desc,
+		CoverImageID: coverImageID,
+		Status:       status,
 	})
 }
 
@@ -121,7 +124,8 @@ func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID 
 func (s *Service) BulkReorderSeriesPosts(ctx context.Context, seriesID pgtype.UUID, posts []struct {
 	ContentID pgtype.UUID
 	Position  int32
-}) error {
+},
+) error {
 	return s.store.bulkReorderSeriesPosts(ctx, seriesID, posts)
 }
 
@@ -139,23 +143,25 @@ type CreateReviewInput struct {
 // CreateReview creates a new content review.
 func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgtype.UUID, input CreateReviewInput) (gen.ContentReview, error) {
 	if input.ContentID == (pgtype.UUID{}) {
-		return gen.ContentReview{}, fmt.Errorf("content_id is required")
+		return gen.ContentReview{}, errors.New("content_id is required")
 	}
+
 	status := input.Status
 	if status == "" {
 		status = ReviewStatusPending
 	}
+
 	var feedback *string
 	if input.Feedback != "" {
 		feedback = &input.Feedback
 	}
 
 	return s.store.createContentReview(ctx, gen.CreateContentReviewParams{
-		TenantID:        tenantID,
-		ContentID:       input.ContentID,
-		ReviewerUserID:  reviewerUserID,
-		Status:          status,
-		Feedback:        feedback,
+		TenantID:       tenantID,
+		ContentID:      input.ContentID,
+		ReviewerUserID: reviewerUserID,
+		Status:         status,
+		Feedback:       feedback,
 	})
 }
 
@@ -177,8 +183,9 @@ func (s *Service) ListPendingReviews(ctx context.Context, tenantID pgtype.UUID, 
 // UpdateReviewStatus updates a review's status and feedback.
 func (s *Service) UpdateReviewStatus(ctx context.Context, id, tenantID pgtype.UUID, status, feedback string) (gen.ContentReview, error) {
 	if status == "" {
-		return gen.ContentReview{}, fmt.Errorf("status is required")
+		return gen.ContentReview{}, errors.New("status is required")
 	}
+
 	var fb *string
 	if feedback != "" {
 		fb = &feedback
@@ -206,7 +213,7 @@ type FeaturePostInput struct {
 // FeaturePost marks a post as featured.
 func (s *Service) FeaturePost(ctx context.Context, tenantID pgtype.UUID, input FeaturePostInput) (gen.ContentFeatured, error) {
 	if input.ContentID == (pgtype.UUID{}) {
-		return gen.ContentFeatured{}, fmt.Errorf("content_id is required")
+		return gen.ContentFeatured{}, errors.New("content_id is required")
 	}
 
 	return s.store.featureContent(ctx, gen.FeatureContentParams{

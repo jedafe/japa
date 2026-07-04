@@ -11,10 +11,10 @@ import (
 
 // Store provides low-level database access for media.
 type Store struct {
-	write      *gen.Queries
-	read       *gen.Queries
-	writePool  *pgxpool.Pool
-	readPool   *pgxpool.Pool
+	write     *gen.Queries
+	read      *gen.Queries
+	writePool *pgxpool.Pool
+	readPool  *pgxpool.Pool
 }
 
 // NewStore creates a Store backed by the given gen.Queries and pool instances.
@@ -28,6 +28,7 @@ func (s *Store) InsertMedia(ctx context.Context, params gen.InsertMediaParams) (
 	if err != nil {
 		return gen.Medium{}, fmt.Errorf("inserting media: %w", err)
 	}
+
 	return m, nil
 }
 
@@ -40,6 +41,7 @@ func (s *Store) GetMediaByID(ctx context.Context, id, tenantID pgtype.UUID) (gen
 	if err != nil {
 		return gen.Medium{}, fmt.Errorf("getting media by ID: %w", err)
 	}
+
 	return m, nil
 }
 
@@ -52,6 +54,7 @@ func (s *Store) GetMediaByStoragePath(ctx context.Context, storagePath string, t
 	if err != nil {
 		return gen.Medium{}, fmt.Errorf("getting media by storage path: %w", err)
 	}
+
 	return m, nil
 }
 
@@ -63,6 +66,7 @@ func (s *Store) ConfirmMedia(ctx context.Context, id, tenantID pgtype.UUID) erro
 	}); err != nil {
 		return fmt.Errorf("confirming media: %w", err)
 	}
+
 	return nil
 }
 
@@ -71,6 +75,7 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, params gen.UpdateMediaM
 	if err := s.write.UpdateMediaMetadata(ctx, params); err != nil {
 		return fmt.Errorf("updating media metadata: %w", err)
 	}
+
 	return nil
 }
 
@@ -82,6 +87,7 @@ func (s *Store) SoftDeleteMedia(ctx context.Context, id, tenantID pgtype.UUID) e
 	}); err != nil {
 		return fmt.Errorf("soft-deleting media: %w", err)
 	}
+
 	return nil
 }
 
@@ -90,6 +96,7 @@ func (s *Store) ListMediaByUploader(ctx context.Context, tenantID, uploaderID pg
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	items, err := s.read.ListMediaByUploader(ctx, gen.ListMediaByUploaderParams{
 		TenantID:       tenantID,
 		UploaderUserID: uploaderID,
@@ -99,6 +106,7 @@ func (s *Store) ListMediaByUploader(ctx context.Context, tenantID, uploaderID pg
 	if err != nil {
 		return nil, fmt.Errorf("listing media by uploader: %w", err)
 	}
+
 	return items, nil
 }
 
@@ -107,6 +115,7 @@ func (s *Store) ListMediaByTenant(ctx context.Context, tenantID pgtype.UUID, lim
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	items, err := s.read.ListMediaByTenant(ctx, gen.ListMediaByTenantParams{
 		TenantID:   tenantID,
 		PageOffset: offset,
@@ -115,6 +124,7 @@ func (s *Store) ListMediaByTenant(ctx context.Context, tenantID pgtype.UUID, lim
 	if err != nil {
 		return nil, fmt.Errorf("listing media by tenant: %w", err)
 	}
+
 	return items, nil
 }
 
@@ -123,6 +133,7 @@ func (s *Store) ListMediaByType(ctx context.Context, tenantID pgtype.UUID, mimeP
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	items, err := s.read.ListMediaByType(ctx, gen.ListMediaByTypeParams{
 		TenantID:    tenantID,
 		MimePattern: &mimePattern,
@@ -132,6 +143,7 @@ func (s *Store) ListMediaByType(ctx context.Context, tenantID pgtype.UUID, mimeP
 	if err != nil {
 		return nil, fmt.Errorf("listing media by type: %w", err)
 	}
+
 	return items, nil
 }
 
@@ -140,6 +152,7 @@ func (s *Store) SearchMedia(ctx context.Context, tenantID pgtype.UUID, query str
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	items, err := s.read.SearchMedia(ctx, gen.SearchMediaParams{
 		TenantID:   tenantID,
 		Query:      &query,
@@ -149,6 +162,7 @@ func (s *Store) SearchMedia(ctx context.Context, tenantID pgtype.UUID, query str
 	if err != nil {
 		return nil, fmt.Errorf("searching media: %w", err)
 	}
+
 	return items, nil
 }
 
@@ -161,6 +175,7 @@ func (s *Store) CountMediaByUploader(ctx context.Context, tenantID, uploaderID p
 	if err != nil {
 		return 0, fmt.Errorf("counting media by uploader: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -169,12 +184,14 @@ func (s *Store) BulkSoftDeleteMedia(ctx context.Context, tenantID pgtype.UUID, m
 	if len(mediaIDs) == 0 {
 		return nil
 	}
+
 	if err := s.write.BulkSoftDeleteMedia(ctx, gen.BulkSoftDeleteMediaParams{
 		TenantID: tenantID,
 		MediaIds: mediaIDs,
 	}); err != nil {
 		return fmt.Errorf("bulk soft-deleting media: %w", err)
 	}
+
 	return nil
 }
 
@@ -204,8 +221,8 @@ type QuarantinedMedia struct {
 	CreatedAt        pgtype.Timestamptz  `json:"created_at"`
 }
 
-// scanMediaRow holds the minimal fields needed for virus scanning.
-type scanMediaRow struct {
+// ScanMediaRow holds the minimal fields needed for virus scanning.
+type ScanMediaRow struct {
 	StorageBucket    string
 	StoragePath      string
 	OriginalFilename string
@@ -221,21 +238,24 @@ func (s *Store) UpdateMediaStoragePath(ctx context.Context, id, tenantID pgtype.
 	if err != nil {
 		return fmt.Errorf("updating media storage path: %w", err)
 	}
+
 	return nil
 }
 
 // GetMediaForScan retrieves a media item by ID without tenant filtering.
 // Used by background workers that operate across all tenants.
-func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (scanMediaRow, error) {
-	var row scanMediaRow
+func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaRow, error) {
+	var row ScanMediaRow
+
 	err := s.readPool.QueryRow(ctx, `
 		SELECT storage_bucket, storage_path, original_filename, uploader_user_id::text
 		FROM media
 		WHERE id = $1 AND deleted_at IS NULL
 	`, mediaID).Scan(&row.StorageBucket, &row.StoragePath, &row.OriginalFilename, &row.UploaderUserID)
 	if err != nil {
-		return scanMediaRow{}, fmt.Errorf("getting media for scan: %w", err)
+		return ScanMediaRow{}, fmt.Errorf("getting media for scan: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -248,6 +268,7 @@ func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte) error {
 	if err != nil {
 		return fmt.Errorf("confirming media by ID: %w", err)
 	}
+
 	return nil
 }
 
@@ -263,6 +284,7 @@ func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, virusName s
 	if err != nil {
 		return fmt.Errorf("rejecting media by ID: %w", err)
 	}
+
 	return nil
 }
 
@@ -278,11 +300,12 @@ func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, reason stri
 	if err != nil {
 		return fmt.Errorf("quarantining media by ID: %w", err)
 	}
+
 	return nil
 }
 
 // ApproveQuarantined clears quarantine fields and confirms the media item.
-func (s *Store) ApproveQuarantined(ctx context.Context, mediaID pgtype.UUID, tenantID, reviewerID pgtype.UUID) error {
+func (s *Store) ApproveQuarantined(ctx context.Context, mediaID, tenantID, reviewerID pgtype.UUID) error {
 	_, err := s.writePool.Exec(ctx, `
 		UPDATE media
 		SET quarantine_reason = NULL,
@@ -295,11 +318,12 @@ func (s *Store) ApproveQuarantined(ctx context.Context, mediaID pgtype.UUID, ten
 	if err != nil {
 		return fmt.Errorf("approving quarantined media: %w", err)
 	}
+
 	return nil
 }
 
 // RejectQuarantined soft-deletes a quarantined media item after admin review.
-func (s *Store) RejectQuarantined(ctx context.Context, mediaID pgtype.UUID, tenantID, reviewerID pgtype.UUID) error {
+func (s *Store) RejectQuarantined(ctx context.Context, mediaID, tenantID, reviewerID pgtype.UUID) error {
 	_, err := s.writePool.Exec(ctx, `
 		UPDATE media
 		SET deleted_at = now(),
@@ -310,6 +334,7 @@ func (s *Store) RejectQuarantined(ctx context.Context, mediaID pgtype.UUID, tena
 	if err != nil {
 		return fmt.Errorf("rejecting quarantined media: %w", err)
 	}
+
 	return nil
 }
 
@@ -318,6 +343,7 @@ func (s *Store) ListQuarantined(ctx context.Context, tenantID pgtype.UUID, limit
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.readPool.Query(ctx, `
 		SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
 		       file_size_bytes, width_px, height_px, duration_secs, storage_path,
@@ -334,9 +360,11 @@ func (s *Store) ListQuarantined(ctx context.Context, tenantID pgtype.UUID, limit
 	if err != nil {
 		return nil, fmt.Errorf("listing quarantined media: %w", err)
 	}
+
 	defer rows.Close()
 
 	var items []QuarantinedMedia
+
 	for rows.Next() {
 		var m QuarantinedMedia
 		if err := rows.Scan(
@@ -348,14 +376,17 @@ func (s *Store) ListQuarantined(ctx context.Context, tenantID pgtype.UUID, limit
 		); err != nil {
 			return nil, fmt.Errorf("scanning quarantined media row: %w", err)
 		}
+
 		items = append(items, m)
 	}
+
 	return items, rows.Err()
 }
 
 // GetQuarantinedMedia returns a single quarantined media item by ID.
 func (s *Store) GetQuarantinedMedia(ctx context.Context, mediaID, tenantID pgtype.UUID) (QuarantinedMedia, error) {
 	var m QuarantinedMedia
+
 	err := s.readPool.QueryRow(ctx, `
 		SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
 		       file_size_bytes, width_px, height_px, duration_secs, storage_path,
@@ -376,5 +407,6 @@ func (s *Store) GetQuarantinedMedia(ctx context.Context, mediaID, tenantID pgtyp
 	if err != nil {
 		return QuarantinedMedia{}, fmt.Errorf("getting quarantined media: %w", err)
 	}
+
 	return m, nil
 }

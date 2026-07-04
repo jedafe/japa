@@ -5,14 +5,16 @@
 // internal notes, and SLA breach tracking.
 //
 // Status state machine:
-//   open → in_progress → waiting_on_user → resolved → closed
-//   Any state → closed (admin action)
-//   Any state → spam (admin action)
+//
+//	open → in_progress → waiting_on_user → resolved → closed
+//	Any state → closed (admin action)
+//	Any state → spam (admin action)
 package tickets
 
 // TicketStatus represents the lifecycle state of a ticket.
 type TicketStatus string
 
+// Ticket status constants representing the lifecycle states.
 const (
 	StatusOpen        TicketStatus = "open"
 	StatusInProgress  TicketStatus = "in_progress"
@@ -25,6 +27,7 @@ const (
 // TicketPriority represents the urgency level of a ticket.
 type TicketPriority string
 
+// Ticket priority constants representing urgency levels.
 const (
 	PriorityLow    TicketPriority = "low"
 	PriorityNormal TicketPriority = "normal"
@@ -35,6 +38,7 @@ const (
 // EventType represents the type of audit trail event.
 type EventType string
 
+// Audit trail event types for ticket lifecycle tracking.
 const (
 	EventStatusChanged   EventType = "status_changed"
 	EventPriorityChanged EventType = "priority_changed"
@@ -59,11 +63,13 @@ func IsValidStatusTransition(from, to TicketStatus) bool {
 	if !ok {
 		return false
 	}
+
 	for _, s := range allowed {
 		if s == to {
 			return true
 		}
 	}
+
 	return false
 }
 

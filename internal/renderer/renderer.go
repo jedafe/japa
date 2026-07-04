@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -65,7 +66,7 @@ func (r *Renderer) Render(ctx context.Context, contentID pgtype.UUID, updatedAt 
 
 // renderViaBun shells out to Bun to run the TipTap SSR script.
 func (r *Renderer) renderViaBun(ctx context.Context, json []byte) (string, error) {
-	cmd := exec.CommandContext(ctx, "bun", "run", r.scriptPath)
+	cmd := exec.CommandContext(ctx, "bun", "run", r.scriptPath) //nolint:gosec // G204: scriptPath from trusted admin config
 	cmd.Stdin = bytes.NewReader(json)
 
 	var stdout, stderr bytes.Buffer
@@ -80,10 +81,10 @@ func (r *Renderer) renderViaBun(ctx context.Context, json []byte) (string, error
 }
 
 // cacheKey generates a Valkey cache key for rendered HTML.
-// Format: jc:render:{content_id}:{updated_at_hash}
+// Format: jc:render:{content_id}:{updated_at_hash}.
 func (r *Renderer) cacheKey(contentID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
 	ts := updatedAt.Time.Unix()
-	hash := sha256.Sum256([]byte(fmt.Sprintf("%d", ts)))
+	hash := sha256.Sum256([]byte(strconv.FormatInt(ts, 10)))
 	tsHash := hex.EncodeToString(hash[:8])
 
 	return fmt.Sprintf("jc:render:%s:%s", contentID.String(), tsHash)

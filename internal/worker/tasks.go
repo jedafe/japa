@@ -12,55 +12,55 @@ import "github.com/hibiken/asynq"
 //  3. Register it in RegisterHandlers
 //  4. Enqueue from the relevant service with the matching constant
 const (
-	// ---- Critical tier (immediate processing, highest concurrency) ----
+	// ---- Critical tier (immediate processing, highest concurrency) ----.
 
 	TypeNotificationDispatchBatch = "notification:dispatch_batch"
 	TypeWebhookDelivery           = "webhook_delivery"
 	TypePaymentWebhookProcess     = "payment_webhook_process"
 	TypeTicketSendConfirmation    = "ticket:send_confirmation"
-	TypePushDelivery               = "push:delivery"
+	TypePushDelivery              = "push:delivery"
 
-	// ---- Default tier (standard background processing) ----
+	// ---- Default tier (standard background processing) ----.
 
-	TypeEmailSend                  = "email_send"
-	TypeSearchIndexSync            = "search_index_sync"
-	TypeImageProcessing            = "image_processing"
-	TypeAITaskProcessing           = "ai_task_processing"
-	TypeEngagementCountUpdate      = "engagement_count_update"
-	TypeModerationScan             = "moderation_scan"
-	TypeScheduledPublish           = "scheduled_publish"
-	TypeLinkPreviewFetch           = "link_preview_fetch"
-	TypeLanguagePackAITranslate    = "language_pack_ai_translate"
-	TypeMediaScan                  = "media_scan"
-	TypeContentFanOutToFeeds       = "content:fan_out_to_feeds"
-	TypeAIGenerateContentEmbedding = "ai:generate_content_embedding"
-	TypeReviewAggregateRecalc      = "review_aggregate_recalc"
-	TypeTicketSendStatusUpdate     = "ticket:send_status_update"
+	TypeEmailSend                     = "email_send"
+	TypeSearchIndexSync               = "search_index_sync"
+	TypeImageProcessing               = "image_processing"
+	TypeAITaskProcessing              = "ai_task_processing"
+	TypeEngagementCountUpdate         = "engagement_count_update"
+	TypeModerationScan                = "moderation_scan"
+	TypeScheduledPublish              = "scheduled_publish"
+	TypeLinkPreviewFetch              = "link_preview_fetch"
+	TypeLanguagePackAITranslate       = "language_pack_ai_translate"
+	TypeMediaScan                     = "media_scan"
+	TypeContentFanOutToFeeds          = "content:fan_out_to_feeds"
+	TypeAIGenerateContentEmbedding    = "ai:generate_content_embedding"
+	TypeReviewAggregateRecalc         = "review_aggregate_recalc"
+	TypeTicketSendStatusUpdate        = "ticket:send_status_update"
 	TypeLearningUpdateTrackCompletion = "learning:update_track_completion"
-	TypeVideoProcessing            = "video_processing"
-	TypeWalletProcessActivityEvent = "wallet:process_activity_event"
-	TypeNewsletterSend             = "newsletter_send"
+	TypeVideoProcessing               = "video_processing"
+	TypeWalletProcessActivityEvent    = "wallet:process_activity_event"
+	TypeNewsletterSend                = "newsletter_send"
 
-	// ---- Low tier (background maintenance, lowest concurrency) ----
+	// ---- Low tier (background maintenance, lowest concurrency) ----.
 
-	TypeDigestEmail                          = "digest_email"
-	TypeSitemapGenerate                      = "sitemap_generate"
-	TypeRSSRegenerate                        = "rss_regenerate"
-	TypeDataExport                           = "data_export"
-	TypeAccountDeletionCleanup               = "account_deletion_cleanup"
-	TypeAdEventIngest                        = "ad_event_ingest"
-	TypeMaintenanceUpdateVelocityScores      = "maintenance:update_velocity_scores"
-	TypeMaintenanceCheckSLABreaches          = "maintenance:check_sla_breaches"
-	TypeMaintenanceUpdateGeoIPDB             = "maintenance:update_geoip_db"
-	TypeSpaceAutoPopulate                    = "space:auto_populate"
-	TypeAnalyticsRefreshViews                = "analytics:refresh_views"
-	TypeSecurityScan                         = "security:scan"
-	TypeMaintenanceRegenerateLLMsTxt         = "maintenance:regenerate_llms_txt"
-	TypeLearningIssueCertificate             = "learning:issue_certificate"
-	TypeDBManualVacuum                       = "db_manual_vacuum"
-	TypeNewsletterDigest                     = "newsletter_digest"
+	TypeDigestEmail                     = "digest_email"
+	TypeSitemapGenerate                 = "sitemap_generate"
+	TypeRSSRegenerate                   = "rss_regenerate"
+	TypeDataExport                      = "data_export"
+	TypeAccountDeletionCleanup          = "account_deletion_cleanup"
+	TypeAdEventIngest                   = "ad_event_ingest"
+	TypeMaintenanceUpdateVelocityScores = "maintenance:update_velocity_scores"
+	TypeMaintenanceCheckSLABreaches     = "maintenance:check_sla_breaches"
+	TypeMaintenanceUpdateGeoIPDB        = "maintenance:update_geoip_db"
+	TypeSpaceAutoPopulate               = "space:auto_populate"
+	TypeAnalyticsRefreshViews           = "analytics:refresh_views"
+	TypeSecurityScan                    = "security:scan"
+	TypeMaintenanceRegenerateLLMsTxt    = "maintenance:regenerate_llms_txt"
+	TypeLearningIssueCertificate        = "learning:issue_certificate"
+	TypeDBManualVacuum                  = "db_manual_vacuum"
+	TypeNewsletterDigest                = "newsletter_digest"
 
-	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----
+	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
 	TypeScheduledPublishSweep = "scheduled_publish_sweep"
 	TypeVelocityScoreRecalc   = "velocity_score_recalc"

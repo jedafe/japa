@@ -9,6 +9,8 @@ import (
 )
 
 func TestIsPrivateIP(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		ip   string
 		want bool
@@ -28,6 +30,7 @@ func TestIsPrivateIP(t *testing.T) {
 			t.Errorf("failed to parse IP: %s", tt.ip)
 			continue
 		}
+
 		got := IsPrivateIP(ip)
 		if got != tt.want {
 			t.Errorf("IsPrivateIP(%s) = %v, want %v", tt.ip, got, tt.want)
@@ -36,6 +39,8 @@ func TestIsPrivateIP(t *testing.T) {
 }
 
 func TestValidateURL(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		url     string
 		wantErr bool
@@ -58,6 +63,8 @@ func TestValidateURL(t *testing.T) {
 }
 
 func TestValidateRedirectURL(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		url     string
@@ -76,6 +83,8 @@ func TestValidateRedirectURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			err := ValidateRedirectURL(tt.url)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateRedirectURL(%q) error = %v, wantErr %v", tt.url, err, tt.wantErr)
@@ -85,6 +94,8 @@ func TestValidateRedirectURL(t *testing.T) {
 }
 
 func TestIsBlockedDomain(t *testing.T) {
+	t.Parallel()
+
 	blacklist := []string{"evil.com", "bad.org"}
 
 	tests := []struct {
@@ -106,8 +117,9 @@ func TestIsBlockedDomain(t *testing.T) {
 }
 
 func TestSSRFRedirectBlocking(t *testing.T) {
+	t.Parallel()
 	// Server that redirects to a private IP (simulates an open redirect to internal host).
-	privateTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	privateTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, `<html><head><meta property="og:title" content="Internal"></head></html>`)
 	}))
@@ -120,7 +132,10 @@ func TestSSRFRedirectBlocking(t *testing.T) {
 	defer redirectServer.Close()
 
 	t.Run("redirect to private IP is blocked", func(t *testing.T) {
+		t.Parallel()
+
 		fetcher := NewFetcher(nil, nil)
+
 		_, err := fetcher.Fetch(t.Context(), redirectServer.URL)
 		if err == nil {
 			t.Error("expected error for redirect to private IP, got nil")
@@ -129,9 +144,11 @@ func TestSSRFRedirectBlocking(t *testing.T) {
 }
 
 func TestMaxRedirectDepth(t *testing.T) {
+	t.Parallel()
 	// Create a chain of redirects that exceeds maxRedirectDepth.
 	var redirectChain []*httptest.Server
-	for i := 0; i < maxRedirectDepth+2; i++ {
+
+	for i := range maxRedirectDepth + 2 {
 		idx := i
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if idx < len(redirectChain)-1 {
@@ -143,11 +160,13 @@ func TestMaxRedirectDepth(t *testing.T) {
 		}))
 		redirectChain = append(redirectChain, server)
 	}
+
 	for _, s := range redirectChain {
 		defer s.Close()
 	}
 
 	fetcher := NewFetcher(nil, nil)
+
 	_, err := fetcher.Fetch(t.Context(), redirectChain[0].URL)
 	if err == nil {
 		t.Error("expected error for too many redirects, got nil")

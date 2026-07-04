@@ -49,6 +49,7 @@ func NewStore(database *db.DB) *Store {
 // GetWebhookDelivery fetches a delivery row by ID.
 func (s *Store) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (WebhookDelivery, error) {
 	var d WebhookDelivery
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, endpoint_id, event_id, event_type, payload,
 		       status, attempts, last_error, delivered_at, created_at
@@ -61,12 +62,14 @@ func (s *Store) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (Webhook
 	if err != nil {
 		return WebhookDelivery{}, fmt.Errorf("fetching webhook delivery %s: %w", id, err)
 	}
+
 	return d, nil
 }
 
 // GetWebhookEndpoint fetches an endpoint configuration by ID.
 func (s *Store) GetWebhookEndpoint(ctx context.Context, id pgtype.UUID) (WebhookEndpoint, error) {
 	var e WebhookEndpoint
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, url, secret, event_types, status
 		FROM webhook_endpoints
@@ -77,6 +80,7 @@ func (s *Store) GetWebhookEndpoint(ctx context.Context, id pgtype.UUID) (Webhook
 	if err != nil {
 		return WebhookEndpoint{}, fmt.Errorf("fetching webhook endpoint %s: %w", id, err)
 	}
+
 	return e, nil
 }
 
@@ -90,6 +94,7 @@ func (s *Store) MarkWebhookDelivered(ctx context.Context, id pgtype.UUID, attemp
 	if err != nil {
 		return fmt.Errorf("marking webhook delivery %s as delivered: %w", id, err)
 	}
+
 	return nil
 }
 
@@ -103,5 +108,6 @@ func (s *Store) MarkWebhookFailed(ctx context.Context, id pgtype.UUID, attempts 
 	if err != nil {
 		return fmt.Errorf("marking webhook delivery %s as failed: %w", id, err)
 	}
+
 	return nil
 }

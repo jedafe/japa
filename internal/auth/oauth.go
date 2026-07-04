@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,7 +44,7 @@ type OAuthUserInfo struct {
 // OAuthStore defines the database operations for OAuth account management.
 type OAuthStore interface {
 	GetOAuthAccount(ctx context.Context, tenantID pgtype.UUID, provider, providerUserID string) (*OAuthAccount, error)
-	GetOAuthAccountByUser(ctx context.Context, tenantID pgtype.UUID, userID pgtype.UUID, provider string) (*OAuthAccount, error)
+	GetOAuthAccountByUser(ctx context.Context, tenantID, userID pgtype.UUID, provider string) (*OAuthAccount, error)
 	LinkOAuthAccount(ctx context.Context, tenantID, userID pgtype.UUID, provider, providerUserID string) error
 	GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, email string) (*User, error)
 }
@@ -77,15 +78,19 @@ func (c OAuthConfig) SupportedProviders() []string {
 	if c.GoogleClientID != "" {
 		providers = append(providers, "google")
 	}
+
 	if c.GitHubClientID != "" {
 		providers = append(providers, "github")
 	}
+
 	if c.AppleClientID != "" {
 		providers = append(providers, "apple")
 	}
+
 	if c.FacebookAppID != "" {
 		providers = append(providers, "facebook")
 	}
+
 	return providers
 }
 
@@ -97,6 +102,7 @@ func (c OAuthConfig) NewProvider(provider string) OAuthProvider {
 		if c.GoogleClientID == "" || c.GoogleClientSecret == "" {
 			return nil
 		}
+
 		return &googleProvider{
 			clientID:     c.GoogleClientID,
 			clientSecret: c.GoogleClientSecret,
@@ -106,6 +112,7 @@ func (c OAuthConfig) NewProvider(provider string) OAuthProvider {
 		if c.GitHubClientID == "" || c.GitHubClientSecret == "" {
 			return nil
 		}
+
 		return &githubProvider{
 			clientID:     c.GitHubClientID,
 			clientSecret: c.GitHubClientSecret,
@@ -115,20 +122,22 @@ func (c OAuthConfig) NewProvider(provider string) OAuthProvider {
 		if c.AppleClientID == "" || c.AppleTeamID == "" || c.AppleKeyID == "" {
 			return nil
 		}
+
 		return &appleProvider{
-			clientID:       c.AppleClientID,
-			teamID:         c.AppleTeamID,
-			keyID:          c.AppleKeyID,
+			clientID:      c.AppleClientID,
+			teamID:        c.AppleTeamID,
+			keyID:         c.AppleKeyID,
 			privateKeyPEM: c.ApplePrivateKeyPEM,
-			redirectURL:    c.RedirectBase + "/api/v1/auth/oauth/apple/callback",
+			redirectURL:   c.RedirectBase + "/api/v1/auth/oauth/apple/callback",
 		}
 	case "facebook":
 		if c.FacebookAppID == "" || c.FacebookAppSecret == "" {
 			return nil
 		}
+
 		return &facebookProvider{
-			appID:     c.FacebookAppID,
-			appSecret: c.FacebookAppSecret,
+			appID:       c.FacebookAppID,
+			appSecret:   c.FacebookAppSecret,
 			redirectURL: c.RedirectBase + "/api/v1/auth/oauth/facebook/callback",
 		}
 	default:
@@ -156,6 +165,7 @@ func (g *googleProvider) AuthURL(state string) string {
 		"access_type":   {"offline"},
 		"prompt":        {"consent"},
 	}
+
 	return "https://accounts.google.com/o/oauth2/v2/auth?" + params.Encode()
 }
 
@@ -177,13 +187,15 @@ func (g *googleProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 	if err != nil {
 		return nil, fmt.Errorf("creating userinfo request: %w", err)
 	}
+
 	req.Header.Set("Authorization", "Bearer "+tokenResp.AccessToken)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching google userinfo: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -195,6 +207,7 @@ func (g *googleProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 		Email string `json:"email"`
 		Name  string `json:"name"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return nil, fmt.Errorf("decoding google userinfo: %w", err)
 	}
@@ -224,6 +237,7 @@ func (g *githubProvider) AuthURL(state string) string {
 		"scope":        {"read:user user:email"},
 		"state":        {state},
 	}
+
 	return "https://github.com/login/oauth/authorize?" + params.Encode()
 }
 
@@ -244,6 +258,7 @@ func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 	if err != nil {
 		return nil, fmt.Errorf("creating github user request: %w", err)
 	}
+
 	req.Header.Set("Authorization", "Bearer "+tokenResp.AccessToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
 
@@ -251,7 +266,8 @@ func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 	if err != nil {
 		return nil, fmt.Errorf("fetching github user: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -264,6 +280,7 @@ func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 		Name  string `json:"name"`
 		Email string `json:"email"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
 		return nil, fmt.Errorf("decoding github user: %w", err)
 	}
@@ -275,7 +292,7 @@ func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 
 	return &OAuthUserInfo{
 		Provider:       "github",
-		ProviderUserID: fmt.Sprintf("%d", user.ID),
+		ProviderUserID: strconv.Itoa(user.ID),
 		Email:          user.Email,
 		Name:           user.Name,
 	}, nil
@@ -287,6 +304,7 @@ func fetchGitHubEmail(ctx context.Context, accessToken string) string {
 	if err != nil {
 		return ""
 	}
+
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
 
@@ -294,7 +312,8 @@ func fetchGitHubEmail(ctx context.Context, accessToken string) string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return ""
@@ -304,6 +323,7 @@ func fetchGitHubEmail(ctx context.Context, accessToken string) string {
 		Email   string `json:"email"`
 		Primary bool   `json:"primary"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
 		return ""
 	}
@@ -313,33 +333,36 @@ func fetchGitHubEmail(ctx context.Context, accessToken string) string {
 			return e.Email
 		}
 	}
+
 	if len(emails) > 0 {
 		return emails[0].Email
 	}
+
 	return ""
 }
 
 // --- Apple Provider (Sign in with Apple) ---
 
 type appleProvider struct {
-	clientID       string
-	teamID         string
-	keyID          string
-	privateKeyPEM  string
-	redirectURL    string
+	clientID      string
+	teamID        string
+	keyID         string
+	privateKeyPEM string
+	redirectURL   string
 }
 
 func (a *appleProvider) Name() string { return "apple" }
 
 func (a *appleProvider) AuthURL(state string) string {
 	params := url.Values{
-		"client_id":       {a.clientID},
-		"redirect_uri":    {a.redirectURL},
-		"response_type":   {"code id_token"},
-		"scope":           {"name email"},
-		"state":           {state},
-		"response_mode":   {"form_post"},
+		"client_id":     {a.clientID},
+		"redirect_uri":  {a.redirectURL},
+		"response_type": {"code id_token"},
+		"scope":         {"name email"},
+		"state":         {state},
+		"response_mode": {"form_post"},
 	}
+
 	return "https://appleid.apple.com/auth/authorize?" + params.Encode()
 }
 
@@ -350,7 +373,7 @@ func (a *appleProvider) Exchange(ctx context.Context, code string) (*OAuthUserIn
 	}
 
 	// Exchange code for tokens
-	tokenURL := "https://appleid.apple.com/auth/token"
+	tokenURL := "https://appleid.apple.com/auth/token" //nolint:gosec // G101: Apple OAuth endpoint URL, not a credential
 	params := url.Values{
 		"client_id":     {a.clientID},
 		"client_secret": {clientSecret},
@@ -363,6 +386,7 @@ func (a *appleProvider) Exchange(ctx context.Context, code string) (*OAuthUserIn
 	if err != nil {
 		return nil, fmt.Errorf("creating apple token request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
@@ -370,7 +394,8 @@ func (a *appleProvider) Exchange(ctx context.Context, code string) (*OAuthUserIn
 	if err != nil {
 		return nil, fmt.Errorf("executing apple token request: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -378,12 +403,13 @@ func (a *appleProvider) Exchange(ctx context.Context, code string) (*OAuthUserIn
 	}
 
 	var tokenResp struct {
-		AccessToken  string `json:"access_token"`
-		IDToken      string `json:"id_token"`
-		TokenType    string `json:"token_type"`
-		Error        string `json:"error"`
-		ErrorDesc    string `json:"error_description"`
+		AccessToken string `json:"access_token"`
+		IDToken     string `json:"id_token"`
+		TokenType   string `json:"token_type"`
+		Error       string `json:"error"`
+		ErrorDesc   string `json:"error_description"`
 	}
+
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
 		return nil, fmt.Errorf("decoding apple token response: %w", err)
 	}
@@ -446,11 +472,11 @@ func (a *appleProvider) generateClientSecret() (string, error) {
 
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"iss":  a.teamID,
-		"iat":  now.Unix(),
-		"exp":  now.Add(time.Hour * 24 * 180).Unix(), // 6 months max
-		"aud":  "https://appleid.apple.com",
-		"sub":  a.clientID,
+		"iss": a.teamID,
+		"iat": now.Unix(),
+		"exp": now.Add(time.Hour * 24 * 180).Unix(), // 6 months max
+		"aud": "https://appleid.apple.com",
+		"sub": a.clientID,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
@@ -470,14 +496,15 @@ func parseECPrivateKey(pemContent string) (*ecdsa.PrivateKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse EC private key: %w", err)
 	}
+
 	return block, nil
 }
 
 // --- Facebook Provider ---
 
 type facebookProvider struct {
-	appID      string
-	appSecret  string
+	appID       string
+	appSecret   string
 	redirectURL string
 }
 
@@ -485,18 +512,19 @@ func (f *facebookProvider) Name() string { return "facebook" }
 
 func (f *facebookProvider) AuthURL(state string) string {
 	params := url.Values{
-		"client_id":    {f.appID},
-		"redirect_uri": {f.redirectURL},
-		"scope":        {"email,public_profile"},
-		"state":        {state},
+		"client_id":     {f.appID},
+		"redirect_uri":  {f.redirectURL},
+		"scope":         {"email,public_profile"},
+		"state":         {state},
 		"response_type": {"code"},
 	}
+
 	return "https://www.facebook.com/v18.0/dialog/oauth?" + params.Encode()
 }
 
 func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUserInfo, error) {
 	// Exchange code for access token
-	tokenURL := "https://graph.facebook.com/v18.0/oauth/access_token"
+	tokenURL := "https://graph.facebook.com/v18.0/oauth/access_token" //nolint:gosec // G101: Facebook OAuth endpoint URL, not a credential
 	params := url.Values{
 		"client_id":     {f.appID},
 		"client_secret": {f.appSecret},
@@ -509,6 +537,7 @@ func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUse
 	if err != nil {
 		return nil, fmt.Errorf("creating facebook token request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
@@ -516,7 +545,8 @@ func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUse
 	if err != nil {
 		return nil, fmt.Errorf("executing facebook token request: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -534,6 +564,7 @@ func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUse
 
 	// Fetch user info from Graph API
 	userURL := "https://graph.facebook.com/v18.0/me?fields=id,email,name&access_token=" + url.QueryEscape(tokenResp.AccessToken)
+
 	userReq, err := http.NewRequestWithContext(ctx, http.MethodGet, userURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating facebook user request: %w", err)
@@ -543,7 +574,8 @@ func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUse
 	if err != nil {
 		return nil, fmt.Errorf("fetching facebook user: %w", err)
 	}
-	defer userResp.Body.Close()
+
+	defer func() { _ = userResp.Body.Close() }()
 
 	if userResp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(userResp.Body)
@@ -555,6 +587,7 @@ func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUse
 		Email string `json:"email"`
 		Name  string `json:"name"`
 	}
+
 	if err := json.NewDecoder(userResp.Body).Decode(&user); err != nil {
 		return nil, fmt.Errorf("decoding facebook user: %w", err)
 	}
@@ -585,6 +618,7 @@ func exchangeCode(ctx context.Context, tokenURL string, params url.Values) (*tok
 	if err != nil {
 		return nil, fmt.Errorf("creating token request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
@@ -592,7 +626,8 @@ func exchangeCode(ctx context.Context, tokenURL string, params url.Values) (*tok
 	if err != nil {
 		return nil, fmt.Errorf("executing token request: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -624,5 +659,6 @@ func ValidateOAuthState(expected, received string) bool {
 	if expected == "" || received == "" {
 		return false
 	}
+
 	return expected == received
 }

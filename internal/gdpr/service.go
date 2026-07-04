@@ -3,6 +3,7 @@ package gdpr
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -57,6 +58,7 @@ func NewService(database *db.DB) *Service {
 func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc := NewService(database)
 	svc.enqueuer = enqueuer
+
 	return svc
 }
 
@@ -76,7 +78,7 @@ func (s *Service) SetSessionDeleter(d SessionDeleter) {
 // noopEnqueuer is a no-op implementation for development.
 type noopEnqueuer struct{}
 
-func (n *noopEnqueuer) Enqueue(taskType string, payload []byte, opts ...interface{}) error {
+func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error {
 	return nil
 }
 
@@ -96,13 +98,15 @@ type RecordConsentInput struct {
 // RecordConsent records a user's consent decision.
 func (s *Service) RecordConsent(ctx context.Context, tenantID, userID pgtype.UUID, input RecordConsentInput) (gen.ConsentRecord, error) {
 	if input.ConsentType == "" {
-		return gen.ConsentRecord{}, fmt.Errorf("consent_type is required")
+		return gen.ConsentRecord{}, errors.New("consent_type is required")
 	}
+
 	if !ValidConsentType(input.ConsentType) {
 		return gen.ConsentRecord{}, fmt.Errorf("invalid consent_type: %s", input.ConsentType)
 	}
+
 	if input.PolicyVersion == "" {
-		return gen.ConsentRecord{}, fmt.Errorf("policy_version is required")
+		return gen.ConsentRecord{}, errors.New("policy_version is required")
 	}
 
 	return s.store.recordConsent(ctx, gen.RecordConsentParams{
@@ -127,10 +131,11 @@ func (s *Service) HasConsent(ctx context.Context, userID pgtype.UUID, consentTyp
 }
 
 // RevokeConsent records a consent revocation.
-func (s *Service) RevokeConsent(ctx context.Context, tenantID, userID pgtype.UUID, consentType string, policyVersion string) error {
+func (s *Service) RevokeConsent(ctx context.Context, tenantID, userID pgtype.UUID, consentType, policyVersion string) error {
 	if consentType == "" {
-		return fmt.Errorf("consent_type is required")
+		return errors.New("consent_type is required")
 	}
+
 	if !ValidConsentType(consentType) {
 		return fmt.Errorf("invalid consent_type: %s", consentType)
 	}
@@ -192,8 +197,8 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 	}
 
 	_, err = s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
-		ID:       requestID,
-		Status:   string(ExportProcessing),
+		ID:     requestID,
+		Status: string(ExportProcessing),
 	})
 	if err != nil {
 		return fmt.Errorf("marking export as processing: %w", err)
@@ -208,6 +213,7 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 		}); statusErr != nil {
 			slog.Error("update data export status to failed", "error", statusErr)
 		}
+
 		return fmt.Errorf("collecting user data: %w", err)
 	}
 
@@ -220,6 +226,7 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 		}); statusErr != nil {
 			slog.Error("update data export status to failed", "error", statusErr)
 		}
+
 		return fmt.Errorf("marshaling export data: %w", err)
 	}
 
@@ -320,6 +327,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		}); statusErr != nil {
 			slog.Error("update deletion status to failed", "error", statusErr)
 		}
+
 		return fmt.Errorf("anonymizing user: %w", err)
 	}
 
@@ -338,7 +346,6 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if err := s.sessionDeleter.DeleteSessions(ctx, request.UserID.String()); err != nil {
 			slog.Warn("failed to delete valkey sessions",
 				"user_id", request.UserID.String(), "error", err)
-			// Log but don't fail — sessions will expire naturally.
 		}
 	}
 
@@ -353,6 +360,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			}); statusErr != nil {
 				slog.Error("update deletion status to failed", "error", statusErr)
 			}
+
 			return fmt.Errorf("deleting honcho context for user %s: %w", request.UserID, err)
 		}
 	} else {
@@ -396,15 +404,17 @@ type LogAuditParams struct {
 // LogAuditEvent creates an audit log entry.
 func (s *Service) LogAuditEvent(ctx context.Context, tenantID pgtype.UUID, params LogAuditParams) error {
 	if params.ActionType == "" {
-		return fmt.Errorf("action_type is required")
+		return errors.New("action_type is required")
 	}
 
 	metadataJSON := []byte("{}")
+
 	if len(params.Metadata) > 0 {
 		b, err := json.Marshal(params.Metadata)
 		if err != nil {
 			return fmt.Errorf("marshaling audit metadata: %w", err)
 		}
+
 		metadataJSON = b
 	}
 
@@ -414,6 +424,7 @@ func (s *Service) LogAuditEvent(ctx context.Context, tenantID pgtype.UUID, param
 	}
 
 	var ipAddress *netip.Addr
+
 	if params.IPAddress != nil {
 		addr, err := netip.ParseAddr(*params.IPAddress)
 		if err == nil {
@@ -431,6 +442,7 @@ func (s *Service) LogAuditEvent(ctx context.Context, tenantID pgtype.UUID, param
 		Metadata:           metadataJSON,
 		IpAddress:          ipAddress,
 	})
+
 	return err
 }
 
@@ -444,6 +456,7 @@ func (s *Service) ListAuditLogs(ctx context.Context, tenantID, actorUserID pgtyp
 	if startDate != nil {
 		startDateTZ = pgtype.Timestamptz{Time: *startDate, Valid: true}
 	}
+
 	if endDate != nil {
 		endDateTZ = pgtype.Timestamptz{Time: *endDate, Valid: true}
 	}
@@ -479,34 +492,36 @@ func parseIPAddress(s *string) *netip.Addr {
 	if s == nil {
 		return nil
 	}
+
 	addr, err := netip.ParseAddr(*s)
 	if err != nil {
 		return nil
 	}
+
 	return &addr
 }
 
 // UserDataExport represents the complete user data export.
 type UserDataExport struct {
-	UserProfile    map[string]interface{} `json:"user_profile"`
+	UserProfile    map[string]interface{}   `json:"user_profile"`
 	Consents       []map[string]interface{} `json:"consents"`
 	Content        []map[string]interface{} `json:"content"`
 	Comments       []map[string]interface{} `json:"comments"`
 	Spaces         []map[string]interface{} `json:"spaces"`
 	Payments       []map[string]interface{} `json:"payments"`
 	Notifications  []map[string]interface{} `json:"notifications"`
-	ExportMetadata map[string]interface{} `json:"export_metadata"`
+	ExportMetadata map[string]interface{}   `json:"export_metadata"`
 }
 
 // collectUserData gathers all user data from relevant tables.
 func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.UUID) (*UserDataExport, error) {
 	export := &UserDataExport{
 		ExportMetadata: map[string]interface{}{
-			"user_id":    userID.String(),
-			"tenant_id":  tenantID.String(),
-			"generated":  time.Now().UTC().Format(time.RFC3339),
-			"version":    "1.0",
-			"platform":   "JapaConnect",
+			"user_id":   userID.String(),
+			"tenant_id": tenantID.String(),
+			"generated": time.Now().UTC().Format(time.RFC3339),
+			"version":   "1.0",
+			"platform":  "JapaConnect",
 		},
 	}
 
@@ -524,10 +539,10 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	} else {
 		for _, c := range consents {
 			export.Consents = append(export.Consents, map[string]interface{}{
-				"type":         c.ConsentType,
-				"granted":      c.Granted,
-				"policy":       c.PolicyVersion,
-				"recorded_at":  c.CreatedAt.Time,
+				"type":        c.ConsentType,
+				"granted":     c.Granted,
+				"policy":      c.PolicyVersion,
+				"recorded_at": c.CreatedAt.Time,
 			})
 		}
 	}

@@ -26,20 +26,22 @@ func NewStore(database *db.DB) *Store {
 // Track operations
 // ---------------------------------------------------------------------------
 
+// Track represents track.
 type Track struct {
-	ID            pgtype.UUID   `json:"id"`
-	TenantID      pgtype.UUID   `json:"tenant_id"`
-	Title         string        `json:"title"`
-	Slug          string        `json:"slug"`
-	Description   *string       `json:"description,omitempty"`
-	Difficulty    string        `json:"difficulty"`
-	CoverMediaID  *pgtype.UUID  `json:"cover_media_id,omitempty"`
-	IsPublished   bool          `json:"is_published"`
-	SortOrder     int32         `json:"sort_order"`
-	CreatedAt     time.Time     `json:"created_at"`
-	UpdatedAt     time.Time     `json:"updated_at"`
+	ID           pgtype.UUID  `json:"id"`
+	TenantID     pgtype.UUID  `json:"tenant_id"`
+	Title        string       `json:"title"`
+	Slug         string       `json:"slug"`
+	Description  *string      `json:"description,omitempty"`
+	Difficulty   string       `json:"difficulty"`
+	CoverMediaID *pgtype.UUID `json:"cover_media_id,omitempty"`
+	IsPublished  bool         `json:"is_published"`
+	SortOrder    int32        `json:"sort_order"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
 }
 
+// CreateTrackInput represents create track input.
 type CreateTrackInput struct {
 	Title        string       `json:"title"`
 	Slug         string       `json:"slug"`
@@ -50,6 +52,7 @@ type CreateTrackInput struct {
 	SortOrder    int32        `json:"sort_order"`
 }
 
+// UpdateTrackInput represents update track input.
 type UpdateTrackInput struct {
 	Title        *string      `json:"title,omitempty"`
 	Description  *string      `json:"description,omitempty"`
@@ -59,6 +62,7 @@ type UpdateTrackInput struct {
 	SortOrder    *int32       `json:"sort_order,omitempty"`
 }
 
+// ListPublishedTracks lists all published tracks for a tenant.
 func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) ([]Track, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
@@ -73,6 +77,7 @@ func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) (
 	defer rows.Close()
 
 	var tracks []Track
+
 	for rows.Next() {
 		var t Track
 		if err := rows.Scan(
@@ -82,13 +87,17 @@ func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) (
 		); err != nil {
 			return nil, fmt.Errorf("scan track: %w", err)
 		}
+
 		tracks = append(tracks, t)
 	}
+
 	return tracks, rows.Err()
 }
 
+// GetTrackBySlug retrieves a track by its slug.
 func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (*Track, error) {
 	var t Track
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
 		       is_published, sort_order, created_at, updated_at
@@ -102,11 +111,14 @@ func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug s
 	if err != nil {
 		return nil, fmt.Errorf("get track by slug: %w", err)
 	}
+
 	return &t, nil
 }
 
-func (s *Store) GetTrackByID(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID) (*Track, error) {
+// GetTrackByID retrieves a track by its ID.
+func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (*Track, error) {
 	var t Track
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
 		       is_published, sort_order, created_at, updated_at
@@ -120,11 +132,14 @@ func (s *Store) GetTrackByID(ctx context.Context, tenantID pgtype.UUID, id pgtyp
 	if err != nil {
 		return nil, fmt.Errorf("get track by id: %w", err)
 	}
+
 	return &t, nil
 }
 
+// CreateTrack creates a new learning track.
 func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input CreateTrackInput) (*Track, error) {
 	var t Track
+
 	err := s.db.Writer.QueryRow(ctx, `
 		INSERT INTO learning_tracks (tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -137,11 +152,14 @@ func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input Cre
 	if err != nil {
 		return nil, fmt.Errorf("create track: %w", err)
 	}
+
 	return &t, nil
 }
 
-func (s *Store) UpdateTrack(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID, input UpdateTrackInput) (*Track, error) {
+// UpdateTrack updates an existing learning track.
+func (s *Store) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input UpdateTrackInput) (*Track, error) {
 	var t Track
+
 	err := s.db.Writer.QueryRow(ctx, `
 		UPDATE learning_tracks
 		SET title = COALESCE($3, title),
@@ -161,22 +179,27 @@ func (s *Store) UpdateTrack(ctx context.Context, tenantID pgtype.UUID, id pgtype
 	if err != nil {
 		return nil, fmt.Errorf("update track: %w", err)
 	}
+
 	return &t, nil
 }
 
-func (s *Store) DeleteTrack(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID) error {
+// DeleteTrack soft-deletes a learning track.
+func (s *Store) DeleteTrack(ctx context.Context, tenantID, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
 		DELETE FROM learning_tracks WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id)
 	if err != nil {
 		return fmt.Errorf("delete track: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
+// ListAllTracks lists all tracks including drafts.
 func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Track, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
@@ -191,6 +214,7 @@ func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Trac
 	defer rows.Close()
 
 	var tracks []Track
+
 	for rows.Next() {
 		var t Track
 		if err := rows.Scan(
@@ -200,8 +224,10 @@ func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Trac
 		); err != nil {
 			return nil, fmt.Errorf("scan track: %w", err)
 		}
+
 		tracks = append(tracks, t)
 	}
+
 	return tracks, rows.Err()
 }
 
@@ -209,18 +235,20 @@ func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Trac
 // Module operations
 // ---------------------------------------------------------------------------
 
+// Module represents module.
 type Module struct {
-	ID          pgtype.UUID  `json:"id"`
-	TenantID    pgtype.UUID  `json:"tenant_id"`
-	TrackID     pgtype.UUID  `json:"track_id"`
-	Title       string       `json:"title"`
-	Slug        string       `json:"slug"`
-	Description *string      `json:"description,omitempty"`
-	SortOrder   int32        `json:"sort_order"`
-	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	TrackID     pgtype.UUID `json:"track_id"`
+	Title       string      `json:"title"`
+	Slug        string      `json:"slug"`
+	Description *string     `json:"description,omitempty"`
+	SortOrder   int32       `json:"sort_order"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
 }
 
+// CreateModuleInput represents create module input.
 type CreateModuleInput struct {
 	Title       string  `json:"title"`
 	Slug        string  `json:"slug"`
@@ -228,13 +256,15 @@ type CreateModuleInput struct {
 	SortOrder   int32   `json:"sort_order"`
 }
 
+// UpdateModuleInput represents update module input.
 type UpdateModuleInput struct {
 	Title       *string `json:"title,omitempty"`
 	Description *string `json:"description,omitempty"`
 	SortOrder   *int32  `json:"sort_order,omitempty"`
 }
 
-func (s *Store) ListModulesByTrack(ctx context.Context, tenantID pgtype.UUID, trackID pgtype.UUID) ([]Module, error) {
+// ListModulesByTrack lists all modules for a track.
+func (s *Store) ListModulesByTrack(ctx context.Context, tenantID, trackID pgtype.UUID) ([]Module, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 		FROM learning_modules
@@ -247,6 +277,7 @@ func (s *Store) ListModulesByTrack(ctx context.Context, tenantID pgtype.UUID, tr
 	defer rows.Close()
 
 	var modules []Module
+
 	for rows.Next() {
 		var m Module
 		if err := rows.Scan(
@@ -255,13 +286,17 @@ func (s *Store) ListModulesByTrack(ctx context.Context, tenantID pgtype.UUID, tr
 		); err != nil {
 			return nil, fmt.Errorf("scan module: %w", err)
 		}
+
 		modules = append(modules, m)
 	}
+
 	return modules, rows.Err()
 }
 
-func (s *Store) GetModuleBySlug(ctx context.Context, tenantID pgtype.UUID, trackID pgtype.UUID, slug string) (*Module, error) {
+// GetModuleBySlug retrieves a module by its slug.
+func (s *Store) GetModuleBySlug(ctx context.Context, tenantID, trackID pgtype.UUID, slug string) (*Module, error) {
 	var m Module
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 		FROM learning_modules
@@ -273,11 +308,14 @@ func (s *Store) GetModuleBySlug(ctx context.Context, tenantID pgtype.UUID, track
 	if err != nil {
 		return nil, fmt.Errorf("get module by slug: %w", err)
 	}
+
 	return &m, nil
 }
 
-func (s *Store) GetModuleByID(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID) (*Module, error) {
+// GetModuleByID retrieves a module by its ID.
+func (s *Store) GetModuleByID(ctx context.Context, tenantID, id pgtype.UUID) (*Module, error) {
 	var m Module
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 		FROM learning_modules
@@ -289,11 +327,14 @@ func (s *Store) GetModuleByID(ctx context.Context, tenantID pgtype.UUID, id pgty
 	if err != nil {
 		return nil, fmt.Errorf("get module by id: %w", err)
 	}
+
 	return &m, nil
 }
 
-func (s *Store) CreateModule(ctx context.Context, tenantID pgtype.UUID, trackID pgtype.UUID, input CreateModuleInput) (*Module, error) {
+// CreateModule creates a new module in a track.
+func (s *Store) CreateModule(ctx context.Context, tenantID, trackID pgtype.UUID, input CreateModuleInput) (*Module, error) {
 	var m Module
+
 	err := s.db.Writer.QueryRow(ctx, `
 		INSERT INTO learning_modules (tenant_id, track_id, title, slug, description, sort_order)
 		VALUES ($1, $2, $3, $4, $5, $6)
@@ -305,11 +346,14 @@ func (s *Store) CreateModule(ctx context.Context, tenantID pgtype.UUID, trackID 
 	if err != nil {
 		return nil, fmt.Errorf("create module: %w", err)
 	}
+
 	return &m, nil
 }
 
-func (s *Store) UpdateModule(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID, input UpdateModuleInput) (*Module, error) {
+// UpdateModule updates an existing module.
+func (s *Store) UpdateModule(ctx context.Context, tenantID, id pgtype.UUID, input UpdateModuleInput) (*Module, error) {
 	var m Module
+
 	err := s.db.Writer.QueryRow(ctx, `
 		UPDATE learning_modules
 		SET title = COALESCE($3, title),
@@ -325,19 +369,23 @@ func (s *Store) UpdateModule(ctx context.Context, tenantID pgtype.UUID, id pgtyp
 	if err != nil {
 		return nil, fmt.Errorf("update module: %w", err)
 	}
+
 	return &m, nil
 }
 
-func (s *Store) DeleteModule(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID) error {
+// DeleteModule soft-deletes a module.
+func (s *Store) DeleteModule(ctx context.Context, tenantID, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
 		DELETE FROM learning_modules WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id)
 	if err != nil {
 		return fmt.Errorf("delete module: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -345,6 +393,7 @@ func (s *Store) DeleteModule(ctx context.Context, tenantID pgtype.UUID, id pgtyp
 // Lesson operations
 // ---------------------------------------------------------------------------
 
+// Lesson represents lesson.
 type Lesson struct {
 	ID              pgtype.UUID  `json:"id"`
 	TenantID        pgtype.UUID  `json:"tenant_id"`
@@ -361,6 +410,7 @@ type Lesson struct {
 	UpdatedAt       time.Time    `json:"updated_at"`
 }
 
+// CreateLessonInput represents create lesson input.
 type CreateLessonInput struct {
 	Title           string       `json:"title"`
 	Slug            string       `json:"slug"`
@@ -372,6 +422,7 @@ type CreateLessonInput struct {
 	IsPublished     bool         `json:"is_published"`
 }
 
+// UpdateLessonInput represents update lesson input.
 type UpdateLessonInput struct {
 	Title           *string      `json:"title,omitempty"`
 	LessonType      *string      `json:"lesson_type,omitempty"`
@@ -382,7 +433,8 @@ type UpdateLessonInput struct {
 	IsPublished     *bool        `json:"is_published,omitempty"`
 }
 
-func (s *Store) ListLessonsByModule(ctx context.Context, tenantID pgtype.UUID, moduleID pgtype.UUID) ([]Lesson, error) {
+// ListLessonsByModule lists all lessons for a module.
+func (s *Store) ListLessonsByModule(ctx context.Context, tenantID, moduleID pgtype.UUID) ([]Lesson, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, tenant_id, module_id, title, slug, lesson_type, content, media_id,
 		       duration_minutes, sort_order, is_published, created_at, updated_at
@@ -396,6 +448,7 @@ func (s *Store) ListLessonsByModule(ctx context.Context, tenantID pgtype.UUID, m
 	defer rows.Close()
 
 	var lessons []Lesson
+
 	for rows.Next() {
 		var l Lesson
 		if err := rows.Scan(
@@ -405,13 +458,17 @@ func (s *Store) ListLessonsByModule(ctx context.Context, tenantID pgtype.UUID, m
 		); err != nil {
 			return nil, fmt.Errorf("scan lesson: %w", err)
 		}
+
 		lessons = append(lessons, l)
 	}
+
 	return lessons, rows.Err()
 }
 
-func (s *Store) GetLessonBySlug(ctx context.Context, tenantID pgtype.UUID, moduleID pgtype.UUID, slug string) (*Lesson, error) {
+// GetLessonBySlug retrieves a lesson by its slug.
+func (s *Store) GetLessonBySlug(ctx context.Context, tenantID, moduleID pgtype.UUID, slug string) (*Lesson, error) {
 	var l Lesson
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, module_id, title, slug, lesson_type, content, media_id,
 		       duration_minutes, sort_order, is_published, created_at, updated_at
@@ -425,11 +482,14 @@ func (s *Store) GetLessonBySlug(ctx context.Context, tenantID pgtype.UUID, modul
 	if err != nil {
 		return nil, fmt.Errorf("get lesson by slug: %w", err)
 	}
+
 	return &l, nil
 }
 
-func (s *Store) GetLessonByID(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID) (*Lesson, error) {
+// GetLessonByID retrieves a lesson by its ID.
+func (s *Store) GetLessonByID(ctx context.Context, tenantID, id pgtype.UUID) (*Lesson, error) {
 	var l Lesson
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, module_id, title, slug, lesson_type, content, media_id,
 		       duration_minutes, sort_order, is_published, created_at, updated_at
@@ -443,11 +503,14 @@ func (s *Store) GetLessonByID(ctx context.Context, tenantID pgtype.UUID, id pgty
 	if err != nil {
 		return nil, fmt.Errorf("get lesson by id: %w", err)
 	}
+
 	return &l, nil
 }
 
-func (s *Store) CreateLesson(ctx context.Context, tenantID pgtype.UUID, moduleID pgtype.UUID, input CreateLessonInput) (*Lesson, error) {
+// CreateLesson creates a new lesson in a module.
+func (s *Store) CreateLesson(ctx context.Context, tenantID, moduleID pgtype.UUID, input CreateLessonInput) (*Lesson, error) {
 	var l Lesson
+
 	err := s.db.Writer.QueryRow(ctx, `
 		INSERT INTO learning_lessons (tenant_id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -460,11 +523,14 @@ func (s *Store) CreateLesson(ctx context.Context, tenantID pgtype.UUID, moduleID
 	if err != nil {
 		return nil, fmt.Errorf("create lesson: %w", err)
 	}
+
 	return &l, nil
 }
 
-func (s *Store) UpdateLesson(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID, input UpdateLessonInput) (*Lesson, error) {
+// UpdateLesson updates an existing lesson.
+func (s *Store) UpdateLesson(ctx context.Context, tenantID, id pgtype.UUID, input UpdateLessonInput) (*Lesson, error) {
 	var l Lesson
+
 	err := s.db.Writer.QueryRow(ctx, `
 		UPDATE learning_lessons
 		SET title = COALESCE($3, title),
@@ -485,19 +551,23 @@ func (s *Store) UpdateLesson(ctx context.Context, tenantID pgtype.UUID, id pgtyp
 	if err != nil {
 		return nil, fmt.Errorf("update lesson: %w", err)
 	}
+
 	return &l, nil
 }
 
-func (s *Store) DeleteLesson(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID) error {
+// DeleteLesson soft-deletes a lesson.
+func (s *Store) DeleteLesson(ctx context.Context, tenantID, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
 		DELETE FROM learning_lessons WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id)
 	if err != nil {
 		return fmt.Errorf("delete lesson: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -505,22 +575,26 @@ func (s *Store) DeleteLesson(ctx context.Context, tenantID pgtype.UUID, id pgtyp
 // Progress operations
 // ---------------------------------------------------------------------------
 
+// Progress represents progress.
 type Progress struct {
-	ID          pgtype.UUID   `json:"id"`
-	TenantID    pgtype.UUID   `json:"tenant_id"`
-	UserID      pgtype.UUID   `json:"user_id"`
-	LessonID    pgtype.UUID   `json:"lesson_id"`
-	Status      string        `json:"status"`
-	CompletedAt *time.Time    `json:"completed_at,omitempty"`
-	CreatedAt   time.Time     `json:"created_at"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	UserID      pgtype.UUID `json:"user_id"`
+	LessonID    pgtype.UUID `json:"lesson_id"`
+	Status      string      `json:"status"`
+	CompletedAt *time.Time  `json:"completed_at,omitempty"`
+	CreatedAt   time.Time   `json:"created_at"`
 }
 
+// UpdateProgressInput represents update progress input.
 type UpdateProgressInput struct {
 	Status string `json:"status"`
 }
 
-func (s *Store) GetProgress(ctx context.Context, userID pgtype.UUID, lessonID pgtype.UUID) (*Progress, error) {
+// GetProgress retrieves progress for a specific lesson.
+func (s *Store) GetProgress(ctx context.Context, userID, lessonID pgtype.UUID) (*Progress, error) {
 	var p Progress
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, user_id, lesson_id, status, completed_at, created_at
 		FROM lesson_progress
@@ -532,17 +606,21 @@ func (s *Store) GetProgress(ctx context.Context, userID pgtype.UUID, lessonID pg
 	if err != nil {
 		return nil, fmt.Errorf("get progress: %w", err)
 	}
+
 	return &p, nil
 }
 
+// UpsertProgress creates or updates progress for a lesson.
 func (s *Store) UpsertProgress(ctx context.Context, tenantID, userID, lessonID pgtype.UUID, input UpdateProgressInput) (*Progress, error) {
 	var completedAt *time.Time
+
 	if input.Status == "completed" {
 		now := time.Now()
 		completedAt = &now
 	}
 
 	var p Progress
+
 	err := s.db.Writer.QueryRow(ctx, `
 		INSERT INTO lesson_progress (tenant_id, user_id, lesson_id, status, completed_at)
 		VALUES ($1, $2, $3, $4, $5)
@@ -557,10 +635,12 @@ func (s *Store) UpsertProgress(ctx context.Context, tenantID, userID, lessonID p
 	if err != nil {
 		return nil, fmt.Errorf("upsert progress: %w", err)
 	}
+
 	return &p, nil
 }
 
-func (s *Store) GetUserTrackProgress(ctx context.Context, userID, trackID pgtype.UUID) (completed int, total int, err error) {
+// GetUserTrackProgress retrieves track progress for a user.
+func (s *Store) GetUserTrackProgress(ctx context.Context, userID, trackID pgtype.UUID) (completed, total int, err error) {
 	err = s.db.Reader.QueryRow(ctx, `
 		SELECT
 			COUNT(*) FILTER (WHERE lp.status = 'completed'),
@@ -573,6 +653,7 @@ func (s *Store) GetUserTrackProgress(ctx context.Context, userID, trackID pgtype
 	if err != nil {
 		return 0, 0, fmt.Errorf("get user track progress: %w", err)
 	}
+
 	return completed, total, nil
 }
 
@@ -580,6 +661,7 @@ func (s *Store) GetUserTrackProgress(ctx context.Context, userID, trackID pgtype
 // Certificate operations
 // ---------------------------------------------------------------------------
 
+// Certificate represents certificate.
 type Certificate struct {
 	ID                pgtype.UUID  `json:"id"`
 	TenantID          pgtype.UUID  `json:"tenant_id"`
@@ -590,8 +672,10 @@ type Certificate struct {
 	IssuedAt          time.Time    `json:"issued_at"`
 }
 
+// GetCertificate retrieves a certificate by its ID.
 func (s *Store) GetCertificate(ctx context.Context, userID, trackID pgtype.UUID) (*Certificate, error) {
 	var c Certificate
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
 		FROM learning_certificates
@@ -603,11 +687,14 @@ func (s *Store) GetCertificate(ctx context.Context, userID, trackID pgtype.UUID)
 	if err != nil {
 		return nil, fmt.Errorf("get certificate: %w", err)
 	}
+
 	return &c, nil
 }
 
+// IssueCertificate issues a certificate for a completed track.
 func (s *Store) IssueCertificate(ctx context.Context, tenantID, userID, trackID pgtype.UUID, certificateNumber string) (*Certificate, error) {
 	var c Certificate
+
 	err := s.db.Writer.QueryRow(ctx, `
 		INSERT INTO learning_certificates (tenant_id, user_id, track_id, certificate_number)
 		VALUES ($1, $2, $3, $4)
@@ -620,9 +707,11 @@ func (s *Store) IssueCertificate(ctx context.Context, tenantID, userID, trackID 
 	if err != nil {
 		return nil, fmt.Errorf("issue certificate: %w", err)
 	}
+
 	return &c, nil
 }
 
+// ListCertificatesByUser lists certificates for a user.
 func (s *Store) ListCertificatesByUser(ctx context.Context, userID pgtype.UUID) ([]Certificate, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
@@ -636,6 +725,7 @@ func (s *Store) ListCertificatesByUser(ctx context.Context, userID pgtype.UUID) 
 	defer rows.Close()
 
 	var certs []Certificate
+
 	for rows.Next() {
 		var c Certificate
 		if err := rows.Scan(
@@ -644,7 +734,9 @@ func (s *Store) ListCertificatesByUser(ctx context.Context, userID pgtype.UUID) 
 		); err != nil {
 			return nil, fmt.Errorf("scan certificate: %w", err)
 		}
+
 		certs = append(certs, c)
 	}
+
 	return certs, rows.Err()
 }

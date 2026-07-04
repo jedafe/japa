@@ -22,7 +22,7 @@ func NewHandlers(r *Renderer) *Handlers {
 
 // Render handles POST /api/v1/content/render.
 // Request body: {"content_id": "...", "updated_at": "...", "json": {...}}
-// Response: {"data": {"html": "..."}}
+// Response: {"data": {"html": "..."}}.
 func (h *Handlers) Render(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -41,6 +41,7 @@ func (h *Handlers) Render(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt string          `json:"updated_at"`
 		JSON      json.RawMessage `json:"json"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -75,6 +76,7 @@ func (h *Handlers) Render(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}

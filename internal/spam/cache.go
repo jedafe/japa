@@ -35,16 +35,19 @@ func CacheCensoredWords(ctx context.Context, rdb *valkey.Client, tenantID pgtype
 	}
 
 	key := cacheKeyFor(tenantID)
+
 	data, err := json.Marshal(cachedWords{Words: words})
 	if err != nil {
 		return fmt.Errorf("marshaling cached words: %w", err)
 	}
 
 	if err := rdb.Redis().Set(ctx, key, data, cacheTTL).Err(); err != nil {
-		slog.Warn("failed to cache censored words",
+		slog.Warn(
+			"failed to cache censored words",
 			"tenant_id", tenantID,
 			"error", err,
 		)
+
 		return fmt.Errorf("caching censored words: %w", err)
 	}
 
@@ -66,7 +69,6 @@ func GetCachedCensoredWords(
 		if err == nil && words != nil {
 			return words, nil
 		}
-		// Cache miss or error — fall through to database
 	}
 
 	words, err := fetchFromDB(ctx, queries, tenantID)
@@ -77,7 +79,8 @@ func GetCachedCensoredWords(
 	// Best-effort cache population (fire and forget on error)
 	if rdb != nil && len(words) > 0 {
 		if cacheErr := CacheCensoredWords(ctx, rdb, tenantID, words); cacheErr != nil {
-			slog.Warn("failed to populate censored words cache",
+			slog.Warn(
+				"failed to populate censored words cache",
 				"tenant_id", tenantID,
 				"error", cacheErr,
 			)
@@ -96,10 +99,12 @@ func InvalidateCensoredWordsCache(ctx context.Context, rdb *valkey.Client, tenan
 
 	key := cacheKeyFor(tenantID)
 	if err := rdb.Redis().Del(ctx, key).Err(); err != nil {
-		slog.Warn("failed to invalidate censored words cache",
+		slog.Warn(
+			"failed to invalidate censored words cache",
 			"tenant_id", tenantID,
 			"error", err,
 		)
+
 		return fmt.Errorf("invalidating cache: %w", err)
 	}
 
@@ -109,6 +114,7 @@ func InvalidateCensoredWordsCache(ctx context.Context, rdb *valkey.Client, tenan
 // fetchFromCache attempts to read and deserialize cached censored words.
 func fetchFromCache(ctx context.Context, rdb *valkey.Client, tenantID pgtype.UUID) ([]CensoredWord, error) {
 	key := cacheKeyFor(tenantID)
+
 	data, err := rdb.Redis().Get(ctx, key).Bytes()
 	if err != nil {
 		return nil, fmt.Errorf("reading cache: %w", err)
@@ -126,12 +132,14 @@ func fetchFromCache(ctx context.Context, rdb *valkey.Client, tenantID pgtype.UUI
 // and converts them to the CensoredWord type.
 func fetchFromDB(ctx context.Context, database *db.DB, tenantID pgtype.UUID) ([]CensoredWord, error) {
 	store := NewStoreWithReader(database)
+
 	rows, err := store.GetCensoredWordsByTenant(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("reading censored words from db: %w", err)
 	}
 
 	words := make([]CensoredWord, 0, len(rows))
+
 	for _, row := range rows {
 		w := CensoredWord{
 			ID:      row.ID.String(),
@@ -141,6 +149,7 @@ func fetchFromDB(ctx context.Context, database *db.DB, tenantID pgtype.UUID) ([]
 		if row.Replacement != nil {
 			w.Replacement = *row.Replacement
 		}
+
 		words = append(words, w)
 	}
 

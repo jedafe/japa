@@ -30,6 +30,7 @@ func (m *mockProvider) Send(ctx context.Context, req Request) (Response, error) 
 	if m.sendFn != nil {
 		return m.sendFn(ctx, req)
 	}
+
 	return Response{
 		ProviderRef: m.name + "-ref",
 		Status:      "success",
@@ -42,6 +43,7 @@ func (m *mockProvider) VerifyWebhookSignature(payload []byte, sig string) error 
 	if m.verifySigFn != nil {
 		return m.verifySigFn(payload, sig)
 	}
+
 	return nil
 }
 
@@ -50,10 +52,14 @@ func (m *mockProvider) VerifyWebhookSignature(payload []byte, sig string) error 
 // ---------------------------------------------------------------------------
 
 func TestProviderInterfaceCompliance(t *testing.T) {
+	t.Parallel()
+
 	var _ Provider = (*mockProvider)(nil)
 }
 
 func TestMockProviderName(t *testing.T) {
+	t.Parallel()
+
 	p := &mockProvider{name: "test-provider"}
 	if got := p.Name(); got != "test-provider" {
 		t.Errorf("Name() = %q, want %q", got, "test-provider")
@@ -61,54 +67,70 @@ func TestMockProviderName(t *testing.T) {
 }
 
 func TestMockProviderSendDefault(t *testing.T) {
+	t.Parallel()
+
 	p := &mockProvider{name: "default"}
-	resp, err := p.Send(context.Background(), Request{Category: "test"})
+
+	resp, err := p.Send(t.Context(), Request{Category: "test"})
 	if err != nil {
 		t.Fatalf("Send() unexpected error: %v", err)
 	}
+
 	if resp.ProviderRef != "default-ref" {
 		t.Errorf("ProviderRef = %q, want %q", resp.ProviderRef, "default-ref")
 	}
+
 	if resp.Status != "success" {
 		t.Errorf("Status = %q, want %q", resp.Status, "success")
 	}
+
 	if resp.Raw["provider"] != "default" {
 		t.Errorf("Raw[provider] = %v, want %q", resp.Raw["provider"], "default")
 	}
 }
 
 func TestMockProviderSendCustom(t *testing.T) {
+	t.Parallel()
+
 	customErr := errors.New("custom error")
 	p := &mockProvider{
 		name: "failing",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{}, customErr
 		},
 	}
-	_, err := p.Send(context.Background(), Request{})
+
+	_, err := p.Send(t.Context(), Request{})
 	if !errors.Is(err, customErr) {
 		t.Errorf("Send() error = %v, want %v", err, customErr)
 	}
 }
 
 func TestMockProviderVerifyWebhookSignatureDefault(t *testing.T) {
+	t.Parallel()
+
 	p := &mockProvider{name: "sig"}
+
 	err := p.VerifyWebhookSignature([]byte("payload"), "sig123")
 	if err != nil {
 		t.Errorf("VerifyWebhookSignature() unexpected error: %v", err)
 	}
+
 	if p.verifyCallCount != 1 {
 		t.Errorf("verifyCallCount = %d, want 1", p.verifyCallCount)
 	}
 }
 
 func TestMockProviderVerifyWebhookSignatureCustom(t *testing.T) {
+	t.Parallel()
+
 	p := &mockProvider{
 		name: "sig-fail",
-		verifySigFn: func(payload []byte, sig string) error {
+		verifySigFn: func(_ []byte, _ string) error {
 			return errors.New("invalid signature")
 		},
 	}
+
 	err := p.VerifyWebhookSignature([]byte("data"), "bad")
 	if err == nil {
 		t.Error("VerifyWebhookSignature() expected error, got nil")
@@ -120,16 +142,21 @@ func TestMockProviderVerifyWebhookSignatureCustom(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewDispatcher(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
 	if d == nil {
 		t.Fatal("NewDispatcher() returned nil")
 	}
+
 	if d.providersByCategory == nil {
 		t.Fatal("providersByCategory map not initialized")
 	}
 }
 
 func TestDispatcherRegisterProvider(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
 	p := &mockProvider{name: "provider-a"}
 	d.RegisterProvider("content_generation", p)
@@ -141,6 +168,7 @@ func TestDispatcherRegisterProvider(t *testing.T) {
 	if len(d.providersByCategory["content_generation"]) != 1 {
 		t.Errorf("content_generation providers = %d, want 1", len(d.providersByCategory["content_generation"]))
 	}
+
 	if len(d.providersByCategory["moderation"]) != 1 {
 		t.Errorf("moderation providers = %d, want 1", len(d.providersByCategory["moderation"]))
 	}
@@ -151,17 +179,19 @@ func TestDispatcherRegisterProvider(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDispatcherDispatchRoutesToCorrectCategory(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
 
 	genProvider := &mockProvider{
 		name: "gen-provider",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, req Request) (Response, error) {
 			return Response{ProviderRef: "gen", Status: "success", Raw: map[string]any{"category": req.Category}}, nil
 		},
 	}
 	modProvider := &mockProvider{
 		name: "mod-provider",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, req Request) (Response, error) {
 			return Response{ProviderRef: "mod", Status: "success", Raw: map[string]any{"category": req.Category}}, nil
 		},
 	}
@@ -170,19 +200,21 @@ func TestDispatcherDispatchRoutesToCorrectCategory(t *testing.T) {
 	d.RegisterProvider("moderation", modProvider)
 
 	// Dispatch to content_generation
-	resp, err := d.Dispatch(context.Background(), "content_generation", Request{Category: "content_generation"})
+	resp, err := d.Dispatch(t.Context(), "content_generation", Request{Category: "content_generation"})
 	if err != nil {
 		t.Fatalf("Dispatch(content_generation) error: %v", err)
 	}
+
 	if resp.ProviderRef != "gen" {
 		t.Errorf("expected gen-provider, got %q", resp.ProviderRef)
 	}
 
 	// Dispatch to moderation
-	resp, err = d.Dispatch(context.Background(), "moderation", Request{Category: "moderation"})
+	resp, err = d.Dispatch(t.Context(), "moderation", Request{Category: "moderation"})
 	if err != nil {
 		t.Fatalf("Dispatch(moderation) error: %v", err)
 	}
+
 	if resp.ProviderRef != "mod" {
 		t.Errorf("expected mod-provider, got %q", resp.ProviderRef)
 	}
@@ -193,17 +225,19 @@ func TestDispatcherDispatchRoutesToCorrectCategory(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDispatcherFallbackOnFailure(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
 
 	failProvider := &mockProvider{
 		name: "primary",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{}, errors.New("primary provider down")
 		},
 	}
 	successProvider := &mockProvider{
 		name: "fallback",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{ProviderRef: "fallback-ref", Status: "success"}, nil
 		},
 	}
@@ -211,33 +245,38 @@ func TestDispatcherFallbackOnFailure(t *testing.T) {
 	d.RegisterProvider("embedding", failProvider)
 	d.RegisterProvider("embedding", successProvider)
 
-	resp, err := d.Dispatch(context.Background(), "embedding", Request{Category: "embedding"})
+	resp, err := d.Dispatch(t.Context(), "embedding", Request{Category: "embedding"})
 	if err != nil {
 		t.Fatalf("Dispatch() unexpected error: %v", err)
 	}
+
 	if resp.ProviderRef != "fallback-ref" {
 		t.Errorf("expected fallback-ref, got %q", resp.ProviderRef)
 	}
+
 	if failProvider.sendCallCount != 1 {
 		t.Errorf("primary sendCallCount = %d, want 1", failProvider.sendCallCount)
 	}
+
 	if successProvider.sendCallCount != 1 {
 		t.Errorf("fallback sendCallCount = %d, want 1", successProvider.sendCallCount)
 	}
 }
 
 func TestDispatcherAllProvidersFail(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
 
 	fail1 := &mockProvider{
 		name: "fail-1",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{}, errors.New("provider 1 error")
 		},
 	}
 	fail2 := &mockProvider{
 		name: "fail-2",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{}, errors.New("provider 2 error")
 		},
 	}
@@ -245,7 +284,7 @@ func TestDispatcherAllProvidersFail(t *testing.T) {
 	d.RegisterProvider("embedding", fail1)
 	d.RegisterProvider("embedding", fail2)
 
-	_, err := d.Dispatch(context.Background(), "embedding", Request{Category: "embedding"})
+	_, err := d.Dispatch(t.Context(), "embedding", Request{Category: "embedding"})
 	if err == nil {
 		t.Fatal("Dispatch() expected error when all providers fail, got nil")
 	}
@@ -257,9 +296,11 @@ func TestDispatcherAllProvidersFail(t *testing.T) {
 }
 
 func TestDispatcherNoProvidersRegistered(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
 
-	_, err := d.Dispatch(context.Background(), "unknown_category", Request{Category: "unknown_category"})
+	_, err := d.Dispatch(t.Context(), "unknown_category", Request{Category: "unknown_category"})
 	if err == nil {
 		t.Fatal("Dispatch() expected error for missing category, got nil")
 	}
@@ -275,17 +316,19 @@ func TestDispatcherNoProvidersRegistered(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDispatcherPriorityOrder(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
 
 	provider1 := &mockProvider{
 		name: "first",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{ProviderRef: "first"}, nil
 		},
 	}
 	provider2 := &mockProvider{
 		name: "second",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{ProviderRef: "second"}, nil
 		},
 	}
@@ -293,10 +336,11 @@ func TestDispatcherPriorityOrder(t *testing.T) {
 	d.RegisterProvider("test", provider1)
 	d.RegisterProvider("test", provider2)
 
-	resp, err := d.Dispatch(context.Background(), "test", Request{Category: "test"})
+	resp, err := d.Dispatch(t.Context(), "test", Request{Category: "test"})
 	if err != nil {
 		t.Fatalf("Dispatch() error: %v", err)
 	}
+
 	if resp.ProviderRef != "first" {
 		t.Errorf("expected first provider to be tried first, got %q", resp.ProviderRef)
 	}
@@ -307,24 +351,30 @@ func TestDispatcherPriorityOrder(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDispatcherContextPropagation(t *testing.T) {
+	t.Parallel()
+
 	type ctxKey struct{}
+
 	d := NewDispatcher()
 
 	var capturedCtx context.Context
+
 	p := &mockProvider{
 		name: "ctx-test",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(ctx context.Context, _ Request) (Response, error) {
 			capturedCtx = ctx
 			return Response{ProviderRef: "ok"}, nil
 		},
 	}
 	d.RegisterProvider("test", p)
 
-	ctx := context.WithValue(context.Background(), ctxKey{}, "test-value")
+	ctx := context.WithValue(t.Context(), ctxKey{}, "test-value")
+
 	_, err := d.Dispatch(ctx, "test", Request{Category: "test"})
 	if err != nil {
 		t.Fatalf("Dispatch() error: %v", err)
 	}
+
 	if capturedCtx.Value(ctxKey{}) != "test-value" {
 		t.Error("context value not propagated to provider")
 	}
@@ -335,23 +385,25 @@ func TestDispatcherContextPropagation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDispatcherPartialFailureThenSuccess(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
 
 	fail1 := &mockProvider{
 		name: "fail-1",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{}, errors.New("first fails")
 		},
 	}
 	fail2 := &mockProvider{
 		name: "fail-2",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{}, errors.New("second fails")
 		},
 	}
 	success := &mockProvider{
 		name: "success",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{ProviderRef: "third-ok"}, nil
 		},
 	}
@@ -360,13 +412,15 @@ func TestDispatcherPartialFailureThenSuccess(t *testing.T) {
 	d.RegisterProvider("test", fail2)
 	d.RegisterProvider("test", success)
 
-	resp, err := d.Dispatch(context.Background(), "test", Request{Category: "test"})
+	resp, err := d.Dispatch(t.Context(), "test", Request{Category: "test"})
 	if err != nil {
 		t.Fatalf("Dispatch() unexpected error: %v", err)
 	}
+
 	if resp.ProviderRef != "third-ok" {
 		t.Errorf("expected third-ok, got %q", resp.ProviderRef)
 	}
+
 	if fail1.sendCallCount != 1 || fail2.sendCallCount != 1 || success.sendCallCount != 1 {
 		t.Errorf("call counts: fail1=%d fail2=%d success=%d, want 1 each",
 			fail1.sendCallCount, fail2.sendCallCount, success.sendCallCount)
@@ -378,10 +432,12 @@ func TestDispatcherPartialFailureThenSuccess(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHITLStatusConstants(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name  string
-		got   string
-		want  string
+		name string
+		got  string
+		want string
 	}{
 		{"pending", HITLStatusPending, "pending"},
 		{"approved", HITLStatusApproved, "approved"},
@@ -389,6 +445,8 @@ func TestHITLStatusConstants(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if tt.got != tt.want {
 				t.Errorf("constant = %q, want %q", tt.got, tt.want)
 			}
@@ -406,7 +464,9 @@ func TestHITLStatusConstants(t *testing.T) {
 // with any *Store value — even nil won't be reached.
 
 func TestCreateHITLReview_MissingContentID(t *testing.T) {
-	_, err := CreateHITLReview(context.Background(), nil, HITLReview{
+	t.Parallel()
+
+	_, err := CreateHITLReview(t.Context(), nil, HITLReview{
 		ContentType: "blog_post",
 		AIOutput:    []byte(`{"text":"hello"}`),
 	})
@@ -416,7 +476,9 @@ func TestCreateHITLReview_MissingContentID(t *testing.T) {
 }
 
 func TestCreateHITLReview_MissingContentType(t *testing.T) {
-	_, err := CreateHITLReview(context.Background(), nil, HITLReview{
+	t.Parallel()
+
+	_, err := CreateHITLReview(t.Context(), nil, HITLReview{
 		ContentID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
 		AIOutput:  []byte(`{"text":"hello"}`),
 	})
@@ -426,7 +488,9 @@ func TestCreateHITLReview_MissingContentType(t *testing.T) {
 }
 
 func TestCreateHITLReview_MissingAIOutput(t *testing.T) {
-	_, err := CreateHITLReview(context.Background(), nil, HITLReview{
+	t.Parallel()
+
+	_, err := CreateHITLReview(t.Context(), nil, HITLReview{
 		ContentID:   pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
 		ContentType: "blog_post",
 	})
@@ -436,42 +500,54 @@ func TestCreateHITLReview_MissingAIOutput(t *testing.T) {
 }
 
 func TestApproveReview_MissingReviewID(t *testing.T) {
-	err := ApproveReview(context.Background(), nil, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true})
+	t.Parallel()
+
+	err := ApproveReview(t.Context(), nil, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true})
 	if err == nil || err.Error() != "review_id is required" {
 		t.Errorf("expected review_id error, got: %v", err)
 	}
 }
 
 func TestApproveReview_MissingReviewerID(t *testing.T) {
-	err := ApproveReview(context.Background(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{})
+	t.Parallel()
+
+	err := ApproveReview(t.Context(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{})
 	if err == nil || err.Error() != "reviewer_id is required" {
 		t.Errorf("expected reviewer_id error, got: %v", err)
 	}
 }
 
 func TestRejectReview_MissingReviewID(t *testing.T) {
-	err := RejectReview(context.Background(), nil, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, "bad content")
+	t.Parallel()
+
+	err := RejectReview(t.Context(), nil, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, "bad content")
 	if err == nil || err.Error() != "review_id is required" {
 		t.Errorf("expected review_id error, got: %v", err)
 	}
 }
 
 func TestRejectReview_MissingReviewerID(t *testing.T) {
-	err := RejectReview(context.Background(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{}, "bad content")
+	t.Parallel()
+
+	err := RejectReview(t.Context(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{}, "bad content")
 	if err == nil || err.Error() != "reviewer_id is required" {
 		t.Errorf("expected reviewer_id error, got: %v", err)
 	}
 }
 
 func TestRejectReview_MissingReason(t *testing.T) {
-	err := RejectReview(context.Background(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{Bytes: [16]byte{2}, Valid: true}, "")
+	t.Parallel()
+
+	err := RejectReview(t.Context(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{Bytes: [16]byte{2}, Valid: true}, "")
 	if err == nil || err.Error() != "rejection reason is required" {
 		t.Errorf("expected rejection reason error, got: %v", err)
 	}
 }
 
 func TestListPendingReviews_MissingTenantID(t *testing.T) {
-	_, err := ListPendingReviews(context.Background(), nil, pgtype.UUID{}, 20, 0)
+	t.Parallel()
+
+	_, err := ListPendingReviews(t.Context(), nil, pgtype.UUID{}, 20, 0)
 	if err == nil || err.Error() != "tenant_id is required" {
 		t.Errorf("expected tenant_id error, got: %v", err)
 	}
@@ -482,6 +558,8 @@ func TestListPendingReviews_MissingTenantID(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHITLReviewFields(t *testing.T) {
+	t.Parallel()
+
 	review := HITLReview{
 		ID:          pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
 		TenantID:    pgtype.UUID{Bytes: [16]byte{2}, Valid: true},
@@ -494,9 +572,11 @@ func TestHITLReviewFields(t *testing.T) {
 	if review.ContentType != "blog_post" {
 		t.Errorf("ContentType = %q, want %q", review.ContentType, "blog_post")
 	}
+
 	if review.Status != HITLStatusPending {
 		t.Errorf("Status = %q, want %q", review.Status, HITLStatusPending)
 	}
+
 	if len(review.AIOutput) == 0 {
 		t.Error("AIOutput should not be empty")
 	}
@@ -507,6 +587,8 @@ func TestHITLReviewFields(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRequestFields(t *testing.T) {
+	t.Parallel()
+
 	req := Request{
 		Category: "content_generation",
 		Payload:  map[string]any{"prompt": "hello"},
@@ -514,12 +596,15 @@ func TestRequestFields(t *testing.T) {
 	if req.Category != "content_generation" {
 		t.Errorf("Category = %q, want %q", req.Category, "content_generation")
 	}
+
 	if req.Payload["prompt"] != "hello" {
 		t.Errorf("Payload[prompt] = %v, want %q", req.Payload["prompt"], "hello")
 	}
 }
 
 func TestResponseFields(t *testing.T) {
+	t.Parallel()
+
 	resp := Response{
 		ProviderRef: "ref-123",
 		Status:      "success",
@@ -528,9 +613,11 @@ func TestResponseFields(t *testing.T) {
 	if resp.ProviderRef != "ref-123" {
 		t.Errorf("ProviderRef = %q, want %q", resp.ProviderRef, "ref-123")
 	}
+
 	if resp.Status != "success" {
 		t.Errorf("Status = %q, want %q", resp.Status, "success")
 	}
+
 	if resp.Raw["tokens"] != 100 {
 		t.Errorf("Raw[tokens] = %v, want 100", resp.Raw["tokens"])
 	}
@@ -541,11 +628,15 @@ func TestResponseFields(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewHandlers(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
+
 	h := NewHandlers(d, nil)
 	if h == nil {
 		t.Fatal("NewHandlers() returned nil")
 	}
+
 	if h.Dispatcher != d {
 		t.Error("Dispatcher not set correctly")
 	}
@@ -556,6 +647,8 @@ func TestNewHandlers(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestParsePageSize(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		query  string
@@ -571,7 +664,10 @@ func TestParsePageSize(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			req := httptest.NewRequest(http.MethodGet, "/?page_size="+tt.query, nil)
+
 			got := parsePageSize(req)
 			if got != tt.expect {
 				t.Errorf("parsePageSize() = %d, want %d", got, tt.expect)
@@ -581,6 +677,8 @@ func TestParsePageSize(t *testing.T) {
 }
 
 func TestParsePageOffset(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		query  string
@@ -594,7 +692,10 @@ func TestParsePageOffset(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			req := httptest.NewRequest(http.MethodGet, "/?page_offset="+tt.query, nil)
+
 			got := parsePageOffset(req)
 			if got != tt.expect {
 				t.Errorf("parsePageOffset() = %d, want %d", got, tt.expect)

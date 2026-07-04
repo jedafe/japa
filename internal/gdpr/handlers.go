@@ -38,13 +38,6 @@ func NewHandlers(service *Service) *Handlers {
 // ---------------------------------------------------------------------------
 
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, errors.New("invalid " + param)
-	}
-	return id, nil
-}
 
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
@@ -53,6 +46,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -63,6 +57,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -88,6 +83,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if v != nil {
 		if err := json.NewEncoder(w).Encode(v); err != nil {
 			slog.Warn("json encode error", "error", err)
@@ -105,24 +101,28 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // parsePageSize extracts page_size from query params with defaults.
 func parsePageSize(r *http.Request) int32 {
 	ps := DefaultPageSize
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
 			if parsed > MaxPageSize {
 				parsed = MaxPageSize
 			}
+
 			ps = parsed
 		}
 	}
-	return int32(ps)
+
+	return int32(ps) //nolint:gosec // G115: bounded by MaxPageSize check above
 }
 
 // parseOffset extracts offset from query params.
 func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
-			return int32(parsed)
+			return int32(parsed) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
+
 	return 0
 }
 
@@ -132,9 +132,11 @@ func clientIP(r *http.Request) *string {
 	if ip == "" {
 		ip = r.Header.Get("X-Real-IP")
 	}
+
 	if ip == "" {
 		ip = r.RemoteAddr
 	}
+
 	if ip != "" {
 		// Take the first IP from comma-separated list.
 		if idx := strings.Index(ip, ","); idx > 0 {
@@ -144,8 +146,10 @@ func clientIP(r *http.Request) *string {
 		if idx := strings.LastIndex(ip, ":"); idx > 0 {
 			ip = ip[:idx]
 		}
+
 		return &ip
 	}
+
 	return nil
 }
 
@@ -153,12 +157,13 @@ func clientIP(r *http.Request) *string {
 // User-facing endpoints
 // ---------------------------------------------------------------------------
 
-// RecordConsent handles POST /api/v1/consent
+// RecordConsent handles POST /api/v1/consent.
 func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -169,6 +174,7 @@ func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
 		Granted       bool   `json:"granted"`
 		PolicyVersion string `json:"policy_version"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -189,7 +195,7 @@ func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": record})
 }
 
-// GetUserConsents handles GET /api/v1/consent
+// GetUserConsents handles GET /api/v1/consent.
 func (h *Handlers) GetUserConsents(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -197,6 +203,7 @@ func (h *Handlers) GetUserConsents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	consentType := r.URL.Query().Get("type")
+
 	records, err := h.Service.GetUserConsents(r.Context(), user.UserID, consentType)
 	if err != nil {
 		handleServiceError(w, err)
@@ -206,12 +213,13 @@ func (h *Handlers) GetUserConsents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": records})
 }
 
-// RevokeConsent handles DELETE /api/v1/consent/:type
+// RevokeConsent handles DELETE /api/v1/consent/:type.
 func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -235,12 +243,13 @@ func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "revoked"}})
 }
 
-// RequestDataExport handles POST /api/v1/account/export
+// RequestDataExport handles POST /api/v1/account/export.
 func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -255,12 +264,13 @@ func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"data": request})
 }
 
-// RequestAccountDeletion handles POST /api/v1/account/delete
+// RequestAccountDeletion handles POST /api/v1/account/delete.
 func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -269,6 +279,7 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 	var input struct {
 		Reason string `json:"reason"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -287,7 +298,7 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 // Admin endpoints
 // ---------------------------------------------------------------------------
 
-// ListAuditLogs handles GET /api/v1/admin/audit-logs
+// ListAuditLogs handles GET /api/v1/admin/audit-logs.
 func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -306,12 +317,14 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var startDate, endDate *time.Time
+
 	if v := r.URL.Query().Get("start_date"); v != "" {
 		t, err := time.Parse("2006-01-02", v)
 		if err == nil {
 			startDate = &t
 		}
 	}
+
 	if v := r.URL.Query().Get("end_date"); v != "" {
 		t, err := time.Parse("2006-01-02", v)
 		if err == nil {
@@ -331,7 +344,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": logs})
 }
 
-// ListConsentsByTenant handles GET /api/v1/admin/consents
+// ListConsentsByTenant handles GET /api/v1/admin/consents.
 func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -351,7 +364,7 @@ func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"data": records})
 }
 
-// ListPendingDataExports handles GET /api/v1/admin/data-exports
+// ListPendingDataExports handles GET /api/v1/admin/data-exports.
 func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireTenant(w, r)
 	if !ok {
@@ -369,7 +382,7 @@ func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"data": requests})
 }
 
-// ListPendingDeletions handles GET /api/v1/admin/deletions
+// ListPendingDeletions handles GET /api/v1/admin/deletions.
 func (h *Handlers) ListPendingDeletions(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireTenant(w, r)
 	if !ok {

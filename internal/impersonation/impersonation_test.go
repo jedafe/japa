@@ -10,7 +10,8 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // ---------------------------------------------------------------------------
@@ -18,13 +19,17 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestImpersonatedFromContext_NilWhenNotSet(t *testing.T) {
-	ic := ImpersonatedFromContext(context.Background())
+	t.Parallel()
+
+	ic := ImpersonatedFromContext(t.Context())
 	if ic != nil {
 		t.Errorf("ImpersonatedFromContext() = %v, want nil", ic)
 	}
 }
 
 func TestImpersonatedFromContext_ReturnsSetValue(t *testing.T) {
+	t.Parallel()
+
 	adminID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, Valid: true}
 	targetID := pgtype.UUID{Bytes: [16]byte{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}, Valid: true}
 
@@ -32,21 +37,25 @@ func TestImpersonatedFromContext_ReturnsSetValue(t *testing.T) {
 		AdminID:        adminID,
 		ImpersonatedID: targetID,
 	}
-	ctx := context.WithValue(context.Background(), impersonatedUserKey, ic)
+	ctx := context.WithValue(t.Context(), impersonatedUserKey, ic)
 
 	got := ImpersonatedFromContext(ctx)
 	if got == nil {
 		t.Fatal("ImpersonatedFromContext() returned nil")
 	}
+
 	if got.AdminID != adminID {
 		t.Errorf("AdminID = %v, want %v", got.AdminID, adminID)
 	}
+
 	if got.ImpersonatedID != targetID {
 		t.Errorf("ImpersonatedID = %v, want %v", got.ImpersonatedID, targetID)
 	}
 }
 
 func TestEffectiveUserID_ReturnsImpersonatedID(t *testing.T) {
+	t.Parallel()
+
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	targetID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
 
@@ -54,7 +63,7 @@ func TestEffectiveUserID_ReturnsImpersonatedID(t *testing.T) {
 		AdminID:        adminID,
 		ImpersonatedID: targetID,
 	}
-	ctx := context.WithValue(context.Background(), impersonatedUserKey, ic)
+	ctx := context.WithValue(t.Context(), impersonatedUserKey, ic)
 
 	got := EffectiveUserID(ctx)
 	if got != targetID {
@@ -63,7 +72,9 @@ func TestEffectiveUserID_ReturnsImpersonatedID(t *testing.T) {
 }
 
 func TestEffectiveUserID_ReturnsZeroWhenNotImpersonating(t *testing.T) {
-	got := EffectiveUserID(context.Background())
+	t.Parallel()
+
+	got := EffectiveUserID(t.Context())
 	if got.Valid {
 		t.Errorf("EffectiveUserID() = %v, want zero UUID", got)
 	}
@@ -74,9 +85,12 @@ func TestEffectiveUserID_ReturnsZeroWhenNotImpersonating(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestConstants(t *testing.T) {
+	t.Parallel()
+
 	if DefaultImpersonationTTL.Seconds() != 1800 {
 		t.Errorf("DefaultImpersonationTTL = %v, want 30 minutes", DefaultImpersonationTTL)
 	}
+
 	if keyPrefix != "jc:impersonate:" {
 		t.Errorf("keyPrefix = %q, want %q", keyPrefix, "jc:impersonate:")
 	}
@@ -88,19 +102,31 @@ func TestConstants(t *testing.T) {
 
 func newTestStore(t *testing.T) (*Store, *miniredis.Miniredis) {
 	t.Helper()
+
 	mr, err := miniredis.Run()
 	if err != nil {
 		t.Fatalf("failed to start miniredis: %v", err)
 	}
+
 	t.Cleanup(mr.Close)
 
-	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	t.Cleanup(func() { rdb.Close() })
+	vk, err := valkey.NewClient(valkey.ClientOption{
+		InitAddress:  []string{mr.Addr()},
+		DisableCache: true,
+	})
+	if err != nil {
+		t.Fatalf("valkey connect: %v", err)
+	}
 
-	return NewStore(rdb), mr
+	compat := valkeycompat.NewAdapter(vk)
+
+	t.Cleanup(func() { vk.Close() })
+
+	return NewStore(compat), mr
 }
 
 func TestStoreSetAndGetImpersonation(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	targetID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
@@ -114,12 +140,14 @@ func TestStoreSetAndGetImpersonation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetImpersonation() error: %v", err)
 	}
+
 	if got == "" {
 		t.Fatal("GetImpersonation() returned empty string")
 	}
 }
 
 func TestStoreGetImpersonationReturnsEmptyWhenNotSet(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 	adminID := pgtype.UUID{Bytes: [16]byte{99}, Valid: true}
 
@@ -127,12 +155,14 @@ func TestStoreGetImpersonationReturnsEmptyWhenNotSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetImpersonation() error: %v", err)
 	}
+
 	if got != "" {
 		t.Errorf("GetImpersonation() = %q, want empty", got)
 	}
 }
 
 func TestStoreClearImpersonation(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	targetID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
@@ -148,12 +178,14 @@ func TestStoreClearImpersonation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetImpersonation() after clear error: %v", err)
 	}
+
 	if got != "" {
 		t.Errorf("GetImpersonation() after clear = %q, want empty", got)
 	}
 }
 
 func TestStoreClearImpersonationIdempotent(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
@@ -165,6 +197,7 @@ func TestStoreClearImpersonationIdempotent(t *testing.T) {
 }
 
 func TestStoreNilRedisGracefulDegradation(t *testing.T) {
+	t.Parallel()
 	// Store with nil redis should degrade gracefully
 	store := &Store{rdb: nil}
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
@@ -179,6 +212,7 @@ func TestStoreNilRedisGracefulDegradation(t *testing.T) {
 	if err != nil {
 		t.Errorf("GetImpersonation() with nil redis should return nil, got: %v", err)
 	}
+
 	if got != "" {
 		t.Errorf("GetImpersonation() with nil redis should return empty, got: %q", got)
 	}
@@ -190,6 +224,7 @@ func TestStoreNilRedisGracefulDegradation(t *testing.T) {
 }
 
 func TestStoreTTLExpiry(t *testing.T) {
+	t.Parallel()
 	store, mr := newTestStore(t)
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	targetID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
@@ -203,6 +238,7 @@ func TestStoreTTLExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetImpersonation() error: %v", err)
 	}
+
 	if got != "" {
 		t.Errorf("GetImpersonation() after TTL = %q, want empty", got)
 	}
@@ -213,6 +249,7 @@ func TestStoreTTLExpiry(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestImpersonationMiddleware_InjectsContext(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	targetID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
@@ -222,8 +259,10 @@ func TestImpersonationMiddleware_InjectsContext(t *testing.T) {
 
 	// Create a request with auth user in context
 	var capturedIC *ImpersonationContext
+
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedIC = ImpersonatedFromContext(r.Context())
+
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -241,24 +280,30 @@ func TestImpersonationMiddleware_InjectsContext(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("handler status = %d, want %d", rec.Code, http.StatusOK)
 	}
+
 	if capturedIC == nil {
 		t.Fatal("ImpersonatedFromContext() returned nil inside handler")
 	}
+
 	if capturedIC.AdminID != adminID {
 		t.Errorf("AdminID = %v, want %v", capturedIC.AdminID, adminID)
 	}
+
 	if capturedIC.ImpersonatedID != targetID {
 		t.Errorf("ImpersonatedID = %v, want %v", capturedIC.ImpersonatedID, targetID)
 	}
 }
 
 func TestImpersonationMiddleware_NoImpersonationPassesThrough(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
 	var capturedIC *ImpersonationContext
+
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedIC = ImpersonatedFromContext(r.Context())
+
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -279,11 +324,14 @@ func TestImpersonationMiddleware_NoImpersonationPassesThrough(t *testing.T) {
 }
 
 func TestImpersonationMiddleware_NoAuthUserPassesThrough(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 
 	var called bool
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
+
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -297,18 +345,23 @@ func TestImpersonationMiddleware_NoAuthUserPassesThrough(t *testing.T) {
 	if !called {
 		t.Error("inner handler not called when no auth user")
 	}
+
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
 
 func TestImpersonationMiddleware_NilRedisPassesThrough(t *testing.T) {
+	t.Parallel()
+
 	store := &Store{rdb: nil}
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
 	var capturedIC *ImpersonationContext
+
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedIC = ImpersonatedFromContext(r.Context())
+
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -329,6 +382,7 @@ func TestImpersonationMiddleware_NilRedisPassesThrough(t *testing.T) {
 }
 
 func TestImpersonationMiddleware_InvalidUUIDPassesThrough(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
@@ -336,8 +390,10 @@ func TestImpersonationMiddleware_InvalidUUIDPassesThrough(t *testing.T) {
 	_ = store.rdb.Set(t.Context(), keyPrefix+adminID.String(), "not-a-uuid", DefaultImpersonationTTL)
 
 	var called bool
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
+
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -362,6 +418,7 @@ func TestImpersonationMiddleware_InvalidUUIDPassesThrough(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestServiceIsAdminAlwaysReturnsTrue(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 	svc := NewService(store, nil)
 
@@ -373,23 +430,28 @@ func TestServiceIsAdminAlwaysReturnsTrue(t *testing.T) {
 }
 
 func TestServiceGetImpersonationStatusNoActive(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 	svc := NewService(store, nil)
 
 	adminID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+
 	targetID, active, err := svc.GetImpersonationStatus(t.Context(), adminID)
 	if err != nil {
 		t.Fatalf("GetImpersonationStatus() error: %v", err)
 	}
+
 	if active {
 		t.Error("GetImpersonationStatus() active = true, want false")
 	}
+
 	if targetID != "" {
 		t.Errorf("GetImpersonationStatus() targetID = %q, want empty", targetID)
 	}
 }
 
 func TestServiceGetImpersonationStatusWithStore(t *testing.T) {
+	t.Parallel()
 	store, _ := newTestStore(t)
 	svc := NewService(store, nil)
 
@@ -403,9 +465,11 @@ func TestServiceGetImpersonationStatusWithStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetImpersonationStatus() error: %v", err)
 	}
+
 	if !active {
 		t.Error("GetImpersonationStatus() active = false, want true")
 	}
+
 	if gotTargetID == "" {
 		t.Error("GetImpersonationStatus() targetID is empty")
 	}

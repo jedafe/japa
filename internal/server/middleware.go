@@ -1,18 +1,19 @@
 // Package server — HTTP middleware registration.
 //
 // Middleware is applied in the order registered. The order matters:
-//   1. RequestID — generate a unique ID so every log line for a request
-//      can be correlated.
-//   2. RealIP — extract the real client IP from X-Forwarded-For so logs
-//      and rate limiters see the original caller, not the proxy.
-//   3. Recovery — catch panics and return a 500 instead of crashing the
-//      process. Uses slog for structured logging so panics appear in the
-//      same log stream as other application logs.
-//   4. Logger — log every request with method, path, status, and duration.
-//   5. CORS — allow cross-origin requests from the SvelteKit frontends.
+//  1. RequestID — generate a unique ID so every log line for a request
+//     can be correlated.
+//  2. RealIP — extract the real client IP from X-Forwarded-For so logs
+//     and rate limiters see the original caller, not the proxy.
+//  3. Recovery — catch panics and return a 500 instead of crashing the
+//     process. Uses slog for structured logging so panics appear in the
+//     same log stream as other application logs.
+//  4. Logger — log every request with method, path, status, and duration.
+//  5. CORS — allow cross-origin requests from the SvelteKit frontends.
 package server
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -26,7 +27,7 @@ import (
 // Every request passes through these middleware in the order registered.
 func RegisterMiddleware(r *chi.Mux) {
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
+	// chimw.RealIP removed — deprecated due to IP spoofing vulnerabilities (GHSA-3fxj-6jh8-hvhx).
 	r.Use(recoveryMiddleware)
 	r.Use(chimw.Logger)
 	r.Use(corsMiddleware)
@@ -43,11 +44,12 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rvr := recover(); rvr != nil {
-				if rvr == http.ErrAbortHandler {
+				if err, ok := rvr.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 					panic(rvr)
 				}
 
-				slog.Error("panic recovered",
+				slog.Error(
+					"panic recovered",
 					"panic", rvr,
 					"method", r.Method,
 					"path", r.URL.Path,
@@ -123,10 +125,12 @@ func isOriginAllowed(origin string) bool {
 		if allowed == "" || allowed == "*" {
 			continue // skip empty entries and never allow wildcard
 		}
+
 		if origin == allowed {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -143,6 +147,7 @@ func isLocalOrigin(origin string) bool {
 	if idx := strings.LastIndex(stripped, ":"); idx != -1 {
 		host = stripped[:idx]
 	}
+
 	return host == "localhost" || host == "127.0.0.1" || host == "[::1]"
 }
 
@@ -162,6 +167,7 @@ func isDefaultProductionOrigin(origin string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -174,9 +180,11 @@ func isDefaultProductionOrigin(origin string) bool {
 // middleware it depends on.
 func requestIDFromContext(ctx interface{ Value(any) any }) string {
 	v := ctx.Value(chimw.RequestIDKey)
+
 	id, ok := v.(string)
 	if !ok {
 		return ""
 	}
+
 	return strings.TrimSpace(id)
 }

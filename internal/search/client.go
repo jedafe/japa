@@ -75,6 +75,7 @@ func NewClient(url, key string) (meilisearch.ServiceManager, error) {
 	}
 
 	slog.Info("meilisearch client created", "url", url)
+
 	return client, nil
 }
 
@@ -111,5 +112,6 @@ func stringsToInterface(ss []string) []interface{} {
 	for i, s := range ss {
 		out[i] = s
 	}
+
 	return out
 }

@@ -55,13 +55,13 @@ type UpdateDocPageRequest struct {
 
 // ValidAudiences lists accepted audience slugs.
 var ValidAudiences = map[string]bool{
-	"users":          true,
-	"premium":        true,
-	"organizations":  true,
-	"moderators":     true,
-	"api":            true,
-	"admin":          true,
-	"superadmin":     true,
+	"users":         true,
+	"premium":       true,
+	"organizations": true,
+	"moderators":    true,
+	"api":           true,
+	"admin":         true,
+	"superadmin":    true,
 }
 
 // ValidReviewStatuses lists accepted review_status values.

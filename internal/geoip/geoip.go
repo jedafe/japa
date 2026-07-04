@@ -44,6 +44,7 @@ func FromContext(ctx context.Context) GeoContext {
 	if !ok {
 		return GeoContext{IsValid: false}
 	}
+
 	return g
 }
 
@@ -60,13 +61,16 @@ type Reader struct {
 // without geo data).
 func NewReader(dbPath string) (*Reader, error) {
 	r := &Reader{}
+
 	reader, err := geoip2.Open(dbPath)
 	if err != nil {
 		// Return a working Reader with nil internal - the server
 		// should not crash if the geoip database is missing
-		return r, nil
+		return r, nil //nolint:nilerr // intentional: degradable geo lookup
 	}
+
 	r.current.Store(reader)
+
 	return r, nil
 }
 
@@ -92,20 +96,25 @@ func (r *Reader) Lookup(ipStr string) GeoContext {
 	if record.Country.IsoCode != "" {
 		gc.CountryCode = record.Country.IsoCode
 	}
+
 	if name, ok := record.Country.Names["en"]; ok {
 		gc.CountryName = name
 	}
+
 	if name, ok := record.City.Names["en"]; ok {
 		gc.City = name
 	}
+
 	if len(record.Subdivisions) > 0 {
 		if name, ok := record.Subdivisions[0].Names["en"]; ok {
 			gc.Subdivision = name
 		}
 	}
+
 	if record.Location.TimeZone != "" {
 		gc.TimeZone = record.Location.TimeZone
 	}
+
 	if record.Location.Latitude != 0 || record.Location.Longitude != 0 {
 		gc.Latitude = record.Location.Latitude
 		gc.Longitude = record.Location.Longitude
@@ -120,9 +129,10 @@ func (r *Reader) Lookup(ipStr string) GeoContext {
 func (r *Reader) Swap(newReader *geoip2.Reader) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	old := r.current.Swap(newReader)
 	if old != nil {
-		old.Close()
+		_ = old.Close()
 	}
 }
 
@@ -130,7 +140,7 @@ func (r *Reader) Swap(newReader *geoip2.Reader) {
 func (r *Reader) Close() {
 	reader := r.current.Load()
 	if reader != nil {
-		reader.Close()
+		_ = reader.Close()
 	}
 }
 

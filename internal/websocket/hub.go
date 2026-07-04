@@ -17,7 +17,7 @@ type Publisher interface {
 // Hub manages WebSocket connections and broadcasts.
 type Hub struct {
 	mu               sync.RWMutex
-	clients          map[string]*Client       // user_id -> Client
+	clients          map[string]*Client            // user_id -> Client
 	spaceSubscribers map[string]map[string]*Client // space_id -> user_id -> Client
 	pubsub           Publisher
 }
@@ -70,6 +70,7 @@ func (h *Hub) Unregister(client *Client) {
 	for spaceID := range client.SpaceIDs {
 		if subs, ok := h.spaceSubscribers[spaceID]; ok {
 			delete(subs, client.UserID)
+
 			if len(subs) == 0 {
 				delete(h.spaceSubscribers, spaceID)
 			}
@@ -113,6 +114,7 @@ func (h *Hub) BroadcastToSpace(spaceID string, event WSEvent) {
 	h.mu.RLock()
 	subs, ok := h.spaceSubscribers[spaceID]
 	bridge := h.pubsub
+
 	if ok {
 		clients := make([]*Client, 0, len(subs))
 		for _, c := range subs {
@@ -125,6 +127,7 @@ func (h *Hub) BroadcastToSpace(spaceID string, event WSEvent) {
 			slog.Error("ws marshal space event", "error", err)
 			return
 		}
+
 		for _, client := range clients {
 			select {
 			case client.Send <- data:
@@ -146,10 +149,12 @@ func (h *Hub) BroadcastToSpace(spaceID string, event WSEvent) {
 // and publishes to Valkey for delivery on other instances.
 func (h *Hub) BroadcastToAll(event WSEvent) {
 	h.mu.RLock()
+
 	clients := make([]*Client, 0, len(h.clients))
 	for _, c := range h.clients {
 		clients = append(clients, c)
 	}
+
 	bridge := h.pubsub
 	h.mu.RUnlock()
 
@@ -181,6 +186,7 @@ func (h *Hub) GetOnlineUsers() []string {
 	for userID := range h.clients {
 		users = append(users, userID)
 	}
+
 	return users
 }
 
@@ -189,6 +195,7 @@ func (h *Hub) IsUserOnline(userID string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	_, ok := h.clients[userID]
+
 	return ok
 }
 
@@ -200,6 +207,7 @@ func (h *Hub) SubscribeToSpace(client *Client, spaceID string) {
 	if h.spaceSubscribers[spaceID] == nil {
 		h.spaceSubscribers[spaceID] = make(map[string]*Client)
 	}
+
 	h.spaceSubscribers[spaceID][client.UserID] = client
 	client.SpaceIDs[spaceID] = true
 }
@@ -211,9 +219,11 @@ func (h *Hub) UnsubscribeFromSpace(client *Client, spaceID string) {
 
 	if subs, ok := h.spaceSubscribers[spaceID]; ok {
 		delete(subs, client.UserID)
+
 		if len(subs) == 0 {
 			delete(h.spaceSubscribers, spaceID)
 		}
 	}
+
 	delete(client.SpaceIDs, spaceID)
 }

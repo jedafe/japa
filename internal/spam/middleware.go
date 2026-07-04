@@ -41,22 +41,26 @@ func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 			blocked, err := store.IsIPBlocked(r.Context(), t.ID, ip)
 			if err != nil {
 				// Log but don't block on check failure — degrade gracefully
-				slog.Warn("ip block check failed",
+				slog.Warn(
+					"ip block check failed",
 					"ip", ip,
 					"tenant_id", t.ID,
 					"error", err,
 				)
 				next.ServeHTTP(w, r)
+
 				return
 			}
 
 			if blocked {
-				slog.Info("blocked request from blocked IP",
+				slog.Info(
+					"blocked request from blocked IP",
 					"ip", ip,
 					"tenant_id", t.ID,
 					"path", r.URL.Path,
 				)
 				writeSpamError(w, http.StatusForbidden, "ip_blocked", "Your IP address has been blocked")
+
 				return
 			}
 
@@ -100,12 +104,14 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 			// Get cached censored words (or fetch from DB on miss)
 			words, err := GetCachedCensoredWords(r.Context(), rdb, database, t.ID)
 			if err != nil {
-				slog.Warn("failed to load censored words for censor middleware",
+				slog.Warn(
+					"failed to load censored words for censor middleware",
 					"tenant_id", t.ID,
 					"error", err,
 				)
 				// Degrade gracefully — let the request through
 				next.ServeHTTP(w, r)
+
 				return
 			}
 
@@ -117,12 +123,14 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 			result := CheckCensoredWords(words, text)
 
 			if result.Blocked {
-				slog.Info("content blocked by censor middleware",
+				slog.Info(
+					"content blocked by censor middleware",
 					"tenant_id", t.ID,
 					"reason", result.FlagReason,
 					"path", r.URL.Path,
 				)
 				writeSpamError(w, http.StatusForbidden, "content_blocked", result.FlagReason)
+
 				return
 			}
 
@@ -154,6 +162,7 @@ func extractIP(r *http.Request) string {
 	if err != nil {
 		return r.RemoteAddr
 	}
+
 	return host
 }
 
@@ -168,6 +177,7 @@ func extractBodyText(r *http.Request) string {
 
 	// Read up to 1MB for censor checking
 	limitedReader := http.MaxBytesReader(nil, r.Body, 1<<20)
+
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, limitedReader)
 
@@ -184,6 +194,7 @@ func extractBodyText(r *http.Request) string {
 	}
 
 	var text strings.Builder
+
 	for _, field := range []string{"body", "content", "title", "message", "text"} {
 		if val, ok := payload[field]; ok {
 			if s, ok := val.(string); ok {
@@ -201,6 +212,7 @@ func extractBodyText(r *http.Request) string {
 func writeSpamError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	resp := map[string]any{
 		"error": map[string]any{
 			"code":    code,

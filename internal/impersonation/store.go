@@ -2,11 +2,12 @@ package impersonation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Key prefix for impersonation state in Valkey.
@@ -19,21 +20,23 @@ const DefaultImpersonationTTL = 30 * time.Minute
 
 // Store provides Valkey-backed impersonation state.
 type Store struct {
-	rdb *redis.Client
+	rdb valkeycompat.Cmdable
 }
 
 // NewStore creates a Store backed by the given Valkey client.
-func NewStore(rdb *redis.Client) *Store {
+func NewStore(rdb valkeycompat.Cmdable) *Store {
 	return &Store{rdb: rdb}
 }
 
 // SetImpersonation stores the impersonation target for an admin.
 // The key auto-expires after the given TTL.
-func (s *Store) SetImpersonation(ctx context.Context, adminID pgtype.UUID, targetID pgtype.UUID, ttl time.Duration) error {
+func (s *Store) SetImpersonation(ctx context.Context, adminID, targetID pgtype.UUID, ttl time.Duration) error {
 	if s.rdb == nil {
 		return nil // graceful degradation
 	}
+
 	key := keyPrefix + adminID.String()
+
 	return s.rdb.Set(ctx, key, targetID.String(), ttl).Err()
 }
 
@@ -43,14 +46,18 @@ func (s *Store) GetImpersonation(ctx context.Context, adminID pgtype.UUID) (stri
 	if s.rdb == nil {
 		return "", nil
 	}
+
 	key := keyPrefix + adminID.String()
+
 	val, err := s.rdb.Get(ctx, key).Result()
-	if err == redis.Nil {
+	if errors.Is(err, valkeycompat.Nil) {
 		return "", nil
 	}
+
 	if err != nil {
 		return "", fmt.Errorf("get impersonation: %w", err)
 	}
+
 	return val, nil
 }
 
@@ -59,6 +66,8 @@ func (s *Store) ClearImpersonation(ctx context.Context, adminID pgtype.UUID) err
 	if s.rdb == nil {
 		return nil
 	}
+
 	key := keyPrefix + adminID.String()
+
 	return s.rdb.Del(ctx, key).Err()
 }

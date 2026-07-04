@@ -34,5 +34,6 @@ func (e WebhookEnvelope) Marshal() ([]byte, error) {
 func SignPayload(secret string, payload []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
+
 	return hex.EncodeToString(mac.Sum(nil))
 }

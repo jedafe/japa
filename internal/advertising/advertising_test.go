@@ -5,24 +5,32 @@ import (
 )
 
 func TestSlotConstants(t *testing.T) {
+	t.Parallel()
+
 	if SlotFeedInline != "feed_inline" {
 		t.Errorf("SlotFeedInline = %s, want feed_inline", SlotFeedInline)
 	}
+
 	if SlotSidebar != "sidebar" {
 		t.Errorf("SlotSidebar = %s, want sidebar", SlotSidebar)
 	}
+
 	if SlotSearchSponsored != "search_sponsored" {
 		t.Errorf("SlotSearchSponsored = %s, want search_sponsored", SlotSearchSponsored)
 	}
+
 	if SlotComparisonSponsored != "comparison_sponsored" {
 		t.Errorf("SlotComparisonSponsored = %s, want comparison_sponsored", SlotComparisonSponsored)
 	}
+
 	if SlotForumInline != "forum_inline" {
 		t.Errorf("SlotForumInline = %s, want forum_inline", SlotForumInline)
 	}
 }
 
 func TestCampaignStatusConstants(t *testing.T) {
+	t.Parallel()
+
 	statuses := map[string]bool{
 		CampaignStatusDraft:    true,
 		CampaignStatusActive:   true,
@@ -43,15 +51,20 @@ func TestCampaignStatusConstants(t *testing.T) {
 }
 
 func TestEventTypeConstants(t *testing.T) {
+	t.Parallel()
+
 	if EventTypeImpression != "impression" {
 		t.Errorf("EventTypeImpression = %s, want impression", EventTypeImpression)
 	}
+
 	if EventTypeClick != "click" {
 		t.Errorf("EventTypeClick = %s, want click", EventTypeClick)
 	}
 }
 
 func TestBoostConstants(t *testing.T) {
+	t.Parallel()
+
 	statuses := map[string]bool{
 		BoostStatusActive:   true,
 		BoostStatusEnded:    true,
@@ -74,30 +87,32 @@ func TestBoostConstants(t *testing.T) {
 }
 
 func TestPaginationDefaults(t *testing.T) {
+	t.Parallel()
+
 	if DefaultPageSize != 20 {
 		t.Errorf("DefaultPageSize = %d, want 20", DefaultPageSize)
 	}
+
 	if MaxPageSize != 100 {
 		t.Errorf("MaxPageSize = %d, want 100", MaxPageSize)
 	}
 }
 
 func TestNewService(t *testing.T) {
+	t.Parallel()
+
 	service := NewService(nil)
-	if service == nil {
-		t.Error("NewService returned nil")
-	}
 	if service.store == nil {
 		t.Error("NewService.store is nil")
 	}
 }
 
 func TestNewHandlers(t *testing.T) {
+	t.Parallel()
+
 	service := NewService(nil)
+
 	handlers := NewHandlers(service)
-	if handlers == nil {
-		t.Error("NewHandlers returned nil")
-	}
 	if handlers.Service != service {
 		t.Error("NewHandlers.Service does not match")
 	}

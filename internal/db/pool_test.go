@@ -22,6 +22,7 @@ import (
 // TestNew_PoolCreation verifies that New creates working writer and reader
 // pools and that Ping succeeds against a live database.
 func TestNew_PoolCreation(t *testing.T) {
+	t.Parallel()
 	dsn := os.Getenv("JC_DATABASE_URL")
 	if dsn == "" {
 		dsn = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable"
@@ -51,6 +52,7 @@ func TestNew_PoolCreation(t *testing.T) {
 // TestClose_IsIdempotent verifies that calling Close multiple times does not
 // panic or return an error.
 func TestClose_IsIdempotent(t *testing.T) {
+	t.Parallel()
 	dsn := os.Getenv("JC_DATABASE_URL")
 	if dsn == "" {
 		dsn = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable"

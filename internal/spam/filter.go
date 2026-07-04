@@ -2,6 +2,7 @@ package spam
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -86,6 +87,7 @@ func safeCompileRegex(pattern string, timeout time.Duration) (*regexp.Regexp, er
 // any goroutine.
 func EvictExpiredRegexCache() {
 	now := time.Now()
+
 	regexCacheMu.Lock()
 	defer regexCacheMu.Unlock()
 
@@ -137,11 +139,12 @@ func CheckCensoredWords(patterns []CensoredWord, text string) CensorResult {
 		switch pw.Action {
 		case "block":
 			result.Blocked = true
-			result.FlagReason = fmt.Sprintf("content contains blocked pattern: %s", pw.Pattern)
+			result.FlagReason = "content contains blocked pattern: " + pw.Pattern
+
 			return result
 		case "flag":
 			result.Flagged = true
-			result.FlagReason = fmt.Sprintf("content contains flagged pattern: %s", pw.Pattern)
+			result.FlagReason = "content contains flagged pattern: " + pw.Pattern
 			// Continue scanning — a later block action takes precedence
 		case "replace":
 			result.CleanText = applyReplacement(pw.Pattern, pw.Replacement, result.CleanText)
@@ -158,8 +161,9 @@ func matchPattern(pattern, text string) (bool, error) {
 	re, err := safeCompileRegex(pattern, defaultRegexTimeout)
 	if err != nil {
 		// Fall back to literal substring match
-		return strings.Contains(text, strings.ToLower(pattern)), nil
+		return strings.Contains(text, strings.ToLower(pattern)), nil //nolint:nilerr // intentional: fallback to literal match
 	}
+
 	return re.MatchString(text), nil
 }
 
@@ -172,6 +176,7 @@ func applyReplacement(pattern, replacement, text string) string {
 		// Fall back to literal replacement
 		return strings.ReplaceAll(text, strings.ToLower(pattern), replacement)
 	}
+
 	return re.ReplaceAllString(text, replacement)
 }
 
@@ -183,7 +188,8 @@ func applyReplacement(pattern, replacement, text string) string {
 func ComputeContentHash(body string) string {
 	normalized := normalizeForHash(body)
 	h := sha256.Sum256([]byte(normalized))
-	return fmt.Sprintf("%x", h)
+
+	return hex.EncodeToString(h[:])
 }
 
 // normalizeForHash prepares content for hashing by trimming whitespace,
@@ -192,15 +198,16 @@ func normalizeForHash(s string) string {
 	s = strings.TrimSpace(s)
 	// Collapse whitespace runs
 	fields := strings.Fields(s)
+
 	return strings.ToLower(strings.Join(fields, " "))
 }
 
 // BlockType constants for IP blocking.
 const (
-	BlockTypeFull        = "full"
+	BlockTypeFull         = "full"
 	BlockTypeRegistration = "registration"
-	BlockTypePosting     = "posting"
-	BlockTypeAPI         = "api"
+	BlockTypePosting      = "posting"
+	BlockTypeAPI          = "api"
 )
 
 // CensorAction constants for censored word actions.
@@ -227,6 +234,7 @@ func IsValidBlockType(bt string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -237,5 +245,6 @@ func IsValidCensorAction(a string) bool {
 			return true
 		}
 	}
+
 	return false
 }

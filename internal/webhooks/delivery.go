@@ -36,7 +36,8 @@ func Deliver(ctx context.Context, endpoint, secret string, envelope WebhookEnvel
 	if err != nil {
 		return fmt.Errorf("sending webhook to %s: %w", endpoint, err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("webhook to %s returned status %d", endpoint, resp.StatusCode)
@@ -54,10 +55,17 @@ func DeliverWithRetry(ctx context.Context, endpoint, secret string, envelope Web
 		maxRetries = 1
 	}
 
+	// Cap retries to prevent integer overflow in exponential backoff calculation.
+	// 2^30 seconds ≈ 34 years — any reasonable retry count is well below this.
+	if maxRetries > 30 {
+		maxRetries = 30
+	}
+
 	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
+
+	for attempt := range maxRetries {
 		if attempt > 0 {
-			delay := time.Duration(1<<uint(attempt-1)) * time.Second
+			delay := time.Duration(1<<uint(attempt-1)) * time.Second //nolint:gosec // G115: attempt bounded by maxRetries cap (30)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()

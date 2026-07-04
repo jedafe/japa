@@ -42,6 +42,7 @@ func (s *Service) ListEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]We
 	defer rows.Close()
 
 	var endpoints []WebhookEndpointWithSecret
+
 	for rows.Next() {
 		var ep WebhookEndpointWithSecret
 		if err := rows.Scan(
@@ -50,14 +51,17 @@ func (s *Service) ListEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]We
 		); err != nil {
 			return nil, fmt.Errorf("scanning webhook endpoint: %w", err)
 		}
+
 		endpoints = append(endpoints, ep)
 	}
+
 	return endpoints, rows.Err()
 }
 
 // GetEndpoint returns a single webhook endpoint by ID.
 func (s *Service) GetEndpoint(ctx context.Context, tenantID, id pgtype.UUID) (WebhookEndpointWithSecret, error) {
 	var ep WebhookEndpointWithSecret
+
 	err := s.store.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, url, secret, event_types, status, created_at, updated_at
 		FROM webhook_endpoints
@@ -69,6 +73,7 @@ func (s *Service) GetEndpoint(ctx context.Context, tenantID, id pgtype.UUID) (We
 	if err != nil {
 		return WebhookEndpointWithSecret{}, fmt.Errorf("fetching webhook endpoint %s: %w", id, err)
 	}
+
 	return ep, nil
 }
 
@@ -80,6 +85,7 @@ func (s *Service) CreateEndpoint(ctx context.Context, tenantID pgtype.UUID, inpu
 	}
 
 	var ep WebhookEndpointWithSecret
+
 	err := s.store.db.Writer.QueryRow(ctx, `
 		INSERT INTO webhook_endpoints (tenant_id, url, secret, event_types, status)
 		VALUES ($1, $2, $3, $4, $5)
@@ -91,6 +97,7 @@ func (s *Service) CreateEndpoint(ctx context.Context, tenantID pgtype.UUID, inpu
 	if err != nil {
 		return WebhookEndpointWithSecret{}, fmt.Errorf("creating webhook endpoint: %w", err)
 	}
+
 	return ep, nil
 }
 
@@ -106,20 +113,24 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 	if input.URL != nil {
 		url = *input.URL
 	}
+
 	secret := current.Secret
 	if input.Secret != nil {
 		secret = *input.Secret
 	}
+
 	eventTypes := current.EventTypes
 	if input.EventTypes != nil {
 		eventTypes = input.EventTypes
 	}
+
 	status := current.Status
 	if input.Status != nil {
 		status = *input.Status
 	}
 
 	var updated WebhookEndpointWithSecret
+
 	err = s.store.db.Writer.QueryRow(ctx, `
 		UPDATE webhook_endpoints
 		SET url = $3, secret = $4, event_types = $5, status = $6, updated_at = now()
@@ -132,6 +143,7 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 	if err != nil {
 		return WebhookEndpointWithSecret{}, fmt.Errorf("updating webhook endpoint %s: %w", id, err)
 	}
+
 	return updated, nil
 }
 
@@ -144,9 +156,11 @@ func (s *Service) DeleteEndpoint(ctx context.Context, tenantID, id pgtype.UUID) 
 	if err != nil {
 		return fmt.Errorf("deleting webhook endpoint %s: %w", id, err)
 	}
+
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("webhook endpoint %s not found", id)
 	}
+
 	return nil
 }
 
@@ -173,7 +187,8 @@ func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.
 		return pgtype.UUID{}, fmt.Errorf("creating test delivery: %w", err)
 	}
 
-	slog.Info("webhook test delivery created",
+	slog.Info(
+		"webhook test delivery created",
 		"delivery_id", deliveryID,
 		"endpoint_id", endpointID,
 		"event_type", eventType,
@@ -228,8 +243,10 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 			slog.Error("failed to mark webhook delivery as failed",
 				"delivery_id", id, "error", markErr)
 		}
+
 		slog.Error("webhook delivery failed after all retries",
 			"delivery_id", id, "endpoint", endpoint.URL, "error", deliverErr)
+
 		return nil
 	}
 
@@ -240,6 +257,7 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 
 	slog.Info("webhook delivered successfully",
 		"delivery_id", id, "endpoint", endpoint.URL, "event_type", delivery.EventType)
+
 	return nil
 }
 
@@ -252,6 +270,7 @@ func (s *Service) CreateDelivery(ctx context.Context, tenantID, endpointID, even
 	}
 
 	var id pgtype.UUID
+
 	err = s.store.db.Writer.QueryRow(ctx, `
 		INSERT INTO webhook_deliveries (tenant_id, endpoint_id, event_id, event_type, payload)
 		VALUES ($1, $2, $3, $4, $5)

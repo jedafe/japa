@@ -30,6 +30,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -40,6 +41,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -47,6 +49,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -82,15 +85,18 @@ func (h *Handlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	status, err := h.Service.GetState(r.Context(), tenantID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": status})
 }
 
@@ -100,19 +106,23 @@ func (h *Handlers) UpdateStep(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	var req UpdateStepRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if err := h.Service.UpdateStep(r.Context(), tenantID, user.UserID, &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
@@ -122,14 +132,17 @@ func (h *Handlers) Complete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if err := h.Service.Complete(r.Context(), tenantID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "completed"}})
 }
 
@@ -139,15 +152,18 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	recs, err := h.Service.GetRecommendations(r.Context(), tenantID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": recs})
 }
 
@@ -157,13 +173,16 @@ func (h *Handlers) DismissTour(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if err := h.Service.DismissTour(r.Context(), tenantID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "dismissed"}})
 }

@@ -13,6 +13,8 @@ import (
 // TestHandleUserFeed_MissingUsername verifies the handler returns 400
 // when the username path parameter is empty.
 func TestHandleUserFeed_MissingUsername(t *testing.T) {
+	t.Parallel()
+
 	pool := (*pgxpool.Pool)(nil) // unused — handler returns before query
 	handler := HandleUserFeed(pool)
 
@@ -32,6 +34,8 @@ func TestHandleUserFeed_MissingUsername(t *testing.T) {
 // TestHandleUserFeed_MissingTenant verifies the handler returns 503
 // when no tenant ID is present in the request context.
 func TestHandleUserFeed_MissingTenant(t *testing.T) {
+	t.Parallel()
+
 	pool := (*pgxpool.Pool)(nil)
 	handler := HandleUserFeed(pool)
 
@@ -51,6 +55,8 @@ func TestHandleUserFeed_MissingTenant(t *testing.T) {
 // when the username is present but the database pool is nil (panics)
 // — so we only test up to the tenant check here.
 func TestHandleUserFeed_InvalidTenant(t *testing.T) {
+	t.Parallel()
+
 	pool := (*pgxpool.Pool)(nil)
 	handler := HandleUserFeed(pool)
 
@@ -69,6 +75,8 @@ func TestHandleUserFeed_InvalidTenant(t *testing.T) {
 
 // TestServeRSSFeed verifies the XML marshalling produces valid RSS 2.0.
 func TestServeRSSFeed(t *testing.T) {
+	t.Parallel()
+
 	items := []RSSItem{
 		{
 			Title:       "Hello World",
@@ -86,6 +94,7 @@ func TestServeRSSFeed(t *testing.T) {
 	if ct := w.Header().Get("Content-Type"); ct != "application/rss+xml; charset=utf-8" {
 		t.Fatalf("unexpected Content-Type: %s", ct)
 	}
+
 	if cc := w.Header().Get("Cache-Control"); cc != "public, max-age=3600" {
 		t.Fatalf("unexpected Cache-Control: %s", cc)
 	}
@@ -94,15 +103,19 @@ func TestServeRSSFeed(t *testing.T) {
 	if err := xml.Unmarshal(w.Body.Bytes(), &feed); err != nil {
 		t.Fatalf("invalid XML: %v", err)
 	}
+
 	if feed.Version != "2.0" {
 		t.Fatalf("expected RSS version 2.0, got %s", feed.Version)
 	}
+
 	if feed.Channel.Title != "Test Feed" {
 		t.Fatalf("unexpected title: %s", feed.Channel.Title)
 	}
+
 	if len(feed.Channel.Items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(feed.Channel.Items))
 	}
+
 	if feed.Channel.Items[0].Title != "Hello World" {
 		t.Fatalf("unexpected item title: %s", feed.Channel.Items[0].Title)
 	}

@@ -2,6 +2,7 @@ package reviews
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -21,8 +22,9 @@ type CreateReviewInput struct {
 // CreateReview creates a new review, enforcing one-per-user-per-entity.
 func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgtype.UUID, input CreateReviewInput) (gen.Review, error) {
 	if input.EntityType == "" {
-		return gen.Review{}, fmt.Errorf("entity_type is required")
+		return gen.Review{}, errors.New("entity_type is required")
 	}
+
 	if input.Rating < RatingMin || input.Rating > RatingMax {
 		return gen.Review{}, fmt.Errorf("rating must be between %d and %d", RatingMin, RatingMax)
 	}
@@ -32,14 +34,16 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 	if err != nil {
 		return gen.Review{}, fmt.Errorf("checking existing review: %w", err)
 	}
+
 	if exists {
-		return gen.Review{}, fmt.Errorf("already_exists: user has already reviewed this entity")
+		return gen.Review{}, errors.New("already_exists: user has already reviewed this entity")
 	}
 
 	var title *string
 	if input.Title != "" {
 		title = &input.Title
 	}
+
 	var body *string
 	if input.Body != "" {
 		body = &input.Body
@@ -95,6 +99,7 @@ func (s *Service) UpdateReview(ctx context.Context, id, tenantID, reviewerUserID
 	if title != "" {
 		t = &title
 	}
+
 	var b *string
 	if body != "" {
 		b = &body
@@ -183,8 +188,9 @@ func (s *Service) FlagReview(ctx context.Context, id, tenantID pgtype.UUID) erro
 // ModerateReview changes a review's status (admin operation).
 func (s *Service) ModerateReview(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Review, error) {
 	if status == "" {
-		return gen.Review{}, fmt.Errorf("status is required")
+		return gen.Review{}, errors.New("status is required")
 	}
+
 	if status != ReviewStatusPublished && status != ReviewStatusFlagged && status != ReviewStatusRemoved {
 		return gen.Review{}, fmt.Errorf("invalid status: %s", status)
 	}
@@ -220,10 +226,15 @@ func (s *Service) RecalculateAggregate(ctx context.Context, tenantID pgtype.UUID
 	if err := s.store.recalculateReviewAggregate(ctx, tenantID, entityType, entityID); err != nil {
 		return fmt.Errorf("recalculate review aggregate: %w", err)
 	}
+
 	_, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
 		TenantID:   tenantID,
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
-	return fmt.Errorf("upsert review aggregate: %w", err)
+	if err != nil {
+		return fmt.Errorf("upsert review aggregate: %w", err)
+	}
+
+	return nil
 }

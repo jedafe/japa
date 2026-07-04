@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"os"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -34,7 +33,7 @@ const (
 	ActorTypeSystem = "system"
 )
 
-// Batch window duration in minutes for deduplication.
+// BatchWindowMinutes is the batch window duration in minutes for deduplication.
 const BatchWindowMinutes = 5
 
 // DefaultPageSize is the default number of notifications returned per page.
@@ -45,10 +44,11 @@ const MaxPageSize = 100
 
 // Service provides notification operations with reader/writer pool separation.
 type Service struct {
-	store  *Store
-	db     *db.DB
-	client *asynq.Client
-	push   *PushDelivery
+	store     *Store
+	db        *db.DB
+	client    *asynq.Client
+	push      *PushDelivery
+	pushStore *PushStore
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -58,8 +58,9 @@ func NewService(database *db.DB) *Service {
 			read:  gen.New(database.Reader),
 			write: gen.New(database.Writer),
 		},
-		db:   database,
-		push: NewPushDelivery(),
+		db:        database,
+		push:      NewPushDelivery(),
+		pushStore: NewPushStore(database.Reader, database.Writer),
 	}
 }
 
@@ -91,6 +92,7 @@ func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, acti
 	}
 
 	task := asynq.NewTask(TaskPushDelivery, payload)
+
 	info, err := s.client.Enqueue(task, asynq.Queue("default"))
 	if err != nil {
 		slog.Error("notifications: failed to enqueue push delivery",
@@ -108,6 +110,7 @@ func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UU
 	if err != nil {
 		return
 	}
+
 	for _, p := range pref {
 		if p.NotificationType == nType && p.Push {
 			s.enqueuePushDelivery(recipientID, title, body, actionURL)
@@ -118,6 +121,18 @@ func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UU
 
 // isPushGloballyEnabled checks if push is enabled for any notification type.
 // This avoids enqueueing when VAPID keys are not configured.
-func isPushGloballyEnabled() bool {
-	return os.Getenv("JC_VAPID_PRIVATE_KEY") != "" && os.Getenv("JC_VAPID_PUBLIC_KEY") != ""
+
+// SavePushSubscription stores a browser push subscription for a user.
+func (s *Service) SavePushSubscription(ctx context.Context, userID pgtype.UUID, endpoint, p256dh, authKey string) error {
+	return s.pushStore.SavePushSubscription(ctx, userID, endpoint, p256dh, authKey)
+}
+
+// DeletePushSubscription removes a browser push subscription for a user.
+func (s *Service) DeletePushSubscription(ctx context.Context, userID pgtype.UUID, endpoint string) error {
+	return s.pushStore.DeletePushSubscription(ctx, userID, endpoint)
+}
+
+// GetVAPIDPublicKey returns the VAPID public key for client-side subscription.
+func (s *Service) GetVAPIDPublicKey() string {
+	return s.push.PublicKey()
 }

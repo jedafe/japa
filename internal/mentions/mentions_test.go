@@ -9,14 +9,18 @@ import (
 
 func mustUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var id pgtype.UUID
 	if err := id.Scan(s); err != nil {
 		t.Fatalf("scan uuid %q: %v", s, err)
 	}
+
 	return id
 }
 
 func TestExtractMentions(t *testing.T) {
+	t.Parallel()
+
 	doc := `{
 		"type": "doc",
 		"content": [
@@ -36,18 +40,23 @@ func TestExtractMentions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(mentions) != 2 {
 		t.Fatalf("expected 2 mentions, got %d", len(mentions))
 	}
+
 	if mentions[0].Label != "Alice" {
 		t.Errorf("mentions[0].Label = %s, want Alice", mentions[0].Label)
 	}
+
 	if mentions[1].Label != "Bob" {
 		t.Errorf("mentions[1].Label = %s, want Bob", mentions[1].Label)
 	}
 }
 
 func TestExtractMentions_SkipsNonUser(t *testing.T) {
+	t.Parallel()
+
 	doc := `{
 		"type": "doc",
 		"content": [
@@ -64,12 +73,14 @@ func TestExtractMentions_SkipsNonUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(mentions) != 0 {
 		t.Errorf("expected 0 mentions, got %d", len(mentions))
 	}
 }
 
 func TestFilterMentions_SkipsAuthor(t *testing.T) {
+	t.Parallel()
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	spaceID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 
@@ -78,7 +89,7 @@ func TestFilterMentions_SkipsAuthor(t *testing.T) {
 	}
 
 	filtered, err := FilterMentions(
-		context.Background(),
+		t.Context(),
 		mentions,
 		authorID,
 		spaceID,
@@ -88,12 +99,14 @@ func TestFilterMentions_SkipsAuthor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(filtered) != 0 {
 		t.Errorf("expected 0 mentions (author skipped), got %d", len(filtered))
 	}
 }
 
 func TestFilterMentions_SkipsBlocked(t *testing.T) {
+	t.Parallel()
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	mentionedID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 	spaceID := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
@@ -106,7 +119,7 @@ func TestFilterMentions_SkipsBlocked(t *testing.T) {
 	blockChecker := &mockBlockChecker{blocked: true}
 
 	filtered, err := FilterMentions(
-		context.Background(),
+		t.Context(),
 		mentions,
 		authorID,
 		spaceID,
@@ -116,12 +129,14 @@ func TestFilterMentions_SkipsBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(filtered) != 0 {
 		t.Errorf("expected 0 mentions (blocked), got %d", len(filtered))
 	}
 }
 
 func TestFilterMentions_SkipsNonMemberInPrivateSpace(t *testing.T) {
+	t.Parallel()
 	authorID := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	mentionedID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 	spaceID := mustUUID(t, "770e8400-e29b-41d4-a716-446655440000")
@@ -134,7 +149,7 @@ func TestFilterMentions_SkipsNonMemberInPrivateSpace(t *testing.T) {
 	memberChecker := &mockMemberChecker{isMember: false}
 
 	filtered, err := FilterMentions(
-		context.Background(),
+		t.Context(),
 		mentions,
 		authorID,
 		spaceID,
@@ -144,6 +159,7 @@ func TestFilterMentions_SkipsNonMemberInPrivateSpace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(filtered) != 0 {
 		t.Errorf("expected 0 mentions (non-member in private space), got %d", len(filtered))
 	}
@@ -155,7 +171,7 @@ type mockBlockChecker struct {
 	blocked bool
 }
 
-func (m *mockBlockChecker) IsBlocked(ctx context.Context, blockerID, blockedID pgtype.UUID) (bool, error) {
+func (m *mockBlockChecker) IsBlocked(_ context.Context, _, _ pgtype.UUID) (bool, error) {
 	return m.blocked, nil
 }
 
@@ -163,14 +179,6 @@ type mockMemberChecker struct {
 	isMember bool
 }
 
-func (m *mockMemberChecker) IsMember(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+func (m *mockMemberChecker) IsMember(_ context.Context, _, _ pgtype.UUID) (bool, error) {
 	return m.isMember, nil
-}
-
-type mockUserChecker struct {
-	erased bool
-}
-
-func (m *mockUserChecker) IsErased(ctx context.Context, userID pgtype.UUID) (bool, error) {
-	return m.erased, nil
 }

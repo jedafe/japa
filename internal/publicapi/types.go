@@ -14,15 +14,15 @@ import (
 
 // APIKey represents an API key returned to the caller (without the hash).
 type APIKey struct {
-	ID            string       `json:"id"`
-	Name          string       `json:"name"`
-	KeyPrefix     string       `json:"key_prefix"`
-	Scopes        []string     `json:"scopes"`
-	RateLimitTier string       `json:"rate_limit_tier"`
-	Status        string       `json:"status"`
-	AllowedIPs    []string     `json:"allowed_ips,omitempty"`
+	ID            string              `json:"id"`
+	Name          string              `json:"name"`
+	KeyPrefix     string              `json:"key_prefix"`
+	Scopes        []string            `json:"scopes"`
+	RateLimitTier string              `json:"rate_limit_tier"`
+	Status        string              `json:"status"`
+	AllowedIPs    []string            `json:"allowed_ips,omitempty"`
 	LastUsedAt    *pgtype.Timestamptz `json:"last_used_at,omitempty"`
-	RequestCount  int64        `json:"request_count"`
+	RequestCount  int64               `json:"request_count"`
 	ExpiresAt     *pgtype.Timestamptz `json:"expires_at,omitempty"`
 	CreatedAt     pgtype.Timestamptz  `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz  `json:"updated_at"`
@@ -39,9 +39,9 @@ type APIKeyIPAllowlist struct {
 
 // CreateAPIKeyInput holds the fields needed to create a new API key.
 type CreateAPIKeyInput struct {
-	Name          string   `json:"name"`
-	Scopes        []string `json:"scopes"`
-	RateLimitTier string   `json:"rate_limit_tier"`
+	Name          string              `json:"name"`
+	Scopes        []string            `json:"scopes"`
+	RateLimitTier string              `json:"rate_limit_tier"`
 	ExpiresAt     *pgtype.Timestamptz `json:"expires_at,omitempty"`
 }
 
@@ -53,12 +53,12 @@ type CreateAPIKeyResponse struct {
 
 // APIKeyContext holds the validated API key info injected into request context.
 type APIKeyContext struct {
-	KeyID          pgtype.UUID
-	UserID         pgtype.UUID
-	TenantID       pgtype.UUID
-	Scopes         []string
-	KeyPrefix      string
-	RateLimitTier  string
+	KeyID         pgtype.UUID
+	UserID        pgtype.UUID
+	TenantID      pgtype.UUID
+	Scopes        []string
+	KeyPrefix     string
+	RateLimitTier string
 }
 
 type contextKey struct{ name string }

@@ -13,7 +13,7 @@ import (
 // and injects it into the request context. The real admin identity is
 // preserved for audit logging; downstream handlers can read the
 // impersonated user via ImpersonatedFromContext or EffectiveUserID.
-func ImpersonationMiddleware(store *Store) func(http.Handler) http.Handler {
+func ImpersonationMiddleware(store *Store) func(http.Handler) http.Handler { //nolint:revive // stuttering type name preserved for API compatibility
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
@@ -26,6 +26,7 @@ func ImpersonationMiddleware(store *Store) func(http.Handler) http.Handler {
 			if err != nil {
 				slog.Warn("impersonation middleware: failed to get status", "error", err)
 				next.ServeHTTP(w, r)
+
 				return
 			}
 

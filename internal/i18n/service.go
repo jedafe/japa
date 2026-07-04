@@ -19,8 +19,8 @@ import (
 
 // cacheEntry holds a locale's translations and when they were last loaded.
 type cacheEntry struct {
-	data      map[string]string
-	loadedAt  time.Time
+	data     map[string]string
+	loadedAt time.Time
 }
 
 // cacheKey is a composite key of tenant + locale.
@@ -73,6 +73,7 @@ func (s *Service) GetTranslationsByLocale(ctx context.Context, tenantID pgtype.U
 	}
 
 	s.cacheSet(tenantID, locale, m)
+
 	return m, nil
 }
 
@@ -87,11 +88,13 @@ func (s *Service) Translate(ctx context.Context, tenantID pgtype.UUID, locale, k
 	if v, ok := m[key]; ok {
 		return v, nil
 	}
+
 	if defaults != nil {
 		if v, ok := defaults[key]; ok {
 			return v, nil
 		}
 	}
+
 	return key, nil // return the key itself as final fallback
 }
 
@@ -103,6 +106,7 @@ func (s *Service) TranslateMany(ctx context.Context, tenantID pgtype.UUID, local
 	}
 
 	out := make(map[string]string, len(keys))
+
 	for _, k := range keys {
 		if v, ok := m[k]; ok {
 			out[k] = v
@@ -110,6 +114,7 @@ func (s *Service) TranslateMany(ctx context.Context, tenantID pgtype.UUID, local
 			out[k] = k
 		}
 	}
+
 	return out, nil
 }
 
@@ -128,7 +133,9 @@ func (s *Service) Upsert(ctx context.Context, tenantID pgtype.UUID, locale, key,
 	}); err != nil {
 		return err
 	}
+
 	s.cacheInvalidate(tenantID, locale)
+
 	return nil
 }
 
@@ -146,12 +153,14 @@ func (s *Service) UpsertBatch(ctx context.Context, tenantID pgtype.UUID, transla
 		}); err != nil {
 			return fmt.Errorf("batch upsert (key=%s): %w", t.Key, err)
 		}
+
 		affectedLocales[t.Locale] = struct{}{}
 	}
 
 	for locale := range affectedLocales {
 		s.cacheInvalidate(tenantID, locale)
 	}
+
 	return nil
 }
 
@@ -168,7 +177,9 @@ func (s *Service) Delete(ctx context.Context, tenantID, id pgtype.UUID, locale s
 	if err := s.store.Delete(ctx, tenantID, id); err != nil {
 		return err
 	}
+
 	s.cacheInvalidate(tenantID, locale)
+
 	return nil
 }
 
@@ -195,14 +206,17 @@ func (s *Service) RefreshCache(ctx context.Context, tenantID pgtype.UUID) error 
 		if err != nil {
 			return fmt.Errorf("refresh cache (locale=%s): %w", locale, err)
 		}
+
 		m := make(map[string]string, len(rows))
 		for _, r := range rows {
 			m[r.Key] = r.Value
 		}
+
 		s.cacheSet(tenantID, locale, m)
 	}
 
 	slog.Info("i18n cache refreshed", "tenant", tenantID, "locales", len(locales))
+
 	return nil
 }
 
@@ -219,6 +233,7 @@ func (s *Service) cacheGet(tenantID pgtype.UUID, locale string) (map[string]stri
 	if !ok {
 		return nil, false
 	}
+
 	if time.Since(entry.loadedAt) > 5*time.Minute {
 		return nil, false
 	}
@@ -227,6 +242,7 @@ func (s *Service) cacheGet(tenantID pgtype.UUID, locale string) (map[string]stri
 	for k, v := range entry.data {
 		m[k] = v
 	}
+
 	return m, true
 }
 

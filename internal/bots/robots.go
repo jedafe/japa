@@ -26,6 +26,7 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 
 	// Group bots by policy
 	var blocked, limited, allowed []KnownBot
+
 	for _, b := range bots {
 		switch b.Policy {
 		case PolicyBlock:
@@ -49,11 +50,13 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 		sb.WriteString("User-agent: ")
 		sb.WriteString(b.UserAgentPattern)
 		sb.WriteString("\n")
+
 		if b.CrawlDelay > 0 {
 			sb.WriteString("Crawl-delay: ")
 			sb.WriteString(fmt.Sprintf("%ds", b.CrawlDelay))
 			sb.WriteString("\n")
 		}
+
 		sb.WriteString("Disallow: /admin/\n")
 		sb.WriteString("Disallow: /api/\n\n")
 	}
@@ -63,11 +66,13 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 		sb.WriteString("User-agent: ")
 		sb.WriteString(b.UserAgentPattern)
 		sb.WriteString("\n")
+
 		if b.CrawlDelay > 0 {
 			sb.WriteString("Crawl-delay: ")
 			sb.WriteString(fmt.Sprintf("%ds", b.CrawlDelay))
 			sb.WriteString("\n")
 		}
+
 		sb.WriteString("Allow: /\n\n")
 	}
 
@@ -92,6 +97,7 @@ func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 			_, _ = w.Write([]byte("User-agent: *\nAllow: /\n"))
+
 			return
 		}
 
@@ -103,6 +109,7 @@ func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 				w.Header().Set("Content-Type", "text/plain")
 				w.Header().Set("Cache-Control", "public, max-age=86400")
 				_, _ = w.Write([]byte(cached))
+
 				return
 			}
 		}
@@ -114,6 +121,7 @@ func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 			_, _ = w.Write([]byte("User-agent: *\nAllow: /\n"))
+
 			return
 		}
 
@@ -138,6 +146,7 @@ func InvalidateRobotsCache(ctx context.Context, rdb *valkey.Client, tenantID pgt
 	if rdb == nil {
 		return
 	}
+
 	cacheKey := robotsCacheKey + ":" + tenantID.String()
 	if err := rdb.Redis().Del(ctx, cacheKey).Err(); err != nil {
 		slog.Warn("robots: failed to invalidate cache", "tenant_id", tenantID, "error", err)
@@ -149,6 +158,7 @@ func InvalidateLLMsCache(ctx context.Context, rdb *valkey.Client, tenantID pgtyp
 	if rdb == nil {
 		return
 	}
+
 	keys := []string{
 		llmsCacheKey + ":" + tenantID.String(),
 		llmsFullCacheKey + ":" + tenantID.String(),
@@ -158,5 +168,6 @@ func InvalidateLLMsCache(ctx context.Context, rdb *valkey.Client, tenantID pgtyp
 			slog.Warn("llms: failed to invalidate cache", "key", key, "error", err)
 		}
 	}
+
 	slog.Info("invalidated llms cache", "tenant_id", tenantID.String())
 }

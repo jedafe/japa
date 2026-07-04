@@ -8,6 +8,7 @@ import (
 )
 
 func TestValidatePassword(t *testing.T) {
+	t.Parallel()
 	// Use a policy without breach checking — these tests verify
 	// structural password requirements (length, uppercase, etc.),
 	// not breach detection.
@@ -36,6 +37,8 @@ func TestValidatePassword(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			err := ValidatePassword(tt.password, policy)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidatePassword(%q) error = %v, wantErr %v", tt.password, err, tt.wantErr)
@@ -45,15 +48,19 @@ func TestValidatePassword(t *testing.T) {
 }
 
 func TestHashAndVerifyPassword(t *testing.T) {
+	t.Parallel()
+
 	password := "TestPassword123"
 
 	hash, err := HashPassword(password)
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
+
 	if hash == "" {
 		t.Fatal("expected non-empty hash")
 	}
+
 	if hash == password {
 		t.Fatal("hash should not equal plaintext")
 	}
@@ -70,6 +77,8 @@ func TestHashAndVerifyPassword(t *testing.T) {
 }
 
 func TestBcryptCost(t *testing.T) {
+	t.Parallel()
+
 	if BcryptCost != 12 {
 		t.Errorf("BcryptCost = %d, want 12", BcryptCost)
 	}
@@ -89,8 +98,10 @@ func (m *mockHistoryStore) GetRecentPasswordHashes(_ context.Context, _ pgtype.U
 	if limit > len(m.hashes) {
 		limit = len(m.hashes)
 	}
+
 	out := make([]string, limit)
 	copy(out, m.hashes[:limit])
+
 	return out, nil
 }
 
@@ -103,14 +114,17 @@ func (m *mockHistoryStore) InsertPasswordHistory(_ context.Context, _, _ pgtype.
 // mustTestUUID scans a UUID string into pgtype.UUID, failing the test on error.
 func mustTestUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var id pgtype.UUID
 	if err := id.Scan(s); err != nil {
 		t.Fatalf("scan uuid %q: %v", s, err)
 	}
+
 	return id
 }
 
 func TestCheckPasswordHistory_ReusedPasswordRejected(t *testing.T) {
+	t.Parallel()
 	// Hash a password and put it in history.
 	hash, err := HashPassword("OldPassword1")
 	if err != nil {
@@ -119,7 +133,7 @@ func TestCheckPasswordHistory_ReusedPasswordRejected(t *testing.T) {
 
 	store := &mockHistoryStore{hashes: []string{hash}}
 	policy := PasswordPolicy{HistoryCount: 5}
-	ctx := context.Background()
+	ctx := t.Context()
 	userID := mustTestUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 
 	err = CheckPasswordHistory(ctx, store, userID, "OldPassword1", policy)
@@ -134,6 +148,8 @@ func TestCheckPasswordHistory_ReusedPasswordRejected(t *testing.T) {
 }
 
 func TestCheckPasswordHistory_UniquePasswordAccepted(t *testing.T) {
+	t.Parallel()
+
 	hash, err := HashPassword("OldPassword1")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
@@ -141,7 +157,7 @@ func TestCheckPasswordHistory_UniquePasswordAccepted(t *testing.T) {
 
 	store := &mockHistoryStore{hashes: []string{hash}}
 	policy := PasswordPolicy{HistoryCount: 5}
-	ctx := context.Background()
+	ctx := t.Context()
 	userID := mustTestUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 
 	err = CheckPasswordHistory(ctx, store, userID, "BrandNewPassword99", policy)
@@ -151,6 +167,7 @@ func TestCheckPasswordHistory_UniquePasswordAccepted(t *testing.T) {
 }
 
 func TestCheckPasswordHistory_HistoryLimitRespected(t *testing.T) {
+	t.Parallel()
 	// Put 3 hashes in history, set limit to 2 — the oldest hash should be ignored.
 	hashes := make([]string, 3)
 	for i := range hashes {
@@ -158,12 +175,13 @@ func TestCheckPasswordHistory_HistoryLimitRespected(t *testing.T) {
 		if err != nil {
 			t.Fatalf("HashPassword: %v", err)
 		}
+
 		hashes[i] = h
 	}
 
 	store := &mockHistoryStore{hashes: hashes}
 	policy := PasswordPolicy{HistoryCount: 2} // Only check last 2
-	ctx := context.Background()
+	ctx := t.Context()
 	userID := mustTestUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 
 	// The oldest password (index 2, "PasswordC123") should NOT be in the
@@ -182,6 +200,8 @@ func TestCheckPasswordHistory_HistoryLimitRespected(t *testing.T) {
 }
 
 func TestCheckPasswordHistory_ZeroHistoryCountSkipsCheck(t *testing.T) {
+	t.Parallel()
+
 	hash, err := HashPassword("OldPassword1")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
@@ -189,7 +209,7 @@ func TestCheckPasswordHistory_ZeroHistoryCountSkipsCheck(t *testing.T) {
 
 	store := &mockHistoryStore{hashes: []string{hash}}
 	policy := PasswordPolicy{HistoryCount: 0} // History check disabled
-	ctx := context.Background()
+	ctx := t.Context()
 	userID := mustTestUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 
 	err = CheckPasswordHistory(ctx, store, userID, "OldPassword1", policy)
@@ -199,9 +219,11 @@ func TestCheckPasswordHistory_ZeroHistoryCountSkipsCheck(t *testing.T) {
 }
 
 func TestCheckPasswordHistory_EmptyHistoryAccepted(t *testing.T) {
+	t.Parallel()
+
 	store := &mockHistoryStore{hashes: nil}
 	policy := PasswordPolicy{HistoryCount: 5}
-	ctx := context.Background()
+	ctx := t.Context()
 	userID := mustTestUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 
 	err := CheckPasswordHistory(ctx, store, userID, "AnyPassword1", policy)
@@ -215,6 +237,7 @@ func is(err error, target interface{}) bool {
 	if err == nil {
 		return false
 	}
+
 	switch t := target.(type) {
 	case **PasswordReusedError:
 		if e, ok := err.(*PasswordReusedError); ok {
@@ -222,5 +245,6 @@ func is(err error, target interface{}) bool {
 			return true
 		}
 	}
+
 	return false
 }

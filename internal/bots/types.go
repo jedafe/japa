@@ -15,11 +15,17 @@ package bots
 type BotType string
 
 const (
+	// BotTypeSearchEngine is the bot type search engine constant.
 	BotTypeSearchEngine BotType = "search_engine"
+ // BotTypeAILLM is the bot type a i l l m.
 	BotTypeAILLM        BotType = "ai_llm"
+ // BotTypeSocial is the bot type social.
 	BotTypeSocial       BotType = "social"
+ // BotTypeMonitoring is the bot type monitoring.
 	BotTypeMonitoring   BotType = "monitoring"
+ // BotTypeScraper is the bot type scraper.
 	BotTypeScraper      BotType = "scraper"
+ // BotTypeUnknown is the bot type unknown.
 	BotTypeUnknown      BotType = "unknown"
 )
 
@@ -27,8 +33,11 @@ const (
 type BotPolicy string
 
 const (
+	// PolicyAllow is the policy allow constant.
 	PolicyAllow BotPolicy = "allow"
+ // PolicyBlock is the policy block.
 	PolicyBlock BotPolicy = "block"
+ // PolicyLimit is the policy limit.
 	PolicyLimit BotPolicy = "limit"
 )
 
@@ -70,6 +79,7 @@ func IsBotType(s string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -80,6 +90,7 @@ func IsPolicy(s string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 

@@ -16,7 +16,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // AccessTokenTTL is the validity period for access tokens.
@@ -66,7 +66,9 @@ func (kr *KeyRotation) SetCurrent(kid string) error {
 	if _, ok := kr.Keys[kid]; !ok {
 		return fmt.Errorf("key ID %s not in rotation", kid)
 	}
+
 	kr.CurrentKeyID = kid
+
 	return nil
 }
 
@@ -77,6 +79,7 @@ func (kr *KeyRotation) MintAccessToken(userID, tenantID pgtype.UUID) (string, er
 	if !userID.Valid {
 		return "", errors.New("cannot mint token: user ID is not valid")
 	}
+
 	if !tenantID.Valid {
 		return "", errors.New("cannot mint token: tenant ID is not valid")
 	}
@@ -106,6 +109,7 @@ func (kr *KeyRotation) MintAccessToken(userID, tenantID pgtype.UUID) (string, er
 	if err != nil {
 		return "", fmt.Errorf("signing access token: %w", err)
 	}
+
 	return signed, nil
 }
 
@@ -118,17 +122,19 @@ func (kr *KeyRotation) ValidateAccessToken(tokenString string) (*JWTClaims, erro
 		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
+
 		kid, ok := token.Header["kid"].(string)
 		if !ok {
 			return nil, errors.New("missing kid header in token")
 		}
+
 		secret, exists := kr.Keys[kid]
 		if !exists {
 			return nil, fmt.Errorf("unknown key ID: %s", kid)
 		}
+
 		return secret, nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("validating token: %w", err)
 	}
@@ -151,31 +157,36 @@ const revocationKeyPrefix = "jc:revoked_jti:"
 
 // IsTokenRevoked checks whether a specific token (by JTI) has been revoked.
 // Returns false if Valkey is unreachable (fail-open for availability).
-func IsTokenRevoked(ctx context.Context, jti string, vkClient *redis.Client) bool {
+func IsTokenRevoked(ctx context.Context, jti string, vkClient valkeycompat.Cmdable) bool {
 	if vkClient == nil {
 		return false
 	}
+
 	exists, err := vkClient.Exists(ctx, revocationKeyPrefix+jti).Result()
 	if err != nil {
 		// Valkey unreachable — fail open, don't block legitimate requests.
 		return false
 	}
+
 	return exists > 0
 }
 
 // RevokeToken adds a JTI to the revoked set in Valkey with a TTL matching
 // the remaining token lifetime. The key automatically expires so revoked
 // JTIs don't accumulate forever.
-func RevokeToken(ctx context.Context, jti string, expiresAt time.Time, vkClient *redis.Client) error {
+func RevokeToken(ctx context.Context, jti string, expiresAt time.Time, vkClient valkeycompat.Cmdable) error {
 	if vkClient == nil || jti == "" {
 		return nil
 	}
+
 	ttl := time.Until(expiresAt)
 	if ttl <= 0 {
 		// Token already expired, no need to store revocation.
 		return nil
 	}
+
 	key := revocationKeyPrefix + jti
+
 	return vkClient.Set(ctx, key, "1", ttl).Err()
 }
 
@@ -187,26 +198,31 @@ func RevokeToken(ctx context.Context, jti string, expiresAt time.Time, vkClient 
 // used (e.g., stored in a client that hasn't made a request) will not be
 // caught by this scan. The primary session invalidation path is through
 // the refresh token revocation in the database.
-func RevokeAllSessions(ctx context.Context, userID string, vkClient *redis.Client) error {
+func RevokeAllSessions(ctx context.Context, _ string, vkClient valkeycompat.Cmdable) error {
 	if vkClient == nil {
 		return nil
 	}
 
 	pattern := revocationKeyPrefix + "*"
+
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := vkClient.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			return fmt.Errorf("scanning revoked JTIs: %w", err)
 		}
+
 		for _, key := range keys {
 			// Best effort — individual key deletion failures are logged but not fatal.
 			_ = vkClient.Del(ctx, key).Err()
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
 		}
 	}
+
 	return nil
 }

@@ -26,33 +26,33 @@ func NewStore(database *db.DB) *Store {
 
 // AdSlotType represents a row in the ad_slot_types table.
 type AdSlotType struct {
-	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
-	SlotName           string             `json:"slot_name"`
-	Description        *string            `json:"description,omitempty"`
-	MaxDisplayPerPage  int32              `json:"max_display_per_page"`
-	IsActive           bool               `json:"is_active"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	SlotName          string             `json:"slot_name"`
+	Description       *string            `json:"description,omitempty"`
+	MaxDisplayPerPage int32              `json:"max_display_per_page"`
+	IsActive          bool               `json:"is_active"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
 // AdCampaign represents a row in the ad_campaigns table.
 type AdCampaign struct {
-	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
-	Name                 string             `json:"name"`
-	SlotTypeID           pgtype.UUID        `json:"slot_type_id"`
-	Content              []byte             `json:"content"`
-	TargetURL            *string            `json:"target_url,omitempty"`
-	Budget               *int64             `json:"budget,omitempty"`
-	Spent                int64              `json:"spent"`
-	Status               string             `json:"status"`
-	Priority             int32              `json:"priority"`
-	FrequencyCapPerUser  *int32             `json:"frequency_cap_per_user,omitempty"`
-	StartDate            pgtype.Timestamptz `json:"start_date"`
-	EndDate              pgtype.Timestamptz `json:"end_date"`
-	CreatedBy            pgtype.UUID        `json:"created_by"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Name                string             `json:"name"`
+	SlotTypeID          pgtype.UUID        `json:"slot_type_id"`
+	Content             []byte             `json:"content"`
+	TargetURL           *string            `json:"target_url,omitempty"`
+	Budget              *int64             `json:"budget,omitempty"`
+	Spent               int64              `json:"spent"`
+	Status              string             `json:"status"`
+	Priority            int32              `json:"priority"`
+	FrequencyCapPerUser *int32             `json:"frequency_cap_per_user,omitempty"`
+	StartDate           pgtype.Timestamptz `json:"start_date"`
+	EndDate             pgtype.Timestamptz `json:"end_date"`
+	CreatedBy           pgtype.UUID        `json:"created_by"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
 // AdEvent represents a row in the ad_events table.
@@ -68,14 +68,14 @@ type AdEvent struct {
 
 // AdAnalyticsDaily represents a row in the ad_analytics_daily table.
 type AdAnalyticsDaily struct {
-	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	CampaignID  pgtype.UUID `json:"campaign_id"`
-	SlotTypeID  pgtype.UUID `json:"slot_type_id"`
-	Date        pgtype.Date `json:"date"`
-	Impressions int32       `json:"impressions"`
-	Clicks      int32       `json:"clicks"`
-	Spent       int64       `json:"spent"`
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	CampaignID  pgtype.UUID        `json:"campaign_id"`
+	SlotTypeID  pgtype.UUID        `json:"slot_type_id"`
+	Date        pgtype.Date        `json:"date"`
+	Impressions int32              `json:"impressions"`
+	Clicks      int32              `json:"clicks"`
+	Spent       int64              `json:"spent"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -100,6 +100,7 @@ func (s *Store) listAdSlotTypes(ctx context.Context, tenantID pgtype.UUID, limit
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.write.Reader.Query(ctx,
 		`SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at
 		 FROM ad_slot_types
@@ -109,26 +110,33 @@ func (s *Store) listAdSlotTypes(ctx context.Context, tenantID pgtype.UUID, limit
 	if err != nil {
 		return nil, fmt.Errorf("listing ad slot types: %w", err)
 	}
+
 	defer rows.Close()
 
 	var result []AdSlotType
+
 	for rows.Next() {
 		var r AdSlotType
 		if err := rows.Scan(&r.ID, &r.TenantID, &r.SlotName, &r.Description,
 			&r.MaxDisplayPerPage, &r.IsActive, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning ad slot type: %w", err)
 		}
+
 		result = append(result, r)
 	}
+
 	if result == nil {
 		result = []AdSlotType{}
 	}
+
 	return result, nil
 }
 
 func (s *Store) getAdSlotTypeByName(ctx context.Context, tenantID pgtype.UUID, slotName string) (AdSlotType, error) {
 	var r AdSlotType
-	err := s.write.Reader.QueryRow(ctx,
+
+	err := s.write.Reader.QueryRow(
+		ctx,
 		`SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at
 		 FROM ad_slot_types
 		 WHERE tenant_id = $1 AND slot_name = $2`, tenantID, slotName,
@@ -137,6 +145,7 @@ func (s *Store) getAdSlotTypeByName(ctx context.Context, tenantID pgtype.UUID, s
 	if err != nil {
 		return AdSlotType{}, fmt.Errorf("getting ad slot type by name: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -150,7 +159,9 @@ func (s *Store) createAdCampaign(ctx context.Context, tenantID pgtype.UUID, name
 	startDate, endDate pgtype.Timestamptz, createdBy pgtype.UUID,
 ) (AdCampaign, error) {
 	var r AdCampaign
-	err := s.write.Writer.QueryRow(ctx,
+
+	err := s.write.Writer.QueryRow(
+		ctx,
 		`INSERT INTO ad_campaigns (
 			tenant_id, name, slot_type_id, content, target_url,
 			budget, status, priority, frequency_cap_per_user,
@@ -170,12 +181,15 @@ func (s *Store) createAdCampaign(ctx context.Context, tenantID pgtype.UUID, name
 	if err != nil {
 		return AdCampaign{}, fmt.Errorf("creating ad campaign: %w", err)
 	}
+
 	return r, nil
 }
 
 func (s *Store) getAdCampaignByID(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
 	var r AdCampaign
-	err := s.write.Reader.QueryRow(ctx,
+
+	err := s.write.Reader.QueryRow(
+		ctx,
 		`SELECT id, tenant_id, name, slot_type_id, content, target_url,
 			budget, spent, status, priority, frequency_cap_per_user,
 			start_date, end_date, created_by, created_at, updated_at
@@ -189,6 +203,7 @@ func (s *Store) getAdCampaignByID(ctx context.Context, id, tenantID pgtype.UUID)
 	if err != nil {
 		return AdCampaign{}, fmt.Errorf("getting ad campaign by ID: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -196,6 +211,7 @@ func (s *Store) listAdCampaignsByTenant(ctx context.Context, tenantID pgtype.UUI
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.write.Reader.Query(ctx,
 		`SELECT id, tenant_id, name, slot_type_id, content, target_url,
 			budget, spent, status, priority, frequency_cap_per_user,
@@ -207,9 +223,11 @@ func (s *Store) listAdCampaignsByTenant(ctx context.Context, tenantID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("listing ad campaigns by tenant: %w", err)
 	}
+
 	defer rows.Close()
 
 	var result []AdCampaign
+
 	for rows.Next() {
 		var r AdCampaign
 		if err := rows.Scan(
@@ -219,11 +237,14 @@ func (s *Store) listAdCampaignsByTenant(ctx context.Context, tenantID pgtype.UUI
 		); err != nil {
 			return nil, fmt.Errorf("scanning ad campaign: %w", err)
 		}
+
 		result = append(result, r)
 	}
+
 	if result == nil {
 		result = []AdCampaign{}
 	}
+
 	return result, nil
 }
 
@@ -231,6 +252,7 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, tenantID, slotTyp
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.write.Reader.Query(ctx,
 		`SELECT id, tenant_id, name, slot_type_id, content, target_url,
 			budget, spent, status, priority, frequency_cap_per_user,
@@ -246,9 +268,11 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, tenantID, slotTyp
 	if err != nil {
 		return nil, fmt.Errorf("listing active campaigns by slot: %w", err)
 	}
+
 	defer rows.Close()
 
 	var result []AdCampaign
+
 	for rows.Next() {
 		var r AdCampaign
 		if err := rows.Scan(
@@ -258,17 +282,22 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, tenantID, slotTyp
 		); err != nil {
 			return nil, fmt.Errorf("scanning active campaign: %w", err)
 		}
+
 		result = append(result, r)
 	}
+
 	if result == nil {
 		result = []AdCampaign{}
 	}
+
 	return result, nil
 }
 
 func (s *Store) updateAdCampaignStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (AdCampaign, error) {
 	var r AdCampaign
-	err := s.write.Writer.QueryRow(ctx,
+
+	err := s.write.Writer.QueryRow(
+		ctx,
 		`UPDATE ad_campaigns
 		 SET status = $1, updated_at = now()
 		 WHERE id = $2 AND tenant_id = $3
@@ -284,6 +313,7 @@ func (s *Store) updateAdCampaignStatus(ctx context.Context, id, tenantID pgtype.
 	if err != nil {
 		return AdCampaign{}, fmt.Errorf("updating ad campaign status: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -295,7 +325,9 @@ func (s *Store) insertAdEvent(ctx context.Context, tenantID, campaignID, userID 
 	eventType string, occurredAt pgtype.Timestamptz,
 ) (AdEvent, error) {
 	var r AdEvent
-	err := s.write.Writer.QueryRow(ctx,
+
+	err := s.write.Writer.QueryRow(
+		ctx,
 		`INSERT INTO ad_events (tenant_id, campaign_id, user_id, event_type, occurred_at)
 		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING id, tenant_id, campaign_id, user_id, event_type, occurred_at, created_at`,
@@ -304,12 +336,15 @@ func (s *Store) insertAdEvent(ctx context.Context, tenantID, campaignID, userID 
 	if err != nil {
 		return AdEvent{}, fmt.Errorf("inserting ad event: %w", err)
 	}
+
 	return r, nil
 }
 
 func (s *Store) countImpressionsForUserToday(ctx context.Context, userID, campaignID pgtype.UUID) (int32, error) {
 	var count int32
-	err := s.write.Reader.QueryRow(ctx,
+
+	err := s.write.Reader.QueryRow(
+		ctx,
 		`SELECT COUNT(*)::int FROM ad_events
 		 WHERE user_id = $1
 		   AND campaign_id = $2
@@ -319,6 +354,7 @@ func (s *Store) countImpressionsForUserToday(ctx context.Context, userID, campai
 	if err != nil {
 		return 0, fmt.Errorf("counting impressions for user today: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -330,7 +366,9 @@ func (s *Store) createOrganizationBoost(ctx context.Context, tenantID, organizat
 	campaignID pgtype.UUID, boostType, status string, startDate, endDate pgtype.Timestamptz,
 ) (OrganizationBoost, error) {
 	var r OrganizationBoost
-	err := s.write.Writer.QueryRow(ctx,
+
+	err := s.write.Writer.QueryRow(
+		ctx,
 		`INSERT INTO organization_boosts (
 			tenant_id, organization_id, campaign_id, boost_type,
 			status, start_date, end_date
@@ -346,6 +384,7 @@ func (s *Store) createOrganizationBoost(ctx context.Context, tenantID, organizat
 	if err != nil {
 		return OrganizationBoost{}, fmt.Errorf("creating organization boost: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -362,6 +401,7 @@ func (s *Store) listOrganizationBoosts(ctx context.Context, tenantID, organizati
 	defer rows.Close()
 
 	var result []OrganizationBoost
+
 	for rows.Next() {
 		var r OrganizationBoost
 		if err := rows.Scan(
@@ -370,11 +410,14 @@ func (s *Store) listOrganizationBoosts(ctx context.Context, tenantID, organizati
 		); err != nil {
 			return nil, fmt.Errorf("scanning organization boost: %w", err)
 		}
+
 		result = append(result, r)
 	}
+
 	if result == nil {
 		result = []OrganizationBoost{}
 	}
+
 	return result, nil
 }
 
@@ -392,6 +435,7 @@ func (s *Store) listActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([]O
 	defer rows.Close()
 
 	var result []OrganizationBoost
+
 	for rows.Next() {
 		var r OrganizationBoost
 		if err := rows.Scan(
@@ -400,17 +444,22 @@ func (s *Store) listActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([]O
 		); err != nil {
 			return nil, fmt.Errorf("scanning active boost: %w", err)
 		}
+
 		result = append(result, r)
 	}
+
 	if result == nil {
 		result = []OrganizationBoost{}
 	}
+
 	return result, nil
 }
 
 func (s *Store) endOrganizationBoost(ctx context.Context, id, tenantID pgtype.UUID) (OrganizationBoost, error) {
 	var r OrganizationBoost
-	err := s.write.Writer.QueryRow(ctx,
+
+	err := s.write.Writer.QueryRow(
+		ctx,
 		`UPDATE organization_boosts
 		 SET status = 'ended', end_date = now()
 		 WHERE id = $1 AND tenant_id = $2
@@ -424,5 +473,6 @@ func (s *Store) endOrganizationBoost(ctx context.Context, id, tenantID pgtype.UU
 	if err != nil {
 		return OrganizationBoost{}, fmt.Errorf("ending organization boost: %w", err)
 	}
+
 	return r, nil
 }

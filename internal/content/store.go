@@ -22,11 +22,11 @@ type CreateContentInput struct {
 	Title        string
 	Slug         string
 	Body         string
-	BodyHtml     string
+	BodyHtml     string //nolint:revive // matches sqlc-generated field name
 	FieldValues  []byte
 	ContentHash  *string
 	GeoSpaceID   pgtype.UUID
-	CanonicalUrl *string
+	CanonicalUrl *string //nolint:revive // matches sqlc-generated field name
 	Status       string
 	Visibility   string
 	PublishAt    pgtype.Timestamptz
@@ -34,11 +34,13 @@ type CreateContentInput struct {
 
 // CreateContent creates a new content row, ensuring slug uniqueness within
 // the tenant. If the provided slug is empty, one is derived from the title.
+// The content hash and read time are computed automatically from the body.
 func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
 	slug := input.Slug
 	if slug == "" {
 		slug = Slugify(input.Title)
 	}
+
 	uniqueSlug, err := s.EnsureUniqueSlug(ctx, slug, tenantID)
 	if err != nil {
 		return gen.CreateContentRow{}, fmt.Errorf("ensuring unique slug: %w", err)
@@ -47,6 +49,13 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 	fieldValues := input.FieldValues
 	if fieldValues == nil {
 		fieldValues = []byte("{}")
+	}
+
+	// Compute content hash from body if not provided.
+	contentHash := input.ContentHash
+	if contentHash == nil {
+		h := ComputeContentHash(input.Body)
+		contentHash = &h
 	}
 
 	content, err := s.write.CreateContent(ctx, gen.CreateContentParams{
@@ -59,7 +68,7 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 		Body:            input.Body,
 		BodyHtml:        input.BodyHtml,
 		FieldValues:     fieldValues,
-		ContentHash:     input.ContentHash,
+		ContentHash:     contentHash,
 		GeoSpaceID:      input.GeoSpaceID,
 		CanonicalUrl:    input.CanonicalUrl,
 		Status:          input.Status,
@@ -95,6 +104,7 @@ func (s *Service) GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen
 	if err != nil {
 		return gen.GetContentByIDRow{}, fmt.Errorf("getting content: %w", err)
 	}
+
 	return content, nil
 }
 
@@ -108,6 +118,7 @@ func (s *Service) GetContentBySlug(ctx context.Context, slug string, tenantID pg
 	if err != nil {
 		return gen.GetContentBySlugRow{}, fmt.Errorf("getting content by slug: %w", err)
 	}
+
 	return content, nil
 }
 
@@ -117,6 +128,7 @@ func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, cursor
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	contents, err := s.read.ListContentsByTenant(ctx, gen.ListContentsByTenantParams{
 		TenantID:        tenantID,
 		CursorCreatedAt: cursor,
@@ -125,6 +137,7 @@ func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, cursor
 	if err != nil {
 		return nil, fmt.Errorf("listing contents: %w", err)
 	}
+
 	return contents, nil
 }
 
@@ -133,6 +146,7 @@ func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, 
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	contents, err := s.read.ListContentsByType(ctx, gen.ListContentsByTypeParams{
 		TenantID:        tenantID,
 		ContentType:     contentType,
@@ -142,6 +156,7 @@ func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, 
 	if err != nil {
 		return nil, fmt.Errorf("listing contents by type: %w", err)
 	}
+
 	return contents, nil
 }
 
@@ -150,6 +165,7 @@ func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgt
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	contents, err := s.read.ListContentsBySpace(ctx, gen.ListContentsBySpaceParams{
 		TenantID:        tenantID,
 		SpaceID:         spaceID,
@@ -159,6 +175,7 @@ func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgt
 	if err != nil {
 		return nil, fmt.Errorf("listing contents by space: %w", err)
 	}
+
 	return contents, nil
 }
 
@@ -167,11 +184,11 @@ type UpdateContentInput struct {
 	Title        string
 	Slug         string
 	Body         string
-	BodyHtml     string
+	BodyHtml     string //nolint:revive // matches sqlc-generated field name
 	FieldValues  []byte
 	ContentHash  *string
 	GeoSpaceID   pgtype.UUID
-	CanonicalUrl *string
+	CanonicalUrl *string //nolint:revive // matches sqlc-generated field name
 	Status       string
 	Visibility   string
 	PublishAt    pgtype.Timestamptz
@@ -199,6 +216,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		if err != nil {
 			return gen.UpdateContentRow{}, fmt.Errorf("ensuring unique slug on update: %w", err)
 		}
+
 		newSlug = uniqueSlug
 	}
 
@@ -259,6 +277,7 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.U
 	if err != nil {
 		return gen.UpdateContentStatusRow{}, fmt.Errorf("updating content status: %w", err)
 	}
+
 	return content, nil
 }
 
@@ -270,6 +289,7 @@ func (s *Service) IncrementContentView(ctx context.Context, id, tenantID pgtype.
 	}); err != nil {
 		return fmt.Errorf("incrementing content view: %w", err)
 	}
+
 	return nil
 }
 
@@ -281,6 +301,7 @@ func (s *Service) DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) e
 	}); err != nil {
 		return fmt.Errorf("deleting content: %w", err)
 	}
+
 	return nil
 }
 
@@ -295,6 +316,7 @@ func (s *Service) ListContentRevisions(ctx context.Context, contentID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("listing content revisions: %w", err)
 	}
+
 	return revisions, nil
 }
 
@@ -307,6 +329,7 @@ func (s *Service) GetContentRevision(ctx context.Context, id, contentID pgtype.U
 	if err != nil {
 		return gen.ContentRevision{}, fmt.Errorf("getting content revision: %w", err)
 	}
+
 	return revision, nil
 }
 
@@ -327,6 +350,7 @@ func (s *Service) PinContent(ctx context.Context, spaceID, contentID, pinnedBy p
 	if err != nil {
 		return gen.SpacePinnedPost{}, fmt.Errorf("pinning content to space: %w", err)
 	}
+
 	return pin, nil
 }
 
@@ -338,6 +362,7 @@ func (s *Service) UnpinContent(ctx context.Context, spaceID, contentID pgtype.UU
 	}); err != nil {
 		return fmt.Errorf("unpinning content from space: %w", err)
 	}
+
 	return nil
 }
 
@@ -347,6 +372,7 @@ func (s *Service) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([
 	if err != nil {
 		return nil, fmt.Errorf("listing pinned content: %w", err)
 	}
+
 	return pins, nil
 }
 
@@ -359,6 +385,7 @@ func (s *Service) IsContentPinned(ctx context.Context, spaceID, contentID pgtype
 	if err != nil {
 		return false, fmt.Errorf("checking if content is pinned: %w", err)
 	}
+
 	return pinned, nil
 }
 
@@ -372,6 +399,7 @@ func (s *Service) ListReactionTypes(ctx context.Context, tenantID pgtype.UUID) (
 	if err != nil {
 		return nil, fmt.Errorf("listing reaction types: %w", err)
 	}
+
 	return types, nil
 }
 
@@ -384,6 +412,7 @@ func (s *Service) GetReactionType(ctx context.Context, tenantID pgtype.UUID, key
 	if err != nil {
 		return gen.ReactionType{}, fmt.Errorf("getting reaction type: %w", err)
 	}
+
 	return rt, nil
 }
 
@@ -401,6 +430,7 @@ func (s *Service) CreateReactionType(ctx context.Context, tenantID pgtype.UUID, 
 	if err != nil {
 		return gen.ReactionType{}, fmt.Errorf("creating reaction type: %w", err)
 	}
+
 	return rt, nil
 }
 
@@ -417,6 +447,7 @@ func (s *Service) UpdateReactionType(ctx context.Context, tenantID pgtype.UUID, 
 	if err != nil {
 		return gen.ReactionType{}, fmt.Errorf("updating reaction type: %w", err)
 	}
+
 	return rt, nil
 }
 
@@ -429,6 +460,7 @@ func (s *Service) DeleteReactionType(ctx context.Context, tenantID pgtype.UUID, 
 	}); err != nil {
 		return fmt.Errorf("deleting reaction type: %w", err)
 	}
+
 	return nil
 }
 
@@ -445,6 +477,7 @@ func (s *Service) AddReaction(ctx context.Context, tenantID pgtype.UUID, entityT
 	if err != nil {
 		return gen.Reaction{}, fmt.Errorf("adding reaction: %w", err)
 	}
+
 	return reaction, nil
 }
 
@@ -459,6 +492,7 @@ func (s *Service) RemoveReaction(ctx context.Context, tenantID pgtype.UUID, enti
 	}); err != nil {
 		return fmt.Errorf("removing reaction: %w", err)
 	}
+
 	return nil
 }
 
@@ -472,6 +506,7 @@ func (s *Service) ListReactionsByEntity(ctx context.Context, tenantID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("listing reactions by entity: %w", err)
 	}
+
 	return reactions, nil
 }
 
@@ -485,6 +520,7 @@ func (s *Service) CountReactionsByEntity(ctx context.Context, tenantID pgtype.UU
 	if err != nil {
 		return nil, fmt.Errorf("counting reactions by entity: %w", err)
 	}
+
 	return counts, nil
 }
 
@@ -499,6 +535,7 @@ func (s *Service) GetUserReactions(ctx context.Context, tenantID pgtype.UUID, en
 	if err != nil {
 		return nil, fmt.Errorf("getting user reactions: %w", err)
 	}
+
 	return reactions, nil
 }
 
@@ -516,6 +553,7 @@ func (s *Service) GetJSONLDTemplate(ctx context.Context, tenantID pgtype.UUID, c
 	if err != nil {
 		return gen.ContentTypeJsonldTemplate{}, fmt.Errorf("getting JSON-LD template: %w", err)
 	}
+
 	return tmpl, nil
 }
 
@@ -525,6 +563,7 @@ func (s *Service) ListJSONLDTemplates(ctx context.Context, tenantID pgtype.UUID)
 	if err != nil {
 		return nil, fmt.Errorf("listing JSON-LD templates: %w", err)
 	}
+
 	return templates, nil
 }
 
@@ -540,6 +579,7 @@ func (s *Service) UpsertJSONLDTemplate(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return gen.ContentTypeJsonldTemplate{}, fmt.Errorf("upserting JSON-LD template: %w", err)
 	}
+
 	return tmpl, nil
 }
 
@@ -551,6 +591,7 @@ func (s *Service) DeleteJSONLDTemplate(ctx context.Context, id, tenantID pgtype.
 	}); err != nil {
 		return fmt.Errorf("deleting JSON-LD template: %w", err)
 	}
+
 	return nil
 }
 
@@ -571,6 +612,7 @@ func (s *Service) UpsertContentScore(ctx context.Context, contentID pgtype.UUID,
 	if err != nil {
 		return gen.ContentScore{}, fmt.Errorf("upserting content score: %w", err)
 	}
+
 	return score, nil
 }
 
@@ -580,5 +622,6 @@ func (s *Service) GetContentScore(ctx context.Context, contentID pgtype.UUID) (g
 	if err != nil {
 		return gen.ContentScore{}, fmt.Errorf("getting content score: %w", err)
 	}
+
 	return score, nil
 }

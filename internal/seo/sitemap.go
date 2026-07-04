@@ -31,8 +31,8 @@ func (h *SitemapHandler) Route(r chi.Router) {
 
 // urlset is the root XML element for sitemaps.
 type urlset struct {
-	XMLName xml.Name    `xml:"urlset"`
-	Xmlns   string      `xml:"xmlns,attr"`
+	XMLName xml.Name   `xml:"urlset"`
+	Xmlns   string     `xml:"xmlns,attr"`
 	URLs    []urlEntry `xml:"url"`
 }
 
@@ -54,7 +54,7 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseURL := fmt.Sprintf("https://%s", r.Host)
+	baseURL := "https://" + r.Host
 	entries := make([]urlEntry, 0, len(contentList)+1)
 
 	// Homepage
@@ -71,6 +71,7 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 		if content.UpdatedAt.Valid {
 			lastMod = content.UpdatedAt.Time.Format(time.RFC3339)
 		}
+
 		entries = append(entries, urlEntry{
 			Loc:        fmt.Sprintf("%s/%s/%s", baseURL, content.ContentType, content.Slug),
 			LastMod:    lastMod,
@@ -87,5 +88,5 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set("Cache-Control", "public, max-age=3600") // 1 hour cache
 	w.WriteHeader(http.StatusOK)
-	xml.NewEncoder(w).Encode(urlset)
+	_ = xml.NewEncoder(w).Encode(urlset)
 }

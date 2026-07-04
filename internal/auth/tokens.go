@@ -14,6 +14,7 @@ func generateRefreshToken() (string, error) {
 	if _, err := rand.Read(bytes); err != nil {
 		return "", fmt.Errorf("generating refresh token: %w", err)
 	}
+
 	return hex.EncodeToString(bytes), nil
 }
 

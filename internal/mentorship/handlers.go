@@ -13,6 +13,7 @@ package mentorship
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -43,6 +44,7 @@ func NewHandlers(service *Service) *Handlers {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -60,6 +62,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -68,22 +71,30 @@ func parsePageSize(r *http.Request) int32 {
 	if s == "" {
 		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
 		return defaultPageSize
 	}
+
 	if n > int(maxPageSize) {
 		return maxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			return int32(n)
+			if n > math.MaxInt32 {
+				return defaultPageSize
+			}
+
+			return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
+
 	return 0
 }
 
@@ -92,7 +103,7 @@ func parseOffset(r *http.Request) int32 {
 // ---------------------------------------------------------------------------
 
 // ListPrograms returns all mentorship programs for the tenant.
-// GET /admin/mentorship/programs
+// GET /admin/mentorship/programs.
 func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -106,6 +117,7 @@ func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing mentorship programs", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list programs")
+
 		return
 	}
 
@@ -113,7 +125,7 @@ func (h *Handlers) ListPrograms(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetProgram returns a single mentorship program by ID.
-// GET /admin/mentorship/programs/{id}
+// GET /admin/mentorship/programs/{id}.
 func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -136,7 +148,7 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateProgram creates a new mentorship program.
-// POST /admin/mentorship/programs
+// POST /admin/mentorship/programs.
 func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -147,6 +159,7 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -161,6 +174,7 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("creating mentorship program", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create program")
+
 		return
 	}
 
@@ -168,7 +182,7 @@ func (h *Handlers) CreateProgram(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateProgram updates an existing mentorship program.
-// PATCH /admin/mentorship/programs/{id}
+// PATCH /admin/mentorship/programs/{id}.
 func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -186,6 +200,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 		Description *string `json:"description,omitempty"`
 		IsActive    *bool   `json:"is_active,omitempty"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -195,6 +210,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("updating mentorship program", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update program")
+
 		return
 	}
 
@@ -206,7 +222,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // ListMatches returns all mentor-mentee matches for the tenant.
-// GET /admin/mentorship/matches
+// GET /admin/mentorship/matches.
 func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -220,6 +236,7 @@ func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing mentorship matches", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list matches")
+
 		return
 	}
 
@@ -227,7 +244,7 @@ func (h *Handlers) ListMatches(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateMatch updates a mentor-mentee match status.
-// PATCH /admin/mentorship/matches/{id}
+// PATCH /admin/mentorship/matches/{id}.
 func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -243,6 +260,7 @@ func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Status *string `json:"status,omitempty"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -257,6 +275,7 @@ func (h *Handlers) UpdateMatch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("updating mentorship match", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update match")
+
 		return
 	}
 

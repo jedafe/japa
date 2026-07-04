@@ -31,6 +31,7 @@ func GenerateLLMsTxt(siteName, siteDescription string, topLinks []Link) string {
 
 	if len(topLinks) > 0 {
 		sb.WriteString("## Top Links\n\n")
+
 		for _, link := range topLinks {
 			sb.WriteString("- [")
 			sb.WriteString(link.Title)
@@ -38,6 +39,7 @@ func GenerateLLMsTxt(siteName, siteDescription string, topLinks []Link) string {
 			sb.WriteString(link.URL)
 			sb.WriteString(")\n")
 		}
+
 		sb.WriteString("\n")
 	}
 
@@ -60,6 +62,7 @@ func GenerateLLMsFullTxt(siteName, siteDescription string, data LLMsData) string
 	// Recent Posts
 	if len(data.RecentPosts) > 0 {
 		sb.WriteString("## Recent Posts\n\n")
+
 		for _, p := range data.RecentPosts {
 			sb.WriteString("- [")
 			sb.WriteString(p.Title)
@@ -67,12 +70,14 @@ func GenerateLLMsFullTxt(siteName, siteDescription string, data LLMsData) string
 			sb.WriteString(p.URL)
 			sb.WriteString(")\n")
 		}
+
 		sb.WriteString("\n")
 	}
 
 	// Tags
 	if len(data.Tags) > 0 {
 		sb.WriteString("## Topics\n\n")
+
 		for _, t := range data.Tags {
 			sb.WriteString("- [")
 			sb.WriteString(t.Title)
@@ -80,12 +85,14 @@ func GenerateLLMsFullTxt(siteName, siteDescription string, data LLMsData) string
 			sb.WriteString(t.URL)
 			sb.WriteString(")\n")
 		}
+
 		sb.WriteString("\n")
 	}
 
 	// Spaces
 	if len(data.Spaces) > 0 {
 		sb.WriteString("## Spaces\n\n")
+
 		for _, s := range data.Spaces {
 			sb.WriteString("- [")
 			sb.WriteString(s.Title)
@@ -93,6 +100,7 @@ func GenerateLLMsFullTxt(siteName, siteDescription string, data LLMsData) string
 			sb.WriteString(s.URL)
 			sb.WriteString(")\n")
 		}
+
 		sb.WriteString("\n")
 	}
 
@@ -103,18 +111,20 @@ func GenerateLLMsFullTxt(siteName, siteDescription string, data LLMsData) string
 // in Valkey with a 1-hour TTL. In production, the data source would query
 // recent posts, tags, and spaces from the database. For now, the handler
 // returns a basic template that can be enhanced with real data.
-func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription string) http.HandlerFunc {
+func LLMsHandler(_ *Store, rdb *valkey.Client, siteName, siteDescription string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		t := tenant.FromContext(r.Context())
 		if t == nil {
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 			_, _ = w.Write([]byte("# Site\n\n> Site description\n"))
+
 			return
 		}
 
 		isFull := strings.HasSuffix(r.URL.Path, "/llms-full.txt")
 		cacheKey := llmsCacheKey + ":" + t.ID.String()
+
 		if isFull {
 			cacheKey = llmsFullCacheKey + ":" + t.ID.String()
 		}
@@ -126,6 +136,7 @@ func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription str
 				w.Header().Set("Content-Type", "text/plain")
 				w.Header().Set("Cache-Control", "public, max-age=3600")
 				_, _ = w.Write([]byte(cached))
+
 				return
 			}
 		}
@@ -167,6 +178,8 @@ func RegenerateLLMsTxt(ctx context.Context, rdb *valkey.Client, tenantID string)
 			slog.Warn("llms: failed to invalidate cache", "key", key, "error", err)
 		}
 	}
+
 	slog.Info("llms: regenerated cache", "tenant_id", tenantID)
+
 	return nil
 }

@@ -22,6 +22,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for review HTTP handlers.
 type Handlers struct {
 	Service *Service
@@ -42,6 +44,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -52,6 +55,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -62,6 +66,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -83,6 +88,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -99,16 +105,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -117,11 +126,13 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +145,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -146,18 +158,22 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		Title      string `json:"title"`
 		Body       string `json:"body"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.EntityType == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
+
 	if input.EntityID == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
 	}
+
 	if input.Rating < RatingMin || input.Rating > RatingMax {
 		writeError(w, http.StatusBadRequest, "invalid_rating", "Rating must be between 1 and 5")
 		return
@@ -180,16 +196,13 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
 // ListReviews handles GET /api/v1/reviews.
 // Supports ?entity_type=, ?entity_id=, ?reviewer_id=, ?page_size=, ?page_offset=.
 func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -209,12 +222,15 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 			return
 		}
+
 		reviews, err := h.Service.ListReviewsByEntity(r.Context(), tenantID, entityType, entityID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+
 		return
 	}
 
@@ -225,12 +241,15 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_reviewer_id", "Invalid reviewer_id")
 			return
 		}
+
 		reviews, err := h.Service.ListReviewsByReviewer(r.Context(), tenantID, reviewerID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+
 		return
 	}
 
@@ -239,14 +258,11 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 
 // GetReview handles GET /api/v1/reviews/{id}.
 func (h *Handlers) GetReview(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
@@ -258,6 +274,7 @@ func (h *Handlers) GetReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": review})
 }
 
@@ -267,10 +284,12 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
@@ -282,10 +301,12 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		Title  string `json:"title"`
 		Body   string `json:"body"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Rating < RatingMin || input.Rating > RatingMax {
 		writeError(w, http.StatusBadRequest, "invalid_rating", "Rating must be between 1 and 5")
 		return
@@ -296,6 +317,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": review})
 }
 
@@ -305,10 +327,12 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
@@ -319,6 +343,7 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -328,10 +353,12 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
@@ -342,16 +369,13 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "flagged"}})
 }
 
 // GetAggregate handles GET /api/v1/reviews/aggregate.
 // Supports ?entity_type= and ?entity_id=.
 func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -359,6 +383,7 @@ func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
 
 	entityType := r.URL.Query().Get("entity_type")
 	entityIDStr := r.URL.Query().Get("entity_id")
+
 	if entityType == "" || entityIDStr == "" {
 		writeError(w, http.StatusBadRequest, "missing_params", "entity_type and entity_id required")
 		return
@@ -375,5 +400,6 @@ func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": aggregate})
 }

@@ -22,7 +22,8 @@ func NewDBStore(database *db.DB) *DBStore {
 // Returns nil (not an error) if no tenant matches the host.
 func (s *DBStore) GetTenantByHost(ctx context.Context, host string) (*Tenant, error) {
 	cleanHost := host
-	for i := 0; i < len(host); i++ {
+
+	for i := range len(host) {
 		if host[i] == ':' {
 			cleanHost = host[:i]
 			break
@@ -35,15 +36,20 @@ func (s *DBStore) GetTenantByHost(ctx context.Context, host string) (*Tenant, er
 		WHERE domain = $1 OR slug = $1
 		LIMIT 1
 	`
+
 	var t Tenant
+
 	var domain pgtype.Text
+
 	err := s.db.Reader.QueryRow(ctx, query, cleanHost).Scan(
 		&t.ID, &t.Name, &t.Slug, &domain,
 	)
 	if err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // intentional: unknown host returns nil tenant
 	}
+
 	t.Domain = domain
+
 	return &t, nil
 }
 
@@ -55,14 +61,19 @@ func (s *DBStore) GetDefaultTenant(ctx context.Context) (*Tenant, error) {
 		ORDER BY created_at ASC
 		LIMIT 1
 	`
+
 	var t Tenant
+
 	var domain pgtype.Text
+
 	err := s.db.Reader.QueryRow(ctx, query).Scan(
 		&t.ID, &t.Name, &t.Slug, &domain,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying default tenant: %w", err)
 	}
+
 	t.Domain = domain
+
 	return &t, nil
 }

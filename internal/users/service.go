@@ -33,6 +33,7 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 	if err != nil {
 		return nil, fmt.Errorf("getting profile: %w", err)
 	}
+
 	return &UserProfileResponse{
 		ID:            p.UserID.String(),
 		Email:         p.Email,
@@ -55,6 +56,7 @@ func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return nil, fmt.Errorf("getting profile by username: %w", err)
 	}
+
 	return &UserProfileResponse{
 		ID:            p.UserID.String(),
 		Email:         p.Email,
@@ -85,14 +87,17 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 	if req.DisplayName != nil {
 		displayName = req.DisplayName
 	}
+
 	avatarURL := current.AvatarUrl
 	if req.AvatarURL != nil {
 		avatarURL = req.AvatarURL
 	}
+
 	bio := current.Bio
 	if req.Bio != nil {
 		bio = req.Bio
 	}
+
 	timezone := current.Timezone
 	if req.Timezone != nil {
 		timezone = req.Timezone
@@ -101,6 +106,7 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 	if err := s.store.upsertProfile(ctx, tenantID, userID, displayName, avatarURL, bio, timezone); err != nil {
 		return fmt.Errorf("updating profile: %w", err)
 	}
+
 	return nil
 }
 
@@ -110,11 +116,12 @@ func (s *Service) GetPreferences(ctx context.Context, tenantID, userID pgtype.UU
 	pref, err := s.store.getPreferences(ctx, tenantID, userID)
 	if err != nil {
 		// If no preferences exist yet, return defaults.
-		return &UserPreferencesResponse{
+		return &UserPreferencesResponse{ //nolint:nilerr // intentional: missing prefs return defaults
 			DarkMode: "system",
 			Language: "en-NG",
 		}, nil
 	}
+
 	return &UserPreferencesResponse{
 		DarkMode: pref.DarkMode,
 		Language: pref.Language,
@@ -128,6 +135,7 @@ func (s *Service) UpdatePreferences(ctx context.Context, tenantID, userID pgtype
 	current, err := s.store.getPreferences(ctx, tenantID, userID)
 	darkMode := "system"
 	language := "en-NG"
+
 	if err == nil {
 		darkMode = current.DarkMode
 		language = current.Language
@@ -137,6 +145,7 @@ func (s *Service) UpdatePreferences(ctx context.Context, tenantID, userID pgtype
 	if req.DarkMode != nil {
 		darkMode = *req.DarkMode
 	}
+
 	if req.Language != nil {
 		language = *req.Language
 	}
@@ -144,6 +153,7 @@ func (s *Service) UpdatePreferences(ctx context.Context, tenantID, userID pgtype
 	if err := s.store.upsertPreferences(ctx, tenantID, userID, darkMode, language); err != nil {
 		return fmt.Errorf("updating preferences: %w", err)
 	}
+
 	return nil
 }
 
@@ -153,6 +163,7 @@ func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search st
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if offset < 0 {
 		offset = 0
 	}

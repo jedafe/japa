@@ -1,3 +1,5 @@
+// Package middleware provides cross-cutting HTTP middleware for JapaConnect.
+//
 // The idempotency middleware intercepts state-changing requests (POST, PUT,
 // PATCH) that carry an Idempotency-Key header and guarantees that
 // re-executing the same request returns the same response. The key hash
@@ -21,7 +23,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
 )
@@ -79,7 +81,7 @@ func (rc *responseCapture) Write(b []byte) (int, error) {
 // When Valkey is unreachable or the key lookup/SET fails, the request
 // is forwarded to the handler without caching — the API stays available
 // even when the idempotency layer is down.
-func IdempotencyMiddleware(rdb *redis.Client) func(http.Handler) http.Handler {
+func IdempotencyMiddleware(rdb valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only state-changing methods are idempotent-safe.
@@ -115,7 +117,8 @@ func IdempotencyMiddleware(rdb *redis.Client) func(http.Handler) http.Handler {
 				if json.Unmarshal(cached, &resp) == nil {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(resp.Status)
-					w.Write([]byte(resp.Body))
+					_, _ = w.Write([]byte(resp.Body))
+
 					return
 				}
 				// Corrupted cache entry — treat as a miss and
@@ -140,6 +143,7 @@ func IdempotencyMiddleware(rdb *redis.Client) func(http.Handler) http.Handler {
 				Status: capture.status,
 				Body:   capture.body.String(),
 			}
+
 			payload, err := json.Marshal(cachedBody)
 			if err != nil {
 				slog.Error("idempotency: failed to marshal cached response",
@@ -150,8 +154,6 @@ func IdempotencyMiddleware(rdb *redis.Client) func(http.Handler) http.Handler {
 			if err := rdb.Set(ctx, cacheKey, payload, idempotencyTTL).Err(); err != nil {
 				slog.Warn("idempotency: failed to cache response",
 					"key", cacheKey, "err", err)
-				// The response was already sent to the client
-				// — nothing to roll back.
 			}
 		})
 	}
@@ -165,6 +167,7 @@ func idempotencyCallerID(r *http.Request) string {
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
 		return user.UserID.String()
 	}
+
 	return r.RemoteAddr
 }
 
@@ -172,6 +175,7 @@ func idempotencyCallerID(r *http.Request) string {
 // the four inputs that uniquely identify an idempotent request.
 func idempotencyHash(method, path, key, callerID string) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s:%s:%s:%s", method, path, key, callerID)
+	_, _ = fmt.Fprintf(h, "%s:%s:%s:%s", method, path, key, callerID)
+
 	return hex.EncodeToString(h.Sum(nil))
 }

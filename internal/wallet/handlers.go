@@ -22,6 +22,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for wallet HTTP handlers.
 type Handlers struct {
 	Service *Service
@@ -42,6 +44,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -52,6 +55,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -62,6 +66,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -83,6 +88,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -99,16 +105,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -117,11 +126,13 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +145,7 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -159,6 +171,7 @@ func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -188,6 +201,7 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -196,10 +210,12 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		PointsToConvert int64 `json:"points_to_convert"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.PointsToConvert <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid_amount", "Points to convert must be positive")
 		return
@@ -227,6 +243,7 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -247,6 +264,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -255,10 +273,12 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		PointsToCreditsRate int32 `json:"points_to_credits_rate"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.PointsToCreditsRate <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid_rate", "points_to_credits_rate must be positive")
 		return
@@ -281,6 +301,7 @@ func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -304,6 +325,7 @@ func (h *Handlers) CreateOrUpdateRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -317,10 +339,12 @@ func (h *Handlers) CreateOrUpdateRule(w http.ResponseWriter, r *http.Request) {
 		CapPerWeek  *int32  `json:"cap_per_week"`
 		Description *string `json:"description"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.ActivityKey == "" {
 		writeError(w, http.StatusBadRequest, "missing_activity_key", "activity_key is required")
 		return
@@ -348,6 +372,7 @@ func (h *Handlers) ToggleRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -374,6 +399,7 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -386,22 +412,27 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 		Reason     string `json:"reason"`
 		Reference  string `json:"reference"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.UserID == "" {
 		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
 	}
+
 	if input.LedgerType == "" {
 		writeError(w, http.StatusBadRequest, "missing_ledger_type", "ledger_type is required")
 		return
 	}
+
 	if input.Amount == 0 {
 		writeError(w, http.StatusBadRequest, "invalid_amount", "Amount cannot be zero")
 		return
 	}
+
 	if input.Reason == "" {
 		writeError(w, http.StatusBadRequest, "missing_reason", "Reason is required for admin adjustments")
 		return
@@ -432,6 +463,7 @@ func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return

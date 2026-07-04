@@ -1,4 +1,4 @@
-// Package valkey provides a thin wrapper around the go-redis client for
+// Package valkey provides a thin wrapper around the valkey-go client for
 // connecting to the Valkey cache and queue service.
 //
 // Valkey is the BSD-licensed, protocol-compatible fork of Redis used as
@@ -24,23 +24,18 @@ package valkey
 import (
 	"context"
 	"fmt"
-	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
-// dialTimeout is the maximum time NewWithFallback will wait when establishing
-// a connection to an unreachable server. It is short enough that a missing
-// Valkey instance does not noticeably slow startup, but long enough that a
-// healthy but briefly slow server can still connect.
-const dialTimeout = 3 * time.Second
-
-// Client wraps a *redis.Client from go-redis. Other packages should call
-// Redis() when they need direct access to the underlying client (for example
-// to run pipeline or pub/sub commands); the wrapper methods cover the common
-// Ping and Close operations.
+// Client wraps a valkey.Client with a go-redis-compatible adapter.
+// Other packages should call Redis() when they need direct access to the
+// underlying client (for example to run pipeline or pub/sub commands);
+// the wrapper methods cover the common Ping and Close operations.
 type Client struct {
-	rdb *redis.Client
+	vk  valkey.Client
+	rdb valkeycompat.Cmdable
 }
 
 // New connects to the Valkey server at addr and confirms the connection with
@@ -49,52 +44,72 @@ type Client struct {
 //
 // addr is the host:port of the Valkey instance (for example "localhost:6379").
 func New(ctx context.Context, addr string) (*Client, error) {
-	rdb := redis.NewClient(&redis.Options{Addr: addr})
+	vk, err := valkey.NewClient(valkey.ClientOption{
+		InitAddress:  []string{addr},
+		DisableCache: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("valkey connect %s: %w", addr, err)
+	}
+
+	rdb := valkeycompat.NewAdapter(vk)
+
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		// Close the client so the connection goroutine does not linger.
-		_ = rdb.Close()
+		vk.Close()
 		return nil, fmt.Errorf("valkey ping %s: %w", addr, err)
 	}
-	return &Client{rdb: rdb}, nil
+
+	return &Client{vk: vk, rdb: rdb}, nil
 }
 
 // NewWithFallback returns a Client configured to talk to addr even when the
-// Valkey server is unreachable at construction time. The dial timeout is set
-// to 3 seconds so an absent server does not stall startup; subsequent
-// commands will fail fast and callers can treat those failures as cache
-// misses. This mirrors the GeoIP graceful-degradation model: missing
-// dependencies degrade features rather than crashing the server.
+// Valkey server is unreachable at construction time. When the server cannot
+// be reached, the returned Client operates in a nil-safe degraded mode: all
+// operations return zero values and errors, following the same graceful-
+// degradation pattern used by the GeoIP reader in internal/geoip.
 func NewWithFallback(addr string) *Client {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:        addr,
-		DialTimeout: dialTimeout,
+	vk, err := valkey.NewClient(valkey.ClientOption{
+		InitAddress:  []string{addr},
+		DisableCache: true,
 	})
-	return &Client{rdb: rdb}
+	if err != nil {
+		// Server unreachable — return a Client in degraded mode.
+		return &Client{}
+	}
+
+	rdb := valkeycompat.NewAdapter(vk)
+
+	return &Client{vk: vk, rdb: rdb}
 }
 
-// Ping verifies that the Valkey server responds. Returns the underlying
-// error (for example a dial or context error) when the server is unreachable.
+// Ping verifies that the Valkey server responds. Returns an error when the
+// underlying client is nil (degraded mode) or the server is unreachable.
 func (c *Client) Ping(ctx context.Context) error {
+	if c.rdb == nil {
+		return fmt.Errorf("valkey ping: client not initialised (degraded mode)")
+	}
+
 	if err := c.rdb.Ping(ctx).Err(); err != nil {
 		return fmt.Errorf("valkey ping: %w", err)
 	}
+
 	return nil
 }
 
 // Close releases the connection pool. It is safe to call on a client created
 // by either New or NewWithFallback, including one whose server was never
 // reachable.
-func (c *Client) Close() error {
-	if err := c.rdb.Close(); err != nil {
-		return fmt.Errorf("valkey close: %w", err)
+func (c *Client) Close() {
+	if c.vk != nil {
+		c.vk.Close()
 	}
-	return nil
 }
 
-// Redis returns the underlying *redis.Client for direct access by other
-// packages. Use it when the wrapper does not yet expose a required operation
-// (pipelines, pub/sub, scripting). Remember to namespace every key with
-// "jc:" as described in the package comment.
-func (c *Client) Redis() *redis.Client {
+// Redis returns the go-redis-compatible adapter for direct access by other
+// packages. Returns nil when the client is in degraded mode (server
+// unreachable). Callers that receive a nil Cmdable should treat all
+// operations as no-ops. Remember to namespace every key with "jc:" as
+// described in the package comment.
+func (c *Client) Redis() valkeycompat.Cmdable {
 	return c.rdb
 }

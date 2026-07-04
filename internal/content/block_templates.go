@@ -53,12 +53,12 @@ func newDefaultRegistry() *BlockTemplateRegistry {
 				Description: "Hero section with title, subtitle, background image, and call-to-action",
 				Icon:        "layout",
 				DefaultProps: map[string]any{
-					"title":           "",
-					"subtitle":        "",
+					"title":            "",
+					"subtitle":         "",
 					"background_image": "",
-					"cta_text":        "",
-					"cta_url":         "",
-					"overlay_opacity": 0.4,
+					"cta_text":         "",
+					"cta_url":          "",
+					"overlay_opacity":  0.4,
 				},
 				Category: BlockCategoryLayout,
 			},
@@ -103,7 +103,7 @@ func newDefaultRegistry() *BlockTemplateRegistry {
 				Description: "Statistics display with numbers and labels",
 				Icon:        "bar-chart-3",
 				DefaultProps: map[string]any{
-					"items": []any{},
+					"items":  []any{},
 					"layout": "horizontal",
 				},
 				Category: BlockCategoryData,
@@ -125,9 +125,9 @@ func newDefaultRegistry() *BlockTemplateRegistry {
 				Description: "Testimonial quote with attribution",
 				Icon:        "quote",
 				DefaultProps: map[string]any{
-					"quote":     "",
-					"author":    "",
-					"role":      "",
+					"quote":      "",
+					"author":     "",
+					"role":       "",
 					"avatar_url": "",
 				},
 				Category: BlockCategoryContent,
@@ -192,6 +192,7 @@ func GetBlockTemplates() []BlockTemplate {
 		out[i] = t
 		out[i].DefaultProps = deepCopyProps(t.DefaultProps)
 	}
+
 	return out
 }
 
@@ -204,6 +205,7 @@ func GetBlockTemplateByType(blockType string) (BlockTemplate, bool) {
 			return t, true
 		}
 	}
+
 	return BlockTemplate{}, false
 }
 
@@ -218,9 +220,11 @@ func deepCopyProps(props map[string]any) map[string]any {
 	if props == nil {
 		return nil
 	}
+
 	cp := make(map[string]any, len(props))
 	for k, v := range props {
 		cp[k] = v
 	}
+
 	return cp
 }

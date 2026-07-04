@@ -9,7 +9,7 @@ const (
 )
 
 // MediaScanPayload is the payload for the media_scan task (ClamAV scan).
-type MediaScanPayload struct {
+type MediaScanPayload struct { //nolint:revive // stuttering type name preserved for API compatibility
 	MediaID string `json:"media_id"`
 }
 

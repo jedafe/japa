@@ -24,6 +24,7 @@ func (s *Store) insertNotification(ctx context.Context, params gen.InsertNotific
 	if err := s.write.InsertNotification(ctx, params); err != nil {
 		return fmt.Errorf("inserting notification: %w", err)
 	}
+
 	return nil
 }
 
@@ -32,6 +33,7 @@ func (s *Store) getNotificationsByRecipient(ctx context.Context, tenantID, recip
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.GetNotificationsByRecipient(ctx, gen.GetNotificationsByRecipientParams{
 		TenantID:    tenantID,
 		RecipientID: recipientID,
@@ -41,6 +43,7 @@ func (s *Store) getNotificationsByRecipient(ctx context.Context, tenantID, recip
 	if err != nil {
 		return nil, fmt.Errorf("getting notifications: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -53,6 +56,7 @@ func (s *Store) getUnreadCount(ctx context.Context, tenantID, recipientID pgtype
 	if err != nil {
 		return 0, fmt.Errorf("counting unread notifications: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -64,6 +68,7 @@ func (s *Store) markNotificationRead(ctx context.Context, notificationID, recipi
 	}); err != nil {
 		return fmt.Errorf("marking notification read: %w", err)
 	}
+
 	return nil
 }
 
@@ -75,6 +80,7 @@ func (s *Store) markAllNotificationsRead(ctx context.Context, tenantID, recipien
 	}); err != nil {
 		return fmt.Errorf("marking all notifications read: %w", err)
 	}
+
 	return nil
 }
 
@@ -86,6 +92,7 @@ func (s *Store) deleteNotification(ctx context.Context, notificationID, recipien
 	}); err != nil {
 		return fmt.Errorf("deleting notification: %w", err)
 	}
+
 	return nil
 }
 
@@ -95,6 +102,7 @@ func (s *Store) getNotificationPreferences(ctx context.Context, userID pgtype.UU
 	if err != nil {
 		return nil, fmt.Errorf("getting notification preferences: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -103,6 +111,7 @@ func (s *Store) upsertNotificationPreference(ctx context.Context, params gen.Ups
 	if err := s.write.UpsertNotificationPreference(ctx, params); err != nil {
 		return fmt.Errorf("upserting notification preference: %w", err)
 	}
+
 	return nil
 }
 
@@ -112,6 +121,7 @@ func (s *Store) getOpenBatchWindow(ctx context.Context, params gen.GetOpenBatchW
 	if err != nil {
 		return gen.NotificationBatchWindow{}, fmt.Errorf("getting open batch window: %w", err)
 	}
+
 	return window, nil
 }
 
@@ -120,6 +130,7 @@ func (s *Store) createBatchWindow(ctx context.Context, params gen.CreateBatchWin
 	if err := s.write.CreateBatchWindow(ctx, params); err != nil {
 		return fmt.Errorf("creating batch window: %w", err)
 	}
+
 	return nil
 }
 
@@ -128,6 +139,7 @@ func (s *Store) extendBatchWindow(ctx context.Context, params gen.ExtendBatchWin
 	if err := s.write.ExtendBatchWindow(ctx, params); err != nil {
 		return fmt.Errorf("extending batch window: %w", err)
 	}
+
 	return nil
 }
 
@@ -136,6 +148,7 @@ func (s *Store) markBatchWindowDispatched(ctx context.Context, windowID pgtype.U
 	if err := s.write.MarkBatchWindowDispatched(ctx, windowID); err != nil {
 		return fmt.Errorf("marking batch window dispatched: %w", err)
 	}
+
 	return nil
 }
 
@@ -145,5 +158,6 @@ func (s *Store) getNotificationTypes(ctx context.Context) ([]gen.NotificationTyp
 	if err != nil {
 		return nil, fmt.Errorf("getting notification types: %w", err)
 	}
+
 	return types, nil
 }

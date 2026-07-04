@@ -37,6 +37,7 @@ func NewToolHandlers(registry *ToolRegistry) *ToolHandlers {
 func toolWriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -54,31 +55,8 @@ func (h *ToolHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (pg
 		toolWriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
-}
-
-func toolParsePageSize(r *http.Request) int32 {
-	s := r.URL.Query().Get("page_size")
-	if s == "" {
-		return 20
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return 20
-	}
-	if n > 100 {
-		return 100
-	}
-	return int32(n)
-}
-
-func toolParseOffset(r *http.Request) int32 {
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			return int32(n)
-		}
-	}
-	return 0
 }
 
 // ---------------------------------------------------------------------------
@@ -86,7 +64,7 @@ func toolParseOffset(r *http.Request) int32 {
 // ---------------------------------------------------------------------------
 
 // ListTools returns all AI tools for the tenant.
-// GET /admin/ai/tools
+// GET /admin/ai/tools.
 func (h *ToolHandlers) ListTools(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -97,17 +75,18 @@ func (h *ToolHandlers) ListTools(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing ai tools", "error", err)
 		toolWriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tools")
+
 		return
 	}
 
 	toolWriteJSON(w, http.StatusOK, map[string]any{
-		"data":       tools,
+		"data":        tools,
 		"total_count": len(tools),
 	})
 }
 
 // GetTool returns a single AI tool by ID.
-// GET /admin/ai/tools/{id}
+// GET /admin/ai/tools/{id}.
 func (h *ToolHandlers) GetTool(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -130,7 +109,7 @@ func (h *ToolHandlers) GetTool(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateTool updates an existing AI tool's configuration.
-// PUT /admin/ai/tools/{id}
+// PUT /admin/ai/tools/{id}.
 func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -149,6 +128,7 @@ func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
 		IsEnabled          *bool           `json:"is_enabled,omitempty"`
 		RequiredPermission *string         `json:"required_permission,omitempty"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		toolWriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -163,6 +143,7 @@ func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("updating ai tool", "error", err)
 		toolWriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update tool")
+
 		return
 	}
 
@@ -170,7 +151,7 @@ func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListToolUsage returns usage statistics for a tool.
-// GET /admin/ai/tools/usage?tool_id=...&days=30
+// GET /admin/ai/tools/usage?tool_id=...&days=30.
 func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -190,6 +171,7 @@ func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	days := 30
+
 	if d := r.URL.Query().Get("days"); d != "" {
 		if n, err := strconv.Atoi(d); err == nil && n > 0 {
 			days = n
@@ -197,18 +179,20 @@ func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	since := time.Now().AddDate(0, 0, -days)
+
 	stats, err := h.Registry.GetToolUsageStats(r.Context(), tenantID, toolID, since)
 	if err != nil {
 		slog.Error("fetching tool usage stats", "error", err)
 		toolWriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch usage stats")
+
 		return
 	}
 
 	toolWriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"tool_id": toolID.String(),
+			"tool_id":     toolID.String(),
 			"period_days": days,
-			"stats": stats,
+			"stats":       stats,
 		},
 	})
 }

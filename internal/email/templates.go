@@ -46,6 +46,7 @@ func RenderPasswordResetEmail(data TemplateData) (string, error) {
 	if err := passwordResetTmpl.Execute(&buf, data); err != nil {
 		return "", err
 	}
+
 	return buf.String(), nil
 }
 
@@ -55,6 +56,7 @@ func RenderEmailVerification(data TemplateData) (string, error) {
 	if err := emailVerifyTmpl.Execute(&buf, data); err != nil {
 		return "", err
 	}
+
 	return buf.String(), nil
 }
 
@@ -64,5 +66,6 @@ func RenderWelcomeEmail(data TemplateData) (string, error) {
 	if err := welcomeTmpl.Execute(&buf, data); err != nil {
 		return "", err
 	}
+
 	return buf.String(), nil
 }

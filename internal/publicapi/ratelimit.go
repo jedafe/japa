@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // SlidingWindowRateLimit returns middleware that enforces per-API-key rate
@@ -21,7 +21,7 @@ import (
 // counters: a client cannot send N requests at the end of one window and
 // N more at the start of the next and get 2N requests through in under
 // 2×window time.
-func SlidingWindowRateLimit(rdb *redis.Client) func(http.Handler) http.Handler {
+func SlidingWindowRateLimit(rdb valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	const windowSize = time.Minute
 
 	return func(next http.Handler) http.Handler {
@@ -31,6 +31,7 @@ func SlidingWindowRateLimit(rdb *redis.Client) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
+
 			if rdb == nil {
 				next.ServeHTTP(w, r)
 				return
@@ -49,8 +50,8 @@ func SlidingWindowRateLimit(rdb *redis.Client) func(http.Handler) http.Handler {
 
 			// Execute the sliding-window logic atomically via MULTI.
 			pipe := rdb.Pipeline()
-			pipe.ZRemRangeByScore(ctx, setKey, "0", fmt.Sprintf("%d", windowStart.UnixNano()))
-			pipe.ZAdd(ctx, setKey, redis.Z{
+			pipe.ZRemRangeByScore(ctx, setKey, "0", strconv.FormatInt(windowStart.UnixNano(), 10))
+			pipe.ZAdd(ctx, setKey, valkeycompat.Z{
 				Score:  float64(now.UnixNano()),
 				Member: uniqueID,
 			})
@@ -60,10 +61,12 @@ func SlidingWindowRateLimit(rdb *redis.Client) func(http.Handler) http.Handler {
 			if _, err := pipe.Exec(ctx); err != nil {
 				slog.Warn("api sliding rate limiter: valkey error, allowing request", "error", err)
 				next.ServeHTTP(w, r)
+
 				return
 			}
 
 			count := zCardCmd.Val()
+
 			remaining := int64(limit) - count
 			if remaining < 0 {
 				remaining = 0
@@ -77,8 +80,10 @@ func SlidingWindowRateLimit(rdb *redis.Client) func(http.Handler) http.Handler {
 				w.Header().Set("Retry-After", retryAfter)
 				writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
 					"Rate limit exceeded. Please retry after "+retryAfter+" seconds.")
+
 				return
 			}
+
 			next.ServeHTTP(w, r)
 		})
 	}

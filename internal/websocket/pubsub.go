@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // PubSubChannel is the Valkey channel used for cross-instance WebSocket
@@ -18,10 +18,10 @@ const PubSubChannel = "jc:ws:broadcast"
 // target user or space ID so that receiving instances can dispatch it to
 // the correct local subscribers.
 type PubSubMessage struct {
-	Type           string      `json:"type"`
-	TargetUserID   string      `json:"target_user_id,omitempty"`
-	TargetSpaceID  string      `json:"target_space_id,omitempty"`
-	Payload        interface{} `json:"payload"`
+	Type          string      `json:"type"`
+	TargetUserID  string      `json:"target_user_id,omitempty"`
+	TargetSpaceID string      `json:"target_space_id,omitempty"`
+	Payload       interface{} `json:"payload"`
 }
 
 // PubSubBridge connects the local WebSocket hub to Valkey pub/sub for
@@ -29,14 +29,14 @@ type PubSubMessage struct {
 // Valkey and subscribes to the same channel, dispatching received messages
 // to local hub clients.
 type PubSubBridge struct {
-	rdb  *redis.Client
-	hub  *Hub
-	sub  *redis.PubSub
+	rdb valkeycompat.Cmdable
+	hub *Hub
+	sub valkeycompat.PubSub
 }
 
 // NewPubSubBridge creates a bridge between the given Valkey client and
 // WebSocket hub. Call Start to begin subscribing.
-func NewPubSubBridge(rdb *redis.Client, hub *Hub) *PubSubBridge {
+func NewPubSubBridge(rdb valkeycompat.Cmdable, hub *Hub) *PubSubBridge {
 	return &PubSubBridge{
 		rdb: rdb,
 		hub: hub,
@@ -50,10 +50,12 @@ func (b *PubSubBridge) Start(ctx context.Context) {
 	b.sub = b.rdb.Subscribe(ctx, PubSubChannel)
 
 	ch := b.sub.Channel()
+
 	slog.Info("websocket pubsub bridge started", "channel", PubSubChannel)
 
 	go func() {
-		defer b.sub.Close()
+		defer func() { _ = b.sub.Close() }()
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -63,11 +65,13 @@ func (b *PubSubBridge) Start(ctx context.Context) {
 				if !ok {
 					return
 				}
+
 				var incoming PubSubMessage
 				if err := json.Unmarshal([]byte(msg.Payload), &incoming); err != nil {
 					slog.Error("websocket pubsub unmarshal", "error", err)
 					continue
 				}
+
 				b.dispatch(incoming)
 			}
 		}
@@ -85,11 +89,13 @@ func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetSpaceID string
 		TargetSpaceID: targetSpaceID,
 		Payload:       event.Payload,
 	}
+
 	data, err := json.Marshal(msg)
 	if err != nil {
 		slog.Error("websocket pubsub marshal", "error", err)
 		return
 	}
+
 	if err := b.rdb.Publish(context.Background(), PubSubChannel, data).Err(); err != nil {
 		slog.Error("websocket pubsub publish", "error", err)
 	}

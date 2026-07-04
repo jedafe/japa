@@ -20,10 +20,10 @@ const (
 
 // Campaign statuses.
 const (
-	CampaignStatusDraft   = "draft"
-	CampaignStatusActive  = "active"
-	CampaignStatusPaused  = "paused"
-	CampaignStatusEnded   = "ended"
+	CampaignStatusDraft    = "draft"
+	CampaignStatusActive   = "active"
+	CampaignStatusPaused   = "paused"
+	CampaignStatusEnded    = "ended"
 	CampaignStatusRejected = "rejected"
 )
 

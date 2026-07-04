@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -13,11 +14,12 @@ import (
 type Store struct {
 	write *gen.Queries
 	read  *gen.Queries
+	db    *db.DB
 }
 
 // NewStore creates a Store backed by the given gen.Queries instances.
-func NewStore(read, write *gen.Queries) *Store {
-	return &Store{read: read, write: write}
+func NewStore(read, write *gen.Queries, database *db.DB) *Store {
+	return &Store{read: read, write: write, db: database}
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +189,33 @@ func forumThreadFromListTagRow(r gen.ListForumThreadsByTagRow) gen.ForumThread {
 	}
 }
 
+func forumThreadFromListTenantRow(r gen.ListForumThreadsByTenantRow) gen.ForumThread {
+	return gen.ForumThread{
+		ID:                r.ID,
+		TenantID:          r.TenantID,
+		ContentID:         r.ContentID,
+		SpaceID:           r.SpaceID,
+		AuthorUserID:      r.AuthorUserID,
+		ParentReplyID:     r.ParentReplyID,
+		Title:             r.Title,
+		Slug:              r.Slug,
+		Body:              r.Body,
+		IsAnonymous:       r.IsAnonymous,
+		Solved:            r.Solved,
+		SolvedAt:          r.SolvedAt,
+		SolvedByUserID:    r.SolvedByUserID,
+		VoteScore:         r.VoteScore,
+		ReplyCount:        r.ReplyCount,
+		ViewCount:         r.ViewCount,
+		BookmarkCount:     r.BookmarkCount,
+		EditWindowMinutes: r.EditWindowMinutes,
+		IsEdited:          r.IsEdited,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
+		DeletedAt:         r.DeletedAt,
+	}
+}
+
 func forumThreadFromUpdateRow(r gen.UpdateForumThreadRow) gen.ForumThread {
 	return gen.ForumThread{
 		ID:                r.ID,
@@ -224,6 +253,7 @@ func (s *Store) createThread(ctx context.Context, p gen.CreateForumThreadParams)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("creating forum thread: %w", err)
 	}
+
 	return forumThreadFromCreateRow(t), nil
 }
 
@@ -233,6 +263,7 @@ func (s *Store) getThreadByID(ctx context.Context, id, tenantID pgtype.UUID) (ge
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting forum thread by ID: %w", err)
 	}
+
 	return forumThreadFromByIDRow(t), nil
 }
 
@@ -242,6 +273,7 @@ func (s *Store) getThreadBySlug(ctx context.Context, slug string, tenantID pgtyp
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting forum thread by slug: %w", err)
 	}
+
 	return forumThreadFromBySlugRow(t), nil
 }
 
@@ -250,6 +282,7 @@ func (s *Store) listThreadsBySpace(ctx context.Context, tenantID, spaceID pgtype
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListForumThreadsBySpace(ctx, gen.ListForumThreadsBySpaceParams{
 		TenantID:        tenantID,
 		SpaceID:         spaceID,
@@ -259,10 +292,12 @@ func (s *Store) listThreadsBySpace(ctx context.Context, tenantID, spaceID pgtype
 	if err != nil {
 		return nil, fmt.Errorf("listing forum threads by space: %w", err)
 	}
+
 	threads := make([]gen.ForumThread, len(rows))
 	for i, r := range rows {
 		threads[i] = forumThreadFromListSpaceRow(r)
 	}
+
 	return threads, nil
 }
 
@@ -271,6 +306,7 @@ func (s *Store) listThreadsByAuthor(ctx context.Context, tenantID, authorUserID 
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListForumThreadsByAuthor(ctx, gen.ListForumThreadsByAuthorParams{
 		TenantID:        tenantID,
 		AuthorUserID:    authorUserID,
@@ -280,10 +316,35 @@ func (s *Store) listThreadsByAuthor(ctx context.Context, tenantID, authorUserID 
 	if err != nil {
 		return nil, fmt.Errorf("listing forum threads by author: %w", err)
 	}
+
 	threads := make([]gen.ForumThread, len(rows))
 	for i, r := range rows {
 		threads[i] = forumThreadFromListAuthorRow(r)
 	}
+
+	return threads, nil
+}
+
+// listThreadsByTenant returns all paginated threads for a tenant (public listing).
+func (s *Store) listThreadsByTenant(ctx context.Context, tenantID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.ListForumThreadsByTenant(ctx, gen.ListForumThreadsByTenantParams{
+		TenantID:        tenantID,
+		CursorCreatedAt: cursorCreatedAt,
+		PageLimit:       limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing forum threads by tenant: %w", err)
+	}
+
+	threads := make([]gen.ForumThread, len(rows))
+	for i, r := range rows {
+		threads[i] = forumThreadFromListTenantRow(r)
+	}
+
 	return threads, nil
 }
 
@@ -292,6 +353,7 @@ func (s *Store) listThreadsByTag(ctx context.Context, tenantID, tagID pgtype.UUI
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListForumThreadsByTag(ctx, gen.ListForumThreadsByTagParams{
 		TenantID:        tenantID,
 		TagID:           tagID,
@@ -301,10 +363,12 @@ func (s *Store) listThreadsByTag(ctx context.Context, tenantID, tagID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("listing forum threads by tag: %w", err)
 	}
+
 	threads := make([]gen.ForumThread, len(rows))
 	for i, r := range rows {
 		threads[i] = forumThreadFromListTagRow(r)
 	}
+
 	return threads, nil
 }
 
@@ -314,6 +378,7 @@ func (s *Store) updateThread(ctx context.Context, p gen.UpdateForumThreadParams)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("updating forum thread: %w", err)
 	}
+
 	return forumThreadFromUpdateRow(t), nil
 }
 
@@ -322,18 +387,20 @@ func (s *Store) softDeleteThread(ctx context.Context, id, tenantID pgtype.UUID) 
 	if err := s.write.SoftDeleteForumThread(ctx, gen.SoftDeleteForumThreadParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("soft-deleting forum thread: %w", err)
 	}
+
 	return nil
 }
 
 // solveThread marks a thread as solved.
 func (s *Store) solveThread(ctx context.Context, id, tenantID, solverUserID pgtype.UUID) error {
 	if err := s.write.SolveForumThread(ctx, gen.SolveForumThreadParams{
-		ID:             id,
-		TenantID:       tenantID,
-		SolverUserID:   solverUserID,
+		ID:           id,
+		TenantID:     tenantID,
+		SolverUserID: solverUserID,
 	}); err != nil {
 		return fmt.Errorf("solving forum thread: %w", err)
 	}
+
 	return nil
 }
 
@@ -346,6 +413,21 @@ func (s *Store) incrementReplyCount(ctx context.Context, id, tenantID pgtype.UUI
 	}); err != nil {
 		return fmt.Errorf("incrementing thread reply count: %w", err)
 	}
+
+	return nil
+}
+
+// incrementThreadViewCount atomically increments the view_count on a thread.
+// Called fire-and-forget from the GetThread handler.
+func (s *Store) incrementThreadViewCount(ctx context.Context, id, tenantID pgtype.UUID) error {
+	_, err := s.db.Writer.Exec(ctx, `
+		UPDATE forum_threads SET view_count = view_count + 1
+		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+	`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("incrementing thread view count: %w", err)
+	}
+
 	return nil
 }
 
@@ -359,6 +441,7 @@ func (s *Store) createReply(ctx context.Context, p gen.CreateForumReplyParams) (
 	if err != nil {
 		return gen.ForumReply{}, fmt.Errorf("creating forum reply: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -368,6 +451,7 @@ func (s *Store) getReplyByID(ctx context.Context, id, tenantID pgtype.UUID) (gen
 	if err != nil {
 		return gen.ForumReply{}, fmt.Errorf("getting forum reply by ID: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -380,6 +464,7 @@ func (s *Store) listRepliesByThread(ctx context.Context, threadID, tenantID pgty
 	if err != nil {
 		return nil, fmt.Errorf("listing forum replies by thread: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -389,6 +474,7 @@ func (s *Store) updateReply(ctx context.Context, p gen.UpdateForumReplyParams) (
 	if err != nil {
 		return gen.ForumReply{}, fmt.Errorf("updating forum reply: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -397,6 +483,7 @@ func (s *Store) softDeleteReply(ctx context.Context, id, tenantID pgtype.UUID) e
 	if err := s.write.SoftDeleteForumReply(ctx, gen.SoftDeleteForumReplyParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("soft-deleting forum reply: %w", err)
 	}
+
 	return nil
 }
 
@@ -410,6 +497,7 @@ func (s *Store) upsertVote(ctx context.Context, p gen.UpsertForumVoteParams) (ge
 	if err != nil {
 		return gen.ForumVote{}, fmt.Errorf("upserting forum vote: %w", err)
 	}
+
 	return v, nil
 }
 
@@ -422,6 +510,7 @@ func (s *Store) getVoteScore(ctx context.Context, entityType string, entityID pg
 	if err != nil {
 		return 0, fmt.Errorf("getting forum vote score: %w", err)
 	}
+
 	return score, nil
 }
 
@@ -430,6 +519,7 @@ func (s *Store) updateThreadVoteScore(ctx context.Context, entityID pgtype.UUID)
 	if err := s.write.UpdateThreadVoteScore(ctx, entityID); err != nil {
 		return fmt.Errorf("updating thread vote score: %w", err)
 	}
+
 	return nil
 }
 
@@ -438,6 +528,7 @@ func (s *Store) updateReplyVoteScore(ctx context.Context, entityID pgtype.UUID) 
 	if err := s.write.UpdateReplyVoteScore(ctx, entityID); err != nil {
 		return fmt.Errorf("updating reply vote score: %w", err)
 	}
+
 	return nil
 }
 
@@ -451,6 +542,7 @@ func (s *Store) addBookmark(ctx context.Context, p gen.AddForumBookmarkParams) (
 	if err != nil {
 		return gen.ForumBookmark{}, fmt.Errorf("adding forum bookmark: %w", err)
 	}
+
 	return b, nil
 }
 
@@ -463,6 +555,7 @@ func (s *Store) removeBookmark(ctx context.Context, userID pgtype.UUID, entityTy
 	}); err != nil {
 		return fmt.Errorf("removing forum bookmark: %w", err)
 	}
+
 	return nil
 }
 
@@ -471,6 +564,7 @@ func (s *Store) listBookmarksByUser(ctx context.Context, tenantID, userID pgtype
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListForumBookmarksByUser(ctx, gen.ListForumBookmarksByUserParams{
 		TenantID:   tenantID,
 		UserID:     userID,
@@ -480,6 +574,7 @@ func (s *Store) listBookmarksByUser(ctx context.Context, tenantID, userID pgtype
 	if err != nil {
 		return nil, fmt.Errorf("listing forum bookmarks: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -493,6 +588,7 @@ func (s *Store) isBookmarked(ctx context.Context, userID pgtype.UUID, entityType
 	if err != nil {
 		return false, fmt.Errorf("checking bookmark: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -504,6 +600,7 @@ func (s *Store) incrementEntityBookmarkCount(ctx context.Context, entityID pgtyp
 	}); err != nil {
 		return fmt.Errorf("incrementing entity bookmark count: %w", err)
 	}
+
 	return nil
 }
 
@@ -517,6 +614,7 @@ func (s *Store) createTag(ctx context.Context, p gen.CreateForumTagParams) (gen.
 	if err != nil {
 		return gen.ForumTag{}, fmt.Errorf("creating forum tag: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -526,6 +624,7 @@ func (s *Store) getTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.F
 	if err != nil {
 		return gen.ForumTag{}, fmt.Errorf("getting forum tag by ID: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -535,6 +634,7 @@ func (s *Store) getTagBySlug(ctx context.Context, slug string, tenantID pgtype.U
 	if err != nil {
 		return gen.ForumTag{}, fmt.Errorf("getting forum tag by slug: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -543,6 +643,7 @@ func (s *Store) listTags(ctx context.Context, tenantID pgtype.UUID, limit, offse
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListForumTags(ctx, gen.ListForumTagsParams{
 		TenantID:   tenantID,
 		PageLimit:  limit,
@@ -551,6 +652,7 @@ func (s *Store) listTags(ctx context.Context, tenantID pgtype.UUID, limit, offse
 	if err != nil {
 		return nil, fmt.Errorf("listing forum tags: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -562,6 +664,7 @@ func (s *Store) addThreadTag(ctx context.Context, threadID, tagID pgtype.UUID) e
 	}); err != nil {
 		return fmt.Errorf("adding forum thread tag: %w", err)
 	}
+
 	return nil
 }
 
@@ -573,6 +676,7 @@ func (s *Store) removeThreadTag(ctx context.Context, threadID, tagID pgtype.UUID
 	}); err != nil {
 		return fmt.Errorf("removing forum thread tag: %w", err)
 	}
+
 	return nil
 }
 
@@ -585,6 +689,44 @@ func (s *Store) updateTagFollowerCount(ctx context.Context, id, tenantID pgtype.
 	}); err != nil {
 		return fmt.Errorf("updating forum tag follower count: %w", err)
 	}
+
+	return nil
+}
+
+// updateTag updates a forum tag's mutable fields using raw SQL since sqlc
+// does not generate an UpdateForumTag query.
+func (s *Store) updateTag(ctx context.Context, id, tenantID pgtype.UUID, name, slug, description, rules string, coverImageID, moderatorUserID pgtype.UUID) (gen.ForumTag, error) {
+	var tag gen.ForumTag
+
+	err := s.db.Writer.QueryRow(ctx, `
+		UPDATE forum_tags
+		SET name = $3, slug = $4, description = $5, rules = $6,
+		    cover_image_id = $7, moderator_user_id = $8
+		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+		RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
+		          follower_count, moderator_user_id, created_at
+	`, id, tenantID, name, slug, strPtr(description), strPtr(rules), coverImageID, moderatorUserID).Scan(
+		&tag.ID, &tag.TenantID, &tag.Name, &tag.Slug, &tag.Description,
+		&tag.Rules, &tag.CoverImageID, &tag.FollowerCount,
+		&tag.ModeratorUserID, &tag.CreatedAt,
+	)
+	if err != nil {
+		return gen.ForumTag{}, fmt.Errorf("updating forum tag: %w", err)
+	}
+
+	return tag, nil
+}
+
+// softDeleteTag marks a forum tag as deleted using raw SQL.
+func (s *Store) softDeleteTag(ctx context.Context, id, tenantID pgtype.UUID) error {
+	_, err := s.db.Writer.Exec(ctx, `
+		UPDATE forum_tags SET deleted_at = now()
+		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+	`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("soft-deleting forum tag: %w", err)
+	}
+
 	return nil
 }
 
@@ -598,6 +740,7 @@ func (s *Store) createPoll(ctx context.Context, p gen.CreateForumPollParams) (ge
 	if err != nil {
 		return gen.ForumPoll{}, fmt.Errorf("creating forum poll: %w", err)
 	}
+
 	return poll, nil
 }
 
@@ -607,6 +750,7 @@ func (s *Store) addPollOption(ctx context.Context, p gen.AddForumPollOptionParam
 	if err != nil {
 		return gen.ForumPollOption{}, fmt.Errorf("adding forum poll option: %w", err)
 	}
+
 	return opt, nil
 }
 
@@ -616,6 +760,7 @@ func (s *Store) votePoll(ctx context.Context, p gen.VoteForumPollParams) (gen.Fo
 	if err != nil {
 		return gen.ForumPollVote{}, fmt.Errorf("voting on forum poll: %w", err)
 	}
+
 	return v, nil
 }
 
@@ -625,6 +770,7 @@ func (s *Store) getPollResults(ctx context.Context, pollID pgtype.UUID) ([]gen.G
 	if err != nil {
 		return nil, fmt.Errorf("getting forum poll results: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -634,6 +780,7 @@ func (s *Store) getPollByID(ctx context.Context, id pgtype.UUID) (gen.ForumPoll,
 	if err != nil {
 		return gen.ForumPoll{}, fmt.Errorf("getting forum poll by ID: %w", err)
 	}
+
 	return poll, nil
 }
 
@@ -643,6 +790,7 @@ func (s *Store) getPollByThreadID(ctx context.Context, threadID pgtype.UUID) (ge
 	if err != nil {
 		return gen.ForumPoll{}, fmt.Errorf("getting forum poll by thread ID: %w", err)
 	}
+
 	return poll, nil
 }
 
@@ -655,6 +803,7 @@ func (s *Store) getPollUserVote(ctx context.Context, pollID, userID pgtype.UUID)
 	if err != nil {
 		return gen.ForumPollVote{}, fmt.Errorf("getting forum poll user vote: %w", err)
 	}
+
 	return v, nil
 }
 
@@ -670,6 +819,7 @@ func (s *Store) insertReplyView(ctx context.Context, replyID, userID pgtype.UUID
 	}); err != nil {
 		return fmt.Errorf("inserting reply view: %w", err)
 	}
+
 	return nil
 }
 
@@ -679,5 +829,6 @@ func (s *Store) getReplyViewCount(ctx context.Context, replyID pgtype.UUID) (int
 	if err != nil {
 		return 0, fmt.Errorf("getting reply view count: %w", err)
 	}
+
 	return count, nil
 }

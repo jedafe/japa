@@ -18,7 +18,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -41,6 +40,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, errors.New("invalid " + param)
 	}
+
 	return id, nil
 }
 
@@ -50,16 +50,8 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
-	return t.ID, true
-}
 
-func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
-	user := auth.FromContext(r.Context())
-	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return nil, false
-	}
-	return user, true
+	return t.ID, true
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -78,6 +70,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if v != nil {
 		if err := json.NewEncoder(w).Encode(v); err != nil {
 			slog.Warn("json encode error", "error", err)
@@ -96,12 +89,13 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // ---------------------------------------------------------------------------
 
 // ListByLocale returns all translations for a given locale.
-// GET /admin/translations?locale=en
+// GET /admin/translations?locale=en.
 func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	locale := r.URL.Query().Get("locale")
 	if locale == "" {
 		writeError(w, http.StatusBadRequest, "missing_locale", "locale query parameter is required")
@@ -141,7 +135,7 @@ func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListLocales returns distinct locales with counts.
-// GET /admin/translations/locales
+// GET /admin/translations/locales.
 func (h *Handlers) ListLocales(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -158,7 +152,7 @@ func (h *Handlers) ListLocales(w http.ResponseWriter, r *http.Request) {
 }
 
 // Upsert handles create/update of a single translation.
-// POST /admin/translations
+// POST /admin/translations.
 func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -171,6 +165,7 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 		Value   string  `json:"value"`
 		Context *string `json:"context"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -180,10 +175,12 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_locale", "locale is required")
 		return
 	}
+
 	if input.Key == "" {
 		writeError(w, http.StatusBadRequest, "missing_key", "key is required")
 		return
 	}
+
 	if input.Value == "" {
 		writeError(w, http.StatusBadRequest, "missing_value", "value is required")
 		return
@@ -202,7 +199,7 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpsertBatch handles batch creation/update of translations.
-// POST /admin/translations/batch
+// POST /admin/translations/batch.
 func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -217,6 +214,7 @@ func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 			Context *string `json:"context"`
 		} `json:"translations"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -248,7 +246,7 @@ func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // Delete removes a translation.
-// DELETE /admin/translations/{id}?locale=en
+// DELETE /admin/translations/{id}?locale=en.
 func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -283,7 +281,7 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // GetLocaleTranslations returns all translations for a locale as a flat map.
-// GET /api/v1/translations/{locale}
+// GET /api/v1/translations/{locale}.
 func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {

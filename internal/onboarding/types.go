@@ -5,7 +5,7 @@ package onboarding
 import "encoding/json"
 
 // OnboardingStatusResponse is the API response for GET /api/v1/onboarding/status.
-type OnboardingStatusResponse struct {
+type OnboardingStatusResponse struct { //nolint:revive // stuttering type name preserved for API compatibility
 	CurrentStep   int             `json:"current_step"`
 	Completed     bool            `json:"completed"`
 	StepData      json.RawMessage `json:"step_data"`
@@ -21,7 +21,7 @@ type UpdateStepRequest struct {
 }
 
 // OnboardingRecommendation is a single recommended space or user.
-type OnboardingRecommendation struct {
+type OnboardingRecommendation struct { //nolint:revive // stuttering type name preserved for API compatibility
 	Type      string  `json:"type"` // "space" or "user"
 	ID        string  `json:"id"`
 	Name      string  `json:"name"`

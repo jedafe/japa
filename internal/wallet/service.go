@@ -3,6 +3,7 @@ package wallet
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,16 +20,19 @@ type EmitActivityEventInput struct {
 // EmitActivityEvent records an activity event for async processing.
 func (s *Service) EmitActivityEvent(ctx context.Context, tenantID, userID pgtype.UUID, input EmitActivityEventInput) (gen.ActivityEvent, error) {
 	if input.ActivityKey == "" {
-		return gen.ActivityEvent{}, fmt.Errorf("activity_key is required")
+		return gen.ActivityEvent{}, errors.New("activity_key is required")
 	}
+
 	if input.Reference == "" {
-		return gen.ActivityEvent{}, fmt.Errorf("reference is required")
+		return gen.ActivityEvent{}, errors.New("reference is required")
 	}
 
 	// Convert payload to JSON bytes
 	var payload []byte
+
 	if input.Payload != nil {
 		var err error
+
 		payload, err = json.Marshal(input.Payload)
 		if err != nil {
 			return gen.ActivityEvent{}, fmt.Errorf("marshaling payload: %w", err)
@@ -63,7 +67,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	rule, err := s.store.getActivityRuleByKey(ctx, tenantID, event.ActivityKey)
 	if err != nil {
 		// If rule not found, skip processing (rule may have been deleted)
-		return nil
+		return nil //nolint:nilerr // intentional: missing rule = skip
 	}
 
 	// Check if rule is enabled
@@ -77,6 +81,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		if err != nil {
 			return fmt.Errorf("checking daily cap: %w", err)
 		}
+
 		if count >= int64(*rule.CapPerDay) {
 			return nil // Cap reached, skip
 		}
@@ -87,6 +92,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		if err != nil {
 			return fmt.Errorf("checking weekly cap: %w", err)
 		}
+
 		if count >= int64(*rule.CapPerWeek) {
 			return nil // Cap reached, skip
 		}
@@ -131,7 +137,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 }
 
 // GetBalance returns the current balance for a user (points and/or credits).
-func (s *Service) GetBalance(ctx context.Context, tenantID, userID pgtype.UUID) (points int64, credits int64, err error) {
+func (s *Service) GetBalance(ctx context.Context, tenantID, userID pgtype.UUID) (points, credits int64, err error) {
 	points, err = s.store.getLatestBalance(ctx, tenantID, userID, LedgerTypePoints)
 	if err != nil {
 		// If no balance yet, return 0
@@ -153,9 +159,9 @@ type ConvertPointsToCreditsInput struct {
 }
 
 // ConvertPointsToCredits converts points to credits at the configured rate.
-func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID pgtype.UUID, input ConvertPointsToCreditsInput) (pointsBalance int64, creditsBalance int64, err error) {
+func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID pgtype.UUID, input ConvertPointsToCreditsInput) (pointsBalance, creditsBalance int64, err error) {
 	if input.PointsToConvert <= 0 {
-		return 0, 0, fmt.Errorf("points to convert must be positive")
+		return 0, 0, errors.New("points to convert must be positive")
 	}
 
 	// Get wallet settings for conversion rate
@@ -168,38 +174,57 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 		}
 	}
 
-	// Get current points balance
-	currentPoints, err := s.store.getLatestBalance(ctx, tenantID, userID, LedgerTypePoints)
+	// Begin transaction to atomically check balance and insert ledger entries.
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("beginning transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	// Get current points balance within the transaction.
+	currentPoints, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+		TenantID:   tenantID,
+		UserID:     userID,
+		LedgerType: LedgerTypePoints,
+	})
 	if err != nil {
 		return 0, 0, fmt.Errorf("getting points balance: %w", err)
 	}
 
 	// Check sufficient balance
 	if currentPoints < input.PointsToConvert {
-		return 0, 0, fmt.Errorf("insufficient points balance")
+		return 0, 0, errors.New("insufficient points balance")
 	}
 
 	// Calculate credits to add (integer division)
 	creditsToAdd := input.PointsToConvert / int64(*settings.PointsToCreditsRate)
 	if creditsToAdd <= 0 {
-		return 0, 0, fmt.Errorf("conversion rate too high for amount")
+		return 0, 0, errors.New("conversion rate too high for amount")
 	}
 
 	// New points balance
 	newPointsBalance := currentPoints - input.PointsToConvert
 
-	// Get current credits balance
-	currentCredits, err := s.store.getLatestBalance(ctx, tenantID, userID, LedgerTypeCredits)
+	// Get current credits balance within the transaction.
+	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+		TenantID:   tenantID,
+		UserID:     userID,
+		LedgerType: LedgerTypeCredits,
+	})
 	if err != nil {
 		currentCredits = 0
 	}
+
 	newCreditsBalance := currentCredits + creditsToAdd
 
 	// Create idempotency key
 	idempotencyKey := fmt.Sprintf("convert:%x:%d", userID.Bytes, input.PointsToConvert)
 
 	// Insert points debit entry
-	_, err = s.store.insertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 		TenantID:         tenantID,
 		UserID:           userID,
 		LedgerType:       LedgerTypePoints,
@@ -217,7 +242,8 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 
 	// Insert credits credit entry
 	creditsIdempotencyKey := fmt.Sprintf("convert_credits:%x:%d", userID.Bytes, input.PointsToConvert)
-	_, err = s.store.insertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+
+	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 		TenantID:         tenantID,
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
@@ -231,6 +257,10 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 	})
 	if err != nil {
 		return 0, 0, fmt.Errorf("inserting credits credit entry: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, 0, fmt.Errorf("committing transaction: %w", err)
 	}
 
 	return newPointsBalance, newCreditsBalance, nil
@@ -248,18 +278,32 @@ type SpendCreditsInput struct {
 // SpendCredits spends credits (synchronous, not a Provider).
 func (s *Service) SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID, input SpendCreditsInput) (int64, error) {
 	if input.Amount <= 0 {
-		return 0, fmt.Errorf("amount must be positive")
+		return 0, errors.New("amount must be positive")
 	}
 
-	// Get current credits balance
-	currentCredits, err := s.store.getLatestBalance(ctx, tenantID, userID, LedgerTypeCredits)
+	// Begin transaction to atomically check balance and insert ledger entry.
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("beginning transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	// Get current credits balance within the transaction.
+	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+		TenantID:   tenantID,
+		UserID:     userID,
+		LedgerType: LedgerTypeCredits,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("getting credits balance: %w", err)
 	}
 
 	// Check sufficient balance
 	if currentCredits < input.Amount {
-		return 0, fmt.Errorf("insufficient credits balance")
+		return 0, errors.New("insufficient credits balance")
 	}
 
 	// New balance
@@ -269,7 +313,7 @@ func (s *Service) SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID
 	idempotencyKey := fmt.Sprintf("spend:%x:%s:%s", userID.Bytes, input.Source, input.Reference)
 
 	// Insert ledger entry
-	_, err = s.store.insertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 		TenantID:         tenantID,
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
@@ -285,6 +329,10 @@ func (s *Service) SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID
 		return 0, fmt.Errorf("inserting spend entry: %w", err)
 	}
 
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("committing transaction: %w", err)
+	}
+
 	return newBalance, nil
 }
 
@@ -298,13 +346,15 @@ type AdminAdjustInput struct {
 }
 
 // AdminAdjustBalance performs a manual admin adjustment.
-func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID pgtype.UUID, actorUserID pgtype.UUID, input AdminAdjustInput) (int64, error) {
+func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID pgtype.UUID, input AdminAdjustInput) (int64, error) {
 	if input.Amount == 0 {
-		return 0, fmt.Errorf("amount cannot be zero")
+		return 0, errors.New("amount cannot be zero")
 	}
+
 	if input.Reason == "" {
-		return 0, fmt.Errorf("reason is required for admin adjustments")
+		return 0, errors.New("reason is required for admin adjustments")
 	}
+
 	if input.LedgerType != LedgerTypePoints && input.LedgerType != LedgerTypeCredits {
 		return 0, fmt.Errorf("invalid ledger type: %s", input.LedgerType)
 	}
@@ -315,8 +365,22 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID pgtype.UUID, 
 		return 0, fmt.Errorf("invalid user_id: %w", err)
 	}
 
-	// Get current balance
-	currentBalance, err := s.store.getLatestBalance(ctx, tenantID, targetUserID, input.LedgerType)
+	// Begin transaction to atomically check balance and insert ledger entry.
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("beginning transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	// Get current balance within the transaction.
+	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+		TenantID:   tenantID,
+		UserID:     targetUserID,
+		LedgerType: input.LedgerType,
+	})
 	if err != nil {
 		currentBalance = 0
 	}
@@ -328,7 +392,7 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID pgtype.UUID, 
 	idempotencyKey := fmt.Sprintf("admin_adjust:%x:%s:%d", targetUserID.Bytes, input.Reason, input.Amount)
 
 	// Insert ledger entry
-	_, err = s.store.insertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 		TenantID:         tenantID,
 		UserID:           targetUserID,
 		LedgerType:       input.LedgerType,
@@ -343,6 +407,10 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID pgtype.UUID, 
 	})
 	if err != nil {
 		return 0, fmt.Errorf("inserting admin adjust entry: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("committing transaction: %w", err)
 	}
 
 	return newBalance, nil
@@ -361,8 +429,9 @@ type UpdateWalletSettingsInput struct {
 // UpdateWalletSettings updates wallet settings for a tenant.
 func (s *Service) UpdateWalletSettings(ctx context.Context, tenantID pgtype.UUID, input UpdateWalletSettingsInput) (gen.WalletSetting, error) {
 	if input.PointsToCreditsRate <= 0 {
-		return gen.WalletSetting{}, fmt.Errorf("points_to_credits_rate must be positive")
+		return gen.WalletSetting{}, errors.New("points_to_credits_rate must be positive")
 	}
+
 	return s.store.upsertWalletSettings(ctx, tenantID, input.PointsToCreditsRate)
 }
 
@@ -384,7 +453,7 @@ type CreateOrUpdateActivityRuleInput struct {
 // CreateOrUpdateActivityRule creates or updates an activity rule.
 func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, tenantID pgtype.UUID, input CreateOrUpdateActivityRuleInput) (gen.ActivityPointRule, error) {
 	if input.ActivityKey == "" {
-		return gen.ActivityPointRule{}, fmt.Errorf("activity_key is required")
+		return gen.ActivityPointRule{}, errors.New("activity_key is required")
 	}
 
 	return s.store.upsertActivityRule(ctx, gen.UpsertActivityRuleParams{
@@ -419,7 +488,7 @@ func (s *Service) GetLedgerEntry(ctx context.Context, id, tenantID pgtype.UUID) 
 }
 
 // GetUserBalance returns the balance for any user (admin operation).
-func (s *Service) GetUserBalance(ctx context.Context, tenantID, userID pgtype.UUID) (points int64, credits int64, err error) {
+func (s *Service) GetUserBalance(ctx context.Context, tenantID, userID pgtype.UUID) (points, credits int64, err error) {
 	return s.GetBalance(ctx, tenantID, userID)
 }
 

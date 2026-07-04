@@ -6,6 +6,8 @@ import (
 )
 
 func TestDefaultFor(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		key  string
@@ -21,6 +23,8 @@ func TestDefaultFor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := DefaultFor(tt.key)
 			if got != tt.want {
 				t.Errorf("DefaultFor(%q) = %v, want %v", tt.key, got, tt.want)
@@ -30,10 +34,13 @@ func TestDefaultFor(t *testing.T) {
 }
 
 func TestAllKeys(t *testing.T) {
+	t.Parallel()
+
 	keys := AllKeys()
 	if len(keys) != len(Registry) {
 		t.Errorf("AllKeys() returned %d keys, registry has %d", len(keys), len(Registry))
 	}
+
 	for _, k := range keys {
 		if !strings.HasPrefix(k, "feature.") {
 			t.Errorf("key %q does not start with 'feature.'", k)
@@ -42,6 +49,8 @@ func TestAllKeys(t *testing.T) {
 }
 
 func TestChecker_ClearCache(t *testing.T) {
+	t.Parallel()
+
 	c := &Checker{
 		cache: &flagCache{
 			entries: map[string]map[string]*flagCacheEntry{
@@ -50,12 +59,15 @@ func TestChecker_ClearCache(t *testing.T) {
 		},
 	}
 	c.ClearCache()
+
 	if len(c.cache.entries) != 0 {
 		t.Errorf("cache should be empty, got %d entries", len(c.cache.entries))
 	}
 }
 
 func TestChecker_CacheGetSet(t *testing.T) {
+	t.Parallel()
+
 	c := &Checker{
 		cache: &flagCache{
 			entries: make(map[string]map[string]*flagCacheEntry),
@@ -68,6 +80,7 @@ func TestChecker_CacheGetSet(t *testing.T) {
 	if val == nil {
 		t.Fatal("expected cached value, got nil")
 	}
+
 	if !*val {
 		t.Error("expected true, got false")
 	}
@@ -79,11 +92,14 @@ func TestChecker_CacheGetSet(t *testing.T) {
 }
 
 func TestRegistryHasNoDuplicates(t *testing.T) {
+	t.Parallel()
+
 	seen := make(map[string]bool)
 	for _, f := range Registry {
 		if seen[f.Key] {
 			t.Errorf("duplicate feature key: %s", f.Key)
 		}
+
 		seen[f.Key] = true
 	}
 }

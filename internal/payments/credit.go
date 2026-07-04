@@ -2,13 +2,14 @@ package payments
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ErrInsufficientCredit is returned when a user lacks sufficient credits for a purchase.
-var ErrInsufficientCredit = fmt.Errorf("insufficient credits balance")
+var ErrInsufficientCredit = errors.New("insufficient credits balance")
 
 // CreditSpendInput holds parameters for spending credits via the wallet.
 type CreditSpendInput struct {
@@ -45,13 +46,15 @@ func (s *Service) PayWithCredit(
 	purposeID string,
 ) (int64, error) {
 	if s.wallet == nil {
-		return 0, fmt.Errorf("wallet service not configured")
+		return 0, errors.New("wallet service not configured")
 	}
+
 	if amount <= 0 {
-		return 0, fmt.Errorf("amount must be positive")
+		return 0, errors.New("amount must be positive")
 	}
+
 	if purposeType == "" {
-		return 0, fmt.Errorf("purpose_type is required")
+		return 0, errors.New("purpose_type is required")
 	}
 
 	input := CreditSpendInput{

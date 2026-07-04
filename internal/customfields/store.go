@@ -19,6 +19,7 @@ func (s *Service) ListFieldGroups(ctx context.Context, tenantID pgtype.UUID) ([]
 	if err != nil {
 		return nil, fmt.Errorf("listing custom field groups: %w", err)
 	}
+
 	return groups, nil
 }
 
@@ -32,6 +33,7 @@ func (s *Service) GetFieldGroup(ctx context.Context, id, tenantID pgtype.UUID) (
 	if err != nil {
 		return gen.CustomFieldGroup{}, fmt.Errorf("getting custom field group: %w", err)
 	}
+
 	return group, nil
 }
 
@@ -45,6 +47,7 @@ func (s *Service) GetFieldGroupBySlug(ctx context.Context, slug string, tenantID
 	if err != nil {
 		return gen.CustomFieldGroup{}, fmt.Errorf("getting custom field group by slug: %w", err)
 	}
+
 	return group, nil
 }
 
@@ -61,6 +64,7 @@ func (s *Service) CreateFieldGroup(ctx context.Context, tenantID pgtype.UUID, na
 	if err != nil {
 		return gen.CustomFieldGroup{}, fmt.Errorf("creating custom field group: %w", err)
 	}
+
 	return group, nil
 }
 
@@ -76,6 +80,7 @@ func (s *Service) UpdateFieldGroup(ctx context.Context, id, tenantID pgtype.UUID
 	if err != nil {
 		return gen.CustomFieldGroup{}, fmt.Errorf("updating custom field group: %w", err)
 	}
+
 	return group, nil
 }
 
@@ -88,6 +93,7 @@ func (s *Service) DeleteFieldGroup(ctx context.Context, id, tenantID pgtype.UUID
 	}); err != nil {
 		return fmt.Errorf("deleting custom field group: %w", err)
 	}
+
 	return nil
 }
 
@@ -105,6 +111,7 @@ func (s *Service) ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtyp
 	if err != nil {
 		return nil, fmt.Errorf("listing custom fields by group: %w", err)
 	}
+
 	return fields, nil
 }
 
@@ -117,6 +124,7 @@ func (s *Service) GetField(ctx context.Context, id, tenantID pgtype.UUID) (gen.C
 	if err != nil {
 		return gen.CustomField{}, fmt.Errorf("getting custom field: %w", err)
 	}
+
 	return field, nil
 }
 
@@ -127,6 +135,7 @@ func (s *Service) CreateField(ctx context.Context, params gen.CreateCustomFieldP
 	if err != nil {
 		return gen.CustomField{}, fmt.Errorf("creating custom field: %w", err)
 	}
+
 	return field, nil
 }
 
@@ -137,6 +146,7 @@ func (s *Service) UpdateField(ctx context.Context, params gen.UpdateCustomFieldP
 	if err != nil {
 		return gen.CustomField{}, fmt.Errorf("updating custom field: %w", err)
 	}
+
 	return field, nil
 }
 
@@ -149,6 +159,7 @@ func (s *Service) DeleteField(ctx context.Context, id, tenantID pgtype.UUID) err
 	}); err != nil {
 		return fmt.Errorf("deleting custom field: %w", err)
 	}
+
 	return nil
 }
 
@@ -163,6 +174,7 @@ func (s *Service) ListAssignmentsByEntityClass(ctx context.Context, entityClass 
 	if err != nil {
 		return nil, fmt.Errorf("listing assignments by entity class: %w", err)
 	}
+
 	return assignments, nil
 }
 
@@ -173,6 +185,7 @@ func (s *Service) CreateAssignment(ctx context.Context, params gen.CreateAssignm
 	if err != nil {
 		return gen.CustomFieldGroupAssignment{}, fmt.Errorf("creating group assignment: %w", err)
 	}
+
 	return assignment, nil
 }
 
@@ -186,6 +199,7 @@ func (s *Service) DeleteAssignment(ctx context.Context, groupID pgtype.UUID, ent
 	}); err != nil {
 		return fmt.Errorf("deleting group assignment: %w", err)
 	}
+
 	return nil
 }
 
@@ -200,6 +214,7 @@ func (s *Service) ListPermissionsByField(ctx context.Context, fieldID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("listing field permissions: %w", err)
 	}
+
 	return perms, nil
 }
 
@@ -209,6 +224,7 @@ func (s *Service) UpsertFieldPermission(ctx context.Context, params gen.UpsertFi
 	if err := s.write.UpsertFieldPermission(ctx, params); err != nil {
 		return fmt.Errorf("upserting field permission: %w", err)
 	}
+
 	return nil
 }
 
@@ -221,6 +237,7 @@ func (s *Service) DeleteFieldPermission(ctx context.Context, fieldID, userGroupI
 	}); err != nil {
 		return fmt.Errorf("deleting field permission: %w", err)
 	}
+
 	return nil
 }
 
@@ -238,6 +255,7 @@ func (s *Service) GetFieldValue(ctx context.Context, fieldID pgtype.UUID, entity
 	if err != nil {
 		return gen.CustomFieldValue{}, fmt.Errorf("getting custom field value: %w", err)
 	}
+
 	return value, nil
 }
 
@@ -250,6 +268,7 @@ func (s *Service) ListFieldValuesByEntity(ctx context.Context, entityType string
 	if err != nil {
 		return nil, fmt.Errorf("listing custom field values by entity: %w", err)
 	}
+
 	return values, nil
 }
 
@@ -260,6 +279,7 @@ func (s *Service) UpsertFieldValue(ctx context.Context, params gen.UpsertCustomF
 	if err != nil {
 		return gen.CustomFieldValue{}, fmt.Errorf("upserting custom field value: %w", err)
 	}
+
 	return value, nil
 }
 
@@ -272,6 +292,7 @@ func (s *Service) DeleteFieldValue(ctx context.Context, fieldID pgtype.UUID, ent
 	}); err != nil {
 		return fmt.Errorf("deleting custom field value: %w", err)
 	}
+
 	return nil
 }
 
@@ -285,6 +306,7 @@ func (s *Service) ListForms(ctx context.Context, tenantID pgtype.UUID) ([]gen.Fo
 	if err != nil {
 		return nil, fmt.Errorf("listing forms: %w", err)
 	}
+
 	return forms, nil
 }
 
@@ -297,6 +319,7 @@ func (s *Service) GetForm(ctx context.Context, id, tenantID pgtype.UUID) (gen.Fo
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("getting form: %w", err)
 	}
+
 	return form, nil
 }
 
@@ -310,6 +333,7 @@ func (s *Service) GetFormBySlug(ctx context.Context, slug string, tenantID pgtyp
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("getting form by slug: %w", err)
 	}
+
 	return form, nil
 }
 
@@ -320,6 +344,7 @@ func (s *Service) CreateForm(ctx context.Context, params gen.CreateFormParams) (
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("creating form: %w", err)
 	}
+
 	return form, nil
 }
 
@@ -330,6 +355,7 @@ func (s *Service) UpdateForm(ctx context.Context, params gen.UpdateFormParams) (
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("updating form: %w", err)
 	}
+
 	return form, nil
 }
 
@@ -342,6 +368,7 @@ func (s *Service) DeleteForm(ctx context.Context, id, tenantID pgtype.UUID) erro
 	}); err != nil {
 		return fmt.Errorf("deleting form: %w", err)
 	}
+
 	return nil
 }
 
@@ -356,6 +383,7 @@ func (s *Service) ListFormSteps(ctx context.Context, formID pgtype.UUID) ([]gen.
 	if err != nil {
 		return nil, fmt.Errorf("listing form steps: %w", err)
 	}
+
 	return steps, nil
 }
 
@@ -365,6 +393,7 @@ func (s *Service) CreateFormStep(ctx context.Context, params gen.CreateFormStepP
 	if err != nil {
 		return gen.FormStep{}, fmt.Errorf("creating form step: %w", err)
 	}
+
 	return step, nil
 }
 
@@ -377,6 +406,7 @@ func (s *Service) DeleteFormStep(ctx context.Context, id, formID pgtype.UUID) er
 	}); err != nil {
 		return fmt.Errorf("deleting form step: %w", err)
 	}
+
 	return nil
 }
 
@@ -391,6 +421,7 @@ func (s *Service) ListFormSubmissions(ctx context.Context, params gen.ListFormSu
 	if err != nil {
 		return nil, fmt.Errorf("listing form submissions: %w", err)
 	}
+
 	return submissions, nil
 }
 
@@ -400,6 +431,7 @@ func (s *Service) CreateFormSubmission(ctx context.Context, params gen.CreateFor
 	if err != nil {
 		return gen.FormSubmission{}, fmt.Errorf("creating form submission: %w", err)
 	}
+
 	return submission, nil
 }
 
@@ -413,6 +445,7 @@ func (s *Service) GetFormSubmission(ctx context.Context, id, tenantID pgtype.UUI
 	if err != nil {
 		return gen.FormSubmission{}, fmt.Errorf("getting form submission: %w", err)
 	}
+
 	return submission, nil
 }
 
@@ -426,5 +459,6 @@ func (s *Service) UpdateFormSubmissionStatus(ctx context.Context, id, tenantID p
 	}); err != nil {
 		return fmt.Errorf("updating form submission status: %w", err)
 	}
+
 	return nil
 }

@@ -8,6 +8,8 @@ import (
 )
 
 func TestCacheKey(t *testing.T) {
+	t.Parallel()
+
 	r := New("/path/to/script.ts", nil)
 
 	var contentID pgtype.UUID
@@ -23,6 +25,7 @@ func TestCacheKey(t *testing.T) {
 	if len(key) < 10 {
 		t.Fatalf("cache key too short: %s", key)
 	}
+
 	if key[:11] != "jc:render:5" {
 		t.Fatalf("cache key prefix wrong: %s", key)
 	}
@@ -35,6 +38,7 @@ func TestCacheKey(t *testing.T) {
 
 	// Different timestamp must produce a different key
 	updatedAt2 := pgtype.Timestamptz{Time: time.Unix(1234567891, 0), Valid: true}
+
 	key3 := r.cacheKey(contentID, updatedAt2)
 	if key == key3 {
 		t.Fatalf("different timestamps produced same key: %s", key)
@@ -42,16 +46,21 @@ func TestCacheKey(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	r := New("/path/to/script.ts", nil)
 	if r == nil {
 		t.Fatal("New returned nil")
 	}
+
 	if r.scriptPath != "/path/to/script.ts" {
 		t.Fatalf("scriptPath = %s, want /path/to/script.ts", r.scriptPath)
 	}
+
 	if r.cache != nil {
 		t.Fatal("cache should be nil")
 	}
+
 	if r.cacheTTL != 24*time.Hour {
 		t.Fatalf("cacheTTL = %v, want 24h", r.cacheTTL)
 	}

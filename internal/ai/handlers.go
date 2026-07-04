@@ -39,6 +39,7 @@ func NewHandlers(dispatcher *Dispatcher, store *Store) *Handlers {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -56,6 +57,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -65,6 +67,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -73,14 +76,17 @@ func parsePageSize(r *http.Request) int32 {
 	if s == "" {
 		return 20
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
 		return 20
 	}
+
 	if n > 100 {
 		return 100
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 func parsePageOffset(r *http.Request) int32 {
@@ -88,11 +94,13 @@ func parsePageOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +115,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -117,23 +126,26 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		Prompt   string         `json:"prompt"`
 		Context  map[string]any `json:"context,omitempty"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Category == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "category is required")
 		return
 	}
+
 	if input.Prompt == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 		return
 	}
 
 	payload := map[string]any{
-		"prompt":   input.Prompt,
-		"context":  input.Context,
-		"user_id":  user.UserID.String(),
+		"prompt":    input.Prompt,
+		"context":   input.Context,
+		"user_id":   user.UserID.String(),
 		"tenant_id": tenantID.String(),
 	}
 
@@ -144,6 +156,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ai generate failed", "error", err, "category", input.Category)
 		writeError(w, http.StatusBadGateway, "ai_error", "AI generation failed")
+
 		return
 	}
 
@@ -162,6 +175,7 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -172,6 +186,7 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 		ContentType string `json:"content_type"`
 		AIOutput    any    `json:"ai_output"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -198,6 +213,7 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("creating HITL review", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+
 		return
 	}
 
@@ -210,6 +226,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -222,6 +239,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		slog.Error("listing pending HITL reviews", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list reviews")
+
 		return
 	}
 
@@ -244,6 +262,7 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 	if err := ApproveReview(r.Context(), h.Store, reviewID, user.UserID); err != nil {
 		slog.Error("approving HITL review", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+
 		return
 	}
 
@@ -266,6 +285,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Reason string `json:"reason"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -274,6 +294,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 	if err := RejectReview(r.Context(), h.Store, reviewID, user.UserID, input.Reason); err != nil {
 		slog.Error("rejecting HITL review", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+
 		return
 	}
 

@@ -11,28 +11,28 @@ import (
 
 // Program represents the referral program settings for a tenant.
 type Program struct {
-	ID                 pgtype.UUID      `json:"id"`
-	TenantID           pgtype.UUID      `json:"tenant_id"`
-	ReferrerRewardCents int32            `json:"referrer_reward_cents"`
-	RefereeRewardCents  int32            `json:"referee_reward_cents"`
-	MaxReferrals        int32            `json:"max_referrals"`
-	CookieDays          int32            `json:"cookie_days"`
-	IsActive            bool             `json:"is_active"`
-	Description         string           `json:"description"`
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	ReferrerRewardCents int32              `json:"referrer_reward_cents"`
+	RefereeRewardCents  int32              `json:"referee_reward_cents"`
+	MaxReferrals        int32              `json:"max_referrals"`
+	CookieDays          int32              `json:"cookie_days"`
+	IsActive            bool               `json:"is_active"`
+	Description         string             `json:"description"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Referral represents a single referral record.
 type Referral struct {
-	ID            pgtype.UUID      `json:"id"`
-	TenantID      pgtype.UUID      `json:"tenant_id"`
-	ReferrerID    pgtype.UUID      `json:"referrer_id"`
-	RefereeID     *pgtype.UUID     `json:"referee_id,omitempty"`
-	ReferralCode  string           `json:"referral_code"`
-	Status        string           `json:"status"`
-	RewardPaidAt  *pgtype.Timestamptz `json:"reward_paid_at,omitempty"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ID           pgtype.UUID         `json:"id"`
+	TenantID     pgtype.UUID         `json:"tenant_id"`
+	ReferrerID   pgtype.UUID         `json:"referrer_id"`
+	RefereeID    *pgtype.UUID        `json:"referee_id,omitempty"`
+	ReferralCode string              `json:"referral_code"`
+	Status       string              `json:"status"`
+	RewardPaidAt *pgtype.Timestamptz `json:"reward_paid_at,omitempty"`
+	CreatedAt    pgtype.Timestamptz  `json:"created_at"`
 }
 
 // Service coordinates referral program configuration and referral tracking.
@@ -48,6 +48,7 @@ func NewService(database *db.DB) *Service {
 // GetProgram returns the referral program settings for the tenant.
 func (s *Service) GetProgram(ctx context.Context, tenantID pgtype.UUID) (Program, error) {
 	var p Program
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, referrer_reward_cents, referee_reward_cents,
 		       max_referrals, cookie_days, is_active, description, created_at, updated_at
@@ -61,6 +62,7 @@ func (s *Service) GetProgram(ctx context.Context, tenantID pgtype.UUID) (Program
 	if err != nil {
 		return Program{}, fmt.Errorf("fetching referral program: %w", err)
 	}
+
 	return p, nil
 }
 
@@ -76,28 +78,34 @@ func (s *Service) UpdateProgram(ctx context.Context, tenantID pgtype.UUID, refer
 	if referrerRewardCents != nil {
 		rr = *referrerRewardCents
 	}
+
 	rf := current.RefereeRewardCents
 	if refereeRewardCents != nil {
 		rf = *refereeRewardCents
 	}
+
 	mr := current.MaxReferrals
 	if maxReferrals != nil {
 		mr = *maxReferrals
 	}
+
 	cd := current.CookieDays
 	if cookieDays != nil {
 		cd = *cookieDays
 	}
+
 	ia := current.IsActive
 	if isActive != nil {
 		ia = *isActive
 	}
+
 	desc := current.Description
 	if description != nil {
 		desc = *description
 	}
 
 	var updated Program
+
 	err = s.db.Writer.QueryRow(ctx, `
 		UPDATE referral_programs
 		SET referrer_reward_cents = $2, referee_reward_cents = $3,
@@ -114,6 +122,7 @@ func (s *Service) UpdateProgram(ctx context.Context, tenantID pgtype.UUID, refer
 	if err != nil {
 		return Program{}, fmt.Errorf("updating referral program: %w", err)
 	}
+
 	return updated, nil
 }
 
@@ -132,19 +141,23 @@ func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit
 	defer rows.Close()
 
 	var referrals []Referral
+
 	for rows.Next() {
 		var ref Referral
 		if err := rows.Scan(&ref.ID, &ref.TenantID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning referral: %w", err)
 		}
+
 		referrals = append(referrals, ref)
 	}
+
 	return referrals, rows.Err()
 }
 
 // GetReferral returns a single referral by ID.
 func (s *Service) GetReferral(ctx context.Context, tenantID, id pgtype.UUID) (Referral, error) {
 	var ref Referral
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at
 		FROM referrals
@@ -153,5 +166,6 @@ func (s *Service) GetReferral(ctx context.Context, tenantID, id pgtype.UUID) (Re
 	if err != nil {
 		return Referral{}, fmt.Errorf("fetching referral %s: %w", id, err)
 	}
+
 	return ref, nil
 }

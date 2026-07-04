@@ -2,9 +2,11 @@ package comparison
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -26,11 +28,13 @@ type CreateComparisonTypeInput struct {
 // CreateComparisonType creates a new admin-defined comparison type.
 func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonTypeInput) (gen.ComparisonTypeDefinition, error) {
 	if input.Name == "" {
-		return gen.ComparisonTypeDefinition{}, fmt.Errorf("name is required")
+		return gen.ComparisonTypeDefinition{}, errors.New("name is required")
 	}
+
 	if input.Slug == "" {
-		return gen.ComparisonTypeDefinition{}, fmt.Errorf("slug is required")
+		return gen.ComparisonTypeDefinition{}, errors.New("slug is required")
 	}
+
 	if input.ItemLabel == "" {
 		input.ItemLabel = "Item"
 	}
@@ -39,6 +43,7 @@ func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID
 	if input.Description != "" {
 		description = &input.Description
 	}
+
 	var icon *string
 	if input.Icon != "" {
 		icon = &input.Icon
@@ -71,6 +76,62 @@ func (s *Service) ListComparisonTypes(ctx context.Context, tenantID pgtype.UUID,
 	return s.store.listComparisonTypesByTenant(ctx, tenantID, limit, offset)
 }
 
+// CreateComparisonInput holds parameters for creating a comparison.
+type CreateComparisonInput struct {
+	Title      string
+	Body       string
+	Visibility string
+	SpaceID    pgtype.UUID
+}
+
+// CreateComparisonResult holds the result of creating a comparison.
+type CreateComparisonResult struct {
+	ID         pgtype.UUID `json:"id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	AuthorID   pgtype.UUID `json:"author_id"`
+	Title      string      `json:"title"`
+	Slug       string      `json:"slug"`
+	Visibility string      `json:"visibility"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+}
+
+// CreateComparison creates a comparison by inserting a content row with
+// content_type='comparison'. The comparison items, dimensions, and values
+// are then linked to this content row via its ID.
+func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.UUID, input CreateComparisonInput) (CreateComparisonResult, error) {
+	if input.Title == "" {
+		return CreateComparisonResult{}, errors.New("title is required")
+	}
+
+	visibility := input.Visibility
+	if visibility == "" {
+		visibility = content.VisibilityMembers
+	}
+
+	contentRow, err := s.contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
+		AuthorID:    userID,
+		SpaceID:     input.SpaceID,
+		ContentType: content.TypeComparison,
+		Title:       input.Title,
+		Body:        input.Body,
+		Status:      content.StatusPublished,
+		Visibility:  visibility,
+	})
+	if err != nil {
+		return CreateComparisonResult{}, fmt.Errorf("creating comparison content: %w", err)
+	}
+
+	return CreateComparisonResult{
+		ID:         contentRow.ID,
+		TenantID:   contentRow.TenantID,
+		AuthorID:   contentRow.AuthorID,
+		Title:      contentRow.Title,
+		Slug:       contentRow.Slug,
+		Visibility: contentRow.Visibility,
+		SpaceID:    contentRow.SpaceID,
+	}, nil
+}
+
 // UpdateComparisonTypeInput holds parameters for updating a comparison type.
 type UpdateComparisonTypeInput struct {
 	Name        string
@@ -82,13 +143,14 @@ type UpdateComparisonTypeInput struct {
 // UpdateComparisonType updates an existing comparison type.
 func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonTypeInput) (gen.ComparisonTypeDefinition, error) {
 	if input.Name == "" {
-		return gen.ComparisonTypeDefinition{}, fmt.Errorf("name is required")
+		return gen.ComparisonTypeDefinition{}, errors.New("name is required")
 	}
 
 	var description *string
 	if input.Description != "" {
 		description = &input.Description
 	}
+
 	var icon *string
 	if input.Icon != "" {
 		icon = &input.Icon
@@ -159,7 +221,7 @@ type CreateComparisonItemInput struct {
 // CreateComparisonItem adds a new item to a comparison.
 func (s *Service) CreateComparisonItem(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonItemInput) (gen.ComparisonItem, error) {
 	if input.Title == "" {
-		return gen.ComparisonItem{}, fmt.Errorf("title is required")
+		return gen.ComparisonItem{}, errors.New("title is required")
 	}
 
 	var description *string
@@ -195,7 +257,7 @@ type UpdateComparisonItemInput struct {
 // UpdateComparisonItem updates an existing comparison item.
 func (s *Service) UpdateComparisonItem(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonItemInput) (gen.ComparisonItem, error) {
 	if input.Title == "" {
-		return gen.ComparisonItem{}, fmt.Errorf("title is required")
+		return gen.ComparisonItem{}, errors.New("title is required")
 	}
 
 	var description *string
@@ -239,8 +301,9 @@ type CreateComparisonDimensionInput struct {
 // CreateComparisonDimension adds a new dimension to a comparison.
 func (s *Service) CreateComparisonDimension(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonDimensionInput) (gen.ComparisonDimension, error) {
 	if input.Label == "" {
-		return gen.ComparisonDimension{}, fmt.Errorf("label is required")
+		return gen.ComparisonDimension{}, errors.New("label is required")
 	}
+
 	if !IsValidDimensionType(input.DimensionType) {
 		return gen.ComparisonDimension{}, fmt.Errorf("invalid dimension type: %s", input.DimensionType)
 	}
@@ -269,8 +332,9 @@ type UpdateComparisonDimensionInput struct {
 // UpdateComparisonDimension updates an existing dimension.
 func (s *Service) UpdateComparisonDimension(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonDimensionInput) (gen.ComparisonDimension, error) {
 	if input.Label == "" {
-		return gen.ComparisonDimension{}, fmt.Errorf("label is required")
+		return gen.ComparisonDimension{}, errors.New("label is required")
 	}
+
 	if !IsValidDimensionType(input.DimensionType) {
 		return gen.ComparisonDimension{}, fmt.Errorf("invalid dimension type: %s", input.DimensionType)
 	}
@@ -290,6 +354,7 @@ func (s *Service) DeleteComparisonDimension(ctx context.Context, id, tenantID pg
 	if err := s.store.deleteComparisonValuesByDimension(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("deleting dimension values: %w", err)
 	}
+
 	return s.store.deleteComparisonDimension(ctx, id, tenantID)
 }
 
@@ -350,19 +415,19 @@ func (s *Service) GetComparisonValue(ctx context.Context, dimensionID, itemID, t
 // ---------------------------------------------------------------------------
 
 // ComparisonMatrixItem represents a single item in the comparison matrix.
-type ComparisonMatrixItem struct {
-	Item       gen.ComparisonItem            `json:"item"`
-	Dimensions []ComparisonMatrixDimension   `json:"dimensions"`
+type ComparisonMatrixItem struct { //nolint:revive // stuttering type name preserved for API compatibility
+	Item       gen.ComparisonItem          `json:"item"`
+	Dimensions []ComparisonMatrixDimension `json:"dimensions"`
 }
 
 // ComparisonMatrixDimension represents a dimension value for an item in the matrix.
-type ComparisonMatrixDimension struct {
-	DimensionID  pgtype.UUID         `json:"dimension_id"`
-	Label        string              `json:"label"`
-	Type         string              `json:"type"`
-	Value        *string             `json:"value"`
-	ValueRating  *float64            `json:"value_rating"`
-	ValueBoolean *bool               `json:"value_boolean"`
+type ComparisonMatrixDimension struct { //nolint:revive // stuttering type name preserved for API compatibility
+	DimensionID  pgtype.UUID `json:"dimension_id"`
+	Label        string      `json:"label"`
+	Type         string      `json:"type"`
+	Value        *string     `json:"value"`
+	ValueRating  *float64    `json:"value_rating"`
+	ValueBoolean *bool       `json:"value_boolean"`
 }
 
 // GetComparisonMatrix assembles the full items×dimensions matrix for a comparison.
@@ -371,6 +436,7 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 	if err != nil {
 		return nil, fmt.Errorf("listing items for matrix: %w", err)
 	}
+
 	dimensions, err := s.store.listComparisonDimensionsByContent(ctx, contentID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing dimensions for matrix: %w", err)
@@ -387,14 +453,17 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 		itemID      [16]byte
 		dimensionID [16]byte
 	}
+
 	valueIndex := make(map[valueKey]gen.ComparisonValue, len(values))
 	for _, v := range values {
 		valueIndex[valueKey{v.ItemID.Bytes, v.DimensionID.Bytes}] = v
 	}
 
 	matrix := make([]ComparisonMatrixItem, 0, len(items))
+
 	for _, item := range items {
 		mi := ComparisonMatrixItem{Item: item, Dimensions: make([]ComparisonMatrixDimension, 0, len(dimensions))}
+
 		for _, dim := range dimensions {
 			md := ComparisonMatrixDimension{
 				DimensionID: dim.ID,
@@ -403,17 +472,22 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 			}
 			if val, ok := valueIndex[valueKey{item.ID.Bytes, dim.ID.Bytes}]; ok {
 				md.Value = val.Value
+
 				if val.ValueRating.Valid {
 					var r float64
 					if err := val.ValueRating.Scan(&r); err == nil {
 						md.ValueRating = &r
 					}
 				}
+
 				md.ValueBoolean = val.ValueBoolean
 			}
+
 			mi.Dimensions = append(mi.Dimensions, md)
 		}
+
 		matrix = append(matrix, mi)
 	}
+
 	return matrix, nil
 }

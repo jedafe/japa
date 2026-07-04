@@ -32,9 +32,11 @@ const maxSearchLimit = 100
 // returned in the API response. Only indexes queried by the search endpoint
 // appear here.
 var indexTypeByUID = map[string]string{
-	IndexPosts:  "content",
-	IndexSpaces: "space",
-	IndexUsers:  "user",
+	IndexPosts:        "content",
+	IndexForumThreads: "forum_thread",
+	IndexSpaces:       "space",
+	IndexUsers:        "user",
+	IndexTags:         "tag",
 }
 
 // searchAttributesToRetrieve limits each hit to the fields the response needs,
@@ -54,7 +56,7 @@ func NewHandlers(client meilisearch.ServiceManager) *Handlers {
 }
 
 // SearchResult represents a single search result.
-type SearchResult struct {
+type SearchResult struct { //nolint:revive // stuttering type name preserved for API compatibility
 	Type    string `json:"type"`
 	ID      string `json:"id"`
 	Title   string `json:"title"`
@@ -63,7 +65,7 @@ type SearchResult struct {
 }
 
 // SearchResponse is the API response for search.
-type SearchResponse struct {
+type SearchResponse struct { //nolint:revive // stuttering type name preserved for API compatibility
 	Results []SearchResult `json:"results"`
 }
 
@@ -71,6 +73,7 @@ type SearchResponse struct {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -95,6 +98,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
+
 	t := tenant.FromContext(r.Context())
 	if t == nil {
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
@@ -114,6 +118,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": SearchResponse{Results: []SearchResult{}},
 		})
+
 		return
 	}
 
@@ -121,6 +126,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("search query failed", "query", query, "error", err)
 		writeError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
+
 		return
 	}
 
@@ -129,9 +135,9 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// runMultiSearch queries the posts, spaces, and users indexes in a single
-// Meilisearch multi-search call, scoped to the given tenant. It returns the
-// flattened, type-tagged results.
+// runMultiSearch queries the posts, spaces, users, forum_threads, and tags
+// indexes in a single Meilisearch multi-search call, scoped to the given
+// tenant. It returns the flattened, type-tagged results.
 func (h *Handlers) runMultiSearch(ctx context.Context, query string, limit int, tenantID pgtype.UUID) ([]SearchResult, error) {
 	tenantFilter := fmt.Sprintf(`tenant_id = "%s"`, tenantID.String())
 
@@ -158,6 +164,20 @@ func (h *Handlers) runMultiSearch(ctx context.Context, query string, limit int, 
 				Filter:               tenantFilter,
 				AttributesToRetrieve: searchAttributesToRetrieve,
 			},
+			{
+				IndexUID:             IndexForumThreads,
+				Query:                query,
+				Limit:                int64(limit),
+				Filter:               tenantFilter,
+				AttributesToRetrieve: searchAttributesToRetrieve,
+			},
+			{
+				IndexUID:             IndexTags,
+				Query:                query,
+				Limit:                int64(limit),
+				Filter:               tenantFilter,
+				AttributesToRetrieve: searchAttributesToRetrieve,
+			},
 		},
 	}
 
@@ -174,11 +194,13 @@ func (h *Handlers) runMultiSearch(ctx context.Context, query string, limit int, 
 // misconfigured engine cannot corrupt the response shape.
 func mapSearchResults(resp *meilisearch.MultiSearchResponse) []SearchResult {
 	results := make([]SearchResult, 0, resp.EstimatedTotalHits)
+
 	for _, sr := range resp.Results {
 		resultType, ok := indexTypeByUID[sr.IndexUID]
 		if !ok {
 			continue
 		}
+
 		for _, hit := range sr.Hits {
 			results = append(results, SearchResult{
 				Type:    resultType,
@@ -189,6 +211,7 @@ func mapSearchResults(resp *meilisearch.MultiSearchResponse) []SearchResult {
 			})
 		}
 	}
+
 	return results
 }
 
@@ -200,10 +223,12 @@ func stringField(hit meilisearch.Hit, key string) string {
 	if !ok || len(raw) == 0 {
 		return ""
 	}
+
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return ""
 	}
+
 	return s
 }
 
@@ -213,9 +238,11 @@ func parseLimit(raw string) int {
 	if raw == "" {
 		return defaultSearchLimit
 	}
+
 	parsed, err := strconv.Atoi(raw)
 	if err != nil || parsed <= 0 || parsed > maxSearchLimit {
 		return defaultSearchLimit
 	}
+
 	return parsed
 }

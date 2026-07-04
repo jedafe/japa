@@ -39,7 +39,7 @@ func FromContext(ctx context.Context) *Tenant {
 }
 
 // TenantStore is the interface for looking up tenants by host header.
-type TenantStore interface {
+type TenantStore interface { //nolint:revive // stuttering type name preserved for API compatibility
 	GetTenantByHost(ctx context.Context, host string) (*Tenant, error)
 	GetDefaultTenant(ctx context.Context) (*Tenant, error)
 }
@@ -50,6 +50,7 @@ func Middleware(store TenantStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
+
 			var tenant *Tenant
 
 			host := r.Host
@@ -65,9 +66,11 @@ func Middleware(store TenantStore) func(http.Handler) http.Handler {
 				if err != nil || t == nil {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusServiceUnavailable)
-					w.Write([]byte(`{"error":{"code":"tenant_unavailable","message":"No tenant available"}}`))
+					_, _ = w.Write([]byte(`{"error":{"code":"tenant_unavailable","message":"No tenant available"}}`))
+
 					return
 				}
+
 				tenant = t
 			}
 
@@ -83,5 +86,6 @@ func IDFromContext(ctx context.Context) pgtype.UUID {
 	if t == nil {
 		return pgtype.UUID{}
 	}
+
 	return t.ID
 }

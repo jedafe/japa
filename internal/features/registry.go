@@ -56,6 +56,7 @@ func DefaultFor(key string) bool {
 			return f.Default
 		}
 	}
+
 	return false
 }
 
@@ -65,5 +66,6 @@ func AllKeys() []string {
 	for i, f := range Registry {
 		keys[i] = f.Key
 	}
+
 	return keys
 }

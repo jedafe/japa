@@ -14,6 +14,8 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestCacheSetAndGet(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
 	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
@@ -23,12 +25,15 @@ func TestCacheSetAndGet(t *testing.T) {
 	if !ok {
 		t.Fatal("expected cache hit")
 	}
+
 	if m["hello"] != "Hello" {
 		t.Errorf("expected Hello, got %s", m["hello"])
 	}
 }
 
 func TestCacheGetReturnsCopy(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
 	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
@@ -44,6 +49,8 @@ func TestCacheGetReturnsCopy(t *testing.T) {
 }
 
 func TestCacheInvalidate(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
 	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
@@ -57,6 +64,8 @@ func TestCacheInvalidate(t *testing.T) {
 }
 
 func TestCacheMissForDifferentLocale(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
 	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
@@ -69,6 +78,8 @@ func TestCacheMissForDifferentLocale(t *testing.T) {
 }
 
 func TestCacheMissForDifferentTenant(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
 	tenant1 := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	tenant2 := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
@@ -86,12 +97,15 @@ func TestCacheMissForDifferentTenant(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWriteJSON(t *testing.T) {
+	t.Parallel()
+
 	w := httptest.NewRecorder()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
+
 	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("expected application/json, got %s", ct)
 	}
@@ -100,12 +114,15 @@ func TestWriteJSON(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
+
 	if body["status"] != "ok" {
 		t.Errorf("expected ok, got %s", body["status"])
 	}
 }
 
 func TestWriteError(t *testing.T) {
+	t.Parallel()
+
 	w := httptest.NewRecorder()
 	writeError(w, http.StatusBadRequest, "missing_locale", "locale is required")
 
@@ -117,9 +134,11 @@ func TestWriteError(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
+
 	if body["error"]["code"] != "missing_locale" {
 		t.Errorf("expected missing_locale, got %s", body["error"]["code"])
 	}
+
 	if body["error"]["message"] != "locale is required" {
 		t.Errorf("expected 'locale is required', got %s", body["error"]["message"])
 	}
@@ -130,10 +149,12 @@ func TestWriteError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUpsertHandlerNoTenant(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
 	h := NewHandlers(svc)
 
-	req := httptest.NewRequest("POST", "/admin/translations", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/translations", nil)
 	w := httptest.NewRecorder()
 
 	h.Upsert(w, req)
@@ -144,10 +165,12 @@ func TestUpsertHandlerNoTenant(t *testing.T) {
 }
 
 func TestGetLocaleTranslationsNoTenant(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
 	h := NewHandlers(svc)
 
-	req := httptest.NewRequest("GET", "/api/v1/translations/en", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/translations/en", nil)
 	w := httptest.NewRecorder()
 
 	h.GetLocaleTranslations(w, req)
@@ -158,10 +181,12 @@ func TestGetLocaleTranslationsNoTenant(t *testing.T) {
 }
 
 func TestListLocalesNoTenant(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
 	h := NewHandlers(svc)
 
-	req := httptest.NewRequest("GET", "/admin/translations/locales", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/translations/locales", nil)
 	w := httptest.NewRecorder()
 
 	h.ListLocales(w, req)

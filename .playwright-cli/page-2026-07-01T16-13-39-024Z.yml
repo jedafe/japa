@@ -1,0 +1,51 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]: control.brand
+    - navigation [ref=e7]:
+      - link "nav.dashboard" [ref=e8] [cursor=pointer]:
+        - /url: /
+        - img [ref=e9]
+        - text: nav.dashboard
+      - link "nav.queue" [ref=e14] [cursor=pointer]:
+        - /url: /queue
+        - img [ref=e15]
+        - text: nav.queue
+      - link "nav.db_health" [ref=e18] [cursor=pointer]:
+        - /url: /db
+        - img [ref=e19]
+        - text: nav.db_health
+      - link "nav.audit" [ref=e23] [cursor=pointer]:
+        - /url: /audit
+        - img [ref=e24]
+        - text: nav.audit
+      - link "nav.security" [ref=e27] [cursor=pointer]:
+        - /url: /security
+        - img [ref=e28]
+        - text: nav.security
+      - link "nav.api_keys" [ref=e30] [cursor=pointer]:
+        - /url: /api-keys
+        - img [ref=e31]
+        - text: nav.api_keys
+      - link "nav.cache" [ref=e35] [cursor=pointer]:
+        - /url: /cache
+        - img [ref=e36]
+        - text: nav.cache
+    - generic [ref=e39]:
+      - paragraph [ref=e40]: super_admin
+      - button "nav.sign_out" [ref=e41]:
+        - img [ref=e42]
+        - text: nav.sign_out
+  - main [ref=e45]:
+    - generic [ref=e48]:
+      - heading "control.brand" [level=1] [ref=e49]
+      - paragraph [ref=e50]: login.title
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - generic [ref=e53]: login.email
+          - textbox "login.email" [ref=e54]:
+            - /placeholder: admin@example.com
+        - generic [ref=e55]:
+          - generic [ref=e56]: login.password
+          - textbox "login.password" [ref=e57]:
+            - /placeholder: ••••••••
+        - button "login.submit" [disabled] [ref=e58]

@@ -46,6 +46,7 @@ func loadFontFace(size float64) font.Face {
 		slog.Warn("og-image: failed to parse Go Regular font", "error", err)
 		return nil
 	}
+
 	face, err := opentype.NewFace(ft, &opentype.FaceOptions{
 		Size:    size,
 		DPI:     72,
@@ -55,6 +56,7 @@ func loadFontFace(size float64) font.Face {
 		slog.Warn("og-image: failed to create font face", "error", err)
 		return nil
 	}
+
 	return face
 }
 
@@ -84,13 +86,16 @@ func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string, tenant
 	}
 
 	var meta contentMeta
-	err = h.reader.QueryRow(ctx,
+
+	err = h.reader.QueryRow(
+		ctx,
 		`SELECT title, content_type FROM contents WHERE id = $1 AND tenant_id = $2`,
 		pgID, tenantID,
 	).Scan(&meta.Title, &meta.ContentType)
 	if err != nil {
 		return nil
 	}
+
 	return &meta
 }
 
@@ -122,12 +127,14 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	if err := png.Encode(&buf, img); err != nil {
 		slog.Error("og-image: png encode failed", "error", err)
 		http.Error(w, "Failed to generate image", http.StatusInternalServerError)
+
 		return
 	}
 
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "public, max-age=86400") // 24h cache
 	w.WriteHeader(http.StatusOK)
+
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		slog.Warn("og-image: write failed", "error", err)
 	}
@@ -144,8 +151,9 @@ func generateOGImage(title, subtitle string, face font.Face) *image.RGBA {
 
 	// Fill with brand color (slate-800).
 	brandBg := color.RGBA{R: 30, G: 41, B: 59, A: 255}
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+
+	for y := range height {
+		for x := range width {
 			img.Set(x, y, brandBg)
 		}
 	}
@@ -153,8 +161,9 @@ func generateOGImage(title, subtitle string, face font.Face) *image.RGBA {
 	// Draw accent stripe at bottom (indigo-500).
 	accent := color.RGBA{R: 99, G: 102, B: 241, A: 255}
 	stripeHeight := 8
+
 	for y := height - stripeHeight; y < height; y++ {
-		for x := 0; x < width; x++ {
+		for x := range width {
 			img.Set(x, y, accent)
 		}
 	}
@@ -180,18 +189,22 @@ func drawString(img *image.RGBA, face font.Face, x, y int, text string, clr colo
 			Dot:  fixed.P(x, y),
 		}
 		d.DrawString(text)
+
 		return
 	}
 
 	// Fallback: bitmap rectangles when font face is unavailable.
 	const charW, charH, spacing = 10, 18, 4
+
 	for i, ch := range text {
 		if ch == ' ' {
 			continue
 		}
+
 		cx := x + i*(charW+spacing)
-		for dy := 0; dy < charH; dy++ {
-			for dx := 0; dx < charW; dx++ {
+
+		for dy := range charH {
+			for dx := range charW {
 				img.Set(cx+dx, y-charH+dy, clr)
 			}
 		}
@@ -203,6 +216,7 @@ func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
+
 	return s[:maxLen-3] + "..."
 }
 
@@ -211,6 +225,7 @@ func cleanTitle(title string) string {
 	title = strings.ReplaceAll(title, "\n", " ")
 	title = strings.ReplaceAll(title, "\r", " ")
 	title = strings.Join(strings.Fields(title), " ")
+
 	return truncateString(title, 60)
 }
 
@@ -231,6 +246,7 @@ func humanizeContentType(ct string) string {
 		if ct == "" {
 			return "Content"
 		}
+
 		return strings.ToUpper(ct[:1]) + ct[1:]
 	}
 }

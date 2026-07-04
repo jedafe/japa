@@ -8,19 +8,19 @@ import (
 // Test Fixtures: Real file magic bytes
 // ---------------------------------------------------------------------------
 
-// JPEG file header: FF D8 FF E0 (JFIF) or FF D8 FF E1 (EXIF)
+// JPEG file header: FF D8 FF E0 (JFIF) or FF D8 FF E1 (EXIF).
 var jpegBytes = []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01}
 
-// PNG file header: 89 50 4E 47 0D 0A 1A 0A
+// PNG file header: 89 50 4E 47 0D 0A 1A 0A.
 var pngBytes = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D}
 
-// GIF89a header: 47 49 46 38 39 61
+// GIF89a header: 47 49 46 38 39 61.
 var gifBytes = []byte{0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00}
 
-// PDF header: 25 50 44 46 2D (%PDF-)
+// PDF header: 25 50 44 46 2D (%PDF-).
 var pdfBytes = []byte{0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37}
 
-// BMP header: 42 4D (BM)
+// BMP header: 42 4D (BM).
 var bmpBytes = []byte{0x42, 0x4D, 0x38, 0x00, 0x00, 0x00}
 
 // EXE/PE header: 4D 5A (MZ) — Go's http.DetectContentType does NOT have
@@ -38,10 +38,10 @@ var elfBytes = []byte{0x7F, 0x45, 0x4C, 0x46, 0x02, 0x01, 0x01, 0x00}
 // We include it for completeness but note it falls through to the octet-stream path.
 var tiffBytes = []byte{0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00}
 
-// MP4 ftyp box (typical): 00 00 00 xx 66 74 79 70
+// MP4 ftyp box (typical): 00 00 00 xx 66 74 79 70.
 var mp4Bytes = []byte{0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6F, 0x6D}
 
-// WebP header: RIFF....WEBP
+// WebP header: RIFF....WEBP.
 var webPBytes = []byte{0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50}
 
 // ---------------------------------------------------------------------------
@@ -49,6 +49,8 @@ var webPBytes = []byte{0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x4
 // ---------------------------------------------------------------------------
 
 func TestCanonicalMIMEType(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input, want string
 	}{
@@ -94,6 +96,8 @@ func TestCanonicalMIMEType(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestVerifyMIMEType_Matches(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		fileData []byte
@@ -111,10 +115,13 @@ func TestVerifyMIMEType_Matches(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			detected, ok, err := VerifyMIMEType(tt.fileData, tt.declared)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if !ok != !tt.wantOK {
 				t.Errorf("matchesExpected = %v, want %v (detected=%s, declared=%s)",
 					ok, tt.wantOK, detected, tt.declared)
@@ -124,6 +131,8 @@ func TestVerifyMIMEType_Matches(t *testing.T) {
 }
 
 func TestVerifyMIMEType_Mismatches(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		fileData []byte
@@ -137,10 +146,13 @@ func TestVerifyMIMEType_Mismatches(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			detected, ok, err := VerifyMIMEType(tt.fileData, tt.declared)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if ok {
 				t.Errorf("expected mismatch but got matchesExpected=true (detected=%s, declared=%s)",
 					detected, tt.declared)
@@ -150,6 +162,7 @@ func TestVerifyMIMEType_Mismatches(t *testing.T) {
 }
 
 func TestVerifyMIMEType_OctetStreamNotRejected(t *testing.T) {
+	t.Parallel()
 	// Formats that http.DetectContentType returns "application/octet-stream"
 	// for (MZ, ELF, TIFF) should NOT be rejected — the detector simply can't
 	// fingerprint them from the header alone. The defense against these
@@ -166,10 +179,13 @@ func TestVerifyMIMEType_OctetStreamNotRejected(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			detected, ok, err := VerifyMIMEType(tt.fileData, tt.declared)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if !ok {
 				t.Errorf("octet-stream should pass through (detected=%s, declared=%s)", detected, tt.declared)
 			}
@@ -178,6 +194,8 @@ func TestVerifyMIMEType_OctetStreamNotRejected(t *testing.T) {
 }
 
 func TestVerifyMIMEType_EmptyBytes(t *testing.T) {
+	t.Parallel()
+
 	_, _, err := VerifyMIMEType([]byte{}, "image/jpeg")
 	if err == nil {
 		t.Error("expected error for empty file bytes, got nil")
@@ -189,12 +207,14 @@ func TestVerifyMIMEType_EmptyBytes(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSpoofingDetection(t *testing.T) {
+	t.Parallel()
 	// Scenario 1: A BMP file renamed to photo.jpg and claimed as image/jpeg.
 	// http.DetectContentType identifies BMP and rejects the mismatch.
 	detected, ok, err := VerifyMIMEType(bmpBytes, "image/jpeg")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if ok {
 		t.Errorf("spoofed BMP claimed as JPEG should be rejected, detected=%s", detected)
 	}
@@ -204,6 +224,7 @@ func TestSpoofingDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if ok {
 		t.Errorf("spoofed GIF claimed as PNG should be rejected, detected=%s", detected)
 	}
@@ -216,6 +237,7 @@ func TestSpoofingDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if !ok {
 		t.Errorf("MZ as octet-stream should pass through, detected=%s", detected)
 	}
@@ -230,11 +252,13 @@ func TestSpoofingDetection(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestValidateFileType(t *testing.T) {
+	t.Parallel()
+
 	mediaTypes := AllowedMIMETypesByContext[UploadContextMedia]
 	avatarTypes := AllowedMIMETypesByContext[UploadContextAvatar]
 
 	tests := []struct {
-		name    string
+		name     string
 		detected string
 		allowed  []string
 		want     bool
@@ -264,6 +288,8 @@ func TestValidateFileType(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := ValidateFileType(tt.detected, tt.allowed)
 			if got != tt.want {
 				t.Errorf("ValidateFileType(%q, ...) = %v, want %v", tt.detected, got, tt.want)
@@ -277,6 +303,8 @@ func TestValidateFileType(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMIMETypeFromExtension(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		filename, want string
 	}{
@@ -308,11 +336,13 @@ func TestMIMETypeFromExtension(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIsAllowedMIMETypeForContext(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name    string
-		mime    string
-		ctx     UploadContext
-		want    bool
+		name string
+		mime string
+		ctx  UploadContext
+		want bool
 	}{
 		{"JPEG allowed for media", "image/jpeg", UploadContextMedia, true},
 		{"image/jpg alias allowed for media", "image/jpg", UploadContextMedia, true},
@@ -325,6 +355,8 @@ func TestIsAllowedMIMETypeForContext(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := IsAllowedMIMETypeForContext(tt.mime, tt.ctx)
 			if got != tt.want {
 				t.Errorf("IsAllowedMIMETypeForContext(%q, %q) = %v, want %v",
@@ -339,6 +371,8 @@ func TestIsAllowedMIMETypeForContext(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMIMETypeForContext(t *testing.T) {
+	t.Parallel()
+
 	media := MIMETypeForContext(UploadContextMedia)
 	if len(media) == 0 {
 		t.Fatal("MIMETypeForContext(UploadContextMedia) returned nil")

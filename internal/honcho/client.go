@@ -6,6 +6,7 @@ package honcho
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,7 +37,7 @@ func NewClient(baseURL string) *Client {
 // job) can propagate it and let Asynq retry.
 func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 	if userID == "" {
-		return fmt.Errorf("honcho: userID is required")
+		return errors.New("honcho: userID is required")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+"/users/"+userID, nil)
@@ -48,8 +49,10 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 	if err != nil {
 		return fmt.Errorf("honcho: calling delete user %s: %w", userID, err)
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+
+	defer func() { _ = resp.Body.Close() }()
+
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("honcho: delete user %s returned status %d", userID, resp.StatusCode)

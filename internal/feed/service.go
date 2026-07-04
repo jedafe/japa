@@ -3,6 +3,7 @@ package feed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -13,39 +14,39 @@ import (
 
 // FeedItem represents a single item in a feed response, normalized across
 // all feed types (explore, primary, space, profile).
-type FeedItem struct {
-	ID           string  `json:"id"`
-	Title        string  `json:"title"`
-	Slug         string  `json:"slug"`
-	ContentType  string  `json:"content_type"`
-	AuthorID     string  `json:"author_id"`
-	SpaceID      *string `json:"space_id,omitempty"`
-	CreatedAt    string  `json:"created_at"`
-	ViewCount    int32   `json:"view_count"`
-	CommentCount int32   `json:"comment_count"`
-	VoteScore    int32   `json:"vote_score"`
+type FeedItem struct { //nolint:revive // stuttering type name preserved for API compatibility
+	ID            string  `json:"id"`
+	Title         string  `json:"title"`
+	Slug          string  `json:"slug"`
+	ContentType   string  `json:"content_type"`
+	AuthorID      string  `json:"author_id"`
+	SpaceID       *string `json:"space_id,omitempty"`
+	CreatedAt     string  `json:"created_at"`
+	ViewCount     int32   `json:"view_count"`
+	CommentCount  int32   `json:"comment_count"`
+	VoteScore     int32   `json:"vote_score"`
 	VelocityScore float64 `json:"velocity_score"`
 }
 
 // PrimaryFeedItem represents a feed item from the personalized (push) feed.
 type PrimaryFeedItem struct {
-	ID                string  `json:"id"`
-	ContentID         string  `json:"content_id"`
-	SpaceID           *string `json:"space_id,omitempty"`
-	ContentType       string  `json:"content_type"`
-	Score             float64 `json:"score"`
-	CreatedAt         string  `json:"created_at"`
-	Title             string  `json:"title"`
-	Slug              string  `json:"slug"`
-	AuthorID          string  `json:"author_id"`
-	ContentCreatedAt  string  `json:"content_created_at"`
+	ID               string  `json:"id"`
+	ContentID        string  `json:"content_id"`
+	SpaceID          *string `json:"space_id,omitempty"`
+	ContentType      string  `json:"content_type"`
+	Score            float64 `json:"score"`
+	CreatedAt        string  `json:"created_at"`
+	Title            string  `json:"title"`
+	Slug             string  `json:"slug"`
+	AuthorID         string  `json:"author_id"`
+	ContentCreatedAt string  `json:"content_created_at"`
 }
 
 // FanOutPost distributes a post to follower feeds asynchronously via Asynq.
 // If space member count ≤ FanOutThreshold: push mode (write feeds rows).
 // If larger: pull mode (mark in hot cache, followers pull on next request).
 // The fan-out is handled by the worker.TypeContentFanOutToFeeds task.
-func (s *Service) FanOutPost(ctx context.Context, tenantID, contentID, spaceID pgtype.UUID, contentType string) error {
+func (s *Service) FanOutPost(_ context.Context, tenantID, contentID, spaceID pgtype.UUID, contentType string) error {
 	// Determine fan-out type based on space membership.
 	fanOutType := "followers" // default: fan out to author's followers
 	if spaceID.Valid {
@@ -78,11 +79,12 @@ func (s *Service) FanOutPost(ctx context.Context, tenantID, contentID, spaceID p
 // GetFeed returns paginated feed items for the specified timeline and sort.
 // timeline: "explore", "primary", "space", "profile"
 // sort: "latest", "top", "rising", "relevant"
-func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline string, userID *pgtype.UUID, spaceID *pgtype.UUID, authorID *pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline string, userID, spaceID, authorID *pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
 	// Clamp pagination limits.
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -92,18 +94,21 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 		return s.getExploreFeed(ctx, tenantID, sort, limit, offset)
 	case "primary":
 		if userID == nil {
-			return nil, fmt.Errorf("primary feed requires user_id")
+			return nil, errors.New("primary feed requires user_id")
 		}
+
 		return s.getPrimaryFeedItems(ctx, tenantID, *userID, sort, limit, offset)
 	case "space":
 		if spaceID == nil {
-			return nil, fmt.Errorf("space feed requires space_id")
+			return nil, errors.New("space feed requires space_id")
 		}
+
 		return s.getSpaceFeedItems(ctx, tenantID, *spaceID, sort, limit, offset)
 	case "profile":
 		if authorID == nil {
-			return nil, fmt.Errorf("profile feed requires author_id")
+			return nil, errors.New("profile feed requires author_id")
 		}
+
 		return s.getProfileFeedItems(ctx, tenantID, *authorID, sort, limit, offset)
 	default:
 		return nil, fmt.Errorf("unknown timeline: %s", timeline)
@@ -118,28 +123,32 @@ func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort
 		if err != nil {
 			return nil, err
 		}
+
 		return topRowsToItems(rows), nil
 	case SortRising:
 		rows, err := s.store.getRisingFeed(ctx, tenantID, limit, offset)
 		if err != nil {
 			return nil, err
 		}
+
 		return risingRowsToItems(rows), nil
 	default: // "latest" or "relevant" both use velocity_score DESC
 		rows, err := s.store.getExploreFeed(ctx, tenantID, limit, offset)
 		if err != nil {
 			return nil, err
 		}
+
 		return exploreRowsToItems(rows), nil
 	}
 }
 
 // getPrimaryFeedItems returns the user's personalized feed with sort.
-func (s *Service) getPrimaryFeedItems(ctx context.Context, tenantID, userID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+func (s *Service) getPrimaryFeedItems(ctx context.Context, tenantID, userID pgtype.UUID, _ string, limit, offset int32) ([]FeedItem, error) {
 	rows, err := s.store.getPrimaryFeed(ctx, tenantID, userID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
+
 	return primaryRowsToItems(rows), nil
 }
 
@@ -157,21 +166,23 @@ func (s *Service) getSpaceFeedItems(ctx context.Context, tenantID, spaceID pgtyp
 		if err != nil {
 			return nil, err
 		}
+
 		return spaceRowsToItems(rows), nil
 	}
 }
 
 // getProfileFeedItems returns a user's public posts with sort.
-func (s *Service) getProfileFeedItems(ctx context.Context, tenantID, authorID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+func (s *Service) getProfileFeedItems(ctx context.Context, tenantID, authorID pgtype.UUID, _ string, limit, offset int32) ([]FeedItem, error) {
 	rows, err := s.store.getProfileFeed(ctx, tenantID, authorID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
+
 	return profileRowsToItems(rows), nil
 }
 
 // UpdateVelocityScores batch updates velocity scores for posts < 7 days old.
-// velocity = engagement / (hours_old + 2)^1.8
+// velocity = engagement / (hours_old + 2)^1.8.
 func (s *Service) UpdateVelocityScores(ctx context.Context, tenantID pgtype.UUID) error {
 	return s.store.updateVelocityScores(ctx, tenantID)
 }
@@ -203,6 +214,7 @@ func (s *Service) GetFeedItemCount(ctx context.Context, userID pgtype.UUID) (int
 	if err != nil {
 		return 0, err
 	}
+
 	return int(count), nil
 }
 
@@ -215,6 +227,7 @@ func uuidToString(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
+
 	return u.String()
 }
 
@@ -223,7 +236,9 @@ func nullableUUIDToString(u pgtype.UUID) *string {
 	if !u.Valid {
 		return nil
 	}
+
 	s := u.String()
+
 	return &s
 }
 
@@ -244,6 +259,7 @@ func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 			VelocityScore: pgNumericToFloat64(r.VelocityScore),
 		}
 	}
+
 	return items
 }
 
@@ -264,6 +280,7 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 			VelocityScore: pgNumericToFloat64(r.VelocityScore),
 		}
 	}
+
 	return items
 }
 
@@ -284,6 +301,7 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 			VelocityScore: pgNumericToFloat64(r.VelocityScore),
 		}
 	}
+
 	return items
 }
 
@@ -301,6 +319,7 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 			VelocityScore: pgNumericToFloat64(r.Score),
 		}
 	}
+
 	return items
 }
 
@@ -320,6 +339,7 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 			VelocityScore: pgNumericToFloat64(r.VelocityScore),
 		}
 	}
+
 	return items
 }
 
@@ -339,17 +359,20 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 			VelocityScore: pgNumericToFloat64(r.VelocityScore),
 		}
 	}
+
 	return items
 }
 
 // ComputeVelocity calculates the velocity score for a post.
-// Formula: engagement / (hours_old + 2)^1.8
+// Formula: engagement / (hours_old + 2)^1.8.
 func ComputeVelocity(voteScore, commentCount, viewCount, bookmarkCount int32, hoursOld float64) float64 {
 	engagement := float64(voteScore + commentCount + viewCount + bookmarkCount)
+
 	denominator := math.Pow(hoursOld+2, 1.8)
 	if denominator == 0 {
 		return 0
 	}
+
 	return engagement / denominator
 }
 
@@ -358,9 +381,11 @@ func pgNumericToFloat64(n pgtype.Numeric) float64 {
 	if !n.Valid {
 		return 0
 	}
+
 	f, err := n.Float64Value()
 	if err != nil {
 		return 0
 	}
+
 	return f.Float64
 }

@@ -56,11 +56,13 @@ func ExtractMentions(docJSON []byte) ([]Mention, error) {
 			} `json:"content"`
 		} `json:"content"`
 	}
+
 	if err := json.Unmarshal(docJSON, &doc); err != nil {
 		return nil, err
 	}
 
 	var mentions []Mention
+
 	for _, block := range doc.Content {
 		for _, node := range block.Content {
 			if node.Type == "japaMention" && node.Attrs != nil {
@@ -68,6 +70,7 @@ func ExtractMentions(docJSON []byte) ([]Mention, error) {
 				if entityType != "user" {
 					continue
 				}
+
 				idStr, _ := node.Attrs["id"].(string)
 				label, _ := node.Attrs["label"].(string)
 
@@ -84,6 +87,7 @@ func ExtractMentions(docJSON []byte) ([]Mention, error) {
 			}
 		}
 	}
+
 	return mentions, nil
 }
 
@@ -104,6 +108,7 @@ func FilterMentions(
 	userChecker UserStatusChecker,
 ) ([]Mention, error) {
 	var filtered []Mention
+
 	for _, m := range mentions {
 		// Skip if mentioned user is the post author
 		if m.ID == authorID {
@@ -116,6 +121,7 @@ func FilterMentions(
 			if err != nil {
 				continue // skip on error
 			}
+
 			if erased {
 				continue
 			}
@@ -127,6 +133,7 @@ func FilterMentions(
 			if err != nil {
 				continue
 			}
+
 			if blocked {
 				continue
 			}
@@ -136,6 +143,7 @@ func FilterMentions(
 			if err != nil {
 				continue
 			}
+
 			if blocked {
 				continue
 			}
@@ -147,6 +155,7 @@ func FilterMentions(
 			if err != nil {
 				continue
 			}
+
 			if !isMember {
 				continue
 			}
@@ -154,5 +163,6 @@ func FilterMentions(
 
 		filtered = append(filtered, m)
 	}
+
 	return filtered, nil
 }

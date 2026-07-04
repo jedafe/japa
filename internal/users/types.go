@@ -48,12 +48,12 @@ type ListUsersResponse struct {
 
 // UserListItem is a condensed user record for list endpoints.
 type UserListItem struct {
-	ID            string  `json:"id"`
-	Email         string  `json:"email"`
-	Username      string  `json:"username"`
-	ProfileType   string  `json:"profile_type"`
-	Status        string  `json:"status"`
-	FollowerCount int32   `json:"follower_count"`
-	CreatedAt     string  `json:"created_at"`
-	UpdatedAt     string  `json:"updated_at"`
+	ID            string `json:"id"`
+	Email         string `json:"email"`
+	Username      string `json:"username"`
+	ProfileType   string `json:"profile_type"`
+	Status        string `json:"status"`
+	FollowerCount int32  `json:"follower_count"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }

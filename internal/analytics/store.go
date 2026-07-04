@@ -61,10 +61,10 @@ func (s *Store) GetEventCountsByType(ctx context.Context, tenantID pgtype.UUID, 
 // GetDailyContentStats returns materialized view data for content stats.
 func (s *Store) GetDailyContentStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date, contentID pgtype.UUID) ([]gen.MvDailyContentStat, error) {
 	return s.queries.GetDailyContentStats(ctx, gen.GetDailyContentStatsParams{
-		TenantID:  tenantID,
-		Column2:   nullableDate(startDate),
-		Column3:   nullableDate(endDate),
-		Column4:   contentID,
+		TenantID: tenantID,
+		Column2:  nullableDate(startDate),
+		Column3:  nullableDate(endDate),
+		Column4:  contentID,
 	})
 }
 
@@ -140,16 +140,16 @@ func (s *Store) CreateSecurityScanResult(ctx context.Context, p gen.CreateSecuri
 // ListSecurityScanResults returns scan results matching filters.
 func (s *Store) ListSecurityScanResults(ctx context.Context, tenantID pgtype.UUID, filter SecurityScanFilter) ([]gen.SecurityScanResult, error) {
 	return s.queries.ListSecurityScanResults(ctx, gen.ListSecurityScanResultsParams{
-		TenantID:   tenantID,
-		Column2:    filter.Severity,
-		Column3:    filter.Unresolved,
-		Limit:      filter.Limit,
-		Offset:     filter.Page * filter.Limit,
+		TenantID: tenantID,
+		Column2:  filter.Severity,
+		Column3:  filter.Unresolved,
+		Limit:    filter.Limit,
+		Offset:   filter.Page * filter.Limit,
 	})
 }
 
 // ResolveSecurityScanResult marks a finding as resolved.
-func (s *Store) ResolveSecurityScanResult(ctx context.Context, id pgtype.UUID, tenantID pgtype.UUID) error {
+func (s *Store) ResolveSecurityScanResult(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.queries.ResolveSecurityScanResult(ctx, gen.ResolveSecurityScanResultParams{
 		ID:       id,
 		TenantID: tenantID,
@@ -193,6 +193,7 @@ func nullableTimestamptz(t *time.Time) pgtype.Timestamptz {
 	if t == nil {
 		return pgtype.Timestamptz{Valid: false}
 	}
+
 	return pgtype.Timestamptz{Time: *t, Valid: true}
 }
 
@@ -202,6 +203,7 @@ func nullableTimestamptzPtr(t *pgtype.Timestamptz) pgtype.Timestamptz {
 	if t == nil {
 		return pgtype.Timestamptz{Valid: false}
 	}
+
 	return *t
 }
 
@@ -210,5 +212,6 @@ func nullableDate(d *pgtype.Date) pgtype.Date {
 	if d == nil {
 		return pgtype.Date{Valid: false}
 	}
+
 	return *d
 }

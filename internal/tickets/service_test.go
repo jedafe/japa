@@ -11,6 +11,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestCreateTicketInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty subject should be invalid.
 	input := CreateTicketInput{Subject: "", Description: "desc"}
 	if input.Subject != "" {
@@ -25,6 +26,7 @@ func TestCreateTicketInputValidation(t *testing.T) {
 }
 
 func TestAddCommentInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty body should be invalid.
 	input := AddCommentInput{Body: ""}
 	if input.Body != "" {
@@ -33,6 +35,8 @@ func TestAddCommentInputValidation(t *testing.T) {
 }
 
 func TestUpdateTicketStatusInputDefaults(t *testing.T) {
+	t.Parallel()
+
 	input := UpdateTicketStatusInput{
 		Status: string(StatusOpen),
 	}
@@ -42,6 +46,8 @@ func TestUpdateTicketStatusInputDefaults(t *testing.T) {
 }
 
 func TestUpdateTicketPriorityInputDefaults(t *testing.T) {
+	t.Parallel()
+
 	input := UpdateTicketPriorityInput{
 		Priority: string(PriorityNormal),
 	}
@@ -51,20 +57,26 @@ func TestUpdateTicketPriorityInputDefaults(t *testing.T) {
 }
 
 func TestAssignTicketInputDefaults(t *testing.T) {
+	t.Parallel()
+
 	input := AssignTicketInput{}
 	if input.AssignedTo.Valid {
 		t.Error("expected invalid AssignedTo")
 	}
+
 	if input.AssignedGroupID.Valid {
 		t.Error("expected invalid AssignedGroupID")
 	}
 }
 
 func TestStrPtrHelper(t *testing.T) {
+	t.Parallel()
+
 	p := strPtr("hello")
 	if p == nil {
 		t.Fatal("expected non-nil pointer")
 	}
+
 	if *p != "hello" {
 		t.Errorf("expected %q, got %q", "hello", *p)
 	}
@@ -75,6 +87,7 @@ func TestStrPtrHelper(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreateTicketTypeInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty name should be invalid.
 	input := CreateTicketTypeInput{Name: "", Slug: "test"}
 	if input.Name != "" {
@@ -89,6 +102,7 @@ func TestCreateTicketTypeInputValidation(t *testing.T) {
 }
 
 func TestUpdateTicketTypeInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty name should be invalid.
 	input := UpdateTicketTypeInput{Name: ""}
 	if input.Name != "" {
@@ -101,10 +115,13 @@ func TestUpdateTicketTypeInputValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreateTicketInputFieldValues(t *testing.T) {
+	t.Parallel()
+
 	fv := map[string]any{
 		"browser": "Chrome",
 		"version": "120",
 	}
+
 	input := CreateTicketInput{
 		Subject:     "Test",
 		Description: "Desc",
@@ -115,21 +132,26 @@ func TestCreateTicketInputFieldValues(t *testing.T) {
 	}
 }
 
-func TestCreateTicketTypeInputSlaHours(t *testing.T) {
+func TestCreateTicketTypeInputSLAHours(t *testing.T) {
+	t.Parallel()
+
 	hours := int32(24)
+
 	input := CreateTicketTypeInput{
-		Name:        "Support",
-		Slug:        "support",
-		SlaHours:    &hours,
-		IsPublic:    true,
-		IsSystem:    false,
+		Name:     "Support",
+		Slug:     "support",
+		SLAHours: &hours,
+		IsPublic: true,
+		IsSystem: false,
 	}
-	if input.SlaHours == nil || *input.SlaHours != 24 {
+	if input.SLAHours == nil || *input.SLAHours != 24 {
 		t.Error("expected SLA hours to be 24")
 	}
 }
 
 func TestUpdateTicketStatusInputWithResolution(t *testing.T) {
+	t.Parallel()
+
 	input := UpdateTicketStatusInput{
 		Status:         string(StatusResolved),
 		ResolutionNote: "Issue fixed",

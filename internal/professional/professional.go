@@ -17,9 +17,9 @@ import (
 
 // Profile status values.
 const (
-	StatusActive  = "active"
+	StatusActive   = "active"
 	StatusInactive = "inactive"
-	StatusBanned  = "banned"
+	StatusBanned   = "banned"
 )
 
 // Member role values.
@@ -45,9 +45,9 @@ const (
 
 // Relocation status values.
 const (
-	RelocationStatusPlanned     = "planned"
-	RelocationStatusInProgress  = "in_progress"
-	RelocationStatusCompleted   = "completed"
+	RelocationStatusPlanned    = "planned"
+	RelocationStatusInProgress = "in_progress"
+	RelocationStatusCompleted  = "completed"
 )
 
 // Verifier status values.
@@ -65,9 +65,9 @@ const (
 
 // validStatuses is the set of all supported profile status values.
 var validStatuses = map[string]bool{
-	StatusActive:  true,
+	StatusActive:   true,
 	StatusInactive: true,
-	StatusBanned:  true,
+	StatusBanned:   true,
 }
 
 // IsValidStatus returns true if the given status is a supported profile status.

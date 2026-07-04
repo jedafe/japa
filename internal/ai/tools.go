@@ -15,28 +15,28 @@ import (
 	"github.com/jedafe/japa/internal/db"
 )
 
-//AITool represents a registered AI tool in the system.
-type AITool struct {
-	ID                 pgtype.UUID      `json:"id"`
-	TenantID           pgtype.UUID      `json:"tenant_id"`
-	Name               string           `json:"name"`
-	Description        string           `json:"description"`
-	Category           string           `json:"category"`
-	Config             json.RawMessage  `json:"config"`
-	IsEnabled          bool             `json:"is_enabled"`
-	RequiredPermission string           `json:"required_permission,omitempty"`
+// AITool represents a registered AI tool in the system.
+type AITool struct { //nolint:revive // stuttering type name preserved for API compatibility
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	Name               string             `json:"name"`
+	Description        string             `json:"description"`
+	Category           string             `json:"category"`
+	Config             json.RawMessage    `json:"config"`
+	IsEnabled          bool               `json:"is_enabled"`
+	RequiredPermission string             `json:"required_permission,omitempty"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 // AIToolUsage tracks usage statistics for an AI tool.
-type AIToolUsage struct {
-	ID         pgtype.UUID      `json:"id"`
-	TenantID   pgtype.UUID      `json:"tenant_id"`
-	ToolID     pgtype.UUID      `json:"tool_id"`
-	UserID     *pgtype.UUID     `json:"user_id,omitempty"`
-	TokensUsed int32            `json:"tokens_used"`
-	CostCents  int32            `json:"cost_cents"`
+type AIToolUsage struct { //nolint:revive // stuttering type name preserved for API compatibility
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	ToolID     pgtype.UUID        `json:"tool_id"`
+	UserID     *pgtype.UUID       `json:"user_id,omitempty"`
+	TokensUsed int32              `json:"tokens_used"`
+	CostCents  int32              `json:"cost_cents"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -65,6 +65,7 @@ func (r *ToolRegistry) ListTools(ctx context.Context, tenantID pgtype.UUID) ([]A
 	defer rows.Close()
 
 	var tools []AITool
+
 	for rows.Next() {
 		var t AITool
 		if err := rows.Scan(
@@ -74,14 +75,17 @@ func (r *ToolRegistry) ListTools(ctx context.Context, tenantID pgtype.UUID) ([]A
 		); err != nil {
 			return nil, fmt.Errorf("scanning ai tool: %w", err)
 		}
+
 		tools = append(tools, t)
 	}
+
 	return tools, rows.Err()
 }
 
 // GetTool returns a single AI tool by ID.
 func (r *ToolRegistry) GetTool(ctx context.Context, tenantID, id pgtype.UUID) (AITool, error) {
 	var t AITool
+
 	err := r.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, name, description, category, config, is_enabled,
 		       required_permission, created_at, updated_at
@@ -95,12 +99,14 @@ func (r *ToolRegistry) GetTool(ctx context.Context, tenantID, id pgtype.UUID) (A
 	if err != nil {
 		return AITool{}, fmt.Errorf("fetching ai tool %s: %w", id, err)
 	}
+
 	return t, nil
 }
 
 // GetToolByName returns a single AI tool by name.
 func (r *ToolRegistry) GetToolByName(ctx context.Context, tenantID pgtype.UUID, name string) (AITool, error) {
 	var t AITool
+
 	err := r.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, name, description, category, config, is_enabled,
 		       required_permission, created_at, updated_at
@@ -114,6 +120,7 @@ func (r *ToolRegistry) GetToolByName(ctx context.Context, tenantID pgtype.UUID, 
 	if err != nil {
 		return AITool{}, fmt.Errorf("fetching ai tool %s: %w", name, err)
 	}
+
 	return t, nil
 }
 
@@ -129,20 +136,24 @@ func (r *ToolRegistry) UpdateTool(ctx context.Context, tenantID, id pgtype.UUID,
 	if input.Description != nil {
 		description = *input.Description
 	}
+
 	config := current.Config
 	if input.Config != nil {
 		config = input.Config
 	}
+
 	isEnabled := current.IsEnabled
 	if input.IsEnabled != nil {
 		isEnabled = *input.IsEnabled
 	}
+
 	requiredPermission := current.RequiredPermission
 	if input.RequiredPermission != nil {
 		requiredPermission = *input.RequiredPermission
 	}
 
 	var updated AITool
+
 	err = r.db.Writer.QueryRow(ctx, `
 		UPDATE ai_tools
 		SET description = $3, config = $4, is_enabled = $5, required_permission = $6, updated_at = now()
@@ -157,6 +168,7 @@ func (r *ToolRegistry) UpdateTool(ctx context.Context, tenantID, id pgtype.UUID,
 	if err != nil {
 		return AITool{}, fmt.Errorf("updating ai tool %s: %w", id, err)
 	}
+
 	return updated, nil
 }
 
@@ -171,6 +183,7 @@ type UpdateToolInput struct {
 // GetToolUsageStats returns aggregated usage statistics for a tool.
 func (r *ToolRegistry) GetToolUsageStats(ctx context.Context, tenantID, toolID pgtype.UUID, since time.Time) (ToolUsageStats, error) {
 	var stats ToolUsageStats
+
 	err := r.db.Reader.QueryRow(ctx, `
 		SELECT
 			COALESCE(SUM(tokens_used), 0) as total_tokens,
@@ -186,6 +199,7 @@ func (r *ToolRegistry) GetToolUsageStats(ctx context.Context, tenantID, toolID p
 	if err != nil {
 		return ToolUsageStats{}, fmt.Errorf("fetching tool usage stats: %w", err)
 	}
+
 	return stats, nil
 }
 
@@ -212,6 +226,7 @@ func (r *ToolRegistry) ListToolUsage(ctx context.Context, tenantID, toolID pgtyp
 	defer rows.Close()
 
 	var usage []AIToolUsage
+
 	for rows.Next() {
 		var u AIToolUsage
 		if err := rows.Scan(
@@ -220,14 +235,17 @@ func (r *ToolRegistry) ListToolUsage(ctx context.Context, tenantID, toolID pgtyp
 		); err != nil {
 			return nil, fmt.Errorf("scanning tool usage: %w", err)
 		}
+
 		usage = append(usage, u)
 	}
+
 	return usage, rows.Err()
 }
 
 // RecordUsage records a single usage event for an AI tool.
 func (r *ToolRegistry) RecordUsage(ctx context.Context, tenantID, toolID pgtype.UUID, userID *pgtype.UUID, tokensUsed, costCents int32) (pgtype.UUID, error) {
 	var id pgtype.UUID
+
 	err := r.db.Writer.QueryRow(ctx, `
 		INSERT INTO ai_tool_usage (tenant_id, tool_id, user_id, tokens_used, cost_cents)
 		VALUES ($1, $2, $3, $4, $5)
@@ -236,6 +254,7 @@ func (r *ToolRegistry) RecordUsage(ctx context.Context, tenantID, toolID pgtype.
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("recording tool usage: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -243,6 +262,7 @@ func (r *ToolRegistry) RecordUsage(ctx context.Context, tenantID, toolID pgtype.
 // Returns the tool ID (newly created or existing).
 func (r *ToolRegistry) EnsureTool(ctx context.Context, tenantID pgtype.UUID, tool ToolDefinition) (pgtype.UUID, error) {
 	var id pgtype.UUID
+
 	err := r.db.Writer.QueryRow(ctx, `
 		INSERT INTO ai_tools (tenant_id, name, description, category, config, is_enabled, required_permission)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -256,6 +276,7 @@ func (r *ToolRegistry) EnsureTool(ctx context.Context, tenantID pgtype.UUID, too
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("ensuring ai tool: %w", err)
 	}
+
 	return id, nil
 }
 

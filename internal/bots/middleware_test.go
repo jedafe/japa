@@ -10,15 +10,18 @@ import (
 )
 
 func TestBotDetectionMiddleware_NoTenant(t *testing.T) {
+	t.Parallel()
+
 	store := &Store{}
 	middleware := BotDetectionMiddleware(store)
 
-	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("User-Agent", "Googlebot/2.1")
+
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -33,14 +36,16 @@ func TestBotDetectionMiddleware_NoTenant(t *testing.T) {
 }
 
 func TestBotDetectionMiddleware_NoUserAgent(t *testing.T) {
+	t.Parallel()
+
 	store := &Store{}
 	middleware := BotDetectionMiddleware(store)
 
-	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -51,14 +56,18 @@ func TestBotDetectionMiddleware_NoUserAgent(t *testing.T) {
 }
 
 func TestBotInfoFromContext_Nil(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	if info := BotInfoFromContext(ctx); info != nil {
 		t.Error("expected nil for empty context")
 	}
 }
 
 func TestIsBotRequest(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	if IsBotRequest(ctx) {
 		t.Error("expected false for empty context")
 	}
@@ -70,26 +79,33 @@ func TestIsBotRequest(t *testing.T) {
 }
 
 func TestGetBotPolicy_Default(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	if p := GetBotPolicy(ctx); p != PolicyAllow {
 		t.Errorf("expected default policy 'allow', got %q", p)
 	}
 }
 
 func TestGetBotPolicy_FromContext(t *testing.T) {
-	ctx := context.WithValue(context.Background(), BotInfoKey, &BotInfo{Policy: PolicyBlock})
+	t.Parallel()
+
+	ctx := context.WithValue(t.Context(), BotInfoKey, &BotInfo{Policy: PolicyBlock})
 	if p := GetBotPolicy(ctx); p != PolicyBlock {
 		t.Errorf("expected policy 'block', got %q", p)
 	}
 }
 
 func TestFilterUserAgentsForLogs(t *testing.T) {
+	t.Parallel()
+
 	ua := "Mozilla/5.0 (compatible; Googlebot/2.1)"
 	if got := FilterUserAgentsForLogs(ua); got != ua {
 		t.Errorf("expected unchanged UA, got %q", got)
 	}
 
 	ua2 := "Mozilla/5.0\n<script>alert(1)</script>"
+
 	got := FilterUserAgentsForLogs(ua2)
 	if len(got) != len("Mozilla/5.0<script>alert(1)</script>") {
 		t.Errorf("expected newlines removed, got %q", got)
@@ -99,6 +115,7 @@ func TestFilterUserAgentsForLogs(t *testing.T) {
 	for i := range longUA {
 		longUA[i] = 'a'
 	}
+
 	got = FilterUserAgentsForLogs(string(longUA))
 	if len(got) != 256 {
 		t.Errorf("expected truncated to 256, got %d", len(got))
@@ -106,6 +123,8 @@ func TestFilterUserAgentsForLogs(t *testing.T) {
 }
 
 func TestMatchBotsByUserAgent(t *testing.T) {
+	t.Parallel()
+
 	bots := []gen.KnownBot{
 		{Name: "Googlebot", UserAgentPattern: "Googlebot", BotType: "search_engine", Policy: "allow"},
 		{Name: "GPTBot", UserAgentPattern: "GPTBot", BotType: "ai_llm", Policy: "allow"},
@@ -116,6 +135,7 @@ func TestMatchBotsByUserAgent(t *testing.T) {
 	if len(matched) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matched))
 	}
+
 	if matched[0].Name != "Googlebot" {
 		t.Errorf("expected Googlebot, got %s", matched[0].Name)
 	}
@@ -124,6 +144,7 @@ func TestMatchBotsByUserAgent(t *testing.T) {
 	if len(matched) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matched))
 	}
+
 	if matched[0].Name != "GPTBot" {
 		t.Errorf("expected GPTBot, got %s", matched[0].Name)
 	}
@@ -145,23 +166,31 @@ func TestMatchBotsByUserAgent(t *testing.T) {
 }
 
 func TestAllBotTypes_NoDuplicates(t *testing.T) {
+	t.Parallel()
+
 	types := AllBotTypes()
 	seen := make(map[BotType]bool)
+
 	for _, bt := range types {
 		if seen[bt] {
 			t.Errorf("duplicate bot type: %s", bt)
 		}
+
 		seen[bt] = true
 	}
 }
 
 func TestAllPolicies_NoDuplicates(t *testing.T) {
+	t.Parallel()
+
 	policies := AllPolicies()
 	seen := make(map[BotPolicy]bool)
+
 	for _, p := range policies {
 		if seen[p] {
 			t.Errorf("duplicate policy: %s", p)
 		}
+
 		seen[p] = true
 	}
 }

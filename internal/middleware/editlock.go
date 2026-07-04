@@ -11,12 +11,13 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
 )
@@ -28,7 +29,7 @@ const editLockTTL = 120 * time.Second
 
 // deleteOwnershipScript atomically checks ownership and deletes the lock key.
 // Returns 1 if the key was deleted (ownership verified), 0 otherwise.
-var deleteOwnershipScript = redis.NewScript(`
+var deleteOwnershipScript = valkeycompat.NewScript(`
 if redis.call("GET", KEYS[1]) == ARGV[1] then
     return redis.call("DEL", KEYS[1])
 else
@@ -54,7 +55,7 @@ end
 // When Valkey is unreachable the middleware degrades gracefully and allows
 // the request through, consistent with the rate limiter and idempotency
 // middleware.
-func EditLockMiddleware(rdb *redis.Client) func(http.Handler) http.Handler {
+func EditLockMiddleware(rdb valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only state-changing methods need edit locks.
@@ -106,13 +107,14 @@ func EditLockMiddleware(rdb *redis.Client) func(http.Handler) http.Handler {
 // between the GET and DEL in the old implementation, another process could
 // release and re-acquire the lock, causing the wrong user's lock to be
 // deleted.
-func handleEditLockDelete(ctx context.Context, w http.ResponseWriter, r *http.Request, rdb *redis.Client, key, userID string, next http.Handler) {
+func handleEditLockDelete(ctx context.Context, w http.ResponseWriter, r *http.Request, rdb valkeycompat.Cmdable, key, userID string, next http.Handler) {
 	result, err := deleteOwnershipScript.Run(ctx, rdb, []string{key}, userID).Int64()
-	if err != nil && err != redis.Nil {
+	if err != nil && !errors.Is(err, valkeycompat.Nil) {
 		slog.Warn("editlock: delete ownership script failed",
 			"key", key, "err", err)
 		// Degrade — let the request through.
 		next.ServeHTTP(w, r)
+
 		return
 	}
 
@@ -135,12 +137,13 @@ func handleEditLockDelete(ctx context.Context, w http.ResponseWriter, r *http.Re
 		// Lock belongs to another user — do not release it.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"error": map[string]string{
 				"code":    "lock_not_owned",
 				"message": "Cannot release edit lock held by another user.",
 			},
 		})
+
 		return
 	}
 
@@ -156,7 +159,7 @@ func handleEditLockDelete(ctx context.Context, w http.ResponseWriter, r *http.Re
 // sets the key only if it does not already exist, with a TTL. This eliminates
 // the TOCTOU race condition in the previous GET+SET implementation where two
 // concurrent requests could both see no lock and both acquire it.
-func handleEditLockAcquire(ctx context.Context, w http.ResponseWriter, r *http.Request, rdb *redis.Client, key, userID string, next http.Handler) {
+func handleEditLockAcquire(ctx context.Context, w http.ResponseWriter, r *http.Request, rdb valkeycompat.Cmdable, key, userID string, next http.Handler) {
 	// Atomic acquire: SET key userID NX EX 120
 	// NX = only set if key does not exist (acquire new lock)
 	// EX = set expiry in seconds (auto-release if editor stalls)
@@ -166,6 +169,7 @@ func handleEditLockAcquire(ctx context.Context, w http.ResponseWriter, r *http.R
 			"key", key, "err", err)
 		// Degraded — let the request through.
 		next.ServeHTTP(w, r)
+
 		return
 	}
 
@@ -185,9 +189,12 @@ func handleEditLockAcquire(ctx context.Context, w http.ResponseWriter, r *http.R
 			slog.Warn("editlock: lost lock during re-acquire, allowing request",
 				"key", key, "err", err2)
 			next.ServeHTTP(w, r)
+
 			return
 		}
+
 		next.ServeHTTP(w, r)
+
 		return
 	}
 
@@ -197,14 +204,16 @@ func handleEditLockAcquire(ctx context.Context, w http.ResponseWriter, r *http.R
 			slog.Warn("editlock: failed to refresh lock TTL",
 				"key", key, "err", err)
 		}
+
 		next.ServeHTTP(w, r)
+
 		return
 	}
 
 	// Different user holds the lock — reject with 409 Conflict.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusConflict)
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]string{
 			"code":    "edit_conflict",
 			"message": "This content is currently being edited by another user.",

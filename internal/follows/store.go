@@ -38,6 +38,7 @@ func (s *Store) toggleFollow(ctx context.Context, tenantID, followerID pgtype.UU
 		}); err != nil {
 			return false, fmt.Errorf("deleting follow: %w", err)
 		}
+
 		return false, nil
 	}
 
@@ -50,6 +51,7 @@ func (s *Store) toggleFollow(ctx context.Context, tenantID, followerID pgtype.UU
 	}); err != nil {
 		return false, fmt.Errorf("inserting follow: %w", err)
 	}
+
 	return true, nil
 }
 
@@ -63,6 +65,7 @@ func (s *Store) getFollow(ctx context.Context, followerID pgtype.UUID, entityTyp
 	if err != nil {
 		return gen.Follow{}, fmt.Errorf("getting follow: %w", err)
 	}
+
 	return follow, nil
 }
 
@@ -76,6 +79,7 @@ func (s *Store) isFollowing(ctx context.Context, followerID pgtype.UUID, entityT
 	if err != nil {
 		return false, fmt.Errorf("checking follow status: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -88,6 +92,7 @@ func (s *Store) isMutualFollow(ctx context.Context, followerID, entityID pgtype.
 	if err != nil {
 		return false, fmt.Errorf("checking mutual follow: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -96,6 +101,7 @@ func (s *Store) getFollowers(ctx context.Context, tenantID pgtype.UUID, entityTy
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.GetFollowersByEntity(ctx, gen.GetFollowersByEntityParams{
 		TenantID:   tenantID,
 		EntityType: entityType,
@@ -106,6 +112,7 @@ func (s *Store) getFollowers(ctx context.Context, tenantID pgtype.UUID, entityTy
 	if err != nil {
 		return nil, fmt.Errorf("getting followers: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -114,6 +121,7 @@ func (s *Store) getFollowing(ctx context.Context, tenantID, followerID pgtype.UU
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.GetFollowingByUser(ctx, gen.GetFollowingByUserParams{
 		TenantID:   tenantID,
 		FollowerID: followerID,
@@ -123,6 +131,7 @@ func (s *Store) getFollowing(ctx context.Context, tenantID, followerID pgtype.UU
 	if err != nil {
 		return nil, fmt.Errorf("getting following: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -136,6 +145,7 @@ func (s *Store) countFollowers(ctx context.Context, tenantID pgtype.UUID, entity
 	if err != nil {
 		return 0, fmt.Errorf("counting followers: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -148,6 +158,7 @@ func (s *Store) countFollowing(ctx context.Context, tenantID, followerID pgtype.
 	if err != nil {
 		return 0, fmt.Errorf("counting following: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -156,6 +167,7 @@ func (s *Store) getBulkFollowingStatus(ctx context.Context, tenantID, followerID
 	if len(entityIDs) == 0 {
 		return map[pgtype.UUID]bool{}, nil
 	}
+
 	rows, err := s.read.GetBulkFollowingStatus(ctx, gen.GetBulkFollowingStatusParams{
 		FollowerID: followerID,
 		TenantID:   tenantID,
@@ -165,10 +177,12 @@ func (s *Store) getBulkFollowingStatus(ctx context.Context, tenantID, followerID
 	if err != nil {
 		return nil, fmt.Errorf("getting bulk following status: %w", err)
 	}
+
 	status := make(map[pgtype.UUID]bool, len(rows))
 	for _, r := range rows {
 		status[r.EntityID] = r.IsFollowing
 	}
+
 	return status, nil
 }
 
@@ -177,6 +191,7 @@ func (s *Store) deleteFollowsByFollower(ctx context.Context, followerID pgtype.U
 	if err := s.write.DeleteFollowsByFollower(ctx, followerID); err != nil {
 		return fmt.Errorf("deleting follows by follower: %w", err)
 	}
+
 	return nil
 }
 
@@ -188,5 +203,6 @@ func (s *Store) deleteFollowsByEntity(ctx context.Context, entityType string, en
 	}); err != nil {
 		return fmt.Errorf("deleting follows by entity: %w", err)
 	}
+
 	return nil
 }

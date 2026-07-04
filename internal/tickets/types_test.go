@@ -9,6 +9,8 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestTicketStatusConstants(t *testing.T) {
+	t.Parallel()
+
 	expected := map[TicketStatus]string{
 		StatusOpen:        "open",
 		StatusInProgress:  "in_progress",
@@ -25,6 +27,8 @@ func TestTicketStatusConstants(t *testing.T) {
 }
 
 func TestTicketPriorityConstants(t *testing.T) {
+	t.Parallel()
+
 	expected := map[TicketPriority]string{
 		PriorityLow:    "low",
 		PriorityNormal: "normal",
@@ -39,6 +43,8 @@ func TestTicketPriorityConstants(t *testing.T) {
 }
 
 func TestEventTypeConstants(t *testing.T) {
+	t.Parallel()
+
 	expected := map[EventType]string{
 		EventStatusChanged:   "status_changed",
 		EventPriorityChanged: "priority_changed",
@@ -54,9 +60,12 @@ func TestEventTypeConstants(t *testing.T) {
 }
 
 func TestPaginationDefaults(t *testing.T) {
+	t.Parallel()
+
 	if DefaultPageSize != 20 {
 		t.Errorf("DefaultPageSize = %d, want 20", DefaultPageSize)
 	}
+
 	if MaxPageSize != 100 {
 		t.Errorf("MaxPageSize = %d, want 100", MaxPageSize)
 	}
@@ -67,6 +76,8 @@ func TestPaginationDefaults(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIsValidStatusTransition(t *testing.T) {
+	t.Parallel()
+
 	validCases := []struct {
 		from TicketStatus
 		to   TicketStatus
@@ -116,6 +127,8 @@ func TestIsValidStatusTransition(t *testing.T) {
 }
 
 func TestAllStatuses(t *testing.T) {
+	t.Parallel()
+
 	statuses := AllStatuses()
 	if len(statuses) != 6 {
 		t.Errorf("AllStatuses() returned %d items, want 6", len(statuses))
@@ -123,6 +136,8 @@ func TestAllStatuses(t *testing.T) {
 }
 
 func TestAllPriorities(t *testing.T) {
+	t.Parallel()
+
 	priorities := AllPriorities()
 	if len(priorities) != 4 {
 		t.Errorf("AllPriorities() returned %d items, want 4", len(priorities))

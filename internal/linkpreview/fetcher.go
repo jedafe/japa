@@ -52,6 +52,7 @@ func NewFetcher(client *http.Client, cache *valkey.Client) *Fetcher {
 	if client == nil {
 		client = newSSRFSafeClient()
 	}
+
 	return &Fetcher{
 		client:   client,
 		cache:    cache,
@@ -65,8 +66,9 @@ func newSSRFSafeClient() *http.Client {
 	transport := &ssrfSafeTransport{
 		inner: http.DefaultTransport,
 	}
+
 	return &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout:   10 * time.Second,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= maxRedirectDepth {
@@ -143,17 +145,19 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Preview, error) {
 
 // fetchAndParse fetches the URL and extracts OG tags.
 func (f *Fetcher) fetchAndParse(ctx context.Context, rawURL string) (*Preview, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (link preview)")
 
 	resp, err := f.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
@@ -178,14 +182,17 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode && n.Data == "meta" {
 			var property, content string
+
 			for _, attr := range n.Attr {
 				if attr.Key == "property" || attr.Key == "name" {
 					property = attr.Val
 				}
+
 				if attr.Key == "content" {
 					content = attr.Val
 				}
 			}
+
 			switch property {
 			case "og:title":
 				preview.Title = content
@@ -197,20 +204,25 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 				preview.SiteName = content
 			}
 		}
+
 		if n.Type == html.ElementNode && n.Data == "link" {
 			var rel, href string
+
 			for _, attr := range n.Attr {
 				if attr.Key == "rel" {
 					rel = attr.Val
 				}
+
 				if attr.Key == "href" {
 					href = attr.Val
 				}
 			}
+
 			if rel == "icon" || rel == "shortcut icon" {
 				preview.Favicon = href
 			}
 		}
+
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			walk(c)
 		}
@@ -221,10 +233,10 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 }
 
 // cacheKey generates a Valkey cache key for a URL.
-// Format: jc:link_preview:{sha256_url[:16]}
+// Format: jc:link_preview:{sha256_url[:16]}.
 func (f *Fetcher) cacheKey(rawURL string) string {
 	hash := sha256.Sum256([]byte(rawURL))
-	return fmt.Sprintf("jc:link_preview:%s", hex.EncodeToString(hash[:8]))
+	return "jc:link_preview:" + hex.EncodeToString(hash[:8])
 }
 
 // getHost extracts the hostname from a URL.
@@ -233,6 +245,8 @@ func getHost(rawURL string) string {
 	if len(parts) < 2 {
 		return rawURL
 	}
+
 	host := strings.SplitN(parts[1], "/", 2)[0]
+
 	return strings.SplitN(host, ":", 2)[0]
 }

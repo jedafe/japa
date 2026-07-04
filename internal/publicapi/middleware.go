@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -27,6 +27,7 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 			if err != nil {
 				slog.Warn("api key validation failed", "error", err)
 				writeError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid or expired API key")
+
 				return
 			}
 
@@ -38,13 +39,16 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 				if err != nil {
 					slog.Error("api key: IP allowlist check failed", "error", err)
 					writeError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
+
 					return
 				}
+
 				if !allowed {
 					slog.Warn("api key: IP not in allowlist",
 						"key_id", keyCtx.KeyID.String(),
 						"client_ip", clientIP)
 					writeError(w, http.StatusForbidden, "ip_not_allowed", "Your IP address is not authorized for this API key")
+
 					return
 				}
 			}
@@ -70,6 +74,7 @@ func extractClientIP(r *http.Request) string {
 		if idx := strings.Index(xff, ","); idx > 0 {
 			return strings.TrimSpace(xff[:idx])
 		}
+
 		return strings.TrimSpace(xff)
 	}
 	// X-Real-IP: single client IP set by reverse proxy.
@@ -81,6 +86,7 @@ func extractClientIP(r *http.Request) string {
 	if idx := strings.LastIndex(addr, ":"); idx > 0 {
 		return addr[:idx]
 	}
+
 	return addr
 }
 
@@ -94,10 +100,12 @@ func RequireScope(scope string) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
+
 			if !hasScope(keyCtx.Scopes, scope) {
 				writeError(w, http.StatusForbidden, "insufficient_scope", "API key lacks required scope: "+scope)
 				return
 			}
+
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -117,6 +125,7 @@ func hasScope(scopes []string, required string) bool {
 			}
 		}
 	}
+
 	return false
 }
 
@@ -129,7 +138,7 @@ func hasScope(scopes []string, required string) bool {
 //
 // Deprecated: Use SlidingWindowRateLimit(rdb) directly. This wrapper
 // exists for backward compatibility.
-func RateLimitMiddleware(rdb *redis.Client) func(http.Handler) http.Handler {
+func RateLimitMiddleware(rdb valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	return SlidingWindowRateLimit(rdb)
 }
 

@@ -10,6 +10,8 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestPubSubMessageJSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	msg := PubSubMessage{
 		Type:          EventNotification,
 		TargetUserID:  "user-1",
@@ -30,15 +32,19 @@ func TestPubSubMessageJSONRoundTrip(t *testing.T) {
 	if got.Type != EventNotification {
 		t.Errorf("type = %q, want %q", got.Type, EventNotification)
 	}
+
 	if got.TargetUserID != "user-1" {
 		t.Errorf("target_user_id = %q, want user-1", got.TargetUserID)
 	}
+
 	if got.TargetSpaceID != "" {
 		t.Errorf("target_space_id = %q, want empty", got.TargetSpaceID)
 	}
 }
 
 func TestPubSubMessageOmitsEmptyFields(t *testing.T) {
+	t.Parallel()
+
 	msg := PubSubMessage{
 		Type:    EventFeedUpdate,
 		Payload: "data",
@@ -57,12 +63,15 @@ func TestPubSubMessageOmitsEmptyFields(t *testing.T) {
 	if _, ok := raw["target_user_id"]; ok {
 		t.Error("target_user_id should be omitted when empty")
 	}
+
 	if _, ok := raw["target_space_id"]; ok {
 		t.Error("target_space_id should be omitted when empty")
 	}
 }
 
 func TestPubSubMessageWithSpaceTarget(t *testing.T) {
+	t.Parallel()
+
 	msg := PubSubMessage{
 		Type:          EventSpaceActivity,
 		TargetSpaceID: "space-42",
@@ -82,6 +91,7 @@ func TestPubSubMessageWithSpaceTarget(t *testing.T) {
 	if got.TargetSpaceID != "space-42" {
 		t.Errorf("target_space_id = %q, want space-42", got.TargetSpaceID)
 	}
+
 	if got.TargetUserID != "" {
 		t.Errorf("target_user_id = %q, want empty", got.TargetUserID)
 	}
@@ -92,6 +102,7 @@ func TestPubSubMessageWithSpaceTarget(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPubSubBridgeTypeExists(t *testing.T) {
+	t.Parallel()
 	// Verify PubSubBridge is accessible from test code.
 	var b *PubSubBridge
 	if b != nil {
@@ -104,6 +115,8 @@ func TestPubSubBridgeTypeExists(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDispatchToUser(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	bridge := &PubSubBridge{hub: hub}
 
@@ -117,9 +130,9 @@ func TestDispatchToUser(t *testing.T) {
 	hub.Register(client)
 
 	msg := PubSubMessage{
-		Type:          EventNotification,
-		TargetUserID:  "user-dispatch",
-		Payload:       map[string]string{"key": "val"},
+		Type:         EventNotification,
+		TargetUserID: "user-dispatch",
+		Payload:      map[string]string{"key": "val"},
 	}
 	bridge.dispatch(msg)
 
@@ -129,6 +142,7 @@ func TestDispatchToUser(t *testing.T) {
 		if err := json.Unmarshal(raw, &ev); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
+
 		if ev.Type != EventNotification {
 			t.Errorf("type = %q, want %q", ev.Type, EventNotification)
 		}
@@ -138,6 +152,8 @@ func TestDispatchToUser(t *testing.T) {
 }
 
 func TestDispatchToSpace(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	bridge := &PubSubBridge{hub: hub}
 
@@ -162,6 +178,7 @@ func TestDispatchToSpace(t *testing.T) {
 			if err := json.Unmarshal(raw, &ev); err != nil {
 				t.Fatalf("unmarshal for %s: %v", c.UserID, err)
 			}
+
 			if ev.Type != EventSpaceActivity {
 				t.Errorf("%s: type = %q, want %q", c.UserID, ev.Type, EventSpaceActivity)
 			}
@@ -172,6 +189,8 @@ func TestDispatchToSpace(t *testing.T) {
 }
 
 func TestDispatchToAll(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	bridge := &PubSubBridge{hub: hub}
 
@@ -193,6 +212,7 @@ func TestDispatchToAll(t *testing.T) {
 			if err := json.Unmarshal(raw, &ev); err != nil {
 				t.Fatalf("unmarshal for %s: %v", c.UserID, err)
 			}
+
 			if ev.Type != EventFeedUpdate {
 				t.Errorf("%s: type = %q, want %q", c.UserID, ev.Type, EventFeedUpdate)
 			}
@@ -203,6 +223,8 @@ func TestDispatchToAll(t *testing.T) {
 }
 
 func TestDispatchEmptyTargetBroadcastsToAll(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	bridge := &PubSubBridge{hub: hub}
 
@@ -228,6 +250,8 @@ func TestDispatchEmptyTargetBroadcastsToAll(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHubSetPubSub(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	bridge := &PubSubBridge{hub: hub}
 
@@ -243,6 +267,8 @@ func TestHubSetPubSub(t *testing.T) {
 }
 
 func TestHubBroadcastWithoutBridge(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	client := &Client{Hub: hub, UserID: "u-nobs", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
@@ -263,6 +289,8 @@ func TestHubBroadcastWithoutBridge(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHubBroadcastTriggersPublish(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	client := &Client{Hub: hub, UserID: "u-pub", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
@@ -284,12 +312,15 @@ func TestHubBroadcastTriggersPublish(t *testing.T) {
 	if bridge.lastEvent.Type != EventDMMessage {
 		t.Errorf("publish type = %q, want %q", bridge.lastEvent.Type, EventDMMessage)
 	}
+
 	if bridge.lastUserID != "u-pub" {
 		t.Errorf("publish user = %q, want u-pub", bridge.lastUserID)
 	}
 }
 
 func TestHubSpaceBroadcastTriggersPublish(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	client := &Client{Hub: hub, UserID: "u-sp", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
@@ -313,6 +344,8 @@ func TestHubSpaceBroadcastTriggersPublish(t *testing.T) {
 }
 
 func TestHubAllBroadcastTriggersPublish(t *testing.T) {
+	t.Parallel()
+
 	hub := NewHub()
 	client := &Client{Hub: hub, UserID: "u-all", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
@@ -341,10 +374,10 @@ func TestHubAllBroadcastTriggersPublish(t *testing.T) {
 // mockBridge is a lightweight stand-in for PubSubBridge that records the
 // last Publish call without requiring a real Valkey connection.
 type mockBridge struct {
-	hub          *Hub
-	lastEvent    WSEvent
-	lastUserID   string
-	lastSpaceID  string
+	hub         *Hub
+	lastEvent   WSEvent
+	lastUserID  string
+	lastSpaceID string
 }
 
 func (m *mockBridge) Publish(event WSEvent, userID, spaceID string) {
@@ -361,6 +394,8 @@ var _ = (*mockBridge)(nil)
 // ---------------------------------------------------------------------------
 
 func TestPubSubChannelConstant(t *testing.T) {
+	t.Parallel()
+
 	if PubSubChannel != "jc:ws:broadcast" {
 		t.Errorf("PubSubChannel = %q, want jc:ws:broadcast", PubSubChannel)
 	}

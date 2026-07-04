@@ -24,6 +24,8 @@ func (m mockPinger) Ping(_ context.Context) error {
 // {"status":"ok"} regardless of database state. The health check must
 // never depend on external services — it only confirms the process is alive.
 func TestHealthCheck(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandler(mockPinger{err: errors.New("db down")})
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -48,6 +50,8 @@ func TestHealthCheck(t *testing.T) {
 // TestReadinessCheck_DBReady verifies that the readiness probe returns 200
 // with a connected database status when Ping succeeds.
 func TestReadinessCheck_DBReady(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandler(mockPinger{err: nil})
 
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
@@ -67,6 +71,7 @@ func TestReadinessCheck_DBReady(t *testing.T) {
 	if body["status"] != "ok" {
 		t.Errorf("status field = %q, want %q", body["status"], "ok")
 	}
+
 	if body["database"] != "connected" {
 		t.Errorf("database field = %q, want %q", body["database"], "connected")
 	}
@@ -76,6 +81,8 @@ func TestReadinessCheck_DBReady(t *testing.T) {
 // 503 with a JSON error body when Ping fails. The load balancer should
 // stop routing traffic to this instance but the process should not restart.
 func TestReadinessCheck_DBNotReady(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandler(mockPinger{err: errors.New("connection refused")})
 
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
@@ -95,6 +102,7 @@ func TestReadinessCheck_DBNotReady(t *testing.T) {
 	if body.Error.Code != "db_unavailable" {
 		t.Errorf("error code = %q, want %q", body.Error.Code, "db_unavailable")
 	}
+
 	if body.Error.Message == "" {
 		t.Error("error message is empty, want a human-readable message")
 	}
@@ -103,6 +111,8 @@ func TestReadinessCheck_DBNotReady(t *testing.T) {
 // TestReadinessCheck_ContentType verifies that the readiness response sets
 // the correct Content-Type header so clients know to parse JSON.
 func TestReadinessCheck_ContentType(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandler(mockPinger{err: nil})
 
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)

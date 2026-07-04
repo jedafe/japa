@@ -56,6 +56,7 @@ type errorBody struct {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -74,6 +75,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("invalid %s: %w", param, err)
 	}
+
 	return id, nil
 }
 
@@ -84,13 +86,16 @@ func clientIP(r *http.Request) string {
 		parts := strings.SplitN(xff, ",", 2)
 		return strings.TrimSpace(parts[0])
 	}
+
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
 		return strings.TrimSpace(xri)
 	}
+
 	idx := strings.LastIndex(r.RemoteAddr, ":")
 	if idx > 0 {
 		return r.RemoteAddr[:idx]
 	}
+
 	return r.RemoteAddr
 }
 
@@ -103,6 +108,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -130,11 +136,13 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	groups, err := h.Service.ListFieldGroups(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": groups})
 }
 
@@ -147,20 +155,24 @@ func (h *Handlers) GetFieldGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	group, err := h.Service.GetFieldGroup(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	fields, err := h.Service.ListFieldsByGroup(r.Context(), group.ID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"group": group, "fields": fields},
 	})
@@ -174,23 +186,28 @@ func (h *Handlers) CreateFieldGroup(w http.ResponseWriter, r *http.Request) {
 		Slug        string  `json:"slug"`
 		Description *string `json:"description"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" {
 		writeError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	group, err := h.Service.CreateFieldGroup(r.Context(), tenantID, req.Name, req.Slug, req.Description, false)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": group})
 }
 
@@ -201,27 +218,33 @@ func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	var req struct {
 		Name        string  `json:"name"`
 		Description *string `json:"description"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if strings.TrimSpace(req.Name) == "" {
 		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	group, err := h.Service.UpdateFieldGroup(r.Context(), id, tenantID, req.Name, req.Description)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": group})
 }
 
@@ -232,14 +255,17 @@ func (h *Handlers) DeleteFieldGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if err := h.Service.DeleteFieldGroup(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
@@ -271,6 +297,7 @@ func marshalOptions(opts []FieldOption) ([]byte, error) {
 	if len(opts) == 0 {
 		return nil, nil
 	}
+
 	return json.Marshal(opts)
 }
 
@@ -281,15 +308,18 @@ func (h *Handlers) ListFieldsByGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	fields, err := h.Service.ListFieldsByGroup(r.Context(), groupID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": fields})
 }
 
@@ -300,32 +330,39 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	var req fieldRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if strings.TrimSpace(req.Label) == "" || strings.TrimSpace(req.Key) == "" {
 		writeError(w, http.StatusBadRequest, "missing_fields", "Label and key are required")
 		return
 	}
+
 	if !IsValidFieldType(req.FieldType) {
 		writeError(w, http.StatusBadRequest, "invalid_field_type", "Unsupported field type")
 		return
 	}
+
 	if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && len(req.Options) == 0 {
 		writeError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
 		return
 	}
+
 	optionsBytes, err := marshalOptions(req.Options)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_options", "Field options are not valid JSON")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	field, err := h.Service.CreateField(r.Context(), gen.CreateCustomFieldParams{
 		GroupID:        groupID,
 		TenantID:       tenantID,
@@ -348,6 +385,7 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": field})
 }
 
@@ -359,32 +397,39 @@ func (h *Handlers) UpdateField(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	var req fieldRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if strings.TrimSpace(req.Label) == "" {
 		writeError(w, http.StatusBadRequest, "missing_fields", "Label is required")
 		return
 	}
+
 	if !IsValidFieldType(req.FieldType) {
 		writeError(w, http.StatusBadRequest, "invalid_field_type", "Unsupported field type")
 		return
 	}
+
 	if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && len(req.Options) == 0 {
 		writeError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
 		return
 	}
+
 	optionsBytes, err := marshalOptions(req.Options)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_options", "Field options are not valid JSON")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	field, err := h.Service.UpdateField(r.Context(), gen.UpdateCustomFieldParams{
 		Label:          req.Label,
 		FieldType:      req.FieldType,
@@ -405,6 +450,7 @@ func (h *Handlers) UpdateField(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": field})
 }
 
@@ -415,14 +461,17 @@ func (h *Handlers) DeleteField(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if err := h.Service.DeleteField(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
@@ -433,16 +482,19 @@ func (h *Handlers) DeleteField(w http.ResponseWriter, r *http.Request) {
 // ListFieldValues handles GET /api/v1/custom-field-values/{entity_type}/{entity_id}.
 func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 	entityType := chi.URLParam(r, "entity_type")
+
 	var entityID pgtype.UUID
 	if err := entityID.Scan(chi.URLParam(r, "entity_id")); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
 		return
 	}
+
 	values, err := h.Service.ListFieldValuesByEntity(r.Context(), entityType, entityID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": values})
 }
 
@@ -451,29 +503,33 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 // before the value is persisted.
 func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		FieldID     string          `json:"field_id"`
-		EntityType  string          `json:"entity_type"`
-		EntityID    string          `json:"entity_id"`
-		ValueText   *string         `json:"value_text"`
-		ValueNumber json.Number     `json:"value_number"`
-		ValueBool   *bool           `json:"value_bool"`
-		ValueDate   string          `json:"value_date"`
-		ValueJson   map[string]any  `json:"value_json"`
+		FieldID     string         `json:"field_id"`
+		EntityType  string         `json:"entity_type"`
+		EntityID    string         `json:"entity_id"`
+		ValueText   *string        `json:"value_text"`
+		ValueNumber json.Number    `json:"value_number"`
+		ValueBool   *bool          `json:"value_bool"`
+		ValueDate   string         `json:"value_date"`
+		ValueJson   map[string]any `json:"value_json"` //nolint:revive // matches sqlc-generated field name
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	var fieldID pgtype.UUID
 	if err := fieldID.Scan(req.FieldID); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid field ID format")
 		return
 	}
+
 	var entityID pgtype.UUID
 	if err := entityID.Scan(req.EntityID); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -486,18 +542,24 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	var date pgtype.Timestamptz
+
 	if req.ValueDate != "" {
 		t, err := time.Parse(time.RFC3339, req.ValueDate)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_value", "value_date must be RFC 3339 format")
 			return
 		}
+
 		date = pgtype.Timestamptz{Time: t, Valid: true}
 	}
+
 	var jsonBytes []byte
+
 	if req.ValueJson != nil {
 		var err error
+
 		jsonBytes, err = json.Marshal(req.ValueJson)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_value", "value_json is not serializable")
@@ -514,6 +576,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		if field.FieldType == FieldTypePlatformEmbed && req.ValueText != nil && *req.ValueText != "" {
 			if _, err := h.Embed.Resolve(r.Context(), *req.ValueText, field.EmbedPlatforms); err != nil {
 				writeError(w, http.StatusBadRequest, "invalid_embed", "The provided URL is not a valid embed for this field")
@@ -536,6 +599,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": value})
 }
 
@@ -550,20 +614,24 @@ func (h *Handlers) SetFieldPermission(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	var req struct {
 		UserGroupID string `json:"user_group_id"`
 		CanView     bool   `json:"can_view"`
 		CanEdit     bool   `json:"can_edit"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	var groupID pgtype.UUID
 	if err := groupID.Scan(req.UserGroupID); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user group ID format")
 		return
 	}
+
 	if err := h.Service.UpsertFieldPermission(r.Context(), gen.UpsertFieldPermissionParams{
 		FieldID:     fieldID,
 		UserGroupID: groupID,
@@ -573,6 +641,7 @@ func (h *Handlers) SetFieldPermission(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "set"}})
 }
 
@@ -586,11 +655,13 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	forms, err := h.Service.ListForms(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": forms})
 }
 
@@ -602,20 +673,24 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	form, err := h.Service.GetForm(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	steps, err := h.Service.ListFormSteps(r.Context(), form.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"form": form, "steps": steps},
 	})
@@ -633,22 +708,27 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 		SuccessMessage *string `json:"success_message"`
 		Status         string  `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" {
 		writeError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
 		return
 	}
+
 	status := req.Status
 	if status == "" {
 		status = "draft"
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	form, err := h.Service.CreateForm(r.Context(), gen.CreateFormParams{
 		TenantID:       tenantID,
 		Name:           req.Name,
@@ -664,6 +744,7 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": form})
 }
 
@@ -675,6 +756,7 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	var req struct {
 		Name           string  `json:"name"`
 		Description    *string `json:"description"`
@@ -683,18 +765,22 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 		SuccessMessage *string `json:"success_message"`
 		Status         string  `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if strings.TrimSpace(req.Name) == "" {
 		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	form, err := h.Service.UpdateForm(r.Context(), gen.UpdateFormParams{
 		Name:           req.Name,
 		Description:    req.Description,
@@ -709,6 +795,7 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": form})
 }
 
@@ -719,14 +806,17 @@ func (h *Handlers) DeleteForm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if err := h.Service.DeleteForm(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
@@ -743,13 +833,16 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	var req struct {
 		FieldValues map[string]any `json:"field_values"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	fieldValues, err := json.Marshal(req.FieldValues)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "field_values could not be serialized")
@@ -771,6 +864,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	// Parse the client IP for abuse tracking; an unparseable address is
 	// recorded as nil rather than failing the submission.
 	var ipAddr *netip.Addr
+
 	if ip := clientIP(r); ip != "" {
 		if addr, err := netip.ParseAddr(ip); err == nil {
 			ipAddr = &addr
@@ -789,6 +883,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{"id": submission.ID, "status": "new"},
 	})
@@ -802,30 +897,37 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	limit := int32(20)
+
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if n, perr := strconv.Atoi(raw); perr == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
+
 	params := gen.ListFormSubmissionsByFormParams{
 		FormID:    formID,
 		TenantID:  tenantID,
 		PageLimit: limit,
 	}
+
 	if cursor := r.URL.Query().Get("cursor"); cursor != "" {
 		if t, perr := time.Parse(time.RFC3339, cursor); perr == nil {
 			params.CursorCreatedAt = pgtype.Timestamptz{Time: t, Valid: true}
 		}
 	}
+
 	submissions, err := h.Service.ListFormSubmissions(r.Context(), params)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": submissions})
 }

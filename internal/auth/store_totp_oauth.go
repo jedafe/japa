@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -26,11 +27,14 @@ func (s *TOTPStoreImpl) GetTOTPSecret(ctx context.Context, userID pgtype.UUID) (
 		WHERE user_id = $1
 		LIMIT 1
 	`
+
 	var record TOTPRecord
+
 	err := s.db.Reader.QueryRow(ctx, query, userID).Scan(&record.SecretEncrypted, &record.Enabled)
 	if err != nil {
 		return nil, fmt.Errorf("querying TOTP secret: %w", err)
 	}
+
 	return &record, nil
 }
 
@@ -46,10 +50,12 @@ func (s *TOTPStoreImpl) UpsertTOTPSecret(ctx context.Context, userID pgtype.UUID
 		SET secret_encrypted = EXCLUDED.secret_encrypted,
 		    updated_at = now()
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, userID, secretEncrypted)
 	if err != nil {
 		return fmt.Errorf("upserting TOTP secret: %w", err)
 	}
+
 	return nil
 }
 
@@ -60,13 +66,16 @@ func (s *TOTPStoreImpl) EnableTOTP(ctx context.Context, userID pgtype.UUID) erro
 		SET enabled_at = now(), updated_at = now()
 		WHERE user_id = $1 AND enabled_at IS NULL
 	`
+
 	tag, err := s.db.Writer.Exec(ctx, query, userID)
 	if err != nil {
 		return fmt.Errorf("enabling TOTP: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("TOTP credential not found or already enabled")
+		return errors.New("TOTP credential not found or already enabled")
 	}
+
 	return nil
 }
 
@@ -77,13 +86,16 @@ func (s *TOTPStoreImpl) DisableTOTP(ctx context.Context, userID pgtype.UUID) err
 		SET enabled_at = NULL, updated_at = now()
 		WHERE user_id = $1 AND enabled_at IS NOT NULL
 	`
+
 	tag, err := s.db.Writer.Exec(ctx, query, userID)
 	if err != nil {
 		return fmt.Errorf("disabling TOTP: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("TOTP is not enabled for this user")
+		return errors.New("TOTP is not enabled for this user")
 	}
+
 	return nil
 }
 
@@ -105,31 +117,37 @@ func (s *OAuthStoreImpl) GetOAuthAccount(ctx context.Context, tenantID pgtype.UU
 		WHERE tenant_id = $1 AND provider = $2 AND provider_user_id = $3
 		LIMIT 1
 	`
+
 	var acct OAuthAccount
+
 	err := s.db.Reader.QueryRow(ctx, query, tenantID, provider, providerUserID).Scan(
 		&acct.ID, &acct.UserID, &acct.Provider, &acct.ProviderUserID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying OAuth account: %w", err)
 	}
+
 	return &acct, nil
 }
 
 // GetOAuthAccountByUser retrieves a linked OAuth account by user ID and provider.
-func (s *OAuthStoreImpl) GetOAuthAccountByUser(ctx context.Context, tenantID pgtype.UUID, userID pgtype.UUID, provider string) (*OAuthAccount, error) {
+func (s *OAuthStoreImpl) GetOAuthAccountByUser(ctx context.Context, tenantID, userID pgtype.UUID, provider string) (*OAuthAccount, error) {
 	query := `
 		SELECT id, user_id, provider, provider_user_id
 		FROM oauth_accounts
 		WHERE tenant_id = $1 AND user_id = $2 AND provider = $3
 		LIMIT 1
 	`
+
 	var acct OAuthAccount
+
 	err := s.db.Reader.QueryRow(ctx, query, tenantID, userID, provider).Scan(
 		&acct.ID, &acct.UserID, &acct.Provider, &acct.ProviderUserID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying OAuth account by user: %w", err)
 	}
+
 	return &acct, nil
 }
 
@@ -139,10 +157,12 @@ func (s *OAuthStoreImpl) LinkOAuthAccount(ctx context.Context, tenantID, userID 
 		INSERT INTO oauth_accounts (tenant_id, user_id, provider, provider_user_id)
 		VALUES ($1, $2, $3, $4)
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID, provider, providerUserID)
 	if err != nil {
 		return fmt.Errorf("linking OAuth account: %w", err)
 	}
+
 	return nil
 }
 
@@ -155,12 +175,15 @@ func (s *OAuthStoreImpl) GetUserByEmail(ctx context.Context, tenantID pgtype.UUI
 		WHERE tenant_id = $1 AND email = $2
 		LIMIT 1
 	`
+
 	var u User
+
 	err := s.db.Reader.QueryRow(ctx, query, tenantID, email).Scan(
 		&u.ID, &u.TenantID, &u.Email, &u.PasswordHash, &u.Username, &u.ProfileType, &u.Status,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying user by email: %w", err)
 	}
+
 	return &u, nil
 }

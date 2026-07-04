@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -40,6 +41,7 @@ func NewS3Client() *S3Client {
 			"endpoint_set", endpoint != "",
 			"access_key_set", accessKey != "",
 			"secret_key_set", secretKey != "")
+
 		return nil
 	}
 
@@ -65,9 +67,9 @@ func NewS3Client() *S3Client {
 
 // PresignPut generates a presigned PUT URL for uploading a file to S3.
 // The URL is valid for the specified duration (default 15 minutes).
-func (c *S3Client) PresignPut(ctx context.Context, storagePath string, expires time.Duration) (string, error) {
+func (c *S3Client) PresignPut(_ context.Context, storagePath string, expires time.Duration) (string, error) {
 	if c == nil {
-		return "", fmt.Errorf("s3 client not configured")
+		return "", errors.New("s3 client not configured")
 	}
 
 	if expires <= 0 {
@@ -114,6 +116,7 @@ func (c *S3Client) getSigningKey(date string) []byte {
 	kRegion := c.hmacSHA256(kDate, []byte(c.region))
 	kService := c.hmacSHA256(kRegion, []byte("s3"))
 	kSigning := c.hmacSHA256(kService, []byte("aws4_request"))
+
 	return kSigning
 }
 
@@ -121,6 +124,7 @@ func (c *S3Client) getSigningKey(date string) []byte {
 func (c *S3Client) hmacSHA256(key, data []byte) []byte {
 	mac := hmac.New(sha256.New, key)
 	mac.Write(data)
+
 	return mac.Sum(nil)
 }
 
@@ -130,5 +134,6 @@ func (c *S3Client) GetObjectURL(storagePath string) string {
 	if c == nil {
 		return ""
 	}
+
 	return fmt.Sprintf("%s/%s/%s", c.endpoint, c.bucket, storagePath)
 }

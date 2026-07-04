@@ -19,13 +19,13 @@ var allowedTags = map[string]bool{
 	"p": true, "br": true,
 	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
 	"strong": true, "em": true, "u": true, "s": true,
-	"a":      true,
-	"ul":     true, "ol": true, "li": true,
+	"a":  true,
+	"ul": true, "ol": true, "li": true,
 	"blockquote": true,
 	"code":       true, "pre": true,
-	"img":        true,
-	"table":      true, "tr": true, "td": true, "th": true, "thead": true, "tbody": true,
-	"div":        true, "span": true,
+	"img":   true,
+	"table": true, "tr": true, "td": true, "th": true, "thead": true, "tbody": true,
+	"div": true, "span": true,
 }
 
 // allowedAttributes is the set of attributes permitted per tag.
@@ -67,7 +67,9 @@ func SanitizeHTML(raw string) string {
 	sanitizeNode(doc)
 
 	var buf bytes.Buffer
-	html.Render(&buf, doc)
+
+	_ = html.Render(&buf, doc)
+
 	return buf.String()
 }
 
@@ -83,7 +85,9 @@ func SanitizeText(text string) string {
 	}
 
 	var buf bytes.Buffer
+
 	extractText(&buf, doc)
+
 	return buf.String()
 }
 
@@ -122,6 +126,7 @@ func sanitizeNode(n *html.Node) {
 				for _, child := range children {
 					sanitizeNode(child)
 				}
+
 				return
 			}
 		} else {
@@ -142,6 +147,7 @@ func collectChildren(n *html.Node) []*html.Node {
 	for child := n.FirstChild; child != nil; child = child.NextSibling {
 		children = append(children, child)
 	}
+
 	return children
 }
 
@@ -153,6 +159,7 @@ func sanitizeAttributes(n *html.Node) {
 	tagAttrs := allowedAttributes[tagName]
 
 	var filtered []html.Attribute
+
 	for _, attr := range n.Attr {
 		attrName := strings.ToLower(attr.Key)
 
@@ -166,6 +173,7 @@ func sanitizeAttributes(n *html.Node) {
 		if !allowed && tagAttrs != nil {
 			allowed = tagAttrs[attrName]
 		}
+
 		if !allowed {
 			continue
 		}
@@ -212,9 +220,11 @@ func isApprovedIframe(n *html.Node) bool {
 					return true
 				}
 			}
+
 			return false
 		}
 	}
+
 	return false
 }
 
@@ -236,6 +246,7 @@ func unwrapNode(n *html.Node) {
 
 	// Collect children first (to avoid mutation during iteration).
 	var children []*html.Node
+
 	for child := n.FirstChild; child != nil; {
 		next := child.NextSibling
 		children = append(children, child)
@@ -255,8 +266,9 @@ func unwrapNode(n *html.Node) {
 // discarding all markup.
 func extractText(w io.Writer, n *html.Node) {
 	if n.Type == html.TextNode {
-		io.WriteString(w, n.Data)
+		_, _ = io.WriteString(w, n.Data)
 	}
+
 	child := n.FirstChild
 	for child != nil {
 		extractText(w, child)
