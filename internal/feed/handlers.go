@@ -12,6 +12,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for feed HTTP handlers.
 type Handlers struct {
 	service *Service
@@ -29,6 +31,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -41,6 +44,7 @@ func (h *Handlers) optionalUser(r *http.Request) *auth.AuthenticatedUser {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -57,16 +61,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageOffset extracts the page_offset query parameter.
@@ -75,11 +82,13 @@ func parsePageOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parseSort extracts and validates the sort query parameter.
@@ -113,6 +122,7 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get explore feed")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -138,6 +148,7 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get primary feed")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -155,7 +166,9 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	spaceIDStr := chi.URLParam(r, "space_id")
+
 	var spaceID pgtype.UUID
+
 	if err := spaceID.Scan(spaceIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
 		return
@@ -170,6 +183,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get space feed")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -187,7 +201,9 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authorIDStr := chi.URLParam(r, "user_id")
+
 	var authorID pgtype.UUID
+
 	if err := authorID.Scan(authorIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
 		return
@@ -202,5 +218,6 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get profile feed")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }

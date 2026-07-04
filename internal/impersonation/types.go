@@ -14,7 +14,7 @@ import (
 )
 
 // ImpersonationContext holds both the real admin and impersonated user IDs.
-type ImpersonationContext struct {
+type ImpersonationContext struct { //nolint:revive // stuttering type name preserved for API compatibility
 	AdminID        pgtype.UUID
 	ImpersonatedID pgtype.UUID
 }
@@ -32,10 +32,11 @@ func ImpersonatedFromContext(ctx context.Context) *ImpersonationContext {
 
 // EffectiveUserID returns the impersonated user ID when active, otherwise
 // falls back to the real user ID from the auth context. This is the
-// primary API for downstream handlers to resolve "who is acting right now."
+// primary API for downstream handlers to resolve "who is acting right now.".
 func EffectiveUserID(ctx context.Context) pgtype.UUID {
 	if ic := ImpersonatedFromContext(ctx); ic != nil {
 		return ic.ImpersonatedID
 	}
+
 	return pgtype.UUID{}
 }

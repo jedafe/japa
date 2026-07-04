@@ -12,19 +12,14 @@ package webhooks
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/tenant"
-)
-
-const (
-	defaultPageSize int32 = 20
-	maxPageSize     int32 = 100
 )
 
 // Handlers holds dependencies for webhook admin HTTP handlers.
@@ -44,6 +39,7 @@ func NewHandlers(service *Service) *Handlers {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -57,7 +53,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case err == pgx.ErrNoRows:
+	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case contains(err.Error(), "not found"):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
@@ -78,6 +74,7 @@ func containsHelper(s, substr string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -87,31 +84,8 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
-}
-
-func parsePageSize(r *http.Request) int32 {
-	s := r.URL.Query().Get("page_size")
-	if s == "" {
-		return defaultPageSize
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return defaultPageSize
-	}
-	if n > int(maxPageSize) {
-		return maxPageSize
-	}
-	return int32(n)
-}
-
-func parseOffset(r *http.Request) int32 {
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			return int32(n)
-		}
-	}
-	return 0
 }
 
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
@@ -119,6 +93,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -127,7 +102,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 // ---------------------------------------------------------------------------
 
 // ListWebhooks returns all webhook endpoints for the tenant.
-// GET /admin/webhooks
+// GET /admin/webhooks.
 func (h *Handlers) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -141,13 +116,13 @@ func (h *Handlers) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data":       endpoints,
+		"data":        endpoints,
 		"total_count": len(endpoints),
 	})
 }
 
 // GetWebhook returns a single webhook endpoint by ID.
-// GET /admin/webhooks/{id}
+// GET /admin/webhooks/{id}.
 func (h *Handlers) GetWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -170,7 +145,7 @@ func (h *Handlers) GetWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateWebhook registers a new webhook endpoint.
-// POST /admin/webhooks
+// POST /admin/webhooks.
 func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -187,10 +162,12 @@ func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation_error", "url is required")
 		return
 	}
+
 	if input.Secret == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "secret is required")
 		return
 	}
+
 	if len(input.EventTypes) == 0 {
 		writeError(w, http.StatusBadRequest, "validation_error", "event_types is required and must not be empty")
 		return
@@ -206,7 +183,7 @@ func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateWebhook updates an existing webhook endpoint.
-// PUT /admin/webhooks/{id}
+// PUT /admin/webhooks/{id}.
 func (h *Handlers) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -235,7 +212,7 @@ func (h *Handlers) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteWebhook removes a webhook endpoint.
-// DELETE /admin/webhooks/{id}
+// DELETE /admin/webhooks/{id}.
 func (h *Handlers) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -257,7 +234,7 @@ func (h *Handlers) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 // TestWebhook sends a test event to a webhook endpoint.
-// POST /admin/webhooks/{id}/test
+// POST /admin/webhooks/{id}/test.
 func (h *Handlers) TestWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {

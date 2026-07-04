@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // UserContextKey is the context key for the authenticated user.
 type contextKey struct{ name string }
 
+// UserContextKey is the user context key.
 var UserContextKey = contextKey{"user"}
 
 // AuthenticatedUser holds the user info extracted from a validated JWT.
@@ -30,7 +31,7 @@ func FromContext(ctx context.Context) *AuthenticatedUser {
 // It validates the JWT, checks if the JTI has been revoked via Valkey,
 // and stores the AuthenticatedUser in context.
 // Returns 401 if no token, invalid token, wrong scheme, or revoked token.
-func RequireAuth(kr *KeyRotation, vkClient *redis.Client) func(http.Handler) http.Handler {
+func RequireAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -84,7 +85,7 @@ func RequireAuth(kr *KeyRotation, vkClient *redis.Client) func(http.Handler) htt
 // but does not require it. Useful for endpoints that show different
 // content for authenticated vs anonymous users. Also checks JTI
 // revocation if a Valkey client is provided.
-func OptionalAuth(kr *KeyRotation, vkClient *redis.Client) func(http.Handler) http.Handler {
+func OptionalAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")

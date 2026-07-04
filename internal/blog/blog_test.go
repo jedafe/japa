@@ -12,15 +12,20 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestSeriesStatusConstants(t *testing.T) {
+	t.Parallel()
+
 	if SeriesStatusActive != "active" {
 		t.Errorf("SeriesStatusActive = %q, want %q", SeriesStatusActive, "active")
 	}
+
 	if SeriesStatusArchived != "archived" {
 		t.Errorf("SeriesStatusArchived = %q, want %q", SeriesStatusArchived, "archived")
 	}
 }
 
 func TestReviewStatusConstants(t *testing.T) {
+	t.Parallel()
+
 	expected := map[string]string{
 		ReviewStatusPending:          "pending",
 		ReviewStatusApproved:         "approved",
@@ -35,9 +40,12 @@ func TestReviewStatusConstants(t *testing.T) {
 }
 
 func TestPaginationDefaults(t *testing.T) {
+	t.Parallel()
+
 	if DefaultPageSize != 20 {
 		t.Errorf("DefaultPageSize = %d, want 20", DefaultPageSize)
 	}
+
 	if MaxPageSize != 100 {
 		t.Errorf("MaxPageSize = %d, want 100", MaxPageSize)
 	}
@@ -48,6 +56,7 @@ func TestPaginationDefaults(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSeriesStatusTransitions(t *testing.T) {
+	t.Parallel()
 	// Valid statuses: active, archived.
 	validStatuses := map[string]bool{
 		SeriesStatusActive:   true,
@@ -73,6 +82,7 @@ func TestSeriesStatusTransitions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestReviewStatusTransitions(t *testing.T) {
+	t.Parallel()
 	// Valid statuses.
 	validStatuses := map[string]bool{
 		ReviewStatusPending:          true,
@@ -100,6 +110,7 @@ func TestReviewStatusTransitions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreateSeriesInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty title should be invalid.
 	input := CreateSeriesInput{Title: "", Slug: "test-series"}
 	if input.Title != "" {
@@ -118,9 +129,12 @@ func TestCreateSeriesInputValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreateReviewInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty content_id should be invalid.
 	input := CreateReviewInput{}
+
 	var zeroUUID pgtype.UUID
+
 	if input.ContentID != zeroUUID {
 		t.Error("expected zero UUID for content_id")
 	}
@@ -131,9 +145,12 @@ func TestCreateReviewInputValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFeaturePostInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty content_id should be invalid.
 	input := FeaturePostInput{}
+
 	var zeroUUID pgtype.UUID
+
 	if input.ContentID != zeroUUID {
 		t.Error("expected zero UUID for content_id")
 	}
@@ -149,6 +166,7 @@ func TestFeaturePostInputValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRSSXMLHeader(t *testing.T) {
+	t.Parallel()
 	// Verify the XML header format.
 	header := xml.Header
 	if header != "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" {
@@ -157,6 +175,7 @@ func TestRSSXMLHeader(t *testing.T) {
 }
 
 func TestRSSItemFields(t *testing.T) {
+	t.Parallel()
 	// Verify RSSItem struct has all required fields.
 	item := RSSItem{
 		Title:       "Test Post",
@@ -169,9 +188,11 @@ func TestRSSItemFields(t *testing.T) {
 	if item.Title != "Test Post" {
 		t.Errorf("unexpected title: %q", item.Title)
 	}
+
 	if item.Link != "https://example.com/test" {
 		t.Errorf("unexpected link: %q", item.Link)
 	}
+
 	if item.GUID != "urn:uuid:123" {
 		t.Errorf("unexpected guid: %q", item.GUID)
 	}
@@ -182,6 +203,8 @@ func TestRSSItemFields(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSeriesStatusValues(t *testing.T) {
+	t.Parallel()
+
 	statuses := []string{SeriesStatusActive, SeriesStatusArchived}
 	for _, s := range statuses {
 		if s == "" {
@@ -191,6 +214,8 @@ func TestSeriesStatusValues(t *testing.T) {
 }
 
 func TestReviewStatusValues(t *testing.T) {
+	t.Parallel()
+
 	statuses := []string{
 		ReviewStatusPending,
 		ReviewStatusApproved,

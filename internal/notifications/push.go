@@ -2,8 +2,10 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 
 	"github.com/SherClockHolmes/webpush-go"
@@ -23,6 +25,7 @@ type PushDelivery struct {
 func NewPushDelivery() *PushDelivery {
 	privKey := os.Getenv("JC_VAPID_PRIVATE_KEY")
 	pubKey := os.Getenv("JC_VAPID_PUBLIC_KEY")
+
 	subject := os.Getenv("JC_VAPID_SUBJECT")
 	if subject == "" {
 		subject = "mailto:admin@japaconnect.com"
@@ -52,7 +55,7 @@ func (p *PushDelivery) PublicKey() string {
 }
 
 // Send delivers a web push notification to the given browser subscription.
-func (p *PushDelivery) Send(ctx context.Context, endpoint, p256dh, auth string, payload []byte) error {
+func (p *PushDelivery) Send(_ context.Context, endpoint, p256dh, auth string, payload []byte) error {
 	if !p.enabled {
 		return nil
 	}
@@ -74,12 +77,14 @@ func (p *PushDelivery) Send(ctx context.Context, endpoint, p256dh, auth string, 
 	if err != nil {
 		return fmt.Errorf("sending web push: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	// 410 Gone: subscription expired or revoked — caller should remove it.
-	if resp.StatusCode == 410 {
-		return fmt.Errorf("subscription expired (410 Gone)")
+	if resp.StatusCode == http.StatusGone {
+		return errors.New("subscription expired (410 Gone)")
 	}
+
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("web push returned status %d", resp.StatusCode)
 	}

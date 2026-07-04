@@ -1,4 +1,7 @@
-.PHONY: build run test migrate docker-up docker-down sqlc-gen lint clean
+.PHONY: build run test test-integration migrate docker-up docker-down sqlc-gen lint lint-fix lint-changed fmt vet check clean
+
+# Go binary path (for tools installed via go install)
+GOBIN := $(shell go env GOPATH)/bin
 
 # Build the API binary into bin/japa-api
 build:
@@ -34,7 +37,26 @@ sqlc-gen:
 
 # Run the linter
 lint:
-	golangci-lint run ./...
+	$(GOBIN)/golangci-lint run ./...
+
+# Auto-fix lint issues where possible
+lint-fix:
+	$(GOBIN)/golangci-lint run --fix ./...
+
+# Run linter on changed files only (for pre-commit)
+lint-changed:
+	$(GOBIN)/golangci-lint run --new-from-rev=HEAD~1 ./...
+
+# Format code
+fmt:
+	$(GOBIN)/golangci-lint fmt ./...
+
+# Vet the code
+vet:
+	go vet ./...
+
+# Run all checks (build, vet, lint, test)
+check: build vet lint test
 
 # Remove build artifacts
 clean:

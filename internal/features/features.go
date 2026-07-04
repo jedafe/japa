@@ -42,6 +42,7 @@ func New(database *db.DB) *Checker {
 		},
 	}
 	go c.cache.cleanupLoop(60 * time.Second)
+
 	return c
 }
 
@@ -56,12 +57,14 @@ func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key strin
 
 	enabled := c.queryEnabled(ctx, tenantID, key)
 	c.cacheSet(tenantKey, key, enabled)
+
 	return enabled
 }
 
 // queryEnabled queries the database for the feature flag.
 func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool {
 	var enabled bool
+
 	err := c.db.Reader.QueryRow(ctx, `
 		SELECT enabled FROM feature_flags
 		WHERE key = $1 AND tenant_id = $2
@@ -69,6 +72,7 @@ func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key st
 	if err != nil {
 		return DefaultFor(key)
 	}
+
 	return enabled
 }
 
@@ -76,11 +80,13 @@ func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key st
 func (c *Checker) cacheGet(tenantKey, flagKey string) *bool {
 	c.cache.mu.RLock()
 	defer c.cache.mu.RUnlock()
+
 	if tenantFlags, ok := c.cache.entries[tenantKey]; ok {
 		if entry, ok := tenantFlags[flagKey]; ok {
 			return &entry.enabled
 		}
 	}
+
 	return nil
 }
 
@@ -88,9 +94,11 @@ func (c *Checker) cacheGet(tenantKey, flagKey string) *bool {
 func (c *Checker) cacheSet(tenantKey, flagKey string, enabled bool) {
 	c.cache.mu.Lock()
 	defer c.cache.mu.Unlock()
+
 	if _, ok := c.cache.entries[tenantKey]; !ok {
 		c.cache.entries[tenantKey] = make(map[string]*flagCacheEntry)
 	}
+
 	c.cache.entries[tenantKey][flagKey] = &flagCacheEntry{
 		enabled:   enabled,
 		createdAt: time.Now(),
@@ -108,15 +116,18 @@ func (c *Checker) ClearCache() {
 func (fc *flagCache) cleanupLoop(maxAge time.Duration) {
 	ticker := time.NewTicker(maxAge)
 	defer ticker.Stop()
+
 	for range ticker.C {
 		fc.mu.Lock()
 		now := time.Now()
+
 		for tenantKey, tenantFlags := range fc.entries {
 			for key, entry := range tenantFlags {
 				if now.Sub(entry.createdAt) > maxAge {
 					delete(tenantFlags, key)
 				}
 			}
+
 			if len(tenantFlags) == 0 {
 				delete(fc.entries, tenantKey)
 			}
@@ -132,6 +143,7 @@ func (c *Checker) GetAllEnabled(ctx context.Context, tenantID pgtype.UUID) map[s
 	for _, f := range Registry {
 		result[f.Key] = c.IsEnabled(ctx, tenantID, f.Key)
 	}
+
 	return result
 }
 
@@ -146,6 +158,7 @@ func (c *Checker) SetEnabled(ctx context.Context, tenantID pgtype.UUID, key stri
 	if err != nil {
 		return fmt.Errorf("updating feature flag %s: %w", key, err)
 	}
+
 	return nil
 }
 
@@ -160,14 +173,16 @@ func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 			if t == nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusServiceUnavailable)
-				json.NewEncoder(w).Encode(map[string]string{"error": "feature_disabled"})
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "feature_disabled"})
+
 				return
 			}
 
 			if !checker.IsEnabled(r.Context(), t.ID, key) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusNotFound)
-				json.NewEncoder(w).Encode(map[string]string{"error": "feature_disabled"})
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "feature_disabled"})
+
 				return
 			}
 

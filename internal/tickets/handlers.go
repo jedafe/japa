@@ -22,6 +22,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for ticket HTTP handlers.
 type Handlers struct {
 	Service *Service
@@ -42,6 +44,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, errors.New("invalid " + param)
 	}
+
 	return id, nil
 }
 
@@ -52,6 +55,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -62,6 +66,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -87,6 +92,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if v != nil {
 		if err := json.NewEncoder(w).Encode(v); err != nil {
 			slog.Warn("json encode error", "error", err)
@@ -105,16 +111,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -123,11 +132,13 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +151,7 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -153,14 +165,17 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		Email       string         `json:"email"`
 		FieldValues map[string]any `json:"field_values"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Subject == "" {
 		writeError(w, http.StatusBadRequest, "missing_subject", "subject is required")
 		return
 	}
+
 	if input.Description == "" {
 		writeError(w, http.StatusBadRequest, "missing_description", "description is required")
 		return
@@ -187,6 +202,7 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": ticket})
 }
 
@@ -196,6 +212,7 @@ func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -209,6 +226,7 @@ func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": tickets})
 }
 
@@ -218,10 +236,12 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
@@ -254,8 +274,8 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"ticket":     ticket,
-			"comments":   comments,
+			"ticket":      ticket,
+			"comments":    comments,
 			"attachments": attachments,
 		},
 	})
@@ -267,10 +287,12 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
@@ -283,6 +305,7 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if ticket.SubmitterUserID != user.UserID {
 		writeError(w, http.StatusForbidden, "forbidden", "You can only reply to your own tickets")
 		return
@@ -291,10 +314,12 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Body string `json:"body"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Body == "" {
 		writeError(w, http.StatusBadRequest, "missing_body", "body is required")
 		return
@@ -309,6 +334,7 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
@@ -322,6 +348,7 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -337,6 +364,7 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 	if tid := r.URL.Query().Get("type_id"); tid != "" {
 		_ = typeID.Scan(tid)
 	}
+
 	if aid := r.URL.Query().Get("assigned_to"); aid != "" {
 		_ = assignedTo.Scan(aid)
 	}
@@ -346,6 +374,7 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": tickets})
 }
 
@@ -355,10 +384,12 @@ func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
@@ -376,10 +407,12 @@ func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing ticket comments", "ticket_id", id, "error", err)
 	}
+
 	attachments, err := h.Service.ListAttachments(r.Context(), id)
 	if err != nil {
 		slog.Error("listing ticket attachments", "ticket_id", id, "error", err)
 	}
+
 	events, err := h.Service.ListEvents(r.Context(), id)
 	if err != nil {
 		slog.Error("listing ticket events", "ticket_id", id, "error", err)
@@ -401,10 +434,12 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
@@ -417,6 +452,7 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 		AssignedTo     string `json:"assigned_to"`
 		ResolutionNote string `json:"resolution_note"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -433,7 +469,9 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": ticket})
+
 		return
 	}
 
@@ -447,7 +485,9 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": ticket})
+
 		return
 	}
 
@@ -458,6 +498,7 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_assigned_to", "Invalid assigned_to")
 			return
 		}
+
 		ticket, err := h.Service.AssignTicket(r.Context(), id, tenantID, AssignTicketInput{
 			AssignedTo: assignedTo,
 			UserID:     user.UserID,
@@ -466,7 +507,9 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": ticket})
+
 		return
 	}
 
@@ -479,6 +522,7 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
@@ -488,10 +532,12 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Body string `json:"body"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Body == "" {
 		writeError(w, http.StatusBadRequest, "missing_body", "body is required")
 		return
@@ -506,6 +552,7 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
@@ -515,6 +562,7 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
@@ -526,6 +574,7 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": events})
 }
 
@@ -539,6 +588,7 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -552,6 +602,7 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
@@ -561,6 +612,7 @@ func (h *Handlers) CreateTicketType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -573,17 +625,20 @@ func (h *Handlers) CreateTicketType(w http.ResponseWriter, r *http.Request) {
 		FieldGroupID      string `json:"field_group_id"`
 		DefaultPriority   string `json:"default_priority"`
 		AutoAssignGroupID string `json:"auto_assign_group_id"`
-		SlaHours          *int32 `json:"sla_hours"`
+		SLAHours          *int32 `json:"sla_hours"`
 		IsPublic          *bool  `json:"is_public"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if input.Slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
@@ -593,6 +648,7 @@ func (h *Handlers) CreateTicketType(w http.ResponseWriter, r *http.Request) {
 	if input.FieldGroupID != "" {
 		_ = fieldGroupID.Scan(input.FieldGroupID)
 	}
+
 	if input.AutoAssignGroupID != "" {
 		_ = autoAssignGroupID.Scan(input.AutoAssignGroupID)
 	}
@@ -609,13 +665,14 @@ func (h *Handlers) CreateTicketType(w http.ResponseWriter, r *http.Request) {
 		FieldGroupID:      fieldGroupID,
 		DefaultPriority:   input.DefaultPriority,
 		AutoAssignGroupID: autoAssignGroupID,
-		SlaHours:          input.SlaHours,
+		SLAHours:          input.SLAHours,
 		IsPublic:          isPublic,
 	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
@@ -625,10 +682,12 @@ func (h *Handlers) UpdateTicketType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket type ID")
@@ -641,13 +700,15 @@ func (h *Handlers) UpdateTicketType(w http.ResponseWriter, r *http.Request) {
 		FieldGroupID      string `json:"field_group_id"`
 		DefaultPriority   string `json:"default_priority"`
 		AutoAssignGroupID string `json:"auto_assign_group_id"`
-		SlaHours          *int32 `json:"sla_hours"`
+		SLAHours          *int32 `json:"sla_hours"`
 		IsPublic          *bool  `json:"is_public"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
@@ -657,6 +718,7 @@ func (h *Handlers) UpdateTicketType(w http.ResponseWriter, r *http.Request) {
 	if input.FieldGroupID != "" {
 		_ = fieldGroupID.Scan(input.FieldGroupID)
 	}
+
 	if input.AutoAssignGroupID != "" {
 		_ = autoAssignGroupID.Scan(input.AutoAssignGroupID)
 	}
@@ -672,13 +734,14 @@ func (h *Handlers) UpdateTicketType(w http.ResponseWriter, r *http.Request) {
 		FieldGroupID:      fieldGroupID,
 		DefaultPriority:   input.DefaultPriority,
 		AutoAssignGroupID: autoAssignGroupID,
-		SlaHours:          input.SlaHours,
+		SLAHours:          input.SLAHours,
 		IsPublic:          isPublic,
 	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -688,10 +751,12 @@ func (h *Handlers) DeleteTicketType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket type ID")
@@ -702,5 +767,6 @@ func (h *Handlers) DeleteTicketType(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }

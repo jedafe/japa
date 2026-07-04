@@ -37,6 +37,7 @@ func (s *Service) StartImpersonation(ctx context.Context, adminID, targetUserID 
 	}
 
 	slog.Info("impersonation started", "admin", adminID.String(), "target", targetUserID.String())
+
 	return nil
 }
 
@@ -55,6 +56,7 @@ func (s *Service) EndImpersonation(ctx context.Context, adminID pgtype.UUID) err
 	}
 
 	slog.Info("impersonation ended", "admin", adminID.String())
+
 	return nil
 }
 
@@ -64,12 +66,13 @@ func (s *Service) GetImpersonationStatus(ctx context.Context, adminID pgtype.UUI
 	if err != nil {
 		return "", false, fmt.Errorf("get impersonation status: %w", err)
 	}
+
 	return targetID, targetID != "", nil
 }
 
 // IsAdmin checks if a user has the admin.impersonate permission.
 // This is a simplified check — in production, resolve through RBAC.
-func (s *Service) IsAdmin(ctx context.Context, userID pgtype.UUID) bool {
+func (s *Service) IsAdmin(_ context.Context, _ pgtype.UUID) bool {
 	// For now, all users with the impersonate permission are admins.
 	// The RBAC resolver checks this at the middleware level.
 	return true

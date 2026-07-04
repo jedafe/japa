@@ -11,9 +11,9 @@ import (
 
 // RSSFeed is the top-level XML structure for an RSS 2.0 feed.
 type RSSFeed struct {
-	XMLName      xml.Name  `xml:"rss"`
-	Version      string    `xml:"version,attr"`
-	Channel      RSSChannel `xml:"channel"`
+	XMLName xml.Name   `xml:"rss"`
+	Version string     `xml:"version,attr"`
+	Channel RSSChannel `xml:"channel"`
 }
 
 // RSSChannel contains metadata and items for the feed.
@@ -52,11 +52,11 @@ func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow) error 
 			pubDate = p.CreatedAt.Time.Format(time.RFC1123Z)
 		}
 
-		guid := fmt.Sprintf("urn:uuid:%s", p.ID.String())
+		guid := "urn:uuid:" + p.ID.String()
 
 		item := RSSItem{
 			Title:       p.Title,
-			Link:        fmt.Sprintf("https://japaconnect.com/blog/%s", p.Slug),
+			Link:        "https://japaconnect.com/blog/" + p.Slug,
 			GUID:        guid,
 			Description: p.BodyHtml,
 			PubDate:     pubDate,
@@ -76,6 +76,7 @@ func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow) error 
 
 	enc := xml.NewEncoder(w)
 	enc.Indent("", "  ")
+
 	if err := enc.Encode(feed); err != nil {
 		return fmt.Errorf("encoding RSS XML: %w", err)
 	}

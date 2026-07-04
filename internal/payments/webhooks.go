@@ -37,7 +37,8 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		writeError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
 		return
 	}
-	defer r.Body.Close()
+
+	defer func() { _ = r.Body.Close() }()
 
 	// Parse event
 	var event map[string]interface{}
@@ -57,6 +58,7 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		writeError(w, http.StatusBadRequest, "missing_event_id", "Missing event ID")
 		return
 	}
+
 	if eventID == "" {
 		writeError(w, http.StatusBadRequest, "missing_event_id", "Missing event ID")
 		return

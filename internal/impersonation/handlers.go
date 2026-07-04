@@ -7,11 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers holds dependencies for impersonation HTTP handlers.
@@ -28,29 +26,13 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, errors.New("invalid " + param)
-	}
-	return id, nil
-}
-
-func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-	return t.ID, true
-}
-
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -72,6 +54,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if v != nil {
 		if err := json.NewEncoder(w).Encode(v); err != nil {
 			slog.Warn("json encode error", "error", err)
@@ -90,7 +73,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // ---------------------------------------------------------------------------
 
 // StartImpersonation begins impersonating a target user.
-// POST /api/v1/admin/impersonate — body: {"user_id": "uuid"}
+// POST /api/v1/admin/impersonate — body: {"user_id": "uuid"}.
 func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -100,6 +83,7 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		UserID string `json:"user_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -125,14 +109,14 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{
-			"status":  "impersonation_started",
+			"status":    "impersonation_started",
 			"target_id": input.UserID,
 		},
 	})
 }
 
 // EndImpersonation stops impersonating the current target.
-// DELETE /api/v1/admin/impersonate
+// DELETE /api/v1/admin/impersonate.
 func (h *Handlers) EndImpersonation(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -152,7 +136,7 @@ func (h *Handlers) EndImpersonation(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetImpersonationStatus returns the current impersonation state.
-// GET /api/v1/admin/impersonate/status
+// GET /api/v1/admin/impersonate/status.
 func (h *Handlers) GetImpersonationStatus(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

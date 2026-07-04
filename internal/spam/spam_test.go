@@ -5,6 +5,8 @@ import (
 )
 
 func TestComputeContentHash_Consistent(t *testing.T) {
+	t.Parallel()
+
 	body := "This is a test post about immigration to the UK."
 	hash1 := ComputeContentHash(body)
 	hash2 := ComputeContentHash(body)
@@ -12,12 +14,14 @@ func TestComputeContentHash_Consistent(t *testing.T) {
 	if hash1 == "" {
 		t.Fatal("ComputeContentHash returned empty string")
 	}
+
 	if hash1 != hash2 {
 		t.Errorf("same input produced different hashes: %s != %s", hash1, hash2)
 	}
 }
 
 func TestComputeContentHash_Normalization(t *testing.T) {
+	t.Parallel()
 	// Different whitespace/casing should produce the same hash
 	body1 := "  Hello   World  "
 	body2 := "hello world"
@@ -30,6 +34,8 @@ func TestComputeContentHash_Normalization(t *testing.T) {
 }
 
 func TestComputeContentHash_DifferentContent(t *testing.T) {
+	t.Parallel()
+
 	hash1 := ComputeContentHash("cats are great")
 	hash2 := ComputeContentHash("dogs are great")
 
@@ -39,6 +45,8 @@ func TestComputeContentHash_DifferentContent(t *testing.T) {
 }
 
 func TestCheckCensoredWords_Block(t *testing.T) {
+	t.Parallel()
+
 	patterns := []CensoredWord{
 		{Pattern: "spam", Action: "block"},
 	}
@@ -47,12 +55,15 @@ func TestCheckCensoredWords_Block(t *testing.T) {
 	if !result.Blocked {
 		t.Error("expected Blocked=true for block action")
 	}
+
 	if result.CleanText == "" {
 		t.Error("CleanText should be set even when blocked")
 	}
 }
 
 func TestCheckCensoredWords_Replace(t *testing.T) {
+	t.Parallel()
+
 	patterns := []CensoredWord{
 		{Pattern: "badword", Action: "replace", Replacement: "****"},
 	}
@@ -61,12 +72,15 @@ func TestCheckCensoredWords_Replace(t *testing.T) {
 	if result.Blocked {
 		t.Error("expected Blocked=false for replace action")
 	}
+
 	if result.CleanText != "This contains **** here" {
 		t.Errorf("CleanText = %q, want %q", result.CleanText, "This contains **** here")
 	}
 }
 
 func TestCheckCensoredWords_Flag(t *testing.T) {
+	t.Parallel()
+
 	patterns := []CensoredWord{
 		{Pattern: "suspicious", Action: "flag"},
 	}
@@ -75,15 +89,19 @@ func TestCheckCensoredWords_Flag(t *testing.T) {
 	if result.Blocked {
 		t.Error("expected Blocked=false for flag action")
 	}
+
 	if !result.Flagged {
 		t.Error("expected Flagged=true for flag action")
 	}
+
 	if result.FlagReason == "" {
 		t.Error("FlagReason should be set")
 	}
 }
 
 func TestCheckCensoredWords_CaseInsensitive(t *testing.T) {
+	t.Parallel()
+
 	patterns := []CensoredWord{
 		{Pattern: "spam", Action: "block"},
 	}
@@ -95,6 +113,8 @@ func TestCheckCensoredWords_CaseInsensitive(t *testing.T) {
 }
 
 func TestCheckCensoredWords_NoMatch(t *testing.T) {
+	t.Parallel()
+
 	patterns := []CensoredWord{
 		{Pattern: "spam", Action: "block"},
 	}
@@ -103,15 +123,19 @@ func TestCheckCensoredWords_NoMatch(t *testing.T) {
 	if result.Blocked {
 		t.Error("expected Blocked=false when no pattern matches")
 	}
+
 	if result.Flagged {
 		t.Error("expected Flagged=false when no pattern matches")
 	}
+
 	if result.CleanText != "This is clean content" {
 		t.Errorf("CleanText = %q, want original text", result.CleanText)
 	}
 }
 
 func TestCheckCensoredWords_RegexPattern(t *testing.T) {
+	t.Parallel()
+
 	patterns := []CensoredWord{
 		{Pattern: `buy\s+now`, Action: "block"},
 	}
@@ -123,6 +147,7 @@ func TestCheckCensoredWords_RegexPattern(t *testing.T) {
 }
 
 func TestCheckCensoredWords_MultipleActions(t *testing.T) {
+	t.Parallel()
 	// Block takes precedence over flag
 	patterns := []CensoredWord{
 		{Pattern: "suspicious", Action: "flag"},
@@ -136,44 +161,58 @@ func TestCheckCensoredWords_MultipleActions(t *testing.T) {
 }
 
 func TestCheckCensoredWords_EmptyPatterns(t *testing.T) {
+	t.Parallel()
+
 	result := CheckCensoredWords([]CensoredWord{}, "Any text")
 
 	if result.Blocked {
 		t.Error("expected Blocked=false with empty patterns")
 	}
+
 	if result.CleanText != "Any text" {
 		t.Errorf("CleanText = %q, want original text", result.CleanText)
 	}
 }
 
 func TestBlockTypeConstants(t *testing.T) {
+	t.Parallel()
+
 	if BlockTypeFull != "full" {
 		t.Errorf("BlockTypeFull = %q, want %q", BlockTypeFull, "full")
 	}
+
 	if BlockTypeRegistration != "registration" {
 		t.Errorf("BlockTypeRegistration = %q", BlockTypeRegistration)
 	}
+
 	if BlockTypePosting != "posting" {
 		t.Errorf("BlockTypePosting = %q", BlockTypePosting)
 	}
+
 	if BlockTypeAPI != "api" {
 		t.Errorf("BlockTypeAPI = %q", BlockTypeAPI)
 	}
 }
 
 func TestCensorActionConstants(t *testing.T) {
+	t.Parallel()
+
 	if CensorActionBlock != "block" {
 		t.Errorf("CensorActionBlock = %q", CensorActionBlock)
 	}
+
 	if CensorActionReplace != "replace" {
 		t.Errorf("CensorActionReplace = %q", CensorActionReplace)
 	}
+
 	if CensorActionFlag != "flag" {
 		t.Errorf("CensorActionFlag = %q", CensorActionFlag)
 	}
 }
 
 func TestIsValidBlockType(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input string
 		want  bool
@@ -195,6 +234,8 @@ func TestIsValidBlockType(t *testing.T) {
 }
 
 func TestIsValidCensorAction(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input string
 		want  bool
@@ -215,6 +256,8 @@ func TestIsValidCensorAction(t *testing.T) {
 }
 
 func TestNormalizeForHash(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input string
 		want  string

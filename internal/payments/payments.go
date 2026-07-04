@@ -12,38 +12,38 @@ import (
 
 // Payment providers.
 const (
-	ProviderPaystack         = "paystack"
-	ProviderStripe           = "stripe"
-	ProviderNOWPayments      = "nowpayments"
-	ProviderManualTransfer   = "manual_transfer"
-	ProviderCredit           = "credit"
+	ProviderPaystack       = "paystack"
+	ProviderStripe         = "stripe"
+	ProviderNOWPayments    = "nowpayments"
+	ProviderManualTransfer = "manual_transfer"
+	ProviderCredit         = "credit"
 )
 
 // Payment purpose types.
 const (
-	PurposeProMembership = "pro_membership"
-	PurposeOrgBoost      = "org_boost"
-	PurposeDonation      = "donation"
-	PurposeCourseAccess  = "course_access"
+	PurposeProMembership  = "pro_membership"
+	PurposeOrgBoost       = "org_boost"
+	PurposeDonation       = "donation"
+	PurposeCourseAccess   = "course_access"
 	PurposeCreditPurchase = "credit_purchase"
 	PurposeAdSlot         = "ad_slot"
 )
 
 // Payment statuses.
 const (
-	PaymentStatusPending   = "pending"
+	PaymentStatusPending    = "pending"
 	PaymentStatusProcessing = "processing"
-	PaymentStatusSucceeded = "succeeded"
-	PaymentStatusFailed    = "failed"
-	PaymentStatusRefunded  = "refunded"
-	PaymentStatusDisputed  = "disputed"
+	PaymentStatusSucceeded  = "succeeded"
+	PaymentStatusFailed     = "failed"
+	PaymentStatusRefunded   = "refunded"
+	PaymentStatusDisputed   = "disputed"
 )
 
 // Subscription statuses.
 const (
-	SubscriptionStatusActive  = "active"
+	SubscriptionStatusActive   = "active"
 	SubscriptionStatusCanceled = "canceled"
-	SubscriptionStatusPastDue = "past_due"
+	SubscriptionStatusPastDue  = "past_due"
 	SubscriptionStatusTrialing = "trialing"
 )
 

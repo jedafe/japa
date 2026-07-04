@@ -12,6 +12,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for follow HTTP handlers.
 type Handlers struct {
 	service *Service
@@ -29,6 +31,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -39,6 +42,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -46,6 +50,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -62,16 +67,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageOffset extracts the page_offset query parameter.
@@ -80,11 +88,13 @@ func parsePageOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -93,12 +103,13 @@ func parsePageOffset(r *http.Request) int32 {
 
 // ToggleFollow handles POST /api/v1/follows.
 // Request body: { "entity_type": "user", "entity_id": "..." }
-// Response: { "data": { "following": true } }
+// Response: { "data": { "following": true } }.
 func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -108,14 +119,17 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		EntityType string `json:"entity_type"`
 		EntityID   string `json:"entity_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.EntityType == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
+
 	if input.EntityID == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
@@ -132,6 +146,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "follow_error", err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]bool{"following": followed},
 	})
@@ -150,11 +165,13 @@ func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required in URL")
 		return
 	}
+
 	entityIDStr := r.URL.Query().Get("entity_id")
 	if entityIDStr == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id query parameter is required")
 		return
 	}
+
 	var entityID pgtype.UUID
 	if err := entityID.Scan(entityIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
@@ -169,6 +186,7 @@ func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get followers")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": followers})
 }
 
@@ -180,7 +198,9 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userIDStr := chi.URLParam(r, "user_id")
+
 	var userID pgtype.UUID
+
 	if err := userID.Scan(userIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
 		return
@@ -194,6 +214,7 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get following")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": following})
 }
 
@@ -205,14 +226,18 @@ func (h *Handlers) CheckMutual(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userIDStr := chi.URLParam(r, "user_id")
+
 	var userID pgtype.UUID
+
 	if err := userID.Scan(userIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
 		return
 	}
 
 	otherIDStr := chi.URLParam(r, "other_user_id")
+
 	var otherID pgtype.UUID
+
 	if err := otherID.Scan(otherIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_other_user_id", "Invalid other_user_id format")
 		return
@@ -223,6 +248,7 @@ func (h *Handlers) CheckMutual(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check mutual follow")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]bool{"mutual": mutual},
 	})

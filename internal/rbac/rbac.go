@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // permCacheTTL is how long permission entries live in Valkey before expiring.
@@ -64,7 +64,7 @@ type UserContext struct {
 type RBAC struct {
 	db    *db.DB
 	cache *permissionCache
-	vk    *redis.Client // nil when Valkey is unavailable (graceful degradation)
+	vk    valkeycompat.Cmdable // nil when Valkey is unavailable (graceful degradation)
 }
 
 // cacheEntry wraps a UserContext with its creation time for TTL-based eviction.
@@ -84,7 +84,7 @@ type permissionCache struct {
 // When vkClient is nil, only the in-memory L1 cache is used (graceful
 // degradation when Valkey is unreachable at startup).
 // A background goroutine evicts L1 cache entries older than 60 seconds.
-func New(database *db.DB, vkClient *redis.Client) *RBAC {
+func New(database *db.DB, vkClient valkeycompat.Cmdable) *RBAC {
 	r := &RBAC{
 		db: database,
 		cache: &permissionCache{
@@ -93,6 +93,7 @@ func New(database *db.DB, vkClient *redis.Client) *RBAC {
 		vk: vkClient,
 	}
 	go r.cache.cleanupLoop(60 * time.Second)
+
 	return r
 }
 
@@ -109,6 +110,7 @@ func (r *RBAC) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, 
 	if err != nil || uc == nil {
 		return false
 	}
+
 	return uc.Permissions[permKey]
 }
 
@@ -138,6 +140,7 @@ func (r *RBAC) GetUserContext(ctx context.Context, userID, tenantID pgtype.UUID)
 
 	r.cacheSet(cacheKey, uc)
 	r.valkeySet(ctx, cacheKey, uc)
+
 	return uc, nil
 }
 
@@ -153,20 +156,25 @@ func (r *RBAC) loadUserContext(ctx context.Context, userID, tenantID pgtype.UUID
 		JOIN permissions p ON rp.permission_id = p.id
 		WHERE ugm.tenant_id = $1 AND ugm.user_id = $2
 	`
+
 	rows, err := r.db.Reader.Query(ctx, query, tenantID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("querying user permissions: %w", err)
 	}
+
 	defer rows.Close()
 
 	permissions := make(map[string]bool)
+
 	for rows.Next() {
 		var key string
 		if err := rows.Scan(&key); err != nil {
 			return nil, fmt.Errorf("scanning permission key: %w", err)
 		}
+
 		permissions[key] = true
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating permission rows: %w", err)
 	}
@@ -177,20 +185,25 @@ func (r *RBAC) loadUserContext(ctx context.Context, userID, tenantID pgtype.UUID
 		JOIN user_groups ug ON ugm.group_id = ug.id
 		WHERE ugm.tenant_id = $1 AND ugm.user_id = $2
 	`
+
 	groupRows, err := r.db.Reader.Query(ctx, groupQuery, tenantID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("querying user groups: %w", err)
 	}
+
 	defer groupRows.Close()
 
 	var groups []Group
+
 	for groupRows.Next() {
 		var g Group
 		if err := groupRows.Scan(&g.ID, &g.TenantID, &g.Name, &g.Slug, &g.IsSystem); err != nil {
 			return nil, fmt.Errorf("scanning group: %w", err)
 		}
+
 		groups = append(groups, g)
 	}
+
 	if err := groupRows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating group rows: %w", err)
 	}
@@ -205,10 +218,12 @@ func (r *RBAC) loadUserContext(ctx context.Context, userID, tenantID pgtype.UUID
 func (r *RBAC) cacheGet(key string) *UserContext {
 	r.cache.mu.RLock()
 	defer r.cache.mu.RUnlock()
+
 	entry, ok := r.cache.entries[key]
 	if !ok {
 		return nil
 	}
+
 	return entry.user
 }
 
@@ -228,16 +243,19 @@ func (r *RBAC) valkeyGet(ctx context.Context, key string) *UserContext {
 	if r.vk == nil {
 		return nil
 	}
+
 	data, err := r.vk.Get(ctx, permCacheKeyPrefix+key).Bytes()
 	if err != nil {
 		// redis.Nil (miss) or connection error — treat as miss.
 		return nil
 	}
+
 	var uc UserContext
 	if err := json.Unmarshal(data, &uc); err != nil {
 		slog.Warn("rbac: corrupt valkey cache entry", "key", key, "error", err)
 		return nil
 	}
+
 	return &uc
 }
 
@@ -248,11 +266,13 @@ func (r *RBAC) valkeySet(ctx context.Context, key string, uc *UserContext) {
 	if r.vk == nil {
 		return
 	}
+
 	data, err := json.Marshal(uc)
 	if err != nil {
 		slog.Warn("rbac: failed to marshal user context for valkey", "key", key, "error", err)
 		return
 	}
+
 	if err := r.vk.Set(ctx, permCacheKeyPrefix+key, data, permCacheTTL).Err(); err != nil {
 		slog.Warn("rbac: failed to write valkey cache", "key", key, "error", err)
 	}
@@ -288,19 +308,24 @@ func (r *RBAC) InvalidateAllCache(ctx context.Context) {
 	if r.vk == nil {
 		return
 	}
+
 	var cursor uint64
+
 	prefix := permCacheKeyPrefix + "*"
+
 	for {
 		keys, nextCursor, err := r.vk.Scan(ctx, cursor, prefix, 100).Result()
 		if err != nil {
 			slog.Warn("rbac: failed to scan valkey for cache flush", "error", err)
 			return
 		}
+
 		if len(keys) > 0 {
 			if err := r.vk.Del(ctx, keys...).Err(); err != nil {
 				slog.Warn("rbac: failed to delete valkey cache keys", "count", len(keys), "error", err)
 			}
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
@@ -319,8 +344,10 @@ func (r *RBAC) ClearCache() {
 func (c *permissionCache) cleanupLoop(maxAge time.Duration) {
 	ticker := time.NewTicker(maxAge)
 	defer ticker.Stop()
+
 	for range ticker.C {
 		c.mu.Lock()
+
 		now := time.Now()
 		for key, entry := range c.entries {
 			if now.Sub(entry.createdAt) > maxAge {

@@ -11,33 +11,44 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestVoteConstants(t *testing.T) {
+	t.Parallel()
+
 	if VoteDown != -1 {
 		t.Errorf("VoteDown = %d, want -1", VoteDown)
 	}
+
 	if VoteUp != 1 {
 		t.Errorf("VoteUp = %d, want 1", VoteUp)
 	}
 }
 
 func TestEntityTypeConstants(t *testing.T) {
+	t.Parallel()
+
 	if EntityTypeThread != "thread" {
 		t.Errorf("EntityTypeThread = %q, want %q", EntityTypeThread, "thread")
 	}
+
 	if EntityTypeReply != "reply" {
 		t.Errorf("EntityTypeReply = %q, want %q", EntityTypeReply, "reply")
 	}
 }
 
 func TestPaginationDefaults(t *testing.T) {
+	t.Parallel()
+
 	if DefaultPageSize != 20 {
 		t.Errorf("DefaultPageSize = %d, want 20", DefaultPageSize)
 	}
+
 	if MaxPageSize != 100 {
 		t.Errorf("MaxPageSize = %d, want 100", MaxPageSize)
 	}
 }
 
 func TestDefaultEditWindowMinutes(t *testing.T) {
+	t.Parallel()
+
 	if DefaultEditWindowMinutes != 30 {
 		t.Errorf("DefaultEditWindowMinutes = %d, want 30", DefaultEditWindowMinutes)
 	}
@@ -48,6 +59,8 @@ func TestDefaultEditWindowMinutes(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestVoteValueValidation(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		value   int16
@@ -62,12 +75,16 @@ func TestVoteValueValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if tt.value != VoteDown && tt.value != VoteUp {
 				if !tt.wantErr {
 					t.Errorf("expected no error for value %d", tt.value)
 				}
+
 				return
 			}
+
 			if tt.wantErr {
 				t.Errorf("expected error for value %d but got none", tt.value)
 			}
@@ -80,6 +97,8 @@ func TestVoteValueValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEntityTypeValidation(t *testing.T) {
+	t.Parallel()
+
 	validTypes := []string{EntityTypeThread, EntityTypeReply}
 	for _, vt := range validTypes {
 		if vt != "thread" && vt != "reply" {
@@ -100,6 +119,7 @@ func TestEntityTypeValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreatePollInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty question should be invalid.
 	input := CreatePollInput{
 		Question: "",
@@ -129,6 +149,7 @@ func TestCreatePollInputValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreateTagInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty name should be invalid.
 	input := CreateTagInput{Name: "", Slug: "test"}
 	if input.Name != "" {
@@ -147,10 +168,13 @@ func TestCreateTagInputValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBookmarkFolderDefault(t *testing.T) {
+	t.Parallel()
+
 	folder := ""
 	if folder == "" {
 		folder = "default"
 	}
+
 	if folder != "default" {
 		t.Errorf("expected default folder, got %q", folder)
 	}
@@ -161,6 +185,8 @@ func TestBookmarkFolderDefault(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreateThreadInputDefaults(t *testing.T) {
+	t.Parallel()
+
 	input := CreateThreadInput{
 		Title: "Test Thread",
 		Slug:  "test-thread",
@@ -168,12 +194,15 @@ func TestCreateThreadInputDefaults(t *testing.T) {
 	if input.EditWindowMinutes <= 0 {
 		input.EditWindowMinutes = DefaultEditWindowMinutes
 	}
+
 	if input.EditWindowMinutes != 30 {
 		t.Errorf("expected edit window 30, got %d", input.EditWindowMinutes)
 	}
+
 	if input.Body == nil {
 		input.Body = []byte("[]")
 	}
+
 	if string(input.Body) != "[]" {
 		t.Errorf("expected empty JSON array body, got %q", string(input.Body))
 	}
@@ -184,6 +213,8 @@ func TestCreateThreadInputDefaults(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUUIDZeroValue(t *testing.T) {
+	t.Parallel()
+
 	var id pgtype.UUID
 	if id.Valid {
 		t.Error("zero pgtype.UUID should not be valid")

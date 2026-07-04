@@ -28,6 +28,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for payment HTTP handlers.
 type Handlers struct {
 	Service             *Service
@@ -51,6 +53,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -61,6 +64,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -71,6 +75,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -92,6 +97,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -108,16 +114,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -126,11 +135,13 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +154,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -157,18 +169,22 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		Metadata     map[string]interface{} `json:"metadata"`
 		DiscountCode string                 `json:"discount_code"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Provider == "" {
 		writeError(w, http.StatusBadRequest, "missing_provider", "provider is required")
 		return
 	}
+
 	if input.PurposeType == "" {
 		writeError(w, http.StatusBadRequest, "missing_purpose_type", "purpose_type is required")
 		return
 	}
+
 	if input.Amount <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid_amount", "Amount must be positive")
 		return
@@ -187,6 +203,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": payment})
 }
 
@@ -204,7 +221,8 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
 		return
 	}
-	defer r.Body.Close()
+
+	defer func() { _ = r.Body.Close() }()
 
 	// Verify Paystack webhook signature (HMAC-SHA256 of body with secret key).
 	if h.PaystackSecretKey != "" {
@@ -221,6 +239,7 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid_event", "Invalid webhook event")
 		return
 	}
+
 	event.Provider = ProviderPaystack
 	event.RawPayload = body
 
@@ -247,7 +266,8 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
 		return
 	}
-	defer r.Body.Close()
+
+	defer func() { _ = r.Body.Close() }()
 
 	// Verify Stripe webhook signature (HMAC-SHA256 with webhook secret).
 	if h.StripeWebhookSecret != "" {
@@ -264,11 +284,59 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_event", "Invalid webhook event")
 		return
 	}
+
 	event.Provider = ProviderStripe
 	event.RawPayload = body
 
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderStripe, event); err != nil {
+		writeError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+// HandleNOWPaymentsWebhook handles POST /api/v1/payments/webhook/nowpayments.
+// This endpoint is public (no auth required) as webhooks come from external services.
+// NOWPayments IPN sends HMAC-SHA256 of the payload using the IPN secret,
+// with the signature in the x-nowpayments-sig header.
+func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	// Read raw body for signature verification.
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
+		return
+	}
+
+	defer func() { _ = r.Body.Close() }()
+
+	// Verify NOWPayments IPN signature (HMAC-SHA256 with IPN secret).
+	if h.NOWPaymentsIPNKey != "" {
+		sig := r.Header.Get("x-nowpayments-sig")
+		if err := verifyHMACSHA256(body, sig, h.NOWPaymentsIPNKey); err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid_signature", "Invalid webhook signature")
+			return
+		}
+	}
+
+	// Parse event
+	var event WebhookEvent
+	if err := json.Unmarshal(body, &event); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_event", "Invalid webhook event")
+		return
+	}
+
+	event.Provider = ProviderNOWPayments
+	event.RawPayload = body
+
+	// Process webhook
+	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderNOWPayments, event); err != nil {
 		writeError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 		return
 	}
@@ -282,6 +350,7 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -295,6 +364,7 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": payments})
 }
 
@@ -304,10 +374,12 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid payment ID")
@@ -319,6 +391,7 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": payment})
 }
 
@@ -328,10 +401,12 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid payment ID")
@@ -339,13 +414,15 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Amount  int64  `json:"amount"`
-		Reason  string `json:"reason"`
+		Amount int64  `json:"amount"`
+		Reason string `json:"reason"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Amount <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid_amount", "Amount must be positive")
 		return
@@ -360,6 +437,7 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": refund})
 }
 
@@ -373,6 +451,7 @@ func (h *Handlers) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -382,14 +461,17 @@ func (h *Handlers) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		Plan     string `json:"plan"`
 		Provider string `json:"provider"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Plan == "" {
 		writeError(w, http.StatusBadRequest, "missing_plan", "plan is required")
 		return
 	}
+
 	if input.Provider == "" {
 		writeError(w, http.StatusBadRequest, "missing_provider", "provider is required")
 		return
@@ -403,6 +485,7 @@ func (h *Handlers) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": subscription})
 }
 
@@ -412,6 +495,7 @@ func (h *Handlers) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -425,6 +509,7 @@ func (h *Handlers) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": subscriptions})
 }
 
@@ -434,6 +519,7 @@ func (h *Handlers) GetActiveSubscription(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -444,6 +530,7 @@ func (h *Handlers) GetActiveSubscription(w http.ResponseWriter, r *http.Request)
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": subscription})
 }
 
@@ -453,10 +540,12 @@ func (h *Handlers) CancelSubscription(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid subscription ID")
@@ -468,6 +557,7 @@ func (h *Handlers) CancelSubscription(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": subscription})
 }
 
@@ -481,34 +571,39 @@ func (h *Handlers) CreateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	var input struct {
-		Code          string   `json:"code"`
-		DiscountType  string   `json:"discount_type"`
-		DiscountValue float64  `json:"discount_value"`
-		ApplicableTo  string   `json:"applicable_to"`
-		MaxUses       *int32   `json:"max_uses"`
-		UsesPerUser   int32    `json:"uses_per_user"`
-		GroupID       string   `json:"group_id"`
-		ValidFrom     string   `json:"valid_from"`
-		ValidUntil    string   `json:"valid_until"`
+		Code          string  `json:"code"`
+		DiscountType  string  `json:"discount_type"`
+		DiscountValue float64 `json:"discount_value"`
+		ApplicableTo  string  `json:"applicable_to"`
+		MaxUses       *int32  `json:"max_uses"`
+		UsesPerUser   int32   `json:"uses_per_user"`
+		GroupID       string  `json:"group_id"`
+		ValidFrom     string  `json:"valid_from"`
+		ValidUntil    string  `json:"valid_until"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Code == "" {
 		writeError(w, http.StatusBadRequest, "missing_code", "code is required")
 		return
 	}
+
 	if input.DiscountType == "" {
 		writeError(w, http.StatusBadRequest, "missing_discount_type", "discount_type is required")
 		return
 	}
+
 	if input.ApplicableTo == "" {
 		writeError(w, http.StatusBadRequest, "missing_applicable_to", "applicable_to is required")
 		return
@@ -523,12 +618,14 @@ func (h *Handlers) CreateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var validUntil *time.Time
+
 	if input.ValidUntil != "" {
 		t, err := time.Parse(time.RFC3339, input.ValidUntil)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_valid_until", "Invalid valid_until format")
 			return
 		}
+
 		validUntil = &t
 	}
 
@@ -548,6 +645,7 @@ func (h *Handlers) CreateDiscountCode(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": code})
 }
 
@@ -557,6 +655,7 @@ func (h *Handlers) ListDiscountCodes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -570,6 +669,7 @@ func (h *Handlers) ListDiscountCodes(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": codes})
 }
 
@@ -579,6 +679,7 @@ func (h *Handlers) ValidateDiscountCode(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -588,14 +689,17 @@ func (h *Handlers) ValidateDiscountCode(w http.ResponseWriter, r *http.Request) 
 		Code        string `json:"code"`
 		PurposeType string `json:"purpose_type"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Code == "" {
 		writeError(w, http.StatusBadRequest, "missing_code", "code is required")
 		return
 	}
+
 	if input.PurposeType == "" {
 		writeError(w, http.StatusBadRequest, "missing_purpose_type", "purpose_type is required")
 		return
@@ -606,6 +710,7 @@ func (h *Handlers) ValidateDiscountCode(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": code})
 }
 
@@ -615,10 +720,12 @@ func (h *Handlers) DeleteDiscountCode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid discount code ID")
@@ -629,6 +736,7 @@ func (h *Handlers) DeleteDiscountCode(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -640,15 +748,17 @@ func (h *Handlers) DeleteDiscountCode(w http.ResponseWriter, r *http.Request) {
 // compares it against the provided signature using constant-time comparison.
 func verifyHMACSHA256(payload []byte, signature, secret string) error {
 	if signature == "" {
-		return fmt.Errorf("missing signature")
+		return errors.New("missing signature")
 	}
+
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
 	expected := hex.EncodeToString(mac.Sum(nil))
 
 	if !hmac.Equal([]byte(signature), []byte(expected)) {
-		return fmt.Errorf("invalid signature")
+		return errors.New("invalid signature")
 	}
+
 	return nil
 }
 
@@ -657,18 +767,21 @@ func verifyHMACSHA256(payload []byte, signature, secret string) error {
 // Rejects payloads older than 5 minutes to prevent replay attacks.
 func verifyStripeSignature(payload []byte, header, secret string) error {
 	if secret == "" {
-		return fmt.Errorf("stripe webhook secret not configured")
+		return errors.New("stripe webhook secret not configured")
 	}
+
 	if header == "" {
-		return fmt.Errorf("missing Stripe-Signature header")
+		return errors.New("missing Stripe-Signature header")
 	}
 
 	var timestamp, sig string
+
 	for _, part := range strings.Split(header, ",") {
 		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
 		if len(kv) != 2 {
 			continue
 		}
+
 		switch kv[0] {
 		case "t":
 			timestamp = kv[1]
@@ -680,10 +793,11 @@ func verifyStripeSignature(payload []byte, header, secret string) error {
 	}
 
 	if timestamp == "" {
-		return fmt.Errorf("missing timestamp in Stripe-Signature header")
+		return errors.New("missing timestamp in Stripe-Signature header")
 	}
+
 	if sig == "" {
-		return fmt.Errorf("missing v1 signature in Stripe-Signature header")
+		return errors.New("missing v1 signature in Stripe-Signature header")
 	}
 
 	// Reject payloads older than 5 minutes (replay protection).
@@ -691,6 +805,7 @@ func verifyStripeSignature(payload []byte, header, secret string) error {
 	if err != nil {
 		return fmt.Errorf("invalid timestamp: %w", err)
 	}
+
 	if age := time.Now().Unix() - ts; age > 300 || age < -300 {
 		return fmt.Errorf("timestamp too old or in the future (age=%ds)", age)
 	}
@@ -702,7 +817,8 @@ func verifyStripeSignature(payload []byte, header, secret string) error {
 	expected := hex.EncodeToString(mac.Sum(nil))
 
 	if !hmac.Equal([]byte(sig), []byte(expected)) {
-		return fmt.Errorf("invalid signature")
+		return errors.New("invalid signature")
 	}
+
 	return nil
 }

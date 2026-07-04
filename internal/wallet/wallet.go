@@ -18,13 +18,13 @@ const (
 
 // Ledger operations.
 const (
-	OperationEarn         = "earn"
-	OperationSpend        = "spend"
-	OperationPurchase     = "purchase"
-	OperationConvert      = "convert"
-	OperationRefund       = "refund"
-	OperationClawback     = "clawback"
-	OperationAdminAdjust  = "admin_adjust"
+	OperationEarn        = "earn"
+	OperationSpend       = "spend"
+	OperationPurchase    = "purchase"
+	OperationConvert     = "convert"
+	OperationRefund      = "refund"
+	OperationClawback    = "clawback"
+	OperationAdminAdjust = "admin_adjust"
 )
 
 // Activity keys (examples — actual keys are admin-configurable).

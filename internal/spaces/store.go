@@ -21,6 +21,7 @@ func (s *Service) ListPermissionPresets(ctx context.Context, tenantID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("listing permission presets: %w", err)
 	}
+
 	return presets, nil
 }
 
@@ -34,6 +35,7 @@ func (s *Service) GetPermissionPreset(ctx context.Context, name string, tenantID
 	if err != nil {
 		return gen.SpacePermissionPreset{}, fmt.Errorf("getting permission preset: %w", err)
 	}
+
 	return preset, nil
 }
 
@@ -44,6 +46,7 @@ func (s *Service) UpdatePermissionPreset(ctx context.Context, params gen.UpdateP
 	if err != nil {
 		return gen.SpacePermissionPreset{}, fmt.Errorf("updating permission preset: %w", err)
 	}
+
 	return preset, nil
 }
 
@@ -58,6 +61,7 @@ func (s *Service) ListSpaceTypes(ctx context.Context, tenantID pgtype.UUID) ([]g
 	if err != nil {
 		return nil, fmt.Errorf("listing space types: %w", err)
 	}
+
 	return types, nil
 }
 
@@ -71,6 +75,7 @@ func (s *Service) GetSpaceType(ctx context.Context, id, tenantID pgtype.UUID) (g
 	if err != nil {
 		return gen.SpaceType{}, fmt.Errorf("getting space type: %w", err)
 	}
+
 	return st, nil
 }
 
@@ -84,6 +89,7 @@ func (s *Service) GetSpaceTypeBySlug(ctx context.Context, slug string, tenantID 
 	if err != nil {
 		return gen.SpaceType{}, fmt.Errorf("getting space type by slug: %w", err)
 	}
+
 	return st, nil
 }
 
@@ -94,6 +100,7 @@ func (s *Service) CreateSpaceType(ctx context.Context, params gen.CreateSpaceTyp
 	if err != nil {
 		return gen.SpaceType{}, fmt.Errorf("creating space type: %w", err)
 	}
+
 	return st, nil
 }
 
@@ -104,6 +111,7 @@ func (s *Service) UpdateSpaceType(ctx context.Context, params gen.UpdateSpaceTyp
 	if err != nil {
 		return gen.SpaceType{}, fmt.Errorf("updating space type: %w", err)
 	}
+
 	return st, nil
 }
 
@@ -116,6 +124,7 @@ func (s *Service) DeleteSpaceType(ctx context.Context, id, tenantID pgtype.UUID)
 	}); err != nil {
 		return fmt.Errorf("deleting space type: %w", err)
 	}
+
 	return nil
 }
 
@@ -129,6 +138,7 @@ func (s *Service) ListSpaces(ctx context.Context, tenantID pgtype.UUID) ([]gen.S
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces: %w", err)
 	}
+
 	return spaces, nil
 }
 
@@ -142,6 +152,7 @@ func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, l
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by level: %w", err)
 	}
+
 	return spaces, nil
 }
 
@@ -155,6 +166,7 @@ func (s *Service) ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pg
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by type: %w", err)
 	}
+
 	return spaces, nil
 }
 
@@ -168,6 +180,7 @@ func (s *Service) ListChildSpaces(ctx context.Context, tenantID, parentID pgtype
 	if err != nil {
 		return nil, fmt.Errorf("listing child spaces: %w", err)
 	}
+
 	return spaces, nil
 }
 
@@ -180,6 +193,7 @@ func (s *Service) GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.S
 	if err != nil {
 		return gen.Space{}, fmt.Errorf("getting space: %w", err)
 	}
+
 	return space, nil
 }
 
@@ -193,6 +207,7 @@ func (s *Service) GetSpaceBySlug(ctx context.Context, slug string, tenantID pgty
 	if err != nil {
 		return gen.Space{}, fmt.Errorf("getting space by slug: %w", err)
 	}
+
 	return space, nil
 }
 
@@ -203,6 +218,7 @@ func (s *Service) CreateSpace(ctx context.Context, params gen.CreateSpaceParams)
 	if err != nil {
 		return gen.Space{}, fmt.Errorf("creating space: %w", err)
 	}
+
 	return space, nil
 }
 
@@ -212,6 +228,7 @@ func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams)
 	if err != nil {
 		return gen.Space{}, fmt.Errorf("updating space: %w", err)
 	}
+
 	return space, nil
 }
 
@@ -223,6 +240,7 @@ func (s *Service) DeleteSpace(ctx context.Context, id, tenantID pgtype.UUID) err
 	}); err != nil {
 		return fmt.Errorf("deleting space: %w", err)
 	}
+
 	return nil
 }
 
@@ -236,6 +254,7 @@ func (s *Service) IncrementSpaceCount(ctx context.Context, id, tenantID pgtype.U
 	}); err != nil {
 		return fmt.Errorf("incrementing space count: %w", err)
 	}
+
 	return nil
 }
 
@@ -250,6 +269,7 @@ func (s *Service) ListSpaceRules(ctx context.Context, spaceID pgtype.UUID) ([]ge
 	if err != nil {
 		return nil, fmt.Errorf("listing space rules: %w", err)
 	}
+
 	return rules, nil
 }
 
@@ -259,6 +279,7 @@ func (s *Service) CreateSpaceRule(ctx context.Context, params gen.CreateSpaceRul
 	if err != nil {
 		return gen.SpaceRule{}, fmt.Errorf("creating space rule: %w", err)
 	}
+
 	return rule, nil
 }
 
@@ -269,6 +290,7 @@ func (s *Service) UpdateSpaceRule(ctx context.Context, params gen.UpdateSpaceRul
 	if err != nil {
 		return gen.SpaceRule{}, fmt.Errorf("updating space rule: %w", err)
 	}
+
 	return rule, nil
 }
 
@@ -281,6 +303,7 @@ func (s *Service) DeleteSpaceRule(ctx context.Context, id, spaceID pgtype.UUID) 
 	}); err != nil {
 		return fmt.Errorf("deleting space rule: %w", err)
 	}
+
 	return nil
 }
 
@@ -298,6 +321,7 @@ func (s *Service) IsMember(ctx context.Context, spaceID, userID, tenantID pgtype
 	if err != nil {
 		return false, fmt.Errorf("checking space membership: %w", err)
 	}
+
 	return isMember, nil
 }
 
@@ -310,6 +334,7 @@ func (s *Service) Join(ctx context.Context, spaceID, userID, tenantID pgtype.UUI
 	}); err != nil {
 		return fmt.Errorf("adding space member: %w", err)
 	}
+
 	return nil
 }
 
@@ -322,6 +347,7 @@ func (s *Service) Leave(ctx context.Context, spaceID, userID, tenantID pgtype.UU
 	}); err != nil {
 		return fmt.Errorf("removing space member: %w", err)
 	}
+
 	return nil
 }
 
@@ -334,7 +360,52 @@ func (s *Service) CountMembers(ctx context.Context, spaceID, tenantID pgtype.UUI
 	if err != nil {
 		return 0, fmt.Errorf("counting space members: %w", err)
 	}
+
 	return count, nil
+}
+
+// SpaceMemberRow represents a space member with user profile information.
+type SpaceMemberRow struct {
+	UserID      pgtype.UUID        `json:"user_id"`
+	Username    string             `json:"username"`
+	DisplayName *string            `json:"display_name"`
+	AvatarURL   *string            `json:"avatar_url"`
+	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
+}
+
+// ListMembers returns paginated members of a space with user profile data.
+func (s *Service) ListMembers(ctx context.Context, spaceID, tenantID pgtype.UUID, limit, offset int32) ([]SpaceMemberRow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	rows, err := s.db.Reader.Query(ctx, `
+		SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.created_at
+		FROM space_members sm
+		JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
+		LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+		WHERE sm.space_id = $1 AND sm.tenant_id = $2
+		ORDER BY sm.created_at DESC
+		LIMIT $3 OFFSET $4
+	`, spaceID, tenantID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("listing space members: %w", err)
+	}
+
+	defer rows.Close()
+
+	var members []SpaceMemberRow
+
+	for rows.Next() {
+		var m SpaceMemberRow
+		if err := rows.Scan(&m.UserID, &m.Username, &m.DisplayName, &m.AvatarURL, &m.JoinedAt); err != nil {
+			return nil, fmt.Errorf("scanning space member: %w", err)
+		}
+
+		members = append(members, m)
+	}
+
+	return members, rows.Err()
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +418,7 @@ func (s *Service) AssignModerator(ctx context.Context, params gen.AssignSpaceMod
 	if err := s.write.AssignSpaceModerator(ctx, params); err != nil {
 		return fmt.Errorf("assigning space moderator: %w", err)
 	}
+
 	return nil
 }
 
@@ -358,6 +430,7 @@ func (s *Service) RemoveModerator(ctx context.Context, spaceID, userID pgtype.UU
 	}); err != nil {
 		return fmt.Errorf("removing space moderator: %w", err)
 	}
+
 	return nil
 }
 
@@ -368,6 +441,7 @@ func (s *Service) ListModerators(ctx context.Context, spaceID pgtype.UUID) ([]ge
 	if err != nil {
 		return nil, fmt.Errorf("listing space moderators: %w", err)
 	}
+
 	return mods, nil
 }
 
@@ -381,8 +455,10 @@ func (s *Service) IsModerator(ctx context.Context, spaceID, userID pgtype.UUID) 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}
+
 		return false, fmt.Errorf("checking space moderator: %w", err)
 	}
+
 	return true, nil
 }
 
@@ -401,6 +477,7 @@ func (s *Service) AddParentSpace(ctx context.Context, spaceID, parentSpaceID pgt
 	if err != nil {
 		return fmt.Errorf("adding parent space: %w", err)
 	}
+
 	return nil
 }
 
@@ -413,9 +490,11 @@ func (s *Service) RemoveParentSpace(ctx context.Context, spaceID, parentSpaceID 
 	if err != nil {
 		return fmt.Errorf("removing parent space: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -438,6 +517,7 @@ func (s *Service) GetParentSpaces(ctx context.Context, spaceID, tenantID pgtype.
 	defer rows.Close()
 
 	var spaces []gen.Space
+
 	for rows.Next() {
 		var sp gen.Space
 		if err := rows.Scan(
@@ -448,8 +528,10 @@ func (s *Service) GetParentSpaces(ctx context.Context, spaceID, tenantID pgtype.
 		); err != nil {
 			return nil, fmt.Errorf("scanning parent space: %w", err)
 		}
+
 		spaces = append(spaces, sp)
 	}
+
 	return spaces, rows.Err()
 }
 
@@ -472,6 +554,7 @@ func (s *Service) GetChildSpaces(ctx context.Context, spaceID, tenantID pgtype.U
 	defer rows.Close()
 
 	var spaces []gen.Space
+
 	for rows.Next() {
 		var sp gen.Space
 		if err := rows.Scan(
@@ -482,7 +565,9 @@ func (s *Service) GetChildSpaces(ctx context.Context, spaceID, tenantID pgtype.U
 		); err != nil {
 			return nil, fmt.Errorf("scanning child space: %w", err)
 		}
+
 		spaces = append(spaces, sp)
 	}
+
 	return spaces, rows.Err()
 }

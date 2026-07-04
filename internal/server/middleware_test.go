@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +17,8 @@ import (
 // line does not clutter the test output.
 func silenceLogger() func() {
 	orig := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+
 	return func() { slog.SetDefault(orig) }
 }
 
@@ -26,6 +26,7 @@ func silenceLogger() func() {
 // panic in a handler and returns a 500 JSON error instead of crashing the
 // process.
 func TestRecoveryMiddleware(t *testing.T) {
+	t.Parallel()
 	// The recovery middleware logs the panic via slog. Silence that log
 	// line so the test output stays clean — the panic is intentional.
 	restore := silenceLogger()
@@ -33,7 +34,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 
 	r := chi.NewRouter()
 	r.Use(recoveryMiddleware)
-	r.Get("/boom", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/boom", func(_ http.ResponseWriter, _ *http.Request) {
 		panic("something went wrong")
 	})
 
@@ -52,6 +53,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decoding response body: %v", err)
 	}
+
 	if body.Error.Code != "internal_error" {
 		t.Errorf("error code = %q, want %q", body.Error.Code, "internal_error")
 	}
@@ -61,11 +63,14 @@ func TestRecoveryMiddleware(t *testing.T) {
 // request ID to the context and the response header so requests can be
 // correlated in logs.
 func TestRequestIDMiddleware(t *testing.T) {
+	t.Parallel()
+
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
 
 	var capturedID string
-	r.Get("/tracked", func(w http.ResponseWriter, r *http.Request) {
+
+	r.Get("/tracked", func(_ http.ResponseWriter, r *http.Request) {
 		capturedID = requestIDFromContext(r.Context())
 	})
 
@@ -83,15 +88,18 @@ func TestRequestIDMiddleware(t *testing.T) {
 // 204 No Content response with the correct CORS headers so browsers can
 // proceed with the actual cross-origin request.
 func TestCORSMiddleware_Preflight(t *testing.T) {
+	t.Parallel()
+
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 
-	r.Get("/data", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/data", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
 	req := httptest.NewRequest(http.MethodOptions, "/data", nil)
 	req.Header.Set("Origin", "http://localhost:5173")
+
 	rec := httptest.NewRecorder()
 
 	r.ServeHTTP(rec, req)
@@ -99,6 +107,7 @@ func TestCORSMiddleware_Preflight(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNoContent)
 	}
+
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:5173" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "http://localhost:5173")
 	}
@@ -108,15 +117,18 @@ func TestCORSMiddleware_Preflight(t *testing.T) {
 // an Origin header receives the CORS headers and passes through to the
 // handler.
 func TestCORSMiddleware_ActualRequest(t *testing.T) {
+	t.Parallel()
+
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 
-	r.Get("/data", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/data", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/data", nil)
 	req.Header.Set("Origin", "http://localhost:5173")
+
 	rec := httptest.NewRecorder()
 
 	r.ServeHTTP(rec, req)
@@ -124,6 +136,7 @@ func TestCORSMiddleware_ActualRequest(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
+
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:5173" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "http://localhost:5173")
 	}
@@ -132,10 +145,12 @@ func TestCORSMiddleware_ActualRequest(t *testing.T) {
 // TestCORSMiddleware_NoOrigin verifies that a request without an Origin
 // header does not receive CORS headers — it is a same-origin request.
 func TestCORSMiddleware_NoOrigin(t *testing.T) {
+	t.Parallel()
+
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 
-	r.Get("/data", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/data", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 

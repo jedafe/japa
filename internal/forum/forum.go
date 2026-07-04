@@ -13,8 +13,8 @@ import (
 
 // Vote values for forum_threads and forum_replies.
 const (
-	VoteDown  int16 = -1
-	VoteUp    int16 = 1
+	VoteDown int16 = -1
+	VoteUp   int16 = 1
 )
 
 // Entity types for bookmarks and votes.
@@ -44,6 +44,7 @@ func NewService(database *db.DB) *Service {
 		store: &Store{
 			read:  gen.New(database.Reader),
 			write: gen.New(database.Writer),
+			db:    database,
 		},
 		db: database,
 	}

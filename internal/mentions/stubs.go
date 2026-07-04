@@ -10,7 +10,8 @@ import (
 // Replace with real implementation when Section 19 (user blocking) is complete.
 type NoopBlockChecker struct{}
 
-func (n *NoopBlockChecker) IsBlocked(ctx context.Context, blockerID, blockedID pgtype.UUID) (bool, error) {
+// IsBlocked always returns false for the noop implementation.
+func (n *NoopBlockChecker) IsBlocked(_ context.Context, _, _ pgtype.UUID) (bool, error) {
 	return false, nil
 }
 
@@ -18,7 +19,8 @@ func (n *NoopBlockChecker) IsBlocked(ctx context.Context, blockerID, blockedID p
 // Replace with real implementation when space membership queries are added.
 type NoopSpaceMemberChecker struct{}
 
-func (n *NoopSpaceMemberChecker) IsMember(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+// IsMember always returns true for the noop implementation.
+func (n *NoopSpaceMemberChecker) IsMember(_ context.Context, _, _ pgtype.UUID) (bool, error) {
 	return true, nil
 }
 
@@ -26,6 +28,7 @@ func (n *NoopSpaceMemberChecker) IsMember(ctx context.Context, spaceID, userID p
 // Replace with real implementation when Section 19 (account erasure) is complete.
 type NoopUserStatusChecker struct{}
 
-func (n *NoopUserStatusChecker) IsErased(ctx context.Context, userID pgtype.UUID) (bool, error) {
+// IsErased always returns false for the noop implementation.
+func (n *NoopUserStatusChecker) IsErased(_ context.Context, _ pgtype.UUID) (bool, error) {
 	return false, nil
 }

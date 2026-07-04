@@ -8,7 +8,10 @@ import (
 )
 
 func TestFromContext_NoGeoData(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
+
 	gc := FromContext(ctx)
 	if gc.IsValid {
 		t.Error("expected IsValid=false for empty context")
@@ -16,25 +19,31 @@ func TestFromContext_NoGeoData(t *testing.T) {
 }
 
 func TestFromContext_WithGeoData(t *testing.T) {
+	t.Parallel()
+
 	gc := GeoContext{
 		CountryCode: "NG",
 		CountryName: "Nigeria",
 		IsValid:     true,
 	}
-	ctx := context.WithValue(context.Background(), GeoContextKey, gc)
+	ctx := context.WithValue(t.Context(), GeoContextKey, gc)
+
 	result := FromContext(ctx)
 	if !result.IsValid {
 		t.Error("expected IsValid=true")
 	}
+
 	if result.CountryCode != "NG" {
 		t.Errorf("CountryCode = %s, want NG", result.CountryCode)
 	}
+
 	if result.CountryName != "Nigeria" {
 		t.Errorf("CountryName = %s, want Nigeria", result.CountryName)
 	}
 }
 
 func TestReader_IsLoaded_NoDatabase(t *testing.T) {
+	t.Parallel()
 	// Create a reader with no database loaded
 	r := &Reader{}
 	if r.IsLoaded() {
@@ -43,7 +52,10 @@ func TestReader_IsLoaded_NoDatabase(t *testing.T) {
 }
 
 func TestReader_Lookup_NoDatabase(t *testing.T) {
+	t.Parallel()
+
 	r := &Reader{}
+
 	gc := r.Lookup("8.8.8.8")
 	if gc.IsValid {
 		t.Error("expected IsValid=false when no database is loaded")
@@ -51,7 +63,10 @@ func TestReader_Lookup_NoDatabase(t *testing.T) {
 }
 
 func TestReader_Lookup_InvalidIP(t *testing.T) {
+	t.Parallel()
+
 	r := &Reader{}
+
 	gc := r.Lookup("not-an-ip")
 	if gc.IsValid {
 		t.Error("expected IsValid=false for invalid IP")
@@ -59,12 +74,13 @@ func TestReader_Lookup_InvalidIP(t *testing.T) {
 }
 
 func TestMiddleware_AddsGeoContext(t *testing.T) {
+	t.Parallel()
 	// Test that middleware adds geo context (even if invalid when no DB)
 	r := &Reader{}
 	mw := Middleware(r)
 
 	called := false
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	handler := mw(http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
 		called = true
 		gc := FromContext(req.Context())
 		// Without a database, IsValid should be false
@@ -73,7 +89,7 @@ func TestMiddleware_AddsGeoContext(t *testing.T) {
 		}
 	}))
 
-	req := httptest.NewRequest("GET", "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.RemoteAddr = "192.168.1.1:12345"
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -84,6 +100,8 @@ func TestMiddleware_AddsGeoContext(t *testing.T) {
 }
 
 func TestRealIP(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		header string
@@ -99,13 +117,17 @@ func TestRealIP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			if tt.header != "" {
 				req.Header.Set(tt.header, tt.value)
 			}
+
 			if tt.remote != "" {
 				req.RemoteAddr = tt.remote
 			}
+
 			got := realIP(req)
 			if got != tt.want {
 				t.Errorf("realIP() = %s, want %s", got, tt.want)

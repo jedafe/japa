@@ -123,10 +123,12 @@ func (r *EmbedResolver) Resolve(
 	}
 
 	host := strings.TrimPrefix(parsed.Hostname(), "www.")
+
 	platform := identifyPlatform(host, parsed.Path)
 	if platform == "" {
 		return nil, ErrUnsupportedPlatform
 	}
+
 	if !platformAllowed(platform, allowedPlatforms) {
 		return nil, ErrUnsupportedPlatform
 	}
@@ -188,11 +190,13 @@ func platformAllowed(platform string, allowed []string) bool {
 	if len(allowed) == 0 {
 		return true
 	}
+
 	for _, p := range allowed {
 		if p == platform {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -231,6 +235,7 @@ func (r *EmbedResolver) resolveYouTube(
 			rawURL,
 		)
 	}
+
 	return embed, nil
 }
 
@@ -250,10 +255,12 @@ func extractYouTubeID(u *url.URL) string {
 	if len(segments) < 2 {
 		return ""
 	}
+
 	first := segments[0]
 	if first == "embed" || first == "shorts" {
 		return segments[1]
 	}
+
 	return ""
 }
 
@@ -273,11 +280,13 @@ func resolveGitHub(rawURL string, u *url.URL) *EmbedData {
 
 	isGistHost := host == "gist.github.com"
 	isGistPathOnRepoHost := len(segments) >= 3 && segments[1] == "gist"
+
 	if !isGistHost && !isGistPathOnRepoHost {
 		return resolveGitHubRepo(embed, segments)
 	}
 
 	var gistUser, gistID string
+
 	switch {
 	case isGistHost && len(segments) == 1:
 		// gist.github.com/{id}
@@ -299,9 +308,11 @@ func resolveGitHub(rawURL string, u *url.URL) *EmbedData {
 	case gistID != "":
 		embed.EmbedURL = "https://gist.github.com/" + gistID
 	}
+
 	embed.Raw["type"] = "gist"
 	embed.Raw["gist_user"] = gistUser
 	embed.Raw["gist_id"] = gistID
+
 	return embed
 }
 
@@ -311,12 +322,14 @@ func resolveGitHubRepo(embed *EmbedData, segments []string) *EmbedData {
 	if len(segments) < 2 {
 		return embed
 	}
+
 	owner := segments[0]
 	repo := segments[1]
 	embed.Title = owner + "/" + repo
 	embed.EmbedURL = embed.URL
 	embed.Raw["owner"] = owner
 	embed.Raw["repo"] = repo
+
 	return embed
 }
 
@@ -325,6 +338,7 @@ func resolveGitHubRepo(embed *EmbedData, segments []string) *EmbedData {
 func resolveFigma(rawURL string) *EmbedData {
 	embedURL := "https://www.figma.com/embed?embed_host=japaconnect&url=" +
 		url.QueryEscape(rawURL)
+
 	return &EmbedData{
 		Platform: platformFigma,
 		URL:      rawURL,
@@ -360,6 +374,7 @@ func (r *EmbedResolver) resolveOEmbedPlatform(
 	if err := r.enrichFromOEmbed(ctx, platform, rawURL, embed); err != nil {
 		return nil, fmt.Errorf("resolve %s: %w", platform, err)
 	}
+
 	return embed, nil
 }
 
@@ -376,6 +391,7 @@ func (r *EmbedResolver) enrichFromOEmbed(
 	if !ok {
 		return nil
 	}
+
 	data, err := r.fetchOEmbed(ctx, oembedURL)
 	if err != nil {
 		return err
@@ -391,9 +407,11 @@ func (r *EmbedResolver) enrichFromOEmbed(
 	if embed.Raw == nil {
 		embed.Raw = map[string]any{}
 	}
+
 	for k, v := range data {
 		embed.Raw[k] = v
 	}
+
 	return nil
 }
 
@@ -405,18 +423,22 @@ func (r *EmbedResolver) oembedURL(platform, rawURL string) (string, bool) {
 	if r.oembedBaseURLs != nil {
 		base = r.oembedBaseURLs[platform]
 	}
+
 	if base == "" {
 		base = defaultOEmbedURLs[platform]
 	}
+
 	if base == "" {
 		return "", false
 	}
 
 	values := url.Values{}
 	values.Set("url", rawURL)
+
 	if _, needsFormat := platformsNeedingFormatJSON[platform]; needsFormat {
 		values.Set("format", "json")
 	}
+
 	return base + "?" + values.Encode(), true
 }
 
@@ -430,13 +452,15 @@ func (r *EmbedResolver) fetchOEmbed(
 	if err != nil {
 		return nil, fmt.Errorf("build oembed request: %w", err)
 	}
+
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("oembed request: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("oembed returned non-2xx status %d", resp.StatusCode)
@@ -446,6 +470,7 @@ func (r *EmbedResolver) fetchOEmbed(
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, fmt.Errorf("decode oembed json: %w", err)
 	}
+
 	return data, nil
 }
 
@@ -455,5 +480,6 @@ func getString(m map[string]any, key string) string {
 	if v, ok := m[key].(string); ok {
 		return v
 	}
+
 	return ""
 }

@@ -46,11 +46,12 @@ type PasswordPolicy struct {
 
 // DefaultPasswordPolicy returns the default password policy.
 // Admin can override these via system_settings keys:
-//   auth.password.min_length (default: 8)
-//   auth.password.require_uppercase (default: true)
-//   auth.password.require_number (default: true)
-//   auth.password.require_symbol (default: false)
-//   auth.password.max_length (default: 128)
+//
+//	auth.password.min_length (default: 8)
+//	auth.password.require_uppercase (default: true)
+//	auth.password.require_number (default: true)
+//	auth.password.require_symbol (default: false)
+//	auth.password.max_length (default: 128)
 func DefaultPasswordPolicy() PasswordPolicy {
 	return PasswordPolicy{
 		MinLength:     8,
@@ -70,6 +71,7 @@ func ValidatePassword(password string, policy PasswordPolicy) error {
 	if len(password) < policy.MinLength {
 		return errors.New("password is too short")
 	}
+
 	if len(password) > policy.MaxLength {
 		return errors.New("password is too long")
 	}
@@ -92,9 +94,11 @@ func ValidatePassword(password string, policy PasswordPolicy) error {
 	if policy.RequireUpper && !hasUpper {
 		return errors.New("password must contain at least one uppercase letter")
 	}
+
 	if policy.RequireNumber && !hasNumber {
 		return errors.New("password must contain at least one number")
 	}
+
 	if policy.RequireSymbol && !hasSymbol {
 		return errors.New("password must contain at least one symbol")
 	}
@@ -106,12 +110,11 @@ func ValidatePassword(password string, policy PasswordPolicy) error {
 		breached, count, err := CheckPasswordBreach(password)
 		if err != nil {
 			// Log but do not block — third-party failure must not prevent registration.
-			var bce *BreachCheckError
-			if errors.As(err, &bce) {
-				// BreachCheckError means the API call failed, not that the password is breached.
-				// Allow the password through.
-			}
+			// BreachCheckError means the API call failed, not that the password is breached.
+			// Allow the password through — logged upstream by the breach checker.
+			_ = err //nolint:staticcheck // SA9003: intentional empty branch — error is non-blocking
 		}
+
 		if breached {
 			return &BreachedError{Count: count}
 		}
@@ -126,6 +129,7 @@ func HashPassword(password string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("hashing password: %w", err)
 	}
+
 	return string(hash), nil
 }
 
@@ -147,7 +151,7 @@ func CheckPasswordHistory(ctx context.Context, store PasswordHistoryQuerier, use
 	if err != nil {
 		// Degradable: if the history table doesn't exist or query fails,
 		// don't block the password change. Log and continue.
-		return nil
+		return nil //nolint:nilerr // intentional: degradable password history check
 	}
 
 	for _, hash := range recentHashes {

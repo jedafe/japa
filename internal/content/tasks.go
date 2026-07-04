@@ -35,13 +35,13 @@ func NewNoopEnqueuer() TaskEnqueuer {
 }
 
 // EnqueueScheduledPublish logs the request and returns nil immediately.
-func (n *noopEnqueuer) EnqueueScheduledPublish(ctx context.Context, contentID pgtype.UUID) error {
+func (n *noopEnqueuer) EnqueueScheduledPublish(_ context.Context, contentID pgtype.UUID) error {
 	slog.Info("content:scheduled_publish task enqueued (noop)", "content_id", contentID.String())
 	return nil
 }
 
 // EnqueueComputeScores logs the request and returns nil immediately.
-func (n *noopEnqueuer) EnqueueComputeScores(ctx context.Context, contentID pgtype.UUID) error {
+func (n *noopEnqueuer) EnqueueComputeScores(_ context.Context, contentID pgtype.UUID) error {
 	slog.Info("content:compute_scores task enqueued (noop)", "content_id", contentID.String())
 	return nil
 }

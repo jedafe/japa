@@ -3,6 +3,7 @@ package payments
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -24,13 +25,15 @@ type CreatePaymentInput struct {
 // CreatePayment creates a new payment record and initiates the payment process.
 func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput) (gen.Payment, error) {
 	if input.Provider == "" {
-		return gen.Payment{}, fmt.Errorf("provider is required")
+		return gen.Payment{}, errors.New("provider is required")
 	}
+
 	if input.PurposeType == "" {
-		return gen.Payment{}, fmt.Errorf("purpose_type is required")
+		return gen.Payment{}, errors.New("purpose_type is required")
 	}
+
 	if input.Amount <= 0 {
-		return gen.Payment{}, fmt.Errorf("amount must be positive")
+		return gen.Payment{}, errors.New("amount must be positive")
 	}
 
 	currency := input.Currency
@@ -46,6 +49,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 	}
 
 	var discountCodeID pgtype.UUID
+
 	var discountAmount int64
 
 	// Apply discount code if provided
@@ -66,8 +70,10 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 
 	// Convert metadata to JSON
 	var metadata []byte
+
 	if input.Metadata != nil {
 		var err error
+
 		metadata, err = json.Marshal(input.Metadata)
 		if err != nil {
 			return gen.Payment{}, fmt.Errorf("marshaling metadata: %w", err)
@@ -123,6 +129,7 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 	if err != nil {
 		return fmt.Errorf("checking webhook idempotency: %w", err)
 	}
+
 	if processed {
 		return nil // Already processed
 	}
@@ -159,15 +166,18 @@ type CreateSubscriptionInput struct {
 // CreateSubscription creates a new subscription.
 func (s *Service) CreateSubscription(ctx context.Context, tenantID, userID pgtype.UUID, input CreateSubscriptionInput) (gen.Subscription, error) {
 	if input.Plan == "" {
-		return gen.Subscription{}, fmt.Errorf("plan is required")
+		return gen.Subscription{}, errors.New("plan is required")
 	}
+
 	if input.Provider == "" {
-		return gen.Subscription{}, fmt.Errorf("provider is required")
+		return gen.Subscription{}, errors.New("provider is required")
 	}
 
 	// Calculate period based on plan
 	now := time.Now()
+
 	var periodEnd time.Time
+
 	switch input.Plan {
 	case PlanProMonthly:
 		periodEnd = now.AddDate(0, 1, 0)
@@ -234,16 +244,19 @@ type CreateDiscountCodeInput struct {
 // CreateDiscountCode creates a new discount code.
 func (s *Service) CreateDiscountCode(ctx context.Context, tenantID pgtype.UUID, input CreateDiscountCodeInput) (gen.DiscountCode, error) {
 	if input.Code == "" {
-		return gen.DiscountCode{}, fmt.Errorf("code is required")
+		return gen.DiscountCode{}, errors.New("code is required")
 	}
+
 	if input.DiscountType == "" {
-		return gen.DiscountCode{}, fmt.Errorf("discount_type is required")
+		return gen.DiscountCode{}, errors.New("discount_type is required")
 	}
+
 	if input.DiscountType != DiscountTypePercent && input.DiscountType != DiscountTypeFixed {
 		return gen.DiscountCode{}, fmt.Errorf("invalid discount_type: %s", input.DiscountType)
 	}
+
 	if input.ApplicableTo == "" {
-		return gen.DiscountCode{}, fmt.Errorf("applicable_to is required")
+		return gen.DiscountCode{}, errors.New("applicable_to is required")
 	}
 
 	var maxUses *int32
@@ -280,8 +293,13 @@ func (s *Service) CreateDiscountCode(ctx context.Context, tenantID pgtype.UUID, 
 		UsesPerUser:   usesPerUser,
 		GroupID:       groupID,
 		ValidFrom:     pgtype.Timestamptz{Time: input.ValidFrom, Valid: true},
-		ValidUntil:    pgtype.Timestamptz{Time: time.Time{}, Valid: input.ValidUntil != nil},
-		CreatedBy:     createdBy,
+		ValidUntil: func() pgtype.Timestamptz {
+			if input.ValidUntil != nil {
+				return pgtype.Timestamptz{Time: *input.ValidUntil, Valid: true}
+			}
+			return pgtype.Timestamptz{}
+		}(),
+		CreatedBy: createdBy,
 	})
 	if err != nil {
 		return gen.DiscountCode{}, err
@@ -306,10 +324,10 @@ func (s *Service) DeleteDiscountCode(ctx context.Context, id, tenantID pgtype.UU
 }
 
 // ValidateDiscountCode validates a discount code for a user and purpose.
-func (s *Service) ValidateDiscountCode(ctx context.Context, tenantID, userID pgtype.UUID, code string, purposeType string) (gen.DiscountCode, error) {
+func (s *Service) ValidateDiscountCode(ctx context.Context, tenantID, userID pgtype.UUID, code, purposeType string) (gen.DiscountCode, error) {
 	discountCode, err := s.store.getDiscountCodeByCode(ctx, tenantID, code)
 	if err != nil {
-		return gen.DiscountCode{}, fmt.Errorf("invalid discount code")
+		return gen.DiscountCode{}, errors.New("invalid discount code")
 	}
 
 	if err := s.validateDiscountCode(ctx, discountCode, userID); err != nil {
@@ -330,10 +348,11 @@ func (s *Service) validateDiscountCode(ctx context.Context, code gen.DiscountCod
 
 	// Check validity period
 	if code.ValidFrom.Valid && now.Before(code.ValidFrom.Time) {
-		return fmt.Errorf("discount code not yet valid")
+		return errors.New("discount code not yet valid")
 	}
+
 	if code.ValidUntil.Valid && now.After(code.ValidUntil.Time) {
-		return fmt.Errorf("discount code expired")
+		return errors.New("discount code expired")
 	}
 
 	// Check max uses (if limited)
@@ -343,8 +362,9 @@ func (s *Service) validateDiscountCode(ctx context.Context, code gen.DiscountCod
 		if err != nil {
 			return fmt.Errorf("checking discount code uses: %w", err)
 		}
-		if int32(len(uses)) >= *code.MaxUses {
-			return fmt.Errorf("discount code usage limit reached")
+
+		if int32(len(uses)) >= *code.MaxUses { //nolint:gosec // G115: len bounded by limit param (1000)
+			return errors.New("discount code usage limit reached")
 		}
 	}
 
@@ -353,8 +373,9 @@ func (s *Service) validateDiscountCode(ctx context.Context, code gen.DiscountCod
 	if err != nil {
 		return fmt.Errorf("checking user discount code uses: %w", err)
 	}
+
 	if userUses >= code.UsesPerUser {
-		return fmt.Errorf("discount code usage limit reached for user")
+		return errors.New("discount code usage limit reached for user")
 	}
 
 	return nil
@@ -387,7 +408,11 @@ func (s *Service) ApplyDiscountCodeUse(ctx context.Context, codeID, userID, paym
 		UserID:    userID,
 		PaymentID: paymentID,
 	})
-	return fmt.Errorf("record discount code use: %w", err)
+	if err != nil {
+		return fmt.Errorf("record discount code use: %w", err)
+	}
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -405,10 +430,11 @@ type CreateRefundInput struct {
 // CreateRefund creates a new refund for a payment.
 func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (gen.PaymentRefund, error) {
 	if input.PaymentID == "" {
-		return gen.PaymentRefund{}, fmt.Errorf("payment_id is required")
+		return gen.PaymentRefund{}, errors.New("payment_id is required")
 	}
+
 	if input.Amount <= 0 {
-		return gen.PaymentRefund{}, fmt.Errorf("amount must be positive")
+		return gen.PaymentRefund{}, errors.New("amount must be positive")
 	}
 
 	var paymentID pgtype.UUID
@@ -451,5 +477,6 @@ func float64ToNumeric(f float64) pgtype.Numeric {
 	if err := n.Scan(fmt.Sprintf("%f", f)); err != nil {
 		return pgtype.Numeric{}
 	}
+
 	return n
 }

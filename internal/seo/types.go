@@ -30,6 +30,6 @@ type OGImageRequest struct {
 
 // OGImageResult is the response from OG image generation.
 type OGImageResult struct {
-	ImageBytes []byte `json:"image_bytes"`
+	ImageBytes  []byte `json:"image_bytes"`
 	ContentType string `json:"content_type"`
 }

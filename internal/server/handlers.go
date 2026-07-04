@@ -40,8 +40,8 @@ func NewHandler(db Pinger) *Handler {
 //
 // Kubernetes and load balancers use liveness probes to decide whether to
 // restart the process; a failing liveness check means "this process is
-// stuck and needs to be killed."
-func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
+// stuck and needs to be killed.".
+func (h *Handler) HealthCheck(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -62,14 +62,14 @@ func (h *Handler) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
-		"status":    "ok",
-		"database":  "connected",
+		"status":   "ok",
+		"database": "connected",
 	})
 }
 
 // errorResponse is the JSON body returned for error responses.
 // It follows the JapaConnect API error format:
-// {"error": {"code": "...", "message": "..."}}
+// {"error": {"code": "...", "message": "..."}}.
 type errorResponse struct {
 	Error errorBody `json:"error"`
 }
@@ -86,6 +86,7 @@ type errorBody struct {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		// The status header is already written, so we cannot change the
 		// status code. Log would go here in a future iteration; for now

@@ -6,6 +6,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -22,10 +23,11 @@ type EmbeddingPayload struct {
 // GenerateContentEmbedding generates a vector embedding for the given text
 // using the AI dispatcher's "embedding" category. The returned slice is
 // pgvector-compatible: a flat []float32 of dimension 1536.
-func GenerateContentEmbedding(ctx context.Context, dispatcher *Dispatcher, text string, model string) ([]float32, error) {
+func GenerateContentEmbedding(ctx context.Context, dispatcher *Dispatcher, text, model string) ([]float32, error) {
 	if text == "" {
-		return nil, fmt.Errorf("text is required for embedding generation")
+		return nil, errors.New("text is required for embedding generation")
 	}
+
 	if model == "" {
 		model = DefaultEmbeddingModel
 	}
@@ -52,7 +54,7 @@ func GenerateContentEmbedding(ctx context.Context, dispatcher *Dispatcher, text 
 func parseEmbeddingResponse(resp Response) ([]float32, error) {
 	raw, ok := resp.Raw["embedding"]
 	if !ok {
-		return nil, fmt.Errorf("provider response missing embedding data")
+		return nil, errors.New("provider response missing embedding data")
 	}
 
 	switch v := raw.(type) {
@@ -63,9 +65,11 @@ func parseEmbeddingResponse(resp Response) ([]float32, error) {
 		for i, f := range v {
 			out[i] = float32(f)
 		}
+
 		return out, nil
 	case []interface{}:
 		out := make([]float32, len(v))
+
 		for i, elem := range v {
 			switch n := elem.(type) {
 			case float64:
@@ -76,12 +80,14 @@ func parseEmbeddingResponse(resp Response) ([]float32, error) {
 				return nil, fmt.Errorf("unexpected embedding element type at index %d: %T", i, elem)
 			}
 		}
+
 		return out, nil
 	case json.RawMessage:
 		var floats []float32
 		if err := json.Unmarshal(v, &floats); err != nil {
 			return nil, fmt.Errorf("unmarshaling embedding: %w", err)
 		}
+
 		return floats, nil
 	default:
 		return nil, fmt.Errorf("unexpected embedding response type: %T", raw)

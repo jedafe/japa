@@ -1,7 +1,6 @@
 package content
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,19 +12,22 @@ import (
 // mustUUID scans a UUID string into a pgtype.UUID, failing the test on error.
 func mustUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var id pgtype.UUID
 	if err := id.Scan(s); err != nil {
 		t.Fatalf("scan uuid %q: %v", s, err)
 	}
+
 	return id
 }
 
 // repeat builds a string by repeating s n times. Helper for word count tests.
 func repeat(s string, n int) string {
 	result := ""
-	for i := 0; i < n; i++ {
+	for range n {
 		result += s
 	}
+
 	return result
 }
 
@@ -34,6 +36,8 @@ func repeat(s string, n int) string {
 // ---------------------------------------------------------------------------
 
 func TestSlugify(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input string
 		want  string
@@ -63,6 +67,8 @@ func TestSlugify(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestComputeReadTime(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		body string
@@ -88,6 +94,8 @@ func TestComputeReadTime(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestContentStatusConstants(t *testing.T) {
+	t.Parallel()
+
 	want := map[string]string{
 		StatusDraft:     "draft",
 		StatusPublished: "published",
@@ -102,6 +110,8 @@ func TestContentStatusConstants(t *testing.T) {
 }
 
 func TestContentTypeConstants(t *testing.T) {
+	t.Parallel()
+
 	want := map[string]string{
 		TypeBlogPost:   "blog_post",
 		TypeDiscussion: "discussion",
@@ -116,6 +126,8 @@ func TestContentTypeConstants(t *testing.T) {
 }
 
 func TestVisibilityConstants(t *testing.T) {
+	t.Parallel()
+
 	want := map[string]string{
 		VisibilityPublic:  "public",
 		VisibilityMembers: "members",
@@ -129,9 +141,12 @@ func TestVisibilityConstants(t *testing.T) {
 }
 
 func TestPageSizeConstants(t *testing.T) {
+	t.Parallel()
+
 	if DefaultPageSize != 20 {
 		t.Errorf("DefaultPageSize = %d, want 20", DefaultPageSize)
 	}
+
 	if MaxPageSize != 100 {
 		t.Errorf("MaxPageSize = %d, want 100", MaxPageSize)
 	}
@@ -142,42 +157,53 @@ func TestPageSizeConstants(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWriteJSON(t *testing.T) {
+	t.Parallel()
+
 	rr := httptest.NewRecorder()
 	writeJSON(rr, http.StatusCreated, map[string]string{"status": "ok"})
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusCreated)
 	}
+
 	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", ct)
 	}
+
 	var got map[string]string
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
+
 	if got["status"] != "ok" {
 		t.Errorf(`body["status"] = %q, want "ok"`, got["status"])
 	}
 }
 
 func TestWriteError(t *testing.T) {
+	t.Parallel()
+
 	rr := httptest.NewRecorder()
 	writeError(rr, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
+
 	var got map[string]any
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
+
 	errMap, ok := got["error"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected error envelope, got %v", got)
 	}
+
 	if errMap["code"] != "invalid_body" {
 		t.Errorf("error.code = %v, want invalid_body", errMap["code"])
 	}
+
 	if errMap["message"] != "Invalid JSON body" {
 		t.Errorf("error.message = %v, want 'Invalid JSON body'", errMap["message"])
 	}
@@ -188,6 +214,8 @@ func TestWriteError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestParsePageSize(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		query string
 		want  int32
@@ -204,6 +232,7 @@ func TestParsePageSize(t *testing.T) {
 	}
 	for _, tt := range tests {
 		req := httptest.NewRequest(http.MethodGet, "/content?page_size="+tt.query, nil)
+
 		got := parsePageSize(req)
 		if got != tt.want {
 			t.Errorf("parsePageSize(page_size=%q) = %d, want %d", tt.query, got, tt.want)
@@ -216,15 +245,19 @@ func TestParsePageSize(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewNoopEnqueuer(t *testing.T) {
+	t.Parallel()
+
 	enq := NewNoopEnqueuer()
 	if enq == nil {
 		t.Fatal("NewNoopEnqueuer returned nil")
 	}
+
 	uid := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
-	if err := enq.EnqueueScheduledPublish(context.Background(), uid); err != nil {
+	if err := enq.EnqueueScheduledPublish(t.Context(), uid); err != nil {
 		t.Errorf("EnqueueScheduledPublish returned error: %v", err)
 	}
-	if err := enq.EnqueueComputeScores(context.Background(), uid); err != nil {
+
+	if err := enq.EnqueueComputeScores(t.Context(), uid); err != nil {
 		t.Errorf("EnqueueComputeScores returned error: %v", err)
 	}
 }

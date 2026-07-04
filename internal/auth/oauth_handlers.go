@@ -6,8 +6,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // OAuthHandlers holds dependencies for OAuth HTTP handlers.
@@ -22,6 +22,7 @@ type OAuthHandlers struct {
 // short-lived cookie, and redirects the user to the provider's login page.
 func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	providerName := chi.URLParam(r, "provider")
+
 	provider := h.Config.NewProvider(providerName)
 	if provider == nil {
 		writeError(w, http.StatusBadRequest, "unsupported_provider",
@@ -33,6 +34,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("generate OAuth state", "error", err)
 		writeError(w, http.StatusInternalServerError, "state_error", "Failed to initiate OAuth")
+
 		return
 	}
 
@@ -55,6 +57,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 // links the account, and returns a JWT.
 func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	providerName := chi.URLParam(r, "provider")
+
 	provider := h.Config.NewProvider(providerName)
 	if provider == nil {
 		writeError(w, http.StatusBadRequest, "unsupported_provider",
@@ -68,6 +71,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_state", "OAuth state cookie is missing")
 		return
 	}
+
 	callbackState := r.URL.Query().Get("state")
 	if !ValidateOAuthState(stateCookie.Value, callbackState) {
 		writeError(w, http.StatusBadRequest, "invalid_state", "OAuth state mismatch — possible CSRF attack")
@@ -90,6 +94,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		desc := r.URL.Query().Get("error_description")
 		slog.Warn("OAuth provider error", "provider", providerName, "error", errParam, "description", desc)
 		writeError(w, http.StatusUnauthorized, "oauth_error", "Authorization was denied or failed")
+
 		return
 	}
 
@@ -104,6 +109,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("OAuth exchange failed", "provider", providerName, "error", err)
 		writeError(w, http.StatusUnauthorized, "oauth_exchange_failed", "Failed to verify with OAuth provider")
+
 		return
 	}
 
@@ -128,7 +134,9 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 			if linkErr := h.Store.LinkOAuthAccount(r.Context(), t.ID, user.ID, providerName, userInfo.ProviderUserID); linkErr != nil {
 				slog.Error("link OAuth account", "error", linkErr)
 			}
+
 			h.issueToken(w, r, user.ID, t.ID)
+
 			return
 		}
 	}
@@ -140,11 +148,12 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // issueToken mints a JWT and returns it as a JSON response.
-func (h *OAuthHandlers) issueToken(w http.ResponseWriter, r *http.Request, userID, tenantID pgtype.UUID) {
+func (h *OAuthHandlers) issueToken(w http.ResponseWriter, _ *http.Request, userID, tenantID pgtype.UUID) {
 	token, err := h.KeyRot.MintAccessToken(userID, tenantID)
 	if err != nil {
 		slog.Error("mint access token", "error", err)
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+
 		return
 	}
 
@@ -160,7 +169,7 @@ func (h *OAuthHandlers) issueToken(w http.ResponseWriter, r *http.Request, userI
 
 // RegisterOAuthRoutes registers the OAuth routes on the given router.
 // Called from server.go during startup.
-func RegisterOAuthRoutes(r chi.Router, handlers *OAuthHandlers, kr *KeyRotation) {
+func RegisterOAuthRoutes(r chi.Router, handlers *OAuthHandlers, _ *KeyRotation) {
 	r.Route("/oauth", func(r chi.Router) {
 		r.Get("/{provider}/initiate", handlers.HandleInitiate)
 		r.Get("/{provider}/callback", handlers.HandleCallback)
@@ -168,6 +177,6 @@ func RegisterOAuthRoutes(r chi.Router, handlers *OAuthHandlers, kr *KeyRotation)
 }
 
 // RequireAuthRoute wraps RequireAuth for convenience in route registration.
-func RequireAuthRoute(kr *KeyRotation, vkClient *redis.Client) func(http.Handler) http.Handler {
+func RequireAuthRoute(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	return RequireAuth(kr, vkClient)
 }

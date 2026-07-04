@@ -1,7 +1,6 @@
 package rbac
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -10,6 +9,8 @@ import (
 )
 
 func TestIsSystemGroup(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		slug string
@@ -25,6 +26,8 @@ func TestIsSystemGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := IsSystemGroup(tt.slug)
 			if got != tt.want {
 				t.Errorf("IsSystemGroup(%q) = %v, want %v", tt.slug, got, tt.want)
@@ -34,6 +37,8 @@ func TestIsSystemGroup(t *testing.T) {
 }
 
 func TestUserContext_PermissionCheck(t *testing.T) {
+	t.Parallel()
+
 	uc := &UserContext{
 		Permissions: map[string]bool{
 			"blog.publish":   true,
@@ -55,6 +60,8 @@ func TestUserContext_PermissionCheck(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := uc.Permissions[tt.hasPerm]
 			if got != tt.want {
 				t.Errorf("permission check for %s = %v, want %v", tt.hasPerm, got, tt.want)
@@ -64,6 +71,8 @@ func TestUserContext_PermissionCheck(t *testing.T) {
 }
 
 func TestRBAC_ClearCache(t *testing.T) {
+	t.Parallel()
+
 	r := &RBAC{
 		cache: &permissionCache{
 			entries: map[string]*cacheEntry{
@@ -73,18 +82,23 @@ func TestRBAC_ClearCache(t *testing.T) {
 	}
 
 	r.ClearCache()
+
 	if len(r.cache.entries) != 0 {
 		t.Errorf("cache should be empty after clear, got %d entries", len(r.cache.entries))
 	}
 }
 
 func TestSystemGroupConstants(t *testing.T) {
+	t.Parallel()
+
 	if SystemGroupSuperAdmin != "super_admin" {
 		t.Errorf("SystemGroupSuperAdmin = %q, want %q", SystemGroupSuperAdmin, "super_admin")
 	}
+
 	if SystemGroupMembers != "members" {
 		t.Errorf("SystemGroupMembers = %q, want %q", SystemGroupMembers, "members")
 	}
+
 	if SystemGroupGuest != "guest" {
 		t.Errorf("SystemGroupGuest = %q, want %q", SystemGroupGuest, "guest")
 	}
@@ -96,6 +110,8 @@ func TestSystemGroupConstants(t *testing.T) {
 // the in-memory L1 cache without touching loadUserContext (which would fail
 // without a real DB).
 func TestCacheHitL1_SkipsDB(t *testing.T) {
+	t.Parallel()
+
 	r := &RBAC{
 		db: nil, // no DB — would panic if loadUserContext is called
 		cache: &permissionCache{
@@ -115,13 +131,15 @@ func TestCacheHitL1_SkipsDB(t *testing.T) {
 	r.cacheSet(userID.String(), uc)
 
 	// GetUserContext should return from L1 without calling loadUserContext.
-	got, err := r.GetUserContext(context.Background(), userID, tenantID)
+	got, err := r.GetUserContext(t.Context(), userID, tenantID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if got.Permissions["blog.publish"] != true {
 		t.Error("expected blog.publish permission from L1 cache")
 	}
+
 	if got.Groups[0].Name != "editors" {
 		t.Error("expected group 'editors' from L1 cache")
 	}
@@ -130,6 +148,7 @@ func TestCacheHitL1_SkipsDB(t *testing.T) {
 // TestCacheHitL2_PromotesToL1 verifies that a Valkey L2 hit is promoted to
 // the in-memory L1 cache.
 func TestCacheHitL2_PromotesToL1(t *testing.T) {
+	t.Parallel()
 	// Without a real Valkey server, we test the round-trip through JSON
 	// marshal/unmarshal to confirm the L2 data shape is correct.
 	uc := &UserContext{
@@ -150,6 +169,7 @@ func TestCacheHitL2_PromotesToL1(t *testing.T) {
 	if decoded.Permissions["spaces.moderate"] != true {
 		t.Error("expected spaces.moderate permission after JSON round-trip")
 	}
+
 	if decoded.Groups[0].Name != "moderators" {
 		t.Error("expected group 'moderators' after JSON round-trip")
 	}
@@ -158,6 +178,8 @@ func TestCacheHitL2_PromotesToL1(t *testing.T) {
 // TestInvalidateUserCache_RemovesFromL1 verifies that InvalidateUserCache
 // evicts the entry from L1.
 func TestInvalidateUserCache_RemovesFromL1(t *testing.T) {
+	t.Parallel()
+
 	r := &RBAC{
 		cache: &permissionCache{
 			entries: make(map[string]*cacheEntry),
@@ -179,7 +201,7 @@ func TestInvalidateUserCache_RemovesFromL1(t *testing.T) {
 	}
 
 	// Invalidate.
-	r.InvalidateUserCache(context.Background(), userID)
+	r.InvalidateUserCache(t.Context(), userID)
 
 	// Confirm it's gone.
 	if cached := r.cacheGet(userID.String()); cached != nil {
@@ -191,6 +213,8 @@ func TestInvalidateUserCache_RemovesFromL1(t *testing.T) {
 // vk is nil (Valkey unreachable at startup). L1-only mode should function
 // correctly.
 func TestGracefulDegradation_NilValkey(t *testing.T) {
+	t.Parallel()
+
 	r := &RBAC{
 		cache: &permissionCache{
 			entries: make(map[string]*cacheEntry),
@@ -209,10 +233,11 @@ func TestGracefulDegradation_NilValkey(t *testing.T) {
 	}
 	r.cacheSet(userID.String(), uc)
 
-	got, err := r.GetUserContext(context.Background(), userID, tenantID)
+	got, err := r.GetUserContext(t.Context(), userID, tenantID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if got.Permissions["content.create"] != true {
 		t.Error("expected content.create permission")
 	}
@@ -220,6 +245,8 @@ func TestGracefulDegradation_NilValkey(t *testing.T) {
 
 // TestInvalidateAllCache_ClearsL1 verifies that InvalidateAllCache empties L1.
 func TestInvalidateAllCache_ClearsL1(t *testing.T) {
+	t.Parallel()
+
 	r := &RBAC{
 		cache: &permissionCache{
 			entries: make(map[string]*cacheEntry),
@@ -245,7 +272,7 @@ func TestInvalidateAllCache_ClearsL1(t *testing.T) {
 		t.Fatalf("expected 5 L1 entries, got %d", len(r.cache.entries))
 	}
 
-	r.InvalidateAllCache(context.Background())
+	r.InvalidateAllCache(t.Context())
 
 	if len(r.cache.entries) != 0 {
 		t.Errorf("expected 0 L1 entries after flush, got %d", len(r.cache.entries))
@@ -255,6 +282,8 @@ func TestInvalidateAllCache_ClearsL1(t *testing.T) {
 // TestCacheEntryTTL verifies that the cacheEntry timestamp is set and used
 // for TTL-based eviction by the cleanup loop.
 func TestCacheEntryTTL(t *testing.T) {
+	t.Parallel()
+
 	entry := &cacheEntry{
 		user:      &UserContext{Permissions: map[string]bool{"test": true}},
 		createdAt: time.Now(),
@@ -267,6 +296,8 @@ func TestCacheEntryTTL(t *testing.T) {
 
 // TestPermCacheKeyPrefix verifies the Valkey key naming convention.
 func TestPermCacheKeyPrefix(t *testing.T) {
+	t.Parallel()
+
 	if permCacheKeyPrefix != "jc:perm:" {
 		t.Errorf("permCacheKeyPrefix = %q, want %q", permCacheKeyPrefix, "jc:perm:")
 	}

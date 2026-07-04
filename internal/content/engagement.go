@@ -8,7 +8,7 @@ import (
 )
 
 // ContentWithScore pairs a content ID with its velocity score for ranking.
-type ContentWithScore struct {
+type ContentWithScore struct { //nolint:revive // stuttering type name preserved for API compatibility
 	ContentID     pgtype.UUID
 	VelocityScore float64
 }
@@ -28,6 +28,7 @@ func (s *Service) IncrementEngagementView(ctx context.Context, contentID pgtype.
 	if err != nil {
 		return fmt.Errorf("incrementing engagement view: %w", err)
 	}
+
 	return nil
 }
 
@@ -44,6 +45,7 @@ func (s *Service) IncrementEngagementComments(ctx context.Context, contentID pgt
 	if err != nil {
 		return fmt.Errorf("incrementing engagement comments: %w", err)
 	}
+
 	return nil
 }
 
@@ -60,6 +62,7 @@ func (s *Service) UpdateEngagementVotesScore(ctx context.Context, contentID pgty
 	if err != nil {
 		return fmt.Errorf("updating engagement votes score: %w", err)
 	}
+
 	return nil
 }
 
@@ -75,6 +78,7 @@ func (s *Service) IncrementEngagementBookmarks(ctx context.Context, contentID pg
 	if err != nil {
 		return fmt.Errorf("incrementing engagement bookmarks: %w", err)
 	}
+
 	return nil
 }
 
@@ -90,6 +94,7 @@ func (s *Service) IncrementEngagementShares(ctx context.Context, contentID pgtyp
 	if err != nil {
 		return fmt.Errorf("incrementing engagement shares: %w", err)
 	}
+
 	return nil
 }
 
@@ -115,13 +120,16 @@ func (s *Service) GetTopContentByVelocity(ctx context.Context, tenantID pgtype.U
 	defer rows.Close()
 
 	var results []ContentWithScore
+
 	for rows.Next() {
 		var cs ContentWithScore
 		if err := rows.Scan(&cs.ContentID, &cs.VelocityScore); err != nil {
 			return nil, fmt.Errorf("scanning velocity result: %w", err)
 		}
+
 		results = append(results, cs)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -143,6 +151,7 @@ type EngagementStats struct {
 // Returns zero-valued stats if no engagement row exists.
 func (s *Service) GetEngagementStats(ctx context.Context, contentID pgtype.UUID) (EngagementStats, error) {
 	var stats EngagementStats
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COALESCE(views, 0), COALESCE(comments_count, 0),
 		       COALESCE(votes_score, 0), COALESCE(bookmarks_count, 0),
@@ -156,7 +165,8 @@ func (s *Service) GetEngagementStats(ctx context.Context, contentID pgtype.UUID)
 	)
 	if err != nil {
 		// If no row exists, return zero stats — not an error.
-		return EngagementStats{}, nil
+		return EngagementStats{}, nil //nolint:nilerr // intentional: no engagement data yet
 	}
+
 	return stats, nil
 }

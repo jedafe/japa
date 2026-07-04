@@ -20,6 +20,7 @@ func GenerateArticleJSONLD(title, description, author, imageURL, publishedAt, up
 	if imageURL != "" {
 		article["image"] = imageURL
 	}
+
 	if updatedAt != "" {
 		article["dateModified"] = updatedAt
 	}
@@ -31,13 +32,13 @@ func GenerateArticleJSONLD(title, description, author, imageURL, publishedAt, up
 // For solved threads, set isSolved to true and provide a non-empty answerBody.
 func GenerateQAPageJSONLD(questionTitle, questionBody, answerBody, author string, isSolved bool) map[string]interface{} {
 	question := map[string]interface{}{
-		"@type":          "Question",
-		"name":           questionTitle,
-		"text":           questionBody,
-		"dateCreated":    time.Now().Format(time.RFC3339),
-		"author":         map[string]interface{}{"@type": "Person", "name": author},
-		"answerCount":    0,
-		"isAccepted":     false,
+		"@type":       "Question",
+		"name":        questionTitle,
+		"text":        questionBody,
+		"dateCreated": time.Now().Format(time.RFC3339),
+		"author":      map[string]interface{}{"@type": "Person", "name": author},
+		"answerCount": 0,
+		"isAccepted":  false,
 	}
 
 	if isSolved && answerBody != "" {
@@ -50,9 +51,9 @@ func GenerateQAPageJSONLD(questionTitle, questionBody, answerBody, author string
 	}
 
 	return map[string]interface{}{
-		"@context":        "https://schema.org",
-		"@type":           "QAPage",
-		"mainEntity":      question,
+		"@context":   "https://schema.org",
+		"@type":      "QAPage",
+		"mainEntity": question,
 	}
 }
 
@@ -83,9 +84,11 @@ func GenerateOrganizationJSONLD(name, logo, url string) map[string]interface{} {
 	if logo != "" {
 		org["logo"] = logo
 	}
+
 	if url != "" {
 		org["url"] = url
 	}
+
 	return org
 }
 
@@ -93,14 +96,15 @@ func GenerateOrganizationJSONLD(name, logo, url string) map[string]interface{} {
 // Use for learning section content.
 func GenerateCourseJSONLD(name, description, provider, url string) map[string]interface{} {
 	course := map[string]interface{}{
-		"@context":   "https://schema.org",
-		"@type":      "Course",
-		"name":       name,
+		"@context":    "https://schema.org",
+		"@type":       "Course",
+		"name":        name,
 		"description": description,
-		"provider":   map[string]interface{}{"@type": "Organization", "name": provider},
+		"provider":    map[string]interface{}{"@type": "Organization", "name": provider},
 	}
 	if url != "" {
 		course["url"] = url
 	}
+
 	return course
 }

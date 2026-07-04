@@ -32,7 +32,7 @@ const (
 	TypeBlogPost   = "blog_post"
 	TypeDiscussion = "discussion"
 	TypePage       = "page"
-	TypeComparison  = "comparison"
+	TypeComparison = "comparison"
 )
 
 // Visibility values stored in the contents.visibility column.
@@ -62,9 +62,9 @@ const MaxPageSize = 100
 // separation. Reads go through the reader pool; writes go through the
 // writer pool. This follows the same pattern as the existing db.DB struct.
 type Service struct {
-	db     *db.DB
-	read   *gen.Queries
-	write  *gen.Queries
+	db    *db.DB
+	read  *gen.Queries
+	write *gen.Queries
 }
 
 // NewService creates a Service backed by the given database pool.

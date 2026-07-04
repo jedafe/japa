@@ -3,6 +3,7 @@ package bots
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -65,6 +66,15 @@ func botToResponse(b gen.KnownBot) BotResponse {
 	}
 }
 
+// safeInt32 converts an int to int32, clamping to math.MaxInt32 if too large.
+func safeInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+
+	return int32(v) //nolint:gosec // G115: safeInt32 helper with bounds check
+}
+
 // ---------------------------------------------------------------------------
 // Known Bots CRUD
 // ---------------------------------------------------------------------------
@@ -78,11 +88,12 @@ func (s *Service) CreateKnownBot(ctx context.Context, tenantID pgtype.UUID, inpu
 		BotType:          string(input.BotType),
 		Policy:           string(input.Policy),
 		IsSystem:         false,
-		CrawlDelay:       int32(input.CrawlDelay),
+		CrawlDelay:       safeInt32(input.CrawlDelay),
 	})
 	if err != nil {
 		return BotResponse{}, fmt.Errorf("create known bot: %w", err)
 	}
+
 	return botToResponse(bot), nil
 }
 
@@ -92,6 +103,7 @@ func (s *Service) GetKnownBotByID(ctx context.Context, tenantID, botID pgtype.UU
 	if err != nil {
 		return BotResponse{}, fmt.Errorf("get known bot: %w", err)
 	}
+
 	return botToResponse(bot), nil
 }
 
@@ -101,10 +113,12 @@ func (s *Service) ListKnownBots(ctx context.Context, tenantID pgtype.UUID, botTy
 	if err != nil {
 		return nil, fmt.Errorf("list known bots: %w", err)
 	}
+
 	result := make([]BotResponse, len(bots))
 	for i, b := range bots {
 		result[i] = botToResponse(b)
 	}
+
 	return result, nil
 }
 
@@ -117,11 +131,12 @@ func (s *Service) UpdateKnownBot(ctx context.Context, tenantID, botID pgtype.UUI
 		UserAgentPattern: input.UserAgentPattern,
 		BotType:          string(input.BotType),
 		Policy:           string(input.Policy),
-		CrawlDelay:       int32(input.CrawlDelay),
+		CrawlDelay:       safeInt32(input.CrawlDelay),
 	})
 	if err != nil {
 		return BotResponse{}, fmt.Errorf("update known bot: %w", err)
 	}
+
 	return botToResponse(bot), nil
 }
 
@@ -130,5 +145,6 @@ func (s *Service) DeleteKnownBot(ctx context.Context, tenantID, botID pgtype.UUI
 	if err := s.store.deleteKnownBot(ctx, botID, tenantID); err != nil {
 		return fmt.Errorf("delete known bot: %w", err)
 	}
+
 	return nil
 }

@@ -22,6 +22,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for blog HTTP handlers.
 type Handlers struct {
 	Service *Service
@@ -42,6 +44,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -52,6 +55,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -62,6 +66,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -81,6 +86,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -97,16 +103,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -115,11 +124,13 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +143,7 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -143,14 +155,17 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 		Description  string  `json:"description"`
 		CoverImageID *string `json:"cover_image_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
+
 	if input.Slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
@@ -158,7 +173,10 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 
 	var coverImageID pgtype.UUID
 	if input.CoverImageID != nil {
-		_ = coverImageID.Scan(*input.CoverImageID)
+		if err := coverImageID.Scan(*input.CoverImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
+			return
+		}
 	}
 
 	series, err := h.Service.CreateSeries(r.Context(), tenantID, user.UserID, CreateSeriesInput{
@@ -171,16 +189,13 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": series})
 }
 
 // ListSeries handles GET /api/v1/blog/series.
 // Supports ?author_id=, ?page_size=, ?page_offset=.
 func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -196,12 +211,15 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_author_id", "Invalid author_id")
 			return
 		}
+
 		series, err := h.Service.ListSeriesByAuthor(r.Context(), tenantID, authorID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": series})
+
 		return
 	}
 
@@ -210,19 +228,17 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": series})
 }
 
 // GetSeries handles GET /api/v1/blog/series/{slug}.
 func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
@@ -234,6 +250,7 @@ func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": series})
 }
 
@@ -243,10 +260,12 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid series ID")
@@ -259,10 +278,12 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 		CoverImageID *string `json:"cover_image_id"`
 		Status       string  `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
@@ -270,7 +291,10 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 
 	var coverImageID pgtype.UUID
 	if input.CoverImageID != nil {
-		_ = coverImageID.Scan(*input.CoverImageID)
+		if err := coverImageID.Scan(*input.CoverImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
+			return
+		}
 	}
 
 	series, err := h.Service.UpdateSeries(r.Context(), id, tenantID, input.Title, input.Description, coverImageID, input.Status)
@@ -278,6 +302,7 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": series})
 }
 
@@ -287,10 +312,12 @@ func (h *Handlers) DeleteSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid series ID")
@@ -301,6 +328,7 @@ func (h *Handlers) DeleteSeries(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -314,6 +342,7 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	seriesID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series ID")
@@ -324,10 +353,12 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 		ContentID string `json:"content_id"`
 		Position  int32  `json:"position"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.ContentID == "" {
 		writeError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
 		return
@@ -343,6 +374,7 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
@@ -352,11 +384,13 @@ func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	seriesID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series ID")
 		return
 	}
+
 	contentID, err := parseUUIDParam(r, "postId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid post ID")
@@ -367,6 +401,7 @@ func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -376,6 +411,7 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	seriesID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series ID")
@@ -388,10 +424,12 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 			Position  int32  `json:"position"`
 		} `json:"posts"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if len(input.Posts) == 0 {
 		writeError(w, http.StatusBadRequest, "missing_posts", "At least one post required")
 		return
@@ -406,6 +444,7 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id in posts array")
 			return
 		}
+
 		posts[i].Position = p.Position
 	}
 
@@ -427,6 +466,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -437,10 +477,12 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		Status    string `json:"status"`
 		Feedback  string `json:"feedback"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.ContentID == "" {
 		writeError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
 		return
@@ -461,6 +503,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
@@ -471,6 +514,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -486,12 +530,15 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
 			return
 		}
+
 		reviews, err := h.Service.ListReviewsByContent(r.Context(), contentID, tenantID)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+
 		return
 	}
 
@@ -501,7 +548,9 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+
 		return
 	}
 
@@ -511,6 +560,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
 }
 
@@ -520,10 +570,12 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
@@ -534,10 +586,12 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		Status   string `json:"status"`
 		Feedback string `json:"feedback"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Status == "" {
 		writeError(w, http.StatusBadRequest, "missing_status", "Status is required")
 		return
@@ -548,6 +602,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": review})
 }
 
@@ -561,6 +616,7 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -571,10 +627,12 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 		FeaturedOrder int32  `json:"featured_order"`
 		FeaturedUntil string `json:"featured_until"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.ContentID == "" {
 		writeError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
 		return
@@ -588,7 +646,10 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 
 	var featuredUntil pgtype.Timestamptz
 	if input.FeaturedUntil != "" {
-		_ = featuredUntil.Scan(input.FeaturedUntil)
+		if err := featuredUntil.Scan(input.FeaturedUntil); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_featured_until", "Invalid featured_until date format")
+			return
+		}
 	}
 
 	featured, err := h.Service.FeaturePost(r.Context(), tenantID, FeaturePostInput{
@@ -600,6 +661,7 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": featured})
 }
 
@@ -609,10 +671,12 @@ func (h *Handlers) UnfeaturePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, err := parseUUIDParam(r, "contentId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content ID")
@@ -623,15 +687,12 @@ func (h *Handlers) UnfeaturePost(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
 // ListFeatured handles GET /api/v1/blog/featured.
 func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -645,6 +706,7 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": featured})
 }
 
@@ -654,6 +716,7 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -661,14 +724,16 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		Items []struct {
-			ID      string `json:"id"`
-			Order   int32  `json:"order"`
+			ID    string `json:"id"`
+			Order int32  `json:"order"`
 		} `json:"items"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if len(input.Items) == 0 {
 		writeError(w, http.StatusBadRequest, "missing_items", "At least one item required")
 		return
@@ -680,6 +745,7 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid featured ID in items array")
 			return
 		}
+
 		if err := h.Service.UpdateFeaturedPostOrder(r.Context(), id, tenantID, item.Order); err != nil {
 			handleServiceError(w, err)
 			return

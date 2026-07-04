@@ -28,6 +28,7 @@ func (s *Store) getState(ctx context.Context, tenantID, userID pgtype.UUID) (gen
 	if err != nil {
 		return gen.OnboardingState{}, fmt.Errorf("getting onboarding state: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -43,6 +44,7 @@ func (s *Store) upsertState(ctx context.Context, tenantID, userID pgtype.UUID, c
 	}); err != nil {
 		return fmt.Errorf("upserting onboarding state: %w", err)
 	}
+
 	return nil
 }
 
@@ -54,6 +56,7 @@ func (s *Store) completeOnboarding(ctx context.Context, tenantID, userID pgtype.
 	}); err != nil {
 		return fmt.Errorf("completing onboarding: %w", err)
 	}
+
 	return nil
 }
 
@@ -65,5 +68,6 @@ func (s *Store) dismissTour(ctx context.Context, tenantID, userID pgtype.UUID) e
 	}); err != nil {
 		return fmt.Errorf("dismissing tour: %w", err)
 	}
+
 	return nil
 }

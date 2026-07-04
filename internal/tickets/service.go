@@ -3,6 +3,7 @@ package tickets
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -41,13 +42,14 @@ func NewService(database *db.DB) *Service {
 func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc := NewService(database)
 	svc.enqueuer = enqueuer
+
 	return svc
 }
 
 // noopEnqueuer is a no-op implementation for development.
 type noopEnqueuer struct{}
 
-func (n *noopEnqueuer) Enqueue(taskType string, payload []byte, opts ...interface{}) error {
+func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error {
 	return nil
 }
 
@@ -63,7 +65,7 @@ type CreateTicketTypeInput struct {
 	FieldGroupID      pgtype.UUID
 	DefaultPriority   string
 	AutoAssignGroupID pgtype.UUID
-	SlaHours          *int32
+	SLAHours          *int32
 	IsPublic          bool
 	IsSystem          bool
 }
@@ -71,11 +73,13 @@ type CreateTicketTypeInput struct {
 // CreateTicketType creates a new admin-defined ticket type.
 func (s *Service) CreateTicketType(ctx context.Context, tenantID pgtype.UUID, input CreateTicketTypeInput) (gen.TicketType, error) {
 	if input.Name == "" {
-		return gen.TicketType{}, fmt.Errorf("name is required")
+		return gen.TicketType{}, errors.New("name is required")
 	}
+
 	if input.Slug == "" {
-		return gen.TicketType{}, fmt.Errorf("slug is required")
+		return gen.TicketType{}, errors.New("slug is required")
 	}
+
 	if input.DefaultPriority == "" {
 		input.DefaultPriority = string(PriorityNormal)
 	}
@@ -93,7 +97,7 @@ func (s *Service) CreateTicketType(ctx context.Context, tenantID pgtype.UUID, in
 		FieldGroupID:      input.FieldGroupID,
 		DefaultPriority:   input.DefaultPriority,
 		AutoAssignGroupID: input.AutoAssignGroupID,
-		SlaHours:          input.SlaHours,
+		SlaHours:          input.SLAHours,
 		IsPublic:          input.IsPublic,
 		IsSystem:          input.IsSystem,
 	})
@@ -121,14 +125,14 @@ type UpdateTicketTypeInput struct {
 	FieldGroupID      pgtype.UUID
 	DefaultPriority   string
 	AutoAssignGroupID pgtype.UUID
-	SlaHours          *int32
+	SLAHours          *int32
 	IsPublic          bool
 }
 
 // UpdateTicketType updates an existing ticket type.
 func (s *Service) UpdateTicketType(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTicketTypeInput) (gen.TicketType, error) {
 	if input.Name == "" {
-		return gen.TicketType{}, fmt.Errorf("name is required")
+		return gen.TicketType{}, errors.New("name is required")
 	}
 
 	var description *string
@@ -144,7 +148,7 @@ func (s *Service) UpdateTicketType(ctx context.Context, id, tenantID pgtype.UUID
 		FieldGroupID:      input.FieldGroupID,
 		DefaultPriority:   input.DefaultPriority,
 		AutoAssignGroupID: input.AutoAssignGroupID,
-		SlaHours:          input.SlaHours,
+		SlaHours:          input.SLAHours,
 		IsPublic:          input.IsPublic,
 	})
 }
@@ -174,10 +178,11 @@ type CreateTicketInput struct {
 // CreateTicket creates a new ticket with auto-assignment if configured.
 func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input CreateTicketInput) (gen.Ticket, error) {
 	if input.Subject == "" {
-		return gen.Ticket{}, fmt.Errorf("subject is required")
+		return gen.Ticket{}, errors.New("subject is required")
 	}
+
 	if input.Description == "" {
-		return gen.Ticket{}, fmt.Errorf("description is required")
+		return gen.Ticket{}, errors.New("description is required")
 	}
 
 	// Resolve ticket type for default priority and SLA.
@@ -193,6 +198,7 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 
 	// Compute SLA breach time.
 	var slaBreachAt pgtype.Timestamptz
+
 	if ticketType.SlaHours != nil && *ticketType.SlaHours > 0 {
 		breachTime := time.Now().Add(time.Duration(*ticketType.SlaHours) * time.Hour)
 		slaBreachAt = pgtype.Timestamptz{Time: breachTime, Valid: true}
@@ -201,11 +207,10 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 	// Auto-assign if configured and no explicit assignment.
 	assignedTo := input.AssignedTo
 	assignedGroupID := input.AssignedGroupID
-	if assignedTo.Valid && assignedGroupID.Valid {
-		// Both set — use as-is.
-	} else if ticketType.AutoAssignGroupID.Valid {
-		// Try auto-assignment.
-	 leastLoaded, assignErr := s.store.getLeastLoadedStaffInGroup(ctx, ticketType.AutoAssignGroupID, tenantID)
+
+	if (!assignedTo.Valid || !assignedGroupID.Valid) && ticketType.AutoAssignGroupID.Valid {
+		// Try auto-assignment when neither is explicitly set.
+		leastLoaded, assignErr := s.store.getLeastLoadedStaffInGroup(ctx, ticketType.AutoAssignGroupID, tenantID)
 		if assignErr == nil && leastLoaded.Valid {
 			assignedTo = leastLoaded
 			assignedGroupID = ticketType.AutoAssignGroupID
@@ -214,11 +219,13 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 
 	// Marshal field values.
 	fieldValuesJSON := []byte("{}")
+
 	if len(input.FieldValues) > 0 {
 		b, err := json.Marshal(input.FieldValues)
 		if err != nil {
 			return gen.Ticket{}, fmt.Errorf("marshaling field values: %w", err)
 		}
+
 		fieldValuesJSON = b
 	}
 
@@ -285,10 +292,10 @@ func (s *Service) ListTickets(ctx context.Context, tenantID pgtype.UUID, status,
 // ListTicketsBySubmitter returns tickets submitted by a specific user.
 func (s *Service) ListTicketsBySubmitter(ctx context.Context, tenantID, submitterUserID pgtype.UUID, limit, offset int32) ([]gen.ListTicketsBySubmitterRow, error) {
 	return s.store.listTicketsBySubmitter(ctx, gen.ListTicketsBySubmitterParams{
-		TenantID:         tenantID,
+		TenantID:        tenantID,
 		SubmitterUserID: submitterUserID,
-		PageLimit:        limit,
-		PageOffset:       offset,
+		PageLimit:       limit,
+		PageOffset:      offset,
 	})
 }
 
@@ -317,7 +324,7 @@ func (s *Service) UpdateTicketStatus(ctx context.Context, id, tenantID pgtype.UU
 
 	// Resolve or close tickets need resolution note.
 	if newStatus == StatusResolved && input.ResolutionNote == "" {
-		return gen.Ticket{}, fmt.Errorf("resolution note is required when resolving a ticket")
+		return gen.Ticket{}, errors.New("resolution note is required when resolving a ticket")
 	}
 
 	// Update status.
@@ -463,7 +470,7 @@ func (s *Service) ResolveTicket(ctx context.Context, id, tenantID pgtype.UUID, i
 }
 
 // CloseTicket closes a ticket (admin action from any state).
-func (s *Service) CloseTicket(ctx context.Context, id, tenantID pgtype.UUID, userID pgtype.UUID) (gen.Ticket, error) {
+func (s *Service) CloseTicket(ctx context.Context, id, tenantID, userID pgtype.UUID) (gen.Ticket, error) {
 	current, err := s.store.getTicketByID(ctx, id, tenantID)
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("fetching current ticket: %w", err)
@@ -502,7 +509,7 @@ type AddCommentInput struct {
 // AddComment adds a comment to a ticket.
 func (s *Service) AddComment(ctx context.Context, ticketID pgtype.UUID, input AddCommentInput) (gen.TicketComment, error) {
 	if input.Body == "" {
-		return gen.TicketComment{}, fmt.Errorf("body is required")
+		return gen.TicketComment{}, errors.New("body is required")
 	}
 
 	comment, err := s.store.createTicketComment(ctx, gen.CreateTicketCommentParams{
@@ -589,6 +596,7 @@ func (s *Service) CheckSLABreaches(ctx context.Context, tenantID pgtype.UUID) (i
 	}
 
 	breached := 0
+
 	now := time.Now()
 	for _, t := range tickets {
 		if t.SlaBreachAt.Valid && t.SlaBreachAt.Time.Before(now) &&
@@ -602,9 +610,11 @@ func (s *Service) CheckSLABreaches(ctx context.Context, tenantID pgtype.UUID) (i
 			}); err != nil {
 				slog.Error("create ticket event", "ticket_id", t.ID, "error", err)
 			}
+
 			breached++
 		}
 	}
+
 	return breached, nil
 }
 
@@ -621,6 +631,7 @@ func (s *Service) enqueueTicketConfirmation(ticket gen.Ticket) {
 	if err != nil {
 		return
 	}
+
 	if err := s.enqueuer.Enqueue(worker.TypeTicketSendConfirmation, payload); err != nil {
 		slog.Error("enqueue ticket confirmation email", "ticket_id", ticket.ID, "error", err)
 	}
@@ -636,6 +647,7 @@ func (s *Service) enqueueTicketStatusUpdate(ticket gen.Ticket) {
 	if err != nil {
 		return
 	}
+
 	if err := s.enqueuer.Enqueue(worker.TypeTicketSendStatusUpdate, payload); err != nil {
 		slog.Error("enqueue ticket status update email", "ticket_id", ticket.ID, "error", err)
 	}

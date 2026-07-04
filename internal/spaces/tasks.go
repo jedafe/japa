@@ -30,7 +30,7 @@ func NewNoopEnqueuer() TaskEnqueuer {
 }
 
 // EnqueueSpaceAutoPopulate logs the request and returns nil immediately.
-func (n *noopEnqueuer) EnqueueSpaceAutoPopulate(ctx context.Context, spaceID pgtype.UUID) error {
+func (n *noopEnqueuer) EnqueueSpaceAutoPopulate(_ context.Context, spaceID pgtype.UUID) error {
 	slog.Info("space:auto_populate task enqueued (noop)", "space_id", spaceID.String())
 	return nil
 }

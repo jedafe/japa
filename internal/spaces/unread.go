@@ -7,14 +7,14 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/valkey"
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // UnreadCounter manages per-user per-space unread post counts using Valkey.
 // Key format: jc:space_unread:{user_id}:{space_id} -> integer
 // Counters are incremented on new post fan-out and reset to 0 on visit.
 type UnreadCounter struct {
-	rdb *redis.Client
+	rdb valkeycompat.Cmdable
 }
 
 // NewUnreadCounter creates an UnreadCounter backed by the given Valkey client.
@@ -23,6 +23,7 @@ func NewUnreadCounter(vk *valkey.Client) *UnreadCounter {
 	if vk == nil {
 		return &UnreadCounter{rdb: nil}
 	}
+
 	return &UnreadCounter{rdb: vk.Redis()}
 }
 
@@ -38,9 +39,11 @@ func (c *UnreadCounter) Increment(ctx context.Context, userID, spaceID pgtype.UU
 	if c.rdb == nil {
 		return nil
 	}
+
 	if err := c.rdb.Incr(ctx, unreadKey(userID, spaceID)).Err(); err != nil {
 		return fmt.Errorf("incrementing space unread count: %w", err)
 	}
+
 	return nil
 }
 
@@ -50,9 +53,11 @@ func (c *UnreadCounter) Reset(ctx context.Context, userID, spaceID pgtype.UUID) 
 	if c.rdb == nil {
 		return nil
 	}
+
 	if err := c.rdb.Set(ctx, unreadKey(userID, spaceID), 0, 0).Err(); err != nil {
 		return fmt.Errorf("resetting space unread count: %w", err)
 	}
+
 	return nil
 }
 
@@ -62,11 +67,13 @@ func (c *UnreadCounter) Get(ctx context.Context, userID, spaceID pgtype.UUID) (i
 	if c.rdb == nil {
 		return 0, nil
 	}
+
 	n, err := c.rdb.Get(ctx, unreadKey(userID, spaceID)).Int()
 	if err != nil {
 		// redis.Nil means the key does not exist yet; treat as zero.
-		return 0, nil
+		return 0, nil //nolint:nilerr // intentional: missing key = zero unread
 	}
+
 	return n, nil
 }
 
@@ -77,22 +84,27 @@ func (c *UnreadCounter) GetBatch(ctx context.Context, userID pgtype.UUID, spaceI
 	if c.rdb == nil {
 		return out, nil
 	}
+
 	keys := make([]string, len(spaceIDs))
 	for i, sid := range spaceIDs {
 		keys[i] = unreadKey(userID, sid)
 	}
+
 	vals, err := c.rdb.MGet(ctx, keys...).Result()
 	if err != nil {
-		return out, nil
+		return out, nil //nolint:nilerr // intentional: degradable batch unread
 	}
+
 	for i, v := range vals {
 		if v == nil {
 			continue
 		}
+
 		if s, ok := v.(string); ok {
 			n, _ := strconv.Atoi(s)
 			out[spaceIDs[i].String()] = n
 		}
 	}
+
 	return out, nil
 }

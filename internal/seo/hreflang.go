@@ -1,3 +1,4 @@
+// Package seo provides SEO utilities including hreflang and sitemap generation.
 package seo
 
 import (
@@ -9,7 +10,7 @@ import (
 var DefaultLanguages = []string{"en", "fr"}
 
 // HreflangLink returns a single HTML <link> tag for a language alternate.
-// Example output: <link rel="alternate" hreflang="fr" href="https://example.com/fr/guide" />
+// Example output: <link rel="alternate" hreflang="fr" href="https://example.com/fr/guide" />.
 func HreflangLink(lang, href string) string {
 	return fmt.Sprintf(`<link rel="alternate" hreflang="%s" href="%s" />`, lang, href)
 }

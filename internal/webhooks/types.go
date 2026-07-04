@@ -34,12 +34,12 @@ type TestWebhookRequest struct {
 
 // WebhookEndpointWithSecret is a webhook endpoint that includes the secret for admin viewing.
 type WebhookEndpointWithSecret struct {
-	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	URL        string      `json:"url"`
-	Secret     string      `json:"secret"`
-	EventTypes []string    `json:"event_types"`
-	Status     string      `json:"status"`
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	URL        string             `json:"url"`
+	Secret     string             `json:"secret"`
+	EventTypes []string           `json:"event_types"`
+	Status     string             `json:"status"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }

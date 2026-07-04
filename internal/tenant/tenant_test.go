@@ -14,21 +14,25 @@ type mockStore struct {
 	err    error
 }
 
-func (m *mockStore) GetTenantByHost(ctx context.Context, host string) (*Tenant, error) {
+func (m *mockStore) GetTenantByHost(_ context.Context, _ string) (*Tenant, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
+
 	return m.tenant, nil
 }
 
-func (m *mockStore) GetDefaultTenant(ctx context.Context) (*Tenant, error) {
+func (m *mockStore) GetDefaultTenant(_ context.Context) (*Tenant, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
+
 	return m.tenant, nil
 }
 
 func TestMiddleware_ResolvesTenant(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		store      TenantStore
@@ -61,21 +65,26 @@ func TestMiddleware_ResolvesTenant(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			handler := Middleware(tt.store)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				tenant := FromContext(r.Context())
 				if tt.wantTenant && tenant == nil {
 					t.Error("expected tenant in context, got nil")
 				}
+
 				if !tt.wantTenant && tenant != nil {
 					t.Error("expected no tenant, got one")
 				}
+
 				w.WriteHeader(http.StatusOK)
 			}))
 
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			if tt.host != "" {
 				req.Host = tt.host
 			}
+
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 
@@ -87,19 +96,24 @@ func TestMiddleware_ResolvesTenant(t *testing.T) {
 }
 
 func TestFromContext_NoTenant(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	if tenant := FromContext(ctx); tenant != nil {
 		t.Error("expected nil tenant from empty context")
 	}
 }
 
 func TestIDFromContext_WithTenant(t *testing.T) {
+	t.Parallel()
+
 	id := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
-	ctx := context.WithValue(context.Background(), TenantContextKey, &Tenant{
+	ctx := context.WithValue(t.Context(), TenantContextKey, &Tenant{
 		ID:   id,
 		Name: "Test",
 		Slug: "test",
 	})
+
 	got := IDFromContext(ctx)
 	if !got.Valid {
 		t.Error("expected valid UUID")

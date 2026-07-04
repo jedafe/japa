@@ -42,6 +42,7 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("generate TOTP secret", "error", err)
 		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to generate 2FA secret")
+
 		return
 	}
 
@@ -50,11 +51,14 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("encrypt TOTP secret", "error", err)
 		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to encrypt 2FA secret")
+
 		return
 	}
+
 	if err := h.Store.UpsertTOTPSecret(r.Context(), user.UserID, encrypted); err != nil {
 		slog.Error("store TOTP secret", "error", err)
 		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to save 2FA secret")
+
 		return
 	}
 
@@ -79,6 +83,7 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code string `json:"code"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
@@ -93,6 +98,7 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	if err := EnableTOTP(r.Context(), h.Store, user.UserID, req.Code); err != nil {
 		slog.Warn("TOTP verify failed", "user_id", user.UserID.String(), "error", err)
 		writeError(w, http.StatusBadRequest, "totp_verify_failed", err.Error())
+
 		return
 	}
 
@@ -116,6 +122,7 @@ func (h *TOTPHandlers) HandleDisable(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code string `json:"code"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
@@ -130,6 +137,7 @@ func (h *TOTPHandlers) HandleDisable(w http.ResponseWriter, r *http.Request) {
 	if err := DisableTOTP(r.Context(), h.Store, user.UserID, req.Code); err != nil {
 		slog.Warn("TOTP disable failed", "user_id", user.UserID.String(), "error", err)
 		writeError(w, http.StatusBadRequest, "totp_disable_failed", err.Error())
+
 		return
 	}
 
@@ -149,6 +157,7 @@ func authUserFromContext(w http.ResponseWriter, r *http.Request) *AuthenticatedU
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return nil
 	}
+
 	return user
 }
 
@@ -162,17 +171,21 @@ func sanitizeCode(code string) string {
 // removeChars removes all occurrences of chars from s.
 func removeChars(s, chars string) string {
 	result := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
+
+	for i := range len(s) {
 		found := false
-		for j := 0; j < len(chars); j++ {
+
+		for j := range len(chars) {
 			if s[i] == chars[j] {
 				found = true
 				break
 			}
 		}
+
 		if !found {
 			result = append(result, s[i])
 		}
 	}
+
 	return string(result)
 }

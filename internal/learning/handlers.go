@@ -1,3 +1,4 @@
+// Package learning provides HTTP handlers for the learning management system.
 package learning
 
 import (
@@ -44,6 +45,7 @@ func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
 
@@ -54,6 +56,7 @@ func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Track slug is required")
@@ -87,9 +90,11 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
+
 	trackSlug := chi.URLParam(r, "trackSlug")
 	moduleSlug := chi.URLParam(r, "moduleSlug")
 	lessonSlug := chi.URLParam(r, "lessonSlug")
+
 	if trackSlug == "" || moduleSlug == "" || lessonSlug == "" {
 		writeError(w, http.StatusBadRequest, "missing_params", "Track, module, and lesson slugs are required")
 		return
@@ -123,6 +128,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
+
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -130,7 +136,9 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lessonIDStr := chi.URLParam(r, "id")
+
 	var lessonID pgtype.UUID
+
 	if err := lessonID.Scan(lessonIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
@@ -142,6 +150,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
 	}
+
 	_ = lesson // lesson validated; proceed with progress update
 
 	var input UpdateProgressInput
@@ -149,9 +158,11 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Status == "" {
 		input.Status = "in_progress"
 	}
+
 	if input.Status != "not_started" && input.Status != "in_progress" && input.Status != "completed" {
 		writeError(w, http.StatusBadRequest, "invalid_status", "Status must be not_started, in_progress, or completed")
 		return
@@ -184,6 +195,7 @@ func (h *Handlers) GetMyCertificates(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list certificates")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": certs})
 }
 
@@ -204,6 +216,7 @@ func (h *Handlers) ListAllTracks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
 
@@ -220,14 +233,17 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
+
 	if input.Slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+
 	if input.Difficulty == "" {
 		input.Difficulty = "beginner"
 	}
@@ -237,6 +253,7 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to create track")
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": track})
 }
 
@@ -249,7 +266,9 @@ func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var id pgtype.UUID
+
 	if err := id.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
@@ -266,6 +285,7 @@ func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to update track")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
@@ -278,7 +298,9 @@ func (h *Handlers) DeleteTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var id pgtype.UUID
+
 	if err := id.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
@@ -288,6 +310,7 @@ func (h *Handlers) DeleteTrack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to delete track")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
@@ -300,7 +323,9 @@ func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	trackIDStr := chi.URLParam(r, "trackId")
+
 	var trackID pgtype.UUID
+
 	if err := trackID.Scan(trackIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
@@ -311,10 +336,12 @@ func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
+
 	if input.Slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
@@ -325,6 +352,7 @@ func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to create module")
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": module})
 }
 
@@ -337,7 +365,9 @@ func (h *Handlers) UpdateModule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var id pgtype.UUID
+
 	if err := id.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid module ID")
 		return
@@ -354,6 +384,7 @@ func (h *Handlers) UpdateModule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to update module")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": module})
 }
 
@@ -366,7 +397,9 @@ func (h *Handlers) DeleteModule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var id pgtype.UUID
+
 	if err := id.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid module ID")
 		return
@@ -376,6 +409,7 @@ func (h *Handlers) DeleteModule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to delete module")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
@@ -388,7 +422,9 @@ func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 	}
 
 	moduleIDStr := chi.URLParam(r, "moduleId")
+
 	var moduleID pgtype.UUID
+
 	if err := moduleID.Scan(moduleIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid module ID")
 		return
@@ -399,14 +435,17 @@ func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
+
 	if input.Slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+
 	if input.LessonType == "" {
 		input.LessonType = "article"
 	}
@@ -416,6 +455,7 @@ func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to create lesson")
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": lesson})
 }
 
@@ -428,7 +468,9 @@ func (h *Handlers) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var id pgtype.UUID
+
 	if err := id.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
@@ -445,6 +487,7 @@ func (h *Handlers) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to update lesson")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": lesson})
 }
 
@@ -457,7 +500,9 @@ func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var id pgtype.UUID
+
 	if err := id.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
@@ -467,6 +512,7 @@ func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to delete lesson")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
@@ -479,7 +525,9 @@ func (h *Handlers) GetTrackProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	trackIDStr := chi.URLParam(r, "trackId")
+
 	var trackID pgtype.UUID
+
 	if err := trackID.Scan(trackIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
@@ -531,6 +579,7 @@ func calculatePercent(completed, total int) float64 {
 	if total == 0 {
 		return 0
 	}
+
 	return float64(completed) / float64(total) * 100
 }
 
@@ -538,6 +587,7 @@ func calculatePercent(completed, total int) float64 {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		// Log encoding errors — the header is already sent so we cannot
 		// change the status code, but we should not silently swallow it.

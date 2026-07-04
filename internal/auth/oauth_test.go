@@ -5,6 +5,8 @@ import (
 )
 
 func TestOAuthConfig_SupportedProviders(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		config   OAuthConfig
@@ -77,11 +79,14 @@ func TestOAuthConfig_SupportedProviders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			result := tt.config.SupportedProviders()
 			if len(result) != len(tt.expected) {
 				t.Errorf("got %d providers, want %d", len(result), len(tt.expected))
 				return
 			}
+
 			for i, p := range result {
 				if p != tt.expected[i] {
 					t.Errorf("provider[%d] = %q, want %q", i, p, tt.expected[i])
@@ -92,6 +97,8 @@ func TestOAuthConfig_SupportedProviders(t *testing.T) {
 }
 
 func TestOAuthConfig_NewProvider(t *testing.T) {
+	t.Parallel()
+
 	cfg := OAuthConfig{
 		GoogleClientID:     "google-id",
 		GoogleClientSecret: "google-secret",
@@ -106,46 +113,60 @@ func TestOAuthConfig_NewProvider(t *testing.T) {
 	}
 
 	t.Run("google provider", func(t *testing.T) {
+		t.Parallel()
+
 		p := cfg.NewProvider("google")
 		if p == nil {
 			t.Fatal("expected non-nil provider")
 		}
+
 		if p.Name() != "google" {
 			t.Errorf("Name() = %q, want %q", p.Name(), "google")
 		}
 	})
 
 	t.Run("github provider", func(t *testing.T) {
+		t.Parallel()
+
 		p := cfg.NewProvider("github")
 		if p == nil {
 			t.Fatal("expected non-nil provider")
 		}
+
 		if p.Name() != "github" {
 			t.Errorf("Name() = %q, want %q", p.Name(), "github")
 		}
 	})
 
 	t.Run("apple provider", func(t *testing.T) {
+		t.Parallel()
+
 		p := cfg.NewProvider("apple")
 		if p == nil {
 			t.Fatal("expected non-nil provider")
 		}
+
 		if p.Name() != "apple" {
 			t.Errorf("Name() = %q, want %q", p.Name(), "apple")
 		}
 	})
 
 	t.Run("facebook provider", func(t *testing.T) {
+		t.Parallel()
+
 		p := cfg.NewProvider("facebook")
 		if p == nil {
 			t.Fatal("expected non-nil provider")
 		}
+
 		if p.Name() != "facebook" {
 			t.Errorf("Name() = %q, want %q", p.Name(), "facebook")
 		}
 	})
 
 	t.Run("unsupported provider", func(t *testing.T) {
+		t.Parallel()
+
 		p := cfg.NewProvider("twitter")
 		if p != nil {
 			t.Error("expected nil for unsupported provider")
@@ -153,6 +174,8 @@ func TestOAuthConfig_NewProvider(t *testing.T) {
 	})
 
 	t.Run("case insensitive", func(t *testing.T) {
+		t.Parallel()
+
 		p := cfg.NewProvider("Google")
 		if p == nil {
 			t.Fatal("expected non-nil for case-insensitive match")
@@ -161,6 +184,8 @@ func TestOAuthConfig_NewProvider(t *testing.T) {
 }
 
 func TestOAuthConfig_NewProvider_NotConfigured(t *testing.T) {
+	t.Parallel()
+
 	cfg := OAuthConfig{} // empty config
 
 	p := cfg.NewProvider("google")
@@ -185,10 +210,13 @@ func TestOAuthConfig_NewProvider_NotConfigured(t *testing.T) {
 }
 
 func TestGenerateOAuthState(t *testing.T) {
+	t.Parallel()
+
 	state1, err := GenerateOAuthState()
 	if err != nil {
 		t.Fatalf("GenerateOAuthState failed: %v", err)
 	}
+
 	if state1 == "" {
 		t.Error("expected non-empty state")
 	}
@@ -205,6 +233,8 @@ func TestGenerateOAuthState(t *testing.T) {
 }
 
 func TestValidateOAuthState(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		expected string
@@ -245,6 +275,8 @@ func TestValidateOAuthState(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			result := ValidateOAuthState(tt.expected, tt.received)
 			if result != tt.want {
 				t.Errorf("ValidateOAuthState(%q, %q) = %v, want %v",
@@ -255,6 +287,8 @@ func TestValidateOAuthState(t *testing.T) {
 }
 
 func TestGoogleProvider_AuthURL(t *testing.T) {
+	t.Parallel()
+
 	p := &googleProvider{
 		clientID:     "test-client-id",
 		clientSecret: "test-secret",
@@ -265,18 +299,23 @@ func TestGoogleProvider_AuthURL(t *testing.T) {
 	if url == "" {
 		t.Error("expected non-empty auth URL")
 	}
+
 	if !contains(url, "client_id=test-client-id") {
 		t.Error("auth URL should contain client_id")
 	}
+
 	if !contains(url, "state=test-state") {
 		t.Error("auth URL should contain state")
 	}
+
 	if !contains(url, "accounts.google.com") {
 		t.Error("auth URL should point to Google")
 	}
 }
 
 func TestGitHubProvider_AuthURL(t *testing.T) {
+	t.Parallel()
+
 	p := &githubProvider{
 		clientID:     "test-client-id",
 		clientSecret: "test-secret",
@@ -287,18 +326,22 @@ func TestGitHubProvider_AuthURL(t *testing.T) {
 	if url == "" {
 		t.Error("expected non-empty auth URL")
 	}
+
 	if !contains(url, "client_id=test-client-id") {
 		t.Error("auth URL should contain client_id")
 	}
+
 	if !contains(url, "state=test-state") {
 		t.Error("auth URL should contain state")
 	}
+
 	if !contains(url, "github.com") {
 		t.Error("auth URL should point to GitHub")
 	}
 }
 
 func TestTokenResponse(t *testing.T) {
+	t.Parallel()
 	// Verify that the tokenResponse struct has the expected fields
 	resp := tokenResponse{
 		AccessToken: "test-token",
@@ -310,39 +353,48 @@ func TestTokenResponse(t *testing.T) {
 }
 
 func TestAppleProvider_AuthURL(t *testing.T) {
+	t.Parallel()
+
 	p := &appleProvider{
-		clientID:    "test-apple-id",
-		teamID:      "test-team-id",
-		keyID:       "test-key-id",
+		clientID:      "test-apple-id",
+		teamID:        "test-team-id",
+		keyID:         "test-key-id",
 		privateKeyPEM: "test-key",
-		redirectURL: "http://localhost:8080/callback",
+		redirectURL:   "http://localhost:8080/callback",
 	}
 
 	authURL := p.AuthURL("test-state")
 	if authURL == "" {
 		t.Error("expected non-empty auth URL")
 	}
+
 	if !contains(authURL, "client_id=test-apple-id") {
 		t.Error("auth URL should contain client_id")
 	}
+
 	if !contains(authURL, "state=test-state") {
 		t.Error("auth URL should contain state")
 	}
+
 	if !contains(authURL, "appleid.apple.com") {
 		t.Error("auth URL should point to Apple")
 	}
+
 	if !contains(authURL, "scope=name+email") {
 		t.Error("auth URL should contain name and email scopes")
 	}
+
 	if !contains(authURL, "response_mode=form_post") {
 		t.Error("auth URL should use form_post response mode")
 	}
 }
 
 func TestFacebookProvider_AuthURL(t *testing.T) {
+	t.Parallel()
+
 	p := &facebookProvider{
-		appID:      "test-fb-id",
-		appSecret:  "test-fb-secret",
+		appID:       "test-fb-id",
+		appSecret:   "test-fb-secret",
 		redirectURL: "http://localhost:8080/callback",
 	}
 
@@ -350,18 +402,23 @@ func TestFacebookProvider_AuthURL(t *testing.T) {
 	if authURL == "" {
 		t.Error("expected non-empty auth URL")
 	}
+
 	if !contains(authURL, "client_id=test-fb-id") {
 		t.Error("auth URL should contain client_id")
 	}
+
 	if !contains(authURL, "state=test-state") {
 		t.Error("auth URL should contain state")
 	}
+
 	if !contains(authURL, "facebook.com") {
 		t.Error("auth URL should point to Facebook")
 	}
+
 	if !contains(authURL, "email") {
 		t.Error("auth URL should contain email scope")
 	}
+
 	if !contains(authURL, "public_profile") {
 		t.Error("auth URL should contain public_profile scope")
 	}
@@ -378,5 +435,6 @@ func containsSubstr(s, substr string) bool {
 			return true
 		}
 	}
+
 	return false
 }

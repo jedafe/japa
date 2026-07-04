@@ -23,14 +23,14 @@ import (
 // ---------------------------------------------------------------------------
 
 // RSSFeed is the top-level RSS 2.0 envelope.
-type RSSFeed struct {
+type RSSFeed struct { //nolint:revive // stuttering type name preserved for API compatibility
 	XMLName xml.Name   `xml:"rss"`
 	Version string     `xml:"version,attr"`
 	Channel RSSChannel `xml:"channel"`
 }
 
 // RSSChannel groups feed metadata and items.
-type RSSChannel struct {
+type RSSChannel struct { //nolint:revive // stuttering type name preserved for API compatibility
 	Title       string    `xml:"title"`
 	Link        string    `xml:"link"`
 	Description string    `xml:"description"`
@@ -39,7 +39,7 @@ type RSSChannel struct {
 }
 
 // RSSItem represents a single entry in the feed.
-type RSSItem struct {
+type RSSItem struct { //nolint:revive // stuttering type name preserved for API compatibility
 	Title       string `xml:"title"`
 	Link        string `xml:"link"`
 	Description string `xml:"description"`
@@ -64,6 +64,7 @@ func HandleFeed(pool *pgxpool.Pool, feedType string) http.HandlerFunc {
 		}
 
 		var contentFilter string
+
 		switch feedType {
 		case "blog":
 			contentFilter = "AND c.content_type = 'blog_post'"
@@ -75,6 +76,7 @@ func HandleFeed(pool *pgxpool.Pool, feedType string) http.HandlerFunc {
 		if err != nil {
 			slog.Error("rss: query feed", "feed_type", feedType, "error", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
+
 			return
 		}
 
@@ -109,6 +111,7 @@ func HandleSpaceFeed(pool *pgxpool.Pool) http.HandlerFunc {
 		if err != nil {
 			slog.Error("rss: query space feed", "slug", slug, "error", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
+
 			return
 		}
 		defer rows.Close()
@@ -146,6 +149,7 @@ func HandleTagFeed(pool *pgxpool.Pool) http.HandlerFunc {
 		if err != nil {
 			slog.Error("rss: query tag feed", "slug", slug, "error", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
+
 			return
 		}
 		defer rows.Close()
@@ -181,6 +185,7 @@ func HandleUserFeed(pool *pgxpool.Pool) http.HandlerFunc {
 		if err != nil {
 			slog.Error("rss: query user feed", "username", username, "error", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
+
 			return
 		}
 		defer rows.Close()
@@ -215,17 +220,21 @@ func queryFeedItems(r *http.Request, pool *pgxpool.Pool, tenantID pgtype.UUID, c
 // scanFeedItems iterates rows and builds RSS items, skipping any scan errors.
 func scanFeedItems(rows pgx.Rows) []RSSItem {
 	items := make([]RSSItem, 0, 20)
+
 	for rows.Next() {
 		var item RSSItem
+
 		var createdAt time.Time
 		if err := rows.Scan(&item.Title, &item.Link, &item.Description, &createdAt, &item.Author); err != nil {
 			slog.Warn("rss: scan row", "error", err)
 			continue
 		}
+
 		item.Link = "https://japaconnect.com/content/" + item.Link
 		item.PubDate = createdAt.Format(time.RFC1123Z)
 		items = append(items, item)
 	}
+
 	return items
 }
 
@@ -246,6 +255,7 @@ func serveRSSFeed(w http.ResponseWriter, title, link, description string, items 
 	}
 
 	w.WriteHeader(http.StatusOK)
+
 	if err := xml.NewEncoder(w).Encode(feed); err != nil {
 		slog.Error("rss: encode xml", "error", err)
 	}

@@ -32,6 +32,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -42,6 +43,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -49,6 +51,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -85,14 +88,17 @@ func parsePageSize(r *http.Request) int32 {
 	if s == "" {
 		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
 		return defaultPageSize
 	}
+
 	if n > maxPageSize {
 		return maxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageOffset extracts the page_offset query parameter.
@@ -101,11 +107,13 @@ func parsePageOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -118,11 +126,13 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	profile, err := h.Service.GetProfile(r.Context(), user.TenantID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
@@ -132,16 +142,19 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	username := chi.URLParam(r, "username")
 	if username == "" {
 		writeError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
 	}
+
 	profile, err := h.Service.GetProfileByUsername(r.Context(), tenantID, username)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
@@ -151,15 +164,18 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var req UpdateProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if err := h.Service.UpdateProfile(r.Context(), user.TenantID, user.UserID, &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
@@ -186,6 +202,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -199,11 +216,13 @@ func (h *Handlers) GetMyPreferences(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	prefs, err := h.Service.GetPreferences(r.Context(), user.TenantID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": prefs})
 }
 
@@ -213,14 +232,17 @@ func (h *Handlers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var req UpdatePreferencesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if err := h.Service.UpdatePreferences(r.Context(), user.TenantID, user.UserID, &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }

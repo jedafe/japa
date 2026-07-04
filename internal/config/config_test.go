@@ -8,6 +8,7 @@ import (
 // TestLoad_ReadsEnvironmentVariables verifies that Load picks up every JC_
 // environment variable and maps it to the correct Config field.
 func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
+	//nolint:paralleltest // t.Setenv is incompatible with t.Parallel
 	t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
 	t.Setenv("JC_REDIS_ADDR", "test-redis:6380")
 	t.Setenv("JC_MEILISEARCH_URL", "http://test-meili:7700")
@@ -55,6 +56,8 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if tt.got != tt.want {
 				t.Errorf("%s = %q, want %q", tt.name, tt.got, tt.want)
 			}
@@ -65,6 +68,7 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 // TestLoad_AppliesDefaults verifies that Load fills in development-safe
 // defaults when environment variables are not set.
 func TestLoad_AppliesDefaults(t *testing.T) {
+	t.Parallel()
 	// Clear all JC_ environment variables so defaults kick in.
 	clearAllJCEnv(t)
 
@@ -90,6 +94,8 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if tt.got != tt.want {
 				t.Errorf("%s = %q, want %q", tt.name, tt.got, tt.want)
 			}
@@ -100,6 +106,7 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 // TestLoad_JWTSecretDefaults verifies that JWTSecret defaults to empty string
 // (random key in dev) and JWTKeyID defaults to "key-dev".
 func TestLoad_JWTSecretDefaults(t *testing.T) {
+	t.Parallel()
 	// Clear all JC_ environment variables so defaults kick in.
 	clearAllJCEnv(t)
 
@@ -111,6 +118,7 @@ func TestLoad_JWTSecretDefaults(t *testing.T) {
 	if cfg.JWTSecret != "" {
 		t.Errorf("JWTSecret = %q, want empty string", cfg.JWTSecret)
 	}
+
 	if cfg.JWTKeyID != "key-dev" {
 		t.Errorf("JWTKeyID = %q, want %q", cfg.JWTKeyID, "key-dev")
 	}
@@ -118,6 +126,7 @@ func TestLoad_JWTSecretDefaults(t *testing.T) {
 
 // TestIsProduction verifies the IsProduction and IsDevelopment helpers.
 func TestIsProduction(t *testing.T) {
+	//nolint:paralleltest // subtests use t.Setenv which is incompatible with t.Parallel
 	tests := []struct {
 		name     string
 		env      string
@@ -133,18 +142,22 @@ func TestIsProduction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			//nolint:paralleltest // t.Setenv is incompatible with t.Parallel
 			if tt.env != "" {
 				t.Setenv("JC_ENV", tt.env)
 			} else {
 				os.Unsetenv("JC_ENV")
 			}
+
 			cfg, err := Load()
 			if err != nil {
 				t.Fatalf("Load returned unexpected error: %v", err)
 			}
+
 			if cfg.IsProduction() != tt.wantProd {
 				t.Errorf("IsProduction() = %v, want %v", cfg.IsProduction(), tt.wantProd)
 			}
+
 			if cfg.IsDevelopment() != tt.wantDev {
 				t.Errorf("IsDevelopment() = %v, want %v", cfg.IsDevelopment(), tt.wantDev)
 			}
@@ -154,6 +167,8 @@ func TestIsProduction(t *testing.T) {
 
 // TestMaskURL verifies that credentials in connection strings are hidden.
 func TestMaskURL(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
@@ -167,6 +182,8 @@ func TestMaskURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := maskURL(tt.input)
 			if got != tt.want {
 				t.Errorf("maskURL(%q) = %q, want %q", tt.input, got, tt.want)
@@ -179,6 +196,7 @@ func TestMaskURL(t *testing.T) {
 // default behavior without interference from the host environment.
 func clearAllJCEnv(t *testing.T) {
 	t.Helper()
+
 	for _, key := range []string{
 		"JC_DATABASE_URL",
 		"JC_REDIS_ADDR",

@@ -36,7 +36,9 @@ import (
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/mentorship"
 	mw "github.com/jedafe/japa/internal/middleware"
+	"github.com/jedafe/japa/internal/newsletter"
 	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/onboarding"
 	"github.com/jedafe/japa/internal/pagebuilder"
@@ -44,9 +46,10 @@ import (
 	"github.com/jedafe/japa/internal/professional"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
-	rsspkg "github.com/jedafe/japa/internal/rss"
+	"github.com/jedafe/japa/internal/referral"
 	"github.com/jedafe/japa/internal/renderer"
 	"github.com/jedafe/japa/internal/reviews"
+	rsspkg "github.com/jedafe/japa/internal/rss"
 	"github.com/jedafe/japa/internal/search"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/spaces"
@@ -56,9 +59,6 @@ import (
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/wallet"
-	"github.com/jedafe/japa/internal/mentorship"
-	"github.com/jedafe/japa/internal/newsletter"
-	"github.com/jedafe/japa/internal/referral"
 	"github.com/jedafe/japa/internal/webhooks"
 	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/worker"
@@ -67,7 +67,7 @@ import (
 // NewServer creates a fully configured Chi router with middleware and routes.
 func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Initialize error tracking (Section 27 — GlitchTip).
-	errtracking.InitSentry(cfg.GlitchtipDSN, cfg.ReleaseSHA)
+	errtracking.InitGlitchTip(cfg.GlitchtipDSN, cfg.ReleaseSHA)
 
 	r := chi.NewRouter()
 	RegisterMiddleware(r)
@@ -80,6 +80,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	if err != nil {
 		slog.Warn("geoip database not loaded", "error", err)
 	}
+
 	r.Use(geoip.Middleware(geoipReader))
 
 	// GeoIP updater for the maintenance: update_geoip_db task.
@@ -106,8 +107,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		if _, err := rand.Read(signingKey); err != nil {
 			slog.Error("generating random JWT key", "error", err)
 		}
+
 		slog.Warn("using random JWT key — sessions will not persist across restarts", "key_id", cfg.JWTKeyID)
 	}
+
 	kr := auth.NewKeyRotation(cfg.JWTKeyID, signingKey)
 
 	// Valkey client for cache, rate limiting, edit locks, brute-force
@@ -125,7 +128,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Auth handlers and DB store
 	authStore := auth.NewDBStore(database)
-	bruteForce := auth.NewValkeyBruteForceStore(vkClient)
+	bruteForce := auth.NewValkeyBruteForceStore(vkClient.Redis())
 	authHandlers := &auth.AuthHandlers{
 		DB:          authStore,
 		KeyRotation: kr,
@@ -143,6 +146,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// OAuth social login handlers — provider config from environment.
 	// Read Apple private key content from file if configured.
 	var applePrivateKeyPEM string
+
 	if cfg.OAuthApplePrivateKeyPath != "" {
 		data, err := os.ReadFile(cfg.OAuthApplePrivateKeyPath)
 		if err != nil {
@@ -151,6 +155,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			applePrivateKeyPEM = string(data)
 		}
 	}
+
 	oauthCfg := auth.OAuthConfig{
 		GoogleClientID:     cfg.OAuthGoogleID,
 		GoogleClientSecret: cfg.OAuthGoogleSecret,
@@ -181,6 +186,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	rbacStore := rbac.NewStore(database)
 	rbacStore.SetRBAC(rbacResolver)
 
+	// RBAC admin management handlers.
+	rbacHandlers := rbac.NewHandlers(rbacStore, rbacResolver)
+
 	// Bootstrap permission keys and the super_admin role at startup. All
 	// operations are idempotent; failures are logged but never crash the
 	// server so a temporarily unhealthy database does not prevent boot.
@@ -209,6 +217,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Link preview subsystem (Section 15 — Link Preview Fetch).
 	linkPreviewFetcher := linkpreview.NewFetcher(nil, vkClient)
 	linkPreviewHandlers := linkpreview.NewHandlers(linkPreviewFetcher)
+
+	// Register link preview processor for the worker's link_preview_fetch task.
+	linkPreviewAdapter := linkpreview.NewProcessorAdapter(linkPreviewFetcher)
+	worker.RegisterLinkPreviewProcessor(linkPreviewAdapter)
 
 	// Follow System subsystem (Section 31 — Follow System).
 	followService := follows.NewService(database)
@@ -242,7 +254,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Professional Profiles subsystem (Section 33 — Professional Profiles).
 	professionalService := professional.NewService(database)
-	professionalHandlers := professional.NewHandlers(professionalService)
+	professionalHandlers := professional.NewHandlers(professionalService, rbacResolver)
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
@@ -326,6 +338,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Newsletter subsystem (Section 33).
 	newsletterService := newsletter.NewService(database)
+	newsletterService.SetAsynqClient(asynqClient)
 	newsletterHandlers := newsletter.NewHandlers(newsletterService)
 
 	// Referral Program subsystem (Section 34).
@@ -346,6 +359,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// AI Core subsystem (Section 20 — AI Core).
 	aiDispatcher := ai.NewDispatcher()
+
+	// Register Xiaomi MiMo as the primary content generation provider.
+	if cfg.XiaomiAPIKey != "" {
+		xiaomiProvider := ai.NewXiaomiProvider(cfg.XiaomiAPIKey, "")
+		aiDispatcher.RegisterProvider("content_generation", xiaomiProvider)
+		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash)
+	}
+
 	aiStore := ai.NewStore(database.Reader, database.Writer)
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
 	aiToolRegistry := ai.NewToolRegistry(database)
@@ -360,6 +381,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Cache flusher for admin-only cache invalidation.
 	cacheFlusher := analytics.NewCacheFlusher(vkClient)
 	analyticsHandlers.SetCacheFlusher(cacheFlusher)
+
+	// Register no-op implementations for any processor interface that hasn't
+	// been wired to a real service yet. This ensures all Asynq task handlers
+	// degrade gracefully instead of crashing on a nil interface.
+	worker.RegisterNoopProcessors()
 
 	// Admin Impersonation subsystem (Section 46).
 	impersonationStore := impersonation.NewStore(vkClient.Redis())
@@ -389,6 +415,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// can upsert documents asynchronously.
 	searchIndexer := search.NewIndexer(meiliClient, gen.New(database.Reader))
 	worker.RegisterSearchIndexer(searchIndexer)
+
 	searchHandlers := search.NewHandlers(meiliClient)
 
 	// Onboarding subsystem (Section 09).
@@ -534,6 +561,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Space membership (join/leave toggle)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Post("/spaces/{slug}/join", spaceHandlers.ToggleSpaceMembership)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+				Get("/spaces/{slug}/members", spaceHandlers.ListMembers)
 
 			// Space rule routes (slug-resolved via SpaceResolver middleware)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
@@ -635,6 +664,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/notification-preferences/{type}", notificationHandlers.UpdatePreference)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/notification-types", notificationHandlers.ListNotificationTypes)
 
+			// Push Subscription routes (public VAPID key, authenticated subscribe/unsubscribe)
+			r.Get("/push/vapid-key", notificationHandlers.HandleGetVAPIDKey)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/push/subscribe", notificationHandlers.HandlePushSubscribe)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/push/subscribe", notificationHandlers.HandlePushUnsubscribe)
+
 			// Feed routes (Section 32 — Activity Feed / Timeline)
 			r.Get("/feed/explore", feedHandlers.GetExploreFeed) // public — no auth required
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/primary", feedHandlers.GetPrimaryFeed)
@@ -646,7 +680,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// PubSub bridge for multi-instance WebSocket scaling.
 			wsBridge := websocket.NewPubSubBridge(vkClient.Redis(), wsHub)
 			wsHub.SetPubSub(wsBridge)
+
 			go wsBridge.Start(context.Background())
+
 			wsService := websocket.NewService(database, wsHub)
 			wsDMStore := websocket.NewDMStore(gen.New(database.Reader), gen.New(database.Writer))
 			wsDMService := websocket.NewDMService(wsDMStore, wsHub)
@@ -696,8 +732,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/threads", forumHandlers.CreateThread)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/threads", forumHandlers.ListThreads)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/threads/{slug}", forumHandlers.GetThread)
+				r.Get("/forum/threads", forumHandlers.ListThreads)
+				r.Get("/forum/threads/{slug}", forumHandlers.GetThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.edit_own")).
 					Patch("/forum/threads/{id}", forumHandlers.UpdateThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.delete_own")).
@@ -707,7 +743,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				// Reply routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/threads/{id}/replies", forumHandlers.CreateReply)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/threads/{id}/replies", forumHandlers.ListReplies)
+				r.Get("/forum/threads/{id}/replies", forumHandlers.ListReplies)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.edit_own")).
 					Patch("/forum/replies/{id}", forumHandlers.UpdateReply)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.delete_own")).
@@ -720,15 +756,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
 					Post("/forum/polls", forumHandlers.CreatePoll)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/polls/{id}", forumHandlers.GetPoll)
+				r.Get("/forum/polls/{id}", forumHandlers.GetPoll)
 
 				// Tag routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.create")).
 					Post("/forum/tags", forumHandlers.CreateTag)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/tags", forumHandlers.ListTags)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
+				r.Get("/forum/tags", forumHandlers.ListTags)
+				r.Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/threads/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/forum/threads/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).Patch("/forum/tags/{id}", forumHandlers.UpdateTag)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).Delete("/forum/tags/{id}", forumHandlers.DeleteTag)
 
 				// Bookmark routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/bookmarks", forumHandlers.AddBookmark)
@@ -741,8 +779,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Series routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.create")).
 					Post("/blog/series", blogHandlers.CreateSeries)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/blog/series", blogHandlers.ListSeries)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/blog/series/{slug}", blogHandlers.GetSeries)
+				r.Get("/blog/series", blogHandlers.ListSeries)
+				r.Get("/blog/series/{slug}", blogHandlers.GetSeries)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
 					Patch("/blog/series/{id}", blogHandlers.UpdateSeries)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.delete")).
@@ -756,7 +794,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
 					Patch("/blog/series/{id}/posts/reorder", blogHandlers.ReorderSeriesPosts)
 
-				// Review routes
+				// Review routes (admin workflow — keep auth-required)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.create")).
 					Post("/blog/reviews", blogHandlers.CreateReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/blog/reviews", blogHandlers.ListReviews)
@@ -768,7 +806,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/blog/featured", blogHandlers.FeaturePost)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.feature")).
 					Delete("/blog/featured/{contentId}", blogHandlers.UnfeaturePost)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/blog/featured", blogHandlers.ListFeatured)
+				r.Get("/blog/featured", blogHandlers.ListFeatured)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.feature")).
 					Patch("/blog/featured/reorder", blogHandlers.ReorderFeatured)
 
@@ -779,9 +817,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Universal Ratings & Reviews routes — gated by feature.ratings_reviews (Section 29)
 			r.With(features.Gate(featureChecker, "feature.ratings_reviews")).Group(func(r chi.Router) {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews", reviewHandlers.CreateReview)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reviews", reviewHandlers.ListReviews)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reviews/aggregate", reviewHandlers.GetAggregate)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reviews/{id}", reviewHandlers.GetReview)
+				r.Get("/reviews", reviewHandlers.ListReviews)
+				r.Get("/reviews/aggregate", reviewHandlers.GetAggregate)
+				r.Get("/reviews/{id}", reviewHandlers.GetReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
@@ -890,6 +928,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/professional-profiles/{id}/verifiers", professionalHandlers.ListVerifiers)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
 					Post("/professional-profiles/{id}/verifiers", professionalHandlers.CreateVerifier)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
+					Delete("/professional-profiles/verifiers/{verifierId}", professionalHandlers.DeleteVerifier)
 			})
 
 			// Payment Core routes (Section 17 — Payment Core)
@@ -899,6 +939,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Webhooks (public - no auth required)
 			r.Post("/payments/webhook/paystack", paymentHandlers.HandlePaystackWebhook)
 			r.Post("/payments/webhook/stripe", paymentHandlers.HandleStripeWebhook)
+			r.Post("/payments/webhook/nowpayments", paymentHandlers.HandleNOWPaymentsWebhook)
 			// Payment listing and details
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/payments", paymentHandlers.ListPayments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/payments/{id}", paymentHandlers.GetPayment)
@@ -1143,7 +1184,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/users/me", usersHandlers.UpdateMyProfile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/me/preferences", usersHandlers.GetMyPreferences)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/users/me/preferences", usersHandlers.UpdateMyPreferences)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users", usersHandlers.ListUsers)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
 
 			// Onboarding routes (Section 09)
@@ -1207,6 +1248,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/newsletter/campaigns", newsletterHandlers.CreateCampaign)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
 				Patch("/admin/newsletter/campaigns/{id}", newsletterHandlers.UpdateCampaign)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
+				Post("/admin/newsletter/campaigns/{id}/send", newsletterHandlers.HandleSendCampaign)
 
 			// Referral Program admin routes (Section 34 — Referral)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "referral.admin")).
@@ -1343,6 +1386,34 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/settings", adminHandlers.ListSettings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Put("/admin/settings/{category}", adminHandlers.UpdateSettings)
+
+			// RBAC Management routes (admin)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Get("/admin/rbac/groups", rbacHandlers.ListGroups)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Post("/admin/rbac/groups", rbacHandlers.CreateGroup)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Delete("/admin/rbac/groups/{id}", rbacHandlers.DeleteGroup)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Get("/admin/rbac/groups/{id}/members", rbacHandlers.ListGroupMembers)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Post("/admin/rbac/groups/{id}/members", rbacHandlers.AddGroupMember)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Delete("/admin/rbac/groups/{id}/members/{userId}", rbacHandlers.RemoveGroupMember)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Get("/admin/rbac/permissions", rbacHandlers.ListPermissions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Get("/admin/rbac/roles", rbacHandlers.ListRoles)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Post("/admin/rbac/roles", rbacHandlers.CreateRole)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Get("/admin/rbac/roles/{id}/permissions", rbacHandlers.ListRolePermissions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Post("/admin/rbac/roles/{id}/permissions", rbacHandlers.AssignPermissionToRole)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Get("/admin/rbac/groups/{id}/roles", rbacHandlers.ListGroupRoles)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Post("/admin/rbac/groups/{id}/roles", rbacHandlers.AssignRoleToGroup)
 
 			// Admin Moderation routes (stubs)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
@@ -1546,6 +1617,8 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "ai.context.admin_view", Description: "View AI usage analytics (admin)"},
 		// Platform Settings (admin)
 		{Key: "admin.settings", Description: "Manage platform settings"},
+		// Admin RBAC Management
+		{Key: "admin.rbac.manage", Description: "Manage RBAC groups, roles, and permissions"},
 		// Admin Moderation
 		{Key: "admin.moderation", Description: "Manage content moderation queue"},
 		// Admin Broadcast
@@ -1603,6 +1676,7 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 
 	// Resolve the role ID (the INSERT above may have been a no-op).
 	var roleID pgtype.UUID
+
 	err = database.Reader.QueryRow(ctx, `
 		SELECT id FROM user_roles WHERE tenant_id = $1 AND slug = 'super_admin_role'
 	`, defaultTenantID).Scan(&roleID)
@@ -1613,6 +1687,7 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 
 	// Resolve the super_admin system group ID by slug.
 	var groupID pgtype.UUID
+
 	err = database.Reader.QueryRow(ctx, `
 		SELECT id FROM user_groups WHERE tenant_id = $1 AND slug = 'super_admin'
 	`, defaultTenantID).Scan(&groupID)
@@ -1671,6 +1746,7 @@ func StartWorker(cfg *worker.Config) (shutdown func(), err error) {
 
 	go func() {
 		slog.Info("asynq worker starting", "addr", worker.Addr(cfg))
+
 		if err := srv.Run(mux); err != nil {
 			slog.Error("asynq worker stopped", "error", err)
 		}

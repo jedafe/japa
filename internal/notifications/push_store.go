@@ -39,16 +39,20 @@ func (s *PushStore) GetPushSubscriptions(ctx context.Context, userID pgtype.UUID
 	defer rows.Close()
 
 	var subs []PushSubscription
+
 	for rows.Next() {
 		var sub PushSubscription
 		if err := rows.Scan(&sub.ID, &sub.UserID, &sub.Endpoint, &sub.P256DH, &sub.Auth); err != nil {
 			return nil, fmt.Errorf("scanning push subscription: %w", err)
 		}
+
 		subs = append(subs, sub)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating push subscriptions: %w", err)
 	}
+
 	return subs, nil
 }
 
@@ -62,6 +66,7 @@ func (s *PushStore) SavePushSubscription(ctx context.Context, userID pgtype.UUID
 	if err != nil {
 		return fmt.Errorf("upserting push subscription: %w", err)
 	}
+
 	return nil
 }
 
@@ -73,5 +78,6 @@ func (s *PushStore) DeletePushSubscription(ctx context.Context, userID pgtype.UU
 	if err != nil {
 		return fmt.Errorf("deleting push subscription: %w", err)
 	}
+
 	return nil
 }

@@ -45,14 +45,17 @@ func (sp *ScheduledPublisher) PublishReadyContent(ctx context.Context) (int, err
 	}
 
 	var pending []pendingContent
+
 	for rows.Next() {
 		var pc pendingContent
 		if err := rows.Scan(&pc.id, &pc.tenantID); err != nil {
 			slog.Error("scheduled_publish: scan error", "error", err)
 			continue
 		}
+
 		pending = append(pending, pc)
 	}
+
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
@@ -62,6 +65,7 @@ func (sp *ScheduledPublisher) PublishReadyContent(ctx context.Context) (int, err
 	}
 
 	published := 0
+
 	for _, pc := range pending {
 		_, err := sp.database.Writer.Exec(ctx, `
 			UPDATE contents
@@ -79,6 +83,7 @@ func (sp *ScheduledPublisher) PublishReadyContent(ctx context.Context) (int, err
 		}
 
 		published++
+
 		slog.Info("scheduled_publish: content published",
 			"content_id", pc.id.String(),
 			"tenant_id", pc.tenantID.String())

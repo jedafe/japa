@@ -9,7 +9,6 @@ package pagebuilder
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -114,17 +113,17 @@ type UpdateTemplateInput struct {
 
 // Theme represents a pagebuilder_themes row.
 type Theme struct {
-	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
-	Name       string             `json:"name"`
-	Slug       string             `json:"slug"`
-	Description *string           `json:"description"`
-	Colors     json.RawMessage    `json:"colors"`
-	Typography  json.RawMessage   `json:"typography"`
-	Spacing    json.RawMessage    `json:"spacing"`
-	IsDefault  bool               `json:"is_default"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Name        string             `json:"name"`
+	Slug        string             `json:"slug"`
+	Description *string            `json:"description"`
+	Colors      json.RawMessage    `json:"colors"`
+	Typography  json.RawMessage    `json:"typography"`
+	Spacing     json.RawMessage    `json:"spacing"`
+	IsDefault   bool               `json:"is_default"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 // CreateThemeInput holds parameters for creating a theme.
@@ -155,20 +154,20 @@ type UpdateThemeInput struct {
 
 // Page represents a pages row.
 type Page struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	TemplateID  *pgtype.UUID       `json:"template_id"`
-	ThemeID     *pgtype.UUID       `json:"theme_id"`
-	Blocks      json.RawMessage    `json:"blocks"`
-	Meta        json.RawMessage    `json:"meta"`
-	Status      string             `json:"status"`
+	ID          pgtype.UUID         `json:"id"`
+	TenantID    pgtype.UUID         `json:"tenant_id"`
+	Title       string              `json:"title"`
+	Slug        string              `json:"slug"`
+	Description *string             `json:"description"`
+	TemplateID  *pgtype.UUID        `json:"template_id"`
+	ThemeID     *pgtype.UUID        `json:"theme_id"`
+	Blocks      json.RawMessage     `json:"blocks"`
+	Meta        json.RawMessage     `json:"meta"`
+	Status      string              `json:"status"`
 	PublishedAt *pgtype.Timestamptz `json:"published_at"`
-	CreatedBy   *pgtype.UUID       `json:"created_by"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	CreatedBy   *pgtype.UUID        `json:"created_by"`
+	CreatedAt   pgtype.Timestamptz  `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz  `json:"updated_at"`
 }
 
 // CreatePageInput holds parameters for creating a page.
@@ -196,6 +195,3 @@ type UpdatePageInput struct {
 }
 
 // now returns the current time as a pgtype.Timestamptz.
-func now() pgtype.Timestamptz {
-	return pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
-}

@@ -21,10 +21,10 @@ import (
 
 // Seeded UUIDs — must match the values in the migration seed data.
 const (
-	tenantID         = "00000000-0000-0000-0000-000000000001"
+	tenantID          = "00000000-0000-0000-0000-000000000001"
 	superAdminGroupID = "00000000-0000-0000-0000-000000000010"
 	membersGroupID    = "00000000-0000-0000-0000-000000000020"
-	countrySpaceType = "00000000-0000-0000-0000-000000000060"
+	countrySpaceType  = "00000000-0000-0000-0000-000000000060"
 )
 
 // Default admin credentials.
@@ -63,10 +63,12 @@ func run() error {
 	}
 
 	ctx := context.Background()
+
 	database, err := db.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
+
 	defer database.Close()
 
 	// Parse the tenant ID once.
@@ -74,7 +76,9 @@ func run() error {
 
 	// ── Check if admin already exists (idempotent) ─────────────────────
 	var existingID pgtype.UUID
-	err = database.Reader.QueryRow(ctx,
+
+	err = database.Reader.QueryRow(
+		ctx,
 		`SELECT id FROM users WHERE tenant_id = $1 AND email = $2`, tid, adminEmail,
 	).Scan(&existingID)
 	if err == nil {
@@ -89,7 +93,9 @@ func run() error {
 	}
 
 	var userID pgtype.UUID
-	err = database.Writer.QueryRow(ctx,
+
+	err = database.Writer.QueryRow(
+		ctx,
 		`INSERT INTO users (tenant_id, email, username, password_hash, profile_type, status)
 		 VALUES ($1, $2, $3, $4, 'personal', 'active')
 		 RETURNING id`, tid, adminEmail, adminUsername, hash,
@@ -97,16 +103,19 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating admin user: %w", err)
 	}
+
 	fmt.Printf("seed: created admin user %s (%s)\n", adminEmail, userID.String())
 
 	// ── Create user profile ────────────────────────────────────────────
-	_, err = database.Writer.Exec(ctx,
+	_, err = database.Writer.Exec(
+		ctx,
 		`INSERT INTO user_profiles (tenant_id, user_id, display_name)
 		 VALUES ($1, $2, $3)`, tid, userID, adminDisplayName,
 	)
 	if err != nil {
 		return fmt.Errorf("creating admin profile: %w", err)
 	}
+
 	fmt.Println("seed: created admin profile")
 
 	// ── Add admin to system groups ─────────────────────────────────────
@@ -118,7 +127,9 @@ func run() error {
 		{name: "members", id: membersGroupID},
 	} {
 		gid := parseUUID(groupPair.id)
-		_, err = database.Writer.Exec(ctx,
+
+		_, err = database.Writer.Exec(
+			ctx,
 			`INSERT INTO user_group_memberships (tenant_id, user_id, group_id)
 			 VALUES ($1, $2, $3)
 			 ON CONFLICT (tenant_id, user_id, group_id) DO NOTHING`, tid, userID, gid,
@@ -126,6 +137,7 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("adding admin to %s group: %w", groupPair.name, err)
 		}
+
 		fmt.Printf("seed: added admin to %s group\n", groupPair.name)
 	}
 
@@ -134,7 +146,9 @@ func run() error {
 
 	for _, s := range defaultSpaces {
 		var spaceID pgtype.UUID
-		err = database.Writer.QueryRow(ctx,
+
+		err = database.Writer.QueryRow(
+			ctx,
 			`INSERT INTO spaces (
 				tenant_id, space_type_id, name, slug, description, level,
 				visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status
@@ -148,7 +162,8 @@ func run() error {
 		}
 
 		// Add admin as member of the space.
-		_, err = database.Writer.Exec(ctx,
+		_, err = database.Writer.Exec(
+			ctx,
 			`INSERT INTO space_members (space_id, user_id, tenant_id, role)
 			 VALUES ($1, $2, $3, 'admin')
 			 ON CONFLICT (space_id, user_id) DO NOTHING`, spaceID, userID, tid,
@@ -161,7 +176,8 @@ func run() error {
 	}
 
 	// ── Create user preferences ────────────────────────────────────────
-	_, err = database.Writer.Exec(ctx,
+	_, err = database.Writer.Exec(
+		ctx,
 		`INSERT INTO user_preferences (tenant_id, user_id, dark_mode, language)
 		 VALUES ($1, $2, 'system', 'en-NG')
 		 ON CONFLICT (tenant_id, user_id) DO NOTHING`, tid, userID,
@@ -169,9 +185,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating user preferences: %w", err)
 	}
+
 	fmt.Println("seed: created user preferences")
 
 	fmt.Println("\nseed: complete ✓")
+
 	return nil
 }
 
@@ -182,5 +200,6 @@ func parseUUID(s string) pgtype.UUID {
 	if err := u.Scan(s); err != nil {
 		panic("seed: invalid UUID constant " + s + ": " + err.Error())
 	}
+
 	return u
 }

@@ -2,6 +2,7 @@ package media
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,7 +36,7 @@ func NewClamAVClient(addr string) *ClamAVClient {
 
 // ScanResult represents the outcome of a ClamAV scan.
 type ScanResult struct {
-	Clean    bool
+	Clean     bool
 	VirusName string
 }
 
@@ -52,7 +53,8 @@ func (c *ClamAVClient) Scan(reader io.Reader) (ScanResult, error) {
 	if err != nil {
 		return ScanResult{}, fmt.Errorf("clamav connect %s: %w", c.addr, err)
 	}
-	defer conn.Close()
+
+	defer func() { _ = conn.Close() }()
 
 	// Set overall deadline for the scan operation.
 	if err := conn.SetDeadline(time.Now().Add(c.timeout)); err != nil {
@@ -69,6 +71,7 @@ func (c *ClamAVClient) Scan(reader io.Reader) (ScanResult, error) {
 	// zero-length chunk.
 	const chunkSize = 2048
 	buf := make([]byte, chunkSize+4) // 4-byte length prefix + data
+
 	for {
 		n, readErr := io.ReadFull(reader, buf[4:4+chunkSize])
 		if n > 0 {
@@ -77,10 +80,12 @@ func (c *ClamAVClient) Scan(reader io.Reader) (ScanResult, error) {
 			buf[1] = byte(n >> 16)
 			buf[2] = byte(n >> 8)
 			buf[3] = byte(n)
+
 			if _, err := conn.Write(buf[:4+n]); err != nil {
 				return ScanResult{}, fmt.Errorf("clamav send chunk: %w", err)
 			}
 		}
+
 		if readErr != nil {
 			break // EOF or error — both terminate the stream
 		}
@@ -95,10 +100,11 @@ func (c *ClamAVClient) Scan(reader io.Reader) (ScanResult, error) {
 	// Read the response line.
 	scanner := bufio.NewScanner(conn)
 	if !scanner.Scan() {
-		return ScanResult{}, fmt.Errorf("clamav: no response from daemon")
+		return ScanResult{}, errors.New("clamav: no response from daemon")
 	}
 
 	line := strings.TrimSpace(scanner.Text())
+
 	return parseClamAVResponse(line), nil
 }
 
@@ -113,10 +119,12 @@ func parseClamAVResponse(line string) ScanResult {
 		virus := strings.TrimSuffix(line, " FOUND")
 		virus = strings.TrimPrefix(virus, "stream: ")
 		slog.Warn("clamav: virus detected", "virus", virus)
+
 		return ScanResult{Clean: false, VirusName: virus}
 	}
 
 	// "stream: ..." error or unexpected response — treat as scan failure.
 	slog.Error("clamav: unexpected response", "response", line)
+
 	return ScanResult{Clean: false, VirusName: "scan_error: " + line}
 }

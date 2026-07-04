@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pquerna/otp/totp"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pquerna/otp/totp"
 )
 
 // TOTPIssuer is the issuer label shown in authenticator apps.
@@ -46,9 +47,9 @@ type TOTPRecord struct {
 // Returns the raw secret (for QR code generation) and an otpauth:// URL
 // that authenticator apps can scan. The secret is NOT stored — call
 // EnableTOTP after the user verifies a code.
-func GenerateTOTPSecret(userID, email string) (secret string, qrCodeURL string, err error) {
+func GenerateTOTPSecret(userID, email string) (secret, qrCodeURL string, err error) {
 	if userID == "" || email == "" {
-		return "", "", fmt.Errorf("user ID and email are required")
+		return "", "", errors.New("user ID and email are required")
 	}
 
 	key, err := totp.Generate(totp.GenerateOpts{
@@ -72,11 +73,13 @@ func GenerateBackupCodes() ([]string, error) {
 			return nil, fmt.Errorf("generating backup code: %w", err)
 		}
 		// Format: XXXX-XXXX (8 hex characters with a dash)
-		codes[i] = fmt.Sprintf("%s-%s",
+		codes[i] = fmt.Sprintf(
+			"%s-%s",
 			base32.StdEncoding.EncodeToString(buf[:2])[:4],
 			base32.StdEncoding.EncodeToString(buf[2:])[:4],
 		)
 	}
+
 	return codes, nil
 }
 
@@ -93,16 +96,16 @@ func VerifyTOTP(secret, code string) bool {
 // Returns an error if the code is invalid or the database operation fails.
 func EnableTOTP(ctx context.Context, store TOTPStore, userID pgtype.UUID, code string) error {
 	if !userID.Valid {
-		return fmt.Errorf("invalid user ID")
+		return errors.New("invalid user ID")
 	}
 
 	record, err := store.GetTOTPSecret(ctx, userID)
 	if err != nil || record == nil {
-		return fmt.Errorf("TOTP not set up — run setup first")
+		return errors.New("TOTP not set up — run setup first")
 	}
 
 	if record.Enabled {
-		return fmt.Errorf("2FA is already enabled")
+		return errors.New("2FA is already enabled")
 	}
 
 	plaintext, err := decryptSecret(record.SecretEncrypted)
@@ -111,7 +114,7 @@ func EnableTOTP(ctx context.Context, store TOTPStore, userID pgtype.UUID, code s
 	}
 
 	if !VerifyTOTP(plaintext, code) {
-		return fmt.Errorf("invalid verification code")
+		return errors.New("invalid verification code")
 	}
 
 	return store.EnableTOTP(ctx, userID)
@@ -122,16 +125,16 @@ func EnableTOTP(ctx context.Context, store TOTPStore, userID pgtype.UUID, code s
 // preventing an attacker who gains session access from turning off 2FA.
 func DisableTOTP(ctx context.Context, store TOTPStore, userID pgtype.UUID, code string) error {
 	if !userID.Valid {
-		return fmt.Errorf("invalid user ID")
+		return errors.New("invalid user ID")
 	}
 
 	record, err := store.GetTOTPSecret(ctx, userID)
 	if err != nil || record == nil {
-		return fmt.Errorf("TOTP not set up")
+		return errors.New("TOTP not set up")
 	}
 
 	if !record.Enabled {
-		return fmt.Errorf("2FA is not enabled")
+		return errors.New("2FA is not enabled")
 	}
 
 	plaintext, err := decryptSecret(record.SecretEncrypted)
@@ -140,7 +143,7 @@ func DisableTOTP(ctx context.Context, store TOTPStore, userID pgtype.UUID, code 
 	}
 
 	if !VerifyTOTP(plaintext, code) {
-		return fmt.Errorf("invalid verification code")
+		return errors.New("invalid verification code")
 	}
 
 	return store.DisableTOTP(ctx, userID)
@@ -174,6 +177,7 @@ func encryptSecret(secret string) (string, error) {
 	}
 
 	ciphertext := gcm.Seal(nil, nonce, []byte(secret), nil)
+
 	return fmt.Sprintf("v1:%s:%s", hex.EncodeToString(nonce), hex.EncodeToString(ciphertext)), nil
 }
 
@@ -229,14 +233,18 @@ func loadEncryptionKey() ([]byte, error) {
 	if raw == "" {
 		env := os.Getenv("JC_ENV")
 		if strings.EqualFold(env, "production") {
-			return nil, fmt.Errorf("JC_TOTP_ENCRYPTION_KEY is required in production")
+			return nil, errors.New("JC_TOTP_ENCRYPTION_KEY is required in production")
 		}
+
 		slog.Warn("JC_TOTP_ENCRYPTION_KEY not set — TOTP secrets stored without encryption (dev only)")
 		// Return a deterministic dev-only key so encrypt/decrypt round-trip works.
 		devKey := sha256.Sum256([]byte("japaconnect-dev-totp-key"))
+
 		return devKey[:], nil
 	}
+
 	hash := sha256.Sum256([]byte(raw))
+
 	return hash[:], nil
 }
 
@@ -246,6 +254,7 @@ func FormatBackupCodes(codes []string) string {
 	for i, c := range codes {
 		quoted[i] = fmt.Sprintf("%q", c)
 	}
+
 	return fmt.Sprintf("[%s]", strings.Join(quoted, ","))
 }
 

@@ -24,6 +24,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for comparison HTTP handlers.
 type Handlers struct {
 	Service *Service
@@ -44,6 +46,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("invalid %s: %w", param, err)
 	}
+
 	return id, nil
 }
 
@@ -54,6 +57,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -64,6 +68,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -85,6 +90,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -101,16 +107,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -119,11 +128,13 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +147,7 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -149,14 +161,17 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 		FieldGroupID string `json:"field_group_id"`
 		ItemLabel    string `json:"item_label"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if input.Slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
@@ -187,6 +202,7 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
@@ -196,6 +212,7 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -209,6 +226,7 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
@@ -218,6 +236,7 @@ func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -234,6 +253,7 @@ func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -243,10 +263,12 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
@@ -259,10 +281,12 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 		Icon        string `json:"icon"`
 		ItemLabel   string `json:"item_label"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
@@ -278,6 +302,7 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -287,10 +312,12 @@ func (h *Handlers) DeleteComparisonType(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
@@ -301,6 +328,7 @@ func (h *Handlers) DeleteComparisonType(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -314,10 +342,12 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+
 	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	typeID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
@@ -330,6 +360,7 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 		CanFill     bool   `json:"can_fill"`
 		AICanFill   bool   `json:"ai_can_fill"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -352,6 +383,7 @@ func (h *Handlers) SetComparisonTypeAccess(w http.ResponseWriter, r *http.Reques
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
@@ -361,6 +393,7 @@ func (h *Handlers) ListComparisonTypeAccess(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+
 	typeID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison type ID")
@@ -372,6 +405,7 @@ func (h *Handlers) ListComparisonTypeAccess(w http.ResponseWriter, r *http.Reque
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": access})
 }
 
@@ -385,49 +419,49 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	var input struct {
-		Title       string `json:"title"`
-		Body        string `json:"body"`
-		Visibility  string `json:"visibility"`
-		SpaceID     string `json:"space_id"`
+		Title      string `json:"title"`
+		Body       string `json:"body"`
+		Visibility string `json:"visibility"`
+		SpaceID    string `json:"space_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
 		return
 	}
 
-	visibility := input.Visibility
-	if visibility == "" {
-		visibility = "members"
-	}
-
 	var spaceID pgtype.UUID
 	if input.SpaceID != "" {
-		_ = spaceID.Scan(input.SpaceID)
+		if err := spaceID.Scan(input.SpaceID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
+			return
+		}
 	}
 
-	// Note: This creates a content row with content_type='comparison'.
-	// The actual content creation is delegated to the content service
-	// via the content_id returned. For now we store the comparison
-	// metadata directly.
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"data": map[string]any{
-			"user_id":    user.UserID,
-			"tenant_id":  tenantID,
-			"title":      input.Title,
-			"space_id":   spaceID,
-			"visibility": visibility,
-		},
+	result, err := h.Service.CreateComparison(r.Context(), tenantID, user.UserID, CreateComparisonInput{
+		Title:      input.Title,
+		Body:       input.Body,
+		Visibility: input.Visibility,
+		SpaceID:    spaceID,
 	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // GetComparison handles GET /api/v1/comparison/{id}.
@@ -436,10 +470,12 @@ func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
@@ -451,6 +487,7 @@ func (h *Handlers) GetComparison(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	dimensions, err := h.Service.ListComparisonDimensions(r.Context(), contentID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -472,10 +509,12 @@ func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
@@ -487,6 +526,7 @@ func (h *Handlers) GetComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": matrix})
 }
 
@@ -500,10 +540,12 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
@@ -517,10 +559,12 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		GeoSpaceID  string `json:"geo_space_id"`
 		Position    int32  `json:"position"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
 		return
@@ -530,6 +574,7 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	if input.ImageID != "" {
 		_ = imageID.Scan(input.ImageID)
 	}
+
 	if input.GeoSpaceID != "" {
 		_ = geoSpaceID.Scan(input.GeoSpaceID)
 	}
@@ -546,6 +591,7 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": item})
 }
 
@@ -555,10 +601,12 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
@@ -572,10 +620,12 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		GeoSpaceID  string `json:"geo_space_id"`
 		Position    int32  `json:"position"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "missing_title", "title is required")
 		return
@@ -585,6 +635,7 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	if input.ImageID != "" {
 		_ = imageID.Scan(input.ImageID)
 	}
+
 	if input.GeoSpaceID != "" {
 		_ = geoSpaceID.Scan(input.GeoSpaceID)
 	}
@@ -600,6 +651,7 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": item})
 }
 
@@ -609,10 +661,12 @@ func (h *Handlers) DeleteComparisonItem(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
@@ -623,6 +677,7 @@ func (h *Handlers) DeleteComparisonItem(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -636,10 +691,12 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
@@ -651,18 +708,22 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 		DimensionType string `json:"dimension_type"`
 		Position      int32  `json:"position"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Label == "" {
 		writeError(w, http.StatusBadRequest, "missing_label", "label is required")
 		return
 	}
+
 	if input.DimensionType == "" {
 		writeError(w, http.StatusBadRequest, "missing_dimension_type", "dimension_type is required")
 		return
 	}
+
 	if !IsValidDimensionType(input.DimensionType) {
 		writeError(w, http.StatusBadRequest, "invalid_dimension_type", "Invalid dimension type")
 		return
@@ -678,6 +739,7 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": dim})
 }
 
@@ -687,10 +749,12 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid dimension ID")
@@ -702,14 +766,17 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 		DimensionType string `json:"dimension_type"`
 		Position      int32  `json:"position"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Label == "" {
 		writeError(w, http.StatusBadRequest, "missing_label", "label is required")
 		return
 	}
+
 	if !IsValidDimensionType(input.DimensionType) {
 		writeError(w, http.StatusBadRequest, "invalid_dimension_type", "Invalid dimension type")
 		return
@@ -724,6 +791,7 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": dim})
 }
 
@@ -733,10 +801,12 @@ func (h *Handlers) DeleteComparisonDimension(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid dimension ID")
@@ -747,6 +817,7 @@ func (h *Handlers) DeleteComparisonDimension(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -760,10 +831,12 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	dimensionID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid dimension ID")
@@ -772,18 +845,20 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 
 	var input struct {
 		Values []struct {
-			ItemID       string  `json:"item_id"`
-			Value        string  `json:"value"`
+			ItemID       string   `json:"item_id"`
+			Value        string   `json:"value"`
 			ValueRating  *float64 `json:"value_rating"`
-			ValueBoolean *bool   `json:"value_boolean"`
+			ValueBoolean *bool    `json:"value_boolean"`
 		} `json:"values"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	results := make([]gen.ComparisonValue, 0, len(input.Values))
+
 	for _, v := range input.Values {
 		var itemID pgtype.UUID
 		if err := itemID.Scan(v.ItemID); err != nil {
@@ -802,6 +877,7 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 			handleServiceError(w, err)
 			return
 		}
+
 		results = append(results, val)
 	}
 

@@ -6,7 +6,6 @@ package admin
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -29,8 +28,8 @@ type SettingDef struct {
 
 // SettingCategory groups related settings with display metadata.
 type SettingCategory struct {
-	Key      string      `json:"key"`
-	Label    string      `json:"label"`
+	Key      string       `json:"key"`
+	Label    string       `json:"label"`
 	Settings []SettingDef `json:"settings"`
 }
 
@@ -203,6 +202,7 @@ var settingCategoryOrder = []string{
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -221,6 +221,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -231,6 +232,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -246,6 +248,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -254,7 +257,8 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Fetch all settings for this tenant from the database.
-	rows, err := h.DB.Reader.Query(ctx,
+	rows, err := h.DB.Reader.Query(
+		ctx,
 		`SELECT key, value FROM system_settings WHERE tenant_id = $1`,
 		tenantID,
 	)
@@ -266,8 +270,10 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Build a map of stored values keyed by the short key (after the dot).
 	stored := make(map[string]any)
+
 	for rows.Next() {
 		var fullKey string
+
 		var value any
 		if err := rows.Scan(&fullKey, &value); err != nil {
 			continue
@@ -283,6 +289,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 	// Assemble the response by iterating over defined categories in order,
 	// merging stored values with the schema defaults.
 	result := make([]SettingCategory, 0, len(settingCategoryOrder))
+
 	for _, catKey := range settingCategoryOrder {
 		def, ok := defaultSettings[catKey]
 		if !ok {
@@ -319,6 +326,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -333,7 +341,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// Validate that the category exists in our schema.
 	def, ok := defaultSettings[category]
 	if !ok {
-		writeError(w, http.StatusNotFound, "invalid_category", fmt.Sprintf("Unknown settings category: %s", category))
+		writeError(w, http.StatusNotFound, "invalid_category", "Unknown settings category: "+category)
 		return
 	}
 
@@ -356,25 +364,29 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
 	tx, err := h.DB.Writer.Begin(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "tx_error", "Failed to start transaction")
 		return
 	}
-	defer tx.Rollback(ctx)
+
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Upsert each setting. Only keys defined in the schema are accepted.
 	var valueJSON []byte
+
 	for key, value := range updates {
 		if !validKeys[key] {
-			writeError(w, http.StatusBadRequest, "invalid_key", fmt.Sprintf("Unknown setting key: %s", key))
+			writeError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
 			return
 		}
 
 		fullKey := category + "." + key
+
 		valueJSON, err = json.Marshal(value)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Cannot serialize value for key: %s", key))
+			writeError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
 			return
 		}
 
@@ -385,7 +397,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			DO UPDATE SET value = EXCLUDED.value, updated_at = now()
 		`, tenantID, fullKey, string(valueJSON))
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "db_error", fmt.Sprintf("Failed to save setting: %s", key))
+			writeError(w, http.StatusInternalServerError, "db_error", "Failed to save setting: "+key)
 			return
 		}
 	}

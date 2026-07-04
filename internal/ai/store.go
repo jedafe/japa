@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -44,7 +45,9 @@ type HITLReview struct {
 // CreateHITLReview inserts a new HITL review record and returns it.
 func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLReview, error) {
 	var result HITLReview
-	err := s.write.QueryRow(ctx, `
+
+	err := s.write.QueryRow(
+		ctx, `
 		INSERT INTO ai_hitl_reviews
 			(tenant_id, content_id, content_type, ai_output, status)
 		VALUES ($1, $2, $3, $4, $5)
@@ -55,6 +58,7 @@ func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLRe
 	if err != nil {
 		return HITLReview{}, fmt.Errorf("creating HITL review: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -68,9 +72,11 @@ func (s *Store) ApproveHITLReview(ctx context.Context, reviewID, reviewerID pgty
 	if err != nil {
 		return fmt.Errorf("approving HITL review: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("not_found: review not found or already processed")
+		return errors.New("not_found: review not found or already processed")
 	}
+
 	return nil
 }
 
@@ -84,9 +90,11 @@ func (s *Store) RejectHITLReview(ctx context.Context, reviewID, reviewerID pgtyp
 	if err != nil {
 		return fmt.Errorf("rejecting HITL review: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("not_found: review not found or already processed")
+		return errors.New("not_found: review not found or already processed")
 	}
+
 	return nil
 }
 
@@ -95,6 +103,7 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 	if limit <= 0 {
 		limit = 20
 	}
+
 	rows, err := s.read.Query(ctx, `
 		SELECT id, tenant_id, content_id, content_type, ai_output, status, created_at
 		FROM ai_hitl_reviews
@@ -105,16 +114,20 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return nil, fmt.Errorf("listing pending HITL reviews: %w", err)
 	}
+
 	defer rows.Close()
 
 	var reviews []HITLReview
+
 	for rows.Next() {
 		var r HITLReview
 		if err := rows.Scan(&r.ID, &r.TenantID, &r.ContentID, &r.ContentType,
 			&r.AIOutput, &r.Status, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning HITL review: %w", err)
 		}
+
 		reviews = append(reviews, r)
 	}
+
 	return reviews, nil
 }

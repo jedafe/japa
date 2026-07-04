@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -26,10 +27,11 @@ type CreateProfessionalProfileTypeInput struct {
 // CreateProfessionalProfileType creates a new admin-defined profile type.
 func (s *Service) CreateProfessionalProfileType(ctx context.Context, tenantID pgtype.UUID, input CreateProfessionalProfileTypeInput) (gen.ProfessionalProfileType, error) {
 	if input.Name == "" {
-		return gen.ProfessionalProfileType{}, fmt.Errorf("name is required")
+		return gen.ProfessionalProfileType{}, errors.New("name is required")
 	}
+
 	if input.Slug == "" {
-		return gen.ProfessionalProfileType{}, fmt.Errorf("slug is required")
+		return gen.ProfessionalProfileType{}, errors.New("slug is required")
 	}
 
 	var icon *string
@@ -72,7 +74,7 @@ type UpdateProfessionalProfileTypeInput struct {
 // UpdateProfessionalProfileType updates an existing profile type.
 func (s *Service) UpdateProfessionalProfileType(ctx context.Context, id, tenantID pgtype.UUID, input UpdateProfessionalProfileTypeInput) (gen.ProfessionalProfileType, error) {
 	if input.Name == "" {
-		return gen.ProfessionalProfileType{}, fmt.Errorf("name is required")
+		return gen.ProfessionalProfileType{}, errors.New("name is required")
 	}
 
 	var icon *string
@@ -115,29 +117,35 @@ type CreateProfessionalProfileInput struct {
 // CreateProfessionalProfile creates a new professional profile.
 func (s *Service) CreateProfessionalProfile(ctx context.Context, tenantID, ownerUserID pgtype.UUID, input CreateProfessionalProfileInput) (gen.ProfessionalProfile, error) {
 	if input.Name == "" {
-		return gen.ProfessionalProfile{}, fmt.Errorf("name is required")
+		return gen.ProfessionalProfile{}, errors.New("name is required")
 	}
+
 	if input.Slug == "" {
-		return gen.ProfessionalProfile{}, fmt.Errorf("slug is required")
+		return gen.ProfessionalProfile{}, errors.New("slug is required")
 	}
 
 	var tagline *string
 	if input.Tagline != "" {
 		tagline = &input.Tagline
 	}
+
 	var description *string
 	if input.Description != "" {
 		description = &input.Description
 	}
+
 	var websiteURL *string
 	if input.WebsiteURL != "" {
 		websiteURL = &input.WebsiteURL
 	}
+
 	var verificationType *string
+
 	if input.VerificationType != "" {
 		if !IsValidVerificationType(input.VerificationType) {
 			return gen.ProfessionalProfile{}, fmt.Errorf("invalid verification type: %s", input.VerificationType)
 		}
+
 		verificationType = &input.VerificationType
 	}
 
@@ -212,8 +220,9 @@ type UpdateProfessionalProfileInput struct {
 // UpdateProfessionalProfile updates an existing profile.
 func (s *Service) UpdateProfessionalProfile(ctx context.Context, id, tenantID pgtype.UUID, input UpdateProfessionalProfileInput) (gen.ProfessionalProfile, error) {
 	if input.Name == "" {
-		return gen.ProfessionalProfile{}, fmt.Errorf("name is required")
+		return gen.ProfessionalProfile{}, errors.New("name is required")
 	}
+
 	if input.Status != "" && !IsValidStatus(input.Status) {
 		return gen.ProfessionalProfile{}, fmt.Errorf("invalid status: %s", input.Status)
 	}
@@ -222,19 +231,24 @@ func (s *Service) UpdateProfessionalProfile(ctx context.Context, id, tenantID pg
 	if input.Tagline != "" {
 		tagline = &input.Tagline
 	}
+
 	var description *string
 	if input.Description != "" {
 		description = &input.Description
 	}
+
 	var websiteURL *string
 	if input.WebsiteURL != "" {
 		websiteURL = &input.WebsiteURL
 	}
+
 	var verificationType *string
+
 	if input.VerificationType != "" {
 		if !IsValidVerificationType(input.VerificationType) {
 			return gen.ProfessionalProfile{}, fmt.Errorf("invalid verification type: %s", input.VerificationType)
 		}
+
 		verificationType = &input.VerificationType
 	}
 
@@ -283,6 +297,7 @@ func (s *Service) AddMember(ctx context.Context, profileID, invitedBy pgtype.UUI
 	if input.Role == "" {
 		input.Role = MemberRoleMember
 	}
+
 	if !IsValidMemberRole(input.Role) {
 		return fmt.Errorf("invalid member role: %s", input.Role)
 	}
@@ -315,6 +330,7 @@ func (s *Service) UpdateMemberRole(ctx context.Context, profileID, userID pgtype
 	if !IsValidMemberRole(input.Role) {
 		return fmt.Errorf("invalid member role: %s", input.Role)
 	}
+
 	return s.store.updateProfessionalProfileMemberRole(ctx, profileID, userID, input.Role)
 }
 
@@ -338,6 +354,7 @@ func generateInvitationToken() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generating invitation token: %w", err)
 	}
+
 	return hex.EncodeToString(b), nil
 }
 
@@ -350,11 +367,13 @@ type CreateInvitationInput struct {
 // CreateInvitation creates a new invitation for the profile.
 func (s *Service) CreateInvitation(ctx context.Context, profileID, invitedBy pgtype.UUID, input CreateInvitationInput) (gen.ProfessionalProfileInvitation, error) {
 	if input.Email == "" {
-		return gen.ProfessionalProfileInvitation{}, fmt.Errorf("email is required")
+		return gen.ProfessionalProfileInvitation{}, errors.New("email is required")
 	}
+
 	if input.Role == "" {
 		input.Role = MemberRoleMember
 	}
+
 	if !IsValidMemberRole(input.Role) {
 		return gen.ProfessionalProfileInvitation{}, fmt.Errorf("invalid member role: %s", input.Role)
 	}
@@ -383,7 +402,7 @@ func (s *Service) CreateInvitation(ctx context.Context, profileID, invitedBy pgt
 func (s *Service) AcceptInvitation(ctx context.Context, token string, userID pgtype.UUID) error {
 	inv, err := s.store.getProfessionalProfileInvitationByToken(ctx, token)
 	if err != nil {
-		return fmt.Errorf("invalid or expired invitation")
+		return errors.New("invalid or expired invitation")
 	}
 
 	// Check if the invitation has expired by comparing with current time.
@@ -391,8 +410,9 @@ func (s *Service) AcceptInvitation(ctx context.Context, token string, userID pgt
 	if err := now.Scan("now()"); err != nil {
 		return fmt.Errorf("checking expiry: %w", err)
 	}
+
 	if inv.ExpiresAt.Time.Before(now.Time) {
-		return fmt.Errorf("invitation has expired")
+		return errors.New("invitation has expired")
 	}
 
 	// Accept the invitation.
@@ -430,14 +450,15 @@ type AuthorContext struct {
 
 // GetAuthorContext returns the author context for a user on a profile.
 // The user must be a member of the profile to post as it.
-func (s *Service) GetAuthorContext(ctx context.Context, profileID, userID, tenantID pgtype.UUID) (AuthorContext, error) {
+func (s *Service) GetAuthorContext(ctx context.Context, profileID, userID, _ pgtype.UUID) (AuthorContext, error) {
 	// Check if the user is a member of the profile.
 	isMember, err := s.store.isProfessionalProfileMember(ctx, profileID, userID)
 	if err != nil {
 		return AuthorContext{}, fmt.Errorf("checking membership: %w", err)
 	}
+
 	if !isMember {
-		return AuthorContext{}, fmt.Errorf("user is not a member of this profile")
+		return AuthorContext{}, errors.New("user is not a member of this profile")
 	}
 
 	return AuthorContext{
@@ -461,6 +482,7 @@ func (s *Service) CanPostAsProfile(ctx context.Context, profileID, userID, tenan
 	if err != nil {
 		return false, err
 	}
+
 	if isOwner {
 		return true, nil
 	}
@@ -468,7 +490,7 @@ func (s *Service) CanPostAsProfile(ctx context.Context, profileID, userID, tenan
 	// Member with editor or admin role can post.
 	member, err := s.store.getProfessionalProfileMember(ctx, profileID, userID)
 	if err != nil {
-		return false, nil // not a member
+		return false, nil //nolint:nilerr // intentional: not a member = not authorized
 	}
 
 	return member.Role == MemberRoleAdmin || member.Role == MemberRoleEditor, nil
@@ -499,12 +521,14 @@ type CreateRelocationInput struct {
 // CreateRelocation records a relocation entry for a professional profile.
 func (s *Service) CreateRelocation(ctx context.Context, tenantID, profileID pgtype.UUID, input CreateRelocationInput) (gen.ProfessionalRelocation, error) {
 	if input.Country == "" {
-		return gen.ProfessionalRelocation{}, fmt.Errorf("country is required")
+		return gen.ProfessionalRelocation{}, errors.New("country is required")
 	}
+
 	status := input.Status
 	if status == "" {
 		status = RelocationStatusPlanned
 	}
+
 	if !IsValidRelocationStatus(status) {
 		return gen.ProfessionalRelocation{}, fmt.Errorf("invalid relocation status: %s", status)
 	}
@@ -513,8 +537,9 @@ func (s *Service) CreateRelocation(ctx context.Context, tenantID, profileID pgty
 	if input.City != "" {
 		city = &input.City
 	}
-	var statusPtr *string
-	statusPtr = &status
+
+	statusPtr := &status
+
 	var year *int32
 	if input.Year != 0 {
 		year = &input.Year
@@ -554,14 +579,17 @@ func (s *Service) UpdateRelocation(ctx context.Context, id, tenantID pgtype.UUID
 	if input.Country != "" {
 		country = &input.Country
 	}
+
 	var city *string
 	if input.City != "" {
 		city = &input.City
 	}
+
 	var status *string
 	if input.Status != "" {
 		status = &input.Status
 	}
+
 	var year *int32
 	if input.Year != 0 {
 		year = &input.Year
@@ -597,16 +625,18 @@ type CreateDocumentInput struct {
 // CreateDocument records a credential document for a professional profile.
 func (s *Service) CreateDocument(ctx context.Context, tenantID, profileID pgtype.UUID, input CreateDocumentInput) (gen.ProfessionalDocument, error) {
 	if input.Title == "" {
-		return gen.ProfessionalDocument{}, fmt.Errorf("title is required")
+		return gen.ProfessionalDocument{}, errors.New("title is required")
 	}
+
 	if input.DocumentType == "" {
-		return gen.ProfessionalDocument{}, fmt.Errorf("document_type is required")
+		return gen.ProfessionalDocument{}, errors.New("document_type is required")
 	}
 
 	var description *string
 	if input.Description != "" {
 		description = &input.Description
 	}
+
 	var fileURL *string
 	if input.FileURL != "" {
 		fileURL = &input.FileURL
@@ -642,14 +672,17 @@ func (s *Service) UpdateDocument(ctx context.Context, id, tenantID pgtype.UUID, 
 	if input.Title != "" {
 		title = &input.Title
 	}
+
 	var documentType *string
 	if input.DocumentType != "" {
 		documentType = &input.DocumentType
 	}
+
 	var description *string
 	if input.Description != "" {
 		description = &input.Description
 	}
+
 	var fileURL *string
 	if input.FileURL != "" {
 		fileURL = &input.FileURL
@@ -687,6 +720,7 @@ func (s *Service) CreateVerifier(ctx context.Context, tenantID, profileID pgtype
 	if input.Role != "" {
 		role = &input.Role
 	}
+
 	status := VerifierStatusPending
 	statusPtr := &status
 
@@ -708,4 +742,42 @@ func (s *Service) ListVerifiers(ctx context.Context, profileID, tenantID pgtype.
 // DeleteVerifier removes a verifier entry.
 func (s *Service) DeleteVerifier(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.store.deleteProfessionalVerifier(ctx, id, tenantID)
+}
+
+// ---------------------------------------------------------------------------
+// Ownership helpers for child resource authorization
+// ---------------------------------------------------------------------------
+
+// GetRelocationProfileID returns the profile_id that owns the given relocation.
+func (s *Service) GetRelocationProfileID(ctx context.Context, relocationID, tenantID pgtype.UUID) (pgtype.UUID, error) {
+	return s.store.getRelocationProfileID(ctx, relocationID, tenantID)
+}
+
+// GetDocumentProfileID returns the profile_id that owns the given document.
+func (s *Service) GetDocumentProfileID(ctx context.Context, documentID, tenantID pgtype.UUID) (pgtype.UUID, error) {
+	return s.store.getDocumentProfileID(ctx, documentID, tenantID)
+}
+
+// GetVerifierProfileID returns the profile_id that owns the given verifier.
+// Uses raw SQL because verifiers have no dedicated GetByID sqlc query.
+func (s *Service) GetVerifierProfileID(ctx context.Context, verifierID, tenantID pgtype.UUID) (pgtype.UUID, error) {
+	query := `SELECT profile_id FROM professional_verifiers WHERE id = $1 AND tenant_id = $2`
+
+	var profileID pgtype.UUID
+
+	if err := s.db.Reader.QueryRow(ctx, query, verifierID, tenantID).Scan(&profileID); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("getting verifier profile ID: %w", err)
+	}
+
+	return profileID, nil
+}
+
+// IsAdminMember returns true if the user has an admin role in the profile.
+func (s *Service) IsAdminMember(ctx context.Context, profileID, userID pgtype.UUID) (bool, error) {
+	member, err := s.store.getProfessionalProfileMember(ctx, profileID, userID)
+	if err != nil {
+		return false, nil //nolint:nilerr // intentional: not a member = not admin
+	}
+
+	return member.Role == MemberRoleAdmin, nil
 }

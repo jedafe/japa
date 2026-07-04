@@ -58,6 +58,18 @@ WHERE tenant_id = @tenant_id
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
 
+-- name: ListForumThreadsByTenant :many
+SELECT id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
+       title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
+       vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
+       is_edited, created_at, updated_at, deleted_at
+FROM forum_threads
+WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
+  AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ORDER BY created_at DESC, id DESC
+LIMIT @page_limit;
+
 -- name: ListForumThreadsByTag :many
 SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
        ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,

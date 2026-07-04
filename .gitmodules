@@ -1,0 +1,3 @@
+[submodule ".jeos"]
+	path = .jeos
+	url = https://github.com/jedafe/japaconnect-engineering

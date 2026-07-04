@@ -42,11 +42,13 @@ func BotDetectionMiddleware(store *Store) func(http.Handler) http.Handler {
 
 			bots, err := store.GetBotsByUserAgent(r.Context(), t.ID, ua)
 			if err != nil {
-				slog.Warn("bot detection: failed to query bots",
+				slog.Warn(
+					"bot detection: failed to query bots",
 					"tenant_id", t.ID,
 					"error", err,
 				)
 				next.ServeHTTP(w, r)
+
 				return
 			}
 
@@ -88,6 +90,7 @@ func GetBotPolicy(ctx context.Context) BotPolicy {
 	if info := BotInfoFromContext(ctx); info != nil {
 		return info.Policy
 	}
+
 	return PolicyAllow
 }
 
@@ -97,5 +100,6 @@ func FilterUserAgentsForLogs(ua string) string {
 	if len(ua) > 256 {
 		ua = ua[:256]
 	}
+
 	return strings.NewReplacer("\n", "", "\r", "", "\t", "").Replace(ua)
 }

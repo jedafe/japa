@@ -16,13 +16,16 @@ type mockContentEmbedder struct {
 	returnErr error
 }
 
-func (m *mockContentEmbedder) EmbedContent(ctx context.Context, contentID, tenantID [16]byte, text string) error {
+func (m *mockContentEmbedder) EmbedContent(_ context.Context, _, _ [16]byte, text string) error {
 	m.callCount++
 	m.lastText = text
+
 	return m.returnErr
 }
 
 func TestContentEmbedderInterfaceCompliance(t *testing.T) {
+	t.Parallel()
+
 	var _ ContentEmbedder = (*mockContentEmbedder)(nil)
 }
 
@@ -31,6 +34,7 @@ func TestContentEmbedderInterfaceCompliance(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRegisterContentEmbedder(t *testing.T) {
+	t.Parallel()
 	// Reset global state.
 	contentEmbedder = nil
 
@@ -46,8 +50,11 @@ func TestRegisterContentEmbedder(t *testing.T) {
 }
 
 func TestRegisterContentEmbedder_Nil(t *testing.T) {
+	t.Parallel()
+
 	contentEmbedder = nil
 	RegisterContentEmbedder(nil)
+
 	if contentEmbedder != nil {
 		t.Error("expected nil after registering nil embedder")
 	}

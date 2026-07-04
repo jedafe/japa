@@ -12,6 +12,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestPublishAtMustBeInFuture(t *testing.T) {
+	t.Parallel()
 	// A time in the past should be rejected.
 	past := time.Now().Add(-1 * time.Hour)
 	if !past.Before(time.Now()) {
@@ -26,6 +27,7 @@ func TestPublishAtMustBeInFuture(t *testing.T) {
 }
 
 func TestPublishAtValidationInCreateHandler(t *testing.T) {
+	t.Parallel()
 	// Verify that the handler rejects publish_at in the past.
 	// This is a logic-level test — the actual HTTP handler test
 	// requires a database, so we test the validation logic directly.
@@ -43,16 +45,21 @@ func TestPublishAtValidationInCreateHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if tt.input == "" {
 				return // no publish_at set — handled by nil check
 			}
+
 			var ts pgtype.Timestamptz
 			if err := ts.Scan(tt.input); err != nil {
 				if !tt.wantErr {
 					t.Fatalf("unexpected scan error: %v", err)
 				}
+
 				return
 			}
+
 			isPast := ts.Valid && ts.Time.Before(now)
 			if isPast != tt.wantErr {
 				t.Errorf("publish_at=%s: wantErr=%v, got isPast=%v", tt.input, tt.wantErr, isPast)
@@ -66,6 +73,8 @@ func TestPublishAtValidationInCreateHandler(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEngagementStatsZeroValue(t *testing.T) {
+	t.Parallel()
+
 	var stats EngagementStats
 	if stats.Views != 0 || stats.VelocityScore != 0 {
 		t.Error("zero-valued EngagementStats should have all zero fields")
@@ -73,7 +82,9 @@ func TestEngagementStatsZeroValue(t *testing.T) {
 }
 
 func TestContentWithScore(t *testing.T) {
+	t.Parallel()
 	id := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
+
 	cs := ContentWithScore{
 		ContentID:     id,
 		VelocityScore: 42.5,
@@ -81,6 +92,7 @@ func TestContentWithScore(t *testing.T) {
 	if cs.VelocityScore != 42.5 {
 		t.Errorf("VelocityScore = %f, want 42.5", cs.VelocityScore)
 	}
+
 	if cs.ContentID != id {
 		t.Error("ContentID mismatch")
 	}
@@ -91,6 +103,7 @@ func TestContentWithScore(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestVelocityFormula(t *testing.T) {
+	t.Parallel()
 	// velocity = (views*1 + comments*5 + votes*10 + bookmarks*3 + shares*8) / hours_since_publish
 	// For 100 views, 10 comments, 5 votes, 3 bookmarks, 2 shares after 10 hours:
 	// (100*1 + 10*5 + 5*10 + 3*3 + 2*8) / 10 = (100 + 50 + 50 + 9 + 16) / 10 = 22.5
@@ -110,6 +123,7 @@ func TestVelocityFormula(t *testing.T) {
 }
 
 func TestVelocityFormulaZeroHours(t *testing.T) {
+	t.Parallel()
 	// Division by zero should produce 0 (handled by the SQL CASE).
 	views := float64(100)
 	hours := float64(0)

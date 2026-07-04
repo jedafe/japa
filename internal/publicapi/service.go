@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -32,6 +33,7 @@ func (s *Store) create(ctx context.Context, params createParams) (pgtype.UUID, e
 		RETURNING id
 	`, params.TenantID, params.UserID, params.Name, params.KeyPrefix, params.KeyHash,
 		params.Scopes, params.RateLimitTier, params.ExpiresAt).Scan(&id)
+
 	return id, err
 }
 
@@ -49,6 +51,7 @@ type createParams struct {
 // findByHash looks up an API key by its SHA-256 hash.
 func (s *Store) findByHash(ctx context.Context, keyHash string) (*apiKeyRow, error) {
 	var row apiKeyRow
+
 	err := s.dbPool.QueryRow(ctx, `
 		SELECT id, tenant_id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
 		FROM api_keys
@@ -59,6 +62,7 @@ func (s *Store) findByHash(ctx context.Context, keyHash string) (*apiKeyRow, err
 	if err != nil {
 		return nil, err
 	}
+
 	return &row, nil
 }
 
@@ -69,6 +73,7 @@ func (s *Store) incrementUsage(ctx context.Context, keyID pgtype.UUID) error {
 		SET request_count = request_count + 1, last_used_at = now(), updated_at = now()
 		WHERE id = $1
 	`, keyID)
+
 	return err
 }
 
@@ -86,6 +91,7 @@ func (s *Store) listByUser(ctx context.Context, userID pgtype.UUID) ([]apiKeyRow
 	defer rows.Close()
 
 	var result []apiKeyRow
+
 	for rows.Next() {
 		var row apiKeyRow
 		if err := rows.Scan(&row.ID, &row.TenantID, &row.UserID, &row.Name, &row.KeyPrefix,
@@ -93,8 +99,10 @@ func (s *Store) listByUser(ctx context.Context, userID pgtype.UUID) ([]apiKeyRow
 			&row.RequestCount, &row.ExpiresAt, &row.CreatedAt, &row.UpdatedAt); err != nil {
 			return nil, err
 		}
+
 		result = append(result, row)
 	}
+
 	return result, rows.Err()
 }
 
@@ -112,6 +120,7 @@ func (s *Store) listAll(ctx context.Context, limit, offset int32) ([]apiKeyRow, 
 	defer rows.Close()
 
 	var result []apiKeyRow
+
 	for rows.Next() {
 		var row apiKeyRow
 		if err := rows.Scan(&row.ID, &row.TenantID, &row.UserID, &row.Name, &row.KeyPrefix,
@@ -119,8 +128,10 @@ func (s *Store) listAll(ctx context.Context, limit, offset int32) ([]apiKeyRow, 
 			&row.RequestCount, &row.ExpiresAt, &row.CreatedAt, &row.UpdatedAt); err != nil {
 			return nil, err
 		}
+
 		result = append(result, row)
 	}
+
 	return result, rows.Err()
 }
 
@@ -129,6 +140,7 @@ func (s *Store) setStatus(ctx context.Context, keyID pgtype.UUID, status string)
 	_, err := s.dbPool.Exec(ctx, `
 		UPDATE api_keys SET status = $1, updated_at = now() WHERE id = $2
 	`, status, keyID)
+
 	return err
 }
 
@@ -184,6 +196,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID, tenantID pgtype.UUID
 	if _, err := rand.Read(rawBytes); err != nil {
 		return CreateAPIKeyResponse{}, fmt.Errorf("generate key: %w", err)
 	}
+
 	fullKey := "jc_live_" + hex.EncodeToString(rawBytes)
 
 	// Hash for storage.
@@ -198,6 +211,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID, tenantID pgtype.UUID
 	if len(scopes) == 0 {
 		scopes = []string{"api.read.*"}
 	}
+
 	tier := input.RateLimitTier
 	if tier == "" {
 		tier = "basic"
@@ -240,15 +254,16 @@ func (s *Service) ValidateAPIKey(ctx context.Context, key string) (*APIKeyContex
 
 	row, err := s.store.findByHash(ctx, keyHash)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("invalid or revoked API key")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("invalid or revoked API key")
 		}
+
 		return nil, fmt.Errorf("validate api key: %w", err)
 	}
 
 	// Check expiry.
 	if row.ExpiresAt != nil && row.ExpiresAt.Valid && row.ExpiresAt.Time.Before(time.Now()) {
-		return nil, fmt.Errorf("API key has expired")
+		return nil, errors.New("API key has expired")
 	}
 
 	// Increment usage (fire-and-forget — don't fail the request on counter errors).
@@ -270,10 +285,12 @@ func (s *Service) ListAPIKeys(ctx context.Context, userID pgtype.UUID) ([]APIKey
 	if err != nil {
 		return nil, fmt.Errorf("list api keys: %w", err)
 	}
+
 	result := make([]APIKey, len(rows))
 	for i, row := range rows {
 		result[i] = rowToAPIKey(row)
 	}
+
 	return result, nil
 }
 
@@ -283,10 +300,12 @@ func (s *Service) ListAllAPIKeys(ctx context.Context, limit, offset int32) ([]AP
 	if err != nil {
 		return nil, fmt.Errorf("list all api keys: %w", err)
 	}
+
 	result := make([]APIKey, len(rows))
 	for i, row := range rows {
 		result[i] = rowToAPIKey(row)
 	}
+
 	return result, nil
 }
 
@@ -294,18 +313,22 @@ func (s *Service) ListAllAPIKeys(ctx context.Context, limit, offset int32) ([]AP
 func (s *Service) RevokeAPIKey(ctx context.Context, userID, keyID pgtype.UUID) error {
 	// Verify the key belongs to the user.
 	var ownerID pgtype.UUID
+
 	err := s.store.dbPool.QueryRow(ctx, `
 		SELECT user_id FROM api_keys WHERE id = $1
 	`, keyID).Scan(&ownerID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return fmt.Errorf("api key not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors.New("api key not found")
 		}
+
 		return fmt.Errorf("revoke api key: %w", err)
 	}
+
 	if ownerID != userID {
-		return fmt.Errorf("api key does not belong to user")
+		return errors.New("api key does not belong to user")
 	}
+
 	return s.store.setStatus(ctx, keyID, "revoked")
 }
 
@@ -321,10 +344,11 @@ func (s *Service) SuspendAPIKey(ctx context.Context, keyID pgtype.UUID) error {
 // AddAllowedIP adds an IP or CIDR range to an API key's allowlist.
 func (s *Service) AddAllowedIP(ctx context.Context, keyID pgtype.UUID, cidr, description string) error {
 	if cidr == "" {
-		return fmt.Errorf("cidr is required")
+		return errors.New("cidr is required")
 	}
 	// Validate the CIDR/IP by attempting to parse it as inet.
 	var id pgtype.UUID
+
 	err := s.store.dbPool.QueryRow(ctx, `
 		INSERT INTO api_key_ip_allowlist (api_key_id, cidr, description)
 		VALUES ($1, $2::inet, $3)
@@ -333,6 +357,7 @@ func (s *Service) AddAllowedIP(ctx context.Context, keyID pgtype.UUID, cidr, des
 	if err != nil {
 		return fmt.Errorf("add allowed IP: %w", err)
 	}
+
 	return nil
 }
 
@@ -345,9 +370,11 @@ func (s *Service) RemoveAllowedIP(ctx context.Context, keyID, ipID pgtype.UUID) 
 	if err != nil {
 		return fmt.Errorf("remove allowed IP: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("allowlist entry not found")
+		return errors.New("allowlist entry not found")
 	}
+
 	return nil
 }
 
@@ -365,18 +392,23 @@ func (s *Service) ListAllowedIPs(ctx context.Context, keyID pgtype.UUID) ([]APIK
 	defer rows.Close()
 
 	var result []APIKeyIPAllowlist
+
 	for rows.Next() {
 		var entry APIKeyIPAllowlist
+
 		var id, apiKeyID pgtype.UUID
+
 		var createdAt pgtype.Timestamptz
 		if err := rows.Scan(&id, &apiKeyID, &entry.CIDR, &entry.Description, &createdAt); err != nil {
 			return nil, fmt.Errorf("scan allowed IP: %w", err)
 		}
+
 		entry.ID = id.String()
 		entry.APIKeyID = apiKeyID.String()
 		entry.CreatedAt = createdAt.Time.Format(time.RFC3339)
 		result = append(result, entry)
 	}
+
 	return result, rows.Err()
 }
 
@@ -384,6 +416,7 @@ func (s *Service) ListAllowedIPs(ctx context.Context, keyID pgtype.UUID) ([]APIK
 // Returns true if the allowlist is empty (no restriction) or if the IP matches.
 func (s *Service) hasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP string) (bool, error) {
 	var count int
+
 	err := s.store.dbPool.QueryRow(ctx, `
 		SELECT count(*) FROM api_key_ip_allowlist WHERE api_key_id = $1
 	`, keyID).Scan(&count)
@@ -396,6 +429,7 @@ func (s *Service) hasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP s
 	}
 	// Check if the client IP falls within any of the CIDR ranges.
 	var allowed int
+
 	err = s.store.dbPool.QueryRow(ctx, `
 		SELECT count(*) FROM api_key_ip_allowlist
 		WHERE api_key_id = $1 AND $2::inet <<= cidr
@@ -403,6 +437,7 @@ func (s *Service) hasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP s
 	if err != nil {
 		return false, fmt.Errorf("check IP against allowlist: %w", err)
 	}
+
 	return allowed > 0, nil
 }
 
@@ -412,6 +447,7 @@ func (s *Service) hasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP s
 func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (*CreateAPIKeyResponse, error) {
 	// Verify the key exists and belongs to the user.
 	var row apiKeyRow
+
 	err := s.store.dbPool.QueryRow(ctx, `
 		SELECT id, tenant_id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
 		FROM api_keys
@@ -420,13 +456,15 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 		&row.Scopes, &row.RateLimitTier, &row.Status, &row.LastUsedAt,
 		&row.RequestCount, &row.ExpiresAt, &row.CreatedAt, &row.UpdatedAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("api key not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("api key not found")
 		}
+
 		return nil, fmt.Errorf("rotate api key: %w", err)
 	}
+
 	if row.UserID != userID {
-		return nil, fmt.Errorf("api key does not belong to user")
+		return nil, errors.New("api key does not belong to user")
 	}
 
 	// Generate a new key with the same configuration.
@@ -434,6 +472,7 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 	if _, err := rand.Read(rawBytes); err != nil {
 		return nil, fmt.Errorf("generate key: %w", err)
 	}
+
 	fullKey := "jc_live_" + hex.EncodeToString(rawBytes)
 
 	hash := sha256.Sum256([]byte(fullKey))
@@ -450,7 +489,8 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 	if err != nil {
 		return nil, fmt.Errorf("rotate api key: begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck // rollback is a no-op after commit
+
+	defer func() { _ = tx.Rollback(ctx) }() //nolint:errcheck // rollback is a no-op after commit
 
 	// Expire the old key.
 	_, err = tx.Exec(ctx, `
@@ -464,6 +504,7 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 
 	// Insert the new key.
 	var newID pgtype.UUID
+
 	err = tx.QueryRow(ctx, `
 		INSERT INTO api_keys (tenant_id, user_id, name, key_prefix, key_hash, scopes, rate_limit_tier, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

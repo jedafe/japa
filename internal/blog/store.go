@@ -31,6 +31,7 @@ func (s *Store) createBlogSeries(ctx context.Context, p gen.CreateBlogSeriesPara
 	if err != nil {
 		return gen.BlogSeries{}, fmt.Errorf("creating blog series: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -39,6 +40,7 @@ func (s *Store) getBlogSeriesByID(ctx context.Context, id, tenantID pgtype.UUID)
 	if err != nil {
 		return gen.BlogSeries{}, fmt.Errorf("getting blog series by ID: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -47,6 +49,7 @@ func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string, tenantID p
 	if err != nil {
 		return gen.BlogSeries{}, fmt.Errorf("getting blog series by slug: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -54,14 +57,16 @@ func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListBlogSeriesByTenant(ctx, gen.ListBlogSeriesByTenantParams{
-		TenantID:    tenantID,
-		PageLimit:   limit,
-		PageOffset:  offset,
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing blog series by tenant: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -69,15 +74,17 @@ func (s *Store) listBlogSeriesByAuthor(ctx context.Context, tenantID, authorUser
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListBlogSeriesByAuthor(ctx, gen.ListBlogSeriesByAuthorParams{
-		TenantID:      tenantID,
-		AuthorUserID:  authorUserID,
-		PageLimit:     limit,
-		PageOffset:    offset,
+		TenantID:     tenantID,
+		AuthorUserID: authorUserID,
+		PageLimit:    limit,
+		PageOffset:   offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing blog series by author: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -86,6 +93,7 @@ func (s *Store) updateBlogSeries(ctx context.Context, p gen.UpdateBlogSeriesPara
 	if err != nil {
 		return gen.BlogSeries{}, fmt.Errorf("updating blog series: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -93,6 +101,7 @@ func (s *Store) deleteBlogSeries(ctx context.Context, id, tenantID pgtype.UUID) 
 	if err := s.write.DeleteBlogSeries(ctx, gen.DeleteBlogSeriesParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting blog series: %w", err)
 	}
+
 	return nil
 }
 
@@ -104,6 +113,7 @@ func (s *Store) addPostToSeries(ctx context.Context, p gen.AddPostToSeriesParams
 	if err := s.write.AddPostToSeries(ctx, p); err != nil {
 		return fmt.Errorf("adding post to series: %w", err)
 	}
+
 	return nil
 }
 
@@ -114,6 +124,7 @@ func (s *Store) removePostFromSeries(ctx context.Context, seriesID, contentID pg
 	}); err != nil {
 		return fmt.Errorf("removing post from series: %w", err)
 	}
+
 	return nil
 }
 
@@ -122,6 +133,7 @@ func (s *Store) listPostsInSeries(ctx context.Context, seriesID pgtype.UUID) ([]
 	if err != nil {
 		return nil, fmt.Errorf("listing posts in series: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -133,6 +145,7 @@ func (s *Store) reorderSeriesPosts(ctx context.Context, seriesID, contentID pgty
 	}); err != nil {
 		return fmt.Errorf("reordering series posts: %w", err)
 	}
+
 	return nil
 }
 
@@ -141,12 +154,14 @@ func (s *Store) reorderSeriesPosts(ctx context.Context, seriesID, contentID pgty
 func (s *Store) bulkReorderSeriesPosts(ctx context.Context, seriesID pgtype.UUID, posts []struct {
 	ContentID pgtype.UUID
 	Position  int32
-}) error {
+},
+) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning bulk reorder transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	q := s.write.WithTx(tx)
 
@@ -176,6 +191,7 @@ func (s *Store) createContentReview(ctx context.Context, p gen.CreateContentRevi
 	if err != nil {
 		return gen.ContentReview{}, fmt.Errorf("creating content review: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -184,6 +200,7 @@ func (s *Store) getContentReviewByID(ctx context.Context, id, tenantID pgtype.UU
 	if err != nil {
 		return gen.ContentReview{}, fmt.Errorf("getting content review by ID: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -195,6 +212,7 @@ func (s *Store) listContentReviewsByContent(ctx context.Context, contentID, tena
 	if err != nil {
 		return nil, fmt.Errorf("listing content reviews by content: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -202,6 +220,7 @@ func (s *Store) listPendingContentReviews(ctx context.Context, tenantID pgtype.U
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListPendingContentReviews(ctx, gen.ListPendingContentReviewsParams{
 		TenantID:   tenantID,
 		PageLimit:  limit,
@@ -210,6 +229,7 @@ func (s *Store) listPendingContentReviews(ctx context.Context, tenantID pgtype.U
 	if err != nil {
 		return nil, fmt.Errorf("listing pending content reviews: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -218,6 +238,7 @@ func (s *Store) updateContentReviewStatus(ctx context.Context, p gen.UpdateConte
 	if err != nil {
 		return gen.ContentReview{}, fmt.Errorf("updating content review status: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -230,6 +251,7 @@ func (s *Store) featureContent(ctx context.Context, p gen.FeatureContentParams) 
 	if err != nil {
 		return gen.ContentFeatured{}, fmt.Errorf("featuring content: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -240,6 +262,7 @@ func (s *Store) unfeatureContent(ctx context.Context, tenantID, contentID pgtype
 	}); err != nil {
 		return fmt.Errorf("unfeaturing content: %w", err)
 	}
+
 	return nil
 }
 
@@ -247,6 +270,7 @@ func (s *Store) listFeaturedPosts(ctx context.Context, tenantID pgtype.UUID, lim
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListFeaturedPosts(ctx, gen.ListFeaturedPostsParams{
 		TenantID:   tenantID,
 		PageLimit:  limit,
@@ -255,17 +279,19 @@ func (s *Store) listFeaturedPosts(ctx context.Context, tenantID pgtype.UUID, lim
 	if err != nil {
 		return nil, fmt.Errorf("listing featured posts: %w", err)
 	}
+
 	return rows, nil
 }
 
 func (s *Store) updateFeaturedOrder(ctx context.Context, id, tenantID pgtype.UUID, featuredOrder int32) error {
 	if err := s.write.UpdateFeaturedOrder(ctx, gen.UpdateFeaturedOrderParams{
-		ID:             id,
-		TenantID:       tenantID,
-		FeaturedOrder:  featuredOrder,
+		ID:            id,
+		TenantID:      tenantID,
+		FeaturedOrder: featuredOrder,
 	}); err != nil {
 		return fmt.Errorf("updating featured order: %w", err)
 	}
+
 	return nil
 }
 
@@ -273,6 +299,7 @@ func (s *Store) expireFeaturedPosts(ctx context.Context) error {
 	if err := s.write.ExpireFeaturedPosts(ctx); err != nil {
 		return fmt.Errorf("expiring featured posts: %w", err)
 	}
+
 	return nil
 }
 
@@ -284,6 +311,7 @@ func (s *Store) listPublishedPostsForRSS(ctx context.Context, tenantID pgtype.UU
 	if limit <= 0 {
 		limit = 50
 	}
+
 	rows, err := s.read.ListPublishedPostsForRSS(ctx, gen.ListPublishedPostsForRSSParams{
 		TenantID:  tenantID,
 		PageLimit: limit,
@@ -291,5 +319,6 @@ func (s *Store) listPublishedPostsForRSS(ctx context.Context, tenantID pgtype.UU
 	if err != nil {
 		return nil, fmt.Errorf("listing published posts for RSS: %w", err)
 	}
+
 	return rows, nil
 }

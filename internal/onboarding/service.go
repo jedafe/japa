@@ -42,8 +42,10 @@ func (s *Service) GetState(ctx context.Context, tenantID, userID pgtype.UUID) (*
 				TourDismissed: false,
 			}, nil
 		}
+
 		return nil, fmt.Errorf("getting onboarding state: %w", err)
 	}
+
 	return &OnboardingStatusResponse{
 		CurrentStep:   int(row.CurrentStep),
 		Completed:     row.Completed,
@@ -58,10 +60,15 @@ func (s *Service) GetState(ctx context.Context, tenantID, userID pgtype.UUID) (*
 func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateStepRequest) error {
 	// Read current state to merge step_data.
 	current, err := s.store.getState(ctx, tenantID, userID)
+
 	var currentStep int32 = 1
+
 	var completed bool
-	var existingData json.RawMessage = json.RawMessage(`{}`)
+
+	existingData := json.RawMessage(`{}`)
+
 	var tourDismissed bool
+
 	if err == nil {
 		currentStep = current.CurrentStep
 		completed = current.Completed
@@ -78,9 +85,14 @@ func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, 
 		newStep = int(currentStep) + 1
 	}
 
-	if err := s.store.upsertState(ctx, tenantID, userID, int32(newStep), completed, merged, tourDismissed); err != nil {
+	if newStep > math.MaxInt32 {
+		newStep = math.MaxInt32
+	}
+
+	if err := s.store.upsertState(ctx, tenantID, userID, int32(newStep), completed, merged, tourDismissed); err != nil { //nolint:gosec // G115: bounded by math.MaxInt32 check above
 		return fmt.Errorf("updating onboarding step: %w", err)
 	}
+
 	return nil
 }
 
@@ -89,6 +101,7 @@ func (s *Service) Complete(ctx context.Context, tenantID, userID pgtype.UUID) er
 	if err := s.store.completeOnboarding(ctx, tenantID, userID); err != nil {
 		return fmt.Errorf("completing onboarding: %w", err)
 	}
+
 	return nil
 }
 
@@ -97,6 +110,7 @@ func (s *Service) DismissTour(ctx context.Context, tenantID, userID pgtype.UUID)
 	if err := s.store.dismissTour(ctx, tenantID, userID); err != nil {
 		return fmt.Errorf("dismissing tour: %w", err)
 	}
+
 	return nil
 }
 
@@ -149,9 +163,11 @@ func parseStepData(data json.RawMessage) stepDataFields {
 	if len(data) == 0 {
 		return fields
 	}
+
 	if err := json.Unmarshal(data, &fields); err != nil {
 		slog.Warn("onboarding: corrupted step data", "error", err)
 	}
+
 	return fields
 }
 
@@ -163,21 +179,25 @@ func mergeJSON(base, overlay json.RawMessage) json.RawMessage {
 			slog.Warn("failed to unmarshal base onboarding data", "error", err)
 		}
 	}
+
 	overlayMap := make(map[string]any)
 	if len(overlay) > 0 {
 		if err := json.Unmarshal(overlay, &overlayMap); err != nil {
 			slog.Warn("failed to unmarshal overlay onboarding data", "error", err)
 		}
 	}
+
 	for k, v := range overlayMap {
 		baseMap[k] = v
 	}
+
 	merged, _ := json.Marshal(baseMap)
+
 	return merged
 }
 
 // recommendSpacesByTags finds spaces that overlap with the user's interests.
-func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, userID pgtype.UUID, tags []string) ([]OnboardingRecommendation, error) {
+func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.UUID, tags []string) ([]OnboardingRecommendation, error) {
 	if len(tags) == 0 {
 		return nil, nil
 	}
@@ -196,8 +216,10 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, userID pg
 	defer rows.Close()
 
 	var recs []OnboardingRecommendation
+
 	for rows.Next() {
 		var id, name, slug pgtype.Text
+
 		var avatarURL, description pgtype.Text
 		if err := rows.Scan(&id, &name, &slug, &avatarURL, &description); err != nil {
 			continue
@@ -216,11 +238,12 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, userID pg
 			})
 		}
 	}
+
 	return recs, nil
 }
 
 // recommendByGeo finds spaces/users matching the user's location.
-func (s *Service) recommendByGeo(ctx context.Context, tenantID, userID pgtype.UUID, location string) ([]OnboardingRecommendation, error) {
+func (s *Service) recommendByGeo(ctx context.Context, tenantID, _ pgtype.UUID, location string) ([]OnboardingRecommendation, error) {
 	if location == "" {
 		return nil, nil
 	}
@@ -240,11 +263,13 @@ func (s *Service) recommendByGeo(ctx context.Context, tenantID, userID pgtype.UU
 	defer rows.Close()
 
 	var recs []OnboardingRecommendation
+
 	for rows.Next() {
 		var id, name, slug, avatarURL pgtype.Text
 		if err := rows.Scan(&id, &name, &slug, &avatarURL); err != nil {
 			continue
 		}
+
 		recs = append(recs, OnboardingRecommendation{
 			Type:      "space",
 			ID:        id.String,
@@ -255,6 +280,7 @@ func (s *Service) recommendByGeo(ctx context.Context, tenantID, userID pgtype.UU
 			Score:     0.8,
 		})
 	}
+
 	return recs, nil
 }
 
@@ -274,11 +300,13 @@ func (s *Service) getPopularItems(ctx context.Context, tenantID pgtype.UUID) ([]
 	defer rows.Close()
 
 	var recs []OnboardingRecommendation
+
 	for rows.Next() {
 		var id, name, slug, avatarURL pgtype.Text
 		if err := rows.Scan(&id, &name, &slug, &avatarURL); err != nil {
 			continue
 		}
+
 		recs = append(recs, OnboardingRecommendation{
 			Type:      "space",
 			ID:        id.String,
@@ -289,6 +317,7 @@ func (s *Service) getPopularItems(ctx context.Context, tenantID pgtype.UUID) ([]
 			Score:     0.5,
 		})
 	}
+
 	return recs, nil
 }
 
@@ -297,15 +326,19 @@ func tagOverlapScore(description string, tags []string) float64 {
 	if description == "" || len(tags) == 0 {
 		return 0
 	}
+
 	descLower := strings.ToLower(description)
 	matchCount := 0
+
 	for _, tag := range tags {
 		if strings.Contains(descLower, strings.ToLower(tag)) {
 			matchCount++
 		}
 	}
+
 	if matchCount == 0 {
 		return 0
 	}
+
 	return math.Min(float64(matchCount)/float64(len(tags)), 1.0)
 }

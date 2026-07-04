@@ -25,10 +25,12 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Task type constant for embedding generation — matches worker.TypeAIGenerateContentEmbedding.
 const taskTypeAIGenerateContentEmbedding = "ai:generate_content_embedding"
 
-// TaskEnqueuer is the interface for enqueueing background tasks.
+// TaskEnqueueClient is the interface for enqueueing background tasks.
 // The Asynq client satisfies this interface. A nil client means tasks
 // are silently skipped (useful for tests and development).
 type TaskEnqueueClient interface {
@@ -52,6 +54,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("invalid %s: %w", param, err)
 	}
+
 	return id, nil
 }
 
@@ -64,6 +67,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -75,6 +79,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -95,6 +100,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -111,16 +117,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // enqueueContentEmbedding enqueues an async task to generate a vector embedding
@@ -136,6 +145,7 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID, titl
 		if text != "" {
 			text += "\n\n"
 		}
+
 		text += body
 	}
 
@@ -168,6 +178,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -178,15 +189,16 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		Title        string          `json:"title"`
 		Slug         string          `json:"slug"`
 		Body         string          `json:"body"`
-		BodyHtml     string          `json:"body_html"`
+		BodyHtml     string          `json:"body_html"` //nolint:revive // matches sqlc-generated field name
 		FieldValues  json.RawMessage `json:"field_values"`
-		CanonicalUrl *string         `json:"canonical_url"`
+		CanonicalUrl *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
 		Status       string          `json:"status"`
 		Visibility   string          `json:"visibility"`
 		PublishAt    *string         `json:"publish_at"`
 		SpaceID      *string         `json:"space_id"`
 		GeoSpaceID   *string         `json:"geo_space_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -196,12 +208,15 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
+
 	if input.ContentType == "" {
 		input.ContentType = TypeDiscussion
 	}
+
 	if input.Status == "" {
 		input.Status = StatusDraft
 	}
+
 	if input.Visibility == "" {
 		input.Visibility = VisibilityPublic
 	}
@@ -225,12 +240,14 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	if input.GeoSpaceID != nil && *input.GeoSpaceID != "" {
 		if err := createInput.GeoSpaceID.Scan(*input.GeoSpaceID); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo_space_id format")
 			return
 		}
 	}
+
 	if input.PublishAt != nil && *input.PublishAt != "" {
 		if err := createInput.PublishAt.Scan(*input.PublishAt); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
@@ -261,6 +278,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
@@ -273,6 +291,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		if newSlug, found := h.Service.ResolveSlugRedirect(r.Context(), EntityContent, slug); found {
 			content, err = h.Service.GetContentBySlug(r.Context(), newSlug, tenantID)
 		}
+
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -294,7 +313,9 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	limit := parsePageSize(r)
+
 	var cursor pgtype.Timestamptz
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
 		if err := cursor.Scan(cs); err != nil {
@@ -307,23 +328,28 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	spaceIDStr := r.URL.Query().Get("space_id")
 
 	var contents any
+
 	var err error
+
 	if spaceIDStr != "" {
 		var spaceID pgtype.UUID
 		if err := spaceID.Scan(spaceIDStr); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
 			return
 		}
+
 		contents, err = h.Service.ListContentsBySpace(r.Context(), tenantID, spaceID, cursor, limit)
 	} else if contentType != "" {
 		contents, err = h.Service.ListContentsByType(r.Context(), tenantID, contentType, cursor, limit)
 	} else {
 		contents, err = h.Service.ListContents(r.Context(), tenantID, cursor, limit)
 	}
+
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": contents})
 }
 
@@ -333,10 +359,12 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -347,9 +375,9 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		Title        string          `json:"title"`
 		Slug         string          `json:"slug"`
 		Body         string          `json:"body"`
-		BodyHtml     string          `json:"body_html"`
+		BodyHtml     string          `json:"body_html"` //nolint:revive // matches sqlc-generated field name
 		FieldValues  json.RawMessage `json:"field_values"`
-		CanonicalUrl *string         `json:"canonical_url"`
+		CanonicalUrl *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
 		Status       string          `json:"status"`
 		Visibility   string          `json:"visibility"`
 		PublishAt    *string         `json:"publish_at"`
@@ -357,6 +385,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		IsLocked     bool            `json:"is_locked"`
 		IsPinned     bool            `json:"is_pinned"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -380,6 +409,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	if input.PublishAt != nil && *input.PublishAt != "" {
 		if err := updateInput.PublishAt.Scan(*input.PublishAt); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
@@ -410,15 +440,18 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	if err := h.Service.DeleteContent(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -433,11 +466,13 @@ func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	revisions, err := h.Service.ListContentRevisions(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": revisions})
 }
 
@@ -452,6 +487,7 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -462,10 +498,12 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 		SpaceID  string `json:"space_id"`
 		Position int32  `json:"position"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.SpaceID == "" {
 		writeError(w, http.StatusBadRequest, "missing_space_id", "space_id is required")
 		return
@@ -482,6 +520,7 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": pin})
 }
 
@@ -493,20 +532,24 @@ func (h *Handlers) UnpinContent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	spaceIDStr := r.URL.Query().Get("space_id")
 	if spaceIDStr == "" {
 		writeError(w, http.StatusBadRequest, "missing_space_id", "space_id query parameter is required")
 		return
 	}
+
 	var spaceID pgtype.UUID
 	if err := spaceID.Scan(spaceIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
 		return
 	}
+
 	if err := h.Service.UnpinContent(r.Context(), spaceID, contentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -520,10 +563,12 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -533,10 +578,12 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		ReactionKey string `json:"reaction_key"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.ReactionKey == "" {
 		writeError(w, http.StatusBadRequest, "missing_reaction_key", "reaction_key is required")
 		return
@@ -547,6 +594,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": reaction})
 }
 
@@ -556,15 +604,18 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
+
 	reactionKey := chi.URLParam(r, "key")
 	if reactionKey == "" {
 		writeError(w, http.StatusBadRequest, "missing_key", "Reaction key is required")
@@ -575,6 +626,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -584,6 +636,7 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -595,6 +648,7 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": counts})
 }
 
@@ -608,11 +662,13 @@ func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	templates, err := h.Service.ListJSONLDTemplates(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": templates})
 }
 
@@ -628,10 +684,12 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 		Template    json.RawMessage `json:"template"`
 		IsActive    bool            `json:"is_active"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.ContentType == "" {
 		writeError(w, http.StatusBadRequest, "missing_content_type", "content_type is required")
 		return
@@ -642,5 +700,6 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": tmpl})
 }

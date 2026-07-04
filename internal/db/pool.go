@@ -105,9 +105,11 @@ func (db *DB) Ping(ctx context.Context) error {
 	if err := db.Writer.Ping(ctx); err != nil {
 		return fmt.Errorf("pinging writer pool: %w", err)
 	}
+
 	if err := db.Reader.Ping(ctx); err != nil {
 		return fmt.Errorf("pinging reader pool: %w", err)
 	}
+
 	return nil
 }
 
@@ -117,6 +119,7 @@ func (db *DB) Close() {
 	if db.Writer != nil {
 		db.Writer.Close()
 	}
+
 	if db.Reader != nil {
 		db.Reader.Close()
 	}

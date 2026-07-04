@@ -22,15 +22,18 @@ func NewDBStore(database *db.DB) *DBStore {
 // CreateUser inserts a new user and returns the generated ID.
 func (s *DBStore) CreateUser(ctx context.Context, tenantID pgtype.UUID, email, username, passwordHash string) (pgtype.UUID, error) {
 	var id pgtype.UUID
+
 	query := `
 		INSERT INTO users (tenant_id, email, username, password_hash)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id
 	`
+
 	err := s.db.Writer.QueryRow(ctx, query, tenantID, email, username, passwordHash).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("creating user: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -42,15 +45,20 @@ func (s *DBStore) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, emai
 		WHERE tenant_id = $1 AND email = $2
 		LIMIT 1
 	`
+
 	var u User
+
 	var passwordHash pgtype.Text
+
 	err := s.db.Reader.QueryRow(ctx, query, tenantID, email).Scan(
 		&u.ID, &u.TenantID, &u.Email, &passwordHash, &u.Username, &u.ProfileType, &u.Status,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying user by email: %w", err)
 	}
+
 	u.PasswordHash = passwordHash
+
 	return &u, nil
 }
 
@@ -60,10 +68,12 @@ func (s *DBStore) StoreRefreshToken(ctx context.Context, tenantID, userID pgtype
 		INSERT INTO refresh_tokens (tenant_id, user_id, token_hash, expires_at)
 		VALUES ($1, $2, $3, $4)
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID, tokenHash, expiresAt)
 	if err != nil {
 		return fmt.Errorf("storing refresh token: %w", err)
 	}
+
 	return nil
 }
 
@@ -75,15 +85,20 @@ func (s *DBStore) GetRefreshToken(ctx context.Context, tokenHash string) (*Refre
 		WHERE token_hash = $1
 		LIMIT 1
 	`
+
 	var rt RefreshToken
+
 	var revokedAt pgtype.Timestamptz
+
 	err := s.db.Reader.QueryRow(ctx, query, tokenHash).Scan(
 		&rt.ID, &rt.UserID, &rt.TenantID, &rt.TokenHash, &rt.ExpiresAt, &revokedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying refresh token: %w", err)
 	}
+
 	rt.RevokedAt = revokedAt
+
 	return &rt, nil
 }
 
@@ -94,10 +109,12 @@ func (s *DBStore) RevokeRefreshToken(ctx context.Context, tokenHash string) erro
 		SET revoked_at = now(), updated_at = now()
 		WHERE token_hash = $1 AND revoked_at IS NULL
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, tokenHash)
 	if err != nil {
 		return fmt.Errorf("revoking refresh token: %w", err)
 	}
+
 	return nil
 }
 
@@ -108,10 +125,12 @@ func (s *DBStore) RevokeAllRefreshTokens(ctx context.Context, tenantID, userID p
 		SET revoked_at = now(), updated_at = now()
 		WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID)
 	if err != nil {
 		return fmt.Errorf("revoking all refresh tokens: %w", err)
 	}
+
 	return nil
 }
 
@@ -121,10 +140,12 @@ func (s *DBStore) StoreResetToken(ctx context.Context, tenantID, userID pgtype.U
 		INSERT INTO password_reset_tokens (tenant_id, user_id, token_hash, expires_at)
 		VALUES ($1, $2, $3, $4)
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID, tokenHash, expiresAt)
 	if err != nil {
 		return fmt.Errorf("storing reset token: %w", err)
 	}
+
 	return nil
 }
 
@@ -137,15 +158,20 @@ func (s *DBStore) GetValidResetToken(ctx context.Context, tokenHash string) (*Re
 		WHERE token_hash = $1
 		LIMIT 1
 	`
+
 	var rec ResetTokenRecord
+
 	var usedAt pgtype.Timestamptz
+
 	err := s.db.Reader.QueryRow(ctx, query, tokenHash).Scan(
 		&rec.UserID, &rec.TenantID, &rec.ExpiresAt, &usedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying reset token: %w", err)
 	}
+
 	rec.UsedAt = usedAt
+
 	return &rec, nil
 }
 
@@ -156,10 +182,12 @@ func (s *DBStore) MarkResetTokenUsed(ctx context.Context, tokenHash string) erro
 		SET used_at = now()
 		WHERE token_hash = $1 AND used_at IS NULL
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, tokenHash)
 	if err != nil {
 		return fmt.Errorf("marking reset token used: %w", err)
 	}
+
 	return nil
 }
 
@@ -170,10 +198,12 @@ func (s *DBStore) UpdateUserPassword(ctx context.Context, userID pgtype.UUID, pa
 		SET password_hash = $2, updated_at = now()
 		WHERE id = $1
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, userID, passwordHash)
 	if err != nil {
 		return fmt.Errorf("updating user password: %w", err)
 	}
+
 	return nil
 }
 
@@ -183,10 +213,12 @@ func (s *DBStore) StoreEmailVerification(ctx context.Context, tenantID, userID p
 		INSERT INTO email_verifications (tenant_id, user_id, email, token_hash, expires_at)
 		VALUES ($1, $2, $3, $4, $5)
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID, email, tokenHash, expiresAt)
 	if err != nil {
 		return fmt.Errorf("storing email verification: %w", err)
 	}
+
 	return nil
 }
 
@@ -198,15 +230,20 @@ func (s *DBStore) GetValidVerificationToken(ctx context.Context, tokenHash strin
 		WHERE token_hash = $1
 		LIMIT 1
 	`
+
 	var rec VerificationTokenRecord
+
 	var verifiedAt pgtype.Timestamptz
+
 	err := s.db.Reader.QueryRow(ctx, query, tokenHash).Scan(
 		&rec.UserID, &rec.TenantID, &rec.ExpiresAt, &verifiedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying verification token: %w", err)
 	}
+
 	rec.VerifiedAt = verifiedAt
+
 	return &rec, nil
 }
 
@@ -217,10 +254,12 @@ func (s *DBStore) MarkEmailVerified(ctx context.Context, userID pgtype.UUID) err
 		SET email_verified_at = now(), updated_at = now()
 		WHERE id = $1 AND email_verified_at IS NULL
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, userID)
 	if err != nil {
 		return fmt.Errorf("marking email verified: %w", err)
 	}
+
 	return nil
 }
 
@@ -230,10 +269,12 @@ func (s *DBStore) InsertPasswordHistory(ctx context.Context, tenantID, userID pg
 		INSERT INTO password_history (tenant_id, user_id, password_hash)
 		VALUES ($1, $2, $3)
 	`
+
 	_, err := s.db.Writer.Exec(ctx, query, tenantID, userID, passwordHash)
 	if err != nil {
 		return fmt.Errorf("inserting password history: %w", err)
 	}
+
 	return nil
 }
 
@@ -247,19 +288,24 @@ func (s *DBStore) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUI
 		ORDER BY created_at DESC
 		LIMIT $2
 	`
+
 	rows, err := s.db.Reader.Query(ctx, query, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("querying password history: %w", err)
 	}
+
 	defer rows.Close()
 
 	var hashes []string
+
 	for rows.Next() {
 		var hash string
 		if err := rows.Scan(&hash); err != nil {
 			return nil, fmt.Errorf("scanning password history: %w", err)
 		}
+
 		hashes = append(hashes, hash)
 	}
+
 	return hashes, rows.Err()
 }

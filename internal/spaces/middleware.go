@@ -43,6 +43,7 @@ type errorBody struct {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -67,20 +68,25 @@ func SpaceResolver(service *Service) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
+
 			t := tenant.FromContext(r.Context())
 			if t == nil {
 				writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 				return
 			}
+
 			space, err := service.GetSpaceBySlug(r.Context(), slug, t.ID)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					writeError(w, http.StatusNotFound, "space_not_found", "Space not found")
 					return
 				}
+
 				writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+
 				return
 			}
+
 			ctx := context.WithValue(r.Context(), SpaceContextKey, &space)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

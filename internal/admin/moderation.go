@@ -13,14 +13,14 @@ import (
 
 // ModerationItem represents a moderation queue item.
 type ModerationItem struct {
-	ID           string `json:"id"`
-	Type         string `json:"type"`          // "review", "content"
-	Status       string `json:"status"`        // "flagged", "pending"
-	Content      string `json:"content"`       // truncated content text
-	Reporter     string `json:"reporter"`      // who reported/flagged it
-	AuthorID     string `json:"author_id"`     // content author
-	Created      string `json:"created_at"`
-	EntityRef    string `json:"entity_ref"`    // reference to the entity (e.g. "review:uuid")
+	ID        string `json:"id"`
+	Type      string `json:"type"`      // "review", "content"
+	Status    string `json:"status"`    // "flagged", "pending"
+	Content   string `json:"content"`   // truncated content text
+	Reporter  string `json:"reporter"`  // who reported/flagged it
+	AuthorID  string `json:"author_id"` // content author
+	Created   string `json:"created_at"`
+	EntityRef string `json:"entity_ref"` // reference to the entity (e.g. "review:uuid")
 }
 
 // ListModeration handles GET /api/v1/admin/moderation.
@@ -29,6 +29,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -42,6 +43,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	// Parse pagination params.
 	limit := int32(20)
 	offset := int32(0)
+
 	if s := r.URL.Query().Get("page_size"); s != "" {
 		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n > 0 {
 			limit = int32(n)
@@ -50,6 +52,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
 	if s := r.URL.Query().Get("page_offset"); s != "" {
 		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n >= 0 {
 			offset = int32(n)
@@ -57,10 +60,12 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
 	items, err := h.queryFlaggedReviews(ctx, tenantID, limit, offset)
 	if err != nil {
 		slog.Error("moderation: querying flagged reviews", "error", err)
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation queue")
+
 		return
 	}
 
@@ -91,13 +96,20 @@ func (h *Handlers) queryFlaggedReviews(ctx context.Context, tenantID pgtype.UUID
 	defer rows.Close()
 
 	var items []ModerationItem
+
 	for rows.Next() {
 		var item ModerationItem
+
 		var id pgtype.UUID
+
 		var body pgtype.Text
+
 		var status string
+
 		var createdAt pgtype.Timestamptz
+
 		var authorID pgtype.UUID
+
 		var authorUsername string
 
 		if err := rows.Scan(&id, &body, &status, &createdAt, &authorID, &authorUsername); err != nil {
@@ -129,6 +141,7 @@ func (h *Handlers) queryFlaggedReviews(ctx context.Context, tenantID pgtype.UUID
 	if items == nil {
 		items = []ModerationItem{}
 	}
+
 	return items, nil
 }
 
@@ -139,6 +152,7 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -151,14 +165,17 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 			Action string `json:"action"` // "approve" or "reject"
 		} `json:"actions"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if len(req.Actions) == 0 {
 		writeError(w, http.StatusBadRequest, "empty_actions", "At least one action is required")
 		return
 	}
+
 	if len(req.Actions) > 100 {
 		writeError(w, http.StatusBadRequest, "too_many_actions", "Maximum 100 actions per request")
 		return
@@ -184,6 +201,7 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var newStatus string
+
 		switch action.Action {
 		case "approve":
 			newStatus = "published"
@@ -202,6 +220,7 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("moderation: updating review status", "id", action.ID, "error", err)
 			continue
 		}
+
 		if result.RowsAffected() > 0 {
 			processed++
 		}
@@ -226,6 +245,7 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -238,10 +258,12 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 		ID   string `json:"id"`
 		Type string `json:"type"` // "review"
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if req.ID == "" {
 		writeError(w, http.StatusBadRequest, "missing_id", "Item ID is required")
 		return
@@ -257,6 +279,7 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(req.ID); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID format")
@@ -272,8 +295,10 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("moderation: appeal failed", "id", req.ID, "error", err)
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to process appeal")
+
 		return
 	}
+
 	if result.RowsAffected() == 0 {
 		writeError(w, http.StatusNotFound, "not_found", "Item not found or not eligible for appeal")
 		return
@@ -302,6 +327,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -312,10 +338,12 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if req.Subject == "" {
 		writeError(w, http.StatusBadRequest, "missing_subject", "subject is required")
 		return
 	}
+
 	if req.Body == "" {
 		writeError(w, http.StatusBadRequest, "missing_body", "body is required")
 		return
@@ -332,12 +360,13 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 	if req.Schedule != "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
-				"sent":      0,
-				"scheduled": true,
+				"sent":         0,
+				"scheduled":    true,
 				"scheduled_at": req.Schedule,
-				"message":   "Broadcast scheduled for later delivery",
+				"message":      "Broadcast scheduled for later delivery",
 			},
 		})
+
 		return
 	}
 
@@ -346,6 +375,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("broadcast: failed to send", "error", err)
 		writeError(w, http.StatusInternalServerError, "broadcast_error", "Failed to send broadcast")
+
 		return
 	}
 
@@ -376,12 +406,14 @@ func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID p
 	defer rows.Close()
 
 	var userIDs []pgtype.UUID
+
 	for rows.Next() {
 		var id pgtype.UUID
 		if err := rows.Scan(&id); err != nil {
 			slog.Warn("broadcast: scanning user ID", "error", err)
 			continue
 		}
+
 		userIDs = append(userIDs, id)
 	}
 
@@ -394,9 +426,11 @@ func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID p
 	if err != nil {
 		return 0, fmt.Errorf("beginning broadcast transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	sent := 0
+
 	for _, uid := range userIDs {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO notifications (tenant_id, recipient_id, notification_type, actor_type, actor_id, title, body, created_at, updated_at)
@@ -406,6 +440,7 @@ func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID p
 			slog.Warn("broadcast: inserting notification", "user_id", uid.String(), "error", err)
 			continue
 		}
+
 		sent++
 	}
 

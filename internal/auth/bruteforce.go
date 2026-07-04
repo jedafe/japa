@@ -32,13 +32,16 @@ func CheckLoginAttempt(ctx context.Context, store BruteForceStore, identifier st
 		// due to infrastructure issues
 		return true, 0
 	}
+
 	if count >= MaxLoginAttempts {
 		backoff := time.Duration(math.Pow(2, float64(count-MaxLoginAttempts+1))) * time.Second
 		if backoff > 30*time.Minute {
 			backoff = 30 * time.Minute
 		}
+
 		return false, backoff
 	}
+
 	return true, 0
 }
 
@@ -47,6 +50,7 @@ func RecordFailedLogin(ctx context.Context, store BruteForceStore, identifier st
 	if err := store.IncrFailCount(ctx, identifier); err != nil {
 		return fmt.Errorf("incrementing fail count: %w", err)
 	}
+
 	return nil
 }
 
@@ -55,6 +59,7 @@ func ResetLoginAttempts(ctx context.Context, store BruteForceStore, identifier s
 	if err := store.ResetFailCount(ctx, identifier); err != nil {
 		return fmt.Errorf("resetting fail count: %w", err)
 	}
+
 	return nil
 }
 

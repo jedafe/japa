@@ -2,6 +2,7 @@ package media
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
 )
+
+const defaultPageSize int32 = 20
 
 // Maximum request body sizes.
 const (
@@ -38,6 +41,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -48,6 +52,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -55,6 +60,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -71,16 +77,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > int(MaxPageSize) {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageOffset extracts the page_offset query parameter.
@@ -89,11 +98,13 @@ func parsePageOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +113,7 @@ func parsePageOffset(r *http.Request) int32 {
 
 // InitiateUpload handles POST /api/v1/media/upload.
 // Request body: { "filename": "photo.jpg", "mime_type": "image/jpeg", "file_size": 123456 }
-// Response: { "data": { "media_id": "...", "storage_path": "...", "presigned_url": "...", "expires_at": "..." } }
+// Response: { "data": { "media_id": "...", "storage_path": "...", "presigned_url": "...", "expires_at": "..." } }.
 func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 	// Enforce 50MB body limit on media upload endpoints.
 	r.Body = http.MaxBytesReader(w, r.Body, MaxMediaUploadBody)
@@ -111,6 +122,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -121,23 +133,30 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		MimeType string `json:"mime_type"`
 		FileSize int64  `json:"file_size"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		// MaxBytesError is returned when the body exceeds the limit.
-		if _, ok := err.(*http.MaxBytesError); ok {
+		maxBytesError := &http.MaxBytesError{}
+		if errors.As(err, &maxBytesError) {
 			writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 50MB limit")
 			return
 		}
+
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+
 		return
 	}
+
 	if input.Filename == "" {
 		writeError(w, http.StatusBadRequest, "missing_filename", "filename is required")
 		return
 	}
+
 	if input.MimeType == "" {
 		writeError(w, http.StatusBadRequest, "missing_mime_type", "mime_type is required")
 		return
 	}
+
 	if input.FileSize <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid_file_size", "file_size must be positive")
 		return
@@ -169,23 +188,27 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "upload_error", err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // ConfirmUpload handles POST /api/v1/media/confirm/{id}.
-// Response: { "data": { "confirmed": true } }
+// Response: { "data": { "confirmed": true } }.
 func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var mediaID pgtype.UUID
+
 	if err := mediaID.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
 		return
@@ -195,23 +218,27 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "confirm_error", err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"confirmed": true}})
 }
 
 // GetMedia handles GET /api/v1/media/{id}.
-// Response: { "data": { ... } }
+// Response: { "data": { ... } }.
 func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var mediaID pgtype.UUID
+
 	if err := mediaID.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
 		return
@@ -235,7 +262,7 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMetadata handles PATCH /api/v1/media/{id}.
 // Request body: { "alt_text": "...", "caption": "...", "width": 100, "height": 200 }
-// Response: { "data": { "updated": true } }
+// Response: { "data": { "updated": true } }.
 func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
 	// Enforce 10MB body limit on standard PATCH endpoints.
 	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
@@ -244,31 +271,38 @@ func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var mediaID pgtype.UUID
+
 	if err := mediaID.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
 		return
 	}
 
 	var input struct {
-		AltText  *string `json:"alt_text"`
-		Caption  *string `json:"caption"`
-		Width    *int32  `json:"width"`
-		Height   *int32  `json:"height"`
+		AltText  *string  `json:"alt_text"`
+		Caption  *string  `json:"caption"`
+		Width    *int32   `json:"width"`
+		Height   *int32   `json:"height"`
 		Duration *float64 `json:"duration_secs"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		if _, ok := err.(*http.MaxBytesError); ok {
+		maxBytesError := &http.MaxBytesError{}
+		if errors.As(err, &maxBytesError) {
 			writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 10MB limit")
 			return
 		}
+
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+
 		return
 	}
 
@@ -276,23 +310,27 @@ func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "update_error", err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }
 
 // DeleteMedia handles DELETE /api/v1/media/{id}.
-// Response: { "data": { "deleted": true } }
+// Response: { "data": { "deleted": true } }.
 func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var mediaID pgtype.UUID
+
 	if err := mediaID.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
 		return
@@ -302,17 +340,19 @@ func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "delete_error", err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
 // ListMedia handles GET /api/v1/media.
 // Query params: page_size, page_offset, type, q (search), uploader_id
-// Response: { "data": [...] }
+// Response: { "data": [...] }.
 func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -322,12 +362,14 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 
 	var uploaderID *pgtype.UUID
+
 	if uidStr := r.URL.Query().Get("uploader_id"); uidStr != "" {
 		var uid pgtype.UUID
 		if err := uid.Scan(uidStr); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_uploader_id", "Invalid uploader_id format")
 			return
 		}
+
 		uploaderID = &uid
 	}
 
@@ -346,6 +388,7 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "list_error", err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -360,6 +403,7 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -373,6 +417,7 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "list_quarantined_error", err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -383,13 +428,16 @@ func (h *Handlers) ApproveQuarantined(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var mediaID pgtype.UUID
+
 	if err := mediaID.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
 		return
@@ -399,6 +447,7 @@ func (h *Handlers) ApproveQuarantined(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "approve_error", err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
 }
 
@@ -409,13 +458,16 @@ func (h *Handlers) RejectQuarantined(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var mediaID pgtype.UUID
+
 	if err := mediaID.Scan(idStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
 		return
@@ -425,12 +477,13 @@ func (h *Handlers) RejectQuarantined(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "reject_error", err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "rejected"}})
 }
 
 // BulkDelete handles POST /api/v1/media/bulk-delete.
 // Request body: { "media_ids": ["...", "..."] }
-// Response: { "data": { "deleted": 2 } }
+// Response: { "data": { "deleted": 2 } }.
 func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	// Enforce 10MB body limit on standard POST endpoints.
 	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
@@ -439,6 +492,7 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -447,26 +501,33 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		MediaIDs []string `json:"media_ids"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		if _, ok := err.(*http.MaxBytesError); ok {
+		maxBytesError := &http.MaxBytesError{}
+		if errors.As(err, &maxBytesError) {
 			writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body exceeds 10MB limit")
 			return
 		}
+
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+
 		return
 	}
+
 	if len(input.MediaIDs) == 0 {
 		writeError(w, http.StatusBadRequest, "missing_media_ids", "media_ids is required")
 		return
 	}
 
 	ids := make([]pgtype.UUID, 0, len(input.MediaIDs))
+
 	for _, idStr := range input.MediaIDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format: "+idStr)
 			return
 		}
+
 		ids = append(ids, id)
 	}
 
@@ -474,6 +535,7 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "bulk_delete_error", err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int{"deleted": len(ids)},
 	})

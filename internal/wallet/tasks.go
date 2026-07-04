@@ -39,6 +39,7 @@ func (s *Service) ProcessActivityEventTask(ctx context.Context, payload []byte) 
 	if err := eventID.Scan(p.EventID); err != nil {
 		return fmt.Errorf("invalid event_id: %w", err)
 	}
+
 	if err := tenantID.Scan(p.TenantID); err != nil {
 		return fmt.Errorf("invalid tenant_id: %w", err)
 	}

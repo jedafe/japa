@@ -2,7 +2,9 @@ package payments
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -18,7 +20,7 @@ type DiscountCodeValidation struct {
 }
 
 // ValidateAndCalculateDiscount validates a discount code and calculates the discount amount.
-func (s *Service) ValidateAndCalculateDiscount(ctx context.Context, tenantID, userID pgtype.UUID, code string, purposeType string, amount int64) (DiscountCodeValidation, error) {
+func (s *Service) ValidateAndCalculateDiscount(ctx context.Context, tenantID, userID pgtype.UUID, code, purposeType string, amount int64) (DiscountCodeValidation, error) {
 	discountCode, err := s.ValidateDiscountCode(ctx, tenantID, userID, code, purposeType)
 	if err != nil {
 		return DiscountCodeValidation{Valid: false}, err
@@ -37,7 +39,7 @@ func (s *Service) ValidateAndCalculateDiscount(ctx context.Context, tenantID, us
 	}, nil
 }
 
-// GetDiscountCodeUsage returns usage statistics for a discount code.
+// DiscountCodeUsage represents usage statistics for a discount code.
 type DiscountCodeUsage struct {
 	TotalUses     int
 	UserUses      int32
@@ -51,7 +53,7 @@ type DiscountCodeUsage struct {
 func (s *Service) GetDiscountCodeUsageStats(ctx context.Context, tenantID pgtype.UUID, code string) (DiscountCodeUsage, error) {
 	discountCode, err := s.store.getDiscountCodeByCode(ctx, tenantID, code)
 	if err != nil {
-		return DiscountCodeUsage{}, fmt.Errorf("discount code not found")
+		return DiscountCodeUsage{}, errors.New("discount code not found")
 	}
 
 	// Get total uses
@@ -63,17 +65,26 @@ func (s *Service) GetDiscountCodeUsageStats(ctx context.Context, tenantID pgtype
 	now := time.Now()
 	isExpired := discountCode.ValidUntil.Valid && now.After(discountCode.ValidUntil.Time)
 	isValid := !discountCode.ValidFrom.Valid || now.After(discountCode.ValidFrom.Time)
+
 	if isExpired {
 		isValid = false
 	}
 
 	usageLimited := discountCode.MaxUses != nil
+
 	var remainingUses *int32
+
 	if usageLimited {
-		remaining := *discountCode.MaxUses - int32(len(uses))
+		usesLen := len(uses)
+		if usesLen > math.MaxInt32 {
+			usesLen = math.MaxInt32
+		}
+
+		remaining := *discountCode.MaxUses - int32(usesLen) //nolint:gosec // G115: bounded by math.MaxInt32 check above
 		if remaining < 0 {
 			remaining = 0
 		}
+
 		remainingUses = &remaining
 	}
 

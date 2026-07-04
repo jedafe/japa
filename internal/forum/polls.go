@@ -2,7 +2,9 @@ package forum
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -35,10 +37,11 @@ type PollResult struct {
 // CreatePoll creates a new poll for a thread with its options.
 func (s *Service) CreatePoll(ctx context.Context, input CreatePollInput) (gen.ForumPoll, error) {
 	if input.Question == "" {
-		return gen.ForumPoll{}, fmt.Errorf("poll question is required")
+		return gen.ForumPoll{}, errors.New("poll question is required")
 	}
+
 	if len(input.Options) < 2 {
-		return gen.ForumPoll{}, fmt.Errorf("poll requires at least 2 options")
+		return gen.ForumPoll{}, errors.New("poll requires at least 2 options")
 	}
 
 	poll, err := s.store.createPoll(ctx, gen.CreateForumPollParams{
@@ -53,9 +56,10 @@ func (s *Service) CreatePoll(ctx context.Context, input CreatePollInput) (gen.Fo
 
 	for i, opt := range input.Options {
 		pos := opt.Position
-		if pos == 0 {
-			pos = int32(i)
+		if pos == 0 && i <= math.MaxInt32 {
+			pos = int32(i) //nolint:gosec // G115: i bounded by poll options count
 		}
+
 		if _, err := s.store.addPollOption(ctx, gen.AddForumPollOptionParams{
 			PollID:   poll.ID,
 			Label:    opt.Label,
@@ -75,8 +79,9 @@ func (s *Service) VotePoll(ctx context.Context, pollID, optionID, userID pgtype.
 	if err != nil {
 		return fmt.Errorf("getting poll: %w", err)
 	}
+
 	if poll.CloseAt.Valid && time.Now().After(poll.CloseAt.Time) {
-		return fmt.Errorf("poll is closed")
+		return errors.New("poll is closed")
 	}
 
 	// Verify the option belongs to this poll via FK constraint (will fail if invalid).
@@ -88,6 +93,7 @@ func (s *Service) VotePoll(ctx context.Context, pollID, optionID, userID pgtype.
 	if err != nil {
 		return fmt.Errorf("voting on poll: %w", err)
 	}
+
 	return nil
 }
 
@@ -97,6 +103,7 @@ func (s *Service) GetPollResults(ctx context.Context, pollID pgtype.UUID) ([]Pol
 	if err != nil {
 		return nil, fmt.Errorf("getting poll results: %w", err)
 	}
+
 	results := make([]PollResult, len(rows))
 	for i, r := range rows {
 		results[i] = PollResult{
@@ -106,6 +113,7 @@ func (s *Service) GetPollResults(ctx context.Context, pollID pgtype.UUID) ([]Pol
 			VoteCount: r.VoteCount,
 		}
 	}
+
 	return results, nil
 }
 

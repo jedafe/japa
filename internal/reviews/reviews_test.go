@@ -11,6 +11,8 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestReviewStatusConstants(t *testing.T) {
+	t.Parallel()
+
 	expected := map[string]string{
 		ReviewStatusPublished: "published",
 		ReviewStatusFlagged:   "flagged",
@@ -24,18 +26,24 @@ func TestReviewStatusConstants(t *testing.T) {
 }
 
 func TestRatingBounds(t *testing.T) {
+	t.Parallel()
+
 	if RatingMin != 1 {
 		t.Errorf("RatingMin = %d, want 1", RatingMin)
 	}
+
 	if RatingMax != 5 {
 		t.Errorf("RatingMax = %d, want 5", RatingMax)
 	}
 }
 
 func TestPaginationDefaults(t *testing.T) {
+	t.Parallel()
+
 	if DefaultPageSize != 20 {
 		t.Errorf("DefaultPageSize = %d, want 20", DefaultPageSize)
 	}
+
 	if MaxPageSize != 100 {
 		t.Errorf("MaxPageSize = %d, want 100", MaxPageSize)
 	}
@@ -46,6 +54,8 @@ func TestPaginationDefaults(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRatingValidation(t *testing.T) {
+	t.Parallel()
+
 	validRatings := []int16{1, 2, 3, 4, 5}
 	for _, r := range validRatings {
 		if r < RatingMin || r > RatingMax {
@@ -66,6 +76,7 @@ func TestRatingValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreateReviewInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty entity_type should be invalid.
 	input := CreateReviewInput{EntityType: "", EntityID: pgtype.UUID{}, Rating: 3}
 	if input.EntityType != "" {
@@ -84,6 +95,7 @@ func TestCreateReviewInputValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestReviewStatusTransitions(t *testing.T) {
+	t.Parallel()
 	// Valid statuses.
 	validStatuses := map[string]bool{
 		ReviewStatusPublished: true,
@@ -110,6 +122,8 @@ func TestReviewStatusTransitions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestReviewStatusValues(t *testing.T) {
+	t.Parallel()
+
 	statuses := []string{
 		ReviewStatusPublished,
 		ReviewStatusFlagged,

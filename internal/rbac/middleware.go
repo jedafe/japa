@@ -10,6 +10,7 @@ import (
 // rbacContextKey is used to store the RBAC resolver in request context.
 type rbacContextKey struct{ name string }
 
+// ResolverKey is the resolver key.
 var ResolverKey = rbacContextKey{"rbac_resolver"}
 
 // RequirePermission is middleware that checks if the authenticated user
@@ -25,14 +26,16 @@ func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.H
 			if user == nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
+				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
+
 				return
 			}
 
 			if !resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
-				w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+
 				return
 			}
 
@@ -52,14 +55,16 @@ func RequirePermissionWithInvalidation(resolver *RBAC, permKey string) func(http
 			if user == nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
+				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
+
 				return
 			}
 
 			if !resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
-				w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+
 				return
 			}
 

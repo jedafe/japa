@@ -8,10 +8,12 @@ import (
 )
 
 func TestCreateBlockInputValidation(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{store: nil}
 
 	// Empty name should fail
-	_, err := svc.CreateBlock(nil, testTenantID(), CreateBlockInput{
+	_, err := svc.CreateBlock(t.Context(), testTenantID(), CreateBlockInput{
 		Name:      "",
 		Slug:      "test",
 		Component: "Test.svelte",
@@ -21,7 +23,7 @@ func TestCreateBlockInputValidation(t *testing.T) {
 	}
 
 	// Empty slug should fail
-	_, err = svc.CreateBlock(nil, testTenantID(), CreateBlockInput{
+	_, err = svc.CreateBlock(t.Context(), testTenantID(), CreateBlockInput{
 		Name:      "Test",
 		Slug:      "",
 		Component: "Test.svelte",
@@ -31,7 +33,7 @@ func TestCreateBlockInputValidation(t *testing.T) {
 	}
 
 	// Empty component should fail
-	_, err = svc.CreateBlock(nil, testTenantID(), CreateBlockInput{
+	_, err = svc.CreateBlock(t.Context(), testTenantID(), CreateBlockInput{
 		Name:      "Test",
 		Slug:      "test",
 		Component: "",
@@ -42,9 +44,11 @@ func TestCreateBlockInputValidation(t *testing.T) {
 }
 
 func TestCreateTemplateInputValidation(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{store: nil}
 
-	_, err := svc.CreateTemplate(nil, testTenantID(), CreateTemplateInput{
+	_, err := svc.CreateTemplate(t.Context(), testTenantID(), CreateTemplateInput{
 		Name: "",
 		Slug: "test",
 	})
@@ -52,7 +56,7 @@ func TestCreateTemplateInputValidation(t *testing.T) {
 		t.Error("expected error for empty name")
 	}
 
-	_, err = svc.CreateTemplate(nil, testTenantID(), CreateTemplateInput{
+	_, err = svc.CreateTemplate(t.Context(), testTenantID(), CreateTemplateInput{
 		Name: "Test",
 		Slug: "",
 	})
@@ -62,9 +66,11 @@ func TestCreateTemplateInputValidation(t *testing.T) {
 }
 
 func TestCreateThemeInputValidation(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{store: nil}
 
-	_, err := svc.CreateTheme(nil, testTenantID(), CreateThemeInput{
+	_, err := svc.CreateTheme(t.Context(), testTenantID(), CreateThemeInput{
 		Name: "",
 		Slug: "test",
 	})
@@ -72,7 +78,7 @@ func TestCreateThemeInputValidation(t *testing.T) {
 		t.Error("expected error for empty name")
 	}
 
-	_, err = svc.CreateTheme(nil, testTenantID(), CreateThemeInput{
+	_, err = svc.CreateTheme(t.Context(), testTenantID(), CreateThemeInput{
 		Name: "Test",
 		Slug: "",
 	})
@@ -82,9 +88,11 @@ func TestCreateThemeInputValidation(t *testing.T) {
 }
 
 func TestCreatePageInputValidation(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{store: nil}
 
-	_, err := svc.CreatePage(nil, testTenantID(), testUserID(), CreatePageInput{
+	_, err := svc.CreatePage(t.Context(), testTenantID(), testUserID(), CreatePageInput{
 		Title: "",
 		Slug:  "test",
 	})
@@ -92,7 +100,7 @@ func TestCreatePageInputValidation(t *testing.T) {
 		t.Error("expected error for empty title")
 	}
 
-	_, err = svc.CreatePage(nil, testTenantID(), testUserID(), CreatePageInput{
+	_, err = svc.CreatePage(t.Context(), testTenantID(), testUserID(), CreatePageInput{
 		Title: "Test",
 		Slug:  "",
 	})
@@ -102,9 +110,11 @@ func TestCreatePageInputValidation(t *testing.T) {
 }
 
 func TestUpdateBlockInputValidation(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{store: nil}
 
-	_, err := svc.UpdateBlock(nil, testID(), testTenantID(), UpdateBlockInput{
+	_, err := svc.UpdateBlock(t.Context(), testID(), testTenantID(), UpdateBlockInput{
 		Name:      "",
 		Component: "Test.svelte",
 	})
@@ -112,7 +122,7 @@ func TestUpdateBlockInputValidation(t *testing.T) {
 		t.Error("expected error for empty name")
 	}
 
-	_, err = svc.UpdateBlock(nil, testID(), testTenantID(), UpdateBlockInput{
+	_, err = svc.UpdateBlock(t.Context(), testID(), testTenantID(), UpdateBlockInput{
 		Name:      "Test",
 		Component: "",
 	})
@@ -122,9 +132,11 @@ func TestUpdateBlockInputValidation(t *testing.T) {
 }
 
 func TestUpdateTemplateInputValidation(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{store: nil}
 
-	_, err := svc.UpdateTemplate(nil, testID(), testTenantID(), UpdateTemplateInput{
+	_, err := svc.UpdateTemplate(t.Context(), testID(), testTenantID(), UpdateTemplateInput{
 		Name: "",
 	})
 	if err == nil {
@@ -133,9 +145,11 @@ func TestUpdateTemplateInputValidation(t *testing.T) {
 }
 
 func TestUpdateThemeInputValidation(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{store: nil}
 
-	_, err := svc.UpdateTheme(nil, testID(), testTenantID(), UpdateThemeInput{
+	_, err := svc.UpdateTheme(t.Context(), testID(), testTenantID(), UpdateThemeInput{
 		Name: "",
 	})
 	if err == nil {
@@ -144,9 +158,11 @@ func TestUpdateThemeInputValidation(t *testing.T) {
 }
 
 func TestUpdatePageInputValidation(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{store: nil}
 
-	_, err := svc.UpdatePage(nil, testID(), testTenantID(), UpdatePageInput{
+	_, err := svc.UpdatePage(t.Context(), testID(), testTenantID(), UpdatePageInput{
 		Title: "",
 	})
 	if err == nil {
@@ -155,18 +171,24 @@ func TestUpdatePageInputValidation(t *testing.T) {
 }
 
 func TestDefaultPageStatus(t *testing.T) {
+	t.Parallel()
+
 	if PageStatusDraft != "draft" {
 		t.Errorf("expected draft, got %s", PageStatusDraft)
 	}
+
 	if PageStatusPublished != "published" {
 		t.Errorf("expected published, got %s", PageStatusPublished)
 	}
+
 	if PageStatusArchived != "archived" {
 		t.Errorf("expected archived, got %s", PageStatusArchived)
 	}
 }
 
 func TestBlockJSONMarshaling(t *testing.T) {
+	t.Parallel()
+
 	b := Block{
 		Name:          "Hero",
 		Slug:          "hero",
@@ -191,12 +213,15 @@ func TestBlockJSONMarshaling(t *testing.T) {
 	if decoded.Name != "Hero" {
 		t.Errorf("expected name Hero, got %s", decoded.Name)
 	}
+
 	if decoded.Slug != "hero" {
 		t.Errorf("expected slug hero, got %s", decoded.Slug)
 	}
 }
 
 func TestPageJSONMarshaling(t *testing.T) {
+	t.Parallel()
+
 	p := Page{
 		Title:  "Landing Page",
 		Slug:   "landing",
@@ -218,6 +243,7 @@ func TestPageJSONMarshaling(t *testing.T) {
 	if decoded.Title != "Landing Page" {
 		t.Errorf("expected title Landing Page, got %s", decoded.Title)
 	}
+
 	if decoded.Status != PageStatusDraft {
 		t.Errorf("expected status draft, got %s", decoded.Status)
 	}
@@ -227,6 +253,7 @@ func TestPageJSONMarshaling(t *testing.T) {
 func testTenantID() pgtype.UUID {
 	var id pgtype.UUID
 	_ = id.Scan("00000000-0000-0000-0000-000000000001")
+
 	return id
 }
 
@@ -234,6 +261,7 @@ func testTenantID() pgtype.UUID {
 func testUserID() pgtype.UUID {
 	var id pgtype.UUID
 	_ = id.Scan("00000000-0000-0000-0000-000000000002")
+
 	return id
 }
 
@@ -241,5 +269,6 @@ func testUserID() pgtype.UUID {
 func testID() pgtype.UUID {
 	var id pgtype.UUID
 	_ = id.Scan("00000000-0000-0000-0000-000000000003")
+
 	return id
 }

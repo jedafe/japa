@@ -1,7 +1,7 @@
 package media
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -15,19 +15,19 @@ import (
 // This prevents false rejections when clients send common variants like
 // "image/jpg" instead of the IANA-registered "image/jpeg".
 var mimeAlias = map[string]string{
-	"image/jpg":      "image/jpeg",
-	"image/pjpeg":    "image/jpeg",
-	"image/x-jpeg":   "image/jpeg",
-	"image/x-webp":   "image/webp",
-	"image/x-png":    "image/png",
-	"video/mpeg":     "video/mpeg",
-	"video/mpg":      "video/mpeg",
-	"video/mpe":      "video/mpeg",
-	"video/x-mpeg":   "video/mpeg",
-	"video/x-msvideo": "video/avi",
-	"audio/x-wav":    "audio/wav",
-	"audio/wave":     "audio/wav",
-	"audio/x-pn-wav": "audio/wav",
+	"image/jpg":         "image/jpeg",
+	"image/pjpeg":       "image/jpeg",
+	"image/x-jpeg":      "image/jpeg",
+	"image/x-webp":      "image/webp",
+	"image/x-png":       "image/png",
+	"video/mpeg":        "video/mpeg",
+	"video/mpg":         "video/mpeg",
+	"video/mpe":         "video/mpeg",
+	"video/x-mpeg":      "video/mpeg",
+	"video/x-msvideo":   "video/avi",
+	"audio/x-wav":       "audio/wav",
+	"audio/wave":        "audio/wav",
+	"audio/x-pn-wav":    "audio/wav",
 	"application/x-pdf": "application/pdf",
 }
 
@@ -40,8 +40,11 @@ var mimeAlias = map[string]string{
 type UploadContext string
 
 const (
+	// UploadContextMedia is the upload context media constant.
 	UploadContextMedia    UploadContext = "media"
+	// UploadContextAvatar is the upload context avatar.
 	UploadContextAvatar   UploadContext = "avatar"
+	// UploadContextDocument is the upload context document.
 	UploadContextDocument UploadContext = "document"
 )
 
@@ -103,6 +106,7 @@ func CanonicalMIMEType(mimeType string) string {
 	if canonical, ok := mimeAlias[normalized]; ok {
 		return canonical
 	}
+
 	return normalized
 }
 
@@ -123,7 +127,7 @@ func CanonicalMIMEType(mimeType string) string {
 func VerifyMIMEType(fileBytes []byte, declaredMimeType string) (detectedType string, matchesExpected bool, err error) {
 	// Guard: empty input is a hard error.
 	if len(fileBytes) == 0 {
-		return "", false, fmt.Errorf("mime verification: empty file bytes")
+		return "", false, errors.New("mime verification: empty file bytes")
 	}
 
 	detected := http.DetectContentType(fileBytes)
@@ -150,6 +154,7 @@ func ValidateFileType(detected string, allowed []string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -173,5 +178,6 @@ func IsAllowedMIMETypeForContext(mimeType string, ctx UploadContext) bool {
 	if allowed == nil {
 		return false
 	}
+
 	return ValidateFileType(mimeType, allowed)
 }

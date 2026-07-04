@@ -6,17 +6,22 @@ import (
 )
 
 func TestGenerateLLMsTxt_Basic(t *testing.T) {
+	t.Parallel()
+
 	txt := GenerateLLMsTxt("JapaConnect", "A community platform for the Nigerian diaspora", nil)
 
 	if !strings.Contains(txt, "# JapaConnect") {
 		t.Error("expected site name as header")
 	}
+
 	if !strings.Contains(txt, "> A community platform for the Nigerian diaspora") {
 		t.Error("expected site description")
 	}
 }
 
 func TestGenerateLLMsTxt_WithLinks(t *testing.T) {
+	t.Parallel()
+
 	links := []Link{
 		{Title: "Getting Started", URL: "/docs/getting-started"},
 		{Title: "API Reference", URL: "/docs/api"},
@@ -27,15 +32,19 @@ func TestGenerateLLMsTxt_WithLinks(t *testing.T) {
 	if !strings.Contains(txt, "## Top Links") {
 		t.Error("expected Top Links section")
 	}
+
 	if !strings.Contains(txt, "- [Getting Started](/docs/getting-started)") {
 		t.Error("expected first link")
 	}
+
 	if !strings.Contains(txt, "- [API Reference](/docs/api)") {
 		t.Error("expected second link")
 	}
 }
 
 func TestGenerateLLMsTxt_NoLinks(t *testing.T) {
+	t.Parallel()
+
 	txt := GenerateLLMsTxt("Test", "Desc", nil)
 
 	if strings.Contains(txt, "## Top Links") {
@@ -44,17 +53,22 @@ func TestGenerateLLMsTxt_NoLinks(t *testing.T) {
 }
 
 func TestGenerateLLMsFullTxt_Basic(t *testing.T) {
+	t.Parallel()
+
 	txt := GenerateLLMsFullTxt("JapaConnect", "Test site", LLMsData{})
 
 	if !strings.Contains(txt, "# JapaConnect") {
 		t.Error("expected site name as header")
 	}
+
 	if !strings.Contains(txt, "> Test site") {
 		t.Error("expected site description")
 	}
 }
 
 func TestGenerateLLMsFullTxt_WithRecentPosts(t *testing.T) {
+	t.Parallel()
+
 	data := LLMsData{
 		RecentPosts: []Link{
 			{Title: "Moving to Canada", URL: "/blog/moving-to-canada"},
@@ -67,15 +81,19 @@ func TestGenerateLLMsFullTxt_WithRecentPosts(t *testing.T) {
 	if !strings.Contains(txt, "## Recent Posts") {
 		t.Error("expected Recent Posts section")
 	}
+
 	if !strings.Contains(txt, "- [Moving to Canada](/blog/moving-to-canada)") {
 		t.Error("expected first post")
 	}
+
 	if !strings.Contains(txt, "- [UK Visa Guide](/blog/uk-visa-guide)") {
 		t.Error("expected second post")
 	}
 }
 
 func TestGenerateLLMsFullTxt_WithTags(t *testing.T) {
+	t.Parallel()
+
 	data := LLMsData{
 		Tags: []Link{
 			{Title: "Canada Immigration", URL: "/tags/canada-immigration"},
@@ -87,12 +105,15 @@ func TestGenerateLLMsFullTxt_WithTags(t *testing.T) {
 	if !strings.Contains(txt, "## Topics") {
 		t.Error("expected Topics section")
 	}
+
 	if !strings.Contains(txt, "- [Canada Immigration](/tags/canada-immigration)") {
 		t.Error("expected tag link")
 	}
 }
 
 func TestGenerateLLMsFullTxt_WithSpaces(t *testing.T) {
+	t.Parallel()
+
 	data := LLMsData{
 		Spaces: []Link{
 			{Title: "Toronto Newcomers", URL: "/spaces/toronto-newcomers"},
@@ -104,12 +125,15 @@ func TestGenerateLLMsFullTxt_WithSpaces(t *testing.T) {
 	if !strings.Contains(txt, "## Spaces") {
 		t.Error("expected Spaces section")
 	}
+
 	if !strings.Contains(txt, "- [Toronto Newcomers](/spaces/toronto-newcomers)") {
 		t.Error("expected space link")
 	}
 }
 
 func TestGenerateLLMsFullTxt_AllSections(t *testing.T) {
+	t.Parallel()
+
 	data := LLMsData{
 		RecentPosts: []Link{{Title: "Post 1", URL: "/post1"}},
 		Tags:        []Link{{Title: "Tag 1", URL: "/tag1"}},
@@ -121,23 +145,29 @@ func TestGenerateLLMsFullTxt_AllSections(t *testing.T) {
 	if !strings.Contains(txt, "## Recent Posts") {
 		t.Error("expected Recent Posts section")
 	}
+
 	if !strings.Contains(txt, "## Topics") {
 		t.Error("expected Topics section")
 	}
+
 	if !strings.Contains(txt, "## Spaces") {
 		t.Error("expected Spaces section")
 	}
 }
 
 func TestGenerateLLMsFullTxt_EmptyData(t *testing.T) {
+	t.Parallel()
+
 	txt := GenerateLLMsFullTxt("Test", "Desc", LLMsData{})
 
 	if strings.Contains(txt, "## Recent Posts") {
 		t.Error("should not have Recent Posts section when empty")
 	}
+
 	if strings.Contains(txt, "## Topics") {
 		t.Error("should not have Topics section when empty")
 	}
+
 	if strings.Contains(txt, "## Spaces") {
 		t.Error("should not have Spaces section when empty")
 	}

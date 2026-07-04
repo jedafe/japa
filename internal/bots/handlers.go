@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,9 +19,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
 )
+
+const defaultPageSize int32 = 20
 
 // Handlers holds dependencies for Bot management HTTP handlers.
 type Handlers struct {
@@ -41,6 +43,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, errors.New("invalid " + param)
 	}
+
 	return id, nil
 }
 
@@ -50,16 +53,8 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
-	return t.ID, true
-}
 
-func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
-	user := auth.FromContext(r.Context())
-	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return nil, false
-	}
-	return user, true
+	return t.ID, true
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -82,6 +77,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if v != nil {
 		if err := json.NewEncoder(w).Encode(v); err != nil {
 			slog.Warn("json encode error", "error", err)
@@ -97,6 +93,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 func parsePageSize(r *http.Request) int32 {
 	ps := DefaultPageSize
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			if n > MaxPageSize {
@@ -106,15 +103,21 @@ func parsePageSize(r *http.Request) int32 {
 			}
 		}
 	}
-	return int32(ps)
+
+	return int32(ps) //nolint:gosec // G115: bounded by MaxPageSize check above
 }
 
 func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			return int32(n)
+			if n > math.MaxInt32 {
+				return defaultPageSize
+			}
+
+			return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
+
 	return 0
 }
 
@@ -123,7 +126,7 @@ func parseOffset(r *http.Request) int32 {
 // ---------------------------------------------------------------------------
 
 // ListKnownBots returns all known bots for the tenant, optionally filtered by bot_type.
-// GET /api/v1/admin/bots?bot_type=search_engine
+// GET /api/v1/admin/bots?bot_type=search_engine.
 func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -146,7 +149,7 @@ func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateKnownBot creates a new known bot entry.
-// POST /api/v1/admin/bots
+// POST /api/v1/admin/bots.
 func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -160,6 +163,7 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 		Policy           string `json:"policy"`
 		CrawlDelay       int    `json:"crawl_delay"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -170,6 +174,7 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
+
 	if input.UserAgentPattern == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "user_agent_pattern is required")
 		return
@@ -179,6 +184,7 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 	if input.BotType == "" {
 		input.BotType = string(BotTypeUnknown)
 	}
+
 	if !IsBotType(input.BotType) {
 		writeError(w, http.StatusBadRequest, "invalid_bot_type", "Invalid bot type")
 		return
@@ -188,6 +194,7 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 	if input.Policy == "" {
 		input.Policy = string(PolicyAllow)
 	}
+
 	if !IsPolicy(input.Policy) {
 		writeError(w, http.StatusBadRequest, "invalid_policy", "Invalid policy")
 		return
@@ -209,7 +216,7 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateKnownBot updates an existing known bot entry.
-// PUT /api/v1/admin/bots/:id
+// PUT /api/v1/admin/bots/:id.
 func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -229,6 +236,7 @@ func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 		Policy           string `json:"policy"`
 		CrawlDelay       int    `json:"crawl_delay"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -238,14 +246,17 @@ func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
+
 	if input.UserAgentPattern == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "user_agent_pattern is required")
 		return
 	}
+
 	if !IsBotType(input.BotType) {
 		writeError(w, http.StatusBadRequest, "invalid_bot_type", "Invalid bot type")
 		return
 	}
+
 	if !IsPolicy(input.Policy) {
 		writeError(w, http.StatusBadRequest, "invalid_policy", "Invalid policy")
 		return
@@ -267,7 +278,7 @@ func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteKnownBot removes a known bot entry.
-// DELETE /api/v1/admin/bots/:id
+// DELETE /api/v1/admin/bots/:id.
 func (h *Handlers) DeleteKnownBot(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {

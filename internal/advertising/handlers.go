@@ -24,6 +24,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for advertising HTTP handlers.
 type Handlers struct {
 	Service *Service
@@ -44,6 +46,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -54,6 +57,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -64,6 +68,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -85,6 +90,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -101,16 +107,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > int(MaxPageSize) {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -119,11 +128,13 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +147,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -152,26 +164,32 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		StartDate           string                 `json:"start_date"`
 		EndDate             string                 `json:"end_date"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if input.SlotTypeName == "" {
 		writeError(w, http.StatusBadRequest, "missing_slot_type_name", "slot_type_name is required")
 		return
 	}
+
 	if input.Content == nil {
 		writeError(w, http.StatusBadRequest, "missing_content", "content is required")
 		return
 	}
 
 	startDate := time.Now()
+
 	if input.StartDate != "" {
 		var err error
+
 		startDate, err = time.Parse(time.RFC3339, input.StartDate)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
@@ -180,12 +198,14 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var endDate *time.Time
+
 	if input.EndDate != "" {
 		t, err := time.Parse(time.RFC3339, input.EndDate)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
 			return
 		}
+
 		endDate = &t
 	}
 
@@ -204,6 +224,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": campaign})
 }
 
@@ -213,10 +234,12 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
@@ -228,6 +251,7 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
@@ -237,6 +261,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -250,6 +275,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": campaigns})
 }
 
@@ -259,10 +285,12 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
@@ -274,6 +302,7 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
@@ -283,10 +312,12 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
@@ -298,6 +329,7 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
@@ -307,10 +339,12 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
@@ -322,6 +356,7 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
@@ -337,6 +372,7 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -349,7 +385,9 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := auth.FromContext(r.Context())
+
 	var userID pgtype.UUID
+
 	if user != nil {
 		userID = user.UserID
 	}
@@ -359,6 +397,7 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": campaigns})
 }
 
@@ -373,6 +412,7 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -386,28 +426,35 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 			OccurredAt string `json:"occurred_at"`
 		} `json:"events"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if len(input.Events) == 0 {
 		writeError(w, http.StatusBadRequest, "empty_events", "events array is empty")
 		return
 	}
 
 	events := make([]IngestAdEventInput, 0, len(input.Events))
+
 	for _, e := range input.Events {
 		if e.EventType != EventTypeImpression && e.EventType != EventTypeClick {
 			continue
 		}
+
 		var occurredAt time.Time
+
 		if e.OccurredAt != "" {
 			var err error
+
 			occurredAt, err = time.Parse(time.RFC3339, e.OccurredAt)
 			if err != nil {
 				continue
 			}
 		}
+
 		events = append(events, IngestAdEventInput{
 			CampaignID: e.CampaignID,
 			UserID:     e.UserID,
@@ -421,6 +468,7 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"ingested": ingested,
@@ -439,6 +487,7 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -452,6 +501,7 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": slotTypes})
 }
 
@@ -465,6 +515,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -477,14 +528,17 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 		StartDate      string `json:"start_date"`
 		EndDate        string `json:"end_date"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.OrganizationID == "" {
 		writeError(w, http.StatusBadRequest, "missing_organization_id", "organization_id is required")
 		return
 	}
+
 	if input.CampaignID == "" {
 		writeError(w, http.StatusBadRequest, "missing_campaign_id", "campaign_id is required")
 		return
@@ -495,6 +549,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
 		return
 	}
+
 	var campaignID pgtype.UUID
 	if err := campaignID.Scan(input.CampaignID); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_campaign_id", "Invalid campaign_id")
@@ -502,8 +557,10 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	startDate := time.Now()
+
 	if input.StartDate != "" {
 		var err error
+
 		startDate, err = time.Parse(time.RFC3339, input.StartDate)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
@@ -512,12 +569,14 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var endDate *time.Time
+
 	if input.EndDate != "" {
 		t, err := time.Parse(time.RFC3339, input.EndDate)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
 			return
 		}
+
 		endDate = &t
 	}
 
@@ -532,6 +591,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": boost})
 }
 
@@ -541,6 +601,7 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -563,6 +624,7 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": boosts})
 }
 
@@ -572,6 +634,7 @@ func (h *Handlers) ListActiveBoosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -582,6 +645,7 @@ func (h *Handlers) ListActiveBoosts(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": boosts})
 }
 
@@ -591,10 +655,12 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
@@ -606,5 +672,6 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": boost})
 }

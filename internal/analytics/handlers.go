@@ -49,6 +49,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -58,6 +59,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -75,6 +77,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if v != nil {
 		if err := json.NewEncoder(w).Encode(v); err != nil {
 			slog.Warn("json encode error", "error", err)
@@ -90,45 +93,51 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 func parsePageSize(r *http.Request) int32 {
 	ps := DefaultPageSize
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
 			if parsed > MaxPageSize {
 				parsed = MaxPageSize
 			}
+
 			ps = parsed
 		}
 	}
-	return int32(ps)
+
+	return int32(ps) //nolint:gosec // G115: ps bounded by MaxPageSize above
 }
 
 func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
-			return int32(parsed)
+			return int32(parsed) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
+
 	return 0
 }
 
 func parseDays(r *http.Request, defaultDays int) int32 {
 	if v := r.URL.Query().Get("days"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			return int32(parsed)
+			return int32(parsed) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
-	return int32(defaultDays)
+
+	return int32(defaultDays) //nolint:gosec // G115: defaultDays is a small constant
 }
 
 // ---------------------------------------------------------------------------
 // User-facing endpoints
 // ---------------------------------------------------------------------------
 
-// TrackEvent handles POST /api/v1/analytics/events
+// TrackEvent handles POST /api/v1/analytics/events.
 func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -142,6 +151,7 @@ func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
 		CountryCode string         `json:"country_code"`
 		SessionID   string         `json:"session_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -172,12 +182,13 @@ func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": event})
 }
 
-// GetUserDashboard handles GET /api/v1/analytics/dashboard
+// GetUserDashboard handles GET /api/v1/analytics/dashboard.
 func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -198,7 +209,7 @@ func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 // Admin endpoints
 // ---------------------------------------------------------------------------
 
-// GetAdminOverview handles GET /api/v1/admin/analytics/overview
+// GetAdminOverview handles GET /api/v1/admin/analytics/overview.
 func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -216,7 +227,7 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": dashboard})
 }
 
-// ListEvents handles GET /api/v1/admin/analytics/events
+// ListEvents handles GET /api/v1/admin/analytics/events.
 func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -236,6 +247,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 			filter.StartDate = &t
 		}
 	}
+
 	if v := r.URL.Query().Get("end_date"); v != "" {
 		if t, err := parseTimeParam(v); err == nil {
 			filter.EndDate = &t
@@ -251,7 +263,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": events})
 }
 
-// ListSecurityScanResults handles GET /api/v1/admin/analytics/security
+// ListSecurityScanResults handles GET /api/v1/admin/analytics/security.
 func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -274,7 +286,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
-// ResolveSecurityScanResult handles POST /api/v1/admin/analytics/security/{id}/resolve
+// ResolveSecurityScanResult handles POST /api/v1/admin/analytics/security/{id}/resolve.
 func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -295,7 +307,7 @@ func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "resolved"}})
 }
 
-// RefreshViews handles POST /api/v1/admin/analytics/refresh
+// RefreshViews handles POST /api/v1/admin/analytics/refresh.
 func (h *Handlers) RefreshViews(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireTenant(w, r)
 	if !ok {
@@ -310,7 +322,7 @@ func (h *Handlers) RefreshViews(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "refresh_queued"}})
 }
 
-// RunSecurityScan handles POST /api/v1/admin/analytics/security/scan
+// RunSecurityScan handles POST /api/v1/admin/analytics/security/scan.
 func (h *Handlers) RunSecurityScan(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -323,6 +335,7 @@ func (h *Handlers) RunSecurityScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = tenantID
+
 	writeJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "scan_queued"}})
 }
 
@@ -338,6 +351,7 @@ func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Scope string `json:"scope"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return

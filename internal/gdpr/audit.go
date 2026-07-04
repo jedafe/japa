@@ -18,11 +18,13 @@ func LogAuditEvent(ctx context.Context, store *Store, tenantID pgtype.UUID, para
 
 func logAuditEvent(ctx context.Context, store *Store, tenantID pgtype.UUID, params LogAuditParams) error {
 	metadataJSON := []byte("{}")
+
 	if len(params.Metadata) > 0 {
 		b, err := json.Marshal(params.Metadata)
 		if err != nil {
 			return fmt.Errorf("marshaling audit metadata: %w", err)
 		}
+
 		metadataJSON = b
 	}
 
@@ -32,6 +34,7 @@ func logAuditEvent(ctx context.Context, store *Store, tenantID pgtype.UUID, para
 	}
 
 	var ipAddress *netip.Addr
+
 	if params.IPAddress != nil {
 		addr, err := netip.ParseAddr(*params.IPAddress)
 		if err == nil {
@@ -49,5 +52,9 @@ func logAuditEvent(ctx context.Context, store *Store, tenantID pgtype.UUID, para
 		Metadata:           metadataJSON,
 		IpAddress:          ipAddress,
 	})
-	return fmt.Errorf("create audit log: %w", err)
+	if err != nil {
+		return fmt.Errorf("create audit log: %w", err)
+	}
+
+	return nil
 }

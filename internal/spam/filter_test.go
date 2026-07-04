@@ -10,19 +10,25 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestSafeCompileRegex_NormalPatternCompiles(t *testing.T) {
+	t.Parallel()
+
 	re, err := safeCompileRegex(`buy\s+now`, defaultRegexTimeout)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if re == nil {
 		t.Fatal("expected non-nil regexp")
 	}
+
 	if !re.MatchString("buy now") {
 		t.Error("expected pattern to match 'buy now'")
 	}
 }
 
 func TestSafeCompileRegex_InvalidPatternReturnsError(t *testing.T) {
+	t.Parallel()
+
 	_, err := safeCompileRegex(`[invalid`, defaultRegexTimeout)
 	if err == nil {
 		t.Fatal("expected error for invalid regex pattern")
@@ -34,6 +40,7 @@ func TestSafeCompileRegex_InvalidPatternReturnsError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSafeCompileRegex_CatastrophicBacktrackingTimesOut(t *testing.T) {
+	t.Parallel()
 	// The pattern (a+)+$ is a classic ReDoS vector. Against a string like
 	// "aaaaaaaaaaaaaaaaaaaaaaaaab" the Go regex engine will explore an
 	// exponential number of backtracking paths.
@@ -51,6 +58,7 @@ func TestSafeCompileRegex_CatastrophicBacktrackingTimesOut(t *testing.T) {
 }
 
 func TestSafeCompileRegex_TimeoutReturnsError(t *testing.T) {
+	t.Parallel()
 	// Use a very short timeout to test the timeout path even if Go
 	// doesn't actually hang.
 	timeout := 1 * time.Nanosecond
@@ -71,6 +79,8 @@ func TestSafeCompileRegex_TimeoutReturnsError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSafeCompileRegex_CacheHitOnRepeatedPatterns(t *testing.T) {
+	t.Parallel()
+
 	pattern := `hello\s+world`
 
 	// First call — cache miss, compiles and caches.
@@ -91,6 +101,8 @@ func TestSafeCompileRegex_CacheHitOnRepeatedPatterns(t *testing.T) {
 }
 
 func TestSafeCompileRegex_CacheExpiredRecompiles(t *testing.T) {
+	t.Parallel()
+
 	pattern := `cache\s+expire\s+test`
 
 	// First compile.
@@ -123,6 +135,8 @@ func TestSafeCompileRegex_CacheExpiredRecompiles(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEvictExpiredRegexCache_RemovesExpiredEntries(t *testing.T) {
+	t.Parallel()
+
 	pattern := `evict\s+me`
 
 	// Populate cache.
@@ -157,27 +171,34 @@ func TestEvictExpiredRegexCache_RemovesExpiredEntries(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMatchPattern_UsesSafeCompile(t *testing.T) {
+	t.Parallel()
+
 	matched, err := matchPattern(`spam`, "this is spam content")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if !matched {
 		t.Error("expected match")
 	}
 }
 
 func TestMatchPattern_FallsBackToLiteral(t *testing.T) {
+	t.Parallel()
 	// Invalid regex — should fall back to literal matching.
 	matched, err := matchPattern(`[invalid`, "this contains [invalid text")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if !matched {
 		t.Error("expected literal fallback to match")
 	}
 }
 
 func TestApplyReplacement_UsesSafeCompile(t *testing.T) {
+	t.Parallel()
+
 	result := applyReplacement(`spam`, "****", "this is spam content")
 	if result != "this is **** content" {
 		t.Errorf("got %q, want %q", result, "this is **** content")
@@ -185,6 +206,8 @@ func TestApplyReplacement_UsesSafeCompile(t *testing.T) {
 }
 
 func TestApplyReplacement_FallsBackToLiteral(t *testing.T) {
+	t.Parallel()
+
 	result := applyReplacement(`[invalid`, "X", "text [invalid here")
 	if result != "text X here" {
 		t.Errorf("got %q, want %q", result, "text X here")

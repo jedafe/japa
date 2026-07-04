@@ -1,0 +1,41 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - link "JapaConnect" [ref=e7] [cursor=pointer]:
+          - /url: /
+        - search [ref=e8]:
+          - generic [ref=e9]:
+            - img [ref=e10]
+            - searchbox "nav.search" [ref=e13]
+        - link "nav.login" [ref=e15] [cursor=pointer]:
+          - /url: /auth/login
+    - main [ref=e16]:
+      - main [ref=e17]:
+        - generic [ref=e18]:
+          - generic [ref=e19]:
+            - heading "Spaces" [level=1] [ref=e20]
+            - paragraph [ref=e21]: Join communities that matter to you.
+          - link "Create space" [ref=e22] [cursor=pointer]:
+            - /url: /spaces/new
+            - img [ref=e23]
+            - text: Create space
+        - generic [ref=e24]:
+          - button "All Spaces" [ref=e25]
+          - button "Countries" [ref=e26]
+          - button "Interests" [ref=e27]
+          - button "Professions" [ref=e28]
+          - button "Universities" [ref=e29]
+    - contentinfo [ref=e73]:
+      - generic [ref=e75]:
+        - generic [ref=e76]:
+          - link "nav.about" [ref=e77] [cursor=pointer]:
+            - /url: /about
+          - link "nav.terms" [ref=e78] [cursor=pointer]:
+            - /url: /terms
+          - link "nav.privacy" [ref=e79] [cursor=pointer]:
+            - /url: /privacy
+          - link "nav.contact" [ref=e80] [cursor=pointer]:
+            - /url: /contact
+        - paragraph [ref=e81]: footer.copyright
+  - region "Notifications"

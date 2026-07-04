@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -40,13 +41,14 @@ func NewService(database *db.DB) *Service {
 func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc := NewService(database)
 	svc.enqueuer = enqueuer
+
 	return svc
 }
 
 // noopEnqueuer is a no-op implementation for development.
 type noopEnqueuer struct{}
 
-func (n *noopEnqueuer) Enqueue(taskType string, payload []byte, opts ...interface{}) error {
+func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error {
 	return nil
 }
 
@@ -68,15 +70,17 @@ type TrackEventInput struct {
 // TrackEvent records a platform event in the write-optimised append-only table.
 func (s *Service) TrackEvent(ctx context.Context, tenantID pgtype.UUID, input TrackEventInput) (gen.PlatformEvent, error) {
 	if input.EventType == "" {
-		return gen.PlatformEvent{}, fmt.Errorf("event_type is required")
+		return gen.PlatformEvent{}, errors.New("event_type is required")
 	}
 
 	metaBytes := []byte("{}")
+
 	if len(input.Meta) > 0 {
 		b, err := json.Marshal(input.Meta)
 		if err != nil {
 			return gen.PlatformEvent{}, fmt.Errorf("marshaling event meta: %w", err)
 		}
+
 		metaBytes = b
 	}
 
@@ -142,29 +146,33 @@ func (s *Service) RefreshViews(ctx context.Context) error {
 		slog.Error("refreshing mv_daily_content_stats", "error", err)
 		return fmt.Errorf("refreshing content stats view: %w", err)
 	}
+
 	slog.Info("refreshed mv_daily_content_stats")
 
 	if err := s.store.RefreshDailySpaceStatsView(ctx); err != nil {
 		slog.Error("refreshing mv_daily_space_stats", "error", err)
 		return fmt.Errorf("refreshing space stats view: %w", err)
 	}
+
 	slog.Info("refreshed mv_daily_space_stats")
 
 	if err := s.store.RefreshUserEngagementStatsView(ctx); err != nil {
 		slog.Error("refreshing mv_user_engagement_stats", "error", err)
 		return fmt.Errorf("refreshing user engagement stats view: %w", err)
 	}
+
 	slog.Info("refreshed mv_user_engagement_stats")
 
 	return nil
 }
 
 // EnqueueRefreshViews enqueues a background job to refresh all materialized views.
-func (s *Service) EnqueueRefreshViews(ctx context.Context) error {
+func (s *Service) EnqueueRefreshViews(_ context.Context) error {
 	payload, err := json.Marshal(map[string]any{})
 	if err != nil {
 		return fmt.Errorf("marshaling refresh views payload: %w", err)
 	}
+
 	return s.enqueuer.Enqueue(worker.TypeAnalyticsRefreshViews, payload)
 }
 
@@ -174,9 +182,9 @@ func (s *Service) EnqueueRefreshViews(ctx context.Context) error {
 
 // UserDashboard holds the user-facing analytics dashboard response.
 type UserDashboard struct {
-	TopContent        []gen.GetTopContentByViewsRow   `json:"top_content"`
-	UserEngagement    []gen.MvUserEngagementStat       `json:"user_engagement"`
-	ContentOverTime   []gen.GetContentVolumeOverTimeRow `json:"content_over_time"`
+	TopContent      []gen.GetTopContentByViewsRow     `json:"top_content"`
+	UserEngagement  []gen.MvUserEngagementStat        `json:"user_engagement"`
+	ContentOverTime []gen.GetContentVolumeOverTimeRow `json:"content_over_time"`
 }
 
 // GetUserDashboardData returns the user's personal analytics dashboard data.
@@ -211,15 +219,15 @@ func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgt
 
 // AdminDashboard holds the admin-facing analytics dashboard response.
 type AdminDashboard struct {
-	DailyActiveUsers  []gen.GetDailyActiveUsersRow     `json:"daily_active_users"`
-	MonthlyActiveUsers []gen.GetMonthlyActiveUsersRow  `json:"monthly_active_users"`
-	EventCounts       []gen.GetEventCountsByTypeRow    `json:"event_counts"`
-	ContentOverTime   []gen.GetContentVolumeOverTimeRow `json:"content_over_time"`
-	UserGrowth        []gen.GetUserGrowthOverTimeRow    `json:"user_growth"`
-	TrafficSources    []gen.GetTrafficSourcesRow        `json:"traffic_sources"`
-	TopContent        []gen.GetTopContentByViewsRow     `json:"top_content"`
-	ContentStats      []gen.MvDailyContentStat          `json:"content_stats"`
-	SpaceStats        []gen.MvDailySpaceStat            `json:"space_stats"`
+	DailyActiveUsers   []gen.GetDailyActiveUsersRow      `json:"daily_active_users"`
+	MonthlyActiveUsers []gen.GetMonthlyActiveUsersRow    `json:"monthly_active_users"`
+	EventCounts        []gen.GetEventCountsByTypeRow     `json:"event_counts"`
+	ContentOverTime    []gen.GetContentVolumeOverTimeRow `json:"content_over_time"`
+	UserGrowth         []gen.GetUserGrowthOverTimeRow    `json:"user_growth"`
+	TrafficSources     []gen.GetTrafficSourcesRow        `json:"traffic_sources"`
+	TopContent         []gen.GetTopContentByViewsRow     `json:"top_content"`
+	ContentStats       []gen.MvDailyContentStat          `json:"content_stats"`
+	SpaceStats         []gen.MvDailySpaceStat            `json:"space_stats"`
 }
 
 // GetAdminDashboardData returns the admin analytics dashboard data.
@@ -311,11 +319,12 @@ func (s *Service) RunSecurityScan(ctx context.Context, tenantID pgtype.UUID) err
 }
 
 // EnqueueSecurityScan enqueues a background job to run the security scanner.
-func (s *Service) EnqueueSecurityScan(ctx context.Context) error {
+func (s *Service) EnqueueSecurityScan(_ context.Context) error {
 	payload, err := json.Marshal(map[string]any{})
 	if err != nil {
 		return fmt.Errorf("marshaling security scan payload: %w", err)
 	}
+
 	return s.enqueuer.Enqueue(worker.TypeSecurityScan, payload)
 }
 
@@ -324,6 +333,7 @@ func (s *Service) ListSecurityScanResults(ctx context.Context, tenantID pgtype.U
 	if filter.Limit <= 0 || filter.Limit > MaxPageSize {
 		filter.Limit = DefaultPageSize
 	}
+
 	return s.store.ListSecurityScanResults(ctx, tenantID, filter)
 }
 

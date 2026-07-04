@@ -13,11 +13,13 @@ func (h *Handlers) ListReactionTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	types, err := h.Service.ListReactionTypes(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
@@ -27,6 +29,7 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var input struct {
 		Key      string `json:"key"`
 		Emoji    string `json:"emoji"`
@@ -34,18 +37,22 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 		Enabled  bool   `json:"enabled"`
 		Position int32  `json:"position"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Key == "" {
 		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
 		return
 	}
+
 	if input.Emoji == "" {
 		writeError(w, http.StatusBadRequest, "missing_emoji", "Emoji is required")
 		return
 	}
+
 	if input.Label == "" {
 		writeError(w, http.StatusBadRequest, "missing_label", "Label is required")
 		return
@@ -56,6 +63,7 @@ func (h *Handlers) CreateReactionType(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": rt})
 }
 
@@ -65,6 +73,7 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
@@ -77,14 +86,17 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 		Enabled  bool   `json:"enabled"`
 		Position int32  `json:"position"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Emoji == "" {
 		writeError(w, http.StatusBadRequest, "missing_emoji", "Emoji is required")
 		return
 	}
+
 	if input.Label == "" {
 		writeError(w, http.StatusBadRequest, "missing_label", "Label is required")
 		return
@@ -95,6 +107,7 @@ func (h *Handlers) UpdateReactionType(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": rt})
 }
 
@@ -104,14 +117,17 @@ func (h *Handlers) DeleteReactionType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		writeError(w, http.StatusBadRequest, "missing_key", "Key is required")
 		return
 	}
+
 	if err := h.Service.DeleteReactionType(r.Context(), tenantID, key); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }

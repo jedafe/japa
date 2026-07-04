@@ -12,6 +12,8 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestUserProfileResponseJSONTags(t *testing.T) {
+	t.Parallel()
+
 	r := UserProfileResponse{
 		ID:            "550e8400-e29b-41d4-a716-446655440000",
 		Email:         "test@example.com",
@@ -26,47 +28,60 @@ func TestUserProfileResponseJSONTags(t *testing.T) {
 		CreatedAt:     "2026-01-01T00:00:00Z",
 		UpdatedAt:     "2026-01-02T00:00:00Z",
 	}
+
 	data, err := json.Marshal(r)
 	if err != nil {
 		t.Fatalf("marshal UserProfileResponse: %v", err)
 	}
+
 	var got map[string]any
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	if got["id"] != "550e8400-e29b-41d4-a716-446655440000" {
 		t.Errorf("id = %v, want UUID", got["id"])
 	}
+
 	if got["email"] != "test@example.com" {
 		t.Errorf("email = %v, want test@example.com", got["email"])
 	}
+
 	if got["username"] != "testuser" {
 		t.Errorf("username = %v, want testuser", got["username"])
 	}
+
 	if got["display_name"] != "Test User" {
 		t.Errorf("display_name = %v, want 'Test User'", got["display_name"])
 	}
+
 	if got["follower_count"] != float64(42) {
 		t.Errorf("follower_count = %v, want 42", got["follower_count"])
 	}
 }
 
 func TestUserPreferencesResponseJSONTags(t *testing.T) {
+	t.Parallel()
+
 	r := UserPreferencesResponse{
 		DarkMode: "dark",
 		Language: "en-NG",
 	}
+
 	data, err := json.Marshal(r)
 	if err != nil {
 		t.Fatalf("marshal UserPreferencesResponse: %v", err)
 	}
+
 	var got map[string]any
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	if got["dark_mode"] != "dark" {
 		t.Errorf("dark_mode = %v, want dark", got["dark_mode"])
 	}
+
 	if got["language"] != "en-NG" {
 		t.Errorf("language = %v, want en-NG", got["language"])
 	}
@@ -77,42 +92,53 @@ func TestUserPreferencesResponseJSONTags(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWriteJSON(t *testing.T) {
+	t.Parallel()
+
 	rr := httptest.NewRecorder()
 	writeJSON(rr, http.StatusOK, map[string]string{"status": "ok"})
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
 	}
+
 	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", ct)
 	}
+
 	var got map[string]string
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
+
 	if got["status"] != "ok" {
 		t.Errorf(`body["status"] = %q, want "ok"`, got["status"])
 	}
 }
 
 func TestWriteError(t *testing.T) {
+	t.Parallel()
+
 	rr := httptest.NewRecorder()
 	writeError(rr, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
+
 	var got map[string]any
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
+
 	errMap, ok := got["error"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected error envelope, got %v", got)
 	}
+
 	if errMap["code"] != "invalid_body" {
 		t.Errorf("error.code = %v, want invalid_body", errMap["code"])
 	}
+
 	if errMap["message"] != "Invalid JSON body" {
 		t.Errorf("error.message = %v, want 'Invalid JSON body'", errMap["message"])
 	}
@@ -123,6 +149,8 @@ func TestWriteError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRequireUserUnauthorized(t *testing.T) {
+	t.Parallel()
+
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/users/me", nil)
@@ -131,15 +159,19 @@ func TestRequireUserUnauthorized(t *testing.T) {
 	if ok {
 		t.Error("expected ok=false for missing auth, got true")
 	}
+
 	if user != nil {
 		t.Error("expected nil user for missing auth")
 	}
+
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusUnauthorized)
 	}
 }
 
 func TestRequireTenantUnavailable(t *testing.T) {
+	t.Parallel()
+
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/users/me", nil)
@@ -148,9 +180,11 @@ func TestRequireTenantUnavailable(t *testing.T) {
 	if ok {
 		t.Error("expected ok=false for missing tenant, got true")
 	}
+
 	if tenantID.Valid {
 		t.Error("expected invalid UUID for missing tenant")
 	}
+
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
 	}
@@ -161,45 +195,64 @@ func TestRequireTenantUnavailable(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUpdateProfileRequestUnmarshal(t *testing.T) {
+	t.Parallel()
+
 	body := `{"display_name": "New Name", "bio": "Updated bio"}`
+
 	var req UpdateProfileRequest
+
 	if err := json.Unmarshal([]byte(body), &req); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	if req.DisplayName == nil || *req.DisplayName != "New Name" {
 		t.Errorf("display_name = %v, want 'New Name'", req.DisplayName)
 	}
+
 	if req.Bio == nil || *req.Bio != "Updated bio" {
 		t.Errorf("bio = %v, want 'Updated bio'", req.Bio)
 	}
+
 	if req.AvatarURL != nil {
 		t.Errorf("avatar_url = %v, want nil", req.AvatarURL)
 	}
 }
 
 func TestUpdatePreferencesRequestUnmarshal(t *testing.T) {
+	t.Parallel()
+
 	body := `{"dark_mode": "dark", "language": "en-US"}`
+
 	var req UpdatePreferencesRequest
+
 	if err := json.Unmarshal([]byte(body), &req); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	if req.DarkMode == nil || *req.DarkMode != "dark" {
 		t.Errorf("dark_mode = %v, want 'dark'", req.DarkMode)
 	}
+
 	if req.Language == nil || *req.Language != "en-US" {
 		t.Errorf("language = %v, want 'en-US'", req.Language)
 	}
 }
 
 func TestUpdatePreferencesRequestPartialUnmarshal(t *testing.T) {
+	t.Parallel()
+
 	body := `{"dark_mode": "light"}`
+
 	var req UpdatePreferencesRequest
+
 	if err := json.Unmarshal([]byte(body), &req); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	if req.DarkMode == nil || *req.DarkMode != "light" {
 		t.Errorf("dark_mode = %v, want 'light'", req.DarkMode)
 	}
+
 	if req.Language != nil {
 		t.Errorf("language = %v, want nil for omitted field", req.Language)
 	}
@@ -210,6 +263,7 @@ func TestUpdatePreferencesRequestPartialUnmarshal(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDefaultPreferenceValues(t *testing.T) {
+	t.Parallel()
 	// Verify the documented default values match what the service layer
 	// returns when no preferences row exists. We test the response type
 	// construction directly rather than calling GetPreferences (which
@@ -221,6 +275,7 @@ func TestDefaultPreferenceValues(t *testing.T) {
 	if prefs.DarkMode != "system" {
 		t.Errorf("default dark_mode = %q, want 'system'", prefs.DarkMode)
 	}
+
 	if prefs.Language != "en-NG" {
 		t.Errorf("default language = %q, want 'en-NG'", prefs.Language)
 	}
@@ -231,11 +286,15 @@ func TestDefaultPreferenceValues(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewHandlersNotNil(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{}
+
 	h := NewHandlers(svc)
 	if h == nil {
 		t.Fatal("NewHandlers returned nil")
 	}
+
 	if h.Service != svc {
 		t.Error("handlers.Service does not match provided service")
 	}

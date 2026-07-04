@@ -29,6 +29,7 @@ func (s *Store) recordConsent(ctx context.Context, p gen.RecordConsentParams) (g
 	if err != nil {
 		return gen.ConsentRecord{}, fmt.Errorf("recording consent: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -40,6 +41,7 @@ func (s *Store) getUserConsents(ctx context.Context, userID pgtype.UUID, consent
 	if err != nil {
 		return nil, fmt.Errorf("getting user consents: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -51,6 +53,7 @@ func (s *Store) hasConsent(ctx context.Context, userID pgtype.UUID, consentType 
 	if err != nil {
 		return false, fmt.Errorf("checking consent: %w", err)
 	}
+
 	return granted, nil
 }
 
@@ -58,6 +61,7 @@ func (s *Store) revokeConsent(ctx context.Context, p gen.RevokeConsentParams) er
 	if err := s.write.RevokeConsent(ctx, p); err != nil {
 		return fmt.Errorf("revoking consent: %w", err)
 	}
+
 	return nil
 }
 
@@ -65,6 +69,7 @@ func (s *Store) listConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, 
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListConsentsByTenant(ctx, gen.ListConsentsByTenantParams{
 		TenantID:    tenantID,
 		ConsentType: consentType,
@@ -74,6 +79,7 @@ func (s *Store) listConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, 
 	if err != nil {
 		return nil, fmt.Errorf("listing consents by tenant: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -86,6 +92,7 @@ func (s *Store) createDataExportRequest(ctx context.Context, p gen.CreateDataExp
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("creating data export request: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -94,6 +101,7 @@ func (s *Store) getDataExportRequest(ctx context.Context, id, tenantID pgtype.UU
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("getting data export request: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -102,6 +110,7 @@ func (s *Store) updateDataExportRequestStatus(ctx context.Context, p gen.UpdateD
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("updating data export request status: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -109,10 +118,12 @@ func (s *Store) listPendingDataExportRequests(ctx context.Context, limit int32) 
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListPendingDataExportRequests(ctx, limit)
 	if err != nil {
 		return nil, fmt.Errorf("listing pending data export requests: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -125,6 +136,7 @@ func (s *Store) createAccountDeletionRequest(ctx context.Context, p gen.CreateAc
 	if err != nil {
 		return gen.AccountDeletionRequest{}, fmt.Errorf("creating account deletion request: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -133,6 +145,7 @@ func (s *Store) getAccountDeletionRequest(ctx context.Context, id, tenantID pgty
 	if err != nil {
 		return gen.AccountDeletionRequest{}, fmt.Errorf("getting account deletion request: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -141,6 +154,7 @@ func (s *Store) updateAccountDeletionRequestStatus(ctx context.Context, p gen.Up
 	if err != nil {
 		return gen.AccountDeletionRequest{}, fmt.Errorf("updating account deletion request status: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -148,10 +162,12 @@ func (s *Store) listPendingDeletionRequests(ctx context.Context, limit int32) ([
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListPendingDeletionRequests(ctx, limit)
 	if err != nil {
 		return nil, fmt.Errorf("listing pending deletion requests: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -159,6 +175,7 @@ func (s *Store) anonymizeUser(ctx context.Context, p gen.AnonymizeUserParams) er
 	if err := s.write.AnonymizeUser(ctx, p); err != nil {
 		return fmt.Errorf("anonymizing user: %w", err)
 	}
+
 	return nil
 }
 
@@ -166,6 +183,7 @@ func (s *Store) deleteUserTokens(ctx context.Context, p gen.DeleteUserTokensPara
 	if err := s.write.DeleteUserTokens(ctx, p); err != nil {
 		return fmt.Errorf("deleting user tokens: %w", err)
 	}
+
 	return nil
 }
 
@@ -178,6 +196,7 @@ func (s *Store) createAuditLog(ctx context.Context, p gen.CreateAuditLogParams) 
 	if err != nil {
 		return gen.AuditLog{}, fmt.Errorf("creating audit log: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -185,9 +204,11 @@ func (s *Store) listAuditLogs(ctx context.Context, p gen.ListAuditLogsParams) ([
 	if p.PageLimit <= 0 || p.PageLimit > MaxPageSize {
 		p.PageLimit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListAuditLogs(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("listing audit logs: %w", err)
 	}
+
 	return rows, nil
 }

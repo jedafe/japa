@@ -36,26 +36,30 @@ type VerificationTokenRecord struct {
 
 // GenerateResetToken creates a cryptographically random token and its SHA-256 hash.
 // The raw token is sent to the user; the hash is stored in the database.
-func GenerateResetToken() (token string, hash string, err error) {
+func GenerateResetToken() (token, hash string, err error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", "", fmt.Errorf("generating reset token: %w", err)
 	}
+
 	token = hex.EncodeToString(bytes)
 	h := sha256.Sum256(bytes)
 	hash = hex.EncodeToString(h[:])
+
 	return token, hash, nil
 }
 
 // GenerateVerificationToken creates a cryptographically random token and its SHA-256 hash.
-func GenerateVerificationToken() (token string, hash string, err error) {
+func GenerateVerificationToken() (token, hash string, err error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", "", fmt.Errorf("generating verification token: %w", err)
 	}
+
 	token = hex.EncodeToString(bytes)
 	h := sha256.Sum256(bytes)
 	hash = hex.EncodeToString(h[:])
+
 	return token, hash, nil
 }
 

@@ -3,6 +3,7 @@ package geoip
 import (
 	"archive/tar"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,22 +42,25 @@ func NewUpdater(licenseKey, dbPath string, reader *Reader) *Updater {
 // (weekly, Sunday 02:00 UTC).
 func (u *Updater) DownloadAndUpdate() error {
 	if u.licenseKey == "" {
-		return fmt.Errorf("JC_MAXMIND_LICENSE_KEY is not set - cannot update geoip database")
+		return errors.New("JC_MAXMIND_LICENSE_KEY is not set - cannot update geoip database")
 	}
 
 	// Download the database archive
-	req, err := http.NewRequest("GET", UpdateURL, nil)
+	req, err := http.NewRequest(http.MethodGet, UpdateURL, nil)
 	if err != nil {
 		return fmt.Errorf("creating update request: %w", err)
 	}
+
 	req.SetBasicAuth(u.licenseKey, u.licenseKey)
 
 	client := &http.Client{Timeout: 5 * time.Minute}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("downloading geoip database: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download returned status %d", resp.StatusCode)
@@ -72,7 +76,7 @@ func (u *Updater) DownloadAndUpdate() error {
 	// Open the new database
 	newReader, err := geoip2.Open(tmpPath)
 	if err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("opening new database: %w", err)
 	}
 
@@ -93,30 +97,38 @@ func extractMMDB(r io.Reader, outputPath string) error {
 	if err != nil {
 		return fmt.Errorf("creating gzip reader: %w", err)
 	}
-	defer gzr.Close()
+
+	defer func() { _ = gzr.Close() }()
 
 	tr := tar.NewReader(gzr)
+
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
+
 		if err != nil {
 			return fmt.Errorf("reading tar: %w", err)
 		}
 
 		if filepath.Ext(header.Name) == ".mmdb" {
-			out, err := os.Create(outputPath)
+			out, err := os.Create(outputPath) //nolint:gosec // G304: outputPath derived from trusted dbPath config
 			if err != nil {
 				return fmt.Errorf("creating output file: %w", err)
 			}
-			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
+
+			// Limit decompression to 200MB to prevent decompression bomb attacks.
+			// GeoLite2-City is typically ~60-80MB; 200MB provides headroom.
+			const maxMMDBSize = 200 * 1024 * 1024
+			if _, err := io.Copy(out, io.LimitReader(tr, maxMMDBSize)); err != nil {
+				_ = out.Close()
 				return fmt.Errorf("writing mmdb: %w", err)
 			}
+
 			return out.Close()
 		}
 	}
 
-	return fmt.Errorf("no .mmdb file found in archive")
+	return errors.New("no .mmdb file found in archive")
 }

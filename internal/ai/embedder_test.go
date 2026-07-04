@@ -10,11 +10,15 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestNewContentEmbedder(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
+
 	ce := NewContentEmbedder(d, nil)
 	if ce == nil {
 		t.Fatal("NewContentEmbedder returned nil")
 	}
+
 	if ce.dispatcher != d {
 		t.Error("dispatcher not set correctly")
 	}
@@ -25,8 +29,11 @@ func TestNewContentEmbedder(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestContentEmbedder_NilDispatcher(t *testing.T) {
+	t.Parallel()
+
 	ce := NewContentEmbedder(nil, nil)
-	err := ce.EmbedContent(context.Background(), [16]byte{1}, [16]byte{2}, "test")
+
+	err := ce.EmbedContent(t.Context(), [16]byte{1}, [16]byte{2}, "test")
 	if err != nil {
 		t.Fatalf("expected nil error with nil dispatcher (graceful skip), got: %v", err)
 	}
@@ -37,10 +44,12 @@ func TestContentEmbedder_NilDispatcher(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestContentEmbedder_NilWriter(t *testing.T) {
+	t.Parallel()
+
 	d := NewDispatcher()
 	p := &mockProvider{
 		name: "embedder",
-		sendFn: func(ctx context.Context, req Request) (Response, error) {
+		sendFn: func(_ context.Context, _ Request) (Response, error) {
 			return Response{
 				ProviderRef: "test",
 				Status:      "success",
@@ -51,7 +60,8 @@ func TestContentEmbedder_NilWriter(t *testing.T) {
 	d.RegisterProvider("embedding", p)
 
 	ce := NewContentEmbedder(d, nil)
-	err := ce.EmbedContent(context.Background(), [16]byte{1}, [16]byte{2}, "test")
+
+	err := ce.EmbedContent(t.Context(), [16]byte{1}, [16]byte{2}, "test")
 	if err == nil {
 		t.Fatal("expected error with nil writer, got nil")
 	}

@@ -3,6 +3,7 @@ package pagebuilder
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -45,6 +46,7 @@ func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID) ([]Block, 
 	defer rows.Close()
 
 	var blocks []Block
+
 	for rows.Next() {
 		var b Block
 		if err := rows.Scan(
@@ -54,14 +56,17 @@ func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID) ([]Block, 
 		); err != nil {
 			return nil, fmt.Errorf("scanning block: %w", err)
 		}
+
 		blocks = append(blocks, b)
 	}
+
 	return blocks, rows.Err()
 }
 
 // GetBlock returns a single block by ID, scoped to the tenant.
 func (s *Store) GetBlock(ctx context.Context, id, tenantID pgtype.UUID) (Block, error) {
 	var b Block
+
 	err := s.reader.QueryRow(ctx, `
 		SELECT id, tenant_id, name, slug, category, component,
 		       COALESCE(default_config, '{}'::jsonb),
@@ -77,6 +82,7 @@ func (s *Store) GetBlock(ctx context.Context, id, tenantID pgtype.UUID) (Block, 
 	if err != nil {
 		return Block{}, fmt.Errorf("getting block: %w", err)
 	}
+
 	return b, nil
 }
 
@@ -86,13 +92,16 @@ func (s *Store) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input Cre
 	if defaultConfig == nil {
 		defaultConfig = json.RawMessage(`{}`)
 	}
+
 	configSchema := input.ConfigSchema
 	if configSchema == nil {
 		configSchema = json.RawMessage(`{}`)
 	}
 
 	var b Block
-	err := s.writer.QueryRow(ctx, `
+
+	err := s.writer.QueryRow(
+		ctx, `
 		INSERT INTO pagebuilder_blocks (tenant_id, name, slug, category, component, default_config, config_schema, preview_image, is_enabled)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, tenant_id, name, slug, category, component,
@@ -109,6 +118,7 @@ func (s *Store) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input Cre
 	if err != nil {
 		return Block{}, fmt.Errorf("creating block: %w", err)
 	}
+
 	return b, nil
 }
 
@@ -118,13 +128,16 @@ func (s *Store) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, input
 	if defaultConfig == nil {
 		defaultConfig = json.RawMessage(`{}`)
 	}
+
 	configSchema := input.ConfigSchema
 	if configSchema == nil {
 		configSchema = json.RawMessage(`{}`)
 	}
 
 	var b Block
-	err := s.writer.QueryRow(ctx, `
+
+	err := s.writer.QueryRow(
+		ctx, `
 		UPDATE pagebuilder_blocks
 		SET name = $3, slug = $4, category = $5, component = $6,
 		    default_config = $7, config_schema = $8, preview_image = $9,
@@ -144,6 +157,7 @@ func (s *Store) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, input
 	if err != nil {
 		return Block{}, fmt.Errorf("updating block: %w", err)
 	}
+
 	return b, nil
 }
 
@@ -156,9 +170,11 @@ func (s *Store) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) error
 	if err != nil {
 		return fmt.Errorf("deleting block: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("block not found or is a system block")
+		return errors.New("block not found or is a system block")
 	}
+
 	return nil
 }
 
@@ -181,6 +197,7 @@ func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID) ([]Temp
 	defer rows.Close()
 
 	var templates []Template
+
 	for rows.Next() {
 		var t Template
 		if err := rows.Scan(
@@ -189,14 +206,17 @@ func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID) ([]Temp
 		); err != nil {
 			return nil, fmt.Errorf("scanning template: %w", err)
 		}
+
 		templates = append(templates, t)
 	}
+
 	return templates, rows.Err()
 }
 
 // GetTemplate returns a single template by ID, scoped to the tenant.
 func (s *Store) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (Template, error) {
 	var t Template
+
 	err := s.reader.QueryRow(ctx, `
 		SELECT id, tenant_id, name, slug, description, page_type,
 		       COALESCE(blocks, '[]'::jsonb), is_system, created_at, updated_at
@@ -209,6 +229,7 @@ func (s *Store) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (Temp
 	if err != nil {
 		return Template{}, fmt.Errorf("getting template: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -220,7 +241,9 @@ func (s *Store) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, input 
 	}
 
 	var t Template
-	err := s.writer.QueryRow(ctx, `
+
+	err := s.writer.QueryRow(
+		ctx, `
 		INSERT INTO pagebuilder_templates (tenant_id, name, slug, description, page_type, blocks)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, tenant_id, name, slug, description, page_type,
@@ -233,6 +256,7 @@ func (s *Store) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, input 
 	if err != nil {
 		return Template{}, fmt.Errorf("creating template: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -244,7 +268,9 @@ func (s *Store) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, in
 	}
 
 	var t Template
-	err := s.writer.QueryRow(ctx, `
+
+	err := s.writer.QueryRow(
+		ctx, `
 		UPDATE pagebuilder_templates
 		SET name = $3, slug = $4, description = $5, page_type = $6,
 		    blocks = $7, updated_at = now()
@@ -259,6 +285,7 @@ func (s *Store) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, in
 	if err != nil {
 		return Template{}, fmt.Errorf("updating template: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -271,9 +298,11 @@ func (s *Store) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) er
 	if err != nil {
 		return fmt.Errorf("deleting template: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("template not found or is a system template")
+		return errors.New("template not found or is a system template")
 	}
+
 	return nil
 }
 
@@ -299,6 +328,7 @@ func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID) ([]Theme, 
 	defer rows.Close()
 
 	var themes []Theme
+
 	for rows.Next() {
 		var t Theme
 		if err := rows.Scan(
@@ -308,14 +338,17 @@ func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID) ([]Theme, 
 		); err != nil {
 			return nil, fmt.Errorf("scanning theme: %w", err)
 		}
+
 		themes = append(themes, t)
 	}
+
 	return themes, rows.Err()
 }
 
 // GetTheme returns a single theme by ID, scoped to the tenant.
 func (s *Store) GetTheme(ctx context.Context, id, tenantID pgtype.UUID) (Theme, error) {
 	var t Theme
+
 	err := s.reader.QueryRow(ctx, `
 		SELECT id, tenant_id, name, slug, description,
 		       COALESCE(colors, '{}'::jsonb),
@@ -332,6 +365,7 @@ func (s *Store) GetTheme(ctx context.Context, id, tenantID pgtype.UUID) (Theme, 
 	if err != nil {
 		return Theme{}, fmt.Errorf("getting theme: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -341,17 +375,21 @@ func (s *Store) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input Cre
 	if colors == nil {
 		colors = json.RawMessage(`{}`)
 	}
+
 	typography := input.Typography
 	if typography == nil {
 		typography = json.RawMessage(`{}`)
 	}
+
 	spacing := input.Spacing
 	if spacing == nil {
 		spacing = json.RawMessage(`{}`)
 	}
 
 	var t Theme
-	err := s.writer.QueryRow(ctx, `
+
+	err := s.writer.QueryRow(
+		ctx, `
 		INSERT INTO pagebuilder_themes (tenant_id, name, slug, description, colors, typography, spacing, is_default)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, tenant_id, name, slug, description,
@@ -368,6 +406,7 @@ func (s *Store) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input Cre
 	if err != nil {
 		return Theme{}, fmt.Errorf("creating theme: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -377,17 +416,21 @@ func (s *Store) UpdateTheme(ctx context.Context, id, tenantID pgtype.UUID, input
 	if colors == nil {
 		colors = json.RawMessage(`{}`)
 	}
+
 	typography := input.Typography
 	if typography == nil {
 		typography = json.RawMessage(`{}`)
 	}
+
 	spacing := input.Spacing
 	if spacing == nil {
 		spacing = json.RawMessage(`{}`)
 	}
 
 	var t Theme
-	err := s.writer.QueryRow(ctx, `
+
+	err := s.writer.QueryRow(
+		ctx, `
 		UPDATE pagebuilder_themes
 		SET name = $3, slug = $4, description = $5, colors = $6,
 		    typography = $7, spacing = $8, is_default = $9, updated_at = now()
@@ -406,6 +449,7 @@ func (s *Store) UpdateTheme(ctx context.Context, id, tenantID pgtype.UUID, input
 	if err != nil {
 		return Theme{}, fmt.Errorf("updating theme: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -418,9 +462,11 @@ func (s *Store) DeleteTheme(ctx context.Context, id, tenantID pgtype.UUID) error
 	if err != nil {
 		return fmt.Errorf("deleting theme: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("theme not found")
+		return errors.New("theme not found")
 	}
+
 	return nil
 }
 
@@ -431,7 +477,8 @@ func (s *Store) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID) e
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `
 		UPDATE pagebuilder_themes SET is_default = false WHERE tenant_id = $1
@@ -446,8 +493,9 @@ func (s *Store) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID) e
 	if err != nil {
 		return fmt.Errorf("setting default theme: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("theme not found")
+		return errors.New("theme not found")
 	}
 
 	return tx.Commit(ctx)
@@ -474,6 +522,7 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID) ([]Page, er
 	defer rows.Close()
 
 	var pages []Page
+
 	for rows.Next() {
 		var p Page
 		if err := rows.Scan(
@@ -483,8 +532,10 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID) ([]Page, er
 		); err != nil {
 			return nil, fmt.Errorf("scanning page: %w", err)
 		}
+
 		pages = append(pages, p)
 	}
+
 	return pages, rows.Err()
 }
 
@@ -505,6 +556,7 @@ func (s *Store) ListPublishedPages(ctx context.Context, tenantID pgtype.UUID) ([
 	defer rows.Close()
 
 	var pages []Page
+
 	for rows.Next() {
 		var p Page
 		if err := rows.Scan(
@@ -514,14 +566,17 @@ func (s *Store) ListPublishedPages(ctx context.Context, tenantID pgtype.UUID) ([
 		); err != nil {
 			return nil, fmt.Errorf("scanning page: %w", err)
 		}
+
 		pages = append(pages, p)
 	}
+
 	return pages, rows.Err()
 }
 
 // GetPage returns a single page by ID, scoped to the tenant.
 func (s *Store) GetPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
 	var p Page
+
 	err := s.reader.QueryRow(ctx, `
 		SELECT id, tenant_id, title, slug, description, template_id, theme_id,
 		       COALESCE(blocks, '[]'::jsonb),
@@ -537,12 +592,14 @@ func (s *Store) GetPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, er
 	if err != nil {
 		return Page{}, fmt.Errorf("getting page: %w", err)
 	}
+
 	return p, nil
 }
 
 // GetPageBySlug returns a published page by slug for public consumption.
 func (s *Store) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (Page, error) {
 	var p Page
+
 	err := s.reader.QueryRow(ctx, `
 		SELECT id, tenant_id, title, slug, description, template_id, theme_id,
 		       COALESCE(blocks, '[]'::jsonb),
@@ -558,26 +615,31 @@ func (s *Store) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.
 	if err != nil {
 		return Page{}, fmt.Errorf("getting page by slug: %w", err)
 	}
+
 	return p, nil
 }
 
 // CreatePage inserts a new page row.
-func (s *Store) CreatePage(ctx context.Context, tenantID pgtype.UUID, createdBy pgtype.UUID, input CreatePageInput) (Page, error) {
+func (s *Store) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID, input CreatePageInput) (Page, error) {
 	blocks := input.Blocks
 	if blocks == nil {
 		blocks = json.RawMessage(`[]`)
 	}
+
 	meta := input.Meta
 	if meta == nil {
 		meta = json.RawMessage(`{}`)
 	}
+
 	status := input.Status
 	if status == "" {
 		status = PageStatusDraft
 	}
 
 	var p Page
-	err := s.writer.QueryRow(ctx, `
+
+	err := s.writer.QueryRow(
+		ctx, `
 		INSERT INTO pages (tenant_id, title, slug, description, template_id, theme_id, blocks, meta, status, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
@@ -594,6 +656,7 @@ func (s *Store) CreatePage(ctx context.Context, tenantID pgtype.UUID, createdBy 
 	if err != nil {
 		return Page{}, fmt.Errorf("creating page: %w", err)
 	}
+
 	return p, nil
 }
 
@@ -603,13 +666,16 @@ func (s *Store) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input 
 	if blocks == nil {
 		blocks = json.RawMessage(`[]`)
 	}
+
 	meta := input.Meta
 	if meta == nil {
 		meta = json.RawMessage(`{}`)
 	}
 
 	var p Page
-	err := s.writer.QueryRow(ctx, `
+
+	err := s.writer.QueryRow(
+		ctx, `
 		UPDATE pages
 		SET title = $3, slug = $4, description = $5, template_id = $6,
 		    theme_id = $7, blocks = $8, meta = $9, status = $10, updated_at = now()
@@ -628,6 +694,7 @@ func (s *Store) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input 
 	if err != nil {
 		return Page{}, fmt.Errorf("updating page: %w", err)
 	}
+
 	return p, nil
 }
 
@@ -639,15 +706,18 @@ func (s *Store) DeletePage(ctx context.Context, id, tenantID pgtype.UUID) error 
 	if err != nil {
 		return fmt.Errorf("deleting page: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("page not found")
+		return errors.New("page not found")
 	}
+
 	return nil
 }
 
 // PublishPage sets the page status to 'published' and stamps published_at.
 func (s *Store) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
 	var p Page
+
 	err := s.writer.QueryRow(ctx, `
 		UPDATE pages
 		SET status = 'published', published_at = now(), updated_at = now()
@@ -664,12 +734,14 @@ func (s *Store) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Page
 	if err != nil {
 		return Page{}, fmt.Errorf("publishing page: %w", err)
 	}
+
 	return p, nil
 }
 
 // ArchivePage sets the page status to 'archived'.
 func (s *Store) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
 	var p Page
+
 	err := s.writer.QueryRow(ctx, `
 		UPDATE pages
 		SET status = 'archived', updated_at = now()
@@ -686,5 +758,6 @@ func (s *Store) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Page
 	if err != nil {
 		return Page{}, fmt.Errorf("archiving page: %w", err)
 	}
+
 	return p, nil
 }

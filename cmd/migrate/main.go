@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jedafe/japa/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/config"
 )
 
 func main() {
@@ -56,6 +56,7 @@ func runMigrations() error {
 	}
 
 	migrationsDir := findMigrationsDir()
+
 	files, err := listMigrationFiles(migrationsDir)
 	if err != nil {
 		return fmt.Errorf("listing migration files: %w", err)
@@ -78,7 +79,7 @@ func runMigrations() error {
 			continue
 		}
 
-		content, err := os.ReadFile(file)
+		content, err := os.ReadFile(file) //nolint:gosec // G304: migration files from trusted admin-configured directory
 		if err != nil {
 			return fmt.Errorf("reading migration %s: %w", name, err)
 		}
@@ -86,10 +87,12 @@ func runMigrations() error {
 		if err := applyMigration(ctx, pool, name, string(content)); err != nil {
 			return fmt.Errorf("applying migration %s: %w", name, err)
 		}
+
 		slog.Info("applied migration", "file", name)
 	}
 
 	slog.Info("migrations complete", "count", len(files))
+
 	return nil
 }
 
@@ -106,6 +109,7 @@ func ensureMigrationsTable(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return fmt.Errorf("creating schema_migrations: %w", err)
 	}
+
 	return nil
 }
 
@@ -119,16 +123,20 @@ func getAppliedMigrations(ctx context.Context, pool *pgxpool.Pool) (map[string]b
 	defer rows.Close()
 
 	applied := make(map[string]bool)
+
 	for rows.Next() {
 		var filename string
 		if err := rows.Scan(&filename); err != nil {
 			return nil, fmt.Errorf("scanning migration row: %w", err)
 		}
+
 		applied[filename] = true
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating migration rows: %w", err)
 	}
+
 	return applied, nil
 }
 
@@ -140,7 +148,8 @@ func applyMigration(ctx context.Context, pool *pgxpool.Pool, filename, sql strin
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, sql); err != nil {
 		return fmt.Errorf("executing SQL: %w", err)
@@ -153,6 +162,7 @@ func applyMigration(ctx context.Context, pool *pgxpool.Pool, filename, sql strin
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing transaction: %w", err)
 	}
+
 	return nil
 }
 
@@ -165,17 +175,21 @@ func listMigrationFiles(dir string) ([]string, error) {
 	}
 
 	var files []string
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
+
 		if !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
 		}
+
 		files = append(files, filepath.Join(dir, entry.Name()))
 	}
 
 	sort.Strings(files)
+
 	return files, nil
 }
 

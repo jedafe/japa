@@ -1,5 +1,5 @@
 // Package media implements the Media System (Section 34).
-// Two-step upload: pre-sign → client uploads direct to MinIO → confirm.
+// Two-step upload: pre-sign → client uploads direct to SeaweedFS → confirm.
 // imgproxy HMAC-SHA256 signed URLs generated server-side.
 // Media Library at /dashboard/media with grid/list view.
 // Modal Picker for TipTap and Page Builder integration.
@@ -23,7 +23,7 @@ const (
 	StoragePathMedia = "media"
 )
 
-// Default bucket for MinIO storage.
+// DefaultBucket is the default bucket for SeaweedFS storage.
 const DefaultBucket = "media"
 
 // Pagination defaults.

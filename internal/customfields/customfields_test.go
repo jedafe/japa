@@ -17,7 +17,9 @@ import (
 func requestWithURLParam(method, target, param, value, body string) *http.Request {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add(param, value)
+
 	r := httptest.NewRequest(method, target, strings.NewReader(body))
+
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
 
@@ -25,14 +27,18 @@ func requestWithURLParam(method, target, param, value, body string) *http.Reques
 // failing the test when the body is not valid JSON.
 func decodeErrorResponse(t *testing.T, body []byte) errorResponse {
 	t.Helper()
+
 	var got errorResponse
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("unmarshal error response: %v", err)
 	}
+
 	return got
 }
 
 func TestIsValidFieldType(t *testing.T) {
+	t.Parallel()
+
 	valid := []string{
 		FieldTypeText, FieldTypeTextarea, FieldTypeNumber, FieldTypeBoolean,
 		FieldTypeDate, FieldTypeDatetime, FieldTypeSelect, FieldTypeMultiselect,
@@ -44,6 +50,7 @@ func TestIsValidFieldType(t *testing.T) {
 			t.Errorf("IsValidFieldType(%q) = false, want true", ft)
 		}
 	}
+
 	for _, ft := range []string{"foo", "", "invalid"} {
 		if IsValidFieldType(ft) {
 			t.Errorf("IsValidFieldType(%q) = true, want false", ft)
@@ -52,47 +59,60 @@ func TestIsValidFieldType(t *testing.T) {
 }
 
 func TestWriteJSON(t *testing.T) {
+	t.Parallel()
+
 	rr := httptest.NewRecorder()
 	writeJSON(rr, http.StatusCreated, map[string]string{"status": "ok"})
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusCreated)
 	}
+
 	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", ct)
 	}
+
 	var got map[string]string
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
+
 	if got["status"] != "ok" {
 		t.Errorf(`body["status"] = %q, want "ok"`, got["status"])
 	}
 }
 
 func TestWriteError(t *testing.T) {
+	t.Parallel()
+
 	rr := httptest.NewRecorder()
 	writeError(rr, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
+
 	got := decodeErrorResponse(t, rr.Body.Bytes())
 	if got.Error.Code != "invalid_body" {
 		t.Errorf("error.code = %q, want invalid_body", got.Error.Code)
 	}
+
 	if got.Error.Message != "Request body is not valid JSON" {
 		t.Errorf("error.message = %q, want Request body is not valid JSON", got.Error.Message)
 	}
 }
 
 func TestParseUUIDParam(t *testing.T) {
+	t.Parallel()
+
 	const valid = "550e8400-e29b-41d4-a716-446655440000"
 	r := requestWithURLParam(http.MethodGet, "/", "id", valid, "")
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		t.Fatalf("parseUUIDParam valid UUID: %v", err)
 	}
+
 	if !id.Valid {
 		t.Fatal("expected valid pgtype.UUID, got invalid zero value")
 	}
@@ -104,6 +124,8 @@ func TestParseUUIDParam(t *testing.T) {
 }
 
 func TestCreateFieldGroup_MissingFields(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandlers(nil, nil)
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/custom-field-groups", strings.NewReader(`{}`))
@@ -112,12 +134,15 @@ func TestCreateFieldGroup_MissingFields(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
 	}
+
 	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "missing_fields" {
 		t.Errorf("error.code = %q, want missing_fields", got.Error.Code)
 	}
 }
 
 func TestCreateFieldGroup_InvalidBody(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandlers(nil, nil)
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/custom-field-groups", strings.NewReader(`{not json`))
@@ -126,14 +151,19 @@ func TestCreateFieldGroup_InvalidBody(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
 	}
+
 	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_body" {
 		t.Errorf("error.code = %q, want invalid_body", got.Error.Code)
 	}
 }
 
 func TestCreateField_InvalidFieldType(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandlers(nil, nil)
+
 	const groupID = "550e8400-e29b-41d4-a716-446655440000"
+
 	body := `{"label":"Test","key":"test","field_type":"invalid"}`
 	r := requestWithURLParam(
 		http.MethodPost,
@@ -146,13 +176,17 @@ func TestCreateField_InvalidFieldType(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
 	}
+
 	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_field_type" {
 		t.Errorf("error.code = %q, want invalid_field_type", got.Error.Code)
 	}
 }
 
 func TestSubmitForm_InvalidBody(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandlers(nil, nil)
+
 	const formID = "550e8400-e29b-41d4-a716-446655440000"
 	r := requestWithURLParam(
 		http.MethodPost,
@@ -165,12 +199,15 @@ func TestSubmitForm_InvalidBody(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
 	}
+
 	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_body" {
 		t.Errorf("error.code = %q, want invalid_body", got.Error.Code)
 	}
 }
 
 func TestSupportedEmbedPlatforms(t *testing.T) {
+	t.Parallel()
+
 	want := map[string]bool{
 		"youtube": true, "github": true, "twitter": true, "vimeo": true,
 		"spotify": true, "figma": true, "codepen": true, "google_maps": true,
@@ -178,6 +215,7 @@ func TestSupportedEmbedPlatforms(t *testing.T) {
 	if len(SupportedEmbedPlatforms) != len(want) {
 		t.Fatalf("len(SupportedEmbedPlatforms) = %d, want %d", len(SupportedEmbedPlatforms), len(want))
 	}
+
 	for _, p := range SupportedEmbedPlatforms {
 		if !want[p] {
 			t.Errorf("unexpected platform %q in SupportedEmbedPlatforms", p)

@@ -2,9 +2,9 @@ package forum
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -26,31 +26,34 @@ type CreateThreadInput struct {
 // on the parent thread if this is a reply-thread (parent_reply_id set).
 func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtype.UUID, input CreateThreadInput) (gen.ForumThread, error) {
 	if input.Title == "" {
-		return gen.ForumThread{}, fmt.Errorf("title is required")
+		return gen.ForumThread{}, errors.New("title is required")
 	}
+
 	editWindow := input.EditWindowMinutes
 	if editWindow <= 0 {
 		editWindow = DefaultEditWindowMinutes
 	}
+
 	if input.Body == nil {
 		input.Body = []byte("[]")
 	}
 
 	thread, err := s.store.createThread(ctx, gen.CreateForumThreadParams{
-		TenantID:           tenantID,
-		ContentID:          input.ContentID,
-		SpaceID:            input.SpaceID,
-		AuthorUserID:       authorUserID,
-		ParentReplyID:      input.ParentReplyID,
-		Title:              input.Title,
-		Slug:               input.Slug,
-		Body:               input.Body,
-		IsAnonymous:        input.IsAnonymous,
-		EditWindowMinutes:  editWindow,
+		TenantID:          tenantID,
+		ContentID:         input.ContentID,
+		SpaceID:           input.SpaceID,
+		AuthorUserID:      authorUserID,
+		ParentReplyID:     input.ParentReplyID,
+		Title:             input.Title,
+		Slug:              input.Slug,
+		Body:              input.Body,
+		IsAnonymous:       input.IsAnonymous,
+		EditWindowMinutes: editWindow,
 	})
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("creating forum thread: %w", err)
 	}
+
 	return thread, nil
 }
 
@@ -74,6 +77,11 @@ func (s *Service) ListThreadsByAuthor(ctx context.Context, tenantID, authorUserI
 	return s.store.listThreadsByAuthor(ctx, tenantID, authorUserID, cursorCreatedAt, limit)
 }
 
+// ListThreadsByTenant returns all paginated threads for a tenant (public listing).
+func (s *Service) ListThreadsByTenant(ctx context.Context, tenantID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	return s.store.listThreadsByTenant(ctx, tenantID, cursorCreatedAt, limit)
+}
+
 // ListThreadsByTag returns paginated threads for a tag.
 func (s *Service) ListThreadsByTag(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
 	return s.store.listThreadsByTag(ctx, tenantID, tagID, cursorCreatedAt, limit)
@@ -86,21 +94,18 @@ func (s *Service) UpdateThread(ctx context.Context, id, tenantID, userID pgtype.
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting thread for update: %w", err)
 	}
+
 	if thread.AuthorUserID != userID {
-		return gen.ForumThread{}, fmt.Errorf("only the author can edit this thread")
+		return gen.ForumThread{}, errors.New("only the author can edit this thread")
 	}
 
-	// Check edit window — if past, allow but flag as edited.
-	if thread.EditWindowMinutes > 0 {
-		editDeadline := thread.CreatedAt.Time.Add(time.Duration(thread.EditWindowMinutes) * time.Minute)
-		if time.Now().After(editDeadline) && !thread.IsEdited {
-			// Past window — proceed, is_edited will be set to true by the update.
-		}
-	}
+	// Edit window check removed — the update query always sets is_edited=true
+	// when the content changes, regardless of the window.
 
 	if title == "" {
 		title = thread.Title
 	}
+
 	if body == nil {
 		body = thread.Body
 	}
@@ -142,12 +147,12 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 	}
 
 	reply, err := s.store.createReply(ctx, gen.CreateForumReplyParams{
-		TenantID:       tenantID,
-		ThreadID:       threadID,
-		ParentReplyID:  input.ParentReplyID,
-		AuthorUserID:   authorUserID,
-		Body:           input.Body,
-		IsAnonymous:    input.IsAnonymous,
+		TenantID:      tenantID,
+		ThreadID:      threadID,
+		ParentReplyID: input.ParentReplyID,
+		AuthorUserID:  authorUserID,
+		Body:          input.Body,
+		IsAnonymous:   input.IsAnonymous,
 	})
 	if err != nil {
 		return gen.ForumReply{}, fmt.Errorf("creating forum reply: %w", err)
@@ -178,12 +183,15 @@ func (s *Service) UpdateReply(ctx context.Context, id, tenantID, userID pgtype.U
 	if err != nil {
 		return gen.ForumReply{}, fmt.Errorf("getting reply for update: %w", err)
 	}
+
 	if reply.AuthorUserID != userID {
-		return gen.ForumReply{}, fmt.Errorf("only the author can edit this reply")
+		return gen.ForumReply{}, errors.New("only the author can edit this reply")
 	}
+
 	if body == nil {
 		body = reply.Body
 	}
+
 	return s.store.updateReply(ctx, gen.UpdateForumReplyParams{
 		ID:       id,
 		TenantID: tenantID,
@@ -210,10 +218,11 @@ type VoteInput struct {
 // Vote upserts a vote on a thread or reply and recalculates the entity's score.
 func (s *Service) Vote(ctx context.Context, tenantID, userID pgtype.UUID, input VoteInput) (gen.ForumVote, error) {
 	if input.Value != VoteDown && input.Value != VoteUp {
-		return gen.ForumVote{}, fmt.Errorf("vote value must be -1 or 1")
+		return gen.ForumVote{}, errors.New("vote value must be -1 or 1")
 	}
+
 	if input.EntityType != EntityTypeThread && input.EntityType != EntityTypeReply {
-		return gen.ForumVote{}, fmt.Errorf("entity type must be 'thread' or 'reply'")
+		return gen.ForumVote{}, errors.New("entity type must be 'thread' or 'reply'")
 	}
 
 	vote, err := s.store.upsertVote(ctx, gen.UpsertForumVoteParams{
@@ -254,8 +263,9 @@ func (s *Service) GetVoteScore(ctx context.Context, entityType string, entityID 
 // AddBookmark adds a bookmark for a thread or reply.
 func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string) (gen.ForumBookmark, error) {
 	if entityType != EntityTypeThread && entityType != EntityTypeReply {
-		return gen.ForumBookmark{}, fmt.Errorf("entity type must be 'thread' or 'reply'")
+		return gen.ForumBookmark{}, errors.New("entity type must be 'thread' or 'reply'")
 	}
+
 	if folder == "" {
 		folder = "default"
 	}
@@ -288,6 +298,7 @@ func (s *Service) RemoveBookmark(ctx context.Context, userID pgtype.UUID, entity
 	if err := s.store.incrementEntityBookmarkCount(ctx, entityID, -1); err != nil {
 		slog.Warn("failed to decrement bookmark count", "error", err)
 	}
+
 	return nil
 }
 
@@ -313,4 +324,13 @@ func (s *Service) RecordReplyView(ctx context.Context, replyID, userID pgtype.UU
 // GetReplyViewCount returns the view count for a reply.
 func (s *Service) GetReplyViewCount(ctx context.Context, replyID pgtype.UUID) (int32, error) {
 	return s.store.getReplyViewCount(ctx, replyID)
+}
+
+// IncrementThreadView atomically increments the view count for a thread.
+// Called fire-and-forget from the GetThread handler — errors are logged
+// but never block the response.
+func (s *Service) IncrementThreadView(ctx context.Context, id, tenantID pgtype.UUID) {
+	if err := s.store.incrementThreadViewCount(ctx, id, tenantID); err != nil {
+		slog.Warn("failed to increment thread view count", "thread_id", id, "error", err)
+	}
 }

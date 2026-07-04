@@ -19,6 +19,7 @@ func (s *Service) scanFailedLoginSpike(ctx context.Context, tenantID pgtype.UUID
 	// Count recent failed login events from platform_events meta.
 	// This is a heuristic — in production the actual auth logs would be queried.
 	var count int64
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM platform_events
@@ -37,6 +38,7 @@ func (s *Service) scanFailedLoginSpike(ctx context.Context, tenantID pgtype.UUID
 			"threshold":    threshold,
 			"period":       "1h",
 		})
+
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
 			TenantID: tenantID,
 			ScanType: string(ScanFailedLoginSpike),
@@ -48,12 +50,14 @@ func (s *Service) scanFailedLoginSpike(ctx context.Context, tenantID pgtype.UUID
 			return fmt.Errorf("recording failed login spike: %w", err)
 		}
 	}
+
 	return nil
 }
 
 // scanSLABreachCount checks for SLA breaches in the ticket system.
 func (s *Service) scanSLABreachCount(ctx context.Context, tenantID pgtype.UUID) error {
 	var count int64
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM security_scan_results
@@ -71,6 +75,7 @@ func (s *Service) scanSLABreachCount(ctx context.Context, tenantID pgtype.UUID) 
 			"breach_count": count,
 			"period":       "24h",
 		})
+
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
 			TenantID: tenantID,
 			ScanType: string(ScanSLABreachCount),
@@ -82,12 +87,14 @@ func (s *Service) scanSLABreachCount(ctx context.Context, tenantID pgtype.UUID) 
 			return fmt.Errorf("recording SLA breach count: %w", err)
 		}
 	}
+
 	return nil
 }
 
 // scanStaleTokens checks for refresh tokens older than 30 days.
 func (s *Service) scanStaleTokens(ctx context.Context, tenantID pgtype.UUID) error {
 	var count int64
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM refresh_tokens
@@ -97,7 +104,7 @@ func (s *Service) scanStaleTokens(ctx context.Context, tenantID pgtype.UUID) err
 	`, tenantID).Scan(&count)
 	if err != nil {
 		// Table may not exist or have different schema — treat as non-fatal.
-		return nil
+		return nil //nolint:nilerr // intentional: degradable security check
 	}
 
 	if count > 100 {
@@ -105,6 +112,7 @@ func (s *Service) scanStaleTokens(ctx context.Context, tenantID pgtype.UUID) err
 			"stale_count": count,
 			"max_age":     "30d",
 		})
+
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
 			TenantID: tenantID,
 			ScanType: string(ScanStaleTokens),
@@ -116,7 +124,6 @@ func (s *Service) scanStaleTokens(ctx context.Context, tenantID pgtype.UUID) err
 			return fmt.Errorf("recording stale tokens: %w", err)
 		}
 	}
+
 	return nil
 }
-
-

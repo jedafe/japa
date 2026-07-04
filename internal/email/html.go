@@ -15,6 +15,8 @@ package email
 //   - {{.SupportURL}}  — link to the support/help page
 
 // passwordResetHTML is the HTML body for the password reset email.
+//
+//nolint:gosec // G101: HTML email template, not a credential
 const passwordResetHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>

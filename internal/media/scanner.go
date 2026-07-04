@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 )
@@ -56,7 +57,8 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 	if err != nil {
 		return fmt.Errorf("media:scan: open file %s/%s: %w", m.StorageBucket, m.StoragePath, err)
 	}
-	defer file.Close()
+
+	defer func() { _ = file.Close() }()
 
 	// Send to ClamAV.
 	result, err := p.scanner.Scan(file)
@@ -75,7 +77,8 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 	}
 
 	// Infected — soft-delete and log the incident.
-	slog.Error("media:scan: virus detected, rejecting upload",
+	slog.Error(
+		"media:scan: virus detected, rejecting upload",
 		"media_id", mediaID,
 		"virus", result.VirusName,
 		"filename", m.OriginalFilename,
@@ -90,7 +93,7 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 }
 
 // scanUUID is a helper to scan a UUID string into a byte slice.
-func scanUUID(s string, dst []byte) error {
+func scanUUID(s string, _ []byte) error {
 	var id [16]byte
 	// Simple UUID parsing: remove dashes and parse hex.
 	if len(s) == 36 && s[8] == '-' && s[13] == '-' && s[18] == '-' && s[23] == '-' {
@@ -101,6 +104,7 @@ func scanUUID(s string, dst []byte) error {
 	if len(s) == 32 {
 		return scanHex(s, id[:])
 	}
+
 	return fmt.Errorf("invalid UUID format: %s", s)
 }
 
@@ -108,14 +112,18 @@ func scanHex(s string, dst []byte) error {
 	if len(s) != 32 {
 		return fmt.Errorf("hex string must be 32 characters, got %d", len(s))
 	}
-	for i := 0; i < 16; i++ {
+
+	for i := range 16 {
 		hi := unhex(s[i*2])
 		lo := unhex(s[i*2+1])
+
 		if hi < 0 || lo < 0 {
-			return fmt.Errorf("invalid hex character in UUID")
+			return errors.New("invalid hex character in UUID")
 		}
+
 		dst[i] = byte(hi<<4 | lo)
 	}
+
 	return nil
 }
 
@@ -128,5 +136,6 @@ func unhex(c byte) int {
 	case c >= 'A' && c <= 'F':
 		return int(c-'A') + 10
 	}
+
 	return -1
 }

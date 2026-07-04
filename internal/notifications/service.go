@@ -21,7 +21,7 @@ type PreferenceInfo struct {
 
 // DispatchResult describes the outcome of a dispatch attempt.
 type DispatchResult struct {
-	Action   string     `json:"action"`    // "created", "extended", or "immediate"
+	Action   string      `json:"action"` // "created", "extended", or "immediate"
 	WindowID pgtype.UUID `json:"window_id"`
 }
 
@@ -30,7 +30,7 @@ type DispatchResult struct {
 // 2. If window exists and not dispatched: extend it (add actor)
 // 3. If no window: create new window
 // Returns whether a new notification was created or batch was extended.
-func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) (DispatchResult, error) {
+func (s *Service) DispatchNotification(ctx context.Context, _, recipientID pgtype.UUID, nType, _ string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, _, _, _ string) (DispatchResult, error) {
 	// Check user preferences — if in-app is disabled, skip entirely.
 	pref, err := s.store.getNotificationPreferences(ctx, recipientID)
 	if err == nil {
@@ -56,6 +56,7 @@ func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientI
 		}); err != nil {
 			return DispatchResult{}, fmt.Errorf("extending batch window: %w", err)
 		}
+
 		return DispatchResult{Action: "extended", WindowID: window.ID}, nil
 	}
 
@@ -87,7 +88,7 @@ func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientI
 // DispatchBatch processes a completed batch window.
 // Creates the final notification row with aggregated actor info
 // (e.g., "Alice and 9 others reacted") and marks the window as dispatched.
-func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID, tenantID pgtype.UUID) error {
+func (s *Service) DispatchBatch(ctx context.Context, windowID, _ pgtype.UUID) error {
 	// We need the window details to build the notification.
 	// Since there's no "get by ID" query, we'll build the notification from
 	// the window's data. This is called by the Asynq task processor.
@@ -101,14 +102,17 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 	if actorType != "" {
 		actorTypePtr = &actorType
 	}
+
 	var subjectTypePtr *string
 	if subjectType != "" {
 		subjectTypePtr = &subjectType
 	}
+
 	var bodyPtr *string
 	if body != "" {
 		bodyPtr = &body
 	}
+
 	var actionURLPtr *string
 	if actionURL != "" {
 		actionURLPtr = &actionURL
@@ -141,10 +145,12 @@ func (s *Service) GetNotifications(ctx context.Context, tenantID, recipientID pg
 	if err != nil {
 		return nil, fmt.Errorf("getting notifications: %w", err)
 	}
+
 	result := make([]NotificationInfo, len(rows))
 	for i, r := range rows {
 		result[i] = NotificationInfo{GetNotificationsByRecipientRow: r}
 	}
+
 	return result, nil
 }
 
@@ -154,6 +160,7 @@ func (s *Service) GetUnreadCount(ctx context.Context, tenantID, recipientID pgty
 	if err != nil {
 		return 0, fmt.Errorf("getting unread count: %w", err)
 	}
+
 	return int(count), nil
 }
 
@@ -178,10 +185,12 @@ func (s *Service) GetPreferences(ctx context.Context, userID pgtype.UUID) ([]Pre
 	if err != nil {
 		return nil, fmt.Errorf("getting preferences: %w", err)
 	}
+
 	result := make([]PreferenceInfo, len(rows))
 	for i, r := range rows {
 		result[i] = PreferenceInfo{GetNotificationPreferencesRow: r}
 	}
+
 	return result, nil
 }
 
@@ -202,12 +211,14 @@ func (s *Service) GetNotificationTypes(ctx context.Context) ([]gen.NotificationT
 }
 
 // BuildBatchTitle constructs an aggregated title from actor info.
-// Examples: "Alice reacted", "Alice and 2 others reacted", "Alice and 9 others reacted"
+// Examples: "Alice reacted", "Alice and 2 others reacted", "Alice and 9 others reacted".
 func BuildBatchTitle(singleActorName string, actorCount int32, action string) string {
 	if actorCount <= 1 {
 		return fmt.Sprintf("%s %s", singleActorName, action)
 	}
+
 	others := actorCount - 1
+
 	return fmt.Sprintf("%s and %d other%s %s", singleActorName, others, pluralize(others), action)
 }
 
@@ -216,6 +227,7 @@ func pluralize(n int32) string {
 	if n == 1 {
 		return ""
 	}
+
 	return "s"
 }
 
@@ -225,5 +237,6 @@ func SplitNames(names string) string {
 	if len(parts) == 0 {
 		return ""
 	}
+
 	return strings.TrimSpace(parts[0])
 }

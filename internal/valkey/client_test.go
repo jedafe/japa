@@ -10,31 +10,40 @@ import (
 // machine, so the tests never depend on a running Valkey instance.
 const unreachableAddr = "localhost:1"
 
-// shortCtx gives the go-redis client a tight deadline for any command, so
+// shortCtx gives the valkey-go client a tight deadline for any command, so
 // the tests fail fast instead of waiting for the OS-level dial timeout.
 func shortCtx(t *testing.T) context.Context {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	t.Cleanup(cancel)
+
 	return ctx
 }
 
 func TestNewWithFallback_ReturnsClient(t *testing.T) {
+	t.Parallel()
+
 	c := NewWithFallback(unreachableAddr)
 	if c == nil {
 		t.Fatal("expected non-nil client even with unreachable address")
 	}
-	if c.Redis() == nil {
-		t.Fatal("expected underlying redis client to be non-nil")
+
+	// In degraded mode, Redis() returns nil — callers check for nil
+	// and degrade gracefully (no-ops on cache misses).
+	if c.Redis() != nil {
+		t.Fatal("expected nil Redis() for unreachable address (degraded mode)")
 	}
-	if err := c.Close(); err != nil {
-		t.Fatalf("Close returned error: %v", err)
-	}
+
+	c.Close()
 }
 
 func TestNewWithFallback_PingUnreachable(t *testing.T) {
+	t.Parallel()
+
 	c := NewWithFallback(unreachableAddr)
-	t.Cleanup(func() { _ = c.Close() })
+
+	t.Cleanup(func() { c.Close() })
 
 	err := c.Ping(shortCtx(t))
 	if err == nil {
@@ -43,6 +52,8 @@ func TestNewWithFallback_PingUnreachable(t *testing.T) {
 }
 
 func TestNew_UnreachableReturnsError(t *testing.T) {
+	t.Parallel()
+
 	_, err := New(shortCtx(t), unreachableAddr)
 	if err == nil {
 		t.Fatal("expected New to return an error when the server is unreachable")
@@ -50,28 +61,19 @@ func TestNew_UnreachableReturnsError(t *testing.T) {
 }
 
 func TestClose_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+
 	c := NewWithFallback(unreachableAddr)
 	// Close should be safe to call exactly once. A panic here would surface
 	// as a test failure automatically.
-	if err := c.Close(); err != nil {
-		t.Fatalf("Close returned unexpected error: %v", err)
-	}
+	c.Close()
 }
 
 func TestClose_Idempotent(t *testing.T) {
-	c := NewWithFallback(unreachableAddr)
-	if err := c.Close(); err != nil {
-		t.Fatalf("first Close returned error: %v", err)
-	}
-	// A second Close may return an error from go-redis but must not panic.
-	_ = c.Close()
-}
+	t.Parallel()
 
-func TestRedis_ReturnsSameInstance(t *testing.T) {
 	c := NewWithFallback(unreachableAddr)
-	t.Cleanup(func() { _ = c.Close() })
-
-	if c.Redis() != c.Redis() {
-		t.Fatal("Redis() should return the same underlying client on every call")
-	}
+	c.Close()
+	// A second Close must not panic.
+	c.Close()
 }

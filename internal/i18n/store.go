@@ -35,6 +35,7 @@ func (s *Store) ListByLocale(ctx context.Context, tenantID pgtype.UUID, locale s
 	if err != nil {
 		return nil, fmt.Errorf("listing translations by locale: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -47,6 +48,7 @@ func (s *Store) ListByKeyPrefix(ctx context.Context, tenantID pgtype.UUID, prefi
 	if err != nil {
 		return nil, fmt.Errorf("listing translations by key prefix: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -60,6 +62,7 @@ func (s *Store) Get(ctx context.Context, tenantID pgtype.UUID, locale, key strin
 	if err != nil {
 		return gen.GetTranslationRow{}, fmt.Errorf("getting translation: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -69,6 +72,7 @@ func (s *Store) ListLocales(ctx context.Context, tenantID pgtype.UUID) ([]string
 	if err != nil {
 		return nil, fmt.Errorf("listing locales: %w", err)
 	}
+
 	return locales, nil
 }
 
@@ -78,6 +82,7 @@ func (s *Store) CountByLocale(ctx context.Context, tenantID pgtype.UUID) ([]gen.
 	if err != nil {
 		return nil, fmt.Errorf("counting translations by locale: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -90,6 +95,7 @@ func (s *Store) Upsert(ctx context.Context, p gen.UpsertTranslationParams) error
 	if err := s.write.UpsertTranslation(ctx, p); err != nil {
 		return fmt.Errorf("upserting translation: %w", err)
 	}
+
 	return nil
 }
 
@@ -101,5 +107,6 @@ func (s *Store) Delete(ctx context.Context, tenantID, id pgtype.UUID) error {
 	}); err != nil {
 		return fmt.Errorf("deleting translation: %w", err)
 	}
+
 	return nil
 }

@@ -6,6 +6,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -33,13 +34,14 @@ func NewContentEmbedder(dispatcher *Dispatcher, writer *pgxpool.Pool) *ContentEm
 // EmbedContent generates a vector embedding for the content body and stores
 // it in content_scores.relevance_embedding. If the content does not yet have
 // a content_scores row, one is created via INSERT ... ON CONFLICT.
-func (ce *ContentEmbedder) EmbedContent(ctx context.Context, contentID, tenantID [16]byte, text string) error {
+func (ce *ContentEmbedder) EmbedContent(ctx context.Context, contentID, _ [16]byte, text string) error {
 	if ce.dispatcher == nil {
 		slog.Warn("ai:embedder: no dispatcher configured, skipping")
 		return nil
 	}
+
 	if ce.writer == nil {
-		return fmt.Errorf("ai:embedder: database pool not configured")
+		return errors.New("ai:embedder: database pool not configured")
 	}
 
 	embedding, err := GenerateContentEmbedding(ctx, ce.dispatcher, text, DefaultEmbeddingModel)
@@ -48,7 +50,7 @@ func (ce *ContentEmbedder) EmbedContent(ctx context.Context, contentID, tenantID
 	}
 
 	if len(embedding) == 0 {
-		return fmt.Errorf("ai:embedder: embedding returned empty vector")
+		return errors.New("ai:embedder: embedding returned empty vector")
 	}
 
 	vec := pgvector.NewVector(embedding)
@@ -67,9 +69,11 @@ func (ce *ContentEmbedder) EmbedContent(ctx context.Context, contentID, tenantID
 		return fmt.Errorf("ai:embedder: storing embedding: %w", err)
 	}
 
-	slog.Info("ai:embedder: embedding stored",
+	slog.Info(
+		"ai:embedder: embedding stored",
 		"content_id", id.String(),
 		"dimensions", len(embedding),
 	)
+
 	return nil
 }

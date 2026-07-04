@@ -5,22 +5,29 @@ import (
 )
 
 func TestGenerateTOTPSecret(t *testing.T) {
+	t.Parallel()
+
 	secret, qrURL, err := GenerateTOTPSecret("user-123", "test@example.com")
 	if err != nil {
 		t.Fatalf("GenerateTOTPSecret failed: %v", err)
 	}
+
 	if secret == "" {
 		t.Error("expected non-empty secret")
 	}
+
 	if qrURL == "" {
 		t.Error("expected non-empty QR URL")
 	}
+
 	if len(secret) < 16 {
 		t.Errorf("secret too short: got %d chars", len(secret))
 	}
 }
 
 func TestGenerateTOTPSecret_EmptyInputs(t *testing.T) {
+	t.Parallel()
+
 	_, _, err := GenerateTOTPSecret("", "test@example.com")
 	if err == nil {
 		t.Error("expected error for empty user ID")
@@ -33,6 +40,7 @@ func TestGenerateTOTPSecret_EmptyInputs(t *testing.T) {
 }
 
 func TestVerifyTOTP_ValidCode(t *testing.T) {
+	t.Parallel()
 	// Generate a secret and create a valid code from it
 	secret, _, err := GenerateTOTPSecret("user-123", "test@example.com")
 	if err != nil {
@@ -46,6 +54,8 @@ func TestVerifyTOTP_ValidCode(t *testing.T) {
 }
 
 func TestVerifyTOTP_InvalidCode(t *testing.T) {
+	t.Parallel()
+
 	secret, _, err := GenerateTOTPSecret("user-123", "test@example.com")
 	if err != nil {
 		t.Fatalf("GenerateTOTPSecret failed: %v", err)
@@ -59,6 +69,8 @@ func TestVerifyTOTP_InvalidCode(t *testing.T) {
 }
 
 func TestVerifyTOTP_EmptyInputs(t *testing.T) {
+	t.Parallel()
+
 	result := VerifyTOTP("", "123456")
 	if result {
 		t.Error("expected false for empty secret")
@@ -71,6 +83,7 @@ func TestVerifyTOTP_EmptyInputs(t *testing.T) {
 }
 
 func TestVerifyTOTP_CleansInput(t *testing.T) {
+	t.Parallel()
 	// Verify that spaces and dashes are stripped
 	secret := "JBSWY3DPEHPK3PXP"
 	result := VerifyTOTP(secret, "123 456")
@@ -83,10 +96,13 @@ func TestVerifyTOTP_CleansInput(t *testing.T) {
 }
 
 func TestGenerateBackupCodes(t *testing.T) {
+	t.Parallel()
+
 	codes, err := GenerateBackupCodes()
 	if err != nil {
 		t.Fatalf("GenerateBackupCodes failed: %v", err)
 	}
+
 	if len(codes) != 10 {
 		t.Errorf("expected 10 backup codes, got %d", len(codes))
 	}
@@ -96,6 +112,7 @@ func TestGenerateBackupCodes(t *testing.T) {
 		if len(code) != 9 {
 			t.Errorf("code %d: expected 9 chars (XXXX-XXXX), got %d: %s", i, len(code), code)
 		}
+
 		if code[4] != '-' {
 			t.Errorf("code %d: expected dash at position 4, got %s", i, code)
 		}
@@ -103,7 +120,10 @@ func TestGenerateBackupCodes(t *testing.T) {
 }
 
 func TestFormatBackupCodes(t *testing.T) {
+	t.Parallel()
+
 	codes := []string{"ABCD-1234", "EFGH-5678"}
+
 	result := FormatBackupCodes(codes)
 	if result != `["ABCD-1234","EFGH-5678"]` {
 		t.Errorf("unexpected format: %s", result)
@@ -111,6 +131,8 @@ func TestFormatBackupCodes(t *testing.T) {
 }
 
 func TestSanitizeCode(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input    string
 		expected string
@@ -131,6 +153,8 @@ func TestSanitizeCode(t *testing.T) {
 }
 
 func TestTOTPIssuer(t *testing.T) {
+	t.Parallel()
+
 	if TOTPIssuer != "JapaConnect" {
 		t.Errorf("TOTPIssuer = %q, want %q", TOTPIssuer, "JapaConnect")
 	}

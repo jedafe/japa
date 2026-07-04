@@ -18,13 +18,15 @@ func DefaultSitemapQualityConfig() SitemapQualityConfig {
 
 // IsSpaceIndexable checks whether a space should be included in the sitemap.
 // A space must meet minimum member and post counts to be considered indexable.
-func IsSpaceIndexable(memberCount, postCount int, minMembers, minPosts int) bool {
+func IsSpaceIndexable(memberCount, postCount, minMembers, minPosts int) bool {
 	if minMembers <= 0 {
 		minMembers = DefaultSitemapQualityConfig().MinMembers
 	}
+
 	if minPosts <= 0 {
 		minPosts = DefaultSitemapQualityConfig().MinPosts
 	}
+
 	return memberCount >= minMembers && postCount >= minPosts
 }
 
@@ -35,14 +37,18 @@ func IsContentIndexable(status, visibility string, wordCount, minWords int, allo
 	if !allowSearchIndexing {
 		return false
 	}
+
 	if status != "published" {
 		return false
 	}
+
 	if visibility != "public" && visibility != "" {
 		return false
 	}
+
 	if minWords <= 0 {
 		minWords = DefaultSitemapQualityConfig().MinWords
 	}
+
 	return wordCount >= minWords
 }

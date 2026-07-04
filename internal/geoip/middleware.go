@@ -13,6 +13,7 @@ func realIP(r *http.Request) string {
 		parts := strings.SplitN(xff, ",", 2)
 		return strings.TrimSpace(parts[0])
 	}
+
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
 		return strings.TrimSpace(xri)
 	}
@@ -21,6 +22,7 @@ func realIP(r *http.Request) string {
 	if idx > 0 {
 		return r.RemoteAddr[:idx]
 	}
+
 	return r.RemoteAddr
 }
 

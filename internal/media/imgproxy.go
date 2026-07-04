@@ -3,8 +3,8 @@ package media
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"os"
 )
@@ -19,7 +19,7 @@ type ImageProxyOpts struct {
 
 // MediaURL generates an imgproxy HMAC-SHA256 signed URL for a media item.
 // Called on every serialization — NEVER cached in DB.
-func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string {
+func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string { //nolint:revive // stuttering type name preserved for API compatibility
 	key := os.Getenv("JC_IMGPROXY_KEY")
 	salt := os.Getenv("JC_IMGPROXY_SALT")
 	baseURL := os.Getenv("JC_IMGPROXY_BASE_URL")
@@ -35,15 +35,18 @@ func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string {
 	if resizingType == "" {
 		resizingType = "fill"
 	}
+
 	width := opts.Width
 	if width == 0 {
 		width = 640
 	}
+
 	height := opts.Height
 	if height == 0 {
 		resizingType = "auto"
 		height = 0
 	}
+
 	format := opts.Format
 	if format == "" {
 		format = "webp"

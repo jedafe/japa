@@ -36,6 +36,7 @@ func NewServer(cfg *Config) *asynq.Server {
 func NewMux() *asynq.ServeMux {
 	mux := asynq.NewServeMux()
 	RegisterHandlers(mux)
+
 	return mux
 }
 
@@ -53,10 +54,10 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	)
 
 	// Scheduled content publishing sweep — every 60 seconds.
-	scheduler.Register("*/60 * * * *", asynq.NewTask(TypeScheduledPublishSweep, nil))
+	_, _ = scheduler.Register("*/60 * * * *", asynq.NewTask(TypeScheduledPublishSweep, nil))
 
 	// Velocity score recalculation — every 5 minutes.
-	scheduler.Register("*/5 * * * *", asynq.NewTask(TypeVelocityScoreRecalc, nil))
+	_, _ = scheduler.Register("*/5 * * * *", asynq.NewTask(TypeVelocityScoreRecalc, nil))
 
 	return scheduler
 }

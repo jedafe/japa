@@ -29,6 +29,7 @@ func (s *Store) getBySlug(ctx context.Context, tenantID pgtype.UUID, audience, s
 	if err != nil {
 		return gen.DocPage{}, fmt.Errorf("getting doc page by slug: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -41,6 +42,7 @@ func (s *Store) getByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.DocP
 	if err != nil {
 		return gen.DocPage{}, fmt.Errorf("getting doc page by ID: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -53,6 +55,7 @@ func (s *Store) listByAudience(ctx context.Context, tenantID pgtype.UUID, audien
 	if err != nil {
 		return nil, fmt.Errorf("listing doc pages by audience: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -65,6 +68,7 @@ func (s *Store) listAllByAudience(ctx context.Context, tenantID pgtype.UUID, aud
 	if err != nil {
 		return nil, fmt.Errorf("listing all doc pages by audience: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -73,6 +77,7 @@ func (s *Store) create(ctx context.Context, params gen.CreateDocPageParams) erro
 	if err := s.write.CreateDocPage(ctx, params); err != nil {
 		return fmt.Errorf("creating doc page: %w", err)
 	}
+
 	return nil
 }
 
@@ -81,6 +86,7 @@ func (s *Store) update(ctx context.Context, params gen.UpdateDocPageParams) erro
 	if err := s.write.UpdateDocPage(ctx, params); err != nil {
 		return fmt.Errorf("updating doc page: %w", err)
 	}
+
 	return nil
 }
 
@@ -92,5 +98,6 @@ func (s *Store) delete(ctx context.Context, tenantID, id pgtype.UUID) error {
 	}); err != nil {
 		return fmt.Errorf("deleting doc page: %w", err)
 	}
+
 	return nil
 }

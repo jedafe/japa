@@ -7,7 +7,8 @@ package auth
 
 import (
 	"bufio"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G401/G505: SHA-1 required by HIBP k-Anonymity API — cannot use SHA-256
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -68,6 +69,7 @@ func (c *breachCache) get(hash string) (isBreached bool, count int, ok bool) {
 	if !found || time.Now().After(entry.expiresAt) {
 		return false, 0, false
 	}
+
 	return entry.isBreached, entry.count, true
 }
 
@@ -108,6 +110,7 @@ func (r *breachRateLimiter) wait() {
 	if elapsed < r.interval {
 		time.Sleep(r.interval - elapsed)
 	}
+
 	r.lastCheck = time.Now()
 }
 
@@ -170,9 +173,10 @@ func CheckPasswordBreach(password string) (isBreached bool, count int, err error
 
 // sha1Hash returns the lowercase hex-encoded SHA-1 digest of the input string.
 func sha1Hash(s string) string {
-	h := sha1.New()
+	h := sha1.New() //nolint:gosec // G401: SHA-1 required by HIBP k-Anonymity API
 	h.Write([]byte(s))
-	return fmt.Sprintf("%x", h.Sum(nil))
+
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // queryHIBPPrefixRange queries the HIBP Pwned Passwords API for a given
@@ -183,12 +187,14 @@ func queryHIBPPrefixRange(prefix, suffix string) (bool, int, error) {
 	if err != nil {
 		return false, 0, fmt.Errorf("hibp request failed: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		// No passwords match this prefix at all — definitely not breached.
 		return false, 0, nil
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		return false, 0, fmt.Errorf("hibp returned status %d", resp.StatusCode)
 	}

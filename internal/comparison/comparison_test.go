@@ -11,6 +11,8 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestDimensionTypeConstants(t *testing.T) {
+	t.Parallel()
+
 	expected := map[string]string{
 		DimensionTypeText:     "text",
 		DimensionTypeRating:   "rating",
@@ -26,9 +28,12 @@ func TestDimensionTypeConstants(t *testing.T) {
 }
 
 func TestPaginationDefaults(t *testing.T) {
+	t.Parallel()
+
 	if DefaultPageSize != 20 {
 		t.Errorf("DefaultPageSize = %d, want 20", DefaultPageSize)
 	}
+
 	if MaxPageSize != 100 {
 		t.Errorf("MaxPageSize = %d, want 100", MaxPageSize)
 	}
@@ -39,6 +44,8 @@ func TestPaginationDefaults(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIsValidDimensionType(t *testing.T) {
+	t.Parallel()
+
 	validTypes := []string{
 		DimensionTypeText,
 		DimensionTypeRating,
@@ -65,29 +72,37 @@ func TestIsValidDimensionType(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDefaultComparisonTypes(t *testing.T) {
+	t.Parallel()
+
 	if len(DefaultComparisonTypes) == 0 {
 		t.Error("expected at least one default comparison type")
 	}
 
 	slugs := make(map[string]bool)
+
 	for _, ct := range DefaultComparisonTypes {
 		if ct.Name == "" {
 			t.Error("default comparison type name should not be empty")
 		}
+
 		if ct.Slug == "" {
 			t.Error("default comparison type slug should not be empty")
 		}
+
 		if ct.ItemLabel == "" {
 			t.Error("default comparison type item_label should not be empty")
 		}
+
 		if slugs[ct.Slug] {
 			t.Errorf("duplicate slug in default types: %s", ct.Slug)
 		}
+
 		slugs[ct.Slug] = true
 	}
 }
 
 func TestDefaultComparisonTypesContent(t *testing.T) {
+	t.Parallel()
 	// Verify the expected default types exist.
 	expectedSlugs := map[string]bool{
 		"universities": false,
@@ -100,6 +115,7 @@ func TestDefaultComparisonTypesContent(t *testing.T) {
 			expectedSlugs[ct.Slug] = true
 		}
 	}
+
 	for slug, found := range expectedSlugs {
 		if !found {
 			t.Errorf("expected default type with slug %q", slug)
@@ -112,6 +128,7 @@ func TestDefaultComparisonTypesContent(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreateComparisonTypeInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty name should be invalid.
 	input := CreateComparisonTypeInput{Name: "", Slug: "test"}
 	if input.Name != "" {
@@ -126,6 +143,7 @@ func TestCreateComparisonTypeInputValidation(t *testing.T) {
 }
 
 func TestCreateComparisonItemInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty title should be invalid.
 	input := CreateComparisonItemInput{Title: "", ContentID: pgtype.UUID{}}
 	if input.Title != "" {
@@ -134,6 +152,7 @@ func TestCreateComparisonItemInputValidation(t *testing.T) {
 }
 
 func TestCreateComparisonDimensionInputValidation(t *testing.T) {
+	t.Parallel()
 	// Empty label should be invalid.
 	input := CreateComparisonDimensionInput{Label: "", DimensionType: DimensionTypeText}
 	if input.Label != "" {
@@ -147,6 +166,7 @@ func TestCreateComparisonDimensionInputValidation(t *testing.T) {
 }
 
 func TestUpsertComparisonValueInputDefaults(t *testing.T) {
+	t.Parallel()
 	// ValueRating and ValueBoolean should be nil by default.
 	input := UpsertComparisonValueInput{
 		DimensionID: pgtype.UUID{},
@@ -156,6 +176,7 @@ func TestUpsertComparisonValueInputDefaults(t *testing.T) {
 	if input.ValueRating != nil {
 		t.Error("expected nil ValueRating")
 	}
+
 	if input.ValueBoolean != nil {
 		t.Error("expected nil ValueBoolean")
 	}
@@ -166,6 +187,8 @@ func TestUpsertComparisonValueInputDefaults(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestComparisonMatrixItemStructure(t *testing.T) {
+	t.Parallel()
+
 	mi := ComparisonMatrixItem{
 		Dimensions: []ComparisonMatrixDimension{},
 	}
@@ -175,6 +198,8 @@ func TestComparisonMatrixItemStructure(t *testing.T) {
 }
 
 func TestComparisonMatrixDimensionDefaults(t *testing.T) {
+	t.Parallel()
+
 	md := ComparisonMatrixDimension{
 		DimensionID: pgtype.UUID{},
 		Label:       "Cost",
@@ -183,9 +208,11 @@ func TestComparisonMatrixDimensionDefaults(t *testing.T) {
 	if md.Value != nil {
 		t.Error("expected nil Value")
 	}
+
 	if md.ValueRating != nil {
 		t.Error("expected nil ValueRating")
 	}
+
 	if md.ValueBoolean != nil {
 		t.Error("expected nil ValueBoolean")
 	}

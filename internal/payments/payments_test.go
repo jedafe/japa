@@ -9,19 +9,24 @@ import (
 )
 
 func TestPaymentConstants(t *testing.T) {
+	t.Parallel()
 	// Test provider constants
 	if ProviderPaystack != "paystack" {
 		t.Errorf("ProviderPaystack = %s, want paystack", ProviderPaystack)
 	}
+
 	if ProviderStripe != "stripe" {
 		t.Errorf("ProviderStripe = %s, want stripe", ProviderStripe)
 	}
+
 	if ProviderNOWPayments != "nowpayments" {
 		t.Errorf("ProviderNOWPayments = %s, want nowpayments", ProviderNOWPayments)
 	}
+
 	if ProviderManualTransfer != "manual_transfer" {
 		t.Errorf("ProviderManualTransfer = %s, want manual_transfer", ProviderManualTransfer)
 	}
+
 	if ProviderCredit != "credit" {
 		t.Errorf("ProviderCredit = %s, want credit", ProviderCredit)
 	}
@@ -30,18 +35,23 @@ func TestPaymentConstants(t *testing.T) {
 	if PurposeProMembership != "pro_membership" {
 		t.Errorf("PurposeProMembership = %s, want pro_membership", PurposeProMembership)
 	}
+
 	if PurposeOrgBoost != "org_boost" {
 		t.Errorf("PurposeOrgBoost = %s, want org_boost", PurposeOrgBoost)
 	}
+
 	if PurposeDonation != "donation" {
 		t.Errorf("PurposeDonation = %s, want donation", PurposeDonation)
 	}
+
 	if PurposeCourseAccess != "course_access" {
 		t.Errorf("PurposeCourseAccess = %s, want course_access", PurposeCourseAccess)
 	}
+
 	if PurposeCreditPurchase != "credit_purchase" {
 		t.Errorf("PurposeCreditPurchase = %s, want credit_purchase", PurposeCreditPurchase)
 	}
+
 	if PurposeAdSlot != "ad_slot" {
 		t.Errorf("PurposeAdSlot = %s, want ad_slot", PurposeAdSlot)
 	}
@@ -50,18 +60,23 @@ func TestPaymentConstants(t *testing.T) {
 	if PaymentStatusPending != "pending" {
 		t.Errorf("PaymentStatusPending = %s, want pending", PaymentStatusPending)
 	}
+
 	if PaymentStatusProcessing != "processing" {
 		t.Errorf("PaymentStatusProcessing = %s, want processing", PaymentStatusProcessing)
 	}
+
 	if PaymentStatusSucceeded != "succeeded" {
 		t.Errorf("PaymentStatusSucceeded = %s, want succeeded", PaymentStatusSucceeded)
 	}
+
 	if PaymentStatusFailed != "failed" {
 		t.Errorf("PaymentStatusFailed = %s, want failed", PaymentStatusFailed)
 	}
+
 	if PaymentStatusRefunded != "refunded" {
 		t.Errorf("PaymentStatusRefunded = %s, want refunded", PaymentStatusRefunded)
 	}
+
 	if PaymentStatusDisputed != "disputed" {
 		t.Errorf("PaymentStatusDisputed = %s, want disputed", PaymentStatusDisputed)
 	}
@@ -70,12 +85,15 @@ func TestPaymentConstants(t *testing.T) {
 	if SubscriptionStatusActive != "active" {
 		t.Errorf("SubscriptionStatusActive = %s, want active", SubscriptionStatusActive)
 	}
+
 	if SubscriptionStatusCanceled != "canceled" {
 		t.Errorf("SubscriptionStatusCanceled = %s, want canceled", SubscriptionStatusCanceled)
 	}
+
 	if SubscriptionStatusPastDue != "past_due" {
 		t.Errorf("SubscriptionStatusPastDue = %s, want past_due", SubscriptionStatusPastDue)
 	}
+
 	if SubscriptionStatusTrialing != "trialing" {
 		t.Errorf("SubscriptionStatusTrialing = %s, want trialing", SubscriptionStatusTrialing)
 	}
@@ -84,6 +102,7 @@ func TestPaymentConstants(t *testing.T) {
 	if PlanProMonthly != "pro_monthly" {
 		t.Errorf("PlanProMonthly = %s, want pro_monthly", PlanProMonthly)
 	}
+
 	if PlanProYearly != "pro_yearly" {
 		t.Errorf("PlanProYearly = %s, want pro_yearly", PlanProYearly)
 	}
@@ -92,9 +111,11 @@ func TestPaymentConstants(t *testing.T) {
 	if RefundStatusPending != "pending" {
 		t.Errorf("RefundStatusPending = %s, want pending", RefundStatusPending)
 	}
+
 	if RefundStatusSucceeded != "succeeded" {
 		t.Errorf("RefundStatusSucceeded = %s, want succeeded", RefundStatusSucceeded)
 	}
+
 	if RefundStatusFailed != "failed" {
 		t.Errorf("RefundStatusFailed = %s, want failed", RefundStatusFailed)
 	}
@@ -103,6 +124,7 @@ func TestPaymentConstants(t *testing.T) {
 	if DiscountTypePercent != "percent" {
 		t.Errorf("DiscountTypePercent = %s, want percent", DiscountTypePercent)
 	}
+
 	if DiscountTypeFixed != "fixed" {
 		t.Errorf("DiscountTypeFixed = %s, want fixed", DiscountTypeFixed)
 	}
@@ -111,9 +133,11 @@ func TestPaymentConstants(t *testing.T) {
 	if ApplicableToCourseAccess != "course_access" {
 		t.Errorf("ApplicableToCourseAccess = %s, want course_access", ApplicableToCourseAccess)
 	}
+
 	if ApplicableToProMembership != "pro_membership" {
 		t.Errorf("ApplicableToProMembership = %s, want pro_membership", ApplicableToProMembership)
 	}
+
 	if ApplicableToAll != "all" {
 		t.Errorf("ApplicableToAll = %s, want all", ApplicableToAll)
 	}
@@ -122,20 +146,27 @@ func TestPaymentConstants(t *testing.T) {
 	if DefaultPageSize != 20 {
 		t.Errorf("DefaultPageSize = %d, want 20", DefaultPageSize)
 	}
+
 	if MaxPageSize != 100 {
 		t.Errorf("MaxPageSize = %d, want 100", MaxPageSize)
 	}
 }
 
 func TestProviderInterface(t *testing.T) {
+	t.Parallel()
 	// Test that providers implement the Provider interface
 	var _ Provider = (*PaystackProvider)(nil)
+
 	var _ Provider = (*StripeProvider)(nil)
+
 	var _ Provider = (*NOWPaymentsProvider)(nil)
+
 	var _ Provider = (*ManualTransferProvider)(nil)
 }
 
 func TestProviderNames(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		provider Provider
 		want     string
@@ -154,6 +185,7 @@ func TestProviderNames(t *testing.T) {
 }
 
 func TestPaymentStatusTransitions(t *testing.T) {
+	t.Parallel()
 	// Test that payment statuses are distinct
 	statuses := map[string]bool{
 		PaymentStatusPending:    true,
@@ -177,6 +209,7 @@ func TestPaymentStatusTransitions(t *testing.T) {
 }
 
 func TestSubscriptionStatusTransitions(t *testing.T) {
+	t.Parallel()
 	// Test that subscription statuses are distinct
 	statuses := map[string]bool{
 		SubscriptionStatusActive:   true,
@@ -198,6 +231,7 @@ func TestSubscriptionStatusTransitions(t *testing.T) {
 }
 
 func TestDiscountCodeValidation(t *testing.T) {
+	t.Parallel()
 	// Test that discount types are valid
 	validTypes := map[string]bool{
 		DiscountTypePercent: true,
@@ -235,59 +269,75 @@ func (m *mockCreditSpender) SpendCredits(
 }
 
 func TestPayWithCredit_WalletNotConfigured(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{wallet: nil}
-	_, err := svc.PayWithCredit(nil, pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
+
+	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
 	if err == nil {
 		t.Fatal("expected error for nil wallet, got nil")
 	}
 }
 
 func TestPayWithCredit_ZeroAmount(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{wallet: &mockCreditSpender{}}
-	_, err := svc.PayWithCredit(nil, pgtype.UUID{}, pgtype.UUID{}, 0, PurposeAdSlot, "slot-1")
+
+	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 0, PurposeAdSlot, "slot-1")
 	if err == nil {
 		t.Fatal("expected error for zero amount, got nil")
 	}
 }
 
 func TestPayWithCredit_EmptyPurposeType(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{wallet: &mockCreditSpender{}}
-	_, err := svc.PayWithCredit(nil, pgtype.UUID{}, pgtype.UUID{}, 100, "", "slot-1")
+
+	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 100, "", "slot-1")
 	if err == nil {
 		t.Fatal("expected error for empty purpose_type, got nil")
 	}
 }
 
 func TestPayWithCredit_ErrInsufficientCredit(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{
 		wallet: &mockCreditSpender{
 			spendFunc: func(
-				ctx context.Context,
-				tenantID pgtype.UUID,
-				userID pgtype.UUID,
-				input CreditSpendInput,
+				_ context.Context,
+				_ pgtype.UUID,
+				_ pgtype.UUID,
+				_ CreditSpendInput,
 			) (int64, error) {
 				return 0, ErrInsufficientCredit
 			},
 		},
 	}
-	_, err := svc.PayWithCredit(nil, pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
+
+	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
 	if err == nil {
 		t.Fatal("expected ErrInsufficientCredit, got nil")
 	}
+
 	if !errors.Is(err, ErrInsufficientCredit) {
 		t.Fatalf("expected ErrInsufficientCredit, got %v", err)
 	}
 }
 
 func TestPayWithCredit_Success(t *testing.T) {
+	t.Parallel()
+
 	var capturedInput CreditSpendInput
+
 	svc := &Service{
 		wallet: &mockCreditSpender{
 			spendFunc: func(
-				ctx context.Context,
-				tenantID pgtype.UUID,
-				userID pgtype.UUID,
+				_ context.Context,
+				_ pgtype.UUID,
+				_ pgtype.UUID,
 				input CreditSpendInput,
 			) (int64, error) {
 				capturedInput = input
@@ -300,23 +350,28 @@ func TestPayWithCredit_Success(t *testing.T) {
 	// This test verifies SpendCredits is called with correct parameters before
 	// the CreatePayment step. The CreatePayment failure is expected in this
 	// unit-test context since no database is configured.
-	_, _ = svc.PayWithCredit(nil, pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
+	_, _ = svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
 
 	if capturedInput.Amount != 100 {
 		t.Errorf("capturedInput.Amount = %d, want 100", capturedInput.Amount)
 	}
+
 	if capturedInput.PurposeType != PurposeAdSlot {
 		t.Errorf("capturedInput.PurposeType = %s, want %s", capturedInput.PurposeType, PurposeAdSlot)
 	}
+
 	if capturedInput.PurposeID != "slot-1" {
 		t.Errorf("capturedInput.PurposeID = %s, want slot-1", capturedInput.PurposeID)
 	}
+
 	if capturedInput.Source != "payment" {
 		t.Errorf("capturedInput.Source = %s, want payment", capturedInput.Source)
 	}
 }
 
 func TestPurposeAdSlotConstant(t *testing.T) {
+	t.Parallel()
+
 	if PurposeAdSlot != "ad_slot" {
 		t.Errorf("PurposeAdSlot = %s, want ad_slot", PurposeAdSlot)
 	}

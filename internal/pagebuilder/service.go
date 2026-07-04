@@ -2,7 +2,7 @@ package pagebuilder
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -35,28 +35,34 @@ func (s *Service) GetBlock(ctx context.Context, id, tenantID pgtype.UUID) (Block
 // CreateBlock creates a new block with input validation.
 func (s *Service) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input CreateBlockInput) (Block, error) {
 	if input.Name == "" {
-		return Block{}, fmt.Errorf("name is required")
+		return Block{}, errors.New("name is required")
 	}
+
 	if input.Slug == "" {
-		return Block{}, fmt.Errorf("slug is required")
+		return Block{}, errors.New("slug is required")
 	}
+
 	if input.Component == "" {
-		return Block{}, fmt.Errorf("component is required")
+		return Block{}, errors.New("component is required")
 	}
+
 	if input.Category == "" {
 		input.Category = "general"
 	}
+
 	return s.store.CreateBlock(ctx, tenantID, input)
 }
 
 // UpdateBlock updates an existing block with input validation.
 func (s *Service) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, input UpdateBlockInput) (Block, error) {
 	if input.Name == "" {
-		return Block{}, fmt.Errorf("name is required")
+		return Block{}, errors.New("name is required")
 	}
+
 	if input.Component == "" {
-		return Block{}, fmt.Errorf("component is required")
+		return Block{}, errors.New("component is required")
 	}
+
 	return s.store.UpdateBlock(ctx, id, tenantID, input)
 }
 
@@ -82,22 +88,26 @@ func (s *Service) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (Te
 // CreateTemplate creates a new template with input validation.
 func (s *Service) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, input CreateTemplateInput) (Template, error) {
 	if input.Name == "" {
-		return Template{}, fmt.Errorf("name is required")
+		return Template{}, errors.New("name is required")
 	}
+
 	if input.Slug == "" {
-		return Template{}, fmt.Errorf("slug is required")
+		return Template{}, errors.New("slug is required")
 	}
+
 	if input.PageType == "" {
 		input.PageType = "landing"
 	}
+
 	return s.store.CreateTemplate(ctx, tenantID, input)
 }
 
 // UpdateTemplate updates an existing template with input validation.
 func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTemplateInput) (Template, error) {
 	if input.Name == "" {
-		return Template{}, fmt.Errorf("name is required")
+		return Template{}, errors.New("name is required")
 	}
+
 	return s.store.UpdateTemplate(ctx, id, tenantID, input)
 }
 
@@ -123,19 +133,22 @@ func (s *Service) GetTheme(ctx context.Context, id, tenantID pgtype.UUID) (Theme
 // CreateTheme creates a new theme with input validation.
 func (s *Service) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input CreateThemeInput) (Theme, error) {
 	if input.Name == "" {
-		return Theme{}, fmt.Errorf("name is required")
+		return Theme{}, errors.New("name is required")
 	}
+
 	if input.Slug == "" {
-		return Theme{}, fmt.Errorf("slug is required")
+		return Theme{}, errors.New("slug is required")
 	}
+
 	return s.store.CreateTheme(ctx, tenantID, input)
 }
 
 // UpdateTheme updates an existing theme with input validation.
 func (s *Service) UpdateTheme(ctx context.Context, id, tenantID pgtype.UUID, input UpdateThemeInput) (Theme, error) {
 	if input.Name == "" {
-		return Theme{}, fmt.Errorf("name is required")
+		return Theme{}, errors.New("name is required")
 	}
+
 	return s.store.UpdateTheme(ctx, id, tenantID, input)
 }
 
@@ -171,22 +184,26 @@ func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtyp
 // CreatePage creates a new page with input validation.
 func (s *Service) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID, input CreatePageInput) (Page, error) {
 	if input.Title == "" {
-		return Page{}, fmt.Errorf("title is required")
+		return Page{}, errors.New("title is required")
 	}
+
 	if input.Slug == "" {
-		return Page{}, fmt.Errorf("slug is required")
+		return Page{}, errors.New("slug is required")
 	}
+
 	if input.Status == "" {
 		input.Status = PageStatusDraft
 	}
+
 	return s.store.CreatePage(ctx, tenantID, createdBy, input)
 }
 
 // UpdatePage updates an existing page with input validation.
 func (s *Service) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input UpdatePageInput) (Page, error) {
 	if input.Title == "" {
-		return Page{}, fmt.Errorf("title is required")
+		return Page{}, errors.New("title is required")
 	}
+
 	return s.store.UpdatePage(ctx, id, tenantID, input)
 }
 

@@ -25,11 +25,17 @@ func NewCacheFlusher(vk *valkey.Client) *CacheFlusher {
 type FlushScope string
 
 const (
+	// FlushAll is the flush all constant.
 	FlushAll       FlushScope = "all"
+ // FlushPages is the flush pages.
 	FlushPages     FlushScope = "pages"
+ // FlushFeeds is the flush feeds.
 	FlushFeeds     FlushScope = "feeds"
+ // FlushI18n is the flush i18n.
 	FlushI18n      FlushScope = "i18n"
+ // FlushSearch is the flush search.
 	FlushSearch    FlushScope = "search"
+ // FlushAnalytics is the flush analytics.
 	FlushAnalytics FlushScope = "analytics"
 )
 
@@ -47,7 +53,9 @@ func (f *CacheFlusher) FlushCache(ctx context.Context, scope FlushScope) (int64,
 	}
 
 	rdb := f.vk.Redis()
+
 	var cursor uint64
+
 	var totalDeleted int64
 
 	for {
@@ -61,6 +69,7 @@ func (f *CacheFlusher) FlushCache(ctx context.Context, scope FlushScope) (int64,
 			if err != nil {
 				return totalDeleted, fmt.Errorf("deleting cache keys: %w", err)
 			}
+
 			totalDeleted += deleted
 		}
 
@@ -71,6 +80,7 @@ func (f *CacheFlusher) FlushCache(ctx context.Context, scope FlushScope) (int64,
 	}
 
 	slog.Info("cache flush completed", "scope", scope, "deleted", totalDeleted)
+
 	return totalDeleted, nil
 }
 
@@ -89,7 +99,9 @@ func (f *CacheFlusher) FlushCacheByPrefix(ctx context.Context, prefix string) (i
 
 func (f *CacheFlusher) flushByPattern(ctx context.Context, pattern string) (int64, error) {
 	rdb := f.vk.Redis()
+
 	var cursor uint64
+
 	var totalDeleted int64
 
 	for {
@@ -103,6 +115,7 @@ func (f *CacheFlusher) flushByPattern(ctx context.Context, pattern string) (int6
 			if err != nil {
 				return totalDeleted, fmt.Errorf("deleting cache keys: %w", err)
 			}
+
 			totalDeleted += deleted
 		}
 

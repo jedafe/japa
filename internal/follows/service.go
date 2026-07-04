@@ -2,6 +2,7 @@ package follows
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -29,8 +30,9 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 	if !isValidEntityType(entityType) {
 		return false, fmt.Errorf("invalid entity type: %s", entityType)
 	}
+
 	if entityType == EntityTypeUser && followerID == entityID {
-		return false, fmt.Errorf("cannot follow yourself")
+		return false, errors.New("cannot follow yourself")
 	}
 
 	followed, err := s.store.toggleFollow(ctx, tenantID, followerID, entityType, entityID)
@@ -43,6 +45,7 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 	if followed {
 		delta = 1
 	}
+
 	if err := s.updateFollowerCount(ctx, entityType, entityID, delta); err != nil {
 		// Log but don't fail the follow operation.
 		slog.Warn("failed to update follower count", "entity_type", entityType, "entity_id", entityID, "error", err)
@@ -72,6 +75,7 @@ func (s *Service) GetFollowers(ctx context.Context, tenantID pgtype.UUID, entity
 	if err != nil {
 		return nil, fmt.Errorf("getting followers: %w", err)
 	}
+
 	result := make([]FollowerInfo, len(rows))
 	for i, r := range rows {
 		result[i] = FollowerInfo{
@@ -88,6 +92,7 @@ func (s *Service) GetFollowers(ctx context.Context, tenantID pgtype.UUID, entity
 			AvatarURL:   r.AvatarUrl,
 		}
 	}
+
 	return result, nil
 }
 
@@ -97,6 +102,7 @@ func (s *Service) GetFollowing(ctx context.Context, tenantID, followerID pgtype.
 	if err != nil {
 		return nil, fmt.Errorf("getting following: %w", err)
 	}
+
 	result := make([]FollowingInfo, len(rows))
 	for i, r := range rows {
 		result[i] = FollowingInfo{
@@ -111,6 +117,7 @@ func (s *Service) GetFollowing(ctx context.Context, tenantID, followerID pgtype.
 			EntityName: r.EntityName,
 		}
 	}
+
 	return result, nil
 }
 
@@ -144,6 +151,7 @@ func (s *Service) DeleteFollowsByEntity(ctx context.Context, entityType string, 
 // tables share the same column name, and triggers may not exist yet.
 func (s *Service) updateFollowerCount(ctx context.Context, entityType string, entityID pgtype.UUID, delta int32) error {
 	var table string
+
 	switch entityType {
 	case EntityTypeUser:
 		table = "users"
@@ -160,10 +168,12 @@ func (s *Service) updateFollowerCount(ctx context.Context, entityType string, en
 		"UPDATE %s SET follower_count = GREATEST(0, follower_count + $1) WHERE id = $2",
 		table,
 	)
+
 	_, err := s.db.Writer.Exec(ctx, query, delta, entityID)
 	if err != nil {
 		return fmt.Errorf("updating follower count on %s: %w", table, err)
 	}
+
 	return nil
 }
 

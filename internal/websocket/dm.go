@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -68,9 +69,11 @@ func (s *DMStore) GetUserConversations(ctx context.Context, tenantID, userID pgt
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
+
 	return s.read.GetUserConversations(ctx, gen.GetUserConversationsParams{
 		UserID:     userID,
 		TenantID:   tenantID,
@@ -93,9 +96,11 @@ func (s *DMStore) GetConversationMessages(ctx context.Context, tenantID, convers
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
+
 	return s.read.GetConversationMessages(ctx, gen.GetConversationMessagesParams{
 		TenantID:       tenantID,
 		ConversationID: conversationID,
@@ -176,26 +181,26 @@ type ConversationResult struct {
 
 // ConversationInfo is the API response for a conversation list item.
 type ConversationInfo struct {
-	ID              string  `json:"id"`
-	OtherUserID     string  `json:"other_user_id"`
-	OtherUsername    string  `json:"other_username"`
-	OtherDisplayName string  `json:"other_display_name"`
-	OtherAvatarURL  string  `json:"other_avatar_url"`
-	LastMessageAt   *string `json:"last_message_at,omitempty"`
+	ID                 string  `json:"id"`
+	OtherUserID        string  `json:"other_user_id"`
+	OtherUsername      string  `json:"other_username"`
+	OtherDisplayName   string  `json:"other_display_name"`
+	OtherAvatarURL     string  `json:"other_avatar_url"`
+	LastMessageAt      *string `json:"last_message_at,omitempty"`
 	LastMessagePreview *string `json:"last_message_preview,omitempty"`
-	UnreadCount     int32   `json:"unread_count"`
-	CreatedAt       string  `json:"created_at"`
+	UnreadCount        int32   `json:"unread_count"`
+	CreatedAt          string  `json:"created_at"`
 }
 
 // MessageInfo is the API response for a message list item.
 type MessageInfo struct {
-	ID               string  `json:"id"`
-	SenderID         string  `json:"sender_id"`
-	SenderUsername   string  `json:"sender_username"`
-	SenderDisplayName string `json:"sender_display_name"`
-	Body             string  `json:"body"`
-	CreatedAt        string  `json:"created_at"`
-	ReadAt           *string `json:"read_at,omitempty"`
+	ID                string  `json:"id"`
+	SenderID          string  `json:"sender_id"`
+	SenderUsername    string  `json:"sender_username"`
+	SenderDisplayName string  `json:"sender_display_name"`
+	Body              string  `json:"body"`
+	CreatedAt         string  `json:"created_at"`
+	ReadAt            *string `json:"read_at,omitempty"`
 }
 
 // DMPrivacyResult is returned when getting DM privacy.
@@ -220,7 +225,7 @@ func NewDMService(store *DMStore, hub *Hub) *DMService {
 func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, senderID, recipientID pgtype.UUID) (ConversationResult, error) {
 	// Ensure sender != recipient
 	if senderID == recipientID {
-		return ConversationResult{}, fmt.Errorf("cannot create conversation with yourself")
+		return ConversationResult{}, errors.New("cannot create conversation with yourself")
 	}
 
 	conv, err := s.store.GetOrCreateConversation(ctx, tenantID, senderID, recipientID)
@@ -234,7 +239,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 // SendMessage sends a message in a conversation.
 func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, senderID pgtype.UUID, body string) error {
 	if body == "" {
-		return fmt.Errorf("message body cannot be empty")
+		return errors.New("message body cannot be empty")
 	}
 
 	// Verify the sender is a participant in this conversation.
@@ -244,7 +249,7 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 	}
 
 	if conv.Participant1ID != senderID && conv.Participant2ID != senderID {
-		return fmt.Errorf("sender is not a participant in this conversation")
+		return errors.New("sender is not a participant in this conversation")
 	}
 
 	// Insert the message.
@@ -270,6 +275,7 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 	if len(preview) > 100 {
 		preview = preview[:100]
 	}
+
 	previewPtr := &preview
 
 	// Update conversation last message.
@@ -299,6 +305,7 @@ func (s *DMService) GetConversations(ctx context.Context, tenantID, userID pgtyp
 	}
 
 	infos := make([]ConversationInfo, len(rows))
+
 	for i, r := range rows {
 		// Determine other user's ID.
 		var otherID pgtype.UUID
@@ -311,9 +318,9 @@ func (s *DMService) GetConversations(ctx context.Context, tenantID, userID pgtyp
 		infos[i] = ConversationInfo{
 			ID:               r.ID.String(),
 			OtherUserID:      otherID.String(),
-			OtherUsername:    fmt.Sprintf("%v", r.OtherUsername),
-			OtherDisplayName: fmt.Sprintf("%v", r.OtherDisplayName),
-			OtherAvatarURL:   fmt.Sprintf("%v", r.OtherAvatarUrl),
+			OtherUsername:    r.OtherUsername,
+			OtherDisplayName: r.OtherDisplayName,
+			OtherAvatarURL:   r.OtherAvatarUrl,
 			UnreadCount:      r.UnreadCount,
 			CreatedAt:        r.CreatedAt.Time.String(),
 		}
@@ -322,6 +329,7 @@ func (s *DMService) GetConversations(ctx context.Context, tenantID, userID pgtyp
 			s := r.LastMessageAt.Time.String()
 			infos[i].LastMessageAt = &s
 		}
+
 		if r.LastMessagePreview != nil {
 			infos[i].LastMessagePreview = r.LastMessagePreview
 		}
@@ -337,8 +345,9 @@ func (s *DMService) GetMessages(ctx context.Context, tenantID, conversationID, u
 	if err != nil {
 		return nil, fmt.Errorf("verifying conversation access: %w", err)
 	}
+
 	if conv.Participant1ID != userID && conv.Participant2ID != userID {
-		return nil, fmt.Errorf("user is not a participant in this conversation")
+		return nil, errors.New("user is not a participant in this conversation")
 	}
 
 	rows, err := s.store.GetConversationMessages(ctx, tenantID, conversationID, limit, offset)
@@ -356,6 +365,7 @@ func (s *DMService) GetMessages(ctx context.Context, tenantID, conversationID, u
 			Body:              r.Body,
 			CreatedAt:         r.CreatedAt.Time.String(),
 		}
+
 		if r.ReadAt.Valid {
 			s := r.ReadAt.Time.String()
 			msgs[i].ReadAt = &s
@@ -370,9 +380,11 @@ func (s *DMService) MarkAsRead(ctx context.Context, conversationID, userID pgtyp
 	if err := s.store.MarkMessagesRead(ctx, conversationID, userID); err != nil {
 		return fmt.Errorf("marking messages read: %w", err)
 	}
+
 	if err := s.store.ResetUnreadCount(ctx, conversationID, userID); err != nil {
 		return fmt.Errorf("resetting unread count: %w", err)
 	}
+
 	return nil
 }
 
@@ -383,8 +395,9 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, tenantID, conversa
 	if err != nil {
 		return fmt.Errorf("verifying conversation: %w", err)
 	}
+
 	if conv.Participant1ID != userID && conv.Participant2ID != userID {
-		return fmt.Errorf("user is not a participant in this conversation")
+		return errors.New("user is not a participant in this conversation")
 	}
 
 	switch action {
@@ -411,7 +424,8 @@ func (s *DMService) UpdateDMPrivacy(ctx context.Context, userID pgtype.UUID, pri
 func (s *DMService) GetDMPrivacy(ctx context.Context, userID pgtype.UUID) (string, error) {
 	privacy, err := s.store.GetUserDMPrivacy(ctx, userID)
 	if err != nil {
-		return DMPrivacyEveryone, nil // default
+		return DMPrivacyEveryone, nil //nolint:nilerr // intentional: default privacy
 	}
+
 	return privacy, nil
 }

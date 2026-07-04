@@ -10,6 +10,8 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 )
 
+const defaultPageSize int32 = 20
+
 // parseJSONBody reads the request body and decodes it into v.
 func parseJSONBody(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
@@ -19,16 +21,19 @@ func parseJSONBody(r *http.Request, v any) error {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parsePageOffset extracts the page_offset query parameter.
@@ -37,11 +42,13 @@ func parsePageOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // requireUserFromContext extracts the authenticated user from the request context.
@@ -50,6 +57,7 @@ func requireUserFromContext(r *http.Request) (*auth.AuthenticatedUser, bool) {
 	if user == nil {
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -61,10 +69,11 @@ func requireTenantFromContext(w http.ResponseWriter, r *http.Request) (pgtype.UU
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
+
 	return user.TenantID, true
 }
 
-// ListConversations handles GET /api/v1/dm/conversations
+// ListConversations handles GET /api/v1/dm/conversations.
 func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -89,7 +98,7 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": conversations})
 }
 
-// ListMessages handles GET /api/v1/dm/conversations/{id}/messages
+// ListMessages handles GET /api/v1/dm/conversations/{id}/messages.
 func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -103,7 +112,9 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conversationIDStr := chi.URLParam(r, "id")
+
 	var conversationID pgtype.UUID
+
 	if err := conversationID.Scan(conversationIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
@@ -121,7 +132,7 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": messages})
 }
 
-// SendMessage handles POST /api/v1/dm/conversations/{id}/messages
+// SendMessage handles POST /api/v1/dm/conversations/{id}/messages.
 func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -135,7 +146,9 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conversationIDStr := chi.URLParam(r, "id")
+
 	var conversationID pgtype.UUID
+
 	if err := conversationID.Scan(conversationIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
@@ -144,6 +157,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Body string `json:"body"`
 	}
+
 	if err := parseJSONBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
@@ -162,7 +176,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
-// MarkAsRead handles POST /api/v1/dm/conversations/{id}/read
+// MarkAsRead handles POST /api/v1/dm/conversations/{id}/read.
 func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -171,7 +185,9 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conversationIDStr := chi.URLParam(r, "id")
+
 	var conversationID pgtype.UUID
+
 	if err := conversationID.Scan(conversationIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
@@ -185,7 +201,7 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
-// AcceptMessageRequest handles POST /api/v1/dm/message-requests/{id}/accept
+// AcceptMessageRequest handles POST /api/v1/dm/message-requests/{id}/accept.
 func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -199,7 +215,9 @@ func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) 
 	}
 
 	conversationIDStr := chi.URLParam(r, "id")
+
 	var conversationID pgtype.UUID
+
 	if err := conversationID.Scan(conversationIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
@@ -213,7 +231,7 @@ func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
-// DeclineMessageRequest handles POST /api/v1/dm/message-requests/{id}/decline
+// DeclineMessageRequest handles POST /api/v1/dm/message-requests/{id}/decline.
 func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -227,7 +245,9 @@ func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request)
 	}
 
 	conversationIDStr := chi.URLParam(r, "id")
+
 	var conversationID pgtype.UUID
+
 	if err := conversationID.Scan(conversationIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
@@ -241,7 +261,7 @@ func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
-// UpdateDMPrivacy handles PUT /api/v1/dm/privacy
+// UpdateDMPrivacy handles PUT /api/v1/dm/privacy.
 func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -252,6 +272,7 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Privacy string `json:"privacy"`
 	}
+
 	if err := parseJSONBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return

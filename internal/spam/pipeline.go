@@ -5,20 +5,21 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // --- Request / Response types ---
 
 // SpamCheckRequest carries the inputs for a pipeline evaluation.
-type SpamCheckRequest struct {
+type SpamCheckRequest struct { //nolint:revive // stuttering type name preserved for API compatibility
 	Content    string      // The text body to evaluate
 	UserID     pgtype.UUID // Submitting user
 	IP         string      // Client IP address
@@ -27,7 +28,7 @@ type SpamCheckRequest struct {
 }
 
 // SpamCheckResult holds the combined output of all pipeline layers.
-type SpamCheckResult struct {
+type SpamCheckResult struct { //nolint:revive // stuttering type name preserved for API compatibility
 	Score   float64  // 0.0 = clean, 1.0 = definitely spam
 	Blocked bool     // score >= blockThreshold
 	Flagged bool     // score >= flagThreshold
@@ -63,7 +64,7 @@ var DefaultWeights = map[string]float64{
 // --- Pipeline ---
 
 // SpamPipeline chains multiple detection layers and returns a single score.
-type SpamPipeline struct {
+type SpamPipeline struct { //nolint:revive // stuttering type name preserved for API compatibility
 	store *Store
 	rdb   *valkey.Client
 	db    *db.DB
@@ -100,6 +101,7 @@ func (p *SpamPipeline) Check(ctx context.Context, tenantID pgtype.UUID, req Spam
 	}
 
 	var results []layerResult
+
 	for _, layer := range layers {
 		name, score, reasons := layer(ctx, tenantID, req)
 		results = append(results, layerResult{name: name, score: score, reasons: reasons})
@@ -107,7 +109,9 @@ func (p *SpamPipeline) Check(ctx context.Context, tenantID pgtype.UUID, req Spam
 
 	// Aggregate: weighted sum across layers.
 	var totalScore float64
+
 	var allReasons []string
+
 	for _, r := range results {
 		weight := DefaultWeights[r.name]
 		totalScore += r.score * weight
@@ -148,11 +152,12 @@ func (p *SpamPipeline) checkIPReputation(ctx context.Context, tenantID pgtype.UU
 	if blocked {
 		return name, 1.0, []string{"IP is in blocked range"}
 	}
+
 	return name, 0.0, nil
 }
 
 // rateLimitKey builds the Valkey key for a user's content creation rate.
-func rateLimitKey(tenantID pgtype.UUID, userID pgtype.UUID) string {
+func rateLimitKey(tenantID, userID pgtype.UUID) string {
 	return fmt.Sprintf("jc:spam:rate:%s:%s", tenantID.String(), userID.String())
 }
 
@@ -171,7 +176,8 @@ func (p *SpamPipeline) checkRateLimit(ctx context.Context, tenantID pgtype.UUID,
 
 	// Remove entries outside the 10-minute window, then count.
 	rdb := p.rdb.Redis()
-	_ = rdb.ZRemRangeByScore(ctx, key, "0", fmt.Sprintf("%d", windowStart.UnixMilli()))
+	_ = rdb.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(windowStart.UnixMilli(), 10))
+
 	count, err := rdb.ZCard(ctx, key).Result()
 	if err != nil {
 		slog.Warn("rate limit check failed", "user_id", req.UserID, "error", err)
@@ -195,10 +201,12 @@ func RecordContentCreation(ctx context.Context, rdb *valkey.Client, tenantID, us
 	if rdb == nil {
 		return nil
 	}
+
 	key := rateLimitKey(tenantID, userID)
 	member := time.Now().Format(time.RFC3339Nano)
 	score := float64(time.Now().UnixMilli())
-	return rdb.Redis().ZAdd(ctx, key, redis.Z{Score: score, Member: member}).Err()
+
+	return rdb.Redis().ZAdd(ctx, key, valkeycompat.Z{Score: score, Member: member}).Err()
 }
 
 // checkContentHash looks for duplicate content by comparing the SHA-256 hash
@@ -211,6 +219,7 @@ func (p *SpamPipeline) checkContentHash(ctx context.Context, tenantID pgtype.UUI
 	}
 
 	hash := ComputeContentHash(req.Content)
+
 	duplicate, err := p.store.CheckDuplicateHash(ctx, tenantID, hash)
 	if err != nil {
 		slog.Warn("content hash check failed", "error", err)
@@ -220,6 +229,7 @@ func (p *SpamPipeline) checkContentHash(ctx context.Context, tenantID pgtype.UUI
 	if duplicate {
 		return name, 0.9, []string{"duplicate content detected (exact hash match)"}
 	}
+
 	return name, 0.0, nil
 }
 
@@ -238,11 +248,13 @@ func (p *SpamPipeline) checkCensoredWords(ctx context.Context, tenantID pgtype.U
 
 	result := CheckCensoredWords(words, req.Content)
 	if result.Blocked {
-		return name, 1.0, []string{fmt.Sprintf("censored word blocked: %s", result.FlagReason)}
+		return name, 1.0, []string{"censored word blocked: " + result.FlagReason}
 	}
+
 	if result.Flagged {
-		return name, 0.6, []string{fmt.Sprintf("censored word flagged: %s", result.FlagReason)}
+		return name, 0.6, []string{"censored word flagged: " + result.FlagReason}
 	}
+
 	return name, 0.0, nil
 }
 
@@ -252,7 +264,7 @@ const maxLinksPerPost = 3
 
 // checkLinkAnalysis counts HTTP(S) URLs in the content. Posts with many
 // links relative to their length are a strong spam signal.
-func (p *SpamPipeline) checkLinkAnalysis(ctx context.Context, _ pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkLinkAnalysis(_ context.Context, _ pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
 	const name = "link_analysis"
 
 	if req.Content == "" {
@@ -275,16 +287,19 @@ func (p *SpamPipeline) checkLinkAnalysis(ctx context.Context, _ pgtype.UUID, req
 // countLinks extracts and counts HTTP(S) URLs from text.
 func countLinks(text string) int {
 	count := 0
+
 	for _, word := range strings.Fields(text) {
 		u, err := url.Parse(word)
 		if err != nil {
 			continue
 		}
+
 		scheme := strings.ToLower(u.Scheme)
 		if scheme == "http" || scheme == "https" {
 			count++
 		}
 	}
+
 	return count
 }
 
@@ -311,6 +326,7 @@ func (p *SpamPipeline) checkUserAge(ctx context.Context, tenantID pgtype.UUID, r
 	}
 
 	queries := gen.New(p.db.Reader)
+
 	user, err := queries.GetUserByID(ctx, gen.GetUserByIDParams{
 		TenantID: tenantID,
 		UserID:   req.UserID,
@@ -328,6 +344,7 @@ func (p *SpamPipeline) checkUserAge(ctx context.Context, tenantID pgtype.UUID, r
 	if age < newAccountThreshold {
 		return name, 0.3, []string{fmt.Sprintf("new account: %s old", age.Round(time.Hour))}
 	}
+
 	return name, 0.0, nil
 }
 
@@ -344,8 +361,10 @@ func (p *SpamPipeline) checkContentLength(_ context.Context, _ pgtype.UUID, req 
 	if length == 0 {
 		return name, 0.2, []string{"empty content"}
 	}
+
 	if length < minContentLength {
 		return name, 0.3, []string{fmt.Sprintf("very short content: %d chars", length)}
 	}
+
 	return name, 0.0, nil
 }

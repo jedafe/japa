@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
 )
@@ -50,11 +50,12 @@ var Tiers = map[string]RateLimitTier{
 // (graceful degradation). When the tier name is unknown, a warning is
 // logged at construction time and the returned middleware is a no-op
 // pass-through — this is a programming error, not a runtime failure.
-func RateLimit(rdb *redis.Client, tier string) func(http.Handler) http.Handler {
+func RateLimit(rdb valkeycompat.Cmdable, tier string) func(http.Handler) http.Handler {
 	limit, ok := Tiers[tier]
 	if !ok {
 		slog.Warn("rate limiter: unknown tier, allowing all traffic",
 			"tier", tier)
+
 		return func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				next.ServeHTTP(w, r)
@@ -91,6 +92,7 @@ func RateLimit(rdb *redis.Client, tier string) func(http.Handler) http.Handler {
 			}
 
 			count := incrCmd.Val()
+
 			remaining := int64(limit.Requests) - count
 			if remaining < 0 {
 				remaining = 0
@@ -104,12 +106,13 @@ func RateLimit(rdb *redis.Client, tier string) func(http.Handler) http.Handler {
 				w.Header().Set("Retry-After", retryAfter)
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				json.NewEncoder(w).Encode(map[string]any{
+				_ = json.NewEncoder(w).Encode(map[string]any{
 					"error": map[string]string{
 						"code":    "rate_limited",
 						"message": "Rate limit exceeded. Please retry after " + retryAfter + " seconds.",
 					},
 				})
+
 				return
 			}
 
@@ -130,5 +133,6 @@ func callerIdentifier(r *http.Request) string {
 	if err != nil {
 		return "ip:" + r.RemoteAddr
 	}
+
 	return "ip:" + host
 }

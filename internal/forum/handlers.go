@@ -22,6 +22,8 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+const defaultPageSize int32 = 20
+
 // Handlers holds dependencies for forum HTTP handlers.
 type Handlers struct {
 	Service *Service
@@ -42,6 +44,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -52,6 +55,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -62,6 +66,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -81,6 +86,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("json encode error", "error", err)
 	}
@@ -97,16 +103,19 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
-		return DefaultPageSize
+		return defaultPageSize
 	}
+
 	if n > MaxPageSize {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // parseCursorCreatedAt extracts the cursor_created_at query parameter.
@@ -115,10 +124,12 @@ func parseCursorCreatedAt(r *http.Request) pgtype.Timestamptz {
 	if s == "" {
 		return pgtype.Timestamptz{}
 	}
+
 	var ts pgtype.Timestamptz
 	if err := ts.Scan(s); err != nil {
 		return pgtype.Timestamptz{}
 	}
+
 	return ts
 }
 
@@ -132,29 +143,33 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	var input struct {
-		Title             string      `json:"title"`
-		Slug              string      `json:"slug"`
-		Body              []byte      `json:"body"`
-		SpaceID           *string     `json:"space_id"`
-		ContentID         *string     `json:"content_id"`
-		ParentReplyID     *string     `json:"parent_reply_id"`
-		IsAnonymous       bool        `json:"is_anonymous"`
-		EditWindowMinutes *int32      `json:"edit_window_minutes"`
+		Title             string  `json:"title"`
+		Slug              string  `json:"slug"`
+		Body              []byte  `json:"body"`
+		SpaceID           *string `json:"space_id"`
+		ContentID         *string `json:"content_id"`
+		ParentReplyID     *string `json:"parent_reply_id"`
+		IsAnonymous       bool    `json:"is_anonymous"`
+		EditWindowMinutes *int32  `json:"edit_window_minutes"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
+
 	if input.Slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
@@ -162,14 +177,26 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	var spaceID, contentID, parentReplyID pgtype.UUID
 	if input.SpaceID != nil {
-		_ = spaceID.Scan(*input.SpaceID)
+		if err := spaceID.Scan(*input.SpaceID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			return
+		}
 	}
+
 	if input.ContentID != nil {
-		_ = contentID.Scan(*input.ContentID)
+		if err := contentID.Scan(*input.ContentID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id format")
+			return
+		}
 	}
+
 	if input.ParentReplyID != nil {
-		_ = parentReplyID.Scan(*input.ParentReplyID)
+		if err := parentReplyID.Scan(*input.ParentReplyID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_parent_reply_id", "Invalid parent_reply_id format")
+			return
+		}
 	}
+
 	editWindow := int32(DefaultEditWindowMinutes)
 	if input.EditWindowMinutes != nil {
 		editWindow = *input.EditWindowMinutes
@@ -189,16 +216,14 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": thread})
 }
 
 // ListThreads handles GET /api/v1/forum/threads.
 // Supports ?space_id=, ?author_id=, ?tag_id=, ?page_size=, ?cursor_created_at=.
+// Public: when no user is present, lists all public threads for the tenant.
 func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -211,6 +236,9 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 	authorIDStr := r.URL.Query().Get("author_id")
 	tagIDStr := r.URL.Query().Get("tag_id")
 
+	// Resolve optional user for "my threads" default.
+	user := auth.FromContext(r.Context())
+
 	switch {
 	case spaceIDStr != "":
 		var spaceID pgtype.UUID
@@ -218,11 +246,13 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
 			return
 		}
+
 		threads, err := h.Service.ListThreadsBySpace(r.Context(), tenantID, spaceID, cursor, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	case authorIDStr != "":
@@ -231,11 +261,13 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_author_id", "Invalid author_id")
 			return
 		}
+
 		threads, err := h.Service.ListThreadsByAuthor(r.Context(), tenantID, authorID, cursor, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	case tagIDStr != "":
@@ -244,34 +276,45 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id")
 			return
 		}
+
 		threads, err := h.Service.ListThreadsByTag(r.Context(), tenantID, tagID, cursor, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	default:
-		// Default: list by author (the current user's threads).
-		threads, err := h.Service.ListThreadsByAuthor(r.Context(), tenantID, user.UserID, cursor, limit)
-		if err != nil {
-			handleServiceError(w, err)
-			return
+		// When authenticated, default to the current user's threads.
+		// When unauthenticated, list all public threads for the tenant.
+		if user != nil {
+			threads, err := h.Service.ListThreadsByAuthor(r.Context(), tenantID, user.UserID, cursor, limit)
+			if err != nil {
+				handleServiceError(w, err)
+				return
+			}
+
+			writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		} else {
+			threads, err := h.Service.ListThreadsByTenant(r.Context(), tenantID, cursor, limit)
+			if err != nil {
+				handleServiceError(w, err)
+				return
+			}
+
+			writeJSON(w, http.StatusOK, map[string]any{"data": threads})
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
 	}
 }
 
 // GetThread handles GET /api/v1/forum/threads/{slug}.
 func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
@@ -283,6 +326,10 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Increment view count fire-and-forget — never blocks the response.
+	go h.Service.IncrementThreadView(r.Context(), thread.ID, tenantID)
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
@@ -292,10 +339,12 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
@@ -307,6 +356,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		Body        []byte `json:"body"`
 		IsAnonymous bool   `json:"is_anonymous"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -317,6 +367,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
@@ -326,10 +377,12 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
@@ -340,6 +393,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -349,10 +403,12 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
@@ -363,6 +419,7 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
 }
 
@@ -376,10 +433,12 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
@@ -387,10 +446,11 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Body          []byte `json:"body"`
+		Body          []byte  `json:"body"`
 		ParentReplyID *string `json:"parent_reply_id"`
-		IsAnonymous   bool   `json:"is_anonymous"`
+		IsAnonymous   bool    `json:"is_anonymous"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -398,7 +458,10 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 
 	var parentReplyID pgtype.UUID
 	if input.ParentReplyID != nil {
-		_ = parentReplyID.Scan(*input.ParentReplyID)
+		if err := parentReplyID.Scan(*input.ParentReplyID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_parent_reply_id", "Invalid parent_reply_id format")
+			return
+		}
 	}
 
 	reply, err := h.Service.CreateReply(r.Context(), tenantID, threadID, user.UserID, CreateReplyInput{
@@ -410,19 +473,17 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": reply})
 }
 
 // ListReplies handles GET /api/v1/forum/threads/{id}/replies.
 func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
@@ -434,6 +495,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": replies})
 }
 
@@ -443,10 +505,12 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
@@ -456,6 +520,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Body []byte `json:"body"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -466,6 +531,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": reply})
 }
 
@@ -475,10 +541,12 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
@@ -489,6 +557,7 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -502,6 +571,7 @@ func (h *Handlers) Vote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -512,18 +582,22 @@ func (h *Handlers) Vote(w http.ResponseWriter, r *http.Request) {
 		EntityID   string `json:"entity_id"`
 		Value      int16  `json:"value"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.EntityType == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
+
 	if input.EntityID == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
 	}
+
 	if input.Value != VoteDown && input.Value != VoteUp {
 		writeError(w, http.StatusBadRequest, "invalid_vote_value", "value must be -1 or 1")
 		return
@@ -544,6 +618,7 @@ func (h *Handlers) Vote(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": vote})
 }
 
@@ -557,6 +632,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -567,14 +643,17 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 		EntityID   string `json:"entity_id"`
 		Folder     string `json:"folder"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.EntityType == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
+
 	if input.EntityID == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
@@ -591,6 +670,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": bm})
 }
 
@@ -600,10 +680,12 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if _, err := parseUUIDParam(r, "id"); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid bookmark ID")
 		return
@@ -613,6 +695,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	// The client should provide these via query params or we look them up.
 	entityType := r.URL.Query().Get("entity_type")
 	entityIDStr := r.URL.Query().Get("entity_id")
+
 	if entityType == "" || entityIDStr == "" {
 		writeError(w, http.StatusBadRequest, "missing_params", "entity_type and entity_id query params required")
 		return
@@ -628,6 +711,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -637,6 +721,7 @@ func (h *Handlers) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -650,6 +735,7 @@ func (h *Handlers) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
 }
 
@@ -659,11 +745,13 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
 // ---------------------------------------------------------------------------
@@ -678,27 +766,31 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		ThreadID      string `json:"thread_id"`
-		Question      string `json:"question"`
-		IsMultiSelect bool   `json:"is_multi_select"`
+		ThreadID      string  `json:"thread_id"`
+		Question      string  `json:"question"`
+		IsMultiSelect bool    `json:"is_multi_select"`
 		CloseAt       *string `json:"close_at"`
 		Options       []struct {
 			Label    string `json:"label"`
 			Position int32  `json:"position"`
 		} `json:"options"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.ThreadID == "" {
 		writeError(w, http.StatusBadRequest, "missing_thread_id", "thread_id is required")
 		return
 	}
+
 	if input.Question == "" {
 		writeError(w, http.StatusBadRequest, "missing_question", "question is required")
 		return
 	}
+
 	if len(input.Options) < 2 {
 		writeError(w, http.StatusBadRequest, "insufficient_options", "At least 2 options required")
 		return
@@ -712,7 +804,10 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 
 	var closeAt pgtype.Timestamptz
 	if input.CloseAt != nil {
-		_ = closeAt.Scan(*input.CloseAt)
+		if err := closeAt.Scan(*input.CloseAt); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_close_at", "Invalid close_at date format")
+			return
+		}
 	}
 
 	opts := make([]PollOptionInput, len(input.Options))
@@ -731,6 +826,7 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": poll})
 }
 
@@ -750,10 +846,12 @@ func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		OptionID string `json:"option_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.OptionID == "" {
 		writeError(w, http.StatusBadRequest, "missing_option_id", "option_id is required")
 		return
@@ -769,16 +867,12 @@ func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "voted"}})
 }
 
 // GetPoll handles GET /api/v1/forum/polls/{id}.
 func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
 	pollID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_poll_id", "Invalid poll ID")
@@ -815,6 +909,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -828,14 +923,17 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		CoverImageID    *string `json:"cover_image_id"`
 		ModeratorUserID *string `json:"moderator_user_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
+
 	if input.Slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
@@ -843,10 +941,17 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 
 	var coverImageID, moderatorUserID pgtype.UUID
 	if input.CoverImageID != nil {
-		_ = coverImageID.Scan(*input.CoverImageID)
+		if err := coverImageID.Scan(*input.CoverImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
+			return
+		}
 	}
+
 	if input.ModeratorUserID != nil {
-		_ = moderatorUserID.Scan(*input.ModeratorUserID)
+		if err := moderatorUserID.Scan(*input.ModeratorUserID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_moderator_user_id", "Invalid moderator_user_id format")
+			return
+		}
 	}
 
 	tag, err := h.Service.CreateTag(r.Context(), tenantID, CreateTagInput{
@@ -861,15 +966,12 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": tag})
 }
 
 // ListTags handles GET /api/v1/forum/tags.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -883,19 +985,17 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": tags})
 }
 
 // GetTagBySlug handles GET /api/v1/forum/tags/{slug}.
 func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
@@ -907,53 +1007,143 @@ func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
-// AddThreadTag handles POST /api/v1/forum/threads/{id}/tags/{tagId}.
-func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
+// UpdateTag handles PATCH /api/v1/forum/tags/{id}.
+func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		return
+	}
+
+	var input struct {
+		Name            string  `json:"name"`
+		Slug            string  `json:"slug"`
+		Description     string  `json:"description"`
+		Rules           string  `json:"rules"`
+		CoverImageID    *string `json:"cover_image_id"`
+		ModeratorUserID *string `json:"moderator_user_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	var coverImageID, moderatorUserID pgtype.UUID
+	if input.CoverImageID != nil {
+		_ = coverImageID.Scan(*input.CoverImageID)
+	}
+
+	if input.ModeratorUserID != nil {
+		_ = moderatorUserID.Scan(*input.ModeratorUserID)
+	}
+
+	tag, err := h.Service.UpdateTag(r.Context(), id, tenantID, UpdateTagInput{
+		Name:            input.Name,
+		Slug:            input.Slug,
+		Description:     input.Description,
+		Rules:           input.Rules,
+		CoverImageID:    coverImageID,
+		ModeratorUserID: moderatorUserID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+}
+
+// DeleteTag handles DELETE /api/v1/forum/tags/{id}.
+func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		return
+	}
+
+	if err := h.Service.DeleteTag(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// AddThreadTag handles POST /api/v1/forum/threads/{id}/tags/{tagId}.
+func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
+
 	tagID, err := parseUUIDParam(r, "tagId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID")
 		return
 	}
 
-	if err := h.Service.AddThreadTag(r.Context(), threadID, tagID); err != nil {
+	if err := h.Service.AddThreadTag(r.Context(), user.TenantID, threadID, tagID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
 // RemoveThreadTag handles DELETE /api/v1/forum/threads/{id}/tags/{tagId}.
 func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
+
 	tagID, err := parseUUIDParam(r, "tagId")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID")
 		return
 	}
 
-	if err := h.Service.RemoveThreadTag(r.Context(), threadID, tagID); err != nil {
+	if err := h.Service.RemoveThreadTag(r.Context(), user.TenantID, threadID, tagID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }

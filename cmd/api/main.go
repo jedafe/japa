@@ -64,6 +64,7 @@ func run() error {
 	// Valkey/Redis instance used for caching. If the worker fails to start
 	// we log the error but continue — the HTTP server remains functional.
 	workerCfg := worker.DefaultConfig()
+
 	workerShutdown, workerErr := server.StartWorker(workerCfg)
 	if workerErr != nil {
 		slog.Error("failed to start Asynq worker", "error", workerErr)
@@ -74,6 +75,7 @@ func run() error {
 	scheduler := worker.NewScheduler(workerCfg)
 	go func() {
 		slog.Info("asynq scheduler starting", "addr", worker.Addr(workerCfg))
+
 		if err := scheduler.Run(); err != nil {
 			slog.Error("asynq scheduler stopped", "error", err)
 		}
@@ -83,6 +85,7 @@ func run() error {
 		if workerShutdown != nil {
 			workerShutdown()
 		}
+
 		scheduler.Shutdown()
 	}()
 
@@ -90,9 +93,11 @@ func run() error {
 	errChan := make(chan error, 1)
 	go func() {
 		slog.Info("HTTP server listening", "port", cfg.Port)
+
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errChan <- fmt.Errorf("HTTP server: %w", err)
 		}
+
 		close(errChan)
 	}()
 
@@ -118,5 +123,6 @@ func run() error {
 	}
 
 	slog.Info("shutdown complete")
+
 	return nil
 }
