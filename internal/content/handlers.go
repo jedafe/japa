@@ -403,6 +403,13 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		IsLocked:     input.IsLocked,
 		IsPinned:     input.IsPinned,
 	}
+
+	// Compute content hash for duplicate detection (Rule 12).
+	if input.Body != "" {
+		hash := ComputeContentHash(input.Body)
+		updateInput.ContentHash = &hash
+	}
+
 	if input.GeoSpaceID != nil && *input.GeoSpaceID != "" {
 		if err := updateInput.GeoSpaceID.Scan(*input.GeoSpaceID); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo_space_id format")

@@ -1,24 +1,27 @@
 import type { PageServerLoad } from './$types';
 import { apiFetch } from '$lib/server/api';
 
+interface Organization {
+	id: string;
+	slug: string;
+	name: string;
+	headline?: string;
+	logo_url?: string;
+	is_public: boolean;
+	member_count?: number;
+}
+
 export const load: PageServerLoad = async ({ parent }) => {
 	const { token } = await parent();
 
 	const result = await apiFetch<{
-		profiles: Array<{
-			id: string;
-			slug: string;
-			name: string;
-			headline: string;
-			skills: string[];
-			is_public: boolean;
-		}>;
+		organizations: Organization[];
 		total: number;
 		page: number;
 		total_pages: number;
-	}>('/professional-profiles?limit=50', {}, token ?? undefined);
+	}>('/organizations?limit=50', {}, token ?? undefined);
 
 	return {
-		organisations: result.ok && result.data ? result.data.profiles : []
+		organisations: result.ok && result.data ? result.data.organizations : []
 	};
 };

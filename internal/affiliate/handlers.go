@@ -1,6 +1,7 @@
 package affiliate
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -300,13 +301,17 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 
 	// Record click async (fire-and-forget)
 	tenantID := link.TenantID
+	referrer := r.Header.Get("Referer")
 	go func() {
-		_ = h.Service.RecordClick(r.Context(), RecordClickInput{
-			LinkID:   link.ID,
-			IPHash:   ipHash,
-			UAHash:   uaHash,
-			ReferrerURL: referrerPtr(r),
-			TenantID: tenantID,
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		referrerURL := referrer
+		_ = h.Service.RecordClick(ctx, RecordClickInput{
+			LinkID:      link.ID,
+			IPHash:      ipHash,
+			UAHash:      uaHash,
+			ReferrerURL: &referrerURL,
+			TenantID:    tenantID,
 		})
 	}()
 

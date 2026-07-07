@@ -124,7 +124,9 @@ func (s *Service) ListEvents(ctx context.Context, tenantID pgtype.UUID, filter E
 
 	var userID pgtype.UUID
 	if filter.UserID != "" {
-		_ = userID.Scan(filter.UserID)
+		if err := userID.Scan(filter.UserID); err != nil {
+			return nil, fmt.Errorf("invalid user_id: %w", err)
+		}
 	}
 
 	return s.store.ListPlatformEvents(ctx, tenantID, filter)
@@ -191,7 +193,6 @@ type UserDashboard struct {
 func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgtype.UUID, days int32) (UserDashboard, error) {
 	start := time.Now().AddDate(0, 0, -int(days))
 	startDate := pgtype.Date{Time: start, Valid: true}
-	zeroUUID := pgtype.UUID{}
 
 	topContent, err := s.store.GetTopContentByViews(ctx, tenantID, &startDate, nil, 10)
 	if err != nil {
@@ -207,8 +208,6 @@ func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgt
 	if err != nil {
 		return UserDashboard{}, fmt.Errorf("fetching content volume: %w", err)
 	}
-
-	_ = zeroUUID
 
 	return UserDashboard{
 		TopContent:      topContent,

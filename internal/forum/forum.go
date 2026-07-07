@@ -34,8 +34,9 @@ const DefaultEditWindowMinutes = 30
 
 // Service provides forum operations with reader/writer pool separation.
 type Service struct {
-	store *Store
-	db    *db.DB
+	store    *Store
+	db       *db.DB
+	settings forumSettingsReader
 }
 
 // NewService creates a Service backed by the given database pool.

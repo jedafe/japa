@@ -1,9 +1,12 @@
 package worker
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/hibiken/asynq"
+	errtracking "github.com/jedafe/japa/internal/errors"
 )
 
 // NewServer creates a new Asynq server configured with all three task tiers.
@@ -28,6 +31,13 @@ func NewServer(cfg *Config) *asynq.Server {
 			},
 			// DefaultRetryDelayFunc implements exponential backoff.
 			RetryDelayFunc: asynq.DefaultRetryDelayFunc,
+			// Forward every task processing error to GlitchTip (AUDIT-BE-002).
+			// This fires on each failed attempt, including the final one before
+			// a task moves to the DLQ. No-op when no DSN is configured.
+			ErrorHandler: asynq.ErrorHandlerFunc(func(_ context.Context, task *asynq.Task, err error) {
+				slog.Error("asynq task failed", "type", task.Type(), "error", err)
+				errtracking.CaptureException(fmt.Errorf("asynq task %q failed: %w", task.Type(), err))
+			}),
 		},
 	)
 }

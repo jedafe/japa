@@ -60,14 +60,14 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 	// Homepage
 	entries = append(entries, urlEntry{
 		Loc:        baseURL,
-		LastMod:    time.Now().Format(time.RFC3339),
+		LastMod:    time.Now().UTC().Format(time.RFC3339),
 		ChangeFreq: "daily",
 		Priority:   "1.0",
 	})
 
 	// Content pages
 	for _, content := range contentList {
-		lastMod := time.Now().Format(time.RFC3339)
+		lastMod := time.Now().UTC().Format(time.RFC3339)
 		if content.UpdatedAt.Valid {
 			lastMod = content.UpdatedAt.Time.Format(time.RFC3339)
 		}

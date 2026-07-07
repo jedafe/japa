@@ -118,23 +118,44 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable) func(http.Handler) http.Han
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(resp.Status)
 					_, _ = w.Write([]byte(resp.Body))
-
 					return
 				}
-				// Corrupted cache entry — treat as a miss and
-				// let the handler recompute the response.
+				// Corrupted cache entry — treat as a miss.
 				slog.Warn("idempotency: corrupted cache entry, recomputing",
 					"key", cacheKey)
 			}
 
-			// Wrap the writer so we can capture the handler's
-			// output for caching.
+			// Acquire a processing lock to prevent concurrent execution.
+			lockKey := cacheKey + ":lock"
+			acquired, err := rdb.SetNX(ctx, lockKey, "1", 30*time.Second).Result()
+			if err != nil {
+				slog.Warn("idempotency: failed to acquire lock", "err", err)
+				next.ServeHTTP(w, r)
+				return
+			}
+			if !acquired {
+				// Another request is processing. Wait briefly then check cache.
+				time.Sleep(100 * time.Millisecond)
+				cached, err := rdb.Get(ctx, cacheKey).Bytes()
+				if err == nil && len(cached) > 0 {
+					var resp cachedResponse
+					if json.Unmarshal(cached, &resp) == nil {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(resp.Status)
+						_, _ = w.Write([]byte(resp.Body))
+						return
+					}
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+			defer rdb.Del(ctx, lockKey)
+
+			// Wrap the writer so we can capture the handler's output.
 			capture := &responseCapture{ResponseWriter: w}
 			next.ServeHTTP(capture, r)
 
-			// Only cache successful writes (2xx). Errors are
-			// transient and callers are expected to retry —
-			// caching an error would poison the replay.
+			// Only cache successful writes (2xx).
 			if capture.status < 200 || capture.status >= 300 {
 				return
 			}

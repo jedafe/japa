@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -79,7 +81,19 @@ func (s *Settings) GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key
 	if err != nil {
 		return false, err
 	}
-	return val == "true" || val == "1", nil
+	// Values are stored JSON-encoded in a JSONB column. Accept a JSON bool
+	// (true), a JSON string ("true"/"1"), or a bare token for resilience.
+	sv := strings.TrimSpace(val)
+	var b bool
+	if json.Unmarshal([]byte(sv), &b) == nil {
+		return b, nil
+	}
+	var str string
+	if json.Unmarshal([]byte(sv), &str) == nil {
+		str = strings.TrimSpace(str)
+		return str == "true" || str == "1", nil
+	}
+	return sv == "true" || sv == "1", nil
 }
 
 func (s *Settings) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error) {
@@ -87,11 +101,23 @@ func (s *Settings) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key 
 	if err != nil {
 		return 0, err
 	}
+	// Values are stored JSON-encoded in a JSONB column. Accept a JSON number
+	// (5000), a JSON string ("5000"), or a bare integer for resilience.
+	sv := strings.TrimSpace(val)
 	var n int
-	if _, err := fmt.Sscanf(val, "%d", &n); err != nil {
-		return 0, fmt.Errorf("setting %q is not an integer: %w", key, err)
+	if json.Unmarshal([]byte(sv), &n) == nil {
+		return n, nil
 	}
-	return n, nil
+	var str string
+	if json.Unmarshal([]byte(sv), &str) == nil {
+		if m, convErr := strconv.Atoi(strings.TrimSpace(str)); convErr == nil {
+			return m, nil
+		}
+	}
+	if m, convErr := strconv.Atoi(sv); convErr == nil {
+		return m, nil
+	}
+	return 0, fmt.Errorf("setting %q is not an integer: %q", key, val)
 }
 
 func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID) {
@@ -120,4 +146,26 @@ func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID)
 			}
 		}
 	}
+}
+
+// GetIntOr returns the integer value for key, or fallback when the key is
+// unset, missing, or not parseable as an integer. It never returns an error,
+// so call sites read a hot-reloadable operational limit with a safe default
+// and unchanged behaviour when the setting has not been configured.
+func (s *Settings) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
+	v, err := s.GetSettingInt(ctx, tenantID, key)
+	if err != nil {
+		return fallback
+	}
+	return v
+}
+
+// GetBoolOr returns the boolean value for key, or fallback when the key is
+// unset or missing. It never returns an error.
+func (s *Settings) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {
+	v, err := s.GetSettingBool(ctx, tenantID, key)
+	if err != nil {
+		return fallback
+	}
+	return v
 }

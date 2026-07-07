@@ -14,6 +14,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	errtracking "github.com/jedafe/japa/internal/errors"
 )
 
 // RegisterMiddleware attaches the standard middleware stack to the router.
@@ -55,6 +57,15 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 					"path", r.URL.Path,
 					"request_id", requestIDFromContext(r.Context()),
 				)
+
+				// Forward the panic to GlitchTip (AUDIT-BE-002). No-op when no
+				// DSN is configured. Wrap non-error panic values so they carry a
+				// message and stack.
+				panicErr, ok := rvr.(error)
+				if !ok {
+					panicErr = fmt.Errorf("panic: %v", rvr)
+				}
+				errtracking.CaptureException(panicErr)
 
 				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
 			}

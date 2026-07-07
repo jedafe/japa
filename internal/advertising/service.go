@@ -174,7 +174,7 @@ func (s *Service) IngestAdEvents(ctx context.Context, tenantID pgtype.UUID, even
 			continue
 		}
 
-		occurredAt := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+		occurredAt := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 		if !event.OccurredAt.IsZero() {
 			occurredAt = pgtype.Timestamptz{Time: event.OccurredAt, Valid: true}
 		}
@@ -262,7 +262,7 @@ func (s *Service) CreateBoost(ctx context.Context, tenantID pgtype.UUID, input C
 		boostType = BoostTypeFeaturedPlacement
 	}
 
-	startDate := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	startDate := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	if !input.StartDate.IsZero() {
 		startDate = pgtype.Timestamptz{Time: input.StartDate, Valid: true}
 	}

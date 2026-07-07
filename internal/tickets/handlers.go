@@ -12,6 +12,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"math"
 	"strconv"
 	"strings"
 
@@ -137,8 +138,10 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if err != nil || n < 0 {
 		return 0
 	}
-
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(n) //nolint:gosec // G109: bounded by MaxInt32 check
 }
 
 // ---------------------------------------------------------------------------
@@ -362,11 +365,17 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 
 	var typeID, assignedTo pgtype.UUID
 	if tid := r.URL.Query().Get("type_id"); tid != "" {
-		_ = typeID.Scan(tid)
+		if err := typeID.Scan(tid); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id format")
+			return
+		}
 	}
 
 	if aid := r.URL.Query().Get("assigned_to"); aid != "" {
-		_ = assignedTo.Scan(aid)
+		if err := assignedTo.Scan(aid); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_assigned_to", "Invalid assigned_to format")
+			return
+		}
 	}
 
 	tickets, err := h.Service.ListTickets(r.Context(), tenantID, status, priority, typeID, assignedTo, search, limit, offset)
@@ -713,11 +722,17 @@ func (h *Handlers) CreateTicketType(w http.ResponseWriter, r *http.Request) {
 
 	var fieldGroupID, autoAssignGroupID pgtype.UUID
 	if input.FieldGroupID != "" {
-		_ = fieldGroupID.Scan(input.FieldGroupID)
+		if err := fieldGroupID.Scan(input.FieldGroupID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id format")
+			return
+		}
 	}
 
 	if input.AutoAssignGroupID != "" {
-		_ = autoAssignGroupID.Scan(input.AutoAssignGroupID)
+		if err := autoAssignGroupID.Scan(input.AutoAssignGroupID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_auto_assign_group_id", "Invalid auto_assign_group_id format")
+			return
+		}
 	}
 
 	isPublic := true
@@ -783,11 +798,17 @@ func (h *Handlers) UpdateTicketType(w http.ResponseWriter, r *http.Request) {
 
 	var fieldGroupID, autoAssignGroupID pgtype.UUID
 	if input.FieldGroupID != "" {
-		_ = fieldGroupID.Scan(input.FieldGroupID)
+		if err := fieldGroupID.Scan(input.FieldGroupID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id format")
+			return
+		}
 	}
 
 	if input.AutoAssignGroupID != "" {
-		_ = autoAssignGroupID.Scan(input.AutoAssignGroupID)
+		if err := autoAssignGroupID.Scan(input.AutoAssignGroupID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_auto_assign_group_id", "Invalid auto_assign_group_id format")
+			return
+		}
 	}
 
 	isPublic := true

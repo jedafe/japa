@@ -23,14 +23,15 @@ import (
 
 // AuthHandlers holds dependencies for auth HTTP handlers.
 type AuthHandlers struct { //nolint:revive // stuttering type name preserved for API compatibility
-	DB          Querier
-	KeyRotation *KeyRotation
-	BruteForce  BruteForceStore
-	Policy      PasswordPolicy
-	AsynqClient *asynq.Client
-	VKClient    *valkey.Client // Valkey client for per-email rate limiting
-	SiteName    string         // Brand name for email templates (e.g. "JapaConnect")
-	SupportURL  string         // Support page URL for email footers
+	DB           Querier
+	KeyRotation  *KeyRotation
+	BruteForce   BruteForceStore
+	Policy       PasswordPolicy
+	AsynqClient  *asynq.Client
+	VKClient     *valkey.Client // Valkey client for per-email rate limiting
+	SiteName     string         // Brand name for email templates (e.g. "JapaConnect")
+	SupportURL   string         // Support page URL for email footers
+	CookieDomain string         // Cookie domain for cross-subdomain sharing (e.g. ".japaconnect.com"), empty = exact host
 }
 
 // Querier is the interface for database operations needed by auth handlers.
@@ -197,6 +198,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		Name:     "jc_refresh",
 		Value:    refreshToken,
 		Path:     "/api/v1/auth",
+		Domain:   h.CookieDomain,
 		MaxAge:   int(RefreshTokenTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   true,
@@ -317,6 +319,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		Name:     "jc_refresh",
 		Value:    refreshToken,
 		Path:     "/api/v1/auth",
+		Domain:   h.CookieDomain,
 		MaxAge:   int(RefreshTokenTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   true,
@@ -405,6 +408,7 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 		Name:     "jc_refresh",
 		Value:    "",
 		Path:     "/api/v1/auth",
+		Domain:   h.CookieDomain,
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   true,
@@ -694,7 +698,9 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Invalidate all sessions for this user.
-	_ = InvalidateAllUserSessions(r.Context(), h.DB, rec.UserID, rec.TenantID)
+	if err := InvalidateAllUserSessions(r.Context(), h.DB, rec.UserID, rec.TenantID); err != nil {
+		slog.Error("reset-password: failed to invalidate sessions", "user_id", rec.UserID.String(), "error", err)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{

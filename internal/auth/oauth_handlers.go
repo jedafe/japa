@@ -12,9 +12,10 @@ import (
 
 // OAuthHandlers holds dependencies for OAuth HTTP handlers.
 type OAuthHandlers struct {
-	Config OAuthConfig
-	Store  OAuthStore
-	KeyRot *KeyRotation
+	Config       OAuthConfig
+	Store        OAuthStore
+	KeyRot       *KeyRotation
+	CookieDomain string // Cookie domain for cross-subdomain sharing (e.g. ".japaconnect.com"), empty = exact host
 }
 
 // HandleInitiate handles GET /api/v1/auth/oauth/{provider}/initiate.
@@ -43,6 +44,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		Name:     "jc_oauth_state",
 		Value:    state,
 		Path:     "/",
+		Domain:   h.CookieDomain,
 		MaxAge:   600, // 10 minutes
 		HttpOnly: true,
 		Secure:   true,
@@ -83,6 +85,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		Name:     "jc_oauth_state",
 		Value:    "",
 		Path:     "/",
+		Domain:   h.CookieDomain,
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   true,

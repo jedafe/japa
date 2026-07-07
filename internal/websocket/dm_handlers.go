@@ -223,7 +223,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // MarkAsRead handles POST /api/v1/dm/conversations/{id}/read.
@@ -248,7 +248,7 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // AcceptMessageRequest handles POST /api/v1/dm/message-requests/{id}/accept.
@@ -278,7 +278,7 @@ func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // DeclineMessageRequest handles POST /api/v1/dm/message-requests/{id}/decline.
@@ -308,7 +308,7 @@ func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // UpdateDMPrivacy handles PUT /api/v1/dm/privacy.
@@ -333,7 +333,7 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // EditMessage handles PATCH /api/v1/dm/conversations/{id}/messages/{mid}.
@@ -383,7 +383,7 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // DeleteMessage handles DELETE /api/v1/dm/conversations/{id}/messages/{mid}.

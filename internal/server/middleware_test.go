@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+
+	mw "github.com/jedafe/japa/internal/middleware"
 )
 
 // silenceLogger replaces the default slog handler with one that discards
@@ -91,7 +93,7 @@ func TestCORSMiddleware_Preflight(t *testing.T) {
 	t.Parallel()
 
 	r := chi.NewRouter()
-	r.Use(corsMiddleware)
+	r.Use(mw.CORS(corsOriginsFromEnv()))
 
 	r.Get("/data", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -120,7 +122,7 @@ func TestCORSMiddleware_ActualRequest(t *testing.T) {
 	t.Parallel()
 
 	r := chi.NewRouter()
-	r.Use(corsMiddleware)
+	r.Use(mw.CORS(corsOriginsFromEnv()))
 
 	r.Get("/data", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -148,7 +150,7 @@ func TestCORSMiddleware_NoOrigin(t *testing.T) {
 	t.Parallel()
 
 	r := chi.NewRouter()
-	r.Use(corsMiddleware)
+	r.Use(mw.CORS(corsOriginsFromEnv()))
 
 	r.Get("/data", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

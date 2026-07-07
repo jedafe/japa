@@ -1,20 +1,31 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { ArrowLeft, Loader2, Plus } from 'lucide-svelte';
-	import { api } from '$lib/api';
+	import { api, type SpaceType } from '$lib/api';
 
 	let name = $state('');
 	let description = $state('');
-	let spaceType = $state('interest');
+	let spaceType = $state('');
 	let error = $state('');
 	let loading = $state(false);
 
-	const spaceTypes = [
-		{ value: 'country', label: 'Country' },
-		{ value: 'interest', label: 'Interest' },
-		{ value: 'profession', label: 'Profession' },
-		{ value: 'university', label: 'University' }
-	];
+	// Space types come from the backend (Rule 16 — no hardcoded domain data).
+	let spaceTypes = $state<{ value: string; label: string }[]>([]);
+
+	onMount(async () => {
+		try {
+			const result = await api.listSpaceTypes();
+			spaceTypes = (result.space_types ?? []).map((t: SpaceType) => ({
+				value: t.id,
+				label: t.name
+			}));
+			if (spaceTypes.length > 0) spaceType = spaceTypes[0].value;
+		} catch {
+			// Fall back to an empty list; the select will prompt to retry.
+			spaceTypes = [];
+		}
+	});
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();

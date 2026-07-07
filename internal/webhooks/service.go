@@ -13,11 +13,20 @@ import (
 // MaxDeliveryAttempts is the roadmap-mandated retry count for webhook delivery.
 const MaxDeliveryAttempts = 5
 
+// webhooksSettingsReader is the subset of config.Settings webhooks needs.
+type webhooksSettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
+
 // Service coordinates webhook endpoint lookup, signed delivery, and delivery
 // status tracking. It implements the worker.WebhookProcessor interface.
 type Service struct {
-	store *Store
+	store    *Store
+	settings webhooksSettingsReader
 }
+
+// SetSettings injects the hot-reloadable settings reader (AUDIT-BE-009).
+func (s *Service) SetSettings(r webhooksSettingsReader) { s.settings = r }
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB) *Service {
@@ -234,8 +243,12 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 		Data:          data,
 	}
 
-	deliverErr := DeliverWithRetry(ctx, endpoint.URL, endpoint.Secret, envelope, MaxDeliveryAttempts)
-	attempts := int32(MaxDeliveryAttempts)
+	maxAttempts := MaxDeliveryAttempts
+	if s.settings != nil {
+		maxAttempts = s.settings.GetIntOr(ctx, endpoint.TenantID, "notifications.max_delivery_attempts", MaxDeliveryAttempts)
+	}
+	deliverErr := DeliverWithRetry(ctx, endpoint.URL, endpoint.Secret, envelope, maxAttempts)
+	attempts := int32(maxAttempts)
 
 	if deliverErr != nil {
 		errMsg := deliverErr.Error()

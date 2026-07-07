@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { getToken } from '$lib/api';
+import { getToken, API_BASE } from '$lib/api';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -25,7 +25,7 @@ export function getTheme() {
 			if (browser) {
 				applyTheme(theme);
 				const token = getToken();
-				fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'}/users/me/preferences`, {
+				fetch(`${API_BASE}/users/me/preferences`, {
 					method: 'PUT',
 					headers: {
 						'Content-Type': 'application/json',

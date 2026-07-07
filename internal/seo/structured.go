@@ -35,7 +35,7 @@ func GenerateQAPageJSONLD(questionTitle, questionBody, answerBody, author string
 		"@type":       "Question",
 		"name":        questionTitle,
 		"text":        questionBody,
-		"dateCreated": time.Now().Format(time.RFC3339),
+		"dateCreated": time.Now().UTC().Format(time.RFC3339),
 		"author":      map[string]interface{}{"@type": "Person", "name": author},
 		"answerCount": 0,
 		"isAccepted":  false,

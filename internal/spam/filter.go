@@ -58,12 +58,17 @@ func safeCompileRegex(pattern string, timeout time.Duration) (*regexp.Regexp, er
 	ch := make(chan compileResult, 1)
 	go func() {
 		re, err := regexp.Compile(pattern)
-		ch <- compileResult{re: re, err: err}
+		select {
+		case ch <- compileResult{re: re, err: err}:
+		default:
+		}
 	}()
 
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	select {
-	case <-time.After(timeout):
-		// Compilation took too long — likely a ReDoS pattern.
+	case <-timer.C:
 		return nil, fmt.Errorf("regex compilation timed out after %v (possible ReDoS pattern)", timeout)
 	case result := <-ch:
 		if result.err != nil {
