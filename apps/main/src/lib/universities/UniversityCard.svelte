@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { MapPin, Users, Star, ExternalLink } from 'lucide-svelte';
+	import { imgproxy } from '$lib/utils/imgproxy';
 
 	let {
 		university
@@ -29,9 +30,10 @@
 		<div class="flex items-start gap-4">
 			{#if university.logo_url}
 				<img
-					src={university.logo_url}
+					src={imgproxy(university.logo_url, { width: 112, height: 112, format: 'webp', quality: 85 })}
 					alt="{university.name} logo"
 					class="h-14 w-14 rounded-xl object-contain shadow-sm"
+					loading="lazy"
 				/>
 			{:else}
 				<div

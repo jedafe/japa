@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { imgproxy } from '$lib/utils/imgproxy';
+
 	interface ImageItem {
 		url: string;
 		alt: string;
@@ -44,9 +46,10 @@
 	{:else if layout === 'single'}
 		<figure class="overflow-hidden rounded-lg">
 			<img
-				src={images[0].url}
+				src={imgproxy(images[0].url, { width: 1200, format: 'webp', quality: 85 })}
 				alt={images[0].alt}
 				class="h-auto w-full object-cover"
+				loading="lazy"
 			/>
 			{#if caption}
 				<figcaption class="mt-2 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -59,9 +62,10 @@
 			<div class="grid gap-3 {images.length === 2 ? 'grid-cols-2' : images.length === 3 ? 'grid-cols-3' : 'grid-cols-2 md:grid-cols-4'}">
 				{#each images.slice(0, 4) as img}
 					<img
-						src={img.url}
+						src={imgproxy(img.url, { width: 600, format: 'webp', quality: 80 })}
 						alt={img.alt}
 						class="aspect-square h-full w-full rounded-lg object-cover"
+						loading="lazy"
 					/>
 				{/each}
 			</div>
@@ -74,7 +78,7 @@
 	{:else if layout === 'carousel' && currentImage}
 		<figure class="relative overflow-hidden rounded-lg">
 			<img
-				src={currentImage.url}
+				src={imgproxy(currentImage.url, { width: 1200, format: 'webp', quality: 85 })}
 				alt={currentImage.alt}
 				class="h-auto w-full object-cover"
 			/>

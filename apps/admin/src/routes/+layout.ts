@@ -1,6 +1,7 @@
 import type { LayoutLoad } from './$types';
 import { browser } from '$app/environment';
 import { locale } from '$lib/stores/i18n.svelte';
+import { fetchPermissions } from '$lib/stores/permissions';
 
 // SPA mode — adapter-static emits a fallback index.html shell, so no
 // server-side rendering is needed. Every route is handled client-side.
@@ -25,6 +26,11 @@ export const load: LayoutLoad = async () => {
 		.then((m) => m.default)
 		.catch(() => ({}));
 	locale.init(localeCode, translations);
+
+	// Fetch the user's RBAC permissions for gating admin sections.
+	if (token) {
+		await fetchPermissions(token);
+	}
 
 	return { token, user: null };
 };

@@ -68,32 +68,32 @@
 		{
 			name: t('dashboard.groups.infra'),
 			items: [
-				{ name: 'PostgreSQL', status: 'healthy' },
-				{ name: 'Valkey', status: 'healthy' },
-				{ name: 'Meilisearch', status: 'healthy' },
-				{ name: 'MinIO', status: 'healthy' }
+				{ name: 'PostgreSQL', status: 'unknown' },
+				{ name: 'Valkey', status: 'unknown' },
+				{ name: 'Meilisearch', status: 'unknown' },
+				{ name: 'SeaweedFS', status: 'unknown' }
 			]
 		},
 		{
 			name: t('dashboard.groups.app'),
 			items: [
-				{ name: 'API Server', status: 'healthy' },
-				{ name: 'imgproxy', status: 'healthy' },
-				{ name: 'Nginx', status: 'healthy' }
+				{ name: 'API Server', status: 'unknown' },
+				{ name: 'imgproxy', status: 'unknown' },
+				{ name: 'Nginx', status: 'unknown' }
 			]
 		},
 		{
 			name: t('dashboard.groups.background'),
 			items: [
-				{ name: 'Asynq Workers', status: 'healthy' },
-				{ name: 'Queue Depth', status: 'healthy' }
+				{ name: 'Asynq Workers', status: 'unknown' },
+				{ name: 'Queue Depth', status: 'unknown' }
 			]
 		},
 		{
 			name: t('dashboard.groups.realtime'),
 			items: [
-				{ name: 'WebSocket Hub', status: 'healthy' },
-				{ name: 'SSE Connections', status: 'healthy' }
+				{ name: 'WebSocket Hub', status: 'unknown' },
+				{ name: 'SSE Connections', status: 'unknown' }
 			]
 		}
 	]);

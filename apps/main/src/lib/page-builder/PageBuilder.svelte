@@ -27,6 +27,16 @@
 
 	let { blocks, readOnly = false, onChange }: Props = $props();
 
+	/** Live region for keyboard reorder announcements. */
+	let liveRegion: HTMLDivElement | undefined = $state();
+
+	function announce(message: string) {
+		if (liveRegion) {
+			liveRegion.textContent = message;
+			setTimeout(() => { liveRegion!.textContent = ''; }, 1000);
+		}
+	}
+
 	/** Map block_type to its Svelte component. */
 	const BLOCK_COMPONENTS: Record<string, typeof HeroBlock> = {
 		hero: HeroBlock,
@@ -65,6 +75,9 @@
 		const [moved] = updated.splice(sourceIndex, 1);
 		updated.splice(targetIndex, 0, moved);
 		emitChange(updated);
+
+		const blockLabel = getBlockLabel(moved.block_type);
+		announce(`Moved ${blockLabel} from position ${sourceIndex + 1} to position ${targetIndex + 1}`);
 	}
 
 	// ── Block CRUD ───────────────────────────────────────────────────
@@ -117,6 +130,8 @@
 </script>
 
 <DragDropProvider onDragEnd={handleDragEnd}>
+	<!-- Live region for keyboard reorder announcements -->
+	<div bind:this={liveRegion} class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 	<div
 		class="page-builder flex flex-col gap-3"
 		role="list"

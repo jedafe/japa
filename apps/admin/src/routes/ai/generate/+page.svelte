@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { aiApi, type GenerateResult } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2, Copy, Check, Sparkles, RotateCcw, Send, ChevronDown, ChevronUp, Clock, Zap, Trash2 } from 'lucide-svelte';
@@ -34,12 +35,25 @@
 		{ value: 'translation', labelKey: 'ai.category.translation', desc: 'Translate content between languages' }
 	];
 
-	const models: { value: string; label: string }[] = [
-		{ value: '', label: 'Default' },
-		{ value: 'gpt-4', label: t('ai.model.gpt4') },
-		{ value: 'gpt-3.5-turbo', label: t('ai.model.gpt35') },
-		{ value: 'claude-3', label: t('ai.model.claude3') }
-	];
+	let models = $state<{ value: string; label: string }[]>([
+		{ value: '', label: 'Default' }
+	]);
+
+	onMount(async () => {
+		try {
+			const res = await aiApi.listModels();
+			if (res.ok && res.data.length > 0) {
+				models = res.data.map((m) => ({ value: m.id, label: m.label }));
+			}
+		} catch {
+			models = [
+				{ value: '', label: 'Default' },
+				{ value: 'gpt-4', label: t('ai.model.gpt4') },
+				{ value: 'gpt-3.5-turbo', label: t('ai.model.gpt35') },
+				{ value: 'claude-3', label: t('ai.model.claude3') }
+			];
+		}
+	});
 
 	let charCount = $derived(prompt.length);
 

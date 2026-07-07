@@ -1,33 +1,21 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { Mail, Lock, Loader2 } from 'lucide-svelte';
-	import { api } from '$lib/api';
+	import { enhance } from '$app/forms';
 	import { trackEvent, AnalyticsEvents } from '$lib/analytics';
 	import { t } from '$lib/stores/i18n.svelte';
 
+	let { form } = $props();
+
 	let email = $state('');
 	let password = $state('');
-	let error = $state('');
 	let loading = $state(false);
 
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
-		error = '';
+	function handleSubmit() {
 		loading = true;
-
-		try {
-			const result = await api.login(email, password);
-
-			if (result.token) {
-				document.cookie = `jc_token=${result.token}; path=/; SameSite=Lax`;
-			}
-			trackEvent(AnalyticsEvents.LOGIN, { email });
-			goto('/');
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Network error. Please try again.';
-		} finally {
+		trackEvent(AnalyticsEvents.LOGIN, { email });
+		return async () => {
 			loading = false;
-		}
+		};
 	}
 </script>
 
@@ -43,16 +31,16 @@
 			{t('auth.welcome_back')}
 		</p>
 
-		{#if error}
+		{#if form?.error}
 			<div
 				class="mt-4 rounded-lg border px-4 py-3 text-sm"
 				style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
 			>
-				{error}
+				{form.error}
 			</div>
 		{/if}
 
-		<form onsubmit={handleSubmit} class="mt-6 space-y-4">
+		<form method="POST" use:enhance={handleSubmit} class="mt-6 space-y-4">
 			<div>
 				<label for="email" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 					{t('auth.email_label')}

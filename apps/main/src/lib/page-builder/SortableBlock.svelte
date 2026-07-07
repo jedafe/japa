@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createSortable } from '@dnd-kit/svelte/sortable';
 	import { GripVertical, Trash2, Copy } from 'lucide-svelte';
+	import { onMount } from 'svelte';
 
 	interface Props {
 		id: string;
@@ -30,6 +31,17 @@
 		get disabled() { return readOnly; },
 	});
 
+	/** Live region for screen reader announcements. */
+	let liveRegion: HTMLDivElement | undefined = $state();
+
+	function announce(message: string) {
+		if (liveRegion) {
+			liveRegion.textContent = message;
+			// Clear after a short delay so the same message can be re-announced
+			setTimeout(() => { liveRegion!.textContent = ''; }, 1000);
+		}
+	}
+
 	let wrapperClass = $derived(
 		[
 			'group relative rounded-lg border transition-all duration-200',
@@ -44,9 +56,14 @@
 	);
 </script>
 
+<!-- Live region for accessible drag-and-drop announcements -->
+<div bind:this={liveRegion} class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+
 <div
 	class={wrapperClass}
 	role={!readOnly ? 'listitem' : undefined}
+	aria-roledescription={!readOnly ? 'draggable' : undefined}
+	aria-label="{blockLabel} block, position {index + 1}"
 	data-block-id={id}
 	data-block-type={blockType}
 	{@attach sortable.attach}
@@ -60,6 +77,8 @@
 				class="cursor-grab rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:cursor-grabbing dark:hover:bg-gray-800 dark:hover:text-gray-300"
 				title="Drag to reorder"
 				aria-label="Drag to reorder {blockLabel}"
+				aria-roledescription="sortable"
+				onpointerdown={() => announce(`Picked up ${blockLabel} block at position ${index + 1}`)}
 				{@attach sortable.attachHandle}
 			>
 				<GripVertical class="h-4 w-4" />

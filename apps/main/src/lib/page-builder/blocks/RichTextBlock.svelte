@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Editor from '$lib/components/editor/Editor.svelte';
+	import type { Component } from 'svelte';
 
 	interface Props {
 		content?: string;
@@ -12,6 +12,9 @@
 		onChange,
 		readOnly = false,
 	}: Props = $props();
+
+	let EditorComponent: Component | undefined = $state();
+	let editorLoaded = $state(false);
 
 	function safeParseHTML(json: string): string {
 		if (!json) return '';
@@ -30,6 +33,16 @@
 	let wrapperClass = $derived(
 		`block-rich-text${!readOnly ? ' ring-2 ring-blue-400/40 hover:ring-blue-400/60' : ''}`
 	);
+
+	// Lazy-load the editor only when not readOnly
+	$effect(() => {
+		if (!readOnly && !editorLoaded) {
+			import('$lib/components/editor/Editor.svelte').then((mod) => {
+				EditorComponent = mod.default;
+				editorLoaded = true;
+			});
+		}
+	});
 </script>
 
 <div class={wrapperClass}>
@@ -37,12 +50,16 @@
 		<div class="prose prose-sm max-w-none dark:prose-invert">
 			{@html parsedContent}
 		</div>
-	{:else}
-		<Editor
+	{:else if EditorComponent}
+		<EditorComponent
 			{content}
 			{onChange}
 			readOnly={false}
 			placeholder="Write your content..."
 		/>
+	{:else}
+		<div class="flex items-center justify-center p-8 text-sm text-gray-400 dark:text-gray-500">
+			Loading editor...
+		</div>
 	{/if}
 </div>
