@@ -39,6 +39,31 @@ func (q *Queries) CreateWSTicket(ctx context.Context, arg CreateWSTicketParams) 
 	return err
 }
 
+const editDMMessage = `-- name: EditDMMessage :exec
+UPDATE dm_messages
+SET body = $1, edited_at = now()
+WHERE id = $2 AND conversation_id = $3 AND sender_id = $4
+  AND deleted_at IS NULL
+  AND created_at > now() - interval '15 minutes'
+`
+
+type EditDMMessageParams struct {
+	Body           string      `json:"body"`
+	ID             pgtype.UUID `json:"id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	SenderID       pgtype.UUID `json:"sender_id"`
+}
+
+func (q *Queries) EditDMMessage(ctx context.Context, arg EditDMMessageParams) error {
+	_, err := q.db.Exec(ctx, editDMMessage,
+		arg.Body,
+		arg.ID,
+		arg.ConversationID,
+		arg.SenderID,
+	)
+	return err
+}
+
 const getConversationByID = `-- name: GetConversationByID :one
 SELECT id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations WHERE id = $1 AND tenant_id = $2
 `
@@ -126,6 +151,29 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 		return nil, err
 	}
 	return items, nil
+}
+
+const getDMMessageByID = `-- name: GetDMMessageByID :one
+SELECT id, conversation_id, sender_id, body, created_at, read_at FROM dm_messages WHERE id = $1 AND conversation_id = $2
+`
+
+type GetDMMessageByIDParams struct {
+	ID             pgtype.UUID `json:"id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+}
+
+func (q *Queries) GetDMMessageByID(ctx context.Context, arg GetDMMessageByIDParams) (DmMessage, error) {
+	row := q.db.QueryRow(ctx, getDMMessageByID, arg.ID, arg.ConversationID)
+	var i DmMessage
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationID,
+		&i.SenderID,
+		&i.Body,
+		&i.CreatedAt,
+		&i.ReadAt,
+	)
+	return i, err
 }
 
 const getMessageRequest = `-- name: GetMessageRequest :one
@@ -335,6 +383,24 @@ type ResetUnreadCountParams struct {
 
 func (q *Queries) ResetUnreadCount(ctx context.Context, arg ResetUnreadCountParams) error {
 	_, err := q.db.Exec(ctx, resetUnreadCount, arg.UserID, arg.ConversationID)
+	return err
+}
+
+const softDeleteDMMessage = `-- name: SoftDeleteDMMessage :exec
+UPDATE dm_messages
+SET deleted_at = now(), body = ''
+WHERE id = $1 AND conversation_id = $2 AND sender_id = $3
+  AND deleted_at IS NULL
+`
+
+type SoftDeleteDMMessageParams struct {
+	ID             pgtype.UUID `json:"id"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	SenderID       pgtype.UUID `json:"sender_id"`
+}
+
+func (q *Queries) SoftDeleteDMMessage(ctx context.Context, arg SoftDeleteDMMessageParams) error {
+	_, err := q.db.Exec(ctx, softDeleteDMMessage, arg.ID, arg.ConversationID, arg.SenderID)
 	return err
 }
 

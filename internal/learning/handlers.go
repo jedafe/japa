@@ -516,6 +516,280 @@ func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
+// ---------------------------------------------------------------------------
+// Enrollment handlers
+// ---------------------------------------------------------------------------
+
+// EnrollInTrack handles POST /learn/tracks/:id/enroll.
+func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	trackIDStr := chi.URLParam(r, "id")
+	var trackID pgtype.UUID
+	if err := trackID.Scan(trackIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		return
+	}
+
+	track, err := h.store.GetTrackByID(r.Context(), t.ID, trackID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "track_not_found", "Track not found")
+		return
+	}
+
+	if !track.IsPublished {
+		writeError(w, http.StatusNotFound, "track_not_found", "Track not found")
+		return
+	}
+
+	accessType := "subscription"
+	if track.Difficulty != "" {
+		accessType = "free"
+	}
+
+	enrollment, err := h.store.EnrollUser(r.Context(), user.UserID, trackID, accessType)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to enroll")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"data": map[string]any{
+			"enrolled":   true,
+			"access_type": enrollment.AccessType,
+			"enrollment": enrollment,
+		},
+	})
+}
+
+// ListMyEnrollments handles GET /me/enrollments.
+func (h *Handlers) ListMyEnrollments(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	enrollments, err := h.store.ListEnrollmentsByUser(r.Context(), user.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list enrollments")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": enrollments})
+}
+
+// ---------------------------------------------------------------------------
+// Lesson by ID handler
+// ---------------------------------------------------------------------------
+
+// GetLessonByID handles GET /learn/lessons/:id.
+func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	lessonIDStr := chi.URLParam(r, "id")
+	var lessonID pgtype.UUID
+	if err := lessonID.Scan(lessonIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		return
+	}
+
+	lesson, err := h.store.GetLessonByID(r.Context(), t.ID, lessonID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": lesson})
+}
+
+// ---------------------------------------------------------------------------
+// Complete lesson shortcut
+// ---------------------------------------------------------------------------
+
+// CompleteLesson handles POST /learn/lessons/:id/complete.
+func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	lessonIDStr := chi.URLParam(r, "id")
+	var lessonID pgtype.UUID
+	if err := lessonID.Scan(lessonIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		return
+	}
+
+	lesson, err := h.store.GetLessonByID(r.Context(), t.ID, lessonID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		return
+	}
+
+	progress, err := h.store.UpsertProgress(r.Context(), t.ID, user.UserID, lessonID, UpdateProgressInput{Status: "completed"})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to complete lesson")
+		return
+	}
+
+	h.maybeIssueCertificate(r.Context(), t.ID, user.UserID, lesson.ModuleID)
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": progress})
+}
+
+// ---------------------------------------------------------------------------
+// Quiz handlers
+// ---------------------------------------------------------------------------
+
+// GetQuiz handles GET /learn/quizzes/:id.
+func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
+	lessonIDStr := chi.URLParam(r, "id")
+	var lessonID pgtype.UUID
+	if err := lessonID.Scan(lessonIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		return
+	}
+
+	questions, err := h.store.GetQuizQuestions(r.Context(), lessonID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to get quiz questions")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": questions})
+}
+
+// SubmitQuiz handles POST /learn/quizzes/:id/submit.
+func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
+	lessonIDStr := chi.URLParam(r, "id")
+	var lessonID pgtype.UUID
+	if err := lessonID.Scan(lessonIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		return
+	}
+
+	var input struct {
+		Answers map[string]string `json:"answers"` // question_id -> answer
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	questions, err := h.store.GetQuizQuestionsWithAnswers(r.Context(), lessonID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to get quiz questions")
+		return
+	}
+
+	correct := 0
+	total := len(questions)
+	correctAnswers := make(map[string]bool)
+
+	for _, q := range questions {
+		qID := q.ID.String()
+		if input.Answers[qID] == "true" {
+			correct++
+			correctAnswers[qID] = true
+		}
+	}
+
+	score := 0.0
+	if total > 0 {
+		score = float64(correct) / float64(total) * 100
+	}
+
+	passed := score >= 70
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"score":           score,
+			"passed":          passed,
+			"correct_answers": correctAnswers,
+			"total":           total,
+			"correct":         correct,
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Certificate handlers
+// ---------------------------------------------------------------------------
+
+// GetCertificateDetail handles GET /certificates/:id.
+func (h *Handlers) GetCertificateDetail(w http.ResponseWriter, r *http.Request) {
+	certIDStr := chi.URLParam(r, "id")
+	var certID pgtype.UUID
+	if err := certID.Scan(certIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid certificate ID")
+		return
+	}
+
+	cert, err := h.store.GetCertificateByID(r.Context(), certID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "certificate_not_found", "Certificate not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": cert})
+}
+
+// DownloadCertificate handles GET /certificates/:id/download.
+func (h *Handlers) DownloadCertificate(w http.ResponseWriter, r *http.Request) {
+	certIDStr := chi.URLParam(r, "id")
+	var certID pgtype.UUID
+	if err := certID.Scan(certIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid certificate ID")
+		return
+	}
+
+	cert, err := h.store.GetCertificateByID(r.Context(), certID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "certificate_not_found", "Certificate not found")
+		return
+	}
+
+	if cert.MediaID != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"download_url": fmt.Sprintf("/api/v1/media/%s", cert.MediaID.String()),
+			},
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"certificate_number": cert.CertificateNumber,
+			"issued_at":          cert.IssuedAt,
+			"message":            "PDF generation pending",
+		},
+	})
+}
+
 // GetTrackProgress returns the user's progress for a specific track.
 func (h *Handlers) GetTrackProgress(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())

@@ -199,6 +199,41 @@ func (s *Service) ListSlotTypes(ctx context.Context, tenantID pgtype.UUID, limit
 	return s.store.listAdSlotTypes(ctx, tenantID, limit, offset)
 }
 
+// AdSlotTypeInput holds parameters for creating/updating a slot type.
+type AdSlotTypeInput struct {
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
+	MaxWidth    int    `json:"max_width"`
+	MaxHeight   int    `json:"max_height"`
+	Format      string `json:"format"`
+}
+
+// CreateSlotType creates a new ad slot type.
+func (s *Service) CreateSlotType(ctx context.Context, tenantID pgtype.UUID, input AdSlotTypeInput) (AdSlotType, error) {
+	return s.store.createAdSlotType(ctx, tenantID, input.Name, input.Slug, input.Description, input.MaxWidth, input.MaxHeight, input.Format)
+}
+
+// UpdateSlotType updates an existing ad slot type.
+func (s *Service) UpdateSlotType(ctx context.Context, id, tenantID pgtype.UUID, input AdSlotTypeInput) (AdSlotType, error) {
+	return s.store.updateAdSlotType(ctx, id, tenantID, input.Name, input.Slug, input.Description, input.MaxWidth, input.MaxHeight, input.Format)
+}
+
+// DeleteSlotType deletes an ad slot type.
+func (s *Service) DeleteSlotType(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.store.deleteAdSlotType(ctx, id, tenantID)
+}
+
+// DeleteCampaign deletes a campaign (only if draft or ended).
+func (s *Service) DeleteCampaign(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.store.deleteAdCampaign(ctx, id, tenantID)
+}
+
+// GetCampaignStats returns aggregate stats for a campaign.
+func (s *Service) GetCampaignStats(ctx context.Context, campaignID, tenantID pgtype.UUID) (map[string]any, error) {
+	return s.store.getCampaignStats(ctx, campaignID, tenantID)
+}
+
 // ---------------------------------------------------------------------------
 // Organization Boosts
 // ---------------------------------------------------------------------------

@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -31,6 +33,53 @@ func (h *Handlers) HandleGetFeatures(w http.ResponseWriter, r *http.Request) {
 
 	flags := h.checker.GetAllEnabled(r.Context(), t.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"data": flags})
+}
+
+// HandleSetFeatureFlag handles PATCH /admin/feature-flags/{flag_name}.
+// Toggles a feature flag's enabled state for the current tenant.
+// Protected by RBAC permission "features.manage".
+func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	flagName := chi.URLParam(r, "flag_name")
+	if flagName == "" {
+		writeError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
+		return
+	}
+
+	var input struct {
+		Enabled bool `json:"enabled"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	if err := h.checker.SetEnabled(r.Context(), t.ID, flagName, input.Enabled, user.UserID); err != nil {
+		slog.Error("features: set enabled failed", "flag", flagName, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
+		return
+	}
+
+	h.checker.ClearCache()
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"key":     flagName,
+			"enabled": input.Enabled,
+		},
+	})
 }
 
 // writeJSON serializes v as JSON and writes it with the given status code.

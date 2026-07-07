@@ -403,3 +403,46 @@ func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": aggregate})
 }
+
+// ModerateReview handles PATCH /api/v1/admin/reviews/:id.
+// Changes a review's status (admin moderation).
+func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		return
+	}
+
+	var input struct {
+		Status string `json:"status"`
+		Reason string `json:"reason"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Status == "" {
+		writeError(w, http.StatusBadRequest, "missing_status", "status is required")
+		return
+	}
+
+	review, err := h.Service.ModerateReview(r.Context(), id, tenantID, input.Status)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": review})
+}

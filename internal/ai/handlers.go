@@ -2,11 +2,20 @@
 //
 // Routes:
 //
-//	POST /api/v1/ai/generate        — generate AI output via the gateway
-//	POST /api/v1/ai/hitl             — create HITL review
-//	GET  /api/v1/ai/hitl/pending     — list pending reviews
-//	POST /api/v1/ai/hitl/{id}/approve — approve a review
-//	POST /api/v1/ai/hitl/{id}/reject  — reject a review with reason
+//	POST /api/v1/ai/generate                      — generate AI output via the gateway
+//	POST /api/v1/ai/chat                           — JapaBot conversational AI
+//	POST /api/v1/ai/improve                        — improve writing quality
+//	POST /api/v1/ai/summarize                      — summarize text
+//	POST /api/v1/ai/translate                      — translate text
+//	POST /api/v1/ai/generate-tags                  — generate content tags
+//	POST /api/v1/ai/generate-og                    — generate OG metadata
+//	POST /api/v1/ai/hitl                           — create HITL review
+//	GET  /api/v1/ai/hitl/pending                   — list pending reviews
+//	POST /api/v1/ai/hitl/{id}/approve              — approve a review
+//	POST /api/v1/ai/hitl/{id}/reject               — reject a review with reason
+//	GET  /admin/ai/context/{user_id}               — view user's AI context (Honcho)
+//	DELETE /admin/ai/context/{user_id}/{entry_id}   — delete a specific context entry
+//	GET  /admin/ai/usage                           — list AI usage logs (stub)
 package ai
 
 import (
@@ -18,6 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/honcho"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -25,11 +35,17 @@ import (
 type Handlers struct {
 	Dispatcher *Dispatcher
 	Store      *Store
+	Honcho     *honcho.Client
 }
 
 // NewHandlers creates Handlers with the given dependencies.
 func NewHandlers(dispatcher *Dispatcher, store *Store) *Handlers {
 	return &Handlers{Dispatcher: dispatcher, Store: store}
+}
+
+// SetHonchoClient injects the Honcho client for admin context operations.
+func (h *Handlers) SetHonchoClient(c *honcho.Client) {
+	h.Honcho = c
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +182,329 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
+// JapaBot Chat Handler
+// ---------------------------------------------------------------------------
+
+// HandleChat handles POST /api/v1/ai/chat — JapaBot conversational AI.
+// Request body: { "message": "user message", "context": {optional context} }
+// Response: { "data": { "response": "AI response", "provider_ref": "...", "status": "..." } }
+func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Message string         `json:"message"`
+		Context map[string]any `json:"context,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	if input.Message == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "message is required")
+		return
+	}
+
+	payload := map[string]any{
+		"prompt":    input.Message,
+		"context":   input.Context,
+		"user_id":   user.UserID.String(),
+		"tenant_id": tenantID.String(),
+		"task":      "chat",
+	}
+
+	resp, err := h.Dispatcher.Dispatch(r.Context(), "chat", Request{
+		Category: "chat",
+		Payload:  payload,
+	})
+	if err != nil {
+		slog.Error("ai chat failed", "error", err)
+		writeError(w, http.StatusBadGateway, "ai_error", "JapaBot is unavailable")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// ---------------------------------------------------------------------------
+// Content AI Assist Handlers
+// ---------------------------------------------------------------------------
+
+// HandleImprove handles POST /api/v1/ai/improve — improve writing quality.
+// Request body: { "text": "...", "tone": "professional|casual|academic" }
+func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Text string `json:"text"`
+		Tone string `json:"tone"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	if input.Text == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "text is required")
+		return
+	}
+
+	tone := input.Tone
+	if tone == "" {
+		tone = "professional"
+	}
+
+	payload := map[string]any{
+		"prompt":    "Improve the following text for clarity, grammar, and style. Tone: " + tone + ".\n\n" + input.Text,
+		"user_id":   user.UserID.String(),
+		"tenant_id": tenantID.String(),
+		"task":      "improve",
+		"tone":      tone,
+	}
+
+	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
+		Category: "content_generation",
+		Payload:  payload,
+	})
+	if err != nil {
+		slog.Error("ai improve failed", "error", err)
+		writeError(w, http.StatusBadGateway, "ai_error", "AI improvement failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// HandleSummarize handles POST /api/v1/ai/summarize — summarize text.
+// Request body: { "text": "...", "max_words": 100 }
+func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Text     string `json:"text"`
+		MaxWords int    `json:"max_words"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	if input.Text == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "text is required")
+		return
+	}
+
+	maxWords := input.MaxWords
+	if maxWords <= 0 {
+		maxWords = 100
+	}
+
+	payload := map[string]any{
+		"prompt":    "Summarize the following text in at most " + strconv.Itoa(maxWords) + " words.\n\n" + input.Text,
+		"user_id":   user.UserID.String(),
+		"tenant_id": tenantID.String(),
+		"task":      "summarize",
+		"max_words": maxWords,
+	}
+
+	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
+		Category: "content_generation",
+		Payload:  payload,
+	})
+	if err != nil {
+		slog.Error("ai summarize failed", "error", err)
+		writeError(w, http.StatusBadGateway, "ai_error", "AI summarization failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// HandleTranslate handles POST /api/v1/ai/translate — translate text.
+// Request body: { "text": "...", "target_locale": "fr" }
+func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Text         string `json:"text"`
+		TargetLocale string `json:"target_locale"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	if input.Text == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "text is required")
+		return
+	}
+
+	if input.TargetLocale == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "target_locale is required")
+		return
+	}
+
+	payload := map[string]any{
+		"prompt":        "Translate the following text to locale " + input.TargetLocale + ".\n\n" + input.Text,
+		"user_id":       user.UserID.String(),
+		"tenant_id":     tenantID.String(),
+		"task":          "translate",
+		"target_locale": input.TargetLocale,
+	}
+
+	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
+		Category: "content_generation",
+		Payload:  payload,
+	})
+	if err != nil {
+		slog.Error("ai translate failed", "error", err)
+		writeError(w, http.StatusBadGateway, "ai_error", "AI translation failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// HandleGenerateTags handles POST /api/v1/ai/generate-tags — generate content tags.
+// Request body: { "title": "...", "text": "..." }
+func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Title string `json:"title"`
+		Text  string `json:"text"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	if input.Title == "" && input.Text == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "title or text is required")
+		return
+	}
+
+	payload := map[string]any{
+		"prompt":    "Generate relevant content tags for the following. Return as a JSON array of strings.\n\nTitle: " + input.Title + "\n\nText: " + input.Text,
+		"user_id":   user.UserID.String(),
+		"tenant_id": tenantID.String(),
+		"task":      "generate_tags",
+	}
+
+	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
+		Category: "content_generation",
+		Payload:  payload,
+	})
+	if err != nil {
+		slog.Error("ai generate-tags failed", "error", err)
+		writeError(w, http.StatusBadGateway, "ai_error", "AI tag generation failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// HandleGenerateOG handles POST /api/v1/ai/generate-og — generate OG metadata.
+// Request body: { "title": "...", "text": "...", "content_type": "post" }
+func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Title       string `json:"title"`
+		Text        string `json:"text"`
+		ContentType string `json:"content_type"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	if input.Title == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "title is required")
+		return
+	}
+
+	contentType := input.ContentType
+	if contentType == "" {
+		contentType = "post"
+	}
+
+	payload := map[string]any{
+		"prompt":        "Generate Open Graph metadata (og:title, og:description, og:image alt text) for the following " + contentType + ". Return as JSON.\n\nTitle: " + input.Title + "\n\nText: " + input.Text,
+		"user_id":       user.UserID.String(),
+		"tenant_id":     tenantID.String(),
+		"task":          "generate_og",
+		"content_type":  contentType,
+	}
+
+	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
+		Category: "content_generation",
+		Payload:  payload,
+	})
+	if err != nil {
+		slog.Error("ai generate-og failed", "error", err)
+		writeError(w, http.StatusBadGateway, "ai_error", "AI OG generation failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// ---------------------------------------------------------------------------
 // HITL Handlers
 // ---------------------------------------------------------------------------
 
@@ -299,4 +638,79 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "rejected"}})
+}
+
+// ---------------------------------------------------------------------------
+// Admin AI Context Handlers
+// ---------------------------------------------------------------------------
+
+// HandleGetUserContext returns the AI context entries for a specific user.
+// GET /admin/ai/context/{user_id}
+func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) {
+	if h.Honcho == nil {
+		writeError(w, http.StatusServiceUnavailable, "honcho_unavailable", "Honcho client not configured")
+		return
+	}
+
+	userID := chi.URLParam(r, "user_id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "user_id is required")
+		return
+	}
+
+	entries, err := h.Honcho.GetContext(r.Context(), userID)
+	if err != nil {
+		slog.Error("getting user AI context", "error", err, "user_id", userID)
+		writeError(w, http.StatusBadGateway, "honcho_error", "Failed to retrieve user context")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        entries,
+		"total_count": len(entries),
+	})
+}
+
+// HandleDeleteUserContextEntry deletes a specific AI context entry for a user.
+// DELETE /admin/ai/context/{user_id}/{entry_id}
+func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.Request) {
+	if h.Honcho == nil {
+		writeError(w, http.StatusServiceUnavailable, "honcho_unavailable", "Honcho client not configured")
+		return
+	}
+
+	userID := chi.URLParam(r, "user_id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "user_id is required")
+		return
+	}
+
+	entryID := chi.URLParam(r, "entry_id")
+	if entryID == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "entry_id is required")
+		return
+	}
+
+	if err := h.Honcho.DeleteEntry(r.Context(), userID, entryID); err != nil {
+		slog.Error("deleting user context entry", "error", err, "user_id", userID, "entry_id", entryID)
+		writeError(w, http.StatusBadGateway, "honcho_error", "Failed to delete context entry")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// ---------------------------------------------------------------------------
+// Admin AI Usage Handler (stub — ai_usage_log table not yet created)
+// ---------------------------------------------------------------------------
+
+// HandleGetAIUsage returns AI usage logs. Currently a stub that returns an
+// empty dataset until the ai_usage_log migration is added.
+// GET /admin/ai/usage
+func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        []any{},
+		"total_count": 0,
+		"note":        "ai_usage_log table not yet implemented",
+	})
 }

@@ -55,3 +55,67 @@ SELECT COUNT(*)::int AS count
 FROM users
 WHERE tenant_id = @tenant_id
   AND (@search::text = '' OR username ILIKE '%' || @search || '%' OR email ILIKE '%' || @search || '%');
+
+-- name: GetUserPrivacySettings :one
+SELECT user_id, dm_privacy, profile_visibility, search_indexable,
+       show_online_status, show_activity, created_at, updated_at
+FROM user_privacy_settings
+WHERE user_id = $1;
+
+-- name: UpsertUserPrivacySettings :exec
+INSERT INTO user_privacy_settings (user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (user_id) DO UPDATE SET
+    dm_privacy = EXCLUDED.dm_privacy,
+    profile_visibility = EXCLUDED.profile_visibility,
+    search_indexable = EXCLUDED.search_indexable,
+    show_online_status = EXCLUDED.show_online_status,
+    show_activity = EXCLUDED.show_activity,
+    updated_at = now();
+
+-- name: GetUserPasswordHash :one
+SELECT id, password_hash FROM users WHERE id = $1 AND tenant_id = $2;
+
+-- name: UpdateUserPassword :exec
+UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1;
+
+-- name: ListUserSessions :many
+SELECT id, token_hash, expires_at, created_at
+FROM refresh_tokens
+WHERE user_id = $1 AND revoked_at IS NULL
+ORDER BY created_at DESC;
+
+-- name: RevokeUserSession :exec
+UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL;
+
+-- name: RevokeAllUserSessions :exec
+UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL AND id != $2;
+
+-- name: ListOAuthAccounts :many
+SELECT id, provider, provider_user_id, created_at
+FROM oauth_accounts
+WHERE tenant_id = $1 AND user_id = $2;
+
+-- name: DisconnectOAuthAccount :exec
+DELETE FROM oauth_accounts WHERE tenant_id = $1 AND user_id = $2 AND provider = $3;
+
+-- name: UserHasPassword :one
+SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND password_hash IS NOT NULL AND password_hash != '') AS has_password;
+
+-- name: ListUserContent :many
+SELECT c.id, c.title, c.content_type, c.status, c.created_at, c.updated_at
+FROM contents c
+WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
+  AND ($3::text = '' OR c.status = $3)
+ORDER BY c.created_at DESC
+LIMIT $4 OFFSET $5;
+
+-- name: ListUserBookmarks :many
+SELECT b.id, b.entity_type, b.entity_id, b.folder, b.created_at
+FROM bookmarks b
+WHERE b.user_id = $1
+ORDER BY b.created_at DESC
+LIMIT $2 OFFSET $3;
+
+-- name: DeactivateUser :exec
+UPDATE users SET status = 'suspended', updated_at = now() WHERE id = $1 AND tenant_id = $2;

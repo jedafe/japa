@@ -1,0 +1,85 @@
+package spaces
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
+func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (bool, error) {
+	isFollowing, err := s.read.IsFollowing(ctx, gen.IsFollowingParams{
+		FollowerID:  userID,
+		EntityType:  "space",
+		EntityID:    spaceID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking follow status: %w", err)
+	}
+
+	if isFollowing {
+		err = s.write.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
+			FollowerID: userID,
+			EntityType: "space",
+			EntityID:   spaceID,
+		})
+		if err != nil {
+			return false, fmt.Errorf("unfollowing space: %w", err)
+		}
+
+		_, err = s.db.Writer.Exec(ctx, `
+			UPDATE spaces SET follower_count = follower_count - 1
+			WHERE id = $1 AND tenant_id = $2 AND follower_count > 0
+		`, spaceID, tenantID)
+		if err != nil {
+			return false, fmt.Errorf("decrementing follower count: %w", err)
+		}
+
+		return false, nil
+	}
+
+	err = s.write.InsertFollow(ctx, gen.InsertFollowParams{
+		TenantID:   tenantID,
+		FollowerID: userID,
+		EntityType: "space",
+		EntityID:   spaceID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("following space: %w", err)
+	}
+
+	_, err = s.db.Writer.Exec(ctx, `
+		UPDATE spaces SET follower_count = follower_count + 1
+		WHERE id = $1 AND tenant_id = $2
+	`, spaceID, tenantID)
+	if err != nil {
+		return false, fmt.Errorf("incrementing follower count: %w", err)
+	}
+
+	return true, nil
+}
+
+func (s *Service) MuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
+	return s.write.MuteSpace(ctx, gen.MuteSpaceParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		SpaceID:  spaceID,
+	})
+}
+
+func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
+	return s.write.UnmuteSpace(ctx, gen.UnmuteSpaceParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		SpaceID:  spaceID,
+	})
+}
+
+func (s *Service) IsSpaceMuted(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (bool, error) {
+	return s.read.IsSpaceMuted(ctx, gen.IsSpaceMutedParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		SpaceID:  spaceID,
+	})
+}

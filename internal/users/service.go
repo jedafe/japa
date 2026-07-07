@@ -2,8 +2,10 @@ package users
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -202,4 +204,212 @@ func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search st
 		Page:       offset / limit,
 		TotalPages: totalPages,
 	}, nil
+}
+
+// GetPrivacySettings returns the user's privacy settings.
+func (s *Service) GetPrivacySettings(ctx context.Context, userID pgtype.UUID) (*PrivacySettings, error) {
+	settings, err := s.store.getUserPrivacySettings(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &PrivacySettings{
+				DmPrivacy:         "everyone",
+				ProfileVisibility: "public",
+				SearchIndexable:   true,
+				ShowOnlineStatus:  true,
+				ShowActivity:      true,
+			}, nil
+		}
+		return nil, fmt.Errorf("getting privacy settings: %w", err)
+	}
+
+	return &PrivacySettings{
+		DmPrivacy:         settings.DmPrivacy,
+		ProfileVisibility: settings.ProfileVisibility,
+		SearchIndexable:   settings.SearchIndexable,
+		ShowOnlineStatus:  settings.ShowOnlineStatus,
+		ShowActivity:      settings.ShowActivity,
+	}, nil
+}
+
+// UpdatePrivacySettings updates the user's privacy settings.
+func (s *Service) UpdatePrivacySettings(ctx context.Context, userID pgtype.UUID, req *UpdatePrivacyRequest) error {
+	current, err := s.GetPrivacySettings(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("reading current settings: %w", err)
+	}
+
+	dmPrivacy := current.DmPrivacy
+	if req.DmPrivacy != nil {
+		dmPrivacy = *req.DmPrivacy
+	}
+
+	profileVisibility := current.ProfileVisibility
+	if req.ProfileVisibility != nil {
+		profileVisibility = *req.ProfileVisibility
+	}
+
+	searchIndexable := current.SearchIndexable
+	if req.SearchIndexable != nil {
+		searchIndexable = *req.SearchIndexable
+	}
+
+	showOnlineStatus := current.ShowOnlineStatus
+	if req.ShowOnlineStatus != nil {
+		showOnlineStatus = *req.ShowOnlineStatus
+	}
+
+	showActivity := current.ShowActivity
+	if req.ShowActivity != nil {
+		showActivity = *req.ShowActivity
+	}
+
+	return s.store.upsertUserPrivacySettings(ctx, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity)
+}
+
+// ListSessions returns the user's active sessions.
+func (s *Service) ListSessions(ctx context.Context, userID pgtype.UUID) ([]SessionInfo, error) {
+	sessions, err := s.store.listUserSessions(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("listing sessions: %w", err)
+	}
+
+	result := make([]SessionInfo, len(sessions))
+	for i, sess := range sessions {
+		result[i] = SessionInfo{
+			ID:        sess.ID.String(),
+			CreatedAt: sess.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			ExpiresAt: sess.ExpiresAt.Time.Format("2006-01-02T15:04:05Z"),
+		}
+	}
+
+	return result, nil
+}
+
+// RevokeSession revokes a specific session.
+func (s *Service) RevokeSession(ctx context.Context, userID, sessionID pgtype.UUID) error {
+	return s.store.revokeUserSession(ctx, sessionID, userID)
+}
+
+// RevokeAllSessions revokes all sessions, optionally keeping the current one.
+func (s *Service) RevokeAllSessions(ctx context.Context, userID pgtype.UUID, keepCurrent bool) error {
+	if keepCurrent {
+		// Find the most recently created session to keep.
+		sessions, err := s.store.listUserSessions(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("listing sessions: %w", err)
+		}
+		if len(sessions) > 0 {
+			return s.store.revokeAllUserSessions(ctx, userID, sessions[0].ID)
+		}
+	}
+	// Revoke all by passing a zero UUID (won't match any real session).
+	return s.store.revokeAllUserSessions(ctx, userID, pgtype.UUID{})
+}
+
+// ListConnectedAccounts returns the user's linked OAuth accounts.
+func (s *Service) ListConnectedAccounts(ctx context.Context, tenantID, userID pgtype.UUID) ([]ConnectedAccountInfo, error) {
+	accounts, err := s.store.listOAuthAccounts(ctx, tenantID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("listing connected accounts: %w", err)
+	}
+
+	result := make([]ConnectedAccountInfo, len(accounts))
+	for i, acc := range accounts {
+		result[i] = ConnectedAccountInfo{
+			Provider:    acc.Provider,
+			ConnectedAt: acc.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		}
+	}
+
+	return result, nil
+}
+
+// DisconnectAccount removes a linked OAuth provider.
+func (s *Service) DisconnectAccount(ctx context.Context, tenantID, userID pgtype.UUID, provider string) error {
+	return s.store.disconnectOAuthAccount(ctx, tenantID, userID, provider)
+}
+
+// ListUserContent returns the user's content, optionally filtered by status.
+func (s *Service) ListUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status string, limit, offset int32) ([]ContentListItem, error) {
+	content, err := s.store.listUserContent(ctx, tenantID, userID, status, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("listing user content: %w", err)
+	}
+
+	result := make([]ContentListItem, len(content))
+	for i, c := range content {
+		result[i] = ContentListItem{
+			ID:          c.ID.String(),
+			Title:       c.Title,
+			ContentType: c.ContentType,
+			Status:      c.Status,
+			CreatedAt:   c.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			UpdatedAt:   c.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		}
+	}
+
+	return result, nil
+}
+
+// ListUserBookmarks returns the user's bookmarks.
+func (s *Service) ListUserBookmarks(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]BookmarkListItem, error) {
+	bookmarks, err := s.store.listUserBookmarks(ctx, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("listing user bookmarks: %w", err)
+	}
+
+	result := make([]BookmarkListItem, len(bookmarks))
+	for i, b := range bookmarks {
+		result[i] = BookmarkListItem{
+			ID:         b.ID.String(),
+			EntityType: b.EntityType,
+			EntityID:   b.EntityID.String(),
+			Folder:     b.Folder,
+			CreatedAt:  b.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		}
+	}
+
+	return result, nil
+}
+
+// UserAnalytics represents aggregated user analytics.
+type UserAnalytics struct {
+	TotalContent     int32 `json:"total_content"`
+	DraftContent     int32 `json:"draft_content"`
+	PublishedContent int32 `json:"published_content"`
+	TotalBookmarks   int32 `json:"total_bookmarks"`
+}
+
+// GetUserAnalytics returns aggregated analytics for the user.
+func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.UUID) (*UserAnalytics, error) {
+	all, err := s.store.listUserContent(ctx, tenantID, userID, "", 1000, 0)
+	if err != nil {
+		return nil, fmt.Errorf("listing content for analytics: %w", err)
+	}
+
+	bookmarks, err := s.store.listUserBookmarks(ctx, userID, 1000, 0)
+	if err != nil {
+		return nil, fmt.Errorf("listing bookmarks for analytics: %w", err)
+	}
+
+	analytics := &UserAnalytics{
+		TotalContent:   int32(len(all)),       //nolint:gosec // bounded by query LIMIT
+		TotalBookmarks: int32(len(bookmarks)), //nolint:gosec // bounded by query LIMIT
+	}
+
+	for _, c := range all {
+		switch c.Status {
+		case "draft":
+			analytics.DraftContent++
+		case "published":
+			analytics.PublishedContent++
+		}
+	}
+
+	return analytics, nil
+}
+
+// DeactivateAccount soft-deactivates the user account.
+func (s *Service) DeactivateAccount(ctx context.Context, tenantID, userID pgtype.UUID) error {
+	return s.store.deactivateUser(ctx, tenantID, userID)
 }

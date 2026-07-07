@@ -2,7 +2,9 @@ package pagebuilder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -220,4 +222,16 @@ func (s *Service) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Pa
 // ArchivePage sets the page status to 'archived'.
 func (s *Service) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
 	return s.store.ArchivePage(ctx, id, tenantID)
+}
+
+// ReorderBlocks updates the order of blocks for a page.
+func (s *Service) ReorderBlocks(ctx context.Context, id, tenantID pgtype.UUID, blocks []map[string]any) (Page, error) {
+	blocksJSON, err := json.Marshal(blocks)
+	if err != nil {
+		return Page{}, fmt.Errorf("marshaling blocks: %w", err)
+	}
+
+	return s.store.UpdatePage(ctx, id, tenantID, UpdatePageInput{
+		Blocks: blocksJSON,
+	})
 }

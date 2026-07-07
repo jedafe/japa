@@ -820,6 +820,41 @@ func (h *Handlers) DeleteForm(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
+// GetFormEmbed handles GET /forms/{slug}/embed.
+// Returns form definition data suitable for rendering an embedded form.
+func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		return
+	}
+
+	form, err := h.Service.GetFormBySlug(r.Context(), slug, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"id":          form.ID,
+			"slug":        form.Slug,
+			"name":        form.Name,
+			"description": form.Description,
+			"status":      form.Status,
+			"is_multi_step": form.IsMultiStep,
+			"submit_label": form.SubmitLabel,
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Custom Field Value Handlers
 // ---------------------------------------------------------------------------
 // Form Submissions
 // ---------------------------------------------------------------------------

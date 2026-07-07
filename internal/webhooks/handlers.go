@@ -15,6 +15,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -269,4 +270,74 @@ func (h *Handlers) TestWebhook(w http.ResponseWriter, r *http.Request) {
 			"status":      "pending",
 		},
 	})
+}
+
+// ListDeliveries handles GET /admin/webhooks/{id}/deliveries.
+func (h *Handlers) ListDeliveries(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid webhook ID")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	deliveries, err := h.Service.ListDeliveries(r.Context(), tenantID, id, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": deliveries})
+}
+
+// RetryDelivery handles POST /admin/webhooks/{id}/retry/{delivery_id}.
+func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	deliveryID, err := parseUUIDParam(r, "delivery_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid delivery ID")
+		return
+	}
+
+	if err := h.Service.RetryDelivery(r.Context(), tenantID, deliveryID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{"status": "retried"},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+func parsePageSize(r *http.Request) int32 {
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			return int32(n)
+		}
+	}
+	return 20
+}
+
+func parsePageSizeOffset(r *http.Request) int32 {
+	if v := r.URL.Query().Get("page_token"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return int32(n)
+		}
+	}
+	return 0
 }

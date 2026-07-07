@@ -45,7 +45,7 @@ const (
 
 	TypeDigestEmail                     = "digest_email"
 	TypeSitemapGenerate                 = "sitemap_generate"
-	TypeRSSRegenerate                   = "rss_regenerate"
+	TypeRSSRegenerate                   = "rss:regenerate"
 	TypeDataExport                      = "data_export"
 	TypeAccountDeletionCleanup          = "account_deletion_cleanup"
 	TypeAdEventIngest                   = "ad_event_ingest"
@@ -59,6 +59,22 @@ const (
 	TypeLearningIssueCertificate        = "learning:issue_certificate"
 	TypeDBManualVacuum                  = "db_manual_vacuum"
 	TypeNewsletterDigest                = "newsletter_digest"
+	TypeComputeTrending                 = "maintenance:compute_trending"
+	TypeComputeSuggestions              = "maintenance:compute_suggestions"
+
+	// ---- Missing Phase 31 tasks (catalog amendments) ----.
+
+	TypeMaintenanceCheckExpiredBans     = "maintenance:check_expired_bans"
+	TypeMaintenanceCheckExpiredBoosts   = "maintenance:check_expired_boosts"
+	TypeMaintenancePruneOldFeeds        = "maintenance:prune_old_feeds"
+	TypeMaintenancePruneAuditLogs       = "maintenance:prune_audit_logs"
+	TypeMaintenancePrunePushTokens      = "maintenance:prune_push_tokens"
+	TypeDMCleanupDeclinedRequests       = "dm:cleanup_declined_requests"
+	TypeCouponTrackEvents               = "coupon:track_events"
+	TypeCouponExpireCheck               = "coupon:expire_check"
+	TypeAffiliateRecordClick            = "affiliate:record_click"
+	TypeAffiliateCreditCommission       = "affiliate:credit_commission"
+	TypeAffiliateExpireCheck            = "affiliate:expire_check"
 
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
@@ -113,6 +129,21 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeLearningIssueCertificate, HandleLearningIssueCertificate)
 	mux.HandleFunc(TypeDBManualVacuum, HandleDBManualVacuum)
 	mux.HandleFunc(TypeNewsletterDigest, HandleNewsletterDigest)
+	mux.HandleFunc(TypeComputeTrending, HandleComputeTrending)
+	mux.HandleFunc(TypeComputeSuggestions, HandleComputeSuggestions)
+
+	// Missing Phase 31 task handlers (catalog amendments)
+	mux.HandleFunc(TypeMaintenanceCheckExpiredBans, HandleMaintenanceCheckExpiredBans)
+	mux.HandleFunc(TypeMaintenanceCheckExpiredBoosts, HandleMaintenanceCheckExpiredBoosts)
+	mux.HandleFunc(TypeMaintenancePruneOldFeeds, HandleMaintenancePruneOldFeeds)
+	mux.HandleFunc(TypeMaintenancePruneAuditLogs, HandleMaintenancePruneAuditLogs)
+	mux.HandleFunc(TypeMaintenancePrunePushTokens, HandleMaintenancePrunePushTokens)
+	mux.HandleFunc(TypeDMCleanupDeclinedRequests, HandleDMCleanupDeclinedRequests)
+	mux.HandleFunc(TypeCouponTrackEvents, HandleCouponTrackEvents)
+	mux.HandleFunc(TypeCouponExpireCheck, HandleCouponExpireCheck)
+	mux.HandleFunc(TypeAffiliateRecordClick, HandleAffiliateRecordClick)
+	mux.HandleFunc(TypeAffiliateCreditCommission, HandleAffiliateCreditCommission)
+	mux.HandleFunc(TypeAffiliateExpireCheck, HandleAffiliateExpireCheck)
 
 	// Periodic sweep handlers
 	mux.HandleFunc(TypeScheduledPublishSweep, HandleScheduledPublishSweep)

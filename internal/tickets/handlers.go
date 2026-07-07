@@ -606,6 +606,73 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
+// AddAttachment handles POST /api/v1/me/tickets/:id/attachments.
+func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	ticketID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+		return
+	}
+
+	var input struct {
+		MediaID   pgtype.UUID `json:"media_id"`
+		CommentID *pgtype.UUID `json:"comment_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if !input.MediaID.Valid {
+		writeError(w, http.StatusBadRequest, "missing_media_id", "media_id is required")
+		return
+	}
+
+	var commentID pgtype.UUID
+	if input.CommentID != nil {
+		commentID = *input.CommentID
+	}
+
+	attachment, err := h.Service.AddAttachment(r.Context(), ticketID, AddAttachmentInput{
+		CommentID: commentID,
+		MediaID:   input.MediaID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": attachment})
+}
+
+// ListAttachments handles GET /api/v1/me/tickets/:id/attachments.
+func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	ticketID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+		return
+	}
+
+	attachments, err := h.Service.ListAttachments(r.Context(), ticketID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": attachments})
+}
+
 // CreateTicketType handles POST /api/v1/admin/ticket-types.
 func (h *Handlers) CreateTicketType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
