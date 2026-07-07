@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/pgvector/pgvector-go"
 )
 
 // ---------------------------------------------------------------------------
@@ -624,4 +625,191 @@ func (s *Service) GetContentScore(ctx context.Context, contentID pgtype.UUID) (g
 	}
 
 	return score, nil
+}
+
+// ---------------------------------------------------------------------------
+// Content Tags
+// ---------------------------------------------------------------------------
+
+// AddContentTag associates a tag with content. Idempotent (ON CONFLICT DO NOTHING).
+func (s *Service) AddContentTag(ctx context.Context, contentID, tagID pgtype.UUID) error {
+	if err := s.write.AddContentTag(ctx, gen.AddContentTagParams{
+		ContentID: contentID,
+		TagID:     tagID,
+	}); err != nil {
+		return fmt.Errorf("adding content tag: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveContentTag disassociates a tag from content.
+func (s *Service) RemoveContentTag(ctx context.Context, contentID, tagID pgtype.UUID) error {
+	if err := s.write.RemoveContentTag(ctx, gen.RemoveContentTagParams{
+		ContentID: contentID,
+		TagID:     tagID,
+	}); err != nil {
+		return fmt.Errorf("removing content tag: %w", err)
+	}
+
+	return nil
+}
+
+// ListContentTags returns all tags associated with the given content.
+func (s *Service) ListContentTags(ctx context.Context, contentID pgtype.UUID) ([]gen.ListContentTagsRow, error) {
+	tags, err := s.read.ListContentTags(ctx, contentID)
+	if err != nil {
+		return nil, fmt.Errorf("listing content tags: %w", err)
+	}
+
+	return tags, nil
+}
+
+// ListContentByTag returns published content items tagged with the given tag.
+func (s *Service) ListContentByTag(ctx context.Context, tenantID, tagID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentByTagRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	contents, err := s.read.ListContentByTag(ctx, gen.ListContentByTagParams{
+		TagID:           tagID,
+		TenantID:        tenantID,
+		CursorCreatedAt: cursor,
+		PageLimit:       limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing content by tag: %w", err)
+	}
+
+	return contents, nil
+}
+
+// ---------------------------------------------------------------------------
+// Content Shares
+// ---------------------------------------------------------------------------
+
+// ShareContent records a share event and returns the created share.
+func (s *Service) ShareContent(ctx context.Context, tenantID, contentID, userID pgtype.UUID, platform string) (gen.ContentShare, error) {
+	if platform == "" {
+		platform = "link"
+	}
+
+	share, err := s.write.CreateContentShare(ctx, gen.CreateContentShareParams{
+		TenantID:  tenantID,
+		ContentID: contentID,
+		UserID:    userID,
+		Platform:  platform,
+	})
+	if err != nil {
+		return gen.ContentShare{}, fmt.Errorf("sharing content: %w", err)
+	}
+
+	return share, nil
+}
+
+// CountContentShares returns the total share count for content.
+func (s *Service) CountContentShares(ctx context.Context, tenantID, contentID pgtype.UUID) (int32, error) {
+	count, err := s.read.CountContentShares(ctx, gen.CountContentSharesParams{
+		TenantID:  tenantID,
+		ContentID: contentID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting content shares: %w", err)
+	}
+
+	return count, nil
+}
+
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+
+// CreateBookmark saves a bookmark for the given entity. Idempotent — upserts folder.
+func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string) (gen.Bookmark, error) {
+	if folder == "" {
+		folder = "default"
+	}
+
+	bm, err := s.write.CreateBookmark(ctx, gen.CreateBookmarkParams{
+		TenantID:   tenantID,
+		UserID:     userID,
+		EntityType: entityType,
+		EntityID:   entityID,
+		Folder:     folder,
+	})
+	if err != nil {
+		return gen.Bookmark{}, fmt.Errorf("creating bookmark: %w", err)
+	}
+
+	return bm, nil
+}
+
+// RemoveBookmark deletes a user's bookmark for the given entity.
+func (s *Service) RemoveBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	if err := s.write.DeleteBookmark(ctx, gen.DeleteBookmarkParams{
+		UserID:     userID,
+		EntityType: entityType,
+		EntityID:   entityID,
+	}); err != nil {
+		return fmt.Errorf("deleting bookmark: %w", err)
+	}
+
+	return nil
+}
+
+// IsBookmarked checks if a user has bookmarked the given entity.
+func (s *Service) IsBookmarked(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+	result, err := s.read.IsBookmarked(ctx, gen.IsBookmarkedParams{
+		UserID:     userID,
+		EntityType: entityType,
+		EntityID:   entityID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking bookmark: %w", err)
+	}
+
+	return result, nil
+}
+
+// ListBookmarks returns all bookmarks for a user.
+func (s *Service) ListBookmarks(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Bookmark, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	bms, err := s.read.ListBookmarksByUser(ctx, gen.ListBookmarksByUserParams{
+		TenantID:   tenantID,
+		UserID:     userID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing bookmarks: %w", err)
+	}
+
+	return bms, nil
+}
+
+// ---------------------------------------------------------------------------
+// Related Content (pgvector cosine similarity)
+// ---------------------------------------------------------------------------
+
+// GetRelatedContent returns up to limit content items most similar to the given
+// content, ranked by cosine distance on the relevance_embedding vector.
+func (s *Service) GetRelatedContent(ctx context.Context, tenantID, excludeID pgtype.UUID, embedding pgvector.Vector, limit int32) ([]gen.GetRelatedContentRow, error) {
+	if limit <= 0 || limit > 12 {
+		limit = 12
+	}
+
+	contents, err := s.read.GetRelatedContent(ctx, gen.GetRelatedContentParams{
+		TenantID:  tenantID,
+		ExcludeID: excludeID,
+		Embedding: &embedding,
+		PageLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting related content: %w", err)
+	}
+
+	return contents, nil
 }

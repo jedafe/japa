@@ -505,6 +505,180 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": slotTypes})
 }
 
+// CreateSlotType handles POST /api/v1/admin/advertising/slot-types.
+func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Name        string `json:"name"`
+		Slug        string `json:"slug"`
+		Description string `json:"description"`
+		MaxWidth    int    `json:"max_width"`
+		MaxHeight   int    `json:"max_height"`
+		Format      string `json:"format"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		return
+	}
+
+	slotType, err := h.Service.CreateSlotType(r.Context(), tenantID, AdSlotTypeInput{
+		Name:        input.Name,
+		Slug:        input.Slug,
+		Description: input.Description,
+		MaxWidth:    input.MaxWidth,
+		MaxHeight:   input.MaxHeight,
+		Format:      input.Format,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": slotType})
+}
+
+// UpdateSlotType handles PUT /api/v1/admin/advertising/slot-types/{id}.
+func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
+		return
+	}
+
+	var input struct {
+		Name        string `json:"name"`
+		Slug        string `json:"slug"`
+		Description string `json:"description"`
+		MaxWidth    int    `json:"max_width"`
+		MaxHeight   int    `json:"max_height"`
+		Format      string `json:"format"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	slotType, err := h.Service.UpdateSlotType(r.Context(), id, tenantID, AdSlotTypeInput{
+		Name:        input.Name,
+		Slug:        input.Slug,
+		Description: input.Description,
+		MaxWidth:    input.MaxWidth,
+		MaxHeight:   input.MaxHeight,
+		Format:      input.Format,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": slotType})
+}
+
+// DeleteSlotType handles DELETE /api/v1/admin/advertising/slot-types/{id}.
+func (h *Handlers) DeleteSlotType(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
+		return
+	}
+
+	if err := h.Service.DeleteSlotType(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// DeleteCampaign handles DELETE /api/v1/admin/advertising/campaigns/{id}.
+func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		return
+	}
+
+	if err := h.Service.DeleteCampaign(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// GetCampaignStats handles GET /api/v1/admin/advertising/campaigns/{id}/stats.
+func (h *Handlers) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		return
+	}
+
+	stats, err := h.Service.GetCampaignStats(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
+}
+
 // ---------------------------------------------------------------------------
 // Organization Boost Handlers
 // ---------------------------------------------------------------------------

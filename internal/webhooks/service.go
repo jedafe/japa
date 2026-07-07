@@ -261,6 +261,83 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// Delivery Logs
+// ---------------------------------------------------------------------------
+
+// ListDeliveries returns delivery records for a specific endpoint.
+func (s *Service) ListDeliveries(ctx context.Context, tenantID, endpointID pgtype.UUID, limit, offset int32) ([]WebhookDelivery, error) {
+	rows, err := s.store.db.Reader.Query(ctx, `
+		SELECT id, tenant_id, endpoint_id, event_id, event_type, payload,
+		       status, attempts, last_error, delivered_at, created_at
+		FROM webhook_deliveries
+		WHERE tenant_id = $1 AND endpoint_id = $2
+		ORDER BY created_at DESC
+		LIMIT $3 OFFSET $4
+	`, tenantID, endpointID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list deliveries: %w", err)
+	}
+	defer rows.Close()
+
+	var deliveries []WebhookDelivery
+
+	for rows.Next() {
+		var d WebhookDelivery
+		if err := rows.Scan(
+			&d.ID, &d.TenantID, &d.EndpointID, &d.EventID,
+			&d.EventType, &d.Payload, &d.Status, &d.Attempts,
+			&d.LastError, &d.DeliveredAt, &d.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan delivery: %w", err)
+		}
+
+		deliveries = append(deliveries, d)
+	}
+
+	return deliveries, rows.Err()
+}
+
+// GetDelivery returns a specific delivery record.
+func (s *Service) GetDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUID) (*WebhookDelivery, error) {
+	var d WebhookDelivery
+
+	err := s.store.db.Reader.QueryRow(ctx, `
+		SELECT id, tenant_id, endpoint_id, event_id, event_type, payload,
+		       status, attempts, last_error, delivered_at, created_at
+		FROM webhook_deliveries
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, deliveryID).Scan(
+		&d.ID, &d.TenantID, &d.EndpointID, &d.EventID,
+		&d.EventType, &d.Payload, &d.Status, &d.Attempts,
+		&d.LastError, &d.DeliveredAt, &d.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get delivery: %w", err)
+	}
+
+	return &d, nil
+}
+
+// RetryDelivery reschedules a failed delivery for immediate retry.
+func (s *Service) RetryDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUID) error {
+	result, err := s.store.db.Writer.Exec(ctx, `
+		UPDATE webhook_deliveries
+		SET status = 'pending', attempts = 0, last_error = NULL
+		WHERE tenant_id = $1 AND id = $2 AND status = 'failed'
+	`, tenantID, deliveryID)
+	if err != nil {
+		return fmt.Errorf("retry delivery: %w", err)
+	}
+
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("delivery not found or not in failed state")
+	}
+
+	return nil
+}
+
 // CreateDelivery records a pending webhook delivery in the database. Callers
 // enqueue the Asynq webhook_delivery task with the returned delivery ID.
 func (s *Service) CreateDelivery(ctx context.Context, tenantID, endpointID, eventID pgtype.UUID, eventType string, payload any) (pgtype.UUID, error) {

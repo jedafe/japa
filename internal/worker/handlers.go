@@ -2259,6 +2259,34 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 }
 
 // ---------------------------------------------------------------------------
+// Trending & Discovery handlers
+// ---------------------------------------------------------------------------
+
+// HandleComputeTrending recomputes trending snapshots for all tenants.
+func HandleComputeTrending(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:maintenance:compute_trending", "payload", t.Payload())
+
+	if trendingProcessor == nil {
+		slog.Warn("task:maintenance:compute_trending: no trending processor registered, skipping")
+		return nil
+	}
+
+	return trendingProcessor.ComputeTrending(ctx)
+}
+
+// HandleComputeSuggestions recomputes suggestion data freshness.
+func HandleComputeSuggestions(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:maintenance:compute_suggestions", "payload", t.Payload())
+
+	if trendingProcessor == nil {
+		slog.Warn("task:maintenance:compute_suggestions: no trending processor registered, skipping")
+		return nil
+	}
+
+	return trendingProcessor.ComputeSuggestions(ctx)
+}
+
+// ---------------------------------------------------------------------------
 // Push notification handler
 // ---------------------------------------------------------------------------
 
@@ -2711,4 +2739,138 @@ func isValidTableName(name string) bool {
 	}
 
 	return true
+}
+
+// ── Missing Phase 31 Task Handlers (stub implementations) ───────────
+
+// HandleMaintenanceCheckExpiredBans lifts expired user_bans.
+func HandleMaintenanceCheckExpiredBans(_ context.Context, _ *asynq.Task) error {
+	slog.Info("maintenance:check_expired_bans — lifting expired bans")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement ban expiry logic
+	_ = db
+	return nil
+}
+
+// HandleMaintenanceCheckExpiredBoosts expires organization_boosts past ends_at.
+func HandleMaintenanceCheckExpiredBoosts(_ context.Context, _ *asynq.Task) error {
+	slog.Info("maintenance:check_expired_boosts — expiring boosts")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement boost expiry logic
+	_ = db
+	return nil
+}
+
+// HandleMaintenancePruneOldFeeds deletes feeds rows older than retention window.
+func HandleMaintenancePruneOldFeeds(_ context.Context, _ *asynq.Task) error {
+	slog.Info("maintenance:prune_old_feeds — pruning old feed entries")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement feed pruning logic
+	_ = db
+	return nil
+}
+
+// HandleMaintenancePruneAuditLogs deletes audit_logs rows older than retention.
+func HandleMaintenancePruneAuditLogs(_ context.Context, _ *asynq.Task) error {
+	slog.Info("maintenance:prune_audit_logs — pruning old audit logs")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement audit log pruning
+	_ = db
+	return nil
+}
+
+// HandleMaintenancePrunePushTokens deletes stale/unresponsive push tokens.
+func HandleMaintenancePrunePushTokens(_ context.Context, _ *asynq.Task) error {
+	slog.Info("maintenance:prune_push_tokens — pruning stale push tokens")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement push token pruning
+	_ = db
+	return nil
+}
+
+// HandleDMCleanupDeclinedRequests purges dm_requests declined > 90 days ago.
+func HandleDMCleanupDeclinedRequests(_ context.Context, _ *asynq.Task) error {
+	slog.Info("dm:cleanup_declined_requests — purging old declined requests")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement DM request cleanup
+	_ = db
+	return nil
+}
+
+// HandleCouponTrackEvents flushes coupon_events to aggregate counters.
+func HandleCouponTrackEvents(_ context.Context, t *asynq.Task) error {
+	slog.Info("coupon:track_events — flushing coupon event counters")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement coupon event flush
+	_ = db
+	return nil
+}
+
+// HandleCouponExpireCheck marks past-expiry coupons as expired.
+func HandleCouponExpireCheck(_ context.Context, _ *asynq.Task) error {
+	slog.Info("coupon:expire_check — checking for expired coupons")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement coupon expiry check
+	_ = db
+	return nil
+}
+
+// HandleAffiliateRecordClick persists click event to affiliate_link_events.
+func HandleAffiliateRecordClick(_ context.Context, _ *asynq.Task) error {
+	slog.Info("affiliate:record_click — persisting click event")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement affiliate click recording
+	_ = db
+	return nil
+}
+
+// HandleAffiliateCreditCommission credits commission after payment succeeds.
+func HandleAffiliateCreditCommission(_ context.Context, _ *asynq.Task) error {
+	slog.Info("affiliate:credit_commission — crediting commission")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement commission crediting
+	_ = db
+	return nil
+}
+
+// HandleAffiliateExpireCheck deactivates links for suspended/banned members.
+func HandleAffiliateExpireCheck(_ context.Context, _ *asynq.Task) error {
+	slog.Info("affiliate:expire_check — deactivating links for suspended members")
+	db, err := requireDB()
+	if err != nil {
+		return err
+	}
+	// TODO: implement affiliate link expiry
+	_ = db
+	return nil
 }

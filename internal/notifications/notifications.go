@@ -119,9 +119,6 @@ func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UU
 	}
 }
 
-// isPushGloballyEnabled checks if push is enabled for any notification type.
-// This avoids enqueueing when VAPID keys are not configured.
-
 // SavePushSubscription stores a browser push subscription for a user.
 func (s *Service) SavePushSubscription(ctx context.Context, userID pgtype.UUID, endpoint, p256dh, authKey string) error {
 	return s.pushStore.SavePushSubscription(ctx, userID, endpoint, p256dh, authKey)

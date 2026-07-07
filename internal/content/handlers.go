@@ -703,3 +703,245 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": tmpl})
 }
+
+// ---------------------------------------------------------------------------
+// Content Bookmark Handlers (Task 12.09)
+// ---------------------------------------------------------------------------
+
+// AddBookmark handles POST /api/v1/content/{id}/bookmark.
+func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var input struct {
+		Folder string `json:"folder"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	bm, err := h.Service.CreateBookmark(r.Context(), tenantID, user.UserID, EntityContent, contentID, input.Folder)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": bm})
+}
+
+// RemoveBookmark handles DELETE /api/v1/content/{id}/bookmark.
+func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.Service.RemoveBookmark(r.Context(), user.UserID, EntityContent, contentID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ListBookmarks handles GET /api/v1/content/{id}/bookmark/status.
+func (h *Handlers) GetBookmarkStatus(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	bookmarked, err := h.Service.IsBookmarked(r.Context(), user.UserID, EntityContent, contentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"bookmarked": bookmarked}})
+}
+
+// ---------------------------------------------------------------------------
+// Content Tags Handlers (Task 12.10)
+// ---------------------------------------------------------------------------
+
+// ListContentTags handles GET /api/v1/content/{id}/tags.
+func (h *Handlers) ListContentTags(w http.ResponseWriter, r *http.Request) {
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tags, err := h.Service.ListContentTags(r.Context(), contentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": tags})
+}
+
+// AddContentTag handles POST /api/v1/content/{id}/tags.
+func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var input struct {
+		TagID string `json:"tag_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	var tagID pgtype.UUID
+	if err := tagID.Scan(input.TagID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id format")
+		return
+	}
+
+	if err := h.Service.AddContentTag(r.Context(), contentID, tagID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	_ = user // permission check handled by middleware
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]bool{"added": true}})
+}
+
+// RemoveContentTag handles DELETE /api/v1/content/{id}/tags/{tagId}.
+func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tagID, err := parseUUIDParam(r, "tagId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
+		return
+	}
+
+	if err := h.Service.RemoveContentTag(r.Context(), contentID, tagID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ---------------------------------------------------------------------------
+// Content Share Handler (Task 12.12)
+// ---------------------------------------------------------------------------
+
+// ShareContent handles POST /api/v1/content/{id}/share.
+func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var input struct {
+		Platform string `json:"platform"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	share, err := h.Service.ShareContent(r.Context(), tenantID, contentID, user.UserID, input.Platform)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": share})
+}
+
+// ---------------------------------------------------------------------------
+// Related Content Handler (Task 12.13)
+// ---------------------------------------------------------------------------
+
+// GetRelatedContent handles GET /api/v1/content/{id}/related.
+func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	limit := parsePageSize(r)
+	if limit > 12 {
+		limit = 12
+	}
+
+	// Get the content's embedding from content_scores.
+	score, err := h.Service.GetContentScore(r.Context(), contentID)
+	if err != nil || score.RelevanceEmbedding == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+
+	contents, err := h.Service.GetRelatedContent(r.Context(), tenantID, contentID, *score.RelevanceEmbedding, limit)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": contents})
+}

@@ -30,6 +30,35 @@ func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int32, 
 	return count, err
 }
 
+const deactivateUser = `-- name: DeactivateUser :exec
+UPDATE users SET status = 'suspended', updated_at = now() WHERE id = $1 AND tenant_id = $2
+`
+
+type DeactivateUserParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeactivateUser(ctx context.Context, arg DeactivateUserParams) error {
+	_, err := q.db.Exec(ctx, deactivateUser, arg.ID, arg.TenantID)
+	return err
+}
+
+const disconnectOAuthAccount = `-- name: DisconnectOAuthAccount :exec
+DELETE FROM oauth_accounts WHERE tenant_id = $1 AND user_id = $2 AND provider = $3
+`
+
+type DisconnectOAuthAccountParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	Provider string      `json:"provider"`
+}
+
+func (q *Queries) DisconnectOAuthAccount(ctx context.Context, arg DisconnectOAuthAccountParams) error {
+	_, err := q.db.Exec(ctx, disconnectOAuthAccount, arg.TenantID, arg.UserID, arg.Provider)
+	return err
+}
+
 const getUserByID = `-- name: GetUserByID :one
 SELECT id, tenant_id, email, username, profile_type, status, follower_count, created_at, updated_at
 FROM users
@@ -123,6 +152,27 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 	return i, err
 }
 
+const getUserPasswordHash = `-- name: GetUserPasswordHash :one
+SELECT id, password_hash FROM users WHERE id = $1 AND tenant_id = $2
+`
+
+type GetUserPasswordHashParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetUserPasswordHashRow struct {
+	ID           pgtype.UUID `json:"id"`
+	PasswordHash *string     `json:"password_hash"`
+}
+
+func (q *Queries) GetUserPasswordHash(ctx context.Context, arg GetUserPasswordHashParams) (GetUserPasswordHashRow, error) {
+	row := q.db.QueryRow(ctx, getUserPasswordHash, arg.ID, arg.TenantID)
+	var i GetUserPasswordHashRow
+	err := row.Scan(&i.ID, &i.PasswordHash)
+	return i, err
+}
+
 const getUserPreferences = `-- name: GetUserPreferences :one
 SELECT id, tenant_id, user_id, dark_mode, language, created_at, updated_at
 FROM user_preferences
@@ -143,6 +193,29 @@ func (q *Queries) GetUserPreferences(ctx context.Context, arg GetUserPreferences
 		&i.UserID,
 		&i.DarkMode,
 		&i.Language,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserPrivacySettings = `-- name: GetUserPrivacySettings :one
+SELECT user_id, dm_privacy, profile_visibility, search_indexable,
+       show_online_status, show_activity, created_at, updated_at
+FROM user_privacy_settings
+WHERE user_id = $1
+`
+
+func (q *Queries) GetUserPrivacySettings(ctx context.Context, userID pgtype.UUID) (UserPrivacySetting, error) {
+	row := q.db.QueryRow(ctx, getUserPrivacySettings, userID)
+	var i UserPrivacySetting
+	err := row.Scan(
+		&i.UserID,
+		&i.DmPrivacy,
+		&i.ProfileVisibility,
+		&i.SearchIndexable,
+		&i.ShowOnlineStatus,
+		&i.ShowActivity,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -200,6 +273,195 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 		&i.FollowerCount,
 	)
 	return i, err
+}
+
+const listOAuthAccounts = `-- name: ListOAuthAccounts :many
+SELECT id, provider, provider_user_id, created_at
+FROM oauth_accounts
+WHERE tenant_id = $1 AND user_id = $2
+`
+
+type ListOAuthAccountsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+type ListOAuthAccountsRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Provider       string             `json:"provider"`
+	ProviderUserID string             `json:"provider_user_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListOAuthAccounts(ctx context.Context, arg ListOAuthAccountsParams) ([]ListOAuthAccountsRow, error) {
+	rows, err := q.db.Query(ctx, listOAuthAccounts, arg.TenantID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOAuthAccountsRow
+	for rows.Next() {
+		var i ListOAuthAccountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Provider,
+			&i.ProviderUserID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserBookmarks = `-- name: ListUserBookmarks :many
+SELECT b.id, b.entity_type, b.entity_id, b.folder, b.created_at
+FROM bookmarks b
+WHERE b.user_id = $1
+ORDER BY b.created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListUserBookmarksParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Limit  int32       `json:"limit"`
+	Offset int32       `json:"offset"`
+}
+
+type ListUserBookmarksRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Folder     string             `json:"folder"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksParams) ([]ListUserBookmarksRow, error) {
+	rows, err := q.db.Query(ctx, listUserBookmarks, arg.UserID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserBookmarksRow
+	for rows.Next() {
+		var i ListUserBookmarksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.Folder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserContent = `-- name: ListUserContent :many
+SELECT c.id, c.title, c.content_type, c.status, c.created_at, c.updated_at
+FROM contents c
+WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
+  AND ($3::text = '' OR c.status = $3)
+ORDER BY c.created_at DESC
+LIMIT $4 OFFSET $5
+`
+
+type ListUserContentParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+	Column3  string      `json:"column_3"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
+}
+
+type ListUserContentRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	ContentType string             `json:"content_type"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams) ([]ListUserContentRow, error) {
+	rows, err := q.db.Query(ctx, listUserContent,
+		arg.TenantID,
+		arg.AuthorID,
+		arg.Column3,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserContentRow
+	for rows.Next() {
+		var i ListUserContentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.ContentType,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserSessions = `-- name: ListUserSessions :many
+SELECT id, token_hash, expires_at, created_at
+FROM refresh_tokens
+WHERE user_id = $1 AND revoked_at IS NULL
+ORDER BY created_at DESC
+`
+
+type ListUserSessionsRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	TokenHash string             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListUserSessions(ctx context.Context, userID pgtype.UUID) ([]ListUserSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listUserSessions, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserSessionsRow
+	for rows.Next() {
+		var i ListUserSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TokenHash,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUsers = `-- name: ListUsers :many
@@ -265,6 +527,48 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 	return items, nil
 }
 
+const revokeAllUserSessions = `-- name: RevokeAllUserSessions :exec
+UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL AND id != $2
+`
+
+type RevokeAllUserSessionsParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) RevokeAllUserSessions(ctx context.Context, arg RevokeAllUserSessionsParams) error {
+	_, err := q.db.Exec(ctx, revokeAllUserSessions, arg.UserID, arg.ID)
+	return err
+}
+
+const revokeUserSession = `-- name: RevokeUserSession :exec
+UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+`
+
+type RevokeUserSessionParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) error {
+	_, err := q.db.Exec(ctx, revokeUserSession, arg.ID, arg.UserID)
+	return err
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :exec
+UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1
+`
+
+type UpdateUserPasswordParams struct {
+	ID           pgtype.UUID `json:"id"`
+	PasswordHash *string     `json:"password_hash"`
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
+	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
+	return err
+}
+
 const upsertUserPreferences = `-- name: UpsertUserPreferences :exec
 INSERT INTO user_preferences (tenant_id, user_id, dark_mode, language)
 VALUES ($1, $2, $3, $4)
@@ -287,6 +591,39 @@ func (q *Queries) UpsertUserPreferences(ctx context.Context, arg UpsertUserPrefe
 		arg.UserID,
 		arg.DarkMode,
 		arg.Language,
+	)
+	return err
+}
+
+const upsertUserPrivacySettings = `-- name: UpsertUserPrivacySettings :exec
+INSERT INTO user_privacy_settings (user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (user_id) DO UPDATE SET
+    dm_privacy = EXCLUDED.dm_privacy,
+    profile_visibility = EXCLUDED.profile_visibility,
+    search_indexable = EXCLUDED.search_indexable,
+    show_online_status = EXCLUDED.show_online_status,
+    show_activity = EXCLUDED.show_activity,
+    updated_at = now()
+`
+
+type UpsertUserPrivacySettingsParams struct {
+	UserID            pgtype.UUID `json:"user_id"`
+	DmPrivacy         string      `json:"dm_privacy"`
+	ProfileVisibility string      `json:"profile_visibility"`
+	SearchIndexable   bool        `json:"search_indexable"`
+	ShowOnlineStatus  bool        `json:"show_online_status"`
+	ShowActivity      bool        `json:"show_activity"`
+}
+
+func (q *Queries) UpsertUserPrivacySettings(ctx context.Context, arg UpsertUserPrivacySettingsParams) error {
+	_, err := q.db.Exec(ctx, upsertUserPrivacySettings,
+		arg.UserID,
+		arg.DmPrivacy,
+		arg.ProfileVisibility,
+		arg.SearchIndexable,
+		arg.ShowOnlineStatus,
+		arg.ShowActivity,
 	)
 	return err
 }
@@ -321,4 +658,15 @@ func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfilePa
 		arg.Timezone,
 	)
 	return err
+}
+
+const userHasPassword = `-- name: UserHasPassword :one
+SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND password_hash IS NOT NULL AND password_hash != '') AS has_password
+`
+
+func (q *Queries) UserHasPassword(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, userHasPassword, id)
+	var has_password bool
+	err := row.Scan(&has_password)
+	return has_password, err
 }

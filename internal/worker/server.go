@@ -53,11 +53,49 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 		&asynq.SchedulerOpts{},
 	)
 
+	// ── Internal sweep tasks ────────────────────────────────────────
+
 	// Scheduled content publishing sweep — every 60 seconds.
 	_, _ = scheduler.Register("*/60 * * * *", asynq.NewTask(TypeScheduledPublishSweep, nil))
 
 	// Velocity score recalculation — every 5 minutes.
 	_, _ = scheduler.Register("*/5 * * * *", asynq.NewTask(TypeVelocityScoreRecalc, nil))
+
+	// ── Phase 31 — Full cron schedule from Section 11 catalog ───────
+
+	// Every 10 min: velocity score update for Rising sort.
+	_, _ = scheduler.Register("*/10 * * * *", asynq.NewTask(TypeMaintenanceUpdateVelocityScores, nil))
+
+	// Every 15 min: check ticket SLA breaches.
+	_, _ = scheduler.Register("*/15 * * * *", asynq.NewTask(TypeMaintenanceCheckSLABreaches, nil))
+
+	// Every 30 min: check expired bans and expired boosts.
+	_, _ = scheduler.Register("*/30 * * * *", asynq.NewTask(TypeMaintenanceCheckExpiredBans, nil))
+	_, _ = scheduler.Register("*/30 * * * *", asynq.NewTask(TypeMaintenanceCheckExpiredBoosts, nil))
+
+	// Hourly: trending, llms.txt, analytics views, RSS.
+	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeComputeTrending, nil))
+	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeMaintenanceRegenerateLLMsTxt, nil))
+	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeAnalyticsRefreshViews, nil))
+	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeRSSRegenerate, nil))
+
+	// 6-hourly: user/space suggestions.
+	_, _ = scheduler.Register("0 */6 * * *", asynq.NewTask(TypeComputeSuggestions, nil))
+
+	// Daily 03:00 UTC: security scan.
+	_, _ = scheduler.Register("0 3 * * *", asynq.NewTask(TypeSecurityScan, nil))
+
+	// Weekly: prune old feeds, prune audit logs, DM cleanup, prune push tokens.
+	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePruneOldFeeds, nil))
+	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePruneAuditLogs, nil))
+	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeDMCleanupDeclinedRequests, nil))
+	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePrunePushTokens, nil))
+
+	// Coupon expiry check — hourly.
+	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeCouponExpireCheck, nil))
+
+	// Affiliate link expiry — daily.
+	_, _ = scheduler.Register("0 4 * * *", asynq.NewTask(TypeAffiliateExpireCheck, nil))
 
 	return scheduler
 }

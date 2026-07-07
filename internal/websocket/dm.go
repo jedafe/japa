@@ -173,6 +173,26 @@ func (s *DMStore) UpsertUserDMPrivacy(ctx context.Context, userID pgtype.UUID, p
 	})
 }
 
+// EditDMMessage updates a message body if the sender owns it and it was sent
+// within the last 15 minutes.
+func (s *DMStore) EditDMMessage(ctx context.Context, messageID, conversationID, senderID pgtype.UUID, body string) error {
+	return s.write.EditDMMessage(ctx, gen.EditDMMessageParams{
+		ID:             messageID,
+		ConversationID: conversationID,
+		SenderID:       senderID,
+		Body:           body,
+	})
+}
+
+// SoftDeleteDMMessage soft-deletes a message if the sender owns it.
+func (s *DMStore) SoftDeleteDMMessage(ctx context.Context, messageID, conversationID, senderID pgtype.UUID) error {
+	return s.write.SoftDeleteDMMessage(ctx, gen.SoftDeleteDMMessageParams{
+		ID:             messageID,
+		ConversationID: conversationID,
+		SenderID:       senderID,
+	})
+}
+
 // ConversationResult is returned when getting or creating a conversation.
 type ConversationResult struct {
 	Conversation gen.DmConversation
@@ -428,4 +448,50 @@ func (s *DMService) GetDMPrivacy(ctx context.Context, userID pgtype.UUID) (strin
 	}
 
 	return privacy, nil
+}
+
+// EditMessage edits a message within the 15-minute window.
+func (s *DMService) EditMessage(ctx context.Context, tenantID, conversationID, messageID, senderID pgtype.UUID, body string) error {
+	if body == "" {
+		return errors.New("message body cannot be empty")
+	}
+
+	conv, err := s.store.GetConversationByID(ctx, conversationID, tenantID)
+	if err != nil {
+		return fmt.Errorf("verifying conversation access: %w", err)
+	}
+
+	if conv.Participant1ID != senderID && conv.Participant2ID != senderID {
+		return errors.New("user is not a participant in this conversation")
+	}
+
+	if err := s.store.EditDMMessage(ctx, messageID, conversationID, senderID, body); err != nil {
+		return fmt.Errorf("editing dm message: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteMessage soft-deletes a message owned by the sender.
+func (s *DMService) DeleteMessage(ctx context.Context, tenantID, conversationID, messageID, senderID pgtype.UUID) error {
+	conv, err := s.store.GetConversationByID(ctx, conversationID, tenantID)
+	if err != nil {
+		return fmt.Errorf("verifying conversation access: %w", err)
+	}
+
+	if conv.Participant1ID != senderID && conv.Participant2ID != senderID {
+		return errors.New("user is not a participant in this conversation")
+	}
+
+	if err := s.store.SoftDeleteDMMessage(ctx, messageID, conversationID, senderID); err != nil {
+		return fmt.Errorf("deleting dm message: %w", err)
+	}
+
+	return nil
+}
+
+// GetOrCreateConversationForInitiator gets or creates a conversation,
+// checking blocks and privacy settings per Section 48.
+func (s *DMService) GetOrCreateConversationForInitiator(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID) (ConversationResult, error) {
+	return s.GetOrCreateConversation(ctx, tenantID, initiatorID, recipientID)
 }

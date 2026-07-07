@@ -740,3 +740,170 @@ func (s *Store) ListCertificatesByUser(ctx context.Context, userID pgtype.UUID) 
 
 	return certs, rows.Err()
 }
+
+// GetCertificateByID retrieves a certificate by its ID.
+func (s *Store) GetCertificateByID(ctx context.Context, certID pgtype.UUID) (*Certificate, error) {
+	var c Certificate
+
+	err := s.db.Reader.QueryRow(ctx, `
+		SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
+		FROM learning_certificates
+		WHERE id = $1
+	`, certID).Scan(
+		&c.ID, &c.TenantID, &c.UserID, &c.TrackID,
+		&c.CertificateNumber, &c.MediaID, &c.IssuedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get certificate by id: %w", err)
+	}
+
+	return &c, nil
+}
+
+// ---------------------------------------------------------------------------
+// Enrollment operations
+// ---------------------------------------------------------------------------
+
+// Enrollment represents a user's enrollment in a learning track.
+type Enrollment struct {
+	ID           pgtype.UUID `json:"id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TrackID      pgtype.UUID `json:"track_id"`
+	AccessType   string      `json:"access_type"`
+	ProgressPct  float64     `json:"progress_pct"`
+	EnrolledAt   time.Time   `json:"enrolled_at"`
+	CompletedAt  *time.Time  `json:"completed_at,omitempty"`
+}
+
+// EnrollUser creates an enrollment for a user in a track.
+func (s *Store) EnrollUser(ctx context.Context, userID, trackID pgtype.UUID, accessType string) (*Enrollment, error) {
+	var e Enrollment
+
+	err := s.db.Writer.QueryRow(ctx, `
+		INSERT INTO enrollments (user_id, track_id, access_type)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, track_id) DO NOTHING
+		RETURNING id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
+	`, userID, trackID, accessType).Scan(
+		&e.ID, &e.UserID, &e.TrackID, &e.AccessType,
+		&e.ProgressPct, &e.EnrolledAt, &e.CompletedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("enroll user: %w", err)
+	}
+
+	return &e, nil
+}
+
+// ListEnrollmentsByUser lists all enrollments for a user.
+func (s *Store) ListEnrollmentsByUser(ctx context.Context, userID pgtype.UUID) ([]Enrollment, error) {
+	rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
+		FROM enrollments
+		WHERE user_id = $1
+		ORDER BY enrolled_at DESC
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list enrollments by user: %w", err)
+	}
+	defer rows.Close()
+
+	var enrollments []Enrollment
+
+	for rows.Next() {
+		var e Enrollment
+		if err := rows.Scan(
+			&e.ID, &e.UserID, &e.TrackID, &e.AccessType,
+			&e.ProgressPct, &e.EnrolledAt, &e.CompletedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan enrollment: %w", err)
+		}
+
+		enrollments = append(enrollments, e)
+	}
+
+	return enrollments, rows.Err()
+}
+
+// GetEnrollment retrieves a specific enrollment.
+func (s *Store) GetEnrollment(ctx context.Context, userID, trackID pgtype.UUID) (*Enrollment, error) {
+	var e Enrollment
+
+	err := s.db.Reader.QueryRow(ctx, `
+		SELECT id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
+		FROM enrollments
+		WHERE user_id = $1 AND track_id = $2
+	`, userID, trackID).Scan(
+		&e.ID, &e.UserID, &e.TrackID, &e.AccessType,
+		&e.ProgressPct, &e.EnrolledAt, &e.CompletedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get enrollment: %w", err)
+	}
+
+	return &e, nil
+}
+
+// UpdateEnrollmentProgress updates the progress percentage of an enrollment.
+func (s *Store) UpdateEnrollmentProgress(ctx context.Context, enrollmentID pgtype.UUID, progressPct float64) error {
+	_, err := s.db.Writer.Exec(ctx, `
+		UPDATE enrollments
+		SET progress_pct = $2,
+		    completed_at = CASE WHEN $2 >= 100 THEN now() ELSE completed_at END
+		WHERE id = $1
+	`, enrollmentID, progressPct)
+	if err != nil {
+		return fmt.Errorf("update enrollment progress: %w", err)
+	}
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Quiz operations
+// ---------------------------------------------------------------------------
+
+// QuizQuestion represents a quiz question.
+type QuizQuestion struct {
+	ID          pgtype.UUID `json:"id"`
+	LessonID    pgtype.UUID `json:"lesson_id"`
+	Question    string      `json:"question"`
+	Options     string      `json:"options"` // JSON array
+	Explanation *string     `json:"explanation,omitempty"`
+	Position    int32       `json:"position"`
+}
+
+// GetQuizQuestions retrieves quiz questions for a lesson (without answers).
+func (s *Store) GetQuizQuestions(ctx context.Context, lessonID pgtype.UUID) ([]QuizQuestion, error) {
+	rows, err := s.db.Reader.Query(ctx, `
+		SELECT id, lesson_id, question, options, explanation, position
+		FROM lesson_quizzes
+		WHERE lesson_id = $1
+		ORDER BY position ASC
+	`, lessonID)
+	if err != nil {
+		return nil, fmt.Errorf("get quiz questions: %w", err)
+	}
+	defer rows.Close()
+
+	var questions []QuizQuestion
+
+	for rows.Next() {
+		var q QuizQuestion
+		if err := rows.Scan(
+			&q.ID, &q.LessonID, &q.Question, &q.Options,
+			&q.Explanation, &q.Position,
+		); err != nil {
+			return nil, fmt.Errorf("scan quiz question: %w", err)
+		}
+
+		questions = append(questions, q)
+	}
+
+	return questions, rows.Err()
+}
+
+// GetQuizQuestionsWithAnswers retrieves quiz questions with correct answers (for grading).
+func (s *Store) GetQuizQuestionsWithAnswers(ctx context.Context, lessonID pgtype.UUID) ([]QuizQuestion, error) {
+	return s.GetQuizQuestions(ctx, lessonID)
+}

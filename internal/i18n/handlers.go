@@ -305,3 +305,20 @@ func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request)
 		"data":   data,
 	})
 }
+
+// HandleListPublicLocales returns the list of enabled locales for the tenant.
+// GET /api/v1/i18n/locales — public, no auth required.
+func (h *Handlers) HandleListPublicLocales(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	locales, err := h.Service.ListLocales(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": locales})
+}

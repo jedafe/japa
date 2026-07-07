@@ -172,7 +172,7 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"read": true}})
 }
 
-// MarkAllAsRead handles POST /api/v1/notifications/read-all.
+// MarkAllAsRead handles POST /api/v1/me/notifications/read-all.
 func (h *Handlers) MarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -190,6 +190,30 @@ func (h *Handlers) MarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"success": true}})
+}
+
+// DeleteNotification handles DELETE /api/v1/me/notifications/{id}.
+func (h *Handlers) DeleteNotification(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+
+	var id pgtype.UUID
+
+	if err := id.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid notification ID format")
+		return
+	}
+
+	if err := h.service.DeleteNotification(r.Context(), id, user.UserID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete notification")
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 // GetPreferences handles GET /api/v1/notification-preferences.

@@ -149,6 +149,108 @@ func (s *Store) getAdSlotTypeByName(ctx context.Context, tenantID pgtype.UUID, s
 	return r, nil
 }
 
+// createAdSlotType inserts a new ad slot type.
+func (s *Store) createAdSlotType(ctx context.Context, tenantID pgtype.UUID, name, slug, description string, maxWidth, maxHeight int, format string) (AdSlotType, error) {
+	var r AdSlotType
+
+	err := s.write.Writer.QueryRow(ctx, `
+		INSERT INTO ad_slot_types (tenant_id, slot_name, description, max_display_per_page, is_active)
+		VALUES ($1, $2, $3, 1, true)
+		RETURNING id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at
+	`, tenantID, name, description).Scan(
+		&r.ID, &r.TenantID, &r.SlotName, &r.Description,
+		&r.MaxDisplayPerPage, &r.IsActive, &r.CreatedAt,
+	)
+	if err != nil {
+		return AdSlotType{}, fmt.Errorf("create ad slot type: %w", err)
+	}
+
+	return r, nil
+}
+
+// updateAdSlotType updates an existing ad slot type.
+func (s *Store) updateAdSlotType(ctx context.Context, id, tenantID pgtype.UUID, name, slug, description string, maxWidth, maxHeight int, format string) (AdSlotType, error) {
+	var r AdSlotType
+
+	err := s.write.Writer.QueryRow(ctx, `
+		UPDATE ad_slot_types
+		SET slot_name = $3, description = $4
+		WHERE id = $1 AND tenant_id = $2
+		RETURNING id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at
+	`, id, tenantID, name, description).Scan(
+		&r.ID, &r.TenantID, &r.SlotName, &r.Description,
+		&r.MaxDisplayPerPage, &r.IsActive, &r.CreatedAt,
+	)
+	if err != nil {
+		return AdSlotType{}, fmt.Errorf("update ad slot type: %w", err)
+	}
+
+	return r, nil
+}
+
+// deleteAdSlotType deletes an ad slot type.
+func (s *Store) deleteAdSlotType(ctx context.Context, id, tenantID pgtype.UUID) error {
+	_, err := s.write.Writer.Exec(ctx, `
+		DELETE FROM ad_slot_types WHERE id = $1 AND tenant_id = $2
+	`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("delete ad slot type: %w", err)
+	}
+
+	return nil
+}
+
+// deleteAdCampaign deletes a campaign (only if draft or ended).
+func (s *Store) deleteAdCampaign(ctx context.Context, id, tenantID pgtype.UUID) error {
+	result, err := s.write.Writer.Exec(ctx, `
+		DELETE FROM ad_campaigns
+		WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'ended')
+	`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("delete ad campaign: %w", err)
+	}
+
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("campaign not found or cannot be deleted")
+	}
+
+	return nil
+}
+
+// getCampaignStats returns aggregate stats for a campaign.
+func (s *Store) getCampaignStats(ctx context.Context, campaignID, tenantID pgtype.UUID) (map[string]any, error) {
+	stats := make(map[string]any)
+
+	var impressions, clicks, uniqueUsers, conversions int64
+
+	err := s.write.Reader.QueryRow(ctx, `
+		SELECT
+			COALESCE(SUM(impressions), 0),
+			COALESCE(SUM(clicks), 0),
+			COUNT(DISTINCT user_id),
+			COALESCE(SUM(conversions), 0)
+		FROM ad_events
+		WHERE campaign_id = $1 AND tenant_id = $2
+	`, campaignID, tenantID).Scan(&impressions, &clicks, &uniqueUsers, &conversions)
+	if err != nil {
+		return nil, fmt.Errorf("get campaign stats: %w", err)
+	}
+
+	stats["impressions"] = impressions
+	stats["clicks"] = clicks
+	stats["unique_users"] = uniqueUsers
+	stats["conversions"] = conversions
+
+	if impressions > 0 {
+		stats["ctr"] = float64(clicks) / float64(impressions) * 100
+	} else {
+		stats["ctr"] = 0.0
+	}
+
+	return stats, nil
+}
+
 // ---------------------------------------------------------------------------
 // Ad Campaigns
 // ---------------------------------------------------------------------------

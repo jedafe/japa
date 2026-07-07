@@ -1134,3 +1134,123 @@ func parsePageSizeOffset(r *http.Request) int32 {
 
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
+
+// =====================
+// Follow / Unfollow
+// =====================
+
+// ToggleFollow handles POST/DELETE /api/v1/spaces/{slug}/follow.
+// Toggles the authenticated user's follow status for the space.
+func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	followed, err := h.Service.ToggleFollowSpace(r.Context(), tenantID, user.UserID, space.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": false}})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": followed}})
+}
+
+// =====================
+// Mute / Unmute
+// =====================
+
+// MuteSpace handles POST /api/v1/spaces/{slug}/mute.
+func (h *Handlers) MuteSpace(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	if err := h.Service.MuteSpace(r.Context(), tenantID, user.UserID, space.ID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": true}})
+}
+
+// UnmuteSpace handles DELETE /api/v1/spaces/{slug}/mute.
+func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	if err := h.Service.UnmuteSpace(r.Context(), tenantID, user.UserID, space.ID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": false}})
+}
+
+// GetMuteStatus handles GET /api/v1/spaces/{slug}/mute-status.
+func (h *Handlers) GetMuteStatus(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": false}})
+		return
+	}
+
+	muted, err := h.Service.IsSpaceMuted(r.Context(), tenantID, user.UserID, space.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": muted}})
+}

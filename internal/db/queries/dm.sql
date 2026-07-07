@@ -94,3 +94,19 @@ SELECT COALESCE(dm_privacy, 'everyone') AS dm_privacy FROM user_dm_settings WHER
 INSERT INTO user_dm_settings (user_id, dm_privacy, updated_at)
 VALUES (@user_id, @dm_privacy, now())
 ON CONFLICT (user_id) DO UPDATE SET dm_privacy = EXCLUDED.dm_privacy, updated_at = now();
+
+-- name: EditDMMessage :exec
+UPDATE dm_messages
+SET body = @body, edited_at = now()
+WHERE id = @id AND conversation_id = @conversation_id AND sender_id = @sender_id
+  AND deleted_at IS NULL
+  AND created_at > now() - interval '15 minutes';
+
+-- name: SoftDeleteDMMessage :exec
+UPDATE dm_messages
+SET deleted_at = now(), body = ''
+WHERE id = @id AND conversation_id = @conversation_id AND sender_id = @sender_id
+  AND deleted_at IS NULL;
+
+-- name: GetDMMessageByID :one
+SELECT * FROM dm_messages WHERE id = @id AND conversation_id = @conversation_id;

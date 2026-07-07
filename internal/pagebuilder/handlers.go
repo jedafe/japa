@@ -618,6 +618,42 @@ func (h *Handlers) ArchivePage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
+// ReorderBlocks handles PATCH /admin/pages/{id}/blocks/reorder.
+func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+
+	var input struct {
+		Blocks []map[string]any `json:"blocks"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	page, err := h.Service.ReorderBlocks(r.Context(), id, tenantID, input.Blocks)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+}
+
 // GetPublishedPage handles GET /pages/{slug} — public endpoint, no auth required.
 func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)

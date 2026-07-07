@@ -98,6 +98,56 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": conversations})
 }
 
+// InitiateConversation handles POST /api/v1/dm/conversations.
+//
+// Creates or retrieves a conversation with the specified recipient.
+// Checks blocks and DM privacy settings per Section 48.
+func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	tenantID, ok := requireTenantFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		RecipientID string `json:"recipient_id"`
+	}
+
+	if err := parseJSONBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if req.RecipientID == "" {
+		writeError(w, http.StatusBadRequest, "missing_recipient_id", "recipient_id is required")
+		return
+	}
+
+	var recipientID pgtype.UUID
+	if err := recipientID.Scan(req.RecipientID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_recipient_id", "Invalid recipient ID format")
+		return
+	}
+
+	result, err := h.dmService.GetOrCreateConversationForInitiator(r.Context(), tenantID, user.UserID, recipientID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to initiate conversation")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"conversation_id": result.Conversation.ID.String(),
+			"is_new":          result.IsNew,
+		},
+	})
+}
+
 // ListMessages handles GET /api/v1/dm/conversations/{id}/messages.
 func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
@@ -284,4 +334,91 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+// EditMessage handles PATCH /api/v1/dm/conversations/{id}/messages/{mid}.
+//
+// Edits a message within the 15-minute window. Only the sender can edit.
+func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	tenantID, ok := requireTenantFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	conversationIDStr := chi.URLParam(r, "id")
+	var conversationID pgtype.UUID
+	if err := conversationID.Scan(conversationIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		return
+	}
+
+	messageIDStr := chi.URLParam(r, "mid")
+	var messageID pgtype.UUID
+	if err := messageID.Scan(messageIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_message_id", "Invalid message ID format")
+		return
+	}
+
+	var req struct {
+		Body string `json:"body"`
+	}
+	if err := parseJSONBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if req.Body == "" {
+		writeError(w, http.StatusBadRequest, "empty_body", "Message body cannot be empty")
+		return
+	}
+
+	if err := h.dmService.EditMessage(r.Context(), tenantID, conversationID, messageID, user.UserID, req.Body); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to edit message")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+// DeleteMessage handles DELETE /api/v1/dm/conversations/{id}/messages/{mid}.
+//
+// Soft-deletes a message. Only the sender can delete.
+func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	tenantID, ok := requireTenantFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	conversationIDStr := chi.URLParam(r, "id")
+	var conversationID pgtype.UUID
+	if err := conversationID.Scan(conversationIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		return
+	}
+
+	messageIDStr := chi.URLParam(r, "mid")
+	var messageID pgtype.UUID
+	if err := messageID.Scan(messageIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_message_id", "Invalid message ID format")
+		return
+	}
+
+	if err := h.dmService.DeleteMessage(r.Context(), tenantID, conversationID, messageID, user.UserID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete message")
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
 }

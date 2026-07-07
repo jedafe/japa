@@ -11,6 +11,102 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addContentTag = `-- name: AddContentTag :exec
+
+INSERT INTO content_tags (content_id, tag_id)
+VALUES ($1, $2)
+ON CONFLICT (content_id, tag_id) DO NOTHING
+`
+
+type AddContentTagParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	TagID     pgtype.UUID `json:"tag_id"`
+}
+
+// =====================
+// Content Tags
+// =====================
+func (q *Queries) AddContentTag(ctx context.Context, arg AddContentTagParams) error {
+	_, err := q.db.Exec(ctx, addContentTag, arg.ContentID, arg.TagID)
+	return err
+}
+
+const countBookmarksByUser = `-- name: CountBookmarksByUser :one
+SELECT COUNT(*)::int AS count
+FROM bookmarks
+WHERE user_id = $1 AND tenant_id = $2
+`
+
+type CountBookmarksByUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) CountBookmarksByUser(ctx context.Context, arg CountBookmarksByUserParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countBookmarksByUser, arg.UserID, arg.TenantID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countContentShares = `-- name: CountContentShares :one
+SELECT COUNT(*)::int AS count
+FROM content_shares
+WHERE tenant_id = $1 AND content_id = $2
+`
+
+type CountContentSharesParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+func (q *Queries) CountContentShares(ctx context.Context, arg CountContentSharesParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countContentShares, arg.TenantID, arg.ContentID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createBookmark = `-- name: CreateBookmark :one
+
+INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id, folder)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE SET folder = EXCLUDED.folder
+RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, created_at
+`
+
+type CreateBookmarkParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	UserID     pgtype.UUID `json:"user_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	Folder     string      `json:"folder"`
+}
+
+// =====================
+// Bookmarks (polymorphic)
+// =====================
+func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) (Bookmark, error) {
+	row := q.db.QueryRow(ctx, createBookmark,
+		arg.TenantID,
+		arg.UserID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.Folder,
+	)
+	var i Bookmark
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.Folder,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createContent = `-- name: CreateContent :one
 
 
@@ -181,6 +277,42 @@ func (q *Queries) CreateContentRevision(ctx context.Context, arg CreateContentRe
 	return i, err
 }
 
+const createContentShare = `-- name: CreateContentShare :one
+
+INSERT INTO content_shares (tenant_id, content_id, user_id, platform)
+VALUES ($1, $2, $3, $4)
+RETURNING id, tenant_id, content_id, user_id, platform, created_at
+`
+
+type CreateContentShareParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+	Platform  string      `json:"platform"`
+}
+
+// =====================
+// Content Shares
+// =====================
+func (q *Queries) CreateContentShare(ctx context.Context, arg CreateContentShareParams) (ContentShare, error) {
+	row := q.db.QueryRow(ctx, createContentShare,
+		arg.TenantID,
+		arg.ContentID,
+		arg.UserID,
+		arg.Platform,
+	)
+	var i ContentShare
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ContentID,
+		&i.UserID,
+		&i.Platform,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createSlugHistory = `-- name: CreateSlugHistory :one
 
 INSERT INTO slug_history (entity_type, entity_id, old_slug, new_slug)
@@ -215,6 +347,22 @@ func (q *Queries) CreateSlugHistory(ctx context.Context, arg CreateSlugHistoryPa
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const deleteBookmark = `-- name: DeleteBookmark :exec
+DELETE FROM bookmarks
+WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+`
+
+type DeleteBookmarkParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+func (q *Queries) DeleteBookmark(ctx context.Context, arg DeleteBookmarkParams) error {
+	_, err := q.db.Exec(ctx, deleteBookmark, arg.UserID, arg.EntityType, arg.EntityID)
+	return err
 }
 
 const deleteContent = `-- name: DeleteContent :exec
@@ -529,6 +677,26 @@ func (q *Queries) IncrementContentView(ctx context.Context, arg IncrementContent
 	return err
 }
 
+const isBookmarked = `-- name: IsBookmarked :one
+SELECT EXISTS(
+    SELECT 1 FROM bookmarks
+    WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+) AS is_bookmarked
+`
+
+type IsBookmarkedParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+func (q *Queries) IsBookmarked(ctx context.Context, arg IsBookmarkedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isBookmarked, arg.UserID, arg.EntityType, arg.EntityID)
+	var is_bookmarked bool
+	err := row.Scan(&is_bookmarked)
+	return is_bookmarked, err
+}
+
 const isContentPinned = `-- name: IsContentPinned :one
 SELECT EXISTS(SELECT 1 FROM space_pinned_posts WHERE space_id = $1 AND content_id = $2) AS exists
 `
@@ -543,6 +711,160 @@ func (q *Queries) IsContentPinned(ctx context.Context, arg IsContentPinnedParams
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const listBookmarksByUser = `-- name: ListBookmarksByUser :many
+SELECT b.id, b.tenant_id, b.user_id, b.entity_type, b.entity_id, b.folder, b.created_at
+FROM bookmarks b
+WHERE b.user_id = $1 AND b.tenant_id = $2
+ORDER BY b.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListBookmarksByUserParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+func (q *Queries) ListBookmarksByUser(ctx context.Context, arg ListBookmarksByUserParams) ([]Bookmark, error) {
+	rows, err := q.db.Query(ctx, listBookmarksByUser,
+		arg.UserID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Bookmark
+	for rows.Next() {
+		var i Bookmark
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.Folder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listContentByTag = `-- name: ListContentByTag :many
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at
+FROM contents c
+JOIN content_tags ct ON ct.content_id = c.id
+WHERE ct.tag_id = $1 AND c.tenant_id = $2 AND c.status = 'published'
+  AND (c.created_at < $3 OR ($3 IS NULL))
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $4
+`
+
+type ListContentByTagParams struct {
+	TagID           pgtype.UUID        `json:"tag_id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	PageLimit       int32              `json:"page_limit"`
+}
+
+type ListContentByTagRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagParams) ([]ListContentByTagRow, error) {
+	rows, err := q.db.Query(ctx, listContentByTag,
+		arg.TagID,
+		arg.TenantID,
+		arg.CursorCreatedAt,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContentByTagRow
+	for rows.Next() {
+		var i ListContentByTagRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.BodyHtml,
+			&i.FieldValues,
+			&i.ContentHash,
+			&i.GeoSpaceID,
+			&i.HeaderImageID,
+			&i.FeaturedImageID,
+			&i.CanonicalUrl,
+			&i.Status,
+			&i.Visibility,
+			&i.IsLocked,
+			&i.IsPinned,
+			&i.ReadTimeMinutes,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.PublishAt,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listContentRevisions = `-- name: ListContentRevisions :many
@@ -570,6 +892,50 @@ func (q *Queries) ListContentRevisions(ctx context.Context, contentID pgtype.UUI
 			&i.BodyHtml,
 			&i.EditedBy,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listContentTags = `-- name: ListContentTags :many
+SELECT t.id, t.name, t.slug, t.description, t.color, t.follower_count
+FROM content_tags ct
+JOIN tags t ON t.id = ct.tag_id
+WHERE ct.content_id = $1
+ORDER BY t.name
+`
+
+type ListContentTagsRow struct {
+	ID            pgtype.UUID `json:"id"`
+	Name          string      `json:"name"`
+	Slug          string      `json:"slug"`
+	Description   *string     `json:"description"`
+	Color         *string     `json:"color"`
+	FollowerCount int32       `json:"follower_count"`
+}
+
+func (q *Queries) ListContentTags(ctx context.Context, contentID pgtype.UUID) ([]ListContentTagsRow, error) {
+	rows, err := q.db.Query(ctx, listContentTags, contentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContentTagsRow
+	for rows.Next() {
+		var i ListContentTagsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.Color,
+			&i.FollowerCount,
 		); err != nil {
 			return nil, err
 		}
@@ -993,6 +1359,20 @@ func (q *Queries) PinContentToSpace(ctx context.Context, arg PinContentToSpacePa
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const removeContentTag = `-- name: RemoveContentTag :exec
+DELETE FROM content_tags WHERE content_id = $1 AND tag_id = $2
+`
+
+type RemoveContentTagParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	TagID     pgtype.UUID `json:"tag_id"`
+}
+
+func (q *Queries) RemoveContentTag(ctx context.Context, arg RemoveContentTagParams) error {
+	_, err := q.db.Exec(ctx, removeContentTag, arg.ContentID, arg.TagID)
+	return err
 }
 
 const unpinContentFromSpace = `-- name: UnpinContentFromSpace :exec

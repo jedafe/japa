@@ -1053,97 +1053,6 @@ func (q *Queries) ListForumThreadsByAuthor(ctx context.Context, arg ListForumThr
 	return items, nil
 }
 
-const listForumThreadsByTenant = `-- name: ListForumThreadsByTenant :many
-SELECT id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
-       title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
-       vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
-       is_edited, created_at, updated_at, deleted_at
-FROM forum_threads
-WHERE tenant_id = $1
-  AND deleted_at IS NULL
-  AND (created_at < $2 OR ($2 IS NULL))
-ORDER BY created_at DESC, id DESC
-LIMIT $3
-`
-
-type ListForumThreadsByTenantParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
-	PageLimit       int32              `json:"page_limit"`
-}
-
-type ListForumThreadsByTenantRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
-	ContentID         pgtype.UUID        `json:"content_id"`
-	SpaceID           pgtype.UUID        `json:"space_id"`
-	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
-	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
-	Title             string             `json:"title"`
-	Slug              string             `json:"slug"`
-	Body              []byte             `json:"body"`
-	IsAnonymous       bool               `json:"is_anonymous"`
-	Solved            bool               `json:"solved"`
-	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
-	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
-	VoteScore         int32              `json:"vote_score"`
-	ReplyCount        int32              `json:"reply_count"`
-	ViewCount         int32              `json:"view_count"`
-	BookmarkCount     int32              `json:"bookmark_count"`
-	EditWindowMinutes int32              `json:"edit_window_minutes"`
-	IsEdited          bool               `json:"is_edited"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) ListForumThreadsByTenant(ctx context.Context, arg ListForumThreadsByTenantParams) ([]ListForumThreadsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadsByTenant,
-		arg.TenantID,
-		arg.CursorCreatedAt,
-		arg.PageLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListForumThreadsByTenantRow
-	for rows.Next() {
-		var i ListForumThreadsByTenantRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.TenantID,
-			&i.ContentID,
-			&i.SpaceID,
-			&i.AuthorUserID,
-			&i.ParentReplyID,
-			&i.Title,
-			&i.Slug,
-			&i.Body,
-			&i.IsAnonymous,
-			&i.Solved,
-			&i.SolvedAt,
-			&i.SolvedByUserID,
-			&i.VoteScore,
-			&i.ReplyCount,
-			&i.ViewCount,
-			&i.BookmarkCount,
-			&i.EditWindowMinutes,
-			&i.IsEdited,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.DeletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listForumThreadsBySpace = `-- name: ListForumThreadsBySpace :many
 SELECT id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
        title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
@@ -1299,6 +1208,93 @@ func (q *Queries) ListForumThreadsByTag(ctx context.Context, arg ListForumThread
 	var items []ListForumThreadsByTagRow
 	for rows.Next() {
 		var i ListForumThreadsByTagRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ContentID,
+			&i.SpaceID,
+			&i.AuthorUserID,
+			&i.ParentReplyID,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.IsAnonymous,
+			&i.Solved,
+			&i.SolvedAt,
+			&i.SolvedByUserID,
+			&i.VoteScore,
+			&i.ReplyCount,
+			&i.ViewCount,
+			&i.BookmarkCount,
+			&i.EditWindowMinutes,
+			&i.IsEdited,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listForumThreadsByTenant = `-- name: ListForumThreadsByTenant :many
+SELECT id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
+       title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
+       vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
+       is_edited, created_at, updated_at, deleted_at
+FROM forum_threads
+WHERE tenant_id = $1
+  AND deleted_at IS NULL
+  AND (created_at < $2 OR ($2 IS NULL))
+ORDER BY created_at DESC, id DESC
+LIMIT $3
+`
+
+type ListForumThreadsByTenantParams struct {
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	PageLimit       int32              `json:"page_limit"`
+}
+
+type ListForumThreadsByTenantRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              []byte             `json:"body"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	Solved            bool               `json:"solved"`
+	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore         int32              `json:"vote_score"`
+	ReplyCount        int32              `json:"reply_count"`
+	ViewCount         int32              `json:"view_count"`
+	BookmarkCount     int32              `json:"bookmark_count"`
+	EditWindowMinutes int32              `json:"edit_window_minutes"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) ListForumThreadsByTenant(ctx context.Context, arg ListForumThreadsByTenantParams) ([]ListForumThreadsByTenantRow, error) {
+	rows, err := q.db.Query(ctx, listForumThreadsByTenant, arg.TenantID, arg.CursorCreatedAt, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListForumThreadsByTenantRow
+	for rows.Next() {
+		var i ListForumThreadsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
