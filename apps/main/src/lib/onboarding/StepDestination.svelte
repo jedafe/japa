@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { ArrowLeft, ArrowRight, Plane, Target } from 'lucide-svelte';
+	import { ArrowLeft, ArrowRight, Plane, Target, MapPin } from 'lucide-svelte';
+	import { onMount } from 'svelte';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { api } from '$lib/api';
 
 	let { stepData, onupdate, onnext, onback, submitting } = $props();
 
@@ -8,6 +10,18 @@
 	let destination = $state((stepData.destination as string) || '');
 	// svelte-ignore state_referenced_locally
 	let primaryGoal = $state((stepData.primary_goal as string) || '');
+
+	// Detected current location (from IP) — shown as helpful context, not a hard input.
+	let detectedCountry = $state('');
+
+	onMount(async () => {
+		try {
+			const geo = await api.geoMe();
+			if (geo.country) detectedCountry = geo.country;
+		} catch {
+			// geo detection is best-effort
+		}
+	});
 
 	const destinations = [
 		{ value: 'canada', label: 'Canada' },
@@ -43,6 +57,16 @@
 			<p class="text-sm" style="color: var(--color-muted)">{t('onboarding.destination_subtitle')}</p>
 		</div>
 	</div>
+
+	{#if detectedCountry}
+		<div
+			class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
+			style="background: color-mix(in srgb, var(--color-primary) 8%, transparent); color: var(--color-muted)"
+		>
+			<MapPin class="h-4 w-4" style="color: var(--color-primary)" />
+			<span>Detected you're browsing from <strong style="color: var(--color-foreground)">{detectedCountry}</strong></span>
+		</div>
+	{/if}
 
 	<div class="space-y-4">
 		<div>

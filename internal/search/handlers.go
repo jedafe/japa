@@ -44,10 +44,16 @@ var indexTypeByUID = map[string]string{
 // keeping payloads small and the mapping logic simple.
 var searchAttributesToRetrieve = []string{"id", "title", "excerpt", "url"}
 
+// searchSettingsReader is the subset of config.Settings the search handlers need.
+type searchSettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
+
 // Handlers holds dependencies for search HTTP handlers.
 type Handlers struct {
-	client  meilisearch.ServiceManager
-	queries *gen.Queries
+	client   meilisearch.ServiceManager
+	queries  *gen.Queries
+	settings searchSettingsReader
 }
 
 // NewHandlers creates Handlers backed by the given Meilisearch client.
@@ -60,6 +66,11 @@ func NewHandlers(client meilisearch.ServiceManager) *Handlers {
 // SetQueries injects the database queries for analytics logging.
 func (h *Handlers) SetQueries(q *gen.Queries) {
 	h.queries = q
+}
+
+// SetSettings injects the hot-reloadable settings reader (AUDIT-BE-009).
+func (h *Handlers) SetSettings(s searchSettingsReader) {
+	h.settings = s
 }
 
 // SearchResult represents a single search result.
@@ -293,8 +304,12 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseLimit(r.URL.Query().Get("limit"))
-	if limit > maxAutocompleteLimit {
-		limit = maxAutocompleteLimit
+	cap := maxAutocompleteLimit
+	if h.settings != nil {
+		cap = h.settings.GetIntOr(r.Context(), t.ID, "search.autocomplete_max", maxAutocompleteLimit)
+	}
+	if limit > cap {
+		limit = cap
 	}
 
 	if h.client == nil {

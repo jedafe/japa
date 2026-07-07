@@ -12,6 +12,11 @@
 	import MentionPopup from './MentionPopup.svelte';
 	import TagPopup from './TagPopup.svelte';
 	import InterlinkPopup from './InterlinkPopup.svelte';
+	import { api } from '$lib/api';
+
+	// AI assist state
+	let aiLoading = $state(false);
+	let aiError = $state('');
 
 	interface Props {
 		content?: string;
@@ -143,6 +148,37 @@
 			case 'horizontalRule':
 				editor.chain().focus().setHorizontalRule().run();
 				break;
+
+			// ── AI assist commands (AUDIT-FE wiring) ─────────────────────────
+			case 'ai:improve':
+			case 'ai:summarize':
+			case 'ai:translate_fr': {
+				const content = editor.getText();
+				if (!content.trim()) break;
+				aiLoading = true;
+				aiError = '';
+				try {
+					let result = '';
+					if (command === 'ai:improve') {
+						const r = await api.aiImprove(content);
+						result = r.result;
+					} else if (command === 'ai:summarize') {
+						const r = await api.aiSummarize(content);
+						result = r.result;
+					} else {
+						const r = await api.aiTranslate(content, 'fr');
+						result = r.result;
+					}
+					if (result) {
+						editor.chain().focus().clearContent().insertContent(result).run();
+					}
+				} catch {
+					aiError = 'AI assist failed — please try again.';
+				} finally {
+					aiLoading = false;
+				}
+				break;
+			}
 		}
 		
 		showSlashCommand = false;

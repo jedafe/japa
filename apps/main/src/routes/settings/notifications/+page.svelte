@@ -1,12 +1,63 @@
 <script lang="ts">
 	import { Bell, Mail, Smartphone, Users, MessageCircle, AtSign, Send, Loader2, Check } from 'lucide-svelte';
 	import { enhance } from '$app/forms';
+	import { api } from '$lib/api';
+	import { browser } from '$app/environment';
 
 	let { data, form } = $props();
 
 	// svelte-ignore state_referenced_locally
 	let prefs = $state(data.prefs);
 	let saving = $state(false);
+
+	// ── Web Push subscription state ───────────────────────────────────────────
+	let pushSupported = $state(false);
+	let pushSubscribed = $state(false);
+	let pushLoading = $state(false);
+	let pushError = $state('');
+
+	$effect(() => {
+		if (browser && 'serviceWorker' in navigator && 'PushManager' in window) {
+			pushSupported = true;
+			navigator.serviceWorker.ready.then(async (reg) => {
+				const sub = await reg.pushManager.getSubscription();
+				pushSubscribed = !!sub;
+			});
+		}
+	});
+
+	async function togglePushSubscription() {
+		pushLoading = true;
+		pushError = '';
+		try {
+			const reg = await navigator.serviceWorker.ready;
+			if (pushSubscribed) {
+				const sub = await reg.pushManager.getSubscription();
+				if (sub) await sub.unsubscribe();
+				pushSubscribed = false;
+			} else {
+				const keyResult = await api.getPushVapidKey();
+				const applicationServerKey = urlB64ToUint8Array(keyResult.public_key);
+				const sub = await reg.pushManager.subscribe({
+					userVisibleOnly: true,
+					applicationServerKey
+				});
+				await api.subscribePush(JSON.parse(JSON.stringify(sub)));
+				pushSubscribed = true;
+			}
+		} catch (e) {
+			pushError = e instanceof Error ? e.message : 'Failed to update push subscription';
+		} finally {
+			pushLoading = false;
+		}
+	}
+
+	function urlB64ToUint8Array(base64String: string): Uint8Array {
+		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+		const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+		const raw = atob(base64);
+		return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+	}
 
 	const notificationTypes = [
 		{
@@ -207,4 +258,42 @@
 			</a>
 		</div>
 	</form>
+
+	<!-- Web push subscription (separate from notification prefs — requires browser permission) -->
+	{#if pushSupported}
+		<section
+			class="mt-6 rounded-2xl border p-5"
+			style="border-color: var(--color-border); background: var(--color-surface)"
+		>
+			<div class="flex items-start justify-between gap-4">
+				<div>
+					<h2 class="text-base font-semibold" style="color: var(--color-foreground)">
+						Browser push notifications
+					</h2>
+					<p class="mt-1 text-sm" style="color: var(--color-muted)">
+						{pushSubscribed
+							? 'Your browser is subscribed and will receive real-time notifications.'
+							: 'Subscribe to receive real-time alerts even when you\'re not on the site.'}
+					</p>
+					{#if pushError}
+						<p class="mt-2 text-sm text-red-500">{pushError}</p>
+					{/if}
+				</div>
+				<button
+					onclick={togglePushSubscription}
+					disabled={pushLoading}
+					class="shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50"
+					style={pushSubscribed
+						? 'background: color-mix(in srgb, var(--color-destructive) 12%, transparent); color: var(--color-destructive)'
+						: 'background: var(--color-primary); color: white'}
+				>
+					{#if pushLoading}
+						<Loader2 class="h-4 w-4 animate-spin" />
+					{:else}
+						{pushSubscribed ? 'Unsubscribe' : 'Enable push'}
+					{/if}
+				</button>
+			</div>
+		</section>
+	{/if}
 </main>

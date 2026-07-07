@@ -20,6 +20,10 @@
 		{ id: 'blockquote', label: 'Quote', icon: '"' },
 		{ id: 'codeBlock', label: 'Code Block', icon: '<>' },
 		{ id: 'horizontalRule', label: 'Horizontal Rule', icon: '—' },
+		// AI assist — gated at the backend by ai.content_assist_enabled
+		{ id: 'ai:improve', label: 'AI: Improve writing', icon: '✨' },
+		{ id: 'ai:summarize', label: 'AI: Summarize', icon: '📝' },
+		{ id: 'ai:translate_fr', label: 'AI: Translate to French', icon: '🌐' },
 	];
 
 	function handleKeyDown(e: KeyboardEvent) {

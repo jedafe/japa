@@ -2,6 +2,8 @@
 	import { Rss, Clock, MessageCircle, Heart, RefreshCw } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api';
+	import TrendingPanel from '$lib/components/TrendingPanel.svelte';
+	import SuggestionsPanel from '$lib/components/SuggestionsPanel.svelte';
 	import AdSlot from '$lib/components/AdSlot.svelte';
 	import { onMount } from 'svelte';
 	import { formatTimestamp, formatRelativeTime } from '$lib/utils/timezone';
@@ -60,7 +62,7 @@
 	<meta name="description" content="{t('feed.subtitle')}" />
 </svelte:head>
 
-<main class="mx-auto max-w-3xl px-4 py-8">
+<main class="mx-auto max-w-6xl px-4 py-8">
 	<header class="mb-8 flex items-start justify-between">
 		<div>
 			<h1 class="text-2xl font-bold tracking-tight sm:text-3xl" style="color: var(--color-foreground)">
@@ -80,14 +82,17 @@
 		</button>
 	</header>
 
-	{#if feed.length === 0}
-		<EmptyState
-			icon={Rss}
-			title={t('feed.empty')}
-			message={t('feed.empty_hint')}
-		/>
-	{:else}
-		<div class="space-y-4" use:autoAnimate>
+	<div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
+		<!-- Main feed column -->
+		<div>
+			{#if feed.length === 0}
+				<EmptyState
+					icon={Rss}
+					title={t('feed.empty')}
+					message={t('feed.empty_hint')}
+				/>
+			{:else}
+				<div class="space-y-4" use:autoAnimate>
 			{#each feed as item, i (item.id)}
 				<article
 					class="card-interactive group rounded-2xl border p-5"
@@ -175,4 +180,12 @@
 			</div>
 		{/if}
 	{/if}
+		</div>
+
+		<!-- Right sidebar: trending + suggestions -->
+		<aside class="hidden lg:flex lg:flex-col lg:gap-4">
+			<TrendingPanel />
+			<SuggestionsPanel />
+		</aside>
+	</div>
 </main>

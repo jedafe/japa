@@ -185,6 +185,16 @@ func listMigrationFiles(dir string) ([]string, error) {
 			continue
 		}
 
+		// Never apply teardown migrations forward. Both ".up.sql" and plain
+		// "NNNNNN_name.sql" files are forward migrations; ".down.sql" files are
+		// rollbacks and must be excluded here. Previously every ".sql" file was
+		// globbed and applied in alphabetical order, so ".down.sql" (which sorts
+		// before ".up.sql") ran forward — dropping/deleting data and polluting
+		// schema_migrations. See AUDIT-BE-003.
+		if strings.HasSuffix(entry.Name(), ".down.sql") {
+			continue
+		}
+
 		files = append(files, filepath.Join(dir, entry.Name()))
 	}
 

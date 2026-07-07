@@ -125,6 +125,10 @@ func (h *Hub) BroadcastToSpace(spaceID string, event WSEvent) {
 		data, err := json.Marshal(event)
 		if err != nil {
 			slog.Error("ws marshal space event", "error", err)
+			// Still publish to bridge for cross-instance delivery.
+			if bridge != nil {
+				bridge.Publish(event, "", spaceID)
+			}
 			return
 		}
 

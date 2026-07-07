@@ -49,6 +49,23 @@ func RegisterRedis(client interface {
 	rdb = client
 }
 
+// settingsReader is the subset of config.Settings the worker needs to read
+// hot-reloadable operational limits. Declared as a local interface so the
+// worker package does not import config (avoids an import cycle); *config.Settings
+// satisfies it structurally.
+type settingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
+
+// appSettings holds the injected settings reader. Nil until RegisterSettings is
+// called, in which case handlers fall back to their compiled-in defaults.
+var appSettings settingsReader
+
+// RegisterSettings injects the hot-reloadable settings reader for worker handlers.
+func RegisterSettings(s settingsReader) {
+	appSettings = s
+}
+
 // videoProcessor holds the video processor for background video processing.
 var videoProcessor interface {
 	Transcode(ctx context.Context, inputPath, outputPath string) error
@@ -831,7 +848,12 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 
 	fedCount := 0
 
-	const maxFanOut = 5000
+	// Hot-reloadable fan-out threshold (feed.fanout_threshold). Falls back to
+	// 5000 when unset or when settings are not injected. See AUDIT-BE-009.
+	maxFanOut := 5000
+	if appSettings != nil {
+		maxFanOut = appSettings.GetIntOr(ctx, tenantID, "feed.fanout_threshold", 5000)
+	}
 
 	switch payload.FanOutType {
 	case "followers":

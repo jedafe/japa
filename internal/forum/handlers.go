@@ -197,7 +197,9 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	editWindow := int32(DefaultEditWindowMinutes)
+	// Pass 0 when the client does not specify an edit window so the service
+	// applies the hot-reloadable default (forum.edit_window_minutes).
+	editWindow := int32(0)
 	if input.EditWindowMinutes != nil {
 		editWindow = *input.EditWindowMinutes
 	}

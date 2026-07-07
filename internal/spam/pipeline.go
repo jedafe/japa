@@ -65,10 +65,20 @@ var DefaultWeights = map[string]float64{
 
 // SpamPipeline chains multiple detection layers and returns a single score.
 type SpamPipeline struct { //nolint:revive // stuttering type name preserved for API compatibility
-	store *Store
-	rdb   *valkey.Client
-	db    *db.DB
+	store    *Store
+	rdb      *valkey.Client
+	db       *db.DB
+	settings spamSettingsReader
 }
+
+// spamSettingsReader is the subset of config.Settings the spam pipeline uses
+// for hot-reloadable moderation thresholds. Local interface to avoid import cycles.
+type spamSettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
+
+// SetSettings injects the hot-reloadable settings reader for spam thresholds.
+func (p *SpamPipeline) SetSettings(s spamSettingsReader) { p.settings = s }
 
 // NewPipeline creates a pipeline backed by the given dependencies.
 func NewPipeline(store *Store, rdb *valkey.Client, database *db.DB) *SpamPipeline {
@@ -264,18 +274,23 @@ const maxLinksPerPost = 3
 
 // checkLinkAnalysis counts HTTP(S) URLs in the content. Posts with many
 // links relative to their length are a strong spam signal.
-func (p *SpamPipeline) checkLinkAnalysis(_ context.Context, _ pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkLinkAnalysis(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
 	const name = "link_analysis"
 
 	if req.Content == "" {
 		return name, 0.0, nil
 	}
 
+	maxLinks := maxLinksPerPost
+	if p.settings != nil {
+		maxLinks = p.settings.GetIntOr(ctx, tenantID, "moderation.max_links_per_post", maxLinksPerPost)
+	}
+
 	linkCount := countLinks(req.Content)
 	wordCount := len(strings.Fields(req.Content))
 
 	switch {
-	case linkCount > maxLinksPerPost:
+	case linkCount > maxLinks:
 		return name, 0.7, []string{fmt.Sprintf("excessive links: %d links in %d words", linkCount, wordCount)}
 	case linkCount > 0 && wordCount > 0 && float64(linkCount)/float64(wordCount) > 0.3:
 		return name, 0.5, []string{fmt.Sprintf("high link density: %d links in %d words", linkCount, wordCount)}
@@ -341,7 +356,12 @@ func (p *SpamPipeline) checkUserAge(ctx context.Context, tenantID pgtype.UUID, r
 	}
 
 	age := time.Since(user.CreatedAt.Time)
-	if age < newAccountThreshold {
+	threshold := newAccountThreshold
+	if p.settings != nil {
+		days := p.settings.GetIntOr(ctx, tenantID, "moderation.new_account_threshold_days", 7)
+		threshold = time.Duration(days) * 24 * time.Hour
+	}
+	if age < threshold {
 		return name, 0.3, []string{fmt.Sprintf("new account: %s old", age.Round(time.Hour))}
 	}
 
@@ -354,7 +374,7 @@ const minContentLength = 10
 
 // checkContentLength flags very short content. Single-word or near-empty
 // posts are a common spam signal (especially combined with other layers).
-func (p *SpamPipeline) checkContentLength(_ context.Context, _ pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
+func (p *SpamPipeline) checkContentLength(ctx context.Context, tenantID pgtype.UUID, req SpamCheckRequest) (string, float64, []string) {
 	const name = "content_length"
 
 	length := len(strings.TrimSpace(req.Content))
@@ -362,7 +382,12 @@ func (p *SpamPipeline) checkContentLength(_ context.Context, _ pgtype.UUID, req 
 		return name, 0.2, []string{"empty content"}
 	}
 
-	if length < minContentLength {
+	minLen := minContentLength
+	if p.settings != nil {
+		minLen = p.settings.GetIntOr(ctx, tenantID, "content.min_length", minContentLength)
+	}
+
+	if length < minLen {
 		return name, 0.3, []string{fmt.Sprintf("very short content: %d chars", length)}
 	}
 

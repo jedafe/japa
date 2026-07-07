@@ -184,6 +184,17 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 
 	qtx := s.store.write.WithTx(tx)
 
+	// Serialize concurrent balance mutations for this user. The Wallet ledger is
+	// append-only (no mutable balance row to lock with FOR UPDATE), so a plain
+	// SELECT of the latest balance does not stop two concurrent conversions from
+	// both passing the sufficient-funds check and double-spending. A
+	// transaction-scoped advisory lock keyed on the user serializes them; it is
+	// released automatically on commit/rollback. See AUDIT-BE-005.
+	lockKey := "wallet:" + tenantID.String() + ":" + userID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return 0, 0, fmt.Errorf("acquiring wallet lock: %w", err)
+	}
+
 	// Get current points balance within the transaction.
 	currentPoints, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 		TenantID:   tenantID,

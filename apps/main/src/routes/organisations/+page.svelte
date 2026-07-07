@@ -10,11 +10,11 @@
 	let loading = $state(false);
 	let searchQuery = $state('');
 
-	async function fetchOrganisations(query?: string) {
+	async function fetchOrganisations(_query?: string) {
 		loading = true;
 		try {
-			const result = await api.listProfessionalProfiles({ limit: 50, search: query });
-			organisations = result.profiles;
+			const result = await api.listOrganizations(50, 1);
+			organisations = result.organizations;
 		} catch {
 			organisations = data.organisations;
 		} finally {
@@ -80,7 +80,7 @@
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" use:autoAnimate>
 			{#each organisations as org (org.id)}
 				<a
-					href="/professional/{org.slug}"
+					href="/organisations/{org.slug}"
 					class="group rounded-xl border p-5 transition-all hover:shadow-md"
 					style="border-color: var(--color-border); background: var(--color-surface)"
 				>
@@ -108,19 +108,14 @@
 							</p>
 						</div>
 					</div>
-					{#if org.skills.length > 0}
+					{#if org.member_count !== undefined}
 						<div class="mt-3 flex flex-wrap gap-1">
-							{#each org.skills.slice(0, 4) as skill}
-								<span
-									class="rounded-full px-2 py-0.5 text-xs"
-									style="background-color: var(--color-background); color: var(--color-muted)"
-								>
-									{skill}
-								</span>
-							{/each}
-							{#if org.skills.length > 4}
-								<span class="text-xs" style="color: var(--color-muted)">+{org.skills.length - 4}</span>
-							{/if}
+							<span
+								class="rounded-full px-2 py-0.5 text-xs"
+								style="background-color: var(--color-background); color: var(--color-muted)"
+							>
+								{org.member_count.toLocaleString()} members
+							</span>
 						</div>
 					{/if}
 				</a>

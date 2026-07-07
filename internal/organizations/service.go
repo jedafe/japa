@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -271,11 +272,16 @@ func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, target
 		return errors.New("only the owner can change roles")
 	}
 
-	return s.store.UpdateMemberRole(ctx, gen.UpdateOrganizationMemberRoleParams{
+	if err := s.store.UpdateMemberRole(ctx, gen.UpdateOrganizationMemberRoleParams{
 		OrganizationID: orgID,
 		UserID:         targetUserID,
 		Role:           newRole,
-	})
+	}); err != nil {
+		return err
+	}
+	// Note: If org membership feeds into RBAC resolution, call InvalidateUserCache here.
+	slog.Info("organization: member role updated", "org_id", orgID.String(), "user_id", targetUserID.String(), "role", newRole)
+	return nil
 }
 
 // ClaimOwnership creates an ownership claim for an unclaimed organization.

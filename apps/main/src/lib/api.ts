@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
+export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
 
 interface ApiOk<T> {
 	data: T;
@@ -40,6 +40,125 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 		throw new Error(`${err.code}: ${err.message}`);
 	}
 	return (body as ApiOk<T>).data;
+}
+
+// Custom-field types
+export interface CustomField {
+	id: string;
+	group_id: string;
+	key: string;
+	label: string;
+	field_type: string;
+	required: boolean;
+	options?: string[];
+	placeholder?: string;
+	description?: string;
+	sort_order: number;
+}
+
+export interface CustomFieldGroup {
+	id: string;
+	name: string;
+	entity_type: string;
+	sort_order: number;
+	fields?: CustomField[];
+}
+
+// Push subscription (mirrors the Web Push API PushSubscriptionJSON shape)
+export interface PushSubscriptionJSON {
+	endpoint: string;
+	expirationTime?: number | null;
+	keys: {
+		p256dh: string;
+		auth: string;
+	};
+}
+
+// Organizations
+export interface Organization {
+	id: string;
+	slug: string;
+	name: string;
+	headline?: string;
+	bio?: string;
+	logo_url?: string;
+	is_public: boolean;
+	member_count?: number;
+	created_at?: string;
+}
+
+export interface OrganizationMember {
+	user_id: string;
+	username: string;
+	display_name?: string;
+	avatar_url?: string;
+	role: string;
+	joined_at?: string;
+}
+
+export interface OrganizationInvitation {
+	id: string;
+	email: string;
+	role: string;
+	status: string;
+	created_at?: string;
+}
+
+// Coupons (TipTap coupon_embed render target)
+export interface Coupon {
+	id: string;
+	code: string;
+	title: string;
+	description?: string;
+	discount_label?: string;
+	affiliate_url?: string;
+	expires_at?: string | null;
+	active: boolean;
+}
+
+// Affiliate program
+export interface AffiliateLink {
+	id: string;
+	code: string;
+	product_type: string;
+	product_id: string;
+	url: string;
+	click_count?: number;
+	conversion_count?: number;
+	created_at?: string;
+}
+
+export interface AffiliateConversion {
+	id: string;
+	product_type: string;
+	credits: number;
+	converted_at: string;
+}
+
+// Geo
+export interface GeoLocation {
+	id: string;
+	name: string;
+	country_code: string;
+	region?: string;
+	latitude?: number;
+	longitude?: number;
+}
+
+// Space types & permission presets
+export interface SpaceType {
+	id: string;
+	name: string;
+	slug: string;
+	description?: string;
+	icon?: string;
+}
+
+export interface SpacePermissionPreset {
+	name: string;
+	label: string;
+	description?: string;
+	permissions: Record<string, boolean>;
 }
 
 export const api = {
@@ -864,6 +983,250 @@ export const api = {
 	},
 	getWebhookDeliveries(id: string) {
 		return request<WebhookDelivery[]>('/webhooks/' + id + '/deliveries');
+	},
+
+	// ── Trending (AUDIT-FE wiring) ────────────────────────────────────────────
+	getTrendingContent(limit = 10) {
+		return request<{ items: FeedItem[] }>(`/trending/content?limit=${limit}`);
+	},
+	getTrendingSpaces(limit = 10) {
+		return request<{ items: unknown[] }>(`/trending/spaces?limit=${limit}`);
+	},
+	getTrendingTags(limit = 10) {
+		return request<{ items: unknown[] }>(`/trending/tags?limit=${limit}`);
+	},
+	getTrendingUsers(limit = 10) {
+		return request<{ items: unknown[] }>(`/trending/users?limit=${limit}`);
+	},
+
+	// ── Suggestions / Discovery (AUDIT-FE wiring) ─────────────────────────────
+	getSuggestedSpaces() {
+		return request<{ items: unknown[] }>('/suggestions/spaces');
+	},
+	getSuggestedUsers() {
+		return request<{ items: unknown[] }>('/suggestions/users');
+	},
+	getSuggestedTags() {
+		return request<{ items: unknown[] }>('/suggestions/tags');
+	},
+
+	// ── Web Push (AUDIT-FE wiring) ────────────────────────────────────────────
+	getPushVapidKey() {
+		return request<{ public_key: string }>('/push/vapid-key');
+	},
+	subscribePush(subscription: PushSubscriptionJSON) {
+		return request<{ subscribed: boolean }>('/push/subscribe', {
+			method: 'POST',
+			body: JSON.stringify({ subscription })
+		});
+	},
+
+	// ── AI Editor Assist (AUDIT-FE wiring) ───────────────────────────────────
+	aiImprove(content: string, instruction?: string) {
+		return request<{ result: string }>('/ai/improve', {
+			method: 'POST',
+			body: JSON.stringify({ content, instruction })
+		});
+	},
+	aiSummarize(content: string) {
+		return request<{ result: string }>('/ai/summarize', {
+			method: 'POST',
+			body: JSON.stringify({ content })
+		});
+	},
+	aiTranslate(content: string, target_language: string) {
+		return request<{ result: string }>('/ai/translate', {
+			method: 'POST',
+			body: JSON.stringify({ content, target_language })
+		});
+	},
+	aiGenerateTags(content: string, title?: string) {
+		return request<{ tags: string[] }>('/ai/generate-tags', {
+			method: 'POST',
+			body: JSON.stringify({ content, title })
+		});
+	},
+	aiGenerateOG(content: string, title?: string) {
+		return request<{ og_title: string; og_description: string; og_image_prompt?: string }>(
+			'/ai/generate-og',
+			{ method: 'POST', body: JSON.stringify({ content, title }) }
+		);
+	},
+
+	// ── Custom Fields (AUDIT-FE wiring) ──────────────────────────────────────
+	getCustomFieldGroups(entityType: string) {
+		return request<{ groups: CustomFieldGroup[] }>(`/custom-field-groups?entity_type=${entityType}`);
+	},
+	getCustomFieldGroupFields(groupId: string) {
+		return request<{ fields: CustomField[] }>(`/custom-field-groups/${groupId}/fields`);
+	},
+	getCustomFieldValues(entityType: string, entityId: string) {
+		return request<{ values: Record<string, unknown> }>(
+			`/custom-field-values/${entityType}/${entityId}`
+		);
+	},
+	setCustomFieldValues(entityType: string, entityId: string, values: Record<string, unknown>) {
+		return request<{ saved: boolean }>('/custom-field-values', {
+			method: 'POST',
+			body: JSON.stringify({ entity_type: entityType, entity_id: entityId, values })
+		});
+	},
+
+	// ── Comments mutations (AUDIT-FE wiring — edit/delete/vote on individual comments) ──
+	updateComment(id: string, body: string) {
+		return request<{ id: string }>(`/comments/${id}`, {
+			method: 'PATCH',
+			body: JSON.stringify({ body })
+		});
+	},
+	deleteComment(id: string) {
+		return request<{ deleted: boolean }>(`/comments/${id}`, { method: 'DELETE' });
+	},
+	voteComment(id: string, value: 1 | -1) {
+		return request<{ score: number }>(`/comments/${id}/vote`, {
+			method: 'POST',
+			body: JSON.stringify({ value })
+		});
+	},
+	removeCommentVote(id: string) {
+		return request<{ score: number }>(`/comments/${id}/vote`, { method: 'DELETE' });
+	},
+	pinComment(id: string) {
+		return request<{ pinned: boolean }>(`/comments/${id}/pin`, { method: 'POST' });
+	},
+	unpinComment(id: string) {
+		return request<{ pinned: boolean }>(`/comments/${id}/pin`, { method: 'DELETE' });
+	},
+
+	// ── Organizations (AUDIT-FE closing gap) ──────────────────────────────────
+	listOrganizations(limit = 50, page = 1) {
+		return request<{ organizations: Organization[]; total: number; total_pages: number }>(
+			`/organizations?limit=${limit}&page=${page}`
+		);
+	},
+	getOrganization(slug: string) {
+		return request<Organization>(`/organizations/${slug}`);
+	},
+	createOrganization(data: { name: string; slug?: string; headline?: string; bio?: string }) {
+		return request<Organization>('/organizations', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+	updateOrganization(id: string, data: Record<string, unknown>) {
+		return request<Organization>(`/organizations/${id}`, {
+			method: 'PATCH',
+			body: JSON.stringify(data)
+		});
+	},
+	deleteOrganization(id: string) {
+		return request<{ deleted: boolean }>(`/organizations/${id}`, { method: 'DELETE' });
+	},
+	getOrganizationMembers(id: string) {
+		return request<{ members: OrganizationMember[] }>(`/organizations/${id}/members`);
+	},
+	addOrganizationMember(id: string, userId: string, role: string) {
+		return request<{ added: boolean }>(`/organizations/${id}/members`, {
+			method: 'POST',
+			body: JSON.stringify({ user_id: userId, role })
+		});
+	},
+	updateOrganizationMember(id: string, userId: string, role: string) {
+		return request<{ updated: boolean }>(`/organizations/${id}/members/${userId}`, {
+			method: 'PATCH',
+			body: JSON.stringify({ role })
+		});
+	},
+	removeOrganizationMember(id: string, userId: string) {
+		return request<{ removed: boolean }>(`/organizations/${id}/members/${userId}`, {
+			method: 'DELETE'
+		});
+	},
+	listOrganizationInvitations(id: string) {
+		return request<{ invitations: OrganizationInvitation[] }>(`/organizations/${id}/invitations`);
+	},
+	inviteToOrganization(id: string, email: string, role: string) {
+		return request<{ invited: boolean }>(`/organizations/${id}/invitations`, {
+			method: 'POST',
+			body: JSON.stringify({ email, role })
+		});
+	},
+	acceptOrganizationInvitation(token: string) {
+		return request<{ accepted: boolean; organization_slug: string }>(
+			`/organizations/invitations/${token}/accept`,
+			{ method: 'POST' }
+		);
+	},
+
+	// ── Claim ownership (AUDIT-FE closing gap) ────────────────────────────────
+	submitOwnershipClaim(data: { entity_type: string; entity_id: string; evidence: string }) {
+		return request<{ id: string; status: string }>('/claim-ownership', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+	updateOwnershipClaim(id: string, status: string) {
+		return request<{ id: string; status: string }>(`/claim-ownership/${id}`, {
+			method: 'PATCH',
+			body: JSON.stringify({ status })
+		});
+	},
+
+	// ── Coupons (AUDIT-FE closing gap — powers the TipTap coupon_embed render) ─
+	getCoupon(id: string) {
+		return request<Coupon>(`/coupons/${id}`);
+	},
+	trackCouponClick(id: string) {
+		return request<{ tracked: boolean }>(`/coupons/${id}/click`, { method: 'POST' });
+	},
+
+	// ── Affiliate program (AUDIT-FE closing gap) ──────────────────────────────
+	enrollAffiliate() {
+		return request<{ enrolled: boolean }>('/affiliate-program/enroll', { method: 'POST' });
+	},
+	getAffiliateLinks() {
+		return request<{ links: AffiliateLink[] }>('/me/affiliate-links');
+	},
+	getAffiliateLink(id: string) {
+		return request<AffiliateLink>(`/me/affiliate-links/${id}`);
+	},
+	createAffiliateLink(data: { product_type: string; product_id: string }) {
+		return request<AffiliateLink>('/me/affiliate-links', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+	deleteAffiliateLink(id: string) {
+		return request<{ deleted: boolean }>(`/me/affiliate-links/${id}`, { method: 'DELETE' });
+	},
+	getAffiliateEarnings() {
+		return request<{ total_credits: number; conversions: AffiliateConversion[] }>(
+			'/me/affiliate-earnings'
+		);
+	},
+
+	// ── Geo (AUDIT-FE closing gap — location resolution for onboarding/spaces) ─
+	geoMe() {
+		return request<{ country: string; country_code: string; region?: string; city?: string }>(
+			'/geo/me'
+		);
+	},
+	geoLookup(query: string) {
+		return request<{ results: GeoLocation[] }>(`/geo/lookup?q=${encodeURIComponent(query)}`);
+	},
+
+	// ── Space types & permission presets (AUDIT-FE closing gap) ───────────────
+	listSpaceTypes() {
+		return request<{ space_types: SpaceType[] }>('/space-types');
+	},
+	getSpaceType(id: string) {
+		return request<SpaceType>(`/space-types/${id}`);
+	},
+	listSpacePermissionPresets() {
+		return request<{ presets: SpacePermissionPreset[] }>('/space-permission-presets');
+	},
+	getSpacePermissionPreset(name: string) {
+		return request<SpacePermissionPreset>(`/space-permission-presets/${name}`);
 	}
 };
 

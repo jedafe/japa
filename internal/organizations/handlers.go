@@ -2,11 +2,14 @@ package organizations
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -95,8 +98,15 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
-	slog.Error("service error", "error", err)
-	writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+	case strings.Contains(err.Error(), "duplicate"):
+		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	default:
+		slog.Error("service error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+	}
 }
 
 type createOrganizationRequest struct {

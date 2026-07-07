@@ -249,6 +249,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Create Asynq client for enqueuing background tasks (push delivery, etc.)
 	asynqClient := worker.NewClient(worker.DefaultConfig())
+	// Shared adapter so feature services enqueue real tasks instead of the
+	// per-package noopEnqueuer that silently drops them (AUDIT-BE-001).
+	taskEnqueuer := worker.NewEnqueuer(asynqClient)
+	// Hot-reloadable system settings (AUDIT-BE-009). Previously config.NewSettings
+	// was never instantiated, so documented operational limits were dead and
+	// services used compiled-in constants. Instantiate once and inject where limits
+	// are read.
+	settingsService := config.NewSettings(database, vkClient.Redis())
+	worker.RegisterSettings(settingsService)
+	// Inject into services with hot-reloadable moderation/ops limits (AUDIT-BE-009).
+	spamPipeline.SetSettings(settingsService)
 	notificationService.SetAsynqClient(asynqClient)
 	authHandlers.AsynqClient = asynqClient
 	contentHandlers.AsynqClient = asynqClient
@@ -301,15 +312,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adHandlers := advertising.NewHandlers(adService)
 
 	// Ticket System subsystem (Section 38 — Ticket System).
-	ticketService := tickets.NewService(database)
+	ticketService := tickets.NewServiceWithEnqueuer(database, taskEnqueuer)
 	ticketHandlers := tickets.NewHandlers(ticketService)
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
-	couponService := coupons.NewService(database)
+	couponService := coupons.NewServiceWithEnqueuer(database, taskEnqueuer)
 	couponHandlers := coupons.NewHandlers(couponService)
 
 	// User Affiliate Program subsystem (Section 56).
-	affiliateService := affiliate.NewService(database)
+	affiliateService := affiliate.NewServiceWithEnqueuer(database, taskEnqueuer)
 	affiliateHandlers := affiliate.NewHandlers(affiliateService)
 
 	// i18n Translation System.
@@ -317,7 +328,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	i18nHandlers := i18n.NewHandlers(i18nService)
 
 	// GDPR / NDPR Compliance subsystem (Section 19).
-	gdprService := gdpr.NewService(database)
+	gdprService := gdpr.NewServiceWithEnqueuer(database, taskEnqueuer)
 	gdprService.SetHonchoEraser(honcho.NewClient(cfg.HonchoURL))
 	gdprHandlers := gdpr.NewHandlers(gdprService)
 
@@ -343,6 +354,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Webhook Delivery subsystem — registers the processor so the Asynq
 	// webhook_delivery handler can fetch, sign, and deliver outgoing webhooks.
 	webhookService := webhooks.NewService(database)
+	webhookService.SetSettings(settingsService)
 	webhookHandlers := webhooks.NewHandlers(webhookService)
 	webhookAdapter := webhooks.NewWorkerAdapter(webhookService)
 	worker.RegisterWebhookProcessor(webhookAdapter)
@@ -367,7 +379,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spamHandlers := spam.NewHandlers(spamStore)
 
 	// Platform Analytics & Site Reports subsystem (Section 40).
-	analyticsService := analytics.NewService(database)
+	analyticsService := analytics.NewServiceWithEnqueuer(database, taskEnqueuer)
 	analyticsHandlers := analytics.NewHandlers(analyticsService)
 
 	// Learning Platform subsystem (Section 36).
@@ -457,6 +469,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	searchHandlers := search.NewHandlers(meiliClient)
 	searchHandlers.SetQueries(gen.New(database.Reader))
+	searchHandlers.SetSettings(settingsService)
 
 	// Onboarding subsystem (Section 09).
 	onboardingService := onboarding.NewService(database)
@@ -860,6 +873,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Forum Q&A / Solved routes — gated by feature.forum (Section 08)
 			forumService := forum.NewService(database)
+			forumService.SetSettings(settingsService)
 			forumHandlers := forum.NewHandlers(forumService)
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {

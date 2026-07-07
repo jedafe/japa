@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { getToken } from '$lib/api';
+import { getToken, API_BASE } from '$lib/api';
 
 type Locale = string;
 
@@ -18,7 +18,7 @@ export function getLocale() {
 				document.documentElement.lang = locale;
 				document.cookie = `jc_locale=${locale};path=/;max-age=31536000;samesite=lax`;
 				const token = getToken();
-				fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'}/users/me/preferences`, {
+				fetch(`${API_BASE}/users/me/preferences`, {
 					method: 'PUT',
 					headers: {
 						'Content-Type': 'application/json',
@@ -51,7 +51,7 @@ export async function loadTranslations(localeCode: string): Promise<Record<strin
 		return loaded[localeCode];
 	}
 	try {
-		const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
+		const base = API_BASE;
 		const res = await fetch(`${base}/translations/${localeCode}`);
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const body = await res.json();

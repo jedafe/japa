@@ -22,6 +22,17 @@ type CreateThreadInput struct {
 	EditWindowMinutes int32
 }
 
+// forumSettingsReader is the subset of config.Settings the forum service reads
+// for hot-reloadable limits. Local interface so forum does not import config.
+type forumSettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
+
+// SetSettings injects the hot-reloadable settings reader.
+func (s *Service) SetSettings(r forumSettingsReader) {
+	s.settings = r
+}
+
 // CreateThread creates a new forum thread and increments the reply count
 // on the parent thread if this is a reply-thread (parent_reply_id set).
 func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtype.UUID, input CreateThreadInput) (gen.ForumThread, error) {
@@ -31,7 +42,13 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 
 	editWindow := input.EditWindowMinutes
 	if editWindow <= 0 {
-		editWindow = DefaultEditWindowMinutes
+		// Hot-reloadable default (forum.edit_window_minutes); falls back to the
+		// compiled-in default when unset or settings not injected. See AUDIT-BE-009.
+		def := DefaultEditWindowMinutes
+		if s.settings != nil {
+			def = s.settings.GetIntOr(ctx, tenantID, "forum.edit_window_minutes", DefaultEditWindowMinutes)
+		}
+		editWindow = int32(def)
 	}
 
 	if input.Body == nil {
