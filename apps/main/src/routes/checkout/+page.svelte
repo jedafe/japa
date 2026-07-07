@@ -24,34 +24,30 @@
 		name: string;
 		description: string;
 		icon: typeof CreditCard;
+		enabled: boolean;
 	}
 
-	const providers: ProviderOption[] = [
-		{
-			id: 'paystack',
-			name: 'Paystack',
-			description: 'Card, bank transfer, USSD',
-			icon: CreditCard
-		},
-		{
-			id: 'stripe',
-			name: 'Stripe',
-			description: 'International cards',
-			icon: ShieldCheck
-		},
-		{
-			id: 'nowpayments',
-			name: 'Crypto',
-			description: 'Bitcoin, USDT, ETH',
-			icon: Bitcoin
-		},
-		{
-			id: 'credit',
-			name: 'Wallet Credits',
-			description: 'Pay from your balance',
-			icon: Wallet
-		}
-	];
+	let { data } = $props();
+
+	const pageData = data as typeof data & { providers: any[] };
+
+	// Map backend providers to frontend ProviderOption type with icons
+	const providerIcons: Record<string, typeof CreditCard> = {
+		paystack: CreditCard,
+		stripe: ShieldCheck,
+		nowpayments: Bitcoin,
+		credit: Wallet
+	};
+
+	const providers: ProviderOption[] = (pageData.providers ?? [])
+		.filter((p: any) => p.enabled)
+		.map((p: any) => ({
+			id: p.id as PaymentProvider,
+			name: p.name,
+			description: p.description,
+			icon: providerIcons[p.id] ?? CreditCard,
+			enabled: p.enabled
+		}));
 
 	let amount = $derived(Number(page.url.searchParams.get('amount') ?? '0'));
 	let purpose = $derived(page.url.searchParams.get('purpose') ?? 'general');

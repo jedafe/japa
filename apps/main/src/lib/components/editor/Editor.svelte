@@ -99,28 +99,108 @@
 		}
 	}
 
+	/** Returns true when the cursor is at the start of a line or after whitespace. */
+	function isTriggerContext(): boolean {
+		if (!editor) return false;
+		const { state } = editor;
+		const anchor = state.selection.$anchor;
+		const textBefore = anchor.parent.textContent.slice(0, anchor.parentOffset);
+		return textBefore.length === 0 || /\s$/.test(textBefore);
+	}
+
 	function handleKeyDown(e: KeyboardEvent) {
-		if (e.key === '/') {
-			showSlashCommand = true;
-			updatePopupPosition();
-		} else if (e.key === 'Escape') {
+		if (e.key === 'Escape') {
 			showSlashCommand = false;
 			showMentionPopup = false;
 			showTagPopup = false;
 			showInterlinkPopup = false;
+			return;
+		}
+
+		if (!isTriggerContext()) return;
+
+		if (e.key === '/' && !showMentionPopup && !showTagPopup && !showInterlinkPopup) {
+			showSlashCommand = true;
+			updatePopupPosition();
+		} else if (e.key === '@' && !showSlashCommand && !showTagPopup && !showInterlinkPopup) {
+			showMentionPopup = true;
+			updatePopupPosition('mention');
+		} else if (e.key === '#' && !showSlashCommand && !showMentionPopup && !showInterlinkPopup) {
+			showTagPopup = true;
+			updatePopupPosition('tag');
+		} else if (e.key === '[' && editor) {
+			const { state } = editor;
+			const anchor = state.selection.$anchor;
+			const textBefore = anchor.parent.textContent.slice(0, anchor.parentOffset);
+			if (textBefore.endsWith('[') && !showSlashCommand && !showMentionPopup && !showTagPopup) {
+				showInterlinkPopup = true;
+				updatePopupPosition('interlink');
+			}
 		}
 	}
 
-	function updatePopupPosition() {
+	function updatePopupPosition(type: 'slash' | 'mention' | 'tag' | 'interlink' = 'slash') {
 		const selection = window.getSelection();
 		if (selection && selection.rangeCount > 0) {
 			const range = selection.getRangeAt(0);
 			const rect = range.getBoundingClientRect();
-			slashCommandPos = { top: rect.bottom + 8, left: rect.left };
+			const pos = { top: rect.bottom + 8, left: rect.left };
+			if (type === 'slash') slashCommandPos = pos;
+			else if (type === 'mention') mentionPos = pos;
+			else if (type === 'tag') tagPos = pos;
+			else if (type === 'interlink') interlinkPos = pos;
 		}
 	}
 
-	function insertSlashCommand(command: string) {
+	function insertMention(user: { id: string; label: string }) {
+		if (!editor) return;
+		const { state } = editor;
+		const anchor = state.selection.$anchor;
+		const textBefore = anchor.parent.textContent.slice(0, anchor.parentOffset);
+		const atIndex = textBefore.lastIndexOf('@');
+		if (atIndex === -1) { showMentionPopup = false; return; }
+
+		const from = anchor.start() + atIndex;
+		const to = anchor.pos;
+		editor.chain().focus().deleteRange({ from, to }).run();
+		editor.chain().focus().insertContent({
+			type: 'mention',
+			attrs: { id: user.id, label: user.label },
+		}).run();
+		showMentionPopup = false;
+	}
+
+	function insertTag(tag: { id: string; label: string }) {
+		if (!editor) return;
+		const { state } = editor;
+		const anchor = state.selection.$anchor;
+		const textBefore = anchor.parent.textContent.slice(0, anchor.parentOffset);
+		const hashIndex = textBefore.lastIndexOf('#');
+		if (hashIndex === -1) { showTagPopup = false; return; }
+
+		const from = anchor.start() + hashIndex;
+		const to = anchor.pos;
+		editor.chain().focus().deleteRange({ from, to }).run();
+		editor.chain().focus().insertContent(`#${tag.label} `).run();
+		showTagPopup = false;
+	}
+
+	function insertInterlink(item: { id: string; type: string; label: string }) {
+		if (!editor) return;
+		const { state } = editor;
+		const anchor = state.selection.$anchor;
+		const textBefore = anchor.parent.textContent.slice(0, anchor.parentOffset);
+		const bracketIndex = textBefore.lastIndexOf('[[');
+		if (bracketIndex === -1) { showInterlinkPopup = false; return; }
+
+		const from = anchor.start() + bracketIndex;
+		const to = anchor.pos;
+		editor.chain().focus().deleteRange({ from, to }).run();
+		editor.chain().focus().insertContent(`[[${item.label}]]`).run();
+		showInterlinkPopup = false;
+	}
+
+	async function insertSlashCommand(command: string) {
 		if (!editor) return;
 		
 		switch (command) {
@@ -199,9 +279,7 @@
 	{#if showMentionPopup}
 		<MentionPopup
 			position={mentionPos}
-			onSelect={(user) => {
-				showMentionPopup = false;
-			}}
+			onSelect={insertMention}
 			onClose={() => showMentionPopup = false}
 		/>
 	{/if}
@@ -209,9 +287,7 @@
 	{#if showTagPopup}
 		<TagPopup
 			position={tagPos}
-			onSelect={(tag) => {
-				showTagPopup = false;
-			}}
+			onSelect={insertTag}
 			onClose={() => showTagPopup = false}
 		/>
 	{/if}
@@ -219,9 +295,7 @@
 	{#if showInterlinkPopup}
 		<InterlinkPopup
 			position={interlinkPos}
-			onSelect={(item) => {
-				showInterlinkPopup = false;
-			}}
+			onSelect={insertInterlink}
 			onClose={() => showInterlinkPopup = false}
 		/>
 	{/if}

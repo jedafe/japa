@@ -1,3 +1,4 @@
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiFetch } from '$lib/server/api';
 
@@ -26,12 +27,17 @@ interface UserDashboard {
 
 export const load: PageServerLoad = async ({ cookies }) => {
 	const token = cookies.get('jc_token');
-	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+	if (!token) {
+		throw redirect(303, '/login');
+	}
+
+	const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
 
 	const dashboardResult = await apiFetch<UserDashboard>('/analytics/dashboard', { headers });
 
 	return {
 		dashboard: dashboardResult.ok && dashboardResult.data ? dashboardResult.data : null,
-		isAuthenticated: !!token
+		isAuthenticated: true
 	};
 };

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { page } from '$app/stores';
 
 	interface Props {
 		position: { top: number; left: number };
@@ -11,7 +12,18 @@
 
 	let selectedIndex = $state(0);
 
-	const commands = [
+	/** Check if the current user has the AI content assist permission via feature flags. */
+	function aiAssistEnabled(): boolean {
+		let enabled = false;
+		const unsub = page.subscribe(($page) => {
+			const flags = $page.data?.featureFlags ?? {};
+			enabled = flags['ai.content_assist_enabled'] === true;
+		});
+		unsub();
+		return enabled;
+	}
+
+	const baseCommands = [
 		{ id: 'heading1', label: 'Heading 1', icon: 'H1' },
 		{ id: 'heading2', label: 'Heading 2', icon: 'H2' },
 		{ id: 'heading3', label: 'Heading 3', icon: 'H3' },
@@ -20,11 +32,16 @@
 		{ id: 'blockquote', label: 'Quote', icon: '"' },
 		{ id: 'codeBlock', label: 'Code Block', icon: '<>' },
 		{ id: 'horizontalRule', label: 'Horizontal Rule', icon: '—' },
-		// AI assist — gated at the backend by ai.content_assist_enabled
+	];
+
+	const aiCommands = [
 		{ id: 'ai:improve', label: 'AI: Improve writing', icon: '✨' },
 		{ id: 'ai:summarize', label: 'AI: Summarize', icon: '📝' },
 		{ id: 'ai:translate_fr', label: 'AI: Translate to French', icon: '🌐' },
 	];
+
+	/** Combine base commands with AI commands when the feature flag is enabled. */
+	const commands = [...baseCommands, ...(aiAssistEnabled() ? aiCommands : [])];
 
 	function handleKeyDown(e: KeyboardEvent) {
 		if (e.key === 'ArrowDown') {
@@ -52,7 +69,7 @@
 </script>
 
 <div
-	class="slash-command-menu"
+	class="slash-command-menu z-50"
 	style="top: {position.top}px; left: {position.left}px"
 >
 	{#each commands as command, i}
@@ -70,7 +87,6 @@
 <style>
 	.slash-command-menu {
 		position: fixed;
-		z-index: 50;
 		background: var(--color-background);
 		border: 1px solid var(--color-muted);
 		border-radius: 0.5rem;

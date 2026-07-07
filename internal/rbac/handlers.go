@@ -233,6 +233,32 @@ func (h *Handlers) ListPermissions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"permissions": perms})
 }
 
+// GetUserPermissions handles GET /api/v1/admin/rbac/user-permissions.
+// Returns the resolved permissions for the authenticated user.
+func (h *Handlers) GetUserPermissions(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		return
+	}
+
+	uc, err := h.rbac.GetUserContext(r.Context(), user.UserID, user.TenantID)
+	if err != nil || uc == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"permissions": []string{}})
+		return
+	}
+
+	// Convert map to sorted slice for consistent response.
+	permKeys := make([]string, 0, len(uc.Permissions))
+	for k, v := range uc.Permissions {
+		if v {
+			permKeys = append(permKeys, k)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"permissions": permKeys})
+}
+
 // ListRoles handles GET /api/v1/admin/rbac/roles.
 func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
 	roles, err := h.store.ListRoles(r.Context())

@@ -714,3 +714,30 @@ func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
 		"note":        "ai_usage_log table not yet implemented",
 	})
 }
+
+// ---------------------------------------------------------------------------
+// AI Models Handler
+// ---------------------------------------------------------------------------
+
+// AIModel represents an available AI model for the admin UI.
+type AIModel struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+// HandleListModels returns the list of available AI models.
+// GET /admin/ai/models
+func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
+	// Models are derived from the registered providers in the dispatcher.
+	// In the current setup, the Xiaomi provider is the primary one.
+	// The admin can select "Default" (auto-select) or a specific model.
+	models := []AIModel{
+		{ID: "", Label: "Default"},
+		{ID: "mimo-flash", Label: "MiMo Flash (Xiaomi)"},
+		{ID: "gpt-4", Label: "GPT-4"},
+		{ID: "gpt-3.5-turbo", Label: "GPT-3.5 Turbo"},
+		{ID: "claude-3", Label: "Claude 3"},
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": models})
+}

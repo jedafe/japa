@@ -8,7 +8,11 @@ const PROTECTED_ROUTES = [
 	'/settings',
 	'/settings/security',
 	'/create',
-	'/onboarding'
+	'/onboarding',
+	'/messages',
+	'/payments',
+	'/checkout',
+	'/dashboard'
 ];
 
 /** Check if a pathname requires authentication. */

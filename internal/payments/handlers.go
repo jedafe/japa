@@ -44,6 +44,146 @@ func NewHandlers(service *Service) *Handlers {
 }
 
 // ---------------------------------------------------------------------------
+// Pricing Plans & Payment Providers
+// ---------------------------------------------------------------------------
+
+// PricingPlan represents a subscription plan available to users.
+type PricingPlan struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Features    []PlanFeature  `json:"features"`
+	Monthly     PlanPricing    `json:"monthly"`
+	Yearly      PlanPricing    `json:"yearly"`
+	Highlighted bool           `json:"highlighted"`
+}
+
+// PlanPricing holds price information for a billing cycle.
+type PlanPricing struct {
+	Amount   int64  `json:"amount"`
+	Currency string `json:"currency"`
+}
+
+// PlanFeature describes a feature included in a plan.
+type PlanFeature struct {
+	Text      string `json:"text"`
+	Included  bool   `json:"included"`
+}
+
+// PaymentProviderInfo describes an available payment provider.
+type PaymentProviderInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+}
+
+// ListPricingPlans handles GET /api/v1/pricing/plans.
+// Returns the available subscription plans with pricing details.
+func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	// Pricing plans are platform-wide configuration.
+	// In the future, these could be stored in system_settings per tenant.
+	_ = tenantID
+
+	plans := []PricingPlan{
+		{
+			ID:          "free",
+			Name:        "Free",
+			Description: "Get started with core community features",
+			Highlighted: false,
+			Features: []PlanFeature{
+				{Text: "Community forum access", Included: true},
+				{Text: "Basic profile", Included: true},
+				{Text: "5 posts per month", Included: true},
+				{Text: "Public spaces", Included: true},
+				{Text: "AI assistant (10 queries/day)", Included: true},
+				{Text: "Priority support", Included: false},
+				{Text: "Advanced analytics", Included: false},
+				{Text: "Custom branding", Included: false},
+			},
+			Monthly: PlanPricing{Amount: 0, Currency: "NGN"},
+			Yearly:  PlanPricing{Amount: 0, Currency: "NGN"},
+		},
+		{
+			ID:          "pro",
+			Name:        "Pro",
+			Description: "For professionals building their diaspora network",
+			Highlighted: true,
+			Features: []PlanFeature{
+				{Text: "Everything in Free", Included: true},
+				{Text: "Unlimited posts", Included: true},
+				{Text: "Professional profile", Included: true},
+				{Text: "AI assistant (100 queries/day)", Included: true},
+				{Text: "Priority support", Included: true},
+				{Text: "Advanced analytics", Included: true},
+				{Text: "Document verification", Included: true},
+				{Text: "Custom branding", Included: false},
+			},
+			Monthly: PlanPricing{Amount: 500000, Currency: "NGN"},
+			Yearly:  PlanPricing{Amount: 5000000, Currency: "NGN"},
+		},
+		{
+			ID:          "business",
+			Name:        "Business",
+			Description: "For organisations and power users",
+			Highlighted: false,
+			Features: []PlanFeature{
+				{Text: "Everything in Pro", Included: true},
+				{Text: "Unlimited AI queries", Included: true},
+				{Text: "Team management", Included: true},
+				{Text: "API access", Included: true},
+				{Text: "Dedicated support", Included: true},
+				{Text: "Custom integrations", Included: true},
+				{Text: "Advanced analytics", Included: true},
+				{Text: "Custom branding", Included: true},
+			},
+			Monthly: PlanPricing{Amount: 1500000, Currency: "NGN"},
+			Yearly:  PlanPricing{Amount: 15000000, Currency: "NGN"},
+		},
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": plans})
+}
+
+// ListPaymentProviders handles GET /api/v1/payment-providers.
+// Returns the available payment providers with their availability status.
+func (h *Handlers) ListPaymentProviders(w http.ResponseWriter, r *http.Request) {
+	providers := []PaymentProviderInfo{
+		{
+			ID:          ProviderPaystack,
+			Name:        "Paystack",
+			Description: "Card, bank transfer, USSD",
+			Enabled:     h.PaystackSecretKey != "",
+		},
+		{
+			ID:          ProviderStripe,
+			Name:        "Stripe",
+			Description: "International cards",
+			Enabled:     h.StripeWebhookSecret != "",
+		},
+		{
+			ID:          ProviderNOWPayments,
+			Name:        "Crypto",
+			Description: "Bitcoin, USDT, ETH",
+			Enabled:     h.NOWPaymentsIPNKey != "",
+		},
+		{
+			ID:          ProviderCredit,
+			Name:        "Wallet Credits",
+			Description: "Pay from your balance",
+			Enabled:     true, // Credit payments are always available
+		},
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": providers})
+}
+
+// ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
 

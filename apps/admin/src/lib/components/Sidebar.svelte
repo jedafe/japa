@@ -24,6 +24,7 @@
 		Layout
 	} from 'lucide-svelte';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions';
 
 	let {
 		currentPath = '/'
@@ -33,28 +34,34 @@
 
 	let open = $state(false);
 
+	/** Permission key required for each nav section. Null = visible to all admins. */
 	const nav = [
-		{ labelKey: 'nav.dashboard', href: '/', icon: LayoutDashboard },
-		{ labelKey: 'nav.users', href: '/users', icon: Users },
-		{ labelKey: 'nav.moderation', href: '/moderation', icon: ShieldCheck },
-		{ labelKey: 'nav.spam', href: '/spam', icon: Shield },
-		{ labelKey: 'nav.ticket_types', href: '/ticket-types', icon: Tag },
-		{ labelKey: 'nav.wallet', href: '/wallet', icon: Wallet },
-		{ labelKey: 'nav.space_types', href: '/space-types', icon: Layers },
-		{ labelKey: 'nav.comparison_types', href: '/comparison-types', icon: GitCompare },
-		{ labelKey: 'nav.professional_types', href: '/professional-types', icon: Briefcase },
-		{ labelKey: 'nav.docs', href: '/docs', icon: FileText },
-		{ labelKey: 'nav.jsonld_templates', href: '/jsonld-templates', icon: Code },
-		{ labelKey: 'nav.page_builder', href: '/page-builder', icon: Layout },
-		{ labelKey: 'nav.bots', href: '/bots', icon: Bot },
-		{ labelKey: 'nav.advertising', href: '/ads', icon: Megaphone },
-		{ labelKey: 'nav.ad_slot_types', href: '/ads/slot-types', icon: Grid3x3 },
-		{ labelKey: 'nav.ad_boosts', href: '/ads/boosts', icon: Zap },
-		{ labelKey: 'nav.tickets', href: '/tickets', icon: Ticket },
-		{ labelKey: 'nav.broadcast', href: '/broadcast', icon: Radio },
-		{ labelKey: 'nav.translations', href: '/translations', icon: Languages },
-		{ labelKey: 'nav.settings', href: '/settings', icon: Settings }
+		{ labelKey: 'nav.dashboard', href: '/', icon: LayoutDashboard, perm: null },
+		{ labelKey: 'nav.users', href: '/users', icon: Users, perm: 'admin.users.view' },
+		{ labelKey: 'nav.moderation', href: '/moderation', icon: ShieldCheck, perm: 'admin.moderation' },
+		{ labelKey: 'nav.spam', href: '/spam', icon: Shield, perm: 'spam.ip_block.manage' },
+		{ labelKey: 'nav.ticket_types', href: '/ticket-types', icon: Tag, perm: 'admin.tickets.manage' },
+		{ labelKey: 'nav.wallet', href: '/wallet', icon: Wallet, perm: 'wallet.admin' },
+		{ labelKey: 'nav.space_types', href: '/space-types', icon: Layers, perm: 'admin.settings' },
+		{ labelKey: 'nav.comparison_types', href: '/comparison-types', icon: GitCompare, perm: 'admin.settings' },
+		{ labelKey: 'nav.professional_types', href: '/professional-types', icon: Briefcase, perm: 'admin.settings' },
+		{ labelKey: 'nav.docs', href: '/docs', icon: FileText, perm: 'admin.settings' },
+		{ labelKey: 'nav.jsonld_templates', href: '/jsonld-templates', icon: Code, perm: 'admin.settings' },
+		{ labelKey: 'nav.page_builder', href: '/page-builder', icon: Layout, perm: 'admin.settings' },
+		{ labelKey: 'nav.bots', href: '/bots', icon: Bot, perm: 'bots.admin' },
+		{ labelKey: 'nav.advertising', href: '/ads', icon: Megaphone, perm: 'admin.settings' },
+		{ labelKey: 'nav.ad_slot_types', href: '/ads/slot-types', icon: Grid3x3, perm: 'admin.settings' },
+		{ labelKey: 'nav.ad_boosts', href: '/ads/boosts', icon: Zap, perm: 'admin.settings' },
+		{ labelKey: 'nav.tickets', href: '/tickets', icon: Ticket, perm: 'admin.tickets.manage' },
+		{ labelKey: 'nav.broadcast', href: '/broadcast', icon: Radio, perm: 'admin.broadcast' },
+		{ labelKey: 'nav.translations', href: '/translations', icon: Languages, perm: 'admin.settings' },
+		{ labelKey: 'nav.settings', href: '/settings', icon: Settings, perm: 'admin.settings' }
 	];
+
+	/** Filter nav items by the user's resolved permissions. */
+	function visibleNav() {
+		return nav.filter((item) => !item.perm || hasPermission(item.perm));
+	}
 </script>
 
 <!-- Mobile toggle -->
@@ -82,7 +89,7 @@
 		<span class="text-sm font-bold tracking-wide uppercase" style="color: var(--color-primary)">{t('admin.brand')}</span>
 	</div>
 	<nav class="flex-1 space-y-1 p-3">
-		{#each nav as item}
+		{#each visibleNav() as item}
 			<a
 				href={item.href}
 				class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"

@@ -282,6 +282,9 @@ export const aiApi = {
 
 	rejectHitlReview: (id: string, reason: string) =>
 		api<{ rejected: boolean }>(`/ai/hitl/${id}/reject`, { method: 'POST', body: { reason } }),
+
+	listModels: () =>
+		api<Array<{ id: string; label: string }>>('/admin/ai/models'),
 };
 
 // ─── JSON-LD Templates ─────────────────────────────────────────────

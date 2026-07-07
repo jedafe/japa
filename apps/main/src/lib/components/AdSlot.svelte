@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api, type AdRender } from '$lib/api';
+	import { imgproxy } from '$lib/utils/imgproxy';
 
 	interface Props {
 		slotName: string;
@@ -48,7 +49,12 @@
 			onclick={handleClick}
 		>
 			{#if ad.image_url}
-				<img src={ad.image_url} alt={ad.title} class="w-full object-cover" />
+				<img
+					src={imgproxy(ad.image_url, { width: 800, format: 'webp', quality: 85 })}
+					alt={ad.title}
+					class="w-full object-cover"
+					loading="lazy"
+				/>
 			{:else}
 				<div class="p-4 text-center">
 					<p class="text-sm font-medium" style="color: var(--color-foreground)">{ad.title}</p>

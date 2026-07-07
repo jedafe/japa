@@ -749,6 +749,29 @@ export const api = {
 		return request<{ points: number; credits: number }>('/wallet/balance');
 	},
 
+	// Pricing Plans
+	getPricingPlans() {
+		return request<Array<{
+			id: string;
+			name: string;
+			description: string;
+			features: Array<{ text: string; included: boolean }>;
+			monthly: { amount: number; currency: string };
+			yearly: { amount: number; currency: string };
+			highlighted: boolean;
+		}>>('/pricing/plans');
+	},
+
+	// Payment Providers
+	getPaymentProviders() {
+		return request<Array<{
+			id: string;
+			name: string;
+			description: string;
+			enabled: boolean;
+		}>>('/payment-providers');
+	},
+
 	// WebSocket
 	getWsTicket() {
 		return request<{ ticket: string }>('/auth/ws-ticket', { method: 'POST' });

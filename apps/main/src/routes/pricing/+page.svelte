@@ -16,7 +16,6 @@
 
 	type PlanId = 'free' | 'pro' | 'business';
 	type BillingCycle = 'monthly' | 'yearly';
-	type PaymentProvider = 'paystack' | 'stripe' | 'nowpayments' | 'credit';
 
 	interface PlanFeature {
 		text: string;
@@ -34,65 +33,27 @@
 		highlighted: boolean;
 	}
 
-	const plans: Plan[] = [
-		{
-			id: 'free',
-			name: 'Free',
-			description: 'Get started with core community features',
-			monthlyPrice: 0,
-			yearlyPrice: 0,
-			icon: ShieldCheck,
-			highlighted: false,
-			features: [
-				{ text: 'Community forum access', included: true },
-				{ text: 'Basic profile', included: true },
-				{ text: '5 posts per month', included: true },
-				{ text: 'Public spaces', included: true },
-				{ text: 'AI assistant (10 queries/day)', included: true },
-				{ text: 'Priority support', included: false },
-				{ text: 'Advanced analytics', included: false },
-				{ text: 'Custom branding', included: false }
-			]
-		},
-		{
-			id: 'pro',
-			name: 'Pro',
-			description: 'For professionals building their diaspora network',
-			monthlyPrice: 500000,
-			yearlyPrice: 5000000,
-			icon: Zap,
-			highlighted: true,
-			features: [
-				{ text: 'Everything in Free', included: true },
-				{ text: 'Unlimited posts', included: true },
-				{ text: 'Professional profile', included: true },
-				{ text: 'AI assistant (100 queries/day)', included: true },
-				{ text: 'Priority support', included: true },
-				{ text: 'Advanced analytics', included: true },
-				{ text: 'Document verification', included: true },
-				{ text: 'Custom branding', included: false }
-			]
-		},
-		{
-			id: 'business',
-			name: 'Business',
-			description: 'For organisations and power users',
-			monthlyPrice: 1500000,
-			yearlyPrice: 15000000,
-			icon: Building2,
-			highlighted: false,
-			features: [
-				{ text: 'Everything in Pro', included: true },
-				{ text: 'Unlimited AI queries', included: true },
-				{ text: 'Team management', included: true },
-				{ text: 'API access', included: true },
-				{ text: 'Dedicated support', included: true },
-				{ text: 'Custom integrations', included: true },
-				{ text: 'Advanced analytics', included: true },
-				{ text: 'Custom branding', included: true }
-			]
-		}
-	];
+	let { data } = $props();
+
+	const pageData = data as typeof data & { plans: any[] };
+
+	// Map backend plans to frontend Plan type with icons
+	const planIcons: Record<string, typeof ShieldCheck> = {
+		free: ShieldCheck,
+		pro: Zap,
+		business: Building2
+	};
+
+	const plans: Plan[] = (pageData.plans ?? []).map((p: any) => ({
+		id: p.id as PlanId,
+		name: p.name,
+		description: p.description,
+		monthlyPrice: p.monthly.amount,
+		yearlyPrice: p.yearly.amount,
+		icon: planIcons[p.id] ?? Zap,
+		features: p.features,
+		highlighted: p.highlighted
+	}));
 
 	let billingCycle = $state<BillingCycle>('monthly');
 	let discountCode = $state('');
