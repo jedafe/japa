@@ -54,6 +54,7 @@ import (
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/referral"
 	"github.com/jedafe/japa/internal/renderer"
+	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/reviews"
 	rsspkg "github.com/jedafe/japa/internal/rss"
 	"github.com/jedafe/japa/internal/search"
@@ -227,6 +228,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// bookmarks.folder, a free-text column).
 	bookmarkFoldersService := bookmarkfolders.NewService(database)
 	bookmarkFoldersHandlers := bookmarkfolders.NewHandlers(bookmarkFoldersService)
+
+	// Content Reports & Flagging subsystem (Section 51).
+	reportsService := reports.NewService(database)
+	reportsHandlers := reports.NewHandlers(reportsService)
 
 	// Content subsystem (Section 14 — Content Type System).
 	contentService := content.NewService(database)
@@ -666,6 +671,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/spaces/{slug}/mute", spaceHandlers.UnmuteSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/mute-status", spaceHandlers.GetMuteStatus)
+			// catalog: POST /spaces/:id/report — takes a raw ID (like the other
+			// report routes), not the slug the rest of this block resolves on.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/spaces/{id}/report", reportsHandlers.ReportSpace)
 
 			// Space rule routes (slug-resolved via SpaceResolver middleware)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
@@ -722,6 +730,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/content/{id}/schedule", contentHandlers.ScheduleContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/view", contentHandlers.RecordContentView)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/share-count", contentHandlers.GetContentShareCount)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/report", reportsHandlers.ReportContent)
 			// Revisions (require auth + permission to view)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.revisions.view")).
 				Get("/content/{id}/revisions", contentHandlers.ListRevisions)
@@ -785,6 +794,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/comments/{id}", commentsHandlers.DeleteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/comments/{id}/report", reportsHandlers.ReportComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
 				Post("/comments/{id}/pin", commentsHandlers.PinComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
@@ -809,6 +819,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/users/{user_id}/mute", interactionsHandlers.MuteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/users/{user_id}/mute", interactionsHandlers.UnmuteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mute-status", interactionsHandlers.GetUserMuteStatus)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/users/{id}/report", reportsHandlers.ReportUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-users", interactionsHandlers.ListMutedUsers)
 
 			// Space Mutes (Section 52)
@@ -906,6 +917,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/dm/conversations/{id}/messages/{mid}", wsHandlers.EditMessage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/dm/conversations/{id}/messages/{mid}", wsHandlers.DeleteMessage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/message-requests/{id}/accept", wsHandlers.AcceptMessageRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/message-requests/{id}/decline", wsHandlers.DeclineMessageRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/dm/privacy", wsHandlers.UpdateDMPrivacy)
@@ -1346,6 +1358,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Admin endpoints
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.audit_logs.view")).
 				Get("/admin/audit-logs", gdprHandlers.ListAuditLogs)
+
+			// Moderation queue — Content Reports (Section 51)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
+				Get("/admin/reports", reportsHandlers.ListReports)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
+				Get("/admin/reports/{id}", reportsHandlers.GetReport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
+				Patch("/admin/reports/{id}", reportsHandlers.UpdateReport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.consents.view")).
 				Get("/admin/consents", gdprHandlers.ListConsentsByTenant)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
@@ -1485,6 +1505,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// regardless of actual state (same class of bug as the DELETE /me fix).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", gdprHandlers.GetMyDataExportStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/download", gdprHandlers.GetMyDataExportDownload)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/reports", reportsHandlers.ListMyReports)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
 
@@ -2035,6 +2056,8 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "tickets.view_own", Description: "View own tickets"},
 		{Key: "tickets.admin", Description: "Admin ticket management"},
 		{Key: "tickets.type.manage", Description: "Manage ticket types"},
+		// Content Reports & Flagging (Section 51)
+		{Key: "reports.review", Description: "Review and action content reports (admin/moderators)"},
 		// GDPR / NDPR Compliance (Section 19)
 		{Key: "gdpr.audit_logs.view", Description: "View audit logs (super_admin)"},
 		{Key: "gdpr.consents.view", Description: "View consent records (admin)"},

@@ -449,6 +449,22 @@ type ContentFeatured struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
+type ContentReport struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ReporterUserID pgtype.UUID        `json:"reporter_user_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	Reason         string             `json:"reason"`
+	Notes          *string            `json:"notes"`
+	EvidenceUrls   []string           `json:"evidence_urls"`
+	Status         string             `json:"status"`
+	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote *string            `json:"resolution_note"`
+	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type ContentReview struct {
 	ID             pgtype.UUID        `json:"id"`
 	TenantID       pgtype.UUID        `json:"tenant_id"`
