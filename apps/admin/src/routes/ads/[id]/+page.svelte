@@ -49,7 +49,7 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<Campaign>(`/admin/advertising/campaigns/${campaignId}`);
+			const result = await api<Campaign>(`/admin/ads/campaigns/${campaignId}`);
 			if (result.ok) {
 				campaign = result.data;
 				editName = campaign.name;
@@ -74,7 +74,7 @@
 		errorMessage = '';
 		successMessage = '';
 		try {
-			const result = await api(`/admin/advertising/campaigns/${campaign.id}`, {
+			const result = await api(`/admin/ads/campaigns/${campaign.id}`, {
 				method: 'PATCH',
 				body: {
 					name: editName.trim(),
@@ -110,8 +110,8 @@
 	async function toggleStatus() {
 		if (!campaign) return;
 		const endpoint = campaign.status === 'active'
-			? `/admin/advertising/campaigns/${campaign.id}/pause`
-			: `/admin/advertising/campaigns/${campaign.id}/activate`;
+			? `/admin/ads/campaigns/${campaign.id}/pause`
+			: `/admin/ads/campaigns/${campaign.id}/activate`;
 		try {
 			const result = await api(endpoint, { method: 'POST' });
 			if (result.ok) {

@@ -1165,45 +1165,47 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Advertising routes (Section 25 — Ad Placement)
 			// Admin campaign management
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-				Post("/admin/advertising/campaigns", adHandlers.CreateCampaign)
+				Post("/admin/ads/campaigns", adHandlers.CreateCampaign)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-				Get("/admin/advertising/campaigns", adHandlers.ListCampaigns)
+				Get("/admin/ads/campaigns", adHandlers.ListCampaigns)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-				Get("/admin/advertising/campaigns/{id}", adHandlers.GetCampaign)
+				Get("/admin/ads/campaigns/{id}", adHandlers.GetCampaign)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-				Post("/admin/advertising/campaigns/{id}/activate", adHandlers.ActivateCampaign)
+				Post("/admin/ads/campaigns/{id}/activate", adHandlers.ActivateCampaign)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-				Post("/admin/advertising/campaigns/{id}/pause", adHandlers.PauseCampaign)
+				Post("/admin/ads/campaigns/{id}/pause", adHandlers.PauseCampaign)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-				Post("/admin/advertising/campaigns/{id}/end", adHandlers.EndCampaign)
-			// Public ad serving and event tracking
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.event.track")).
-				Get("/ads/render", adHandlers.RenderSlot)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.event.track")).
-				Post("/ads/events/ingest", adHandlers.IngestEvents)
+				Post("/admin/ads/campaigns/{id}/end", adHandlers.EndCampaign)
+			// Public ad serving and event tracking (catalog: /ads/serve, /ads/events —
+			// §8: reachable by guests, OptionalAuth so a signed-in user's frequency
+			// cap still applies; usergroup targeting itself is deferred to P5).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/ads/serve", adHandlers.RenderSlot)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Post("/ads/events", adHandlers.IngestEvents)
 		// Slot types (admin)
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
-			Get("/admin/advertising/slot-types", adHandlers.ListSlotTypes)
+			Get("/admin/ads/slot-types", adHandlers.ListSlotTypes)
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
-			Post("/admin/advertising/slot-types", adHandlers.CreateSlotType)
+			Post("/admin/ads/slot-types", adHandlers.CreateSlotType)
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
-			Put("/admin/advertising/slot-types/{id}", adHandlers.UpdateSlotType)
+			Put("/admin/ads/slot-types/{id}", adHandlers.UpdateSlotType)
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
-			Delete("/admin/advertising/slot-types/{id}", adHandlers.DeleteSlotType)
+			Delete("/admin/ads/slot-types/{id}", adHandlers.DeleteSlotType)
 
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-			Delete("/admin/advertising/campaigns/{id}", adHandlers.DeleteCampaign)
+			Delete("/admin/ads/campaigns/{id}", adHandlers.DeleteCampaign)
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.stats.view")).
-			Get("/admin/advertising/campaigns/{id}/stats", adHandlers.GetCampaignStats)
+			Get("/admin/ads/campaigns/{id}/stats", adHandlers.GetCampaignStats)
 			// Organization boosts
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-				Post("/admin/advertising/boosts", adHandlers.CreateBoost)
+				Post("/admin/ads/boosts", adHandlers.CreateBoost)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-				Get("/admin/advertising/boosts", adHandlers.ListBoosts)
+				Get("/admin/ads/boosts", adHandlers.ListBoosts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-				Get("/admin/advertising/boosts/active", adHandlers.ListActiveBoosts)
+				Get("/admin/ads/boosts/active", adHandlers.ListActiveBoosts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-				Post("/admin/advertising/boosts/{id}/end", adHandlers.EndBoost)
+				Post("/admin/ads/boosts/{id}/end", adHandlers.EndBoost)
 
 			// Ticket System routes (Section 38 — Ticket System)
 			// User portal (catalog: /tickets, /me/tickets)
@@ -1644,25 +1646,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Admin: CRUD for tracks, modules, lessons
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Get("/admin/learning/tracks", learningHandlers.ListAllTracks)
+				Get("/admin/learn/tracks", learningHandlers.ListAllTracks)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Post("/admin/learning/tracks", learningHandlers.CreateTrack)
+				Post("/admin/learn/tracks", learningHandlers.CreateTrack)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Patch("/admin/learning/tracks/{id}", learningHandlers.UpdateTrack)
+				Patch("/admin/learn/tracks/{id}", learningHandlers.UpdateTrack)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Delete("/admin/learning/tracks/{id}", learningHandlers.DeleteTrack)
+				Delete("/admin/learn/tracks/{id}", learningHandlers.DeleteTrack)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Post("/admin/learning/tracks/{trackId}/modules", learningHandlers.CreateModule)
+				Post("/admin/learn/tracks/{trackId}/modules", learningHandlers.CreateModule)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Patch("/admin/learning/modules/{id}", learningHandlers.UpdateModule)
+				Patch("/admin/learn/modules/{id}", learningHandlers.UpdateModule)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Delete("/admin/learning/modules/{id}", learningHandlers.DeleteModule)
+				Delete("/admin/learn/modules/{id}", learningHandlers.DeleteModule)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Post("/admin/learning/modules/{moduleId}/lessons", learningHandlers.CreateLesson)
+				Post("/admin/learn/modules/{moduleId}/lessons", learningHandlers.CreateLesson)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Patch("/admin/learning/lessons/{id}", learningHandlers.UpdateLesson)
+				Patch("/admin/learn/lessons/{id}", learningHandlers.UpdateLesson)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Delete("/admin/learning/lessons/{id}", learningHandlers.DeleteLesson)
+				Delete("/admin/learn/lessons/{id}", learningHandlers.DeleteLesson)
 
 			// Page Builder admin CRUD routes (Section 16 — Page Builder)
 			// Blocks
@@ -1679,15 +1681,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Templates
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pagebuilder.templates.manage")).
-				Get("/admin/pagebuilder/templates", pagebuilderHandlers.ListTemplates)
+				Get("/admin/page-templates", pagebuilderHandlers.ListTemplates)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pagebuilder.templates.manage")).
-				Get("/admin/pagebuilder/templates/{id}", pagebuilderHandlers.GetTemplate)
+				Get("/admin/page-templates/{id}", pagebuilderHandlers.GetTemplate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pagebuilder.templates.manage")).
-				Post("/admin/pagebuilder/templates", pagebuilderHandlers.CreateTemplate)
+				Post("/admin/page-templates", pagebuilderHandlers.CreateTemplate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pagebuilder.templates.manage")).
-				Patch("/admin/pagebuilder/templates/{id}", pagebuilderHandlers.UpdateTemplate)
+				Patch("/admin/page-templates/{id}", pagebuilderHandlers.UpdateTemplate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pagebuilder.templates.manage")).
-				Delete("/admin/pagebuilder/templates/{id}", pagebuilderHandlers.DeleteTemplate)
+				Delete("/admin/page-templates/{id}", pagebuilderHandlers.DeleteTemplate)
 
 			// Themes
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pagebuilder.themes.manage")).

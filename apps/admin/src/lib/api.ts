@@ -132,25 +132,25 @@ export const docsApi = {
 // ─── Ad Slot Types ─────────────────────────────────────────────────
 
 export const adSlotTypesApi = {
-	list: (params?: string) => api<unknown>(`/admin/advertising/slot-types${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/admin/ads/slot-types${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string; width: number; height: number; description?: string }) =>
-		api('/admin/advertising/slot-types', { method: 'POST', body }),
+		api('/admin/ads/slot-types', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; slug?: string; width?: number; height?: number; description?: string }) =>
-		api(`/admin/advertising/slot-types/${id}`, { method: 'PATCH', body }),
+		api(`/admin/ads/slot-types/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
-		api(`/admin/advertising/slot-types/${id}`, { method: 'DELETE' }),
+		api(`/admin/ads/slot-types/${id}`, { method: 'DELETE' }),
 };
 
 // ─── Ad Boosts ─────────────────────────────────────────────────────
 
 export const adBoostsApi = {
-	list: (params?: string) => api<unknown>(`/admin/advertising/boosts${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/admin/ads/boosts${params ? `?${params}` : ''}`),
 	create: (body: { organization_id: string; space_id: string; boost_type: string; start_date: string; end_date: string }) =>
-		api('/admin/advertising/boosts', { method: 'POST', body }),
+		api('/admin/ads/boosts', { method: 'POST', body }),
 	update: (id: string, body: { organization_id?: string; space_id?: string; boost_type?: string; start_date?: string; end_date?: string }) =>
-		api(`/admin/advertising/boosts/${id}`, { method: 'PATCH', body }),
+		api(`/admin/ads/boosts/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
-		api(`/admin/advertising/boosts/${id}`, { method: 'DELETE' }),
+		api(`/admin/ads/boosts/${id}`, { method: 'DELETE' }),
 };
 
 // ─── Comparison Types (Admin) ──────────────────────────────────────
