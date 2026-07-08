@@ -79,19 +79,23 @@ export const ticketTypesApi = {
 // ─── Wallet Management ─────────────────────────────────────────────
 
 export const walletApi = {
-	getRules: (params?: string) => api<unknown>(`/wallet/rules${params ? `?${params}` : ''}`),
+	getRules: (params?: string) => api<unknown>(`/admin/wallet/rules${params ? `?${params}` : ''}`),
 	createRule: (body: { event_type: string; points_value: number; description?: string; is_active: boolean }) =>
-		api('/wallet/rules', { method: 'POST', body }),
+		api('/admin/wallet/rules', { method: 'POST', body }),
+	// NOTE: backend only has PATCH /admin/wallet/rules/:id/toggle (is_active only) —
+	// no full-update route exists for event_type/points_value/description yet.
+	// This call will 404 until that's implemented; pre-existing gap, not caused by
+	// the /wallet -> /admin/wallet prefix rename.
 	updateRule: (id: string, body: { event_type?: string; points_value?: number; description?: string; is_active?: boolean }) =>
-		api(`/wallet/rules/${id}`, { method: 'PATCH', body }),
+		api(`/admin/wallet/rules/${id}`, { method: 'PATCH', body }),
 
-	getSettings: () => api<unknown>('/wallet/settings'),
+	getSettings: () => api<unknown>('/admin/wallet/settings'),
 	updateSettings: (body: { points_to_credit_ratio: number; daily_earning_cap: number; enable_earning: boolean }) =>
-		api('/wallet/settings', { method: 'PUT', body }),
+		api('/admin/wallet/settings', { method: 'PUT', body }),
 
-	getUserBalance: (userId: string) => api<unknown>(`/wallet/admin/user/${userId}/balance`),
+	getUserBalance: (userId: string) => api<unknown>(`/admin/wallet/user/${userId}/balance`),
 	adjustBalance: (body: { user_id: string; amount: number; reason: string; type: 'points' | 'credits' }) =>
-		api('/wallet/admin/adjust', { method: 'POST', body }),
+		api('/admin/wallet/adjust', { method: 'POST', body }),
 };
 
 // ─── Space Types ───────────────────────────────────────────────────
