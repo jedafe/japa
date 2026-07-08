@@ -1262,10 +1262,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/consent", gdprHandlers.GetUserConsents)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Delete("/consent/{type}", gdprHandlers.RevokeConsent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Post("/account/export", gdprHandlers.RequestDataExport)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Post("/account/delete", gdprHandlers.RequestAccountDeletion)
+			// NOTE (§6.1/§6.2 dedupe): data-export and account-deletion are served
+			// by the real GDPR handlers under /me/data-export and DELETE /me (below).
+			// The former POST /account/export and POST /account/delete are removed to
+			// avoid duplicate routes and the users-package stubs that did nothing.
 
 			// Admin endpoints
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.audit_logs.view")).
@@ -1395,8 +1395,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmarks", usersHandlers.ListMyBookmarks)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/analytics", usersHandlers.GetMyAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/deactivate", usersHandlers.DeactivateAccount)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me", usersHandlers.RequestGDPRDeletion)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/data-export", usersHandlers.RequestDataExport)
+			// GDPR deletion + data export — served by the REAL gdpr handlers
+			// (queue-backed export via data:export_user_data + Honcho hard erasure),
+			// not the users-package stubs. Consolidated here from /account/* (§6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me", gdprHandlers.RequestAccountDeletion)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export", gdprHandlers.RequestDataExport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", usersHandlers.GetDataExportStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
