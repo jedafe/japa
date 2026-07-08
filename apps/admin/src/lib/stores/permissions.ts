@@ -56,7 +56,7 @@ export async function fetchPermissions(token: string | null): Promise<void> {
 
 	try {
 		const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
-		const res = await fetch(`${apiBase}/admin/rbac/user-permissions`, {
+		const res = await fetch(`${apiBase}/me/permissions`, {
 			headers: { Authorization: `Bearer ${token}` }
 		});
 
