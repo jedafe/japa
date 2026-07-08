@@ -195,7 +195,7 @@ export const api = {
 	},
 	disableTOTP(password: string) {
 		return request<{ disabled: boolean }>('/me/totp', {
-			method: 'POST',
+			method: 'DELETE',
 			body: JSON.stringify({ password })
 		});
 	},
@@ -923,10 +923,10 @@ export const api = {
 
 	// Ads
 	renderAd(slot: string) {
-		return request<AdRender>('/ads/render?slot=' + encodeURIComponent(slot));
+		return request<AdRender>('/ads/serve?slot=' + encodeURIComponent(slot));
 	},
 	trackAdEvent(adId: string, event: 'impression' | 'click') {
-		return request<{ tracked: boolean }>('/ads/events/ingest', {
+		return request<{ tracked: boolean }>('/ads/events', {
 			method: 'POST',
 			body: JSON.stringify({ ad_id: adId, event })
 		});
