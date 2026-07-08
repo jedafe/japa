@@ -266,6 +266,32 @@ func (h *Handlers) ListMyFollowedTags(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": following})
 }
 
+// GetFollowStatus handles GET /api/v1/users/{user_id}/follow-status — whether
+// the caller follows the given user.
+func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	targetIDStr := chi.URLParam(r, "user_id")
+
+	var targetID pgtype.UUID
+
+	if err := targetID.Scan(targetIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
+		return
+	}
+
+	following, err := h.service.IsFollowing(r.Context(), user.UserID, EntityTypeUser, targetID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check follow status")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"following": following}})
+}
+
 // CheckMutual handles GET /api/v1/users/{user_id}/mutual/{other_user_id}.
 func (h *Handlers) CheckMutual(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
