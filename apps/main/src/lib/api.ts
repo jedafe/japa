@@ -1038,7 +1038,7 @@ export const api = {
 		return request<{ public_key: string }>('/push/vapid-key');
 	},
 	subscribePush(subscription: PushSubscriptionJSON) {
-		return request<{ subscribed: boolean }>('/push/subscribe', {
+		return request<{ subscribed: boolean }>('/me/push-tokens', {
 			method: 'POST',
 			body: JSON.stringify({ subscription })
 		});
