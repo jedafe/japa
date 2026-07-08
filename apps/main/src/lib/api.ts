@@ -480,10 +480,10 @@ export const api = {
 			total: number;
 			page: number;
 			total_pages: number;
-		}>('/professional-profiles' + (q ? '?' + q : ''));
+		}>('/profiles' + (q ? '?' + q : ''));
 	},
 	getProfessionalProfile(slug: string) {
-		return request<ProfessionalProfileDetail>('/professional-profiles/' + slug);
+		return request<ProfessionalProfileDetail>('/profiles/' + slug);
 	},
 	createProfessionalProfile(data: {
 		name: string;
@@ -491,7 +491,7 @@ export const api = {
 		skills: string[];
 		is_public?: boolean;
 	}) {
-		return request<ProfessionalProfileDetail>('/professional-profiles', {
+		return request<ProfessionalProfileDetail>('/profiles', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -502,16 +502,16 @@ export const api = {
 		skills?: string[];
 		is_public?: boolean;
 	}) {
-		return request<ProfessionalProfileDetail>('/professional-profiles/' + id, {
+		return request<ProfessionalProfileDetail>('/profiles/' + id, {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
 	},
 	deleteProfessionalProfile(id: string) {
-		return request<{ deleted: boolean }>('/professional-profiles/' + id, { method: 'DELETE' });
+		return request<{ deleted: boolean }>('/profiles/' + id, { method: 'DELETE' });
 	},
 	listRelocations(profileId: string) {
-		return request<Relocation[]>('/professional-profiles/' + profileId + '/relocations');
+		return request<Relocation[]>('/profiles/' + profileId + '/relocations');
 	},
 	addRelocation(profileId: string, data: {
 		country: string;
@@ -519,7 +519,7 @@ export const api = {
 		status: string;
 		year?: number;
 	}) {
-		return request<Relocation>('/professional-profiles/' + profileId + '/relocations', {
+		return request<Relocation>('/profiles/' + profileId + '/relocations', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -530,18 +530,18 @@ export const api = {
 		status?: string;
 		year?: number;
 	}) {
-		return request<Relocation>('/professional-profiles/relocations/' + relocationId, {
+		return request<Relocation>('/profiles/relocations/' + relocationId, {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
 	},
 	deleteRelocation(relocationId: string) {
-		return request<{ deleted: boolean }>('/professional-profiles/relocations/' + relocationId, {
+		return request<{ deleted: boolean }>('/profiles/relocations/' + relocationId, {
 			method: 'DELETE'
 		});
 	},
 	listDocuments(profileId: string) {
-		return request<Document[]>('/professional-profiles/' + profileId + '/documents');
+		return request<Document[]>('/profiles/' + profileId + '/documents');
 	},
 	addDocument(profileId: string, data: {
 		document_type: string;
@@ -549,7 +549,7 @@ export const api = {
 		description?: string;
 		file_url?: string;
 	}) {
-		return request<Document>('/professional-profiles/' + profileId + '/documents', {
+		return request<Document>('/profiles/' + profileId + '/documents', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -560,21 +560,21 @@ export const api = {
 		description?: string;
 		file_url?: string;
 	}) {
-		return request<Document>('/professional-profiles/documents/' + documentId, {
+		return request<Document>('/profiles/documents/' + documentId, {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
 	},
 	deleteDocument(documentId: string) {
-		return request<{ deleted: boolean }>('/professional-profiles/documents/' + documentId, {
+		return request<{ deleted: boolean }>('/profiles/documents/' + documentId, {
 			method: 'DELETE'
 		});
 	},
 	listVerifiers(profileId: string) {
-		return request<Verifier[]>('/professional-profiles/' + profileId + '/verifiers');
+		return request<Verifier[]>('/profiles/' + profileId + '/verifiers');
 	},
 	assignVerifier(profileId: string, data: { user_id: string; role?: string }) {
-		return request<Verifier>('/professional-profiles/' + profileId + '/verifiers', {
+		return request<Verifier>('/profiles/' + profileId + '/verifiers', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -843,7 +843,7 @@ export const api = {
 		const p = new URLSearchParams();
 		if (params?.limit) p.set('limit', String(params.limit));
 		const q = p.toString();
-		return request<ComparisonType[]>('/comparison/types' + (q ? '?' + q : ''));
+		return request<ComparisonType[]>('/comparisons/types' + (q ? '?' + q : ''));
 	},
 
 	// Media
@@ -963,12 +963,12 @@ export const api = {
 
 	// Comparison create + matrix
 	createComparison(data: { type_id: string; title: string; items: Array<{ name: string; values: Record<string, string> }> }) {
-		return request<{ id: string; slug: string }>('/comparison', {
+		return request<{ id: string; slug: string }>('/comparisons', {
 			method: 'POST', body: JSON.stringify(data)
 		});
 	},
 	getComparisonMatrix(id: string) {
-		return request<{ dimensions: Array<{ id: string; name: string }>; items: Array<{ id: string; name: string; values: Record<string, string> }> }>('/comparison/' + id + '/matrix');
+		return request<{ dimensions: Array<{ id: string; name: string }>; items: Array<{ id: string; name: string; values: Record<string, string> }> }>('/comparisons/' + id + '/matrix');
 	},
 
 	// Space creation
@@ -1046,32 +1046,32 @@ export const api = {
 
 	// ── AI Editor Assist (AUDIT-FE wiring) ───────────────────────────────────
 	aiImprove(content: string, instruction?: string) {
-		return request<{ result: string }>('/ai/improve', {
+		return request<{ result: string }>('/ai/assist/improve', {
 			method: 'POST',
 			body: JSON.stringify({ content, instruction })
 		});
 	},
 	aiSummarize(content: string) {
-		return request<{ result: string }>('/ai/summarize', {
+		return request<{ result: string }>('/ai/assist/summarize', {
 			method: 'POST',
 			body: JSON.stringify({ content })
 		});
 	},
 	aiTranslate(content: string, target_language: string) {
-		return request<{ result: string }>('/ai/translate', {
+		return request<{ result: string }>('/ai/assist/translate', {
 			method: 'POST',
 			body: JSON.stringify({ content, target_language })
 		});
 	},
 	aiGenerateTags(content: string, title?: string) {
-		return request<{ tags: string[] }>('/ai/generate-tags', {
+		return request<{ tags: string[] }>('/ai/assist/generate-tags', {
 			method: 'POST',
 			body: JSON.stringify({ content, title })
 		});
 	},
 	aiGenerateOG(content: string, title?: string) {
 		return request<{ og_title: string; og_description: string; og_image_prompt?: string }>(
-			'/ai/generate-og',
+			'/ai/assist/generate-og',
 			{ method: 'POST', body: JSON.stringify({ content, title }) }
 		);
 	},

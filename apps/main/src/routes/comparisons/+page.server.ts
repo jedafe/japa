@@ -10,7 +10,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 		slug: string;
 		description: string;
 		comparison_count: number;
-	}>>('/comparison/types?limit=50', {}, token ?? undefined);
+	}>>('/comparisons/types?limit=50', {}, token ?? undefined);
 
 	return {
 		types: result.ok && result.data ? result.data : []
