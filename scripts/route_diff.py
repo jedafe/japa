@@ -43,7 +43,13 @@ def parse_server(path: str):
                 auth_depth = depth  # inside this brace depth we are under /auth
             if auth_depth is not None and depth < auth_depth:
                 auth_depth = None
-            m = re.search(r'(?:^|\.)(Get|Post|Put|Patch|Delete)\("(/[^"]*)"', line)
+            # Match both `r.Get("…")` and the continuation-line form where the
+            # method sits on its own indented line after `r.With(...).`:
+            #     r.With(mw...).
+            #         Post("/path", handler)
+            # The (?<![A-Za-z]) lookbehind keeps `Post(` from matching inside an
+            # identifier like `RepostGet(` while allowing `.Post(` and `  Post(`.
+            m = re.search(r'(?<![A-Za-z])(Get|Post|Put|Patch|Delete)\("(/[^"]*)"', line)
             if not m:
                 continue
             meth, rpath = m.group(1).upper(), m.group(2)
