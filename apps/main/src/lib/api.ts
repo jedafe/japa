@@ -185,16 +185,16 @@ export const api = {
 		});
 	},
 	setupTOTP() {
-		return request<{ secret: string; qr_uri: string }>('/auth/totp/setup', { method: 'POST' });
+		return request<{ secret: string; qr_uri: string }>('/me/totp/enable', { method: 'POST' });
 	},
 	verifyTOTP(code: string) {
-		return request<{ verified: boolean; backup_codes: string[] }>('/auth/totp/verify', {
+		return request<{ verified: boolean; backup_codes: string[] }>('/me/totp/confirm', {
 			method: 'POST',
 			body: JSON.stringify({ code })
 		});
 	},
 	disableTOTP(password: string) {
-		return request<{ disabled: boolean }>('/auth/totp/disable', {
+		return request<{ disabled: boolean }>('/me/totp', {
 			method: 'POST',
 			body: JSON.stringify({ password })
 		});
