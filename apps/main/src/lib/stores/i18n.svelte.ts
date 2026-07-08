@@ -18,7 +18,7 @@ export function getLocale() {
 				document.documentElement.lang = locale;
 				document.cookie = `jc_locale=${locale};path=/;max-age=31536000;samesite=lax`;
 				const token = getToken();
-				fetch(`${API_BASE}/users/me/preferences`, {
+				fetch(`${API_BASE}/me/preferences`, {
 					method: 'PUT',
 					headers: {
 						'Content-Type': 'application/json',

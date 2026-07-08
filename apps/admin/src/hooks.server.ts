@@ -29,7 +29,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	// Validate token against backend
 	try {
-		const res = await fetch(`${API_BASE}/users/me`, {
+		const res = await fetch(`${API_BASE}/me`, {
 			headers: { Authorization: `Bearer ${token}` }
 		});
 
