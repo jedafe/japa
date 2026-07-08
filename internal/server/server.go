@@ -766,17 +766,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// User Blocks (Section 41 — user-facing, non-admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/users/{user_id}/block", interactionsHandlers.ToggleBlock)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/users/{user_id}/block", interactionsHandlers.ToggleBlock)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/blocked", interactionsHandlers.ListBlocked)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/blocked-users", interactionsHandlers.ListBlocked)
 
 			// User Mutes (Section 52)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/users/{user_id}/mute", interactionsHandlers.MuteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/users/{user_id}/mute", interactionsHandlers.UnmuteUser)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/muted", interactionsHandlers.ListMutedUsers)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-users", interactionsHandlers.ListMutedUsers)
 
 			// Space Mutes (Section 52)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/spaces/{space_id}/mute", interactionsHandlers.MuteSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/spaces/{space_id}/mute", interactionsHandlers.UnmuteSpace)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/spaces/muted", interactionsHandlers.ListMutedSpaces)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-spaces", interactionsHandlers.ListMutedSpaces)
 
 			// Notification System routes (Section 35 — Notification System)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notifications", notificationHandlers.ListNotifications)
@@ -1364,11 +1364,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.manage")).
 				Post("/admin/api-keys/{id}/suspend", publicAPIHandlers.SuspendKey)
 
-			// User Profile & Preferences routes
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/me", usersHandlers.GetMyProfile)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/users/me", usersHandlers.UpdateMyProfile)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/me/preferences", usersHandlers.GetMyPreferences)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/users/me/preferences", usersHandlers.UpdateMyPreferences)
+			// User Profile & Preferences routes (catalog: /me, /me/profile)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me", usersHandlers.GetMyProfile)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/profile", usersHandlers.UpdateMyProfile)
+			// NOTE (§6.3 dedupe): /me/preferences overlaps /me/notification-preferences;
+			// kept as a documented extra pending confirmation of distinct semantics.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/preferences", usersHandlers.GetMyPreferences)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/preferences", usersHandlers.UpdateMyPreferences)
 
 			// User /me/ account management routes (Section 50)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/change-password", usersHandlers.ChangePassword)
