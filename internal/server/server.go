@@ -67,6 +67,7 @@ import (
 	"github.com/jedafe/japa/internal/webhooks"
 	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/trending"
+	"github.com/jedafe/japa/internal/universities"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -215,6 +216,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Geo HTTP handlers — /api/v1/geo/*. The hierarchy endpoints reuse
 	// spaceService (countries/states/cities are seeded as spaces).
 	geoHandlers := geoip.NewHandlers(geoipReader, spaceService)
+
+	// Universities subsystem (Section 39) — read-view over spaces of the
+	// University space-type + their custom field values, no dedicated table.
+	universitiesHandlers := universities.NewHandlers(spaceService, cfService)
 
 	// Content subsystem (Section 14 — Content Type System).
 	contentService := content.NewService(database)
@@ -840,6 +845,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/geo/countries", geoHandlers.HandleListCountries)
 			r.Get("/geo/countries/{code}/states", geoHandlers.HandleListStates)
 			r.Get("/geo/states/{id}/cities", geoHandlers.HandleListCities)
+
+			// Universities (Section 39 — read-view over University-type spaces)
+			r.Get("/universities", universitiesHandlers.ListUniversities)
+			r.Get("/universities/{slug}", universitiesHandlers.GetUniversity)
+			// NOTE (P5): GET /universities/:id/compare deferred — the existing
+			// comparison system is content-authored (pre-defined items/dimensions
+			// attached to a comparison article), not ad-hoc entity-by-ID comparison.
+			// Needs a product decision on which "compare" behavior is meant before
+			// wiring: show existing authored comparisons mentioning this university,
+			// or dynamically diff custom-field values between universities.
 
 			// WebSocket + DM routes (Section 10 — Real-Time WebSockets)
 			wsHub := websocket.NewHub()
