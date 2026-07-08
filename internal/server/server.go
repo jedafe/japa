@@ -1244,17 +1244,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
 				Delete("/admin/ticket-types/{id}", ticketHandlers.DeleteTicketType)
 
-			// i18n Translation management (admin)
+			// i18n Translation management (admin) — catalog: /admin/i18n/*.
+			// NOTE: Upsert/UpsertBatch are MANUAL value-setting handlers, not the
+			// catalog's AI-driven POST /admin/i18n/strings/:key/translate or
+			// /ai-translate-batch (no AI dispatcher call exists here) — kept under
+			// the /strings prefix as documented manual-upsert extras rather than
+			// mislabeled as the AI routes, which remain unimplemented (P5).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
-				Get("/admin/translations", i18nHandlers.ListByLocale)
+				Get("/admin/i18n/strings", i18nHandlers.ListByLocale)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
-				Get("/admin/translations/locales", i18nHandlers.ListLocales)
+				Get("/admin/i18n/languages", i18nHandlers.ListLocales)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
-				Post("/admin/translations", i18nHandlers.Upsert)
+				Post("/admin/i18n/strings", i18nHandlers.Upsert)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
-				Post("/admin/translations/batch", i18nHandlers.UpsertBatch)
+				Post("/admin/i18n/strings/batch", i18nHandlers.UpsertBatch)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
-				Delete("/admin/translations/{id}", i18nHandlers.Delete)
+				Delete("/admin/i18n/strings/{id}", i18nHandlers.Delete)
 
 			// i18n public endpoints (no auth) — catalog: /i18n/packs, /i18n/packs/:lang_code
 			r.Get("/i18n/packs", i18nHandlers.HandleListPublicLocales)
@@ -1734,31 +1739,38 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// RBAC Management routes (admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Get("/admin/rbac/groups", rbacHandlers.ListGroups)
+				Get("/admin/user-groups", rbacHandlers.ListGroups)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Post("/admin/rbac/groups", rbacHandlers.CreateGroup)
+				Post("/admin/user-groups", rbacHandlers.CreateGroup)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Delete("/admin/rbac/groups/{id}", rbacHandlers.DeleteGroup)
+				Delete("/admin/user-groups/{id}", rbacHandlers.DeleteGroup)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Get("/admin/rbac/groups/{id}/members", rbacHandlers.ListGroupMembers)
+				Get("/admin/user-groups/{id}/members", rbacHandlers.ListGroupMembers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Post("/admin/rbac/groups/{id}/members", rbacHandlers.AddGroupMember)
+				Post("/admin/user-groups/{id}/members", rbacHandlers.AddGroupMember)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Delete("/admin/rbac/groups/{id}/members/{userId}", rbacHandlers.RemoveGroupMember)
+				Delete("/admin/user-groups/{id}/members/{userId}", rbacHandlers.RemoveGroupMember)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Get("/admin/rbac/permissions", rbacHandlers.ListPermissions)
+				Get("/admin/permissions", rbacHandlers.ListPermissions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Get("/admin/rbac/roles", rbacHandlers.ListRoles)
+				Get("/admin/roles", rbacHandlers.ListRoles)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Post("/admin/rbac/roles", rbacHandlers.CreateRole)
+				Post("/admin/roles", rbacHandlers.CreateRole)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Get("/admin/rbac/roles/{id}/permissions", rbacHandlers.ListRolePermissions)
+				Get("/admin/roles/{id}/permissions", rbacHandlers.ListRolePermissions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Post("/admin/rbac/roles/{id}/permissions", rbacHandlers.AssignPermissionToRole)
+				Post("/admin/roles/{id}/permissions", rbacHandlers.AssignPermissionToRole)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Get("/admin/rbac/groups/{id}/roles", rbacHandlers.ListGroupRoles)
+				Get("/admin/user-groups/{id}/roles", rbacHandlers.ListGroupRoles)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
-				Post("/admin/rbac/groups/{id}/roles", rbacHandlers.AssignRoleToGroup)
+				Post("/admin/user-groups/{id}/roles", rbacHandlers.AssignRoleToGroup)
+
+			// GetUserPermissions resolves the CALLER's own permission set (no admin
+			// gate in the handler itself) — was never registered as a route, so the
+			// admin panel's fetchPermissions() has been silently 404ing and falling
+			// back to an empty permission set. Wired here at /me/permissions.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/me/permissions", rbacHandlers.GetUserPermissions)
 
 			// Admin Moderation routes (stubs)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
