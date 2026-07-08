@@ -829,10 +829,10 @@ export const api = {
 		return request<UserProfile[]>('/users' + (q ? '?' + q : ''));
 	},
 	getMe() {
-		return request<UserProfile>('/users/me');
+		return request<UserProfile>('/me');
 	},
 	updateMe(data: { display_name?: string; bio?: string; location?: string }) {
-		return request<UserProfile>('/users/me', {
+		return request<UserProfile>('/me/profile', {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
