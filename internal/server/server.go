@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/analytics"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/blog"
+	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/comments"
@@ -221,6 +222,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Universities subsystem (Section 39) — read-view over spaces of the
 	// University space-type + their custom field values, no dedicated table.
 	universitiesHandlers := universities.NewHandlers(spaceService, cfService)
+
+	// Bookmark Folders subsystem — first-class named folders (distinct from
+	// bookmarks.folder, a free-text column).
+	bookmarkFoldersService := bookmarkfolders.NewService(database)
+	bookmarkFoldersHandlers := bookmarkfolders.NewHandlers(bookmarkFoldersService)
 
 	// Content subsystem (Section 14 — Content Type System).
 	contentService := content.NewService(database)
@@ -1464,6 +1470,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts", usersHandlers.ListMyDrafts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/scheduled", usersHandlers.ListMyScheduled)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmarks", usersHandlers.ListMyBookmarks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmark-folders", bookmarkFoldersHandlers.ListFolders)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/bookmark-folders", bookmarkFoldersHandlers.CreateFolder)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/bookmark-folders/{id}", bookmarkFoldersHandlers.UpdateFolder)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/bookmark-folders/{id}", bookmarkFoldersHandlers.DeleteFolder)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/analytics", usersHandlers.GetMyAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/deactivate", usersHandlers.DeactivateAccount)
 			// GDPR deletion + data export — served by the REAL gdpr handlers
