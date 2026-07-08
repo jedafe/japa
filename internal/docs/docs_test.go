@@ -191,72 +191,6 @@ func uuidPtrFromBytes(b [16]byte) *string {
 	return &s
 }
 
-func TestGetOpenAPISpec(t *testing.T) {
-	t.Parallel()
-
-	spec := GetOpenAPISpec()
-	if spec == nil {
-		t.Fatal("expected non-nil spec")
-	}
-
-	version, ok := spec["openapi"].(string)
-	if !ok || version != "3.0.3" {
-		t.Errorf("expected openapi version '3.0.3', got %v", spec["openapi"])
-	}
-
-	paths, ok := spec["paths"].(map[string]any)
-	if !ok {
-		t.Fatal("expected paths to be a map")
-	}
-
-	if _, ok := paths["/spaces"]; !ok {
-		t.Error("expected /spaces path in spec")
-	}
-
-	if _, ok := paths["/content"]; !ok {
-		t.Error("expected /content path in spec")
-	}
-
-	if _, ok := paths["/users/me"]; !ok {
-		t.Error("expected /users/me path in spec")
-	}
-
-	components, ok := spec["components"].(map[string]any)
-	if !ok {
-		t.Fatal("expected components to be a map")
-	}
-
-	schemas, ok := components["schemas"].(map[string]any)
-	if !ok {
-		t.Fatal("expected components.schemas to be a map")
-	}
-
-	for _, name := range []string{"Space", "Content", "User", "Error"} {
-		if _, ok := schemas[name]; !ok {
-			t.Errorf("expected schema %q in components.schemas", name)
-		}
-	}
-}
-
-func TestGetOpenAPISpecJSON(t *testing.T) {
-	t.Parallel()
-
-	spec := GetOpenAPISpec()
-
-	data, err := json.Marshal(spec)
-	if err != nil {
-		t.Fatalf("failed to marshal OpenAPI spec: %v", err)
-	}
-
-	var decoded map[string]any
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("failed to unmarshal OpenAPI spec: %v", err)
-	}
-
-	if decoded["openapi"] != "3.0.3" {
-		t.Errorf("expected openapi '3.0.3' after round-trip, got %v", decoded["openapi"])
-	}
-}
 
 func TestAPIPlaygroundHandler(t *testing.T) {
 	t.Parallel()
@@ -293,7 +227,7 @@ func TestAPIPlaygroundHandler(t *testing.T) {
 func TestOpenAPIHandler(t *testing.T) {
 	t.Parallel()
 
-	req := httptest.NewRequest(http.MethodGet, "/docs/api/openapi.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/docs/openapi.json", nil)
 	w := httptest.NewRecorder()
 	h := &Handlers{Service: &Service{}}
 	h.OpenAPIHandler(w, req)

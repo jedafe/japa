@@ -502,7 +502,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 		// API Playground & OpenAPI Spec (Section 44 — docs.japaconnect.com)
 		r.Get("/docs/api/playground", docsHandlers.APIPlaygroundHandler)
-		r.Get("/docs/api/openapi.json", docsHandlers.OpenAPIHandler)
+		// catalog: GET /docs/openapi.json (single canonical spec, §6.4 dedupe)
+		r.Get("/docs/openapi.json", docsHandlers.OpenAPIHandler)
 	})
 
 	// API routes go through tenant resolution
@@ -1342,9 +1343,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.impersonate")).
 				Get("/admin/impersonate/status", impersonationHandlers.GetImpersonationStatus)
 
-			// Developer Portal — Swagger UI & OpenAPI spec (public, no auth)
+			// Developer Portal — Swagger UI (public, no auth). The spec it fetches
+			// is the canonical /docs/openapi.json (§6.4 dedupe — no second route).
 			r.Get("/developer/swagger", publicapi.HandleSwaggerUI)
-			r.Get("/developer/swagger.json", publicapi.HandleSwaggerJSON)
 
 			// Developer Portal — API Key management (Section 47)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
