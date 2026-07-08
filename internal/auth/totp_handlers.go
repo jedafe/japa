@@ -149,6 +149,28 @@ func (h *TOTPHandlers) HandleDisable(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleStatus handles GET /api/v1/me/totp/status — whether 2FA is enabled
+// for the caller.
+func (h *TOTPHandlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
+	user := authUserFromContext(w, r)
+	if user == nil {
+		return
+	}
+
+	record, err := h.Store.GetTOTPSecret(r.Context(), user.UserID)
+	if err != nil || record == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": map[string]interface{}{"enabled": false},
+		})
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{"enabled": record.Enabled},
+	})
+}
+
 // authUserFromContext extracts the authenticated user from the request context.
 // Writes a 401 error and returns nil if no user is present.
 func authUserFromContext(w http.ResponseWriter, r *http.Request) *AuthenticatedUser {
