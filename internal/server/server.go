@@ -1145,21 +1145,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/me/wallet/convert", walletHandlers.ConvertPoints)
 				// Settings (admin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
-					Get("/wallet/settings", walletHandlers.GetSettings)
+					Get("/admin/wallet/settings", walletHandlers.GetSettings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
-					Put("/wallet/settings", walletHandlers.UpdateSettings)
+					Put("/admin/wallet/settings", walletHandlers.UpdateSettings)
 				// Activity rules (admin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
-					Get("/wallet/rules", walletHandlers.ListRules)
+					Get("/admin/wallet/rules", walletHandlers.ListRules)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
-					Post("/wallet/rules", walletHandlers.CreateOrUpdateRule)
+					Post("/admin/wallet/rules", walletHandlers.CreateOrUpdateRule)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
-					Patch("/wallet/rules/{id}/toggle", walletHandlers.ToggleRule)
+					Patch("/admin/wallet/rules/{id}/toggle", walletHandlers.ToggleRule)
 				// Admin adjustments
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
-					Post("/wallet/admin/adjust", walletHandlers.AdminAdjust)
+					Post("/admin/wallet/adjust", walletHandlers.AdminAdjust)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
-					Get("/wallet/admin/user/{userId}/balance", walletHandlers.AdminGetUserBalance)
+					Get("/admin/wallet/user/{userId}/balance", walletHandlers.AdminGetUserBalance)
 			})
 
 			// Advertising routes (Section 25 — Ad Placement)
