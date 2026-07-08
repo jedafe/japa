@@ -789,9 +789,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notification-types", notificationHandlers.ListNotificationTypes)
 
 			// Push Subscription routes (public VAPID key, authenticated subscribe/unsubscribe)
+			// catalog: POST /me/push-tokens, DELETE /me/push-tokens/:id
 			r.Get("/push/vapid-key", notificationHandlers.HandleGetVAPIDKey)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/push/subscribe", notificationHandlers.HandlePushSubscribe)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/push/subscribe", notificationHandlers.HandlePushUnsubscribe)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/push-tokens", notificationHandlers.HandlePushSubscribe)
+			// NOTE (§7.1): catalog is DELETE /me/push-tokens/:id; handler currently keys
+			// by endpoint in the body. Path-param (token id) migration deferred to P4.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/push-tokens", notificationHandlers.HandlePushUnsubscribe)
 
 			// Feed routes (Section 32 — Activity Feed / Timeline)
 			r.Get("/explore", feedHandlers.GetExploreFeed) // public — no auth required (catalog: /explore)
