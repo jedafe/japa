@@ -317,6 +317,72 @@ func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUser
 	return items, nil
 }
 
+const getFollowingByUserAndType = `-- name: GetFollowingByUserAndType :many
+SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
+    CASE f.entity_type
+        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
+        WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
+        WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
+        ELSE ''
+    END AS entity_name
+FROM follows f
+WHERE f.tenant_id = $1 AND f.follower_id = $2 AND f.entity_type = $3
+ORDER BY f.created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type GetFollowingByUserAndTypeParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	FollowerID pgtype.UUID `json:"follower_id"`
+	EntityType string      `json:"entity_type"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type GetFollowingByUserAndTypeRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	FollowerID pgtype.UUID        `json:"follower_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	EntityName string             `json:"entity_name"`
+}
+
+func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowingByUserAndTypeParams) ([]GetFollowingByUserAndTypeRow, error) {
+	rows, err := q.db.Query(ctx, getFollowingByUserAndType,
+		arg.TenantID,
+		arg.FollowerID,
+		arg.EntityType,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetFollowingByUserAndTypeRow
+	for rows.Next() {
+		var i GetFollowingByUserAndTypeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.FollowerID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.CreatedAt,
+			&i.EntityName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertFollow = `-- name: InsertFollow :exec
 
 
