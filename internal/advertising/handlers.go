@@ -366,13 +366,10 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 
 // RenderSlot handles GET /api/v1/ads/render?slot={slot_name}.
 // Returns eligible campaigns for the given slot. Empty result when no match
-// — never a placeholder.
+// — never a placeholder. Public (catalog: GET /ads/serve) — guests are served
+// the untargeted/default eligible set; usergroup-based targeting is not yet
+// implemented (no targeting column on ad_campaigns — deferred, see plan P5).
 func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -405,14 +402,10 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 // Ad Events Ingestion Handler
 // ---------------------------------------------------------------------------
 
-// IngestEvents handles POST /api/v1/ads/events/ingest.
-// Accepts a batch of ad events for async ingestion.
+// IngestEvents handles POST /api/v1/ads/events.
+// Accepts a batch of ad events for async ingestion. Public (catalog: POST
+// /ads/events) — fire-and-forget impression/click ingestion from guests too.
 func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
