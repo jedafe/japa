@@ -600,19 +600,27 @@ export const api = {
 		});
 	},
 
-	// Reviews & Ratings
+	// Reviews & Ratings (catalog: /reviews/:entity_type/:entity_id[/aggregate])
 	createReview(data: { entity_type: string; entity_id: string; rating: number; title?: string; body?: string }) {
-		return request<Review>('/reviews', { method: 'POST', body: JSON.stringify(data) });
+		const { entity_type, entity_id, ...body } = data;
+		return request<Review>(`/reviews/${entity_type}/${entity_id}`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		});
 	},
 	listReviews(params: { entity_type: string; entity_id: string; limit?: number; offset?: number }) {
-		const p = new URLSearchParams({ entity_type: params.entity_type, entity_id: params.entity_id });
+		const p = new URLSearchParams();
 		if (params.limit) p.set('limit', String(params.limit));
 		if (params.offset) p.set('offset', String(params.offset));
-		return request<{ reviews: Review[]; total: number }>('/reviews?' + p.toString());
+		const q = p.toString();
+		return request<{ reviews: Review[]; total: number }>(
+			`/reviews/${params.entity_type}/${params.entity_id}` + (q ? '?' + q : '')
+		);
 	},
 	getReviewAggregate(params: { entity_type: string; entity_id: string }) {
-		const p = new URLSearchParams(params);
-		return request<{ average: number; count: number; distribution: number[] }>('/reviews/aggregate?' + p.toString());
+		return request<{ average: number; count: number; distribution: number[] }>(
+			`/reviews/${params.entity_type}/${params.entity_id}/aggregate`
+		);
 	},
 	updateReview(id: string, data: { rating?: number; title?: string; body?: string }) {
 		return request<Review>('/reviews/' + id, { method: 'PATCH', body: JSON.stringify(data) });

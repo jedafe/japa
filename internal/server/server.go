@@ -966,9 +966,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Universal Ratings & Reviews routes — gated by feature.ratings_reviews (Section 29)
 		r.With(features.Gate(featureChecker, "feature.ratings_reviews")).Group(func(r chi.Router) {
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews", reviewHandlers.CreateReview)
+			// catalog: /reviews/:entity_type/:entity_id[/aggregate]; bare /reviews
+			// (reviewer-scoped list) kept as a documented extra.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews/{entity_type}/{entity_id}", reviewHandlers.CreateReview)
 			r.Get("/reviews", reviewHandlers.ListReviews)
-			r.Get("/reviews/aggregate", reviewHandlers.GetAggregate)
+			r.Get("/reviews/{entity_type}/{entity_id}", reviewHandlers.ListReviews)
+			r.Get("/reviews/{entity_type}/{entity_id}/aggregate", reviewHandlers.GetAggregate)
 			r.Get("/reviews/{id}", reviewHandlers.GetReview)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
