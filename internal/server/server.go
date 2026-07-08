@@ -537,12 +537,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/verify-email", authHandlers.HandleVerifyEmail)
 				r.Post("/resend-verification", authHandlers.HandleResendVerification)
 
-				// TOTP 2FA routes — require authentication
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/totp/setup", totpHandlers.HandleSetup)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/totp/verify", totpHandlers.HandleVerify)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/totp/disable", totpHandlers.HandleDisable)
-
-				// OAuth social login routes
+				// OAuth social login routes.
+				// DEFERRED (§8): catalog specifies POST /auth/oauth/:provider, but
+				// HandleInitiate issues a 307 redirect and the frontend uses <a href>
+				// GET links. Converting to POST requires the handler to return the
+				// auth URL as JSON + frontend rework + full OAuth-flow retest. Left as
+				// GET initiate until that change is made and verified.
 				r.Get("/oauth/{provider}/initiate", oauthHandlers.HandleInitiate)
 				r.Get("/oauth/{provider}/callback", oauthHandlers.HandleCallback)
 			})
@@ -1381,6 +1381,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/sessions", usersHandlers.RevokeAllSessions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/connected-accounts", usersHandlers.ListConnectedAccounts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/connected-accounts/{provider}", usersHandlers.DisconnectAccount)
+
+			// TOTP 2FA (catalog: /me/totp/* — moved out of the /auth group)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/totp/enable", totpHandlers.HandleSetup)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/totp/confirm", totpHandlers.HandleVerify)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/totp", totpHandlers.HandleDisable)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/content", usersHandlers.ListMyContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts", usersHandlers.ListMyDrafts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/scheduled", usersHandlers.ListMyScheduled)
