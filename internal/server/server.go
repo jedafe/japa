@@ -769,6 +769,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/following", followHandlers.GetFollowing)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mutual/{other_user_id}", followHandlers.CheckMutual)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/follow-status", followHandlers.GetFollowStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{tag_id}/followers", followHandlers.GetFollowers)
 
@@ -780,6 +781,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// User Mutes (Section 52)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/users/{user_id}/mute", interactionsHandlers.MuteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/users/{user_id}/mute", interactionsHandlers.UnmuteUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mute-status", interactionsHandlers.GetUserMuteStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-users", interactionsHandlers.ListMutedUsers)
 
 			// Space Mutes (Section 52)
@@ -810,6 +812,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/explore", feedHandlers.GetExploreFeed) // public — no auth required (catalog: /explore)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed) // catalog: /feed (primary timeline)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/space/{space_id}", feedHandlers.GetSpaceFeed)
+			// catalog: GET /spaces/:id/feed — same handler, param name matches (space_id).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/feed", feedHandlers.GetSpaceFeed)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/profile/{user_id}", feedHandlers.GetProfileFeed)
 
 			// Trending & Discovery routes (Phase 28)
