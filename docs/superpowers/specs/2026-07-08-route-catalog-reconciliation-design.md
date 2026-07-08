@@ -29,12 +29,19 @@ state:
 | Metric | Count |
 |---|---|
 | Catalog route-entries (structural) | 574 |
-| Code routes registered in `server.go` (excl. infra) | 247 |
-| Structurally matching | 125 |
-| Catalog-only (implement or rename-target) | 449 |
-| Code-only (document or rename-source) | 122 |
+| Code routes registered in `server.go` (excl. infra) | ~566 |
+| Structurally matching | 190 |
+| Catalog-only (implement or rename-target) | 384 |
+| Code-only (document or rename-source) | 376 |
 
 Numbers are produced by `scripts/route_diff.py`; re-run it to refresh.
+
+**Note:** an earlier version of the harness under-captured routes registered in
+the two-line `r.With(...).\n  Method(...)` form (321 of them), making code look
+far sparser than it is. Corrected figures above show the code is nearly as rich
+as the catalog — the divergence is dominated by **prefix/param renames** (a
+renamed route appears once on each side) plus the genuinely-unimplemented
+control/admin panels, not large swaths of missing user-facing functionality.
 
 **Extraction caveats (accounted for):**
 - Routes under `r.Route("/auth", …)` are stored relative (`/login`), so
