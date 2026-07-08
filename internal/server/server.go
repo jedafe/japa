@@ -1123,6 +1123,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/subscriptions", paymentHandlers.CreateSubscription)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/subscriptions", paymentHandlers.ListSubscriptions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/subscription", paymentHandlers.GetActiveSubscription)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/subscription/cancel", paymentHandlers.CancelMySubscription)
+			// NOTE (P5): /me/subscription/reactivate has no safe wiring yet —
+			// CancelSubscription is a hard cutoff (status='canceled', cancel_at=now()),
+			// so reactivating needs a product decision on billing-period recomputation
+			// and possibly payment-gateway re-authorization, not just a status flip.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage")).
 				Patch("/subscriptions/{id}/cancel", paymentHandlers.CancelSubscription)
 			// Discount codes
@@ -1138,6 +1143,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Balance and ledger (catalog: /me/wallet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
 					Get("/me/wallet", walletHandlers.GetBalance)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
+					Get("/me/wallet/points", walletHandlers.GetPointsBalance)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
+					Get("/me/wallet/credits", walletHandlers.GetCreditsBalance)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
 					Get("/me/wallet/ledger", walletHandlers.GetLedger)
 				// Conversion
