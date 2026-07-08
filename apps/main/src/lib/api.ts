@@ -304,10 +304,10 @@ export const api = {
 			total: number;
 			page: number;
 			total_pages: number;
-		}>('/forum/threads' + (q ? '?' + q : ''));
+		}>('/forum' + (q ? '?' + q : ''));
 	},
 	getForumThread(slug: string) {
-		return request<ForumThread>('/forum/threads/' + slug);
+		return request<ForumThread>('/forum/' + slug);
 	},
 	createForumThread(data: {
 		title: string;
@@ -316,22 +316,22 @@ export const api = {
 		tags?: string[];
 		anonymous?: boolean;
 	}) {
-		return request<ForumThread>('/forum/threads', {
+		return request<ForumThread>('/forum', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	},
 	updateForumThread(id: string, data: { title?: string; body?: string }) {
-		return request<ForumThread>('/forum/threads/' + id, {
+		return request<ForumThread>('/forum/' + id, {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
 	},
 	deleteForumThread(id: string) {
-		return request<{ deleted: boolean }>('/forum/threads/' + id, { method: 'DELETE' });
+		return request<{ deleted: boolean }>('/forum/' + id, { method: 'DELETE' });
 	},
 	solveForumThread(id: string) {
-		return request<{ solved: boolean }>('/forum/threads/' + id + '/solve', { method: 'POST' });
+		return request<{ solved: boolean }>('/forum/' + id + '/solve', { method: 'POST' });
 	},
 	getForumReplies(threadId: string, params?: { limit?: number; offset?: number }) {
 		const p = new URLSearchParams();
@@ -341,10 +341,10 @@ export const api = {
 		return request<{
 			replies: ForumReply[];
 			total: number;
-		}>('/forum/threads/' + threadId + '/replies' + (q ? '?' + q : ''));
+		}>('/forum/' + threadId + '/replies' + (q ? '?' + q : ''));
 	},
 	createForumReply(threadId: string, data: { body: string; anonymous?: boolean }) {
-		return request<ForumReply>('/forum/threads/' + threadId + '/replies', {
+		return request<ForumReply>('/forum/' + threadId + '/replies', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
