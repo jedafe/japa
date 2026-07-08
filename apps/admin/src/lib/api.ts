@@ -175,18 +175,18 @@ export interface ComparisonTypeAccess {
 }
 
 export const comparisonAdminApi = {
-	listTypes: () => api<ComparisonType[]>('/comparison/types'),
-	getType: (id: string) => api<ComparisonTypeDetail>(`/comparison/types/${id}`),
+	listTypes: () => api<ComparisonType[]>('/comparisons/types'),
+	getType: (id: string) => api<ComparisonTypeDetail>(`/comparisons/types/${id}`),
 	createType: (body: { name: string; slug: string; description: string; is_public: boolean }) =>
-		api<ComparisonType>('/comparison/types', { method: 'POST', body }),
+		api<ComparisonType>('/comparisons/types', { method: 'POST', body }),
 	updateType: (id: string, body: { name?: string; description?: string; is_public?: boolean }) =>
-		api<ComparisonType>(`/comparison/types/${id}`, { method: 'PATCH', body }),
+		api<ComparisonType>(`/comparisons/types/${id}`, { method: 'PATCH', body }),
 	deleteType: (id: string) =>
-		api<{ deleted: boolean }>(`/comparison/types/${id}`, { method: 'DELETE' }),
+		api<{ deleted: boolean }>(`/comparisons/types/${id}`, { method: 'DELETE' }),
 	getTypeAccess: (id: string) =>
-		api<ComparisonTypeAccess>(`/comparison/types/${id}/access`),
+		api<ComparisonTypeAccess>(`/comparisons/types/${id}/access`),
 	setTypeAccess: (id: string, body: { allowed_groups: string[]; allowed_roles: string[] }) =>
-		api<{ updated: boolean }>(`/comparison/types/${id}/access`, { method: 'PUT', body }),
+		api<{ updated: boolean }>(`/comparisons/types/${id}/access`, { method: 'PUT', body }),
 };
 
 // ─── Professional Profile Types & Members (Admin) ──────────────────
@@ -221,22 +221,22 @@ export interface ProfileInvitation {
 }
 
 export const professionalAdminApi = {
-	listTypes: () => api<ProfileType[]>('/professional-profiles/types'),
-	getType: (id: string) => api<ProfileTypeDetail>(`/professional-profiles/types/${id}`),
+	listTypes: () => api<ProfileType[]>('/profiles/types'),
+	getType: (id: string) => api<ProfileTypeDetail>(`/profiles/types/${id}`),
 	createType: (body: { name: string; slug: string; description: string }) =>
-		api<ProfileType>('/professional-profiles/types', { method: 'POST', body }),
+		api<ProfileType>('/profiles/types', { method: 'POST', body }),
 	listMembers: (profileId: string) =>
-		api<ProfileMember[]>(`/professional-profiles/${profileId}/members`),
+		api<ProfileMember[]>(`/profiles/${profileId}/members`),
 	addMember: (profileId: string, body: { user_id: string; role: string }) =>
-		api<ProfileMember>(`/professional-profiles/${profileId}/members`, { method: 'POST', body }),
+		api<ProfileMember>(`/profiles/${profileId}/members`, { method: 'POST', body }),
 	removeMember: (profileId: string, userId: string) =>
-		api<{ removed: boolean }>(`/professional-profiles/${profileId}/members/${userId}`, { method: 'DELETE' }),
+		api<{ removed: boolean }>(`/profiles/${profileId}/members/${userId}`, { method: 'DELETE' }),
 	updateMember: (profileId: string, userId: string, body: { role: string }) =>
-		api<ProfileMember>(`/professional-profiles/${profileId}/members/${userId}`, { method: 'PATCH', body }),
+		api<ProfileMember>(`/profiles/${profileId}/members/${userId}`, { method: 'PATCH', body }),
 	listInvitations: (profileId: string) =>
-		api<ProfileInvitation[]>(`/professional-profiles/${profileId}/invitations`),
+		api<ProfileInvitation[]>(`/profiles/${profileId}/invitations`),
 	sendInvitation: (profileId: string, body: { email: string; role: string }) =>
-		api<ProfileInvitation>(`/professional-profiles/${profileId}/invitations`, { method: 'POST', body }),
+		api<ProfileInvitation>(`/profiles/${profileId}/invitations`, { method: 'POST', body }),
 };
 
 // ─── AI Core ───────────────────────────────────────────────────────
