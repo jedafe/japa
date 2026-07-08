@@ -67,6 +67,19 @@ WHERE f.tenant_id = @tenant_id AND f.follower_id = @follower_id
 ORDER BY f.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: GetFollowingByUserAndType :many
+SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
+    CASE f.entity_type
+        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
+        WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
+        WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
+        ELSE ''
+    END AS entity_name
+FROM follows f
+WHERE f.tenant_id = @tenant_id AND f.follower_id = @follower_id AND f.entity_type = @entity_type
+ORDER BY f.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- =====================
 -- Counts
 -- =====================

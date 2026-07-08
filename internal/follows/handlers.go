@@ -218,6 +218,54 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": following})
 }
 
+// ListMyFollowing handles GET /api/v1/me/following — everything the caller follows.
+func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	following, err := h.service.GetFollowing(r.Context(), tenantID, user.UserID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get following")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": following})
+}
+
+// ListMyFollowedTags handles GET /api/v1/me/followed-tags — tags the caller follows.
+func (h *Handlers) ListMyFollowedTags(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	following, err := h.service.GetFollowingByType(r.Context(), tenantID, user.UserID, EntityTypeTag, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get followed tags")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": following})
+}
+
 // CheckMutual handles GET /api/v1/users/{user_id}/mutual/{other_user_id}.
 func (h *Handlers) CheckMutual(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
