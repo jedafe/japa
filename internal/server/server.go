@@ -615,6 +615,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Space routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces", spaceHandlers.ListSpaces)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces", spaceHandlers.ListMySpaces)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces/moderated", spaceHandlers.ListMyModeratedSpaces)
+			// NOTE (P5): /me/spaces/owned has no wiring — the spaces table has no
+			// owner_id/created_by column (consistent with the geo-first model where
+			// Country/State/City spaces aren't owned by anyone); needs a schema
+			// decision, not just a query.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}", spaceHandlers.GetSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.create")).

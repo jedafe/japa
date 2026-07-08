@@ -142,6 +142,34 @@ func (s *Service) ListSpaces(ctx context.Context, tenantID pgtype.UUID) ([]gen.S
 	return spaces, nil
 }
 
+// ListSpacesByMember returns every space the given user belongs to, most
+// recently joined first (catalog: GET /me/spaces).
+func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.Space, error) {
+	spaces, err := s.read.ListSpacesByMemberUser(ctx, gen.ListSpacesByMemberUserParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing spaces by member: %w", err)
+	}
+
+	return spaces, nil
+}
+
+// ListSpacesByModerator returns every space the given user moderates
+// (catalog: GET /me/spaces/moderated).
+func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.Space, error) {
+	spaces, err := s.read.ListSpacesByModeratorUser(ctx, gen.ListSpacesByModeratorUserParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing spaces by moderator: %w", err)
+	}
+
+	return spaces, nil
+}
+
 // ListSpacesByLevel returns every space at the given hierarchy level for the
 // tenant, newest first.
 func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, level string) ([]gen.Space, error) {
