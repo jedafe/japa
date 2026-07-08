@@ -10,6 +10,7 @@ package gdpr
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -280,7 +281,10 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 		Reason string `json:"reason"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	// Reason is optional: DELETE /me may be sent with no body. Tolerate an
+	// empty body (io.EOF) so deletion works without a payload; only reject
+	// genuinely malformed JSON.
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}

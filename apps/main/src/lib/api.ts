@@ -677,10 +677,10 @@ export const api = {
 		return request<{ revoked: boolean }>('/consent/' + consentType, { method: 'DELETE' });
 	},
 	requestDataExport() {
-		return request<{ request_id: string }>('/account/export', { method: 'POST' });
+		return request<{ request_id: string }>('/me/data-export');
 	},
 	requestAccountDeletion() {
-		return request<{ request_id: string }>('/account/delete', { method: 'POST' });
+		return request<{ request_id: string }>('/me', { method: 'DELETE' });
 	},
 
 	// Content Pinning
