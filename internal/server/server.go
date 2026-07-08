@@ -550,7 +550,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Feature flags endpoint (public - frontend needs flags to
 			// render navigation, no auth required)
 			featureHandlers := features.NewHandlers(featureChecker)
-			r.Get("/features", featureHandlers.HandleGetFeatures)
+			r.Get("/feature-flags", featureHandlers.HandleGetFeatures)
 
 			// Feature flags admin toggle (requires auth + RBAC permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "features.manage")).
@@ -794,8 +794,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/push/subscribe", notificationHandlers.HandlePushUnsubscribe)
 
 			// Feed routes (Section 32 — Activity Feed / Timeline)
-			r.Get("/feed/explore", feedHandlers.GetExploreFeed) // public — no auth required
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/primary", feedHandlers.GetPrimaryFeed)
+			r.Get("/explore", feedHandlers.GetExploreFeed) // public — no auth required (catalog: /explore)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed) // catalog: /feed (primary timeline)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/space/{space_id}", feedHandlers.GetSpaceFeed)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/profile/{user_id}", feedHandlers.GetProfileFeed)
 
@@ -1247,9 +1247,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
 				Delete("/admin/translations/{id}", i18nHandlers.Delete)
 
-			// i18n public endpoints (no auth)
-			r.Get("/i18n/locales", i18nHandlers.HandleListPublicLocales)
-			r.Get("/translations/{locale}", i18nHandlers.GetLocaleTranslations)
+			// i18n public endpoints (no auth) — catalog: /i18n/packs, /i18n/packs/:lang_code
+			r.Get("/i18n/packs", i18nHandlers.HandleListPublicLocales)
+			r.Get("/i18n/packs/{lang_code}", i18nHandlers.GetLocaleTranslations)
 
 			// GDPR / NDPR Compliance routes (Section 19)
 			// User-facing endpoints
