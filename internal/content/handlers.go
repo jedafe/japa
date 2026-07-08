@@ -30,6 +30,13 @@ const defaultPageSize int32 = 20
 // Task type constant for embedding generation — matches worker.TypeAIGenerateContentEmbedding.
 const taskTypeAIGenerateContentEmbedding = "ai:generate_content_embedding"
 
+// Task type constant for scheduled publishing — matches worker.TypeScheduledPublish.
+// NOTE: this intentionally does NOT reuse content.TaskTypeScheduledPublish
+// ("content:scheduled_publish") from tasks.go — that constant's noopEnqueuer
+// was never wired to a real handler; the worker package's registered handler
+// listens for the plain "scheduled_publish" string used here.
+const taskTypeScheduledPublish = "scheduled_publish"
+
 // TaskEnqueueClient is the interface for enqueueing background tasks.
 // The Asynq client satisfies this interface. A nil client means tasks
 // are silently skipped (useful for tests and development).
@@ -460,6 +467,163 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle Handlers (publish / archive / schedule / view / share-count)
+// ---------------------------------------------------------------------------
+
+// PublishContent handles POST /api/v1/content/{id}/publish.
+func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusPublished)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
+}
+
+// ArchiveContent handles POST /api/v1/content/{id}/archive.
+func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusArchived)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
+}
+
+// ScheduleContent handles POST /api/v1/content/{id}/schedule. Sets
+// status='scheduled' and publish_at, then enqueues the scheduled_publish
+// Asynq task (matching internal/worker's registered handler) to fire at
+// publish_at.
+func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var input struct {
+		PublishAt time.Time `json:"publish_at"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.PublishAt.IsZero() || input.PublishAt.Before(time.Now()) {
+		writeError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
+		return
+	}
+
+	updated, err := h.Service.ScheduleContent(r.Context(), id, tenantID, input.PublishAt)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.enqueueScheduledPublish(id, tenantID, input.PublishAt)
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
+}
+
+// RecordContentView handles POST /api/v1/content/{id}/view.
+func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.Service.IncrementContentView(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"recorded": true}})
+}
+
+// GetContentShareCount handles GET /api/v1/content/{id}/share-count.
+func (h *Handlers) GetContentShareCount(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	count, err := h.Service.CountContentShares(r.Context(), tenantID, id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int32{"share_count": count}})
+}
+
+// enqueueScheduledPublish enqueues the scheduled_publish Asynq task to fire
+// at publishAt. Fire-and-forget: logs and returns on failure rather than
+// failing the request — the content is already saved as 'scheduled'.
+func (h *Handlers) enqueueScheduledPublish(contentID, tenantID pgtype.UUID, publishAt time.Time) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"content_id": contentID.String(),
+		"tenant_id":  tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("content: failed to marshal scheduled_publish task payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(taskTypeScheduledPublish, payload),
+		asynq.ProcessAt(publishAt),
+	); err != nil {
+		slog.Warn("content: failed to enqueue scheduled_publish task", "content_id", contentID.String(), "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

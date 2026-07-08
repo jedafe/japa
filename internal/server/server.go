@@ -706,6 +706,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/content/{id}", contentHandlers.UpdateContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
 				Delete("/content/{id}", contentHandlers.DeleteContent)
+			// Lifecycle: publish/archive/schedule are status transitions (content.edit);
+			// view/share-count just require auth.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+				Post("/content/{id}/publish", contentHandlers.PublishContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+				Post("/content/{id}/archive", contentHandlers.ArchiveContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+				Post("/content/{id}/schedule", contentHandlers.ScheduleContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/view", contentHandlers.RecordContentView)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/share-count", contentHandlers.GetContentShareCount)
 			// Revisions (require auth + permission to view)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.revisions.view")).
 				Get("/content/{id}/revisions", contentHandlers.ListRevisions)
