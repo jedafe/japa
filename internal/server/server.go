@@ -1100,14 +1100,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Payment Core routes (Section 17 — Payment Core)
 			// Payment initiation
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.create")).
-				Post("/payments/initiate", paymentHandlers.InitiatePayment)
+				Post("/payments/intent", paymentHandlers.InitiatePayment)
 			// Webhooks (public - no auth required)
 			r.Post("/payments/webhook/paystack", paymentHandlers.HandlePaystackWebhook)
 			r.Post("/payments/webhook/stripe", paymentHandlers.HandleStripeWebhook)
 			r.Post("/payments/webhook/nowpayments", paymentHandlers.HandleNOWPaymentsWebhook)
-			// Payment listing and details
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/payments", paymentHandlers.ListPayments)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/payments/{id}", paymentHandlers.GetPayment)
+			// Payment listing and details (catalog: /me/payments)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments", paymentHandlers.ListPayments)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments/{id}", paymentHandlers.GetPayment)
 			// Refunds
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.refund")).
 				Post("/payments/{id}/refund", paymentHandlers.RefundPayment)
@@ -1115,27 +1115,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage")).
 				Post("/subscriptions", paymentHandlers.CreateSubscription)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/subscriptions", paymentHandlers.ListSubscriptions)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/subscriptions/active", paymentHandlers.GetActiveSubscription)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/subscription", paymentHandlers.GetActiveSubscription)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage")).
 				Patch("/subscriptions/{id}/cancel", paymentHandlers.CancelSubscription)
 			// Discount codes
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
 				Post("/discount-codes", paymentHandlers.CreateDiscountCode)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/discount-codes", paymentHandlers.ListDiscountCodes)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/discount-codes/validate", paymentHandlers.ValidateDiscountCode)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/payments/discount-codes/validate", paymentHandlers.ValidateDiscountCode)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
 				Delete("/discount-codes/{id}", paymentHandlers.DeleteDiscountCode)
 
 			// Wallet & Credits routes — gated by feature.wallet (Section 28)
 			r.With(features.Gate(featureChecker, "feature.wallet")).Group(func(r chi.Router) {
-				// Balance and ledger
+				// Balance and ledger (catalog: /me/wallet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
-					Get("/wallet/balance", walletHandlers.GetBalance)
+					Get("/me/wallet", walletHandlers.GetBalance)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
-					Get("/wallet/ledger", walletHandlers.GetLedger)
+					Get("/me/wallet/ledger", walletHandlers.GetLedger)
 				// Conversion
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.convert")).
-					Post("/wallet/convert", walletHandlers.ConvertPoints)
+					Post("/me/wallet/convert", walletHandlers.ConvertPoints)
 				// Settings (admin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
 					Get("/wallet/settings", walletHandlers.GetSettings)
@@ -1199,20 +1199,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/advertising/boosts/{id}/end", adHandlers.EndBoost)
 
 			// Ticket System routes (Section 38 — Ticket System)
-			// User portal (main site /support)
+			// User portal (catalog: /tickets, /me/tickets)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Post("/support", ticketHandlers.CreateTicket)
+				Post("/tickets", ticketHandlers.CreateTicket)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/support/my", ticketHandlers.ListMyTickets)
+				Get("/me/tickets", ticketHandlers.ListMyTickets)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/support/my/{id}", ticketHandlers.GetMyTicket)
+				Get("/me/tickets/{id}", ticketHandlers.GetMyTicket)
 		r.With(auth.RequireAuth(kr, vkClient.Redis())).
-			Post("/support/my/{id}/reply", ticketHandlers.AddReply)
+			Post("/me/tickets/{id}/comments", ticketHandlers.AddReply)
 
 		r.With(auth.RequireAuth(kr, vkClient.Redis())).
-			Post("/support/my/{id}/attachments", ticketHandlers.AddAttachment)
+			Post("/me/tickets/{id}/attachments", ticketHandlers.AddAttachment)
 		r.With(auth.RequireAuth(kr, vkClient.Redis())).
-			Get("/support/my/{id}/attachments", ticketHandlers.ListAttachments)
+			Get("/me/tickets/{id}/attachments", ticketHandlers.ListAttachments)
 
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
 			Get("/admin/tickets", ticketHandlers.ListTickets)
@@ -1342,21 +1342,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Developer Portal — API Key management (Section 47)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
-				Get("/developer/keys", publicAPIHandlers.ListKeys)
+				Get("/me/api-keys", publicAPIHandlers.ListKeys)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
-				Post("/developer/keys", publicAPIHandlers.CreateKey)
+				Post("/me/api-keys", publicAPIHandlers.CreateKey)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
-				Delete("/developer/keys/{id}", publicAPIHandlers.RevokeKey)
+				Delete("/me/api-keys/{id}", publicAPIHandlers.RevokeKey)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
-				Post("/developer/keys/{id}/rotate", publicAPIHandlers.RotateKey)
+				Post("/me/api-keys/{id}/rotate", publicAPIHandlers.RotateKey)
 
 			// IP Allowlist for API keys (Section 47)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
-				Get("/developer/keys/{id}/ip-allowlist", publicAPIHandlers.ListAllowedIPs)
+				Get("/me/api-keys/{id}/ip-allowlist", publicAPIHandlers.ListAllowedIPs)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
-				Post("/developer/keys/{id}/ip-allowlist", publicAPIHandlers.AddAllowedIP)
+				Post("/me/api-keys/{id}/ip-allowlist", publicAPIHandlers.AddAllowedIP)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
-				Delete("/developer/keys/{id}/ip-allowlist/{ipId}", publicAPIHandlers.RemoveAllowedIP)
+				Delete("/me/api-keys/{id}/ip-allowlist/{ipId}", publicAPIHandlers.RemoveAllowedIP)
 
 			// Admin API Key management (Section 47)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
