@@ -170,6 +170,34 @@ func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pg
 	return spaces, nil
 }
 
+// ListStatesByCountryCode returns the state/province spaces parented to the
+// country with the given ISO geo_code (catalog: GET /geo/countries/:code/states).
+func (s *Service) ListStatesByCountryCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) ([]gen.Space, error) {
+	states, err := s.read.ListStatesByCountryGeoCode(ctx, gen.ListStatesByCountryGeoCodeParams{
+		TenantID:    tenantID,
+		CountryCode: &countryCode,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing states by country code: %w", err)
+	}
+
+	return states, nil
+}
+
+// ListCitiesByState returns the city spaces parented to the given state
+// (catalog: GET /geo/states/:id/cities).
+func (s *Service) ListCitiesByState(ctx context.Context, tenantID, stateID pgtype.UUID) ([]gen.Space, error) {
+	cities, err := s.read.ListCitiesByStateID(ctx, gen.ListCitiesByStateIDParams{
+		StateID:  stateID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing cities by state: %w", err)
+	}
+
+	return cities, nil
+}
+
 // ListSpacesByLevel returns every space at the given hierarchy level for the
 // tenant, newest first.
 func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID pgtype.UUID, level string) ([]gen.Space, error) {

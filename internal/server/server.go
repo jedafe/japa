@@ -95,9 +95,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	geoipUpdater := geoip.NewUpdater(cfg.MaxmindLicenseKey, cfg.GeoIPDBPath, geoipReader)
 	worker.RegisterGeoIPUpdater(geoipUpdater)
 
-	// Geo HTTP handlers — /api/v1/geo/me and /api/v1/geo/lookup
-	geoHandlers := geoip.NewHandlers(geoipReader)
-
 	// IP block middleware — reject blocked IPs before they reach any handler.
 	// Runs after RealIP (so the resolved IP is available) but before all
 	// other middleware and route handlers.
@@ -214,6 +211,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spaceService := spaces.NewService(database)
 	spaceUnread := spaces.NewUnreadCounter(vkClient)
 	spaceHandlers := spaces.NewHandlers(spaceService, spaceUnread)
+
+	// Geo HTTP handlers — /api/v1/geo/*. The hierarchy endpoints reuse
+	// spaceService (countries/states/cities are seeded as spaces).
+	geoHandlers := geoip.NewHandlers(geoipReader, spaceService)
 
 	// Content subsystem (Section 14 — Content Type System).
 	contentService := content.NewService(database)
@@ -828,12 +829,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/suggestions/spaces", trendingHandlers.GetSuggestedSpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/suggestions/tags", trendingHandlers.GetSuggestedTags)
 
-			// Geo routes (Phase 30 — Geo IP)
+			// Geo routes (Phase 30 — Geo IP; catalog: Sections 05, 37)
 			// Public: returns geo data for the current request IP (resolved by middleware)
 			r.Get("/geo/me", geoHandlers.HandleGeoMe)
+			r.Get("/geo/detect", geoHandlers.HandleGeoDetect)
 			// Admin: resolve an arbitrary IP address
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "geo.lookup")).
 				Get("/geo/lookup", geoHandlers.HandleGeoLookup)
+			// Geo hierarchy (public — read-views over seeded country/state/city spaces)
+			r.Get("/geo/countries", geoHandlers.HandleListCountries)
+			r.Get("/geo/countries/{code}/states", geoHandlers.HandleListStates)
+			r.Get("/geo/states/{id}/cities", geoHandlers.HandleListCities)
 
 			// WebSocket + DM routes (Section 10 — Real-Time WebSockets)
 			wsHub := websocket.NewHub()
