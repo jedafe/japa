@@ -1431,7 +1431,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// not the users-package stubs. Consolidated here from /account/* (§6).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me", gdprHandlers.RequestAccountDeletion)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export", gdprHandlers.RequestDataExport)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", usersHandlers.GetDataExportStatus)
+			// NOTE: replaces the users-package stub that hardcoded "no_pending_export"
+			// regardless of actual state (same class of bug as the DELETE /me fix).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", gdprHandlers.GetMyDataExportStatus)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/download", gdprHandlers.GetMyDataExportDownload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
 
