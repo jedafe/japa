@@ -881,19 +881,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/threads", forumHandlers.CreateThread)
-				r.Get("/forum/threads", forumHandlers.ListThreads)
-				r.Get("/forum/threads/{slug}", forumHandlers.GetThread)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum", forumHandlers.CreateThread)
+				r.Get("/forum", forumHandlers.ListThreads)
+				r.Get("/forum/{slug}", forumHandlers.GetThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.edit_own")).
-					Patch("/forum/threads/{id}", forumHandlers.UpdateThread)
+					Patch("/forum/{id}", forumHandlers.UpdateThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.delete_own")).
-					Delete("/forum/threads/{id}", forumHandlers.DeleteThread)
+					Delete("/forum/{id}", forumHandlers.DeleteThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.solve")).
-					Post("/forum/threads/{id}/solve", forumHandlers.SolveThread)
+					Post("/forum/{id}/solve", forumHandlers.SolveThread)
 
 				// Reply routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/threads/{id}/replies", forumHandlers.CreateReply)
-				r.Get("/forum/threads/{id}/replies", forumHandlers.ListReplies)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/{id}/replies", forumHandlers.CreateReply)
+				r.Get("/forum/{id}/replies", forumHandlers.ListReplies)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.edit_own")).
 					Patch("/forum/replies/{id}", forumHandlers.UpdateReply)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.delete_own")).
@@ -913,8 +913,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/forum/tags", forumHandlers.CreateTag)
 				r.Get("/forum/tags", forumHandlers.ListTags)
 				r.Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/threads/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/forum/threads/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/forum/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).Patch("/forum/tags/{id}", forumHandlers.UpdateTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).Delete("/forum/tags/{id}", forumHandlers.DeleteTag)
 
