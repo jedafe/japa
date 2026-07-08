@@ -19,7 +19,7 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-	const feedResult = await apiFetch<{ items: FeedItem[]; has_more: boolean }>('/feed/primary?limit=20', { headers });
+	const feedResult = await apiFetch<{ items: FeedItem[]; has_more: boolean }>('/feed?limit=20', { headers });
 
 	return {
 		feed: feedResult.ok && feedResult.data ? feedResult.data.items : [],

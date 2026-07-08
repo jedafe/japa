@@ -5,7 +5,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-	const flagsResult = await apiFetch<Record<string, boolean>>('/features');
+	const flagsResult = await apiFetch<Record<string, boolean>>('/feature-flags');
 	const flags = flagsResult.ok && flagsResult.data ? flagsResult.data : {};
 
 	let notificationCount = 0;
@@ -22,7 +22,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
 		?? (locals.user as any)?.language
 		?? 'en';
 
-	const translationsResult = await apiFetch<{ data: Record<string, string> }>(`/translations/${locale}`);
+	const translationsResult = await apiFetch<{ data: Record<string, string> }>(`/i18n/packs/${locale}`);
 	const translations = translationsResult.ok && translationsResult.data?.data ? translationsResult.data.data : {};
 
 	return {

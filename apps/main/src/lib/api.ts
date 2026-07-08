@@ -930,7 +930,7 @@ export const api = {
 		if (params?.limit) p.set('limit', String(params.limit));
 		if (params?.cursor) p.set('cursor', params.cursor);
 		const q = p.toString();
-		return request<{ items: FeedItem[]; has_more: boolean }>('/feed/primary' + (q ? '?' + q : ''));
+		return request<{ items: FeedItem[]; has_more: boolean }>('/feed' + (q ? '?' + q : ''));
 	},
 	getSpaceFeed(spaceId: string, params?: { limit?: number; offset?: number; cursor?: string }) {
 		const p = new URLSearchParams();
@@ -953,7 +953,7 @@ export const api = {
 		if (params?.limit) p.set('limit', String(params.limit));
 		if (params?.offset) p.set('offset', String(params.offset));
 		const q = p.toString();
-		return request<{ items: FeedItem[]; has_more: boolean }>('/feed/explore' + (q ? '?' + q : ''));
+		return request<{ items: FeedItem[]; has_more: boolean }>('/explore' + (q ? '?' + q : ''));
 	},
 
 	// Onboarding recommendations

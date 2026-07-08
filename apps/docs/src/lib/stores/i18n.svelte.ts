@@ -42,7 +42,7 @@ export async function loadTranslations(localeCode: string): Promise<Record<strin
 	}
 	try {
 		const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
-		const res = await fetch(`${base}/translations/${localeCode}`);
+		const res = await fetch(`${base}/i18n/packs/${localeCode}`);
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const body = await res.json();
 		const data = body?.data ?? body ?? {};
