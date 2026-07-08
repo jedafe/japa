@@ -98,6 +98,28 @@ FROM spaces
 WHERE parent_id = @parent_id AND tenant_id = @tenant_id
 ORDER BY created_at ASC, id ASC;
 
+-- name: ListSpacesByMemberUser :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_members sm ON sm.space_id = s.id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id
+ORDER BY sm.joined_at DESC, s.id DESC;
+
+-- name: ListSpacesByModeratorUser :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_moderators sm ON sm.space_id = s.id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id
+ORDER BY sm.created_at DESC, s.id DESC;
+
 -- name: GetSpaceByID :one
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
