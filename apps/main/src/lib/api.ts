@@ -405,7 +405,7 @@ export const api = {
 
 	// Tickets
 	createTicket(data: { subject: string; description: string; type_id?: string; priority?: string; email?: string; field_values?: Record<string, unknown> }) {
-		return request<Ticket>('/support', { method: 'POST', body: JSON.stringify(data) });
+		return request<Ticket>('/tickets', { method: 'POST', body: JSON.stringify(data) });
 	},
 	listTickets(params?: { status?: string; page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
@@ -413,13 +413,13 @@ export const api = {
 		if (params?.page_size) p.set('page_size', String(params.page_size));
 		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
-		return request<Ticket[]>('/support/my' + (q ? '?' + q : ''));
+		return request<Ticket[]>('/me/tickets' + (q ? '?' + q : ''));
 	},
 	getTicket(id: string) {
-		return request<{ ticket: Ticket; comments: TicketComment[]; attachments: unknown[] }>('/support/my/' + id);
+		return request<{ ticket: Ticket; comments: TicketComment[]; attachments: unknown[] }>('/me/tickets/' + id);
 	},
 	addTicketReply(id: string, data: { body: string }) {
-		return request<TicketComment>('/support/my/' + id + '/reply', {
+		return request<TicketComment>('/me/tickets/' + id + '/comments', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -582,19 +582,19 @@ export const api = {
 
 	// Developer API Keys
 	listDeveloperKeys() {
-		return request<DeveloperApiKey[]>('/developer/keys');
+		return request<DeveloperApiKey[]>('/me/api-keys');
 	},
 	createDeveloperKey(data: { name: string; scopes: string[] }) {
-		return request<{ key: string; key_info: DeveloperApiKey }>('/developer/keys', {
+		return request<{ key: string; key_info: DeveloperApiKey }>('/me/api-keys', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	},
 	revokeDeveloperKey(id: string) {
-		return request<{ deleted: boolean }>('/developer/keys/' + id, { method: 'DELETE' });
+		return request<{ deleted: boolean }>('/me/api-keys/' + id, { method: 'DELETE' });
 	},
 	updateDeveloperKey(id: string, data: { name?: string; scopes?: string[] }) {
-		return request<DeveloperApiKey>('/developer/keys/' + id, {
+		return request<DeveloperApiKey>('/me/api-keys/' + id, {
 			method: 'PUT',
 			body: JSON.stringify(data)
 		});
@@ -705,7 +705,7 @@ export const api = {
 		metadata?: Record<string, unknown>;
 	}) {
 		return request<{ payment_id: string; checkout_url?: string; reference: string; provider: string }>(
-			'/payments/initiate',
+			'/payments/intent',
 			{ method: 'POST', body: JSON.stringify(data) }
 		);
 	},
@@ -738,7 +738,7 @@ export const api = {
 			discount_type: string;
 			discount_value: number;
 			expires_at?: string;
-		}>('/discount-codes/validate', {
+		}>('/payments/discount-codes/validate', {
 			method: 'POST',
 			body: JSON.stringify({ code })
 		});
@@ -746,7 +746,7 @@ export const api = {
 
 	// Wallet
 	getWalletBalance() {
-		return request<{ points: number; credits: number }>('/wallet/balance');
+		return request<{ points: number; credits: number }>('/me/wallet');
 	},
 
 	// Pricing Plans
@@ -785,10 +785,10 @@ export const api = {
 		const p = new URLSearchParams();
 		if (params?.limit) p.set('limit', String(params.limit));
 		const q = p.toString();
-		return request<WalletLedgerEntry[]>('/wallet/ledger' + (q ? '?' + q : ''));
+		return request<WalletLedgerEntry[]>('/me/wallet/ledger' + (q ? '?' + q : ''));
 	},
 	convertWallet(data: { points: number }) {
-		return request<{ points: number; credits: number }>('/wallet/convert', {
+		return request<{ points: number; credits: number }>('/me/wallet/convert', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -799,12 +799,12 @@ export const api = {
 		const p = new URLSearchParams();
 		if (params?.limit) p.set('limit', String(params.limit));
 		const q = p.toString();
-		return request<PaymentListItem[]>('/payments' + (q ? '?' + q : ''));
+		return request<PaymentListItem[]>('/me/payments' + (q ? '?' + q : ''));
 	},
 
 	// Subscriptions
 	getActiveSubscription() {
-		return request<SubscriptionDetail | null>('/subscriptions/active');
+		return request<SubscriptionDetail | null>('/me/subscription');
 	},
 	cancelSubscription(id: string) {
 		return request<{ success: boolean }>('/subscriptions/' + id + '/cancel', { method: 'PATCH' });
