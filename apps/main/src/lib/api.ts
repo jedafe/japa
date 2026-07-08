@@ -814,8 +814,8 @@ export const api = {
 	getActiveSubscription() {
 		return request<SubscriptionDetail | null>('/me/subscription');
 	},
-	cancelSubscription(id: string) {
-		return request<{ success: boolean }>('/subscriptions/' + id + '/cancel', { method: 'PATCH' });
+	cancelSubscription() {
+		return request<{ success: boolean }>('/me/subscription/cancel', { method: 'POST' });
 	},
 
 	// Search
