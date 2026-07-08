@@ -264,6 +264,51 @@ func (h *Handlers) UpdatePreference(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"success": true}})
 }
 
+// UpdatePreferences handles PATCH /api/v1/me/notification-preferences — a
+// bulk update across multiple notification types in one request. Thin
+// orchestration over the existing per-type UpdatePreference; no new
+// service-layer logic.
+func (h *Handlers) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Preferences []struct {
+			Type  string `json:"type"`
+			InApp bool   `json:"in_app"`
+			Email bool   `json:"email"`
+			Push  bool   `json:"push"`
+		} `json:"preferences"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	for _, p := range input.Preferences {
+		if p.Type == "" {
+			writeError(w, http.StatusBadRequest, "missing_type", "each preference requires a type")
+			return
+		}
+
+		if err := h.service.UpdatePreference(r.Context(), user.UserID, p.Type, p.InApp, p.Email, p.Push); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update preference")
+			return
+		}
+	}
+
+	prefs, err := h.service.GetPreferences(r.Context(), user.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get preferences")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": prefs})
+}
+
 // ListNotificationTypes handles GET /api/v1/notification-types.
 func (h *Handlers) ListNotificationTypes(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
