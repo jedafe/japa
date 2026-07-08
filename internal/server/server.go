@@ -59,6 +59,7 @@ import (
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/spaces"
 	"github.com/jedafe/japa/internal/spam"
+	"github.com/jedafe/japa/internal/tags"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/tickets"
 	"github.com/jedafe/japa/internal/users"
@@ -240,6 +241,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Follow System subsystem (Section 31 — Follow System).
 	followService := follows.NewService(database)
 	followHandlers := follows.NewHandlers(followService)
+
+	// General Tags subsystem (Sections 08, 49) — distinct from forum_tags.
+	// Composes contentService + followService directly.
+	tagsService := tags.NewService(database)
+	tagsHandlers := tags.NewHandlers(tagsService, contentService, followService)
 
 	// Notification System subsystem (Section 35 — Notification System).
 	notificationService := notifications.NewService(database)
@@ -777,7 +783,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mutual/{other_user_id}", followHandlers.CheckMutual)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/follow-status", followHandlers.GetFollowStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{tag_id}/followers", followHandlers.GetFollowers)
 
 			// User Blocks (Section 41 — user-facing, non-admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/users/{user_id}/block", interactionsHandlers.ToggleBlock)
@@ -1475,6 +1480,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/search/autocomplete", searchHandlers.Autocomplete)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/search", searchHandlers.SearchSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/search", searchHandlers.SearchTag)
+
+			// General Tags (Sections 08, 49) — distinct from forum tags.
+			r.Get("/tags", tagsHandlers.ListTags)
+			r.Get("/tags/{slug}", tagsHandlers.GetTag)
+			r.Get("/tags/{slug}/content", tagsHandlers.GetTagContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/followers", tagsHandlers.GetTagFollowers)
+			// NOTE (admin gaps): admin tag CRUD (POST/PATCH/DELETE /admin/tags) does
+			// not exist yet — there is currently no way to create a general tag at
+			// all, so content_tags/AddContentTag is effectively unreachable until
+			// that's implemented.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.analytics.search")).
 				Get("/admin/search/analytics", searchHandlers.SearchAdminAnalytics)
 
