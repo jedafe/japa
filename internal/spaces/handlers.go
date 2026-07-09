@@ -9,6 +9,7 @@
 package spaces
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,17 +25,27 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// ContentService is the subset of content.Service the space content/pinned
+// handlers need.
+type ContentService interface {
+	ListContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsBySpaceRow, error)
+	PinContent(ctx context.Context, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.SpacePinnedPost, error)
+	UnpinContent(ctx context.Context, spaceID, contentID pgtype.UUID) error
+	ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]gen.SpacePinnedPost, error)
+}
+
 // Handlers holds dependencies for space HTTP handlers. The Service wraps the
 // reader/writer database pools; the UnreadCounter tracks per-user unread
 // post counts via Valkey (nil is safe — it degrades to no-op).
 type Handlers struct {
 	Service *Service
 	Unread  *UnreadCounter
+	content ContentService
 }
 
 // NewHandlers creates Handlers with the given Service and UnreadCounter.
-func NewHandlers(service *Service, unread *UnreadCounter) *Handlers {
-	return &Handlers{Service: service, Unread: unread}
+func NewHandlers(service *Service, unread *UnreadCounter, contentService ContentService) *Handlers {
+	return &Handlers{Service: service, Unread: unread, content: contentService}
 }
 
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
@@ -1298,4 +1309,149 @@ func (h *Handlers) GetMuteStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": muted}})
+}
+
+// ListSpaceContent handles GET /api/v1/spaces/{slug}/content — content
+// belonging to this space, newest first. Supports ?cursor= and ?page_size=.
+func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+
+	var cursor pgtype.Timestamptz
+	if cs := r.URL.Query().Get("cursor"); cs != "" {
+		if err := cursor.Scan(cs); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
+			return
+		}
+	}
+
+	items, err := h.content.ListContentsBySpace(r.Context(), tenantID, space.ID, cursor, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list space content")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// ListPinned handles GET /api/v1/spaces/{slug}/pinned.
+func (h *Handlers) ListPinned(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	pins, err := h.content.ListPinnedContent(r.Context(), space.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list pinned content")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": pins})
+}
+
+// AddPinned handles POST /api/v1/spaces/{slug}/pinned — pins a content item
+// to the space (moderator action, gated by spaces.moderate at the router).
+func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	var input struct {
+		ContentID string `json:"content_id"`
+		Position  int32  `json:"position"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.ContentID == "" {
+		writeError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
+		return
+	}
+
+	var contentID pgtype.UUID
+	if err := contentID.Scan(input.ContentID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		return
+	}
+
+	pin, err := h.content.PinContent(r.Context(), space.ID, contentID, user.UserID, input.Position)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to pin content")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": pin})
+}
+
+// RemovePinned handles DELETE /api/v1/spaces/{slug}/pinned/{content_id}.
+func (h *Handlers) RemovePinned(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	var contentID pgtype.UUID
+	if err := contentID.Scan(chi.URLParam(r, "content_id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		return
+	}
+
+	if err := h.content.UnpinContent(r.Context(), space.ID, contentID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unpin content")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unpinned": true}})
+}
+
+// Leave handles DELETE /api/v1/spaces/{slug}/leave — dedicated leave action,
+// split from the join/leave toggle in ToggleSpaceMembership.
+func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.Service.Leave(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, tenantID, -1); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"left": true}})
 }
