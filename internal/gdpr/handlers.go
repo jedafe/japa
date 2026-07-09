@@ -464,3 +464,25 @@ func (h *Handlers) ListPendingDeletions(w http.ResponseWriter, r *http.Request) 
 func strPtr(s string) *string {
 	return &s
 }
+
+// ─── P5.6 GDPR Execute Deletion ──────────────────────────────────────────
+
+// ExecuteDeletion handles POST /admin/gdpr/deletion-requests/:id/execute (P5.6).
+func (h *Handlers) ExecuteDeletion(w http.ResponseWriter, r *http.Request) {
+	requestID := chi.URLParam(r, "id")
+	_, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	// Mark the deletion request as executed — actual deletion is async via worker
+	_, err := h.Service.db.Writer.Exec(r.Context(),
+		`UPDATE gdpr_deletion_requests SET status = 'executed', executed_at = now(), updated_at = now()
+		 WHERE id = $1 AND status = 'pending'`, requestID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
+		"request_id": requestID, "status": "executed",
+	}})
+}

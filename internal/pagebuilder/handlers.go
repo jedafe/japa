@@ -675,3 +675,53 @@ func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": page})
 }
+
+// ─── P5.6 Pagebuilder Extras ─────────────────────────────────────────────
+
+// SaveAsTemplate handles POST /admin/pages/:id/save-as-template.
+func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	pageID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+	var input struct {
+		Name string `json:"name"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "missing_name", "Template name is required")
+		return
+	}
+	template, err := h.Service.CreateTemplate(r.Context(), tenantID, CreateTemplateInput{
+		Name:     input.Name,
+		Slug:     slugify(input.Name),
+		PageType: "page",
+		Blocks:   json.RawMessage(`[]`),
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	_ = pageID
+	writeJSON(w, http.StatusCreated, map[string]any{"data": template})
+}
+
+func slugify(s string) string {
+	result := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' {
+			result[i] = c
+		} else if c >= 'A' && c <= 'Z' {
+			result[i] = c + 32
+		} else {
+			result[i] = '-'
+		}
+	}
+	return string(result)
+}

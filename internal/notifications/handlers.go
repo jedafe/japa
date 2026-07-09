@@ -404,3 +404,63 @@ func (h *Handlers) HandleGetVAPIDKey(w http.ResponseWriter, _ *http.Request) {
 	publicKey := h.service.GetVAPIDPublicKey()
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"publicKey": publicKey}})
 }
+
+// CreateNotificationType handles POST /admin/notification-types (P5.6).
+func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Key         string  `json:"key"`
+		Label       string  `json:"label"`
+		Description *string `json:"description"`
+		Enabled     *bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		return
+	}
+	if input.Key == "" || input.Label == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "key and label are required")
+		return
+	}
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+	if err := h.service.CreateNotificationType(r.Context(), input.Key, input.Label, input.Description, enabled); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create notification type")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"key": input.Key}})
+}
+
+// UpdateNotificationType handles PATCH /admin/notification-types/:key (P5.6).
+func (h *Handlers) UpdateNotificationType(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	var input struct {
+		Label       string  `json:"label"`
+		Description *string `json:"description"`
+		Enabled     *bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		return
+	}
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+	if err := h.service.UpdateNotificationType(r.Context(), key, input.Label, input.Description, enabled); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update notification type")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key}})
+}
+
+// DeleteNotificationType handles DELETE /admin/notification-types/:key (P5.6).
+func (h *Handlers) DeleteNotificationType(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	if err := h.service.DeleteNotificationType(r.Context(), key); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete notification type")
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
