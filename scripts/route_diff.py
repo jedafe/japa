@@ -29,20 +29,26 @@ def collapse_params(p: str) -> str:
 def parse_server(path: str):
     """Return set of (METHOD, normalized_path).
 
-    Tracks the /auth sub-route so its relative registrations get the /auth
-    prefix restored. Everything else is relative to /api/v1, which the catalog
-    also strips, so no prefix is added.
+    Tracks the /auth and /control sub-routes so their relative registrations
+    get the correct prefix restored. Everything else is relative to /api/v1,
+    which the catalog also strips, so no prefix is added.
     """
     routes = set()
-    auth_depth = None
+    route_prefix = None
+    prefix_depth = None
     depth = 0
     with open(path) as f:
         for line in f:
             depth += line.count("{") - line.count("}")
             if re.search(r'\.Route\("/auth"', line):
-                auth_depth = depth  # inside this brace depth we are under /auth
-            if auth_depth is not None and depth < auth_depth:
-                auth_depth = None
+                route_prefix = "/auth"
+                prefix_depth = depth
+            elif re.search(r'\.Route\("/control"', line):
+                route_prefix = "/control"
+                prefix_depth = depth
+            if prefix_depth is not None and depth < prefix_depth:
+                route_prefix = None
+                prefix_depth = None
             # Match both `r.Get("…")` and the continuation-line form where the
             # method sits on its own indented line after `r.With(...).`:
             #     r.With(mw...).
@@ -53,8 +59,8 @@ def parse_server(path: str):
             if not m:
                 continue
             meth, rpath = m.group(1).upper(), m.group(2)
-            if auth_depth is not None and not rpath.startswith("/auth"):
-                rpath = "/auth" + rpath
+            if route_prefix is not None and not rpath.startswith(route_prefix):
+                rpath = route_prefix + rpath
             routes.add((meth, collapse_params(rpath)))
     return routes
 

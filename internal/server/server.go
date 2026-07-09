@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/comments"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/control"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/coupons"
 	"github.com/jedafe/japa/internal/affiliate"
@@ -507,6 +508,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	sitemapHandler := seo.NewSitemapHandler(seoQueries, database.Reader)
 	ogImageHandler := seo.NewOGImageHandler(database.Reader)
 
+	// Config handlers for public settings endpoint.
+	configHandlers := config.NewHandlers(settingsService)
+
+	// Control panel handlers (super-admin).
+	controlService := control.NewService(database)
+	controlHandlers := control.NewHandlers(controlService, database, featureChecker, spamStore, publicAPIHandlers)
+
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
 	r.Get("/ready", h.ReadinessCheck)
@@ -525,6 +533,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/spaces/{slug}/feed.xml", rsspkg.HandleSpaceFeed(database.Reader))
 		r.Get("/tags/{slug}/feed.xml", rsspkg.HandleTagFeed(database.Reader))
 		r.Get("/users/{username}/feed.xml", rsspkg.HandleUserFeed(database.Reader))
+
+		// Public settings endpoint (no auth required, tenant-scoped)
+		r.Get("/site/settings/public", configHandlers.GetPublicSettings)
 
 		// API Playground & OpenAPI Spec (Section 44 — docs.japaconnect.com)
 		r.Get("/docs/api/playground", docsHandlers.APIPlaygroundHandler)
@@ -564,14 +575,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/verify-email", authHandlers.HandleVerifyEmail)
 				r.Post("/resend-verification", authHandlers.HandleResendVerification)
 
-				// OAuth social login routes.
-				// DEFERRED (§8): catalog specifies POST /auth/oauth/:provider, but
-				// HandleInitiate issues a 307 redirect and the frontend uses <a href>
-				// GET links. Converting to POST requires the handler to return the
-				// auth URL as JSON + frontend rework + full OAuth-flow retest. Left as
-				// GET initiate until that change is made and verified.
-				r.Get("/oauth/{provider}/initiate", oauthHandlers.HandleInitiate)
-				r.Get("/oauth/{provider}/callback", oauthHandlers.HandleCallback)
+			// OAuth social login routes.
+			// POST returns auth_url as JSON for frontend-driven redirect.
+			r.Post("/oauth/{provider}/initiate", oauthHandlers.HandleInitiate)
+			r.Get("/oauth/{provider}/callback", oauthHandlers.HandleCallback)
 			})
 
 			// Feature flags endpoint (public - frontend needs flags to
@@ -1492,16 +1499,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/me/api-keys/{id}/ip-allowlist", publicAPIHandlers.ListAllowedIPs)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
 				Post("/me/api-keys/{id}/ip-allowlist", publicAPIHandlers.AddAllowedIP)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
-				Delete("/me/api-keys/{id}/ip-allowlist/{ipId}", publicAPIHandlers.RemoveAllowedIP)
+		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
+			Delete("/me/api-keys/{id}/ip-allowlist/{ipId}", publicAPIHandlers.RemoveAllowedIP)
 
-			// Admin API Key management (Section 47)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
-				Get("/admin/api-keys", publicAPIHandlers.ListAllKeys)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.manage")).
-				Post("/admin/api-keys/{id}/suspend", publicAPIHandlers.SuspendKey)
-
-			// User Profile & Preferences routes (catalog: /me, /me/profile)
+		// User Profile & Preferences routes (catalog: /me, /me/profile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me", usersHandlers.GetMyProfile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/profile", usersHandlers.UpdateMyProfile)
 			// NOTE (§6.3 dedupe): /me/preferences overlaps /me/notification-preferences;
@@ -1882,10 +1883,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
 				Patch("/admin/pages/{id}/blocks/reorder", pagebuilderHandlers.ReorderBlocks)
 
-			// Public page endpoint (no auth required)
-			r.Get("/pages/{slug}", pagebuilderHandlers.GetPublishedPage)
+		// Public page endpoint (no auth required)
+		r.Get("/pages/{slug}", pagebuilderHandlers.GetPublishedPage)
 
-			// Platform Settings (admin)
+		// Public page-templates endpoints (read-only, no auth required)
+		r.Get("/page-templates", pagebuilderHandlers.ListTemplates)
+		r.Get("/page-templates/{id}", pagebuilderHandlers.GetTemplate)
+
+		// Platform Settings (admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Get("/admin/settings", adminHandlers.ListSettings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
@@ -1937,6 +1942,76 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Admin Broadcast route
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
 				Post("/admin/broadcasts", adminHandlers.Broadcast)
+		})
+	})
+
+	// Super-admin Control Panel routes (Section 21).
+	// Tenant-scoped, requires auth + control.panel.access permission.
+	r.Group(func(r chi.Router) {
+		r.Use(tenant.Middleware(tenantStore))
+		r.Use(auth.RequireAuth(kr, vkClient.Redis()))
+		r.Use(rbac.RequirePermission(rbacResolver, "control.panel.access"))
+
+		r.Route("/control", func(r chi.Router) {
+			// Tenants
+			r.Get("/tenants", controlHandlers.ListTenants)
+			r.Post("/tenants", controlHandlers.CreateTenant)
+			r.Get("/tenants/{id}", controlHandlers.GetTenant)
+			r.Patch("/tenants/{id}", controlHandlers.UpdateTenant)
+			r.Delete("/tenants/{id}", controlHandlers.DeleteTenant)
+			r.Post("/tenants/{id}/suspend", controlHandlers.SuspendTenant)
+			r.Post("/tenants/{id}/unsuspend", controlHandlers.UnsuspendTenant)
+
+			// System Settings
+			r.Get("/system-settings", controlHandlers.ListSystemSettings)
+			r.Patch("/system-settings", controlHandlers.UpdateSystemSettings)
+			r.Patch("/system-settings/{key}", controlHandlers.UpdateSystemSetting)
+			r.Post("/system-settings/{key}/reset", controlHandlers.ResetSystemSetting)
+
+			// Feature Flags
+			r.Get("/feature-flags", controlHandlers.ListFeatureFlags)
+			r.Patch("/feature-flags/{flag_name}", controlHandlers.SetFeatureFlag)
+
+			// Infrastructure Health
+			r.Get("/health", controlHandlers.HealthCheck)
+			r.Get("/health/db", controlHandlers.DBHealthCheck)
+			r.Post("/health/db/vacuum", controlHandlers.DBVacuum)
+
+			// Queue Monitor
+			r.Get("/queue/stats", controlHandlers.QueueStats)
+			r.Get("/queue/dlq", controlHandlers.ListDLQ)
+			r.Post("/queue/dlq/{task_id}/retry", controlHandlers.RetryDLQTask)
+			r.Delete("/queue/dlq/{task_id}", controlHandlers.DiscardDLQTask)
+			r.Post("/queue/dlq/discard-all", controlHandlers.DiscardAllDLQ)
+
+			// Cache Management
+			r.Get("/cache/stats", controlHandlers.CacheStats)
+			r.Post("/cache/flush", controlHandlers.FlushCache)
+
+			// Security
+			r.Get("/security", controlHandlers.SecurityOverview)
+			r.Get("/security/ip-blocks", controlHandlers.ListIPBlocks)
+			r.Post("/security/ip-blocks", controlHandlers.CreateIPBlock)
+			r.Delete("/security/ip-blocks/{id}", controlHandlers.DeleteIPBlock)
+
+			// API Keys (moved from /admin/api-keys)
+			r.Get("/api-keys", publicAPIHandlers.ListAllKeys)
+			r.Post("/api-keys", controlHandlers.CreateAPIKey)
+			r.Get("/api-keys/{id}", controlHandlers.GetAPIKey)
+			r.Patch("/api-keys/{id}", controlHandlers.UpdateAPIKey)
+			r.Delete("/api-keys/{id}", controlHandlers.DeleteAPIKey)
+			r.Post("/api-keys/{id}/suspend", publicAPIHandlers.SuspendKey)
+			r.Get("/api-keys/analytics", controlHandlers.GetAPIKeyAnalytics)
+
+			// AI Budget
+			r.Get("/ai-budget", controlHandlers.GetAIBudget)
+			r.Patch("/ai-budget", controlHandlers.UpdateAIBudget)
+
+			// Audit Log (full cross-tenant view)
+			r.Get("/audit-logs", controlHandlers.ListAuditLogs)
+
+			// Deployments
+			r.Get("/deployments", controlHandlers.ListDeployments)
 		})
 	})
 
@@ -2168,6 +2243,18 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "pages.publish", Description: "Publish and archive pages"},
 		// Geo IP (Phase 30)
 		{Key: "geo.lookup", Description: "Resolve arbitrary IP addresses via GeoIP"},
+		// Super-admin Control Panel (Section 21)
+		{Key: "control.panel.access", Description: "Access super-admin control panel"},
+		{Key: "control.tenants.manage", Description: "Manage tenants"},
+		{Key: "control.settings.manage", Description: "Manage system settings"},
+		{Key: "control.feature_flags.manage", Description: "Manage feature flags"},
+		{Key: "control.health.view", Description: "View infrastructure health"},
+		{Key: "control.queue.manage", Description: "Manage job queue"},
+		{Key: "control.cache.manage", Description: "Manage cache"},
+		{Key: "control.security.manage", Description: "Manage security settings"},
+		{Key: "control.api_keys.manage", Description: "Manage API keys"},
+		{Key: "control.ai_budget.manage", Description: "Manage AI budget"},
+		{Key: "control.audit_logs.view", Description: "View audit logs"},
 	}
 
 	var defaultTenantID pgtype.UUID

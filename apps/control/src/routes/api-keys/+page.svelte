@@ -23,7 +23,7 @@
 	let errorMessage = $state('');
 
 	onMount(async () => {
-		const result = await api<AdminApiKey[]>('/admin/api-keys');
+		const result = await api<AdminApiKey[]>('/control/api-keys');
 		if (result.ok) {
 			keys = result.data;
 		} else {
@@ -33,7 +33,7 @@
 	});
 
 	async function suspendKey(id: string) {
-		const result = await api(`/admin/api-keys/${id}/suspend`, { method: 'POST' });
+		const result = await api(`/control/api-keys/${id}/suspend`, { method: 'POST' });
 		if (result.ok) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'suspended' } : k));
 		} else {
