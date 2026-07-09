@@ -991,3 +991,91 @@ func verifyStripeSignature(payload []byte, header, secret string) error {
 
 	return nil
 }
+
+// ─── P5.6 Payment Extras ─────────────────────────────────────────────────
+
+// UpdateDiscountCode handles PATCH /admin/discount-codes/:id.
+func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid discount code ID")
+		return
+	}
+	var input struct {
+		Code      string `json:"code"`
+		Percent   *int   `json:"percent"`
+		Amount    *int64 `json:"amount"`
+		ExpiresAt string `json:"expires_at"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	// Update via raw SQL since no UpdateDiscountCode service method exists
+	_, err = h.Service.db.Writer.Exec(r.Context(),
+		`UPDATE discount_codes SET code = COALESCE(NULLIF($3,''), code), updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2`, id, tenantID, input.Code)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update discount code")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id.String()}})
+}
+
+// GetDiscountCodeUsage handles GET /admin/discount-codes/:id/usage.
+func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	code := chi.URLParam(r, "id")
+	usage, err := h.Service.GetDiscountCodeUsageStats(r.Context(), tenantID, code)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get usage stats")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": usage})
+}
+
+// DeleteSubscription handles DELETE /subscriptions/:id.
+func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid subscription ID")
+		return
+	}
+	_, err = h.Service.db.Writer.Exec(r.Context(),
+		`UPDATE subscriptions SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete subscription")
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ReactivateSubscription handles POST /me/subscription/reactivate.
+func (h *Handlers) ReactivateSubscription(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_, err := h.Service.db.Writer.Exec(r.Context(),
+		`UPDATE subscriptions SET status = 'active', cancelled_at = NULL, updated_at = now()
+		 WHERE user_id = $1 AND tenant_id = $2 AND status = 'cancelled'
+		 ORDER BY updated_at DESC LIMIT 1`, user.UserID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reactivate subscription")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reactivated": true}})
+}

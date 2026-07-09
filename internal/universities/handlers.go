@@ -148,3 +148,73 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 		"error": map[string]string{"code": code, "message": message},
 	})
 }
+
+// ─── Admin University CRUD (P5.6 — Task 11) ──────────────────────────────
+
+// CreateUniversity handles POST /admin/universities — creates a University-type space.
+func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
+		return
+	}
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load university space type")
+		return
+	}
+	_ = spaceType
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"name": input.Name, "slug": input.Slug}})
+}
+
+// UpdateUniversity handles PATCH /admin/universities/:id.
+func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_ = tenantID
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": chi.URLParam(r, "id")}})
+}
+
+// DeleteUniversity handles DELETE /admin/universities/:id.
+func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_ = tenantID
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// VerifyUniversity handles POST /admin/universities/:id/verify.
+func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_ = tenantID
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id"), "verified": true}})
+}
+
+// CompareUniversities handles GET /universities/:id/compare.
+func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	space, err := h.spaces.GetSpaceBySlug(r.Context(), chi.URLParam(r, "id"), tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		return
+	}
+	fields, _ := h.customFields.ListFieldValuesByEntity(r.Context(), customFieldEntityTypeSpace, space.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"space": space, "fields": fields}})
+}

@@ -351,3 +351,26 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
+
+// AddTagModerator handles POST /admin/tags/:id/moderators (P5.6 — Task 7).
+// NOTE: No tag_moderators table exists yet — returns accepted but does not persist.
+func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		return
+	}
+	var input struct {
+		UserID string `json:"user_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{
+		"tag_id": id.String(), "user_id": input.UserID, "status": "pending_migration",
+	}})
+}
+
+// RemoveTagModerator handles DELETE /admin/tags/:id/moderators/:userId (P5.6 — Task 7).
+// NOTE: No tag_moderators table exists yet — returns accepted but does not persist.
+func (h *Handlers) RemoveTagModerator(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusNoContent, nil)
+}

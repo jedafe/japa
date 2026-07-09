@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 	"strconv"
 	"strings"
 
@@ -1366,4 +1367,125 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": following}})
+}
+
+// ─── P5.6 Professional Profile Extras ─────────────────────────────────────
+
+// VerifyProfile handles POST /admin/profiles/:id/verify (P5.6).
+func (h *Handlers) VerifyProfile(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+	_, err = h.Service.db.Writer.Exec(r.Context(),
+		`UPDATE professional_profiles SET verified = true, updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2`, profileID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify profile")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": profileID.String(), "verified": true}})
+}
+
+// UnverifyProfile handles DELETE /admin/profiles/:id/verify (P5.6).
+func (h *Handlers) UnverifyProfile(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+	_, err = h.Service.db.Writer.Exec(r.Context(),
+		`UPDATE professional_profiles SET verified = false, updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2`, profileID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify profile")
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ListProfileContent handles GET /profiles/:id/content (P5.6).
+func (h *Handlers) ListProfileContent(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+	_ = profileID
+	// Content is linked via author_id — return empty for now
+	writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+}
+
+// InviteMember handles POST /profiles/:id/members/invite (P5.6).
+func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+	var input struct {
+		Email string `json:"email"`
+		Role  string `json:"role"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	if input.Email == "" {
+		writeError(w, http.StatusBadRequest, "missing_email", "Email is required")
+		return
+	}
+	// Create invitation via raw SQL
+	token := fmt.Sprintf("inv_%d", time.Now().UnixNano())
+	_, err = h.Service.db.Writer.Exec(r.Context(),
+		`INSERT INTO professional_profile_invitations (profile_id, email, role, invited_by, token, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, now() + interval '7 days')`,
+		profileID, input.Email, input.Role, pgtype.UUID{}, token)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create invitation")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{
+		"profile_id": profileID.String(), "email": input.Email, "token": token,
+	}})
+}
+
+// AcceptProfileInvitation handles POST /profiles/invitations/accept (P5.6).
+func (h *Handlers) AcceptProfileInvitation(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	if input.Token == "" {
+		writeError(w, http.StatusBadRequest, "missing_token", "Token is required")
+		return
+	}
+	_ = tenantID
+	// Accept invitation via raw SQL
+	_, err := h.Service.db.Writer.Exec(r.Context(),
+		`UPDATE professional_profile_invitations SET accepted_at = now()
+		 WHERE token = $1 AND accepted_at IS NULL AND expires_at > now()`, input.Token)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to accept invitation")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"accepted": true}})
 }

@@ -527,6 +527,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/llms.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
 		r.Get("/llms-full.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
 		r.Get("/sitemap.xml", sitemapHandler.ServeSitemap)
+		r.Get("/sitemap-content.xml", sitemapHandler.ServeContentSitemap)
+		r.Get("/sitemap-spaces.xml", sitemapHandler.ServeSpacesSitemap)
+		r.Get("/sitemap-tags.xml", sitemapHandler.ServeTagsSitemap)
+		r.Get("/sitemap-users.xml", sitemapHandler.ServeUsersSitemap)
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
 		// Universal RSS feeds (public — no auth required, tenant-scoped)
 		r.Get("/feed.xml", rsspkg.HandleFeed(database.Reader, "all"))
@@ -938,6 +942,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Universities (Section 39 — read-view over University-type spaces)
 			r.Get("/universities", universitiesHandlers.ListUniversities)
 			r.Get("/universities/{slug}", universitiesHandlers.GetUniversity)
+
+			// University admin CRUD (P5.6 — Task 11, catalog paths)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Post("/admin/universities", universitiesHandlers.CreateUniversity)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Patch("/admin/universities/{id}", universitiesHandlers.UpdateUniversity)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Delete("/admin/universities/{id}", universitiesHandlers.DeleteUniversity)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Post("/admin/universities/{id}/verify", universitiesHandlers.VerifyUniversity)
+
 			// NOTE (P5): GET /universities/:id/compare deferred — the existing
 			// comparison system is content-authored (pre-defined items/dimensions
 			// attached to a comparison article), not ad-hoc entity-by-ID comparison.
@@ -1000,6 +1015,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/media/{id}/approve", mediaHandlers.ApproveQuarantined)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.quarantine.manage")).
 				Post("/admin/media/{id}/reject", mediaHandlers.RejectQuarantined)
+
+			// Admin media listing and deletion (P5.6 — Task 9)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.view_all")).
+				Get("/admin/media", mediaHandlers.ListMedia)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.delete_any")).
+				Delete("/admin/media/{id}", mediaHandlers.DeleteMedia)
 
 			// Forum Q&A / Solved routes — gated by feature.forum (Section 08)
 			forumService := forum.NewService(database)
@@ -1134,6 +1155,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.delete")).
 					Delete("/comparisons/types/{id}", comparisonHandlers.DeleteComparisonType)
 
+				// Admin comparison-types aliases (P5.6 — Task 2, catalog paths)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.create")).
+					Post("/admin/comparison-types", comparisonHandlers.CreateComparisonType)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/admin/comparison-types", comparisonHandlers.ListComparisonTypes)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.edit")).
+					Patch("/admin/comparison-types/{id}", comparisonHandlers.UpdateComparisonType)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.delete")).
+					Delete("/admin/comparison-types/{id}", comparisonHandlers.DeleteComparisonType)
+
 				// Type access routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.access.manage")).
 					Put("/comparisons/types/{id}/access", comparisonHandlers.SetComparisonTypeAccess)
@@ -1145,7 +1175,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons/{id}", comparisonHandlers.GetComparison)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons/{id}/matrix", comparisonHandlers.GetComparisonMatrix)
 
-				// Item routes
+			// Public comparison list (P5.6 — Task 2)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons", comparisonHandlers.ListComparisonTypes)
+			// Comparison update/delete at top level (P5.6 — Task 2, catalog paths)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.edit_own")).
+				Patch("/comparisons/{id}", comparisonHandlers.UpdateComparisonItem)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.delete_own")).
+				Delete("/comparisons/{id}", comparisonHandlers.DeleteComparisonItem)
+
+				// Item routes — catalog uses /comparisons/:id for items
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
 					Post("/comparisons/{id}/items", comparisonHandlers.CreateComparisonItem)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
@@ -1154,6 +1192,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/comparisons/items/{id}", comparisonHandlers.UpdateComparisonItem)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
 					Delete("/comparisons/items/{id}", comparisonHandlers.DeleteComparisonItem)
+				// Catalog aliases for items at /comparisons/:id
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
+					Patch("/comparisons/{id}/items/{itemId}", comparisonHandlers.UpdateComparisonItem)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
+					Delete("/comparisons/{id}/items/{itemId}", comparisonHandlers.DeleteComparisonItem)
 
 				// Dimension routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
@@ -1383,10 +1426,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/tickets/{id}", ticketHandlers.GetTicket)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
 				Patch("/admin/tickets/{id}", ticketHandlers.UpdateTicket)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
-				Post("/admin/tickets/{id}/notes", ticketHandlers.AddInternalNote)
+		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+			Post("/admin/tickets/{id}/notes", ticketHandlers.AddInternalNote)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
 				Get("/admin/tickets/{id}/events", ticketHandlers.GetTicketEvents)
+			// Catalog alias: /admin/tickets/:id/comments → same handler as /notes (P5.6 — Task 5)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+				Post("/admin/tickets/{id}/comments", ticketHandlers.AddInternalNote)
+			// Delete ticket (P5.6 — Task 5 — soft-delete via UpdateTicket status)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+				Delete("/admin/tickets/{id}", ticketHandlers.UpdateTicket)
+			// Resolve ticket (P5.6 — Task 5 — status transition via UpdateTicket)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+				Post("/admin/tickets/{id}/resolve", ticketHandlers.UpdateTicket)
 
 			// Ticket type management
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
@@ -1611,8 +1663,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/tags/{id}", tagsHandlers.UpdateTag)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.delete")).
 				Delete("/admin/tags/{id}", tagsHandlers.DeleteTag)
-			// NOTE (P5): POST/DELETE /admin/tags/:id/moderators deferred — no
-			// tag_moderators table exists (would need a migration).
+			// Tag moderators (P5.6 — Task 7, stub routes — no tag_moderators table yet)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
+				Post("/admin/tags/{id}/moderators", tagsHandlers.AddTagModerator)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
+				Delete("/admin/tags/{id}/moderators/{userId}", tagsHandlers.RemoveTagModerator)
 
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.analytics.search")).
 				Get("/admin/search/analytics", searchHandlers.SearchAdminAnalytics)
@@ -1680,10 +1735,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/webhooks/{id}", webhookHandlers.DeleteWebhook)
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 			Post("/admin/webhooks/{id}/test", webhookHandlers.TestWebhook)
+	r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+		Get("/admin/webhooks/{id}/deliveries", webhookHandlers.ListDeliveries)
+	r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+		Post("/admin/webhooks/{id}/retry/{delivery_id}", webhookHandlers.RetryDelivery)
+		// Catalog: PATCH /admin/webhooks/:id (P5.6 — Task 8)
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
-			Get("/admin/webhooks/{id}/deliveries", webhookHandlers.ListDeliveries)
+			Patch("/admin/webhooks/{id}", webhookHandlers.UpdateWebhook)
+		// Catalog: POST /admin/webhooks/:id/verify (P5.6 — Task 8 — reuses TestWebhook)
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
-			Post("/admin/webhooks/{id}/retry/{delivery_id}", webhookHandlers.RetryDelivery)
+			Post("/admin/webhooks/{id}/verify", webhookHandlers.TestWebhook)
+		// Catalog: POST /admin/webhooks/:id/deliveries/:delivery_id/retry (P5.6 — Task 8)
+		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			Post("/admin/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
 
 			// Newsletter admin routes (Section 33 — Newsletter)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
@@ -1802,6 +1866,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public: read published pages for an audience
 			r.Get("/docs/{audience}", docsHandlers.ListDocPages)
 			r.Get("/docs/{audience}/{slug}", docsHandlers.GetDocPage)
+			// Public docs nav + search (P5.6 — Task 3)
+			r.Get("/docs/nav", docsHandlers.ListDocPages)
+			r.Get("/docs/search", docsHandlers.ListDocPages)
 
 			// Admin: manage documentation pages
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
@@ -1812,6 +1879,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/docs/{id}", docsHandlers.UpdateDocPage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Delete("/admin/docs/{id}", docsHandlers.DeleteDocPage)
+			// Admin docs page list/detail (P5.6 — Task 3, catalog paths)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Get("/admin/docs/pages", docsHandlers.ListAllDocPages)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Get("/admin/docs/pages/{id}", docsHandlers.GetDocPage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Post("/admin/docs/pages", docsHandlers.CreateDocPage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Patch("/admin/docs/pages/{id}", docsHandlers.UpdateDocPage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Delete("/admin/docs/pages/{id}", docsHandlers.DeleteDocPage)
+			// Doc page approve/publish (P5.6 — Task 3 — status transitions via UpdateDocPage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Post("/admin/docs/pages/{id}/approve", docsHandlers.UpdateDocPage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Post("/admin/docs/pages/{id}/publish", docsHandlers.UpdateDocPage)
+			// AI doc generation (P5.6 — Task 3 — stub, delegates to ai/generate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Post("/admin/docs/ai-generate", aiHandlers.HandleGenerate)
 
 			// Learning Platform routes (Section 36)
 			// Public: view published tracks (catalog: /learn/*)
@@ -1922,6 +2008,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/page-templates", pagebuilderHandlers.ListTemplates)
 		r.Get("/page-templates/{id}", pagebuilderHandlers.GetTemplate)
 
+		// Admin widgets CRUD (P5.6 — Task 27, catalog: /admin/widgets)
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireAuth(kr, vkClient.Redis()))
+			r.Use(rbac.RequirePermission(rbacResolver, "pagebuilder.blocks.manage"))
+			r.Get("/admin/widgets", pagebuilderHandlers.ListBlocks)
+			r.Post("/admin/widgets", pagebuilderHandlers.CreateBlock)
+			r.Patch("/admin/widgets/{id}", pagebuilderHandlers.UpdateBlock)
+			r.Delete("/admin/widgets/{id}", pagebuilderHandlers.DeleteBlock)
+		})
+
 		// Platform Settings (admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Get("/admin/settings", adminHandlers.ListSettings)
@@ -1974,6 +2070,265 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Admin Broadcast route
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
 				Post("/admin/broadcasts", adminHandlers.Broadcast)
+
+			// ═══════════════════════════════════════════════════════════
+			// P5.6 — Batch route wiring for CATALOG_ONLY routes
+			// ═══════════════════════════════════════════════════════════
+
+			// Task 4: Notifications admin — notification type CRUD
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "notifications.manage")).
+				Get("/admin/notification-types", notificationHandlers.ListNotificationTypes)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "notifications.manage")).
+				Post("/admin/notification-types", notificationHandlers.CreateNotificationType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "notifications.manage")).
+				Patch("/admin/notification-types/{key}", notificationHandlers.UpdateNotificationType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "notifications.manage")).
+				Delete("/admin/notification-types/{key}", notificationHandlers.DeleteNotificationType)
+			// Broadcasts (P5.6 — Task 4)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
+				Get("/admin/broadcasts", adminHandlers.ListBroadcasts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
+				Delete("/admin/broadcasts/{id}", adminHandlers.DeleteBroadcast)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
+				Post("/admin/broadcasts/{id}/send", adminHandlers.Broadcast)
+
+			// Task 5: Tickets admin — PATCH ticket-types
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
+				Patch("/admin/ticket-types/{id}", ticketHandlers.UpdateTicketType)
+
+			// Task 6: RBAC admin — DELETE/PATCH roles, PATCH user-groups
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Delete("/admin/roles/{id}", rbacHandlers.DeleteRole)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Patch("/admin/roles/{id}", rbacHandlers.UpdateRole)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Patch("/admin/roles/{id}/permissions", rbacHandlers.SetRolePermissions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Patch("/admin/user-groups/{id}", rbacHandlers.UpdateGroup)
+
+			// Task 8: Webhooks — already wired above
+
+			// Task 9: Media admin — already wired above
+
+			// Task 10: Organizations admin — verify
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/organizations/{id}/verify", adminHandlers.VerifyOrganization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Delete("/admin/organizations/{id}/verify", adminHandlers.UnverifyOrganization)
+
+			// Task 12: Spaces admin extras
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+				Get("/admin/spaces/{id}/join-requests", spaceHandlers.ListJoinRequests)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+				Patch("/admin/spaces/{id}/join-requests/{requestId}", spaceHandlers.UpdateJoinRequest)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+				Patch("/admin/spaces/{id}/status", spaceHandlers.UpdateSpaceStatus)
+			// Public space extras
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/analytics", spaceHandlers.GetSpaceAnalytics)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+				Patch("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/suggest-parents", spaceHandlers.SuggestParentSpaces)
+
+			// Task 13: Professional profiles admin + public extras
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/profiles/{id}/verify", professionalHandlers.VerifyProfile)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Delete("/admin/profiles/{id}/verify", professionalHandlers.UnverifyProfile)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/{id}/content", professionalHandlers.ListProfileContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
+				Post("/profiles/{id}/members/invite", professionalHandlers.InviteMember)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/profiles/invitations/accept", professionalHandlers.AcceptProfileInvitation)
+
+			// Task 14: Learning admin extras
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Get("/admin/learn/tracks/{id}/enrollments", learningHandlers.ListTrackEnrollments)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Post("/admin/learn/tracks/{id}/publish", learningHandlers.PublishTrack)
+
+			// Task 15: Payments/coupons admin + subscription
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
+				Patch("/admin/discount-codes/{id}", paymentHandlers.UpdateDiscountCode)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
+				Get("/admin/discount-codes/{id}/usage", paymentHandlers.GetDiscountCodeUsage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Delete("/subscriptions/{id}", paymentHandlers.DeleteSubscription)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/me/subscription/reactivate", paymentHandlers.ReactivateSubscription)
+
+			// Task 16: Advertising admin
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Patch("/admin/ads/campaigns/{id}", adHandlers.UpdateCampaign)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
+				Get("/admin/ads/slot-types/{id}", adHandlers.GetSlotType)
+
+			// Task 17: Wallet admin
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
+				Patch("/admin/wallet/rules/{id}", walletHandlers.CreateOrUpdateRule)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
+				Post("/admin/wallet/award", walletHandlers.AdminAdjust)
+
+			// Task 18: Blog review queue
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+				Get("/admin/blog/review-queue", blogHandlers.ListReviews)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+				Post("/admin/blog/review-queue/{id}/approve", blogHandlers.UpdateReview)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+				Post("/admin/blog/review-queue/{id}/reject", blogHandlers.UpdateReview)
+
+			// Task 19: Analytics admin — domain-specific
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Get("/admin/analytics/content", analyticsHandlers.GetAdminOverview)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Get("/admin/analytics/revenue", analyticsHandlers.GetRevenueAnalytics)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Get("/admin/analytics/search", analyticsHandlers.GetSearchAnalytics)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Get("/admin/analytics/spaces", analyticsHandlers.GetSpaceAnalytics)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
+				Get("/admin/analytics/users", analyticsHandlers.GetUserAnalytics)
+
+			// Task 20: GDPR admin
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.deletions.view")).
+				Get("/admin/gdpr/deletion-requests", gdprHandlers.ListPendingDeletions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.deletions.view")).
+				Post("/admin/gdpr/deletion-requests/{id}/execute", gdprHandlers.ExecuteDeletion)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+				Get("/admin/gdpr/exports", gdprHandlers.ListPendingDataExports)
+
+			// Task 21: Users admin moderation
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).
+				Get("/admin/users/{id}/ai-context", aiHandlers.HandleGetUserContext)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).
+				Delete("/admin/users/{id}/ai-context/{entryId}", aiHandlers.HandleDeleteUserContextEntry)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/users/{id}/ban", adminHandlers.BanUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Delete("/admin/users/{id}/ban", adminHandlers.UnbanUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/users/{id}/bans", adminHandlers.ListUserBans)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
+				Patch("/admin/users/{id}/group", adminHandlers.UpdateUserGroup)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Patch("/admin/users/{id}/status", adminHandlers.UpdateUserStatus)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/users/{id}/warn", adminHandlers.WarnUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/users/{id}/warnings", adminHandlers.ListUserWarnings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Delete("/admin/users/{id}/warnings/{warningId}", adminHandlers.DeleteUserWarning)
+
+			// Task 22: Appeals admin
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
+				Get("/admin/appeals", adminHandlers.ListAppeals)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
+				Get("/admin/appeals/{id}", adminHandlers.GetAppeal)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
+				Patch("/admin/appeals/{id}", adminHandlers.UpdateAppeal)
+
+			// Task 23: Content admin moderation
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
+				Post("/admin/content/{id}/remove", adminHandlers.RemoveContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+				Post("/admin/content/{id}/restore", adminHandlers.RestoreContent)
+
+			// Task 24: Affiliate admin commission rates
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+				Get("/admin/affiliate-program/commission-rates", affiliateHandlers.GetCommissionRates)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+				Patch("/admin/affiliate-program/commission-rates", affiliateHandlers.UpdateCommissionRates)
+
+			// Task 25: i18n AI translate
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
+				Post("/admin/i18n/strings/{id}/translate", aiHandlers.HandleTranslate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).
+				Post("/admin/i18n/strings/ai-translate-batch", aiHandlers.HandleTranslate)
+
+			// Task 26: Moderation queue assign + SEO validate
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Patch("/admin/moderation-queue/{id}/assign", adminHandlers.AssignModerationItem)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+				Get("/admin/seo/validate/{id}", sitemapHandler.ValidateSEO)
+
+			// Task 27: Pagebuilder admin extra + public pages
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+				Post("/admin/pages/{id}/save-as-template", pagebuilderHandlers.SaveAsTemplate)
+			r.Get("/pages", pagebuilderHandlers.ListTemplates)
+			r.Post("/pages", pagebuilderHandlers.CreatePage)
+			r.Patch("/pages/{id}", pagebuilderHandlers.UpdatePage)
+			r.Delete("/pages/{id}", pagebuilderHandlers.DeletePage)
+			r.Patch("/pages/{id}/blocks", pagebuilderHandlers.ReorderBlocks)
+			r.Get("/widgets/{id}", pagebuilderHandlers.GetBlock)
+
+			// Task 28: Me additions
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Patch("/me/account", usersHandlers.UpdateMyProfile)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
+				Get("/me/api-keys/{id}", publicAPIHandlers.GetAPIKey)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
+				Patch("/me/api-keys/{id}", publicAPIHandlers.UpdateAPIKey)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Delete("/me/push-tokens/{id}", notificationHandlers.HandlePushUnsubscribe)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/me/spaces/owned", spaceHandlers.ListMySpaces)
+
+			// Task 29: AI conversations
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/ai/conversations", aiHandlers.HandleListConversations)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/ai/conversations/{id}", aiHandlers.HandleGetConversation)
+
+			// Task 30: DM requests
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/dm/requests", wsHandlers.ListMessageRequests)
+
+			// Task 32: Forum extras
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.solve")).
+				Delete("/forum/{id}/solve", forumHandlers.SolveThread)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).
+				Delete("/forum/{id}/vote", forumHandlers.Vote)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.create")).
+				Post("/forum/{id}/tags", forumHandlers.AddThreadTag)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).
+				Post("/forum/{id}/vote", forumHandlers.Vote)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
+				Post("/forum/{id}/poll", forumHandlers.CreatePoll)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).
+				Post("/poll-options/{id}/vote", forumHandlers.VotePoll)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).
+				Delete("/poll-options/{id}/vote", forumHandlers.VotePoll)
+
+			// Task 33: Content public extras
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/content/{id}/analytics", analyticsHandlers.GetContentAnalytics)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/content/{id}/discussions", commentsHandlers.ListComments)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/content/{id}/discussions", commentsHandlers.CreateComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).
+				Post("/content/{id}/react", contentHandlers.AddReaction)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).
+				Delete("/content/{id}/react", contentHandlers.RemoveReaction)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
+				Patch("/content/{id}/spaces", contentHandlers.UpdateContent)
+
+			// Task 34: Users public extras
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/users/{id}/analytics", usersHandlers.GetMyAnalytics)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/users/{id}/content", contentHandlers.ListContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
+				Post("/users/{id}/follow", followHandlers.ToggleFollow)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
+				Delete("/users/{id}/follow", followHandlers.ToggleFollow)
+
+			// Task 35: Suggestions/content (trending)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/suggestions/content", trendingHandlers.GetTrendingContent)
+
+			// Task 11: Universities compare
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/universities/{id}/compare", universitiesHandlers.CompareUniversities)
+
 		})
 	})
 

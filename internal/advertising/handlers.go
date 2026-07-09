@@ -842,3 +842,63 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": boost})
 }
+
+// ─── P5.6 Advertising Extras ─────────────────────────────────────────────
+
+// UpdateCampaign handles PATCH /admin/ads/campaigns/:id.
+func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		return
+	}
+	var input struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Budget      *int64 `json:"budget"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	_, err = h.Service.db.Writer.Exec(r.Context(),
+		`UPDATE ad_campaigns SET name = COALESCE(NULLIF($3,''), name),
+		 description = COALESCE(NULLIF($4,''), description),
+		 budget = COALESCE($5, budget), updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2`, id, tenantID, input.Name, input.Description, input.Budget)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id.String()}})
+}
+
+// GetSlotType handles GET /admin/ads/slot-types/:id.
+func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
+		return
+	}
+	var slotType struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Width       int    `json:"width"`
+		Height      int    `json:"height"`
+	}
+	err = h.Service.db.Reader.QueryRow(r.Context(),
+		`SELECT id, name, COALESCE(description,''), width, height
+		 FROM ad_slot_types WHERE id = $1 AND tenant_id = $2`, id, tenantID).
+		Scan(&slotType.ID, &slotType.Name, &slotType.Description, &slotType.Width, &slotType.Height)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "Slot type not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": slotType})
+}
