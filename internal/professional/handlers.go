@@ -8,6 +8,7 @@
 package professional
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,15 +27,24 @@ import (
 
 const defaultPageSize int32 = 20
 
+// entityTypeProfessionalProfile matches follows.EntityTypeProfessionalProfile.
+const entityTypeProfessionalProfile = "professional_profile"
+
+// FollowsService is the subset of follows.Service the profile follow handler needs.
+type FollowsService interface {
+	ToggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+}
+
 // Handlers holds dependencies for professional profile HTTP handlers.
 type Handlers struct {
 	Service *Service
 	RBAC    *rbac.RBAC
+	follows FollowsService
 }
 
 // NewHandlers creates Handlers with the given Service and RBAC resolver.
-func NewHandlers(service *Service, rbacResolver *rbac.RBAC) *Handlers {
-	return &Handlers{Service: service, RBAC: rbacResolver}
+func NewHandlers(service *Service, rbacResolver *rbac.RBAC, followsService FollowsService) *Handlers {
+	return &Handlers{Service: service, RBAC: rbacResolver, follows: followsService}
 }
 
 // ---------------------------------------------------------------------------
@@ -1324,4 +1334,36 @@ func (h *Handlers) DeleteVerifier(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ToggleFollow handles POST/DELETE /api/v1/profiles/{id}/follow.
+func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	following, err := h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, entityTypeProfessionalProfile, profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle follow")
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": false}})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": following}})
 }
