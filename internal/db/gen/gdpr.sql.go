@@ -227,6 +227,36 @@ func (q *Queries) GetDataExportRequest(ctx context.Context, arg GetDataExportReq
 	return i, err
 }
 
+const getLatestDataExportRequestByUser = `-- name: GetLatestDataExportRequestByUser :one
+SELECT id, tenant_id, user_id, status, download_url, expires_at,
+    completed_at, created_at
+FROM data_export_requests
+WHERE user_id = $1 AND tenant_id = $2
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetLatestDataExportRequestByUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetLatestDataExportRequestByUser(ctx context.Context, arg GetLatestDataExportRequestByUserParams) (DataExportRequest, error) {
+	row := q.db.QueryRow(ctx, getLatestDataExportRequestByUser, arg.UserID, arg.TenantID)
+	var i DataExportRequest
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.Status,
+		&i.DownloadUrl,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getUserConsents = `-- name: GetUserConsents :many
 SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
     ip_address, user_agent, created_at

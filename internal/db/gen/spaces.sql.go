@@ -579,6 +579,70 @@ func (q *Queries) ListChildSpaces(ctx context.Context, arg ListChildSpacesParams
 	return items, nil
 }
 
+const listCitiesByStateID = `-- name: ListCitiesByStateID :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE sps.parent_space_id = $1 AND s.tenant_id = $2 AND s.level = 'city'
+ORDER BY s.name
+`
+
+type ListCitiesByStateIDParams struct {
+	StateID  pgtype.UUID `json:"state_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Geo hierarchy (catalog: GET /geo/states/:id/cities). Cities are
+// admin-created on demand (not bulk-seeded, per ADR-020) but follow the same
+// space_parent_spaces parenting as states.
+func (q *Queries) ListCitiesByStateID(ctx context.Context, arg ListCitiesByStateIDParams) ([]Space, error) {
+	rows, err := q.db.Query(ctx, listCitiesByStateID, arg.StateID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Space
+	for rows.Next() {
+		var i Space
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPermissionPresetsByTenant = `-- name: ListPermissionPresetsByTenant :many
 
 
@@ -817,6 +881,128 @@ func (q *Queries) ListSpacesByLevel(ctx context.Context, arg ListSpacesByLevelPa
 	return items, nil
 }
 
+const listSpacesByMemberUser = `-- name: ListSpacesByMemberUser :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_members sm ON sm.space_id = s.id
+WHERE sm.user_id = $1 AND sm.tenant_id = $2
+ORDER BY sm.joined_at DESC, s.id DESC
+`
+
+type ListSpacesByMemberUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMemberUserParams) ([]Space, error) {
+	rows, err := q.db.Query(ctx, listSpacesByMemberUser, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Space
+	for rows.Next() {
+		var i Space
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpacesByModeratorUser = `-- name: ListSpacesByModeratorUser :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_moderators sm ON sm.space_id = s.id
+WHERE sm.user_id = $1 AND sm.tenant_id = $2
+ORDER BY sm.created_at DESC, s.id DESC
+`
+
+type ListSpacesByModeratorUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) ListSpacesByModeratorUser(ctx context.Context, arg ListSpacesByModeratorUserParams) ([]Space, error) {
+	rows, err := q.db.Query(ctx, listSpacesByModeratorUser, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Space
+	for rows.Next() {
+		var i Space
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSpacesByTenant = `-- name: ListSpacesByTenant :many
 
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
@@ -892,6 +1078,72 @@ type ListSpacesByTypeParams struct {
 
 func (q *Queries) ListSpacesByType(ctx context.Context, arg ListSpacesByTypeParams) ([]Space, error) {
 	rows, err := q.db.Query(ctx, listSpacesByType, arg.TenantID, arg.SpaceTypeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Space
+	for rows.Next() {
+		var i Space
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStatesByCountryGeoCode = `-- name: ListStatesByCountryGeoCode :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+JOIN spaces country ON country.id = sps.parent_space_id
+WHERE country.tenant_id = $1 AND country.level = 'country'
+  AND country.geo_code = $2 AND s.level = 'state'
+ORDER BY s.name
+`
+
+type ListStatesByCountryGeoCodeParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	CountryCode *string     `json:"country_code"`
+}
+
+// Geo hierarchy (catalog: GET /geo/countries/:code/states). Countries and
+// states are seeded as spaces (level='country'/'state') parented via the
+// space_parent_spaces join table (migrations/000100_seed_geo.up.sql).
+func (q *Queries) ListStatesByCountryGeoCode(ctx context.Context, arg ListStatesByCountryGeoCodeParams) ([]Space, error) {
+	rows, err := q.db.Query(ctx, listStatesByCountryGeoCode, arg.TenantID, arg.CountryCode)
 	if err != nil {
 		return nil, err
 	}

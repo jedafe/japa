@@ -285,6 +285,15 @@ type Bookmark struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type BookmarkFolder struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Name      string             `json:"name"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type CensoredWord struct {
 	ID          pgtype.UUID        `json:"id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
@@ -438,6 +447,22 @@ type ContentFeatured struct {
 	FeaturedOrder int32              `json:"featured_order"`
 	FeaturedUntil pgtype.Timestamptz `json:"featured_until"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type ContentReport struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ReporterUserID pgtype.UUID        `json:"reporter_user_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	Reason         string             `json:"reason"`
+	Notes          *string            `json:"notes"`
+	EvidenceUrls   []string           `json:"evidence_urls"`
+	Status         string             `json:"status"`
+	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote *string            `json:"resolution_note"`
+	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
 type ContentReview struct {

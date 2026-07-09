@@ -307,6 +307,51 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
+// ListMySpaces handles GET /api/v1/me/spaces — every space the caller belongs to.
+func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	spaces, err := h.Service.ListSpacesByMember(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+}
+
+// ListMyModeratedSpaces handles GET /api/v1/me/spaces/moderated — every space
+// the caller moderates.
+func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	spaces, err := h.Service.ListSpacesByModerator(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+}
+
 // GetSpace handles GET /api/v1/spaces/{slug}. It returns the space together
 // with its rules so a single request can render a complete space view.
 func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {

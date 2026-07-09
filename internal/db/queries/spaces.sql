@@ -98,6 +98,58 @@ FROM spaces
 WHERE parent_id = @parent_id AND tenant_id = @tenant_id
 ORDER BY created_at ASC, id ASC;
 
+-- name: ListSpacesByMemberUser :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_members sm ON sm.space_id = s.id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id
+ORDER BY sm.joined_at DESC, s.id DESC;
+
+-- name: ListSpacesByModeratorUser :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_moderators sm ON sm.space_id = s.id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id
+ORDER BY sm.created_at DESC, s.id DESC;
+
+-- name: ListStatesByCountryGeoCode :many
+-- Geo hierarchy (catalog: GET /geo/countries/:code/states). Countries and
+-- states are seeded as spaces (level='country'/'state') parented via the
+-- space_parent_spaces join table (migrations/000100_seed_geo.up.sql).
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+JOIN spaces country ON country.id = sps.parent_space_id
+WHERE country.tenant_id = @tenant_id AND country.level = 'country'
+  AND country.geo_code = @country_code AND s.level = 'state'
+ORDER BY s.name;
+
+-- name: ListCitiesByStateID :many
+-- Geo hierarchy (catalog: GET /geo/states/:id/cities). Cities are
+-- admin-created on demand (not bulk-seeded, per ADR-020) but follow the same
+-- space_parent_spaces parenting as states.
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE sps.parent_space_id = @state_id AND s.tenant_id = @tenant_id AND s.level = 'city'
+ORDER BY s.name;
+
 -- name: GetSpaceByID :one
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,

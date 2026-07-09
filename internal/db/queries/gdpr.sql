@@ -65,6 +65,14 @@ SELECT id, tenant_id, user_id, status, download_url, expires_at,
 FROM data_export_requests
 WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: GetLatestDataExportRequestByUser :one
+SELECT id, tenant_id, user_id, status, download_url, expires_at,
+    completed_at, created_at
+FROM data_export_requests
+WHERE user_id = @user_id AND tenant_id = @tenant_id
+ORDER BY created_at DESC
+LIMIT 1;
+
 -- name: UpdateDataExportRequestStatus :one
 UPDATE data_export_requests
 SET status = @status,

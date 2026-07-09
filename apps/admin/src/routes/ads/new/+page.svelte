@@ -32,7 +32,7 @@
 			if (targetingGeo.trim()) targeting.geo = targetingGeo.split(',').map((s) => s.trim());
 			if (targetingInterests.trim()) targeting.interests = targetingInterests.split(',').map((s) => s.trim());
 
-			const result = await api('/admin/advertising/campaigns', {
+			const result = await api('/admin/ads/campaigns', {
 				method: 'POST',
 				body: {
 					name: name.trim(),
