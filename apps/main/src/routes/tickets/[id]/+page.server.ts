@@ -26,7 +26,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			created_at: string;
 		}>;
 		attachments: unknown[];
-	}>('/support/my/' + id, {}, token ?? undefined);
+	}>('/me/tickets/' + id, {}, token ?? undefined);
 
 	if (!result.ok || !result.data) {
 		return { ticket: null, comments: [] };

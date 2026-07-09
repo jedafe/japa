@@ -41,7 +41,7 @@
 		if (filterType) params.set('type', filterType);
 		if (filterStatus) params.set('status', filterStatus);
 		try {
-			const result = await api<{ items: ModItem[]; page: number; total_pages: number }>(`/admin/moderation?${params}`);
+			const result = await api<{ items: ModItem[]; page: number; total_pages: number }>(`/admin/moderation-queue?${params}`);
 			if (result.ok) {
 				items = result.data.items;
 				totalPages = result.data.total_pages;
@@ -81,7 +81,7 @@
 		const ids = Array.from(selectedIds);
 		errorMessage = '';
 		try {
-			await api('/admin/moderation/bulk', { method: 'POST', body: { ids, action } });
+			await api('/admin/moderation-queue/bulk', { method: 'POST', body: { ids, action } });
 			selectedIds = new Set();
 			load();
 		} catch {
@@ -99,7 +99,7 @@
 		if (!appealItem) return;
 		errorMessage = '';
 		try {
-			await api(`/admin/moderation/${appealItem.id}/appeal`, { method: 'POST', body: { note: appealNote } });
+			await api(`/admin/moderation-queue/${appealItem.id}/appeal`, { method: 'POST', body: { note: appealNote } });
 			showAppeal = false;
 			load();
 		} catch {

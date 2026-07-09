@@ -47,6 +47,6 @@ export async function apiFetch<T>(
 
 /** Fetch the platform feature flags from the Go backend. */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
-	const result = await apiFetch<FeatureFlags>('/features');
+	const result = await apiFetch<FeatureFlags>('/feature-flags');
 	return result.ok && result.data ? result.data : {};
 }

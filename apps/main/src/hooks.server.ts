@@ -27,7 +27,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	if (token) {
 		try {
-			const res = await fetch(`${API_BASE_URL}/users/me`, {
+			const res = await fetch(`${API_BASE_URL}/me`, {
 				headers: { Authorization: `Bearer ${token}` }
 			});
 			if (res.ok) {
@@ -60,7 +60,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Fetch feature flags from the backend.
 	let featureFlags: FeatureFlags = {};
 	try {
-		const flagsResult = await apiFetch<FeatureFlags>('/features');
+		const flagsResult = await apiFetch<FeatureFlags>('/feature-flags');
 		if (flagsResult.ok && flagsResult.data) {
 			featureFlags = flagsResult.data;
 		}

@@ -165,6 +165,48 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetPointsBalance handles GET /api/v1/me/wallet/points.
+func (h *Handlers) GetPointsBalance(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	points, _, err := h.Service.GetBalance(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"points": points}})
+}
+
+// GetCreditsBalance handles GET /api/v1/me/wallet/credits.
+func (h *Handlers) GetCreditsBalance(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	_, credits, err := h.Service.GetBalance(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"credits": credits}})
+}
+
 // GetLedger handles GET /api/v1/wallet/ledger.
 func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -391,6 +433,32 @@ func (h *Handlers) ToggleRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": rule})
+}
+
+// DeleteRule handles DELETE /api/v1/admin/wallet/rules/{id}.
+func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID")
+		return
+	}
+
+	if err := h.Service.DeleteActivityRule(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
 // AdminAdjust handles POST /api/v1/wallet/admin/adjust.

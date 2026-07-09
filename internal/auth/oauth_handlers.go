@@ -18,9 +18,10 @@ type OAuthHandlers struct {
 	CookieDomain string // Cookie domain for cross-subdomain sharing (e.g. ".japaconnect.com"), empty = exact host
 }
 
-// HandleInitiate handles GET /api/v1/auth/oauth/{provider}/initiate.
+// HandleInitiate handles POST /api/v1/auth/oauth/{provider}/initiate.
 // Validates the provider, generates a CSRF state token, stores it in a
-// short-lived cookie, and redirects the user to the provider's login page.
+// short-lived cookie, and returns the auth URL as JSON for the frontend
+// to redirect the user to the provider's login page.
 func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	providerName := chi.URLParam(r, "provider")
 
@@ -51,7 +52,9 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, provider.AuthURL(state), http.StatusTemporaryRedirect)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{"auth_url": provider.AuthURL(state)},
+	})
 }
 
 // HandleCallback handles GET /api/v1/auth/oauth/{provider}/callback.
@@ -174,7 +177,7 @@ func (h *OAuthHandlers) issueToken(w http.ResponseWriter, _ *http.Request, userI
 // Called from server.go during startup.
 func RegisterOAuthRoutes(r chi.Router, handlers *OAuthHandlers, _ *KeyRotation) {
 	r.Route("/oauth", func(r chi.Router) {
-		r.Get("/{provider}/initiate", handlers.HandleInitiate)
+		r.Post("/{provider}/initiate", handlers.HandleInitiate)
 		r.Get("/{provider}/callback", handlers.HandleCallback)
 	})
 }

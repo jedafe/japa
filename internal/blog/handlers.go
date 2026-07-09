@@ -8,8 +8,10 @@
 package blog
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -19,19 +21,39 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
 const defaultPageSize int32 = 20
 
+// contentTypeBlogPost is the content_type used for blog posts — blog posts
+// are regular content rows (Section 24 is an extension over Section 14's
+// content system), not a separate table.
+const contentTypeBlogPost = "blog_post"
+
+// statusInReview is the content status used while a post awaits editorial review.
+const statusInReview = "in_review"
+
+// ContentService is the subset of content.Service the blog post handlers need.
+type ContentService interface {
+	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
+	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
+	GetContentBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentBySlugRow, error)
+	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTypeRow, error)
+	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
+}
+
 // Handlers holds dependencies for blog HTTP handlers.
 type Handlers struct {
 	Service *Service
+	content ContentService
 }
 
 // NewHandlers creates Handlers with the given Service.
-func NewHandlers(service *Service) *Handlers {
-	return &Handlers{Service: service}
+func NewHandlers(service *Service, contentService ContentService) *Handlers {
+	return &Handlers{Service: service, content: contentService}
 }
 
 // ---------------------------------------------------------------------------
@@ -779,4 +801,234 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 		// Headers already sent, just log the error.
 		return
 	}
+}
+
+// ListPosts handles GET /api/v1/blog — published blog posts, newest first.
+// Supports ?cursor= (RFC3339 timestamp) and ?page_size=. Blog posts are
+// content rows with content_type=blog_post; this is a thin wrapper over
+// content.Service.ListContentsByType with the type pinned.
+func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+
+	var cursor pgtype.Timestamptz
+	if cs := r.URL.Query().Get("cursor"); cs != "" {
+		if err := cursor.Scan(cs); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
+			return
+		}
+	}
+
+	posts, err := h.content.ListContentsByType(r.Context(), tenantID, contentTypeBlogPost, cursor, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
+		return
+	}
+
+	// This route is public (no auth middleware) — ListContentsByType has no
+	// status filter, so drafts/archived posts must be filtered out here rather
+	// than exposed to anonymous readers.
+	published := make([]gen.ListContentsByTypeRow, 0, len(posts))
+
+	for _, p := range posts {
+		if p.Status == content.StatusPublished {
+			published = append(published, p)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": published})
+}
+
+// GetPost handles GET /api/v1/blog/{slug} — a single published blog post.
+// Public (no auth middleware); only content_type=blog_post and
+// status=published are visible here — anything else 404s rather than
+// disclosing the existence/content of drafts or unrelated content types.
+func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		return
+	}
+
+	post, err := h.content.GetContentBySlug(r.Context(), slug, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		return
+	}
+
+	if post.ContentType != contentTypeBlogPost || post.Status != content.StatusPublished {
+		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": post})
+}
+
+// CreatePost handles POST /api/v1/blog — creates a blog post (content_type
+// forced to blog_post regardless of any type field in the request body).
+func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Title      string `json:"title"`
+		Slug       string `json:"slug"`
+		Body       string `json:"body"`
+		BodyHtml   string `json:"body_html"` //nolint:revive // matches sqlc-generated field name
+		Status     string `json:"status"`
+		Visibility string `json:"visibility"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Title == "" {
+		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		return
+	}
+
+	if input.Status == "" {
+		input.Status = "draft"
+	}
+
+	if input.Visibility == "" {
+		input.Visibility = "public"
+	}
+
+	post, err := h.content.CreateContent(r.Context(), tenantID, content.CreateContentInput{
+		AuthorID:    user.UserID,
+		ContentType: contentTypeBlogPost,
+		Title:       input.Title,
+		Slug:        input.Slug,
+		Body:        content.SanitizeText(input.Body),
+		BodyHtml:    content.SanitizeHTML(input.BodyHtml),
+		Status:      input.Status,
+		Visibility:  input.Visibility,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": post})
+}
+
+// SubmitForReview handles POST /api/v1/blog/{id}/submit-for-review —
+// transitions the post's content status to in_review.
+func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	existing, err := h.content.GetContent(r.Context(), contentID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		return
+	}
+
+	// A blog-specific action must not be usable to change the status of
+	// unrelated content (forum threads, pages, etc.) reached by guessing IDs.
+	if existing.ContentType != contentTypeBlogPost {
+		writeError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
+		return
+	}
+
+	post, err := h.content.UpdateContentStatus(r.Context(), contentID, tenantID, statusInReview)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to submit post for review")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": post})
+}
+
+// FeaturePostByID handles POST /api/v1/blog/{id}/feature — the catalog's
+// path-based featuring, alongside the existing body-based POST /blog/featured.
+func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	existing, err := h.content.GetContent(r.Context(), contentID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		return
+	}
+
+	if existing.ContentType != contentTypeBlogPost {
+		writeError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
+		return
+	}
+
+	var input struct {
+		FeaturedOrder int32  `json:"featured_order"`
+		FeaturedUntil string `json:"featured_until"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	var featuredUntil pgtype.Timestamptz
+	if input.FeaturedUntil != "" {
+		if err := featuredUntil.Scan(input.FeaturedUntil); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_featured_until", "Invalid featured_until date format")
+			return
+		}
+	}
+
+	featured, err := h.Service.FeaturePost(r.Context(), tenantID, FeaturePostInput{
+		ContentID:     contentID,
+		FeaturedOrder: input.FeaturedOrder,
+		FeaturedUntil: featuredUntil,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": featured})
 }

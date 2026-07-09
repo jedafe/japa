@@ -33,6 +33,7 @@ const (
 	MessageRequestPending  = "pending"
 	MessageRequestAccepted = "accepted"
 	MessageRequestDeclined = "declined"
+	MessageRequestBlocked  = "blocked"
 )
 
 // Pagination defaults.

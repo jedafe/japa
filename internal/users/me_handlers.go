@@ -496,21 +496,6 @@ func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetDataExportStatus handles GET /api/v1/me/data-export/status.
-func (h *Handlers) GetDataExportStatus(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	_ = user
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]string{
-			"status": "no_pending_export",
-		},
-	})
-}
 
 // Ensure pgx.ErrNoRows is referenced to avoid import cycle.
 var _ = pgx.ErrNoRows
