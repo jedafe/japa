@@ -7,7 +7,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
 
 	let translations: Record<string, string> = {};
 	try {
-		const res = await fetch(`${API_BASE}/translations/${localeCode}`);
+		const res = await fetch(`${API_BASE}/i18n/packs/${localeCode}`);
 		if (res.ok) {
 			const body = await res.json();
 			translations = body?.data ?? body ?? {};

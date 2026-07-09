@@ -23,7 +23,7 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<{ items: Campaign[] }>(`/admin/advertising/campaigns`);
+			const result = await api<{ items: Campaign[] }>(`/admin/ads/campaigns`);
 			if (result.ok) {
 				campaigns = result.data.items ?? [];
 			} else {
@@ -38,8 +38,8 @@
 
 	async function toggleCampaign(campaign: Campaign) {
 		const endpoint = campaign.status === 'active'
-			? `/admin/advertising/campaigns/${campaign.id}/pause`
-			: `/admin/advertising/campaigns/${campaign.id}/activate`;
+			? `/admin/ads/campaigns/${campaign.id}/pause`
+			: `/admin/ads/campaigns/${campaign.id}/activate`;
 		try {
 			const result = await api(endpoint, { method: 'POST' });
 			if (result.ok) {

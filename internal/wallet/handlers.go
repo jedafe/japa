@@ -165,6 +165,48 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetPointsBalance handles GET /api/v1/me/wallet/points.
+func (h *Handlers) GetPointsBalance(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	points, _, err := h.Service.GetBalance(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"points": points}})
+}
+
+// GetCreditsBalance handles GET /api/v1/me/wallet/credits.
+func (h *Handlers) GetCreditsBalance(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	_, credits, err := h.Service.GetBalance(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"credits": credits}})
+}
+
 // GetLedger handles GET /api/v1/wallet/ledger.
 func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

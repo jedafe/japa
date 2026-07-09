@@ -32,7 +32,7 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 	params.set('limit', limit);
 	params.set('offset', offset);
 
-	const result = await apiFetch<ProfileListResponse>(`/professional-profiles?${params.toString()}`, { headers });
+	const result = await apiFetch<ProfileListResponse>(`/profiles?${params.toString()}`, { headers });
 
 	return {
 		profiles: result.ok && result.data ? result.data.profiles : [],

@@ -29,7 +29,7 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
 	const typeResult = await apiFetch<{ data: ComparisonType }>(
-		`/comparison/types/${params.slug}`,
+		`/comparisons/types/${params.slug}`,
 		{ headers }
 	);
 
@@ -38,7 +38,7 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 	}
 
 	const compResult = await apiFetch<{ data: Comparison[] }>(
-		`/comparison?type_slug=${params.slug}&limit=50`,
+		`/comparisons?type_slug=${params.slug}&limit=50`,
 		{ headers }
 	);
 

@@ -288,7 +288,8 @@ func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	locale := chi.URLParam(r, "locale")
+	// Catalog route param is :lang_code (was :locale).
+	locale := chi.URLParam(r, "lang_code")
 	if locale == "" {
 		writeError(w, http.StatusBadRequest, "missing_locale", "locale is required")
 		return

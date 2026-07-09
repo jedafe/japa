@@ -135,6 +135,27 @@ func (s *Store) getFollowing(ctx context.Context, tenantID, followerID pgtype.UU
 	return rows, nil
 }
 
+// getFollowingByType returns paginated entities of one entity_type that a
+// user follows (catalog: GET /me/followed-tags uses entity_type "tag").
+func (s *Store) getFollowingByType(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, limit, offset int32) ([]gen.GetFollowingByUserAndTypeRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.GetFollowingByUserAndType(ctx, gen.GetFollowingByUserAndTypeParams{
+		TenantID:   tenantID,
+		FollowerID: followerID,
+		EntityType: entityType,
+		PageOffset: offset,
+		PageLimit:  limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting following by type: %w", err)
+	}
+
+	return rows, nil
+}
+
 // countFollowers returns the number of followers for an entity.
 func (s *Store) countFollowers(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountFollowersByEntity(ctx, gen.CountFollowersByEntityParams{

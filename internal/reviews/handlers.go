@@ -151,12 +151,15 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// entity_type/entity_id come from the URL path (catalog: POST
+	// /reviews/:entity_type/:entity_id); the body carries only the review fields.
+	entityType := chi.URLParam(r, "entity_type")
+	entityIDStr := chi.URLParam(r, "entity_id")
+
 	var input struct {
-		EntityType string `json:"entity_type"`
-		EntityID   string `json:"entity_id"`
-		Rating     int16  `json:"rating"`
-		Title      string `json:"title"`
-		Body       string `json:"body"`
+		Rating int16  `json:"rating"`
+		Title  string `json:"title"`
+		Body   string `json:"body"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -164,12 +167,12 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.EntityType == "" {
+	if entityType == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
 
-	if input.EntityID == "" {
+	if entityIDStr == "" {
 		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
 	}
@@ -180,13 +183,13 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var entityID pgtype.UUID
-	if err := entityID.Scan(input.EntityID); err != nil {
+	if err := entityID.Scan(entityIDStr); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 		return
 	}
 
 	review, err := h.Service.CreateReview(r.Context(), tenantID, user.UserID, CreateReviewInput{
-		EntityType: input.EntityType,
+		EntityType: entityType,
 		EntityID:   entityID,
 		Rating:     input.Rating,
 		Title:      input.Title,
@@ -211,8 +214,11 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	entityType := r.URL.Query().Get("entity_type")
-	entityIDStr := r.URL.Query().Get("entity_id")
+	// Entity-scoped listing (catalog: GET /reviews/:entity_type/:entity_id)
+	// takes URL params; bare GET /reviews falls back to ?reviewer_id= (kept
+	// as a documented extra — the catalog only specifies entity-scoped list).
+	entityType := chi.URLParam(r, "entity_type")
+	entityIDStr := chi.URLParam(r, "entity_id")
 	reviewerIDStr := r.URL.Query().Get("reviewer_id")
 
 	// List by entity.
@@ -381,8 +387,9 @@ func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entityType := r.URL.Query().Get("entity_type")
-	entityIDStr := r.URL.Query().Get("entity_id")
+	// catalog: GET /reviews/:entity_type/:entity_id/aggregate
+	entityType := chi.URLParam(r, "entity_type")
+	entityIDStr := chi.URLParam(r, "entity_id")
 
 	if entityType == "" || entityIDStr == "" {
 		writeError(w, http.StatusBadRequest, "missing_params", "entity_type and entity_id required")
