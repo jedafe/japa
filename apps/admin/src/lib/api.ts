@@ -79,19 +79,23 @@ export const ticketTypesApi = {
 // ─── Wallet Management ─────────────────────────────────────────────
 
 export const walletApi = {
-	getRules: (params?: string) => api<unknown>(`/wallet/rules${params ? `?${params}` : ''}`),
+	getRules: (params?: string) => api<unknown>(`/admin/wallet/rules${params ? `?${params}` : ''}`),
 	createRule: (body: { event_type: string; points_value: number; description?: string; is_active: boolean }) =>
-		api('/wallet/rules', { method: 'POST', body }),
+		api('/admin/wallet/rules', { method: 'POST', body }),
+	// NOTE: backend only has PATCH /admin/wallet/rules/:id/toggle (is_active only) —
+	// no full-update route exists for event_type/points_value/description yet.
+	// This call will 404 until that's implemented; pre-existing gap, not caused by
+	// the /wallet -> /admin/wallet prefix rename.
 	updateRule: (id: string, body: { event_type?: string; points_value?: number; description?: string; is_active?: boolean }) =>
-		api(`/wallet/rules/${id}`, { method: 'PATCH', body }),
+		api(`/admin/wallet/rules/${id}`, { method: 'PATCH', body }),
 
-	getSettings: () => api<unknown>('/wallet/settings'),
+	getSettings: () => api<unknown>('/admin/wallet/settings'),
 	updateSettings: (body: { points_to_credit_ratio: number; daily_earning_cap: number; enable_earning: boolean }) =>
-		api('/wallet/settings', { method: 'PUT', body }),
+		api('/admin/wallet/settings', { method: 'PUT', body }),
 
-	getUserBalance: (userId: string) => api<unknown>(`/wallet/admin/user/${userId}/balance`),
+	getUserBalance: (userId: string) => api<unknown>(`/admin/wallet/user/${userId}/balance`),
 	adjustBalance: (body: { user_id: string; amount: number; reason: string; type: 'points' | 'credits' }) =>
-		api('/wallet/admin/adjust', { method: 'POST', body }),
+		api('/admin/wallet/adjust', { method: 'POST', body }),
 };
 
 // ─── Space Types ───────────────────────────────────────────────────
@@ -99,11 +103,11 @@ export const walletApi = {
 export const spaceTypesApi = {
 	list: (params?: string) => api<unknown>(`/space-types${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string; description?: string; is_university: boolean; icon?: string }) =>
-		api('/space-types', { method: 'POST', body }),
+		api('/admin/space-types', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; slug?: string; description?: string; is_university?: boolean; icon?: string }) =>
-		api(`/space-types/${id}`, { method: 'PATCH', body }),
+		api(`/admin/space-types/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
-		api(`/space-types/${id}`, { method: 'DELETE' }),
+		api(`/admin/space-types/${id}`, { method: 'DELETE' }),
 };
 
 // ─── User Impersonation ────────────────────────────────────────────
@@ -132,25 +136,25 @@ export const docsApi = {
 // ─── Ad Slot Types ─────────────────────────────────────────────────
 
 export const adSlotTypesApi = {
-	list: (params?: string) => api<unknown>(`/admin/advertising/slot-types${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/admin/ads/slot-types${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string; width: number; height: number; description?: string }) =>
-		api('/admin/advertising/slot-types', { method: 'POST', body }),
+		api('/admin/ads/slot-types', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; slug?: string; width?: number; height?: number; description?: string }) =>
-		api(`/admin/advertising/slot-types/${id}`, { method: 'PATCH', body }),
+		api(`/admin/ads/slot-types/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
-		api(`/admin/advertising/slot-types/${id}`, { method: 'DELETE' }),
+		api(`/admin/ads/slot-types/${id}`, { method: 'DELETE' }),
 };
 
 // ─── Ad Boosts ─────────────────────────────────────────────────────
 
 export const adBoostsApi = {
-	list: (params?: string) => api<unknown>(`/admin/advertising/boosts${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/admin/ads/boosts${params ? `?${params}` : ''}`),
 	create: (body: { organization_id: string; space_id: string; boost_type: string; start_date: string; end_date: string }) =>
-		api('/admin/advertising/boosts', { method: 'POST', body }),
+		api('/admin/ads/boosts', { method: 'POST', body }),
 	update: (id: string, body: { organization_id?: string; space_id?: string; boost_type?: string; start_date?: string; end_date?: string }) =>
-		api(`/admin/advertising/boosts/${id}`, { method: 'PATCH', body }),
+		api(`/admin/ads/boosts/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
-		api(`/admin/advertising/boosts/${id}`, { method: 'DELETE' }),
+		api(`/admin/ads/boosts/${id}`, { method: 'DELETE' }),
 };
 
 // ─── Comparison Types (Admin) ──────────────────────────────────────
@@ -175,18 +179,18 @@ export interface ComparisonTypeAccess {
 }
 
 export const comparisonAdminApi = {
-	listTypes: () => api<ComparisonType[]>('/comparison/types'),
-	getType: (id: string) => api<ComparisonTypeDetail>(`/comparison/types/${id}`),
+	listTypes: () => api<ComparisonType[]>('/comparisons/types'),
+	getType: (id: string) => api<ComparisonTypeDetail>(`/comparisons/types/${id}`),
 	createType: (body: { name: string; slug: string; description: string; is_public: boolean }) =>
-		api<ComparisonType>('/comparison/types', { method: 'POST', body }),
+		api<ComparisonType>('/comparisons/types', { method: 'POST', body }),
 	updateType: (id: string, body: { name?: string; description?: string; is_public?: boolean }) =>
-		api<ComparisonType>(`/comparison/types/${id}`, { method: 'PATCH', body }),
+		api<ComparisonType>(`/comparisons/types/${id}`, { method: 'PATCH', body }),
 	deleteType: (id: string) =>
-		api<{ deleted: boolean }>(`/comparison/types/${id}`, { method: 'DELETE' }),
+		api<{ deleted: boolean }>(`/comparisons/types/${id}`, { method: 'DELETE' }),
 	getTypeAccess: (id: string) =>
-		api<ComparisonTypeAccess>(`/comparison/types/${id}/access`),
+		api<ComparisonTypeAccess>(`/comparisons/types/${id}/access`),
 	setTypeAccess: (id: string, body: { allowed_groups: string[]; allowed_roles: string[] }) =>
-		api<{ updated: boolean }>(`/comparison/types/${id}/access`, { method: 'PUT', body }),
+		api<{ updated: boolean }>(`/comparisons/types/${id}/access`, { method: 'PUT', body }),
 };
 
 // ─── Professional Profile Types & Members (Admin) ──────────────────
@@ -221,22 +225,22 @@ export interface ProfileInvitation {
 }
 
 export const professionalAdminApi = {
-	listTypes: () => api<ProfileType[]>('/professional-profiles/types'),
-	getType: (id: string) => api<ProfileTypeDetail>(`/professional-profiles/types/${id}`),
+	listTypes: () => api<ProfileType[]>('/profiles/types'),
+	getType: (id: string) => api<ProfileTypeDetail>(`/profiles/types/${id}`),
 	createType: (body: { name: string; slug: string; description: string }) =>
-		api<ProfileType>('/professional-profiles/types', { method: 'POST', body }),
+		api<ProfileType>('/profiles/types', { method: 'POST', body }),
 	listMembers: (profileId: string) =>
-		api<ProfileMember[]>(`/professional-profiles/${profileId}/members`),
+		api<ProfileMember[]>(`/profiles/${profileId}/members`),
 	addMember: (profileId: string, body: { user_id: string; role: string }) =>
-		api<ProfileMember>(`/professional-profiles/${profileId}/members`, { method: 'POST', body }),
+		api<ProfileMember>(`/profiles/${profileId}/members`, { method: 'POST', body }),
 	removeMember: (profileId: string, userId: string) =>
-		api<{ removed: boolean }>(`/professional-profiles/${profileId}/members/${userId}`, { method: 'DELETE' }),
+		api<{ removed: boolean }>(`/profiles/${profileId}/members/${userId}`, { method: 'DELETE' }),
 	updateMember: (profileId: string, userId: string, body: { role: string }) =>
-		api<ProfileMember>(`/professional-profiles/${profileId}/members/${userId}`, { method: 'PATCH', body }),
+		api<ProfileMember>(`/profiles/${profileId}/members/${userId}`, { method: 'PATCH', body }),
 	listInvitations: (profileId: string) =>
-		api<ProfileInvitation[]>(`/professional-profiles/${profileId}/invitations`),
+		api<ProfileInvitation[]>(`/profiles/${profileId}/invitations`),
 	sendInvitation: (profileId: string, body: { email: string; role: string }) =>
-		api<ProfileInvitation>(`/professional-profiles/${profileId}/invitations`, { method: 'POST', body }),
+		api<ProfileInvitation>(`/profiles/${profileId}/invitations`, { method: 'POST', body }),
 };
 
 // ─── AI Core ───────────────────────────────────────────────────────

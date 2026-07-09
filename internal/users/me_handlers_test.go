@@ -14,17 +14,6 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
-func mustUUID(t *testing.T, s string) pgtype.UUID {
-	t.Helper()
-
-	var id pgtype.UUID
-	if err := id.Scan(s); err != nil {
-		t.Fatalf("scan uuid %q: %v", s, err)
-	}
-
-	return id
-}
-
 func withAuthUser(r *http.Request) *http.Request {
 	ctx := r.Context()
 
@@ -266,21 +255,3 @@ func TestDataExport_Accepted(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// GetDataExportStatus — returns 200
-// ---------------------------------------------------------------------------
-
-func TestDataExportStatus_OK(t *testing.T) {
-	t.Parallel()
-
-	h := NewHandlers(testService())
-	req := httptest.NewRequest(http.MethodGet, "/me/data-export/status", nil)
-	req = withAuthUser(req)
-
-	rr := httptest.NewRecorder()
-	h.GetDataExportStatus(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
-	}
-}

@@ -392,6 +392,41 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
+// ListMyMedia handles GET /api/v1/me/media — the caller's own uploaded media,
+// reusing ListMedia's uploader_id filter with the authenticated user's ID.
+func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	var mimeType *string
+	if mt := r.URL.Query().Get("type"); mt != "" {
+		mimeType = &mt
+	}
+
+	var query *string
+	if q := r.URL.Query().Get("q"); q != "" {
+		query = &q
+	}
+
+	items, err := h.service.ListMedia(r.Context(), tenantID, &user.UserID, mimeType, query, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
 // ---------------------------------------------------------------------------
 // Admin Handlers — Media Quarantine
 // ---------------------------------------------------------------------------

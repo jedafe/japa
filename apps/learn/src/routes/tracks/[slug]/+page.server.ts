@@ -12,14 +12,14 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 	const token = cookies.get('learn_token') ?? cookies.get('jc_token');
 
 	try {
-		const result = await apiFetch<{ id: string; slug: string; title: string; description: string; difficulty: string; estimated_hours: number; module_count: number; lesson_count: number; modules: unknown[] }>(`/learning/tracks/${params.slug}`, {}, token);
+		const result = await apiFetch<{ id: string; slug: string; title: string; description: string; difficulty: string; estimated_hours: number; module_count: number; lesson_count: number; modules: unknown[] }>(`/learn/tracks/${params.slug}`, {}, token);
 		if (!result.ok || !result.data) {
 			throw error(404, { code: 'NOT_FOUND', message: 'Track not found' });
 		}
 
 		let progress: ProgressData | null = null;
 		try {
-			const progressResult = await apiFetch<ProgressData>(`/learning/progress/${result.data.id}`, {}, token);
+			const progressResult = await apiFetch<ProgressData>(`/learn/progress/${result.data.id}`, {}, token);
 			if (progressResult.ok && progressResult.data) {
 				progress = progressResult.data;
 			}

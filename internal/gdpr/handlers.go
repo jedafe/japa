@@ -10,6 +10,7 @@ package gdpr
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -264,6 +265,59 @@ func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"data": request})
 }
 
+// GetMyDataExportStatus handles GET /api/v1/me/data-export/status.
+func (h *Handlers) GetMyDataExportStatus(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	request, found, err := h.Service.GetLatestDataExportRequest(r.Context(), user.UserID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !found {
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "no_pending_export"}})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": request})
+}
+
+// GetMyDataExportDownload handles GET /api/v1/me/data-export/download.
+// Redirects to the signed download URL once the export has completed.
+func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	request, found, err := h.Service.GetLatestDataExportRequest(r.Context(), user.UserID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !found || request.Status != "completed" || request.DownloadUrl == nil {
+		writeError(w, http.StatusNotFound, "export_not_ready", "No completed export is available for download")
+		return
+	}
+
+	http.Redirect(w, r, *request.DownloadUrl, http.StatusTemporaryRedirect)
+}
+
 // RequestAccountDeletion handles POST /api/v1/account/delete.
 func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -280,7 +334,10 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 		Reason string `json:"reason"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	// Reason is optional: DELETE /me may be sent with no body. Tolerate an
+	// empty body (io.EOF) so deletion works without a payload; only reject
+	// genuinely malformed JSON.
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}

@@ -56,7 +56,7 @@
 	);
 
 	async function loadLocales() {
-		const result = await api<LocaleCount[]>('/admin/translations/locales');
+		const result = await api<LocaleCount[]>('/admin/i18n/languages');
 		if (result.ok) {
 			locales = result.data;
 			if (locales.length > 0 && !locales.find((l) => l.locale === selectedLocale)) {
@@ -67,7 +67,7 @@
 
 	async function loadTranslations() {
 		loading = true;
-		const result = await api<Translation[]>(`/admin/translations?locale=${selectedLocale}`);
+		const result = await api<Translation[]>(`/admin/i18n/strings?locale=${selectedLocale}`);
 		if (result.ok) {
 			translations = result.data;
 		}
@@ -77,7 +77,7 @@
 	async function addTranslation() {
 		if (!newKey.trim() || !newValue.trim()) return;
 		adding = true;
-		const result = await api<Translation>('/admin/translations', {
+		const result = await api<Translation>('/admin/i18n/strings', {
 			method: 'POST',
 			body: {
 				locale: selectedLocale,
@@ -100,7 +100,7 @@
 	async function saveEdit(id: string) {
 		const translation = translations.find((tr) => tr.id === id);
 		if (!translation) return;
-		const result = await api<Translation>('/admin/translations', {
+		const result = await api<Translation>('/admin/i18n/strings', {
 			method: 'POST',
 			body: { locale: translation.locale, key: translation.key, value: editValue, context: translation.context }
 		});
@@ -111,7 +111,7 @@
 	}
 
 	async function deleteTranslation(id: string) {
-		const result = await api<{ deleted: boolean }>(`/admin/translations/${id}`, {
+		const result = await api<{ deleted: boolean }>(`/admin/i18n/strings/${id}`, {
 			method: 'DELETE'
 		});
 		if (result.ok) {

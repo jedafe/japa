@@ -2,8 +2,10 @@ package gdpr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -103,6 +105,25 @@ func (s *Store) getDataExportRequest(ctx context.Context, id, tenantID pgtype.UU
 	}
 
 	return row, nil
+}
+
+// getLatestDataExportRequestByUser returns the caller's most recent export
+// request, or (zero value, nil) if they have never requested one — "no
+// pending export" is a valid state, not an error.
+func (s *Store) getLatestDataExportRequestByUser(ctx context.Context, userID, tenantID pgtype.UUID) (gen.DataExportRequest, bool, error) {
+	row, err := s.read.GetLatestDataExportRequestByUser(ctx, gen.GetLatestDataExportRequestByUserParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return gen.DataExportRequest{}, false, nil
+	}
+
+	if err != nil {
+		return gen.DataExportRequest{}, false, fmt.Errorf("getting latest data export request: %w", err)
+	}
+
+	return row, true, nil
 }
 
 func (s *Store) updateDataExportRequestStatus(ctx context.Context, p gen.UpdateDataExportRequestStatusParams) (gen.DataExportRequest, error) {
