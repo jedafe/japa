@@ -42,29 +42,29 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
 	listTracks() {
-		return request<Track[]>('/learning/tracks');
+		return request<Track[]>('/learn/tracks');
 	},
 	getTrack(slug: string) {
-		return request<TrackDetail>('/learning/tracks/' + slug);
+		return request<TrackDetail>('/learn/tracks/' + slug);
 	},
 	getLesson(trackSlug: string, moduleSlug: string, lessonSlug: string) {
 		return request<Lesson>(
-			`/learning/tracks/${trackSlug}/modules/${moduleSlug}/lessons/${lessonSlug}`
+			`/learn/tracks/${trackSlug}/modules/${moduleSlug}/lessons/${lessonSlug}`
 		);
 	},
 	updateProgress(lessonId: string, data: { completed: boolean }) {
-		return request<{ progress: number }>('/learning/lessons/' + lessonId + '/progress', {
+		return request<{ progress: number }>('/learn/lessons/' + lessonId + '/progress', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	},
 	getProgress(trackId: string) {
 		return request<{ track_id: string; progress: number; completed_lessons: string[] }>(
-			'/learning/progress/' + trackId
+			'/learn/progress/' + trackId
 		);
 	},
 	getCertificates() {
-		return request<Certificate[]>('/learning/certificates');
+		return request<Certificate[]>('/me/certificates');
 	}
 };
 

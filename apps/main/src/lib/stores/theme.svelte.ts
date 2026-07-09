@@ -25,7 +25,7 @@ export function getTheme() {
 			if (browser) {
 				applyTheme(theme);
 				const token = getToken();
-				fetch(`${API_BASE}/users/me/preferences`, {
+				fetch(`${API_BASE}/me/preferences`, {
 					method: 'PUT',
 					headers: {
 						'Content-Type': 'application/json',

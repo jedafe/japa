@@ -49,10 +49,12 @@ func run() error {
 	}
 	defer database.Close()
 
-	// Build the HTTP server with the configured port. Pass the worker
-	// config so the DLQ monitoring endpoint is registered.
+	// Build the HTTP server with the configured port.
+	// NOTE: DLQ monitoring (/control/queue/dlq*) is not yet wired into
+	// NewServer — it is scoped as part of the Control Panel work in
+	// docs/superpowers/plans/2026-07-08-route-catalog-reconciliation.md (P5).
 	workerCfg := worker.DefaultConfig()
-	router := server.NewServer(database, &cfg, workerCfg)
+	router := server.NewServer(database, &cfg)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,

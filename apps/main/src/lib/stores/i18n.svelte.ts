@@ -18,7 +18,7 @@ export function getLocale() {
 				document.documentElement.lang = locale;
 				document.cookie = `jc_locale=${locale};path=/;max-age=31536000;samesite=lax`;
 				const token = getToken();
-				fetch(`${API_BASE}/users/me/preferences`, {
+				fetch(`${API_BASE}/me/preferences`, {
 					method: 'PUT',
 					headers: {
 						'Content-Type': 'application/json',
@@ -52,7 +52,7 @@ export async function loadTranslations(localeCode: string): Promise<Record<strin
 	}
 	try {
 		const base = API_BASE;
-		const res = await fetch(`${base}/translations/${localeCode}`);
+		const res = await fetch(`${base}/i18n/packs/${localeCode}`);
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const body = await res.json();
 		const data = body?.data ?? body ?? {};

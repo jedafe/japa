@@ -185,17 +185,17 @@ export const api = {
 		});
 	},
 	setupTOTP() {
-		return request<{ secret: string; qr_uri: string }>('/auth/totp/setup', { method: 'POST' });
+		return request<{ secret: string; qr_uri: string }>('/me/totp/enable', { method: 'POST' });
 	},
 	verifyTOTP(code: string) {
-		return request<{ verified: boolean; backup_codes: string[] }>('/auth/totp/verify', {
+		return request<{ verified: boolean; backup_codes: string[] }>('/me/totp/confirm', {
 			method: 'POST',
 			body: JSON.stringify({ code })
 		});
 	},
 	disableTOTP(password: string) {
-		return request<{ disabled: boolean }>('/auth/totp/disable', {
-			method: 'POST',
+		return request<{ disabled: boolean }>('/me/totp', {
+			method: 'DELETE',
 			body: JSON.stringify({ password })
 		});
 	},
@@ -304,10 +304,10 @@ export const api = {
 			total: number;
 			page: number;
 			total_pages: number;
-		}>('/forum/threads' + (q ? '?' + q : ''));
+		}>('/forum' + (q ? '?' + q : ''));
 	},
 	getForumThread(slug: string) {
-		return request<ForumThread>('/forum/threads/' + slug);
+		return request<ForumThread>('/forum/' + slug);
 	},
 	createForumThread(data: {
 		title: string;
@@ -316,22 +316,22 @@ export const api = {
 		tags?: string[];
 		anonymous?: boolean;
 	}) {
-		return request<ForumThread>('/forum/threads', {
+		return request<ForumThread>('/forum', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	},
 	updateForumThread(id: string, data: { title?: string; body?: string }) {
-		return request<ForumThread>('/forum/threads/' + id, {
+		return request<ForumThread>('/forum/' + id, {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
 	},
 	deleteForumThread(id: string) {
-		return request<{ deleted: boolean }>('/forum/threads/' + id, { method: 'DELETE' });
+		return request<{ deleted: boolean }>('/forum/' + id, { method: 'DELETE' });
 	},
 	solveForumThread(id: string) {
-		return request<{ solved: boolean }>('/forum/threads/' + id + '/solve', { method: 'POST' });
+		return request<{ solved: boolean }>('/forum/' + id + '/solve', { method: 'POST' });
 	},
 	getForumReplies(threadId: string, params?: { limit?: number; offset?: number }) {
 		const p = new URLSearchParams();
@@ -341,10 +341,10 @@ export const api = {
 		return request<{
 			replies: ForumReply[];
 			total: number;
-		}>('/forum/threads/' + threadId + '/replies' + (q ? '?' + q : ''));
+		}>('/forum/' + threadId + '/replies' + (q ? '?' + q : ''));
 	},
 	createForumReply(threadId: string, data: { body: string; anonymous?: boolean }) {
-		return request<ForumReply>('/forum/threads/' + threadId + '/replies', {
+		return request<ForumReply>('/forum/' + threadId + '/replies', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -405,7 +405,7 @@ export const api = {
 
 	// Tickets
 	createTicket(data: { subject: string; description: string; type_id?: string; priority?: string; email?: string; field_values?: Record<string, unknown> }) {
-		return request<Ticket>('/support', { method: 'POST', body: JSON.stringify(data) });
+		return request<Ticket>('/tickets', { method: 'POST', body: JSON.stringify(data) });
 	},
 	listTickets(params?: { status?: string; page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
@@ -413,13 +413,13 @@ export const api = {
 		if (params?.page_size) p.set('page_size', String(params.page_size));
 		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
-		return request<Ticket[]>('/support/my' + (q ? '?' + q : ''));
+		return request<Ticket[]>('/me/tickets' + (q ? '?' + q : ''));
 	},
 	getTicket(id: string) {
-		return request<{ ticket: Ticket; comments: TicketComment[]; attachments: unknown[] }>('/support/my/' + id);
+		return request<{ ticket: Ticket; comments: TicketComment[]; attachments: unknown[] }>('/me/tickets/' + id);
 	},
 	addTicketReply(id: string, data: { body: string }) {
-		return request<TicketComment>('/support/my/' + id + '/reply', {
+		return request<TicketComment>('/me/tickets/' + id + '/comments', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -480,10 +480,10 @@ export const api = {
 			total: number;
 			page: number;
 			total_pages: number;
-		}>('/professional-profiles' + (q ? '?' + q : ''));
+		}>('/profiles' + (q ? '?' + q : ''));
 	},
 	getProfessionalProfile(slug: string) {
-		return request<ProfessionalProfileDetail>('/professional-profiles/' + slug);
+		return request<ProfessionalProfileDetail>('/profiles/' + slug);
 	},
 	createProfessionalProfile(data: {
 		name: string;
@@ -491,7 +491,7 @@ export const api = {
 		skills: string[];
 		is_public?: boolean;
 	}) {
-		return request<ProfessionalProfileDetail>('/professional-profiles', {
+		return request<ProfessionalProfileDetail>('/profiles', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -502,16 +502,16 @@ export const api = {
 		skills?: string[];
 		is_public?: boolean;
 	}) {
-		return request<ProfessionalProfileDetail>('/professional-profiles/' + id, {
+		return request<ProfessionalProfileDetail>('/profiles/' + id, {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
 	},
 	deleteProfessionalProfile(id: string) {
-		return request<{ deleted: boolean }>('/professional-profiles/' + id, { method: 'DELETE' });
+		return request<{ deleted: boolean }>('/profiles/' + id, { method: 'DELETE' });
 	},
 	listRelocations(profileId: string) {
-		return request<Relocation[]>('/professional-profiles/' + profileId + '/relocations');
+		return request<Relocation[]>('/profiles/' + profileId + '/relocations');
 	},
 	addRelocation(profileId: string, data: {
 		country: string;
@@ -519,7 +519,7 @@ export const api = {
 		status: string;
 		year?: number;
 	}) {
-		return request<Relocation>('/professional-profiles/' + profileId + '/relocations', {
+		return request<Relocation>('/profiles/' + profileId + '/relocations', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -530,18 +530,18 @@ export const api = {
 		status?: string;
 		year?: number;
 	}) {
-		return request<Relocation>('/professional-profiles/relocations/' + relocationId, {
+		return request<Relocation>('/profiles/relocations/' + relocationId, {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
 	},
 	deleteRelocation(relocationId: string) {
-		return request<{ deleted: boolean }>('/professional-profiles/relocations/' + relocationId, {
+		return request<{ deleted: boolean }>('/profiles/relocations/' + relocationId, {
 			method: 'DELETE'
 		});
 	},
 	listDocuments(profileId: string) {
-		return request<Document[]>('/professional-profiles/' + profileId + '/documents');
+		return request<Document[]>('/profiles/' + profileId + '/documents');
 	},
 	addDocument(profileId: string, data: {
 		document_type: string;
@@ -549,7 +549,7 @@ export const api = {
 		description?: string;
 		file_url?: string;
 	}) {
-		return request<Document>('/professional-profiles/' + profileId + '/documents', {
+		return request<Document>('/profiles/' + profileId + '/documents', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -560,21 +560,21 @@ export const api = {
 		description?: string;
 		file_url?: string;
 	}) {
-		return request<Document>('/professional-profiles/documents/' + documentId, {
+		return request<Document>('/profiles/documents/' + documentId, {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
 	},
 	deleteDocument(documentId: string) {
-		return request<{ deleted: boolean }>('/professional-profiles/documents/' + documentId, {
+		return request<{ deleted: boolean }>('/profiles/documents/' + documentId, {
 			method: 'DELETE'
 		});
 	},
 	listVerifiers(profileId: string) {
-		return request<Verifier[]>('/professional-profiles/' + profileId + '/verifiers');
+		return request<Verifier[]>('/profiles/' + profileId + '/verifiers');
 	},
 	assignVerifier(profileId: string, data: { user_id: string; role?: string }) {
-		return request<Verifier>('/professional-profiles/' + profileId + '/verifiers', {
+		return request<Verifier>('/profiles/' + profileId + '/verifiers', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -582,37 +582,45 @@ export const api = {
 
 	// Developer API Keys
 	listDeveloperKeys() {
-		return request<DeveloperApiKey[]>('/developer/keys');
+		return request<DeveloperApiKey[]>('/me/api-keys');
 	},
 	createDeveloperKey(data: { name: string; scopes: string[] }) {
-		return request<{ key: string; key_info: DeveloperApiKey }>('/developer/keys', {
+		return request<{ key: string; key_info: DeveloperApiKey }>('/me/api-keys', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	},
 	revokeDeveloperKey(id: string) {
-		return request<{ deleted: boolean }>('/developer/keys/' + id, { method: 'DELETE' });
+		return request<{ deleted: boolean }>('/me/api-keys/' + id, { method: 'DELETE' });
 	},
 	updateDeveloperKey(id: string, data: { name?: string; scopes?: string[] }) {
-		return request<DeveloperApiKey>('/developer/keys/' + id, {
+		return request<DeveloperApiKey>('/me/api-keys/' + id, {
 			method: 'PUT',
 			body: JSON.stringify(data)
 		});
 	},
 
-	// Reviews & Ratings
+	// Reviews & Ratings (catalog: /reviews/:entity_type/:entity_id[/aggregate])
 	createReview(data: { entity_type: string; entity_id: string; rating: number; title?: string; body?: string }) {
-		return request<Review>('/reviews', { method: 'POST', body: JSON.stringify(data) });
+		const { entity_type, entity_id, ...body } = data;
+		return request<Review>(`/reviews/${entity_type}/${entity_id}`, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		});
 	},
 	listReviews(params: { entity_type: string; entity_id: string; limit?: number; offset?: number }) {
-		const p = new URLSearchParams({ entity_type: params.entity_type, entity_id: params.entity_id });
+		const p = new URLSearchParams();
 		if (params.limit) p.set('limit', String(params.limit));
 		if (params.offset) p.set('offset', String(params.offset));
-		return request<{ reviews: Review[]; total: number }>('/reviews?' + p.toString());
+		const q = p.toString();
+		return request<{ reviews: Review[]; total: number }>(
+			`/reviews/${params.entity_type}/${params.entity_id}` + (q ? '?' + q : '')
+		);
 	},
 	getReviewAggregate(params: { entity_type: string; entity_id: string }) {
-		const p = new URLSearchParams(params);
-		return request<{ average: number; count: number; distribution: number[] }>('/reviews/aggregate?' + p.toString());
+		return request<{ average: number; count: number; distribution: number[] }>(
+			`/reviews/${params.entity_type}/${params.entity_id}/aggregate`
+		);
 	},
 	updateReview(id: string, data: { rating?: number; title?: string; body?: string }) {
 		return request<Review>('/reviews/' + id, { method: 'PATCH', body: JSON.stringify(data) });
@@ -677,10 +685,10 @@ export const api = {
 		return request<{ revoked: boolean }>('/consent/' + consentType, { method: 'DELETE' });
 	},
 	requestDataExport() {
-		return request<{ request_id: string }>('/account/export', { method: 'POST' });
+		return request<{ request_id: string }>('/me/data-export');
 	},
 	requestAccountDeletion() {
-		return request<{ request_id: string }>('/account/delete', { method: 'POST' });
+		return request<{ request_id: string }>('/me', { method: 'DELETE' });
 	},
 
 	// Content Pinning
@@ -705,7 +713,7 @@ export const api = {
 		metadata?: Record<string, unknown>;
 	}) {
 		return request<{ payment_id: string; checkout_url?: string; reference: string; provider: string }>(
-			'/payments/initiate',
+			'/payments/intent',
 			{ method: 'POST', body: JSON.stringify(data) }
 		);
 	},
@@ -738,7 +746,7 @@ export const api = {
 			discount_type: string;
 			discount_value: number;
 			expires_at?: string;
-		}>('/discount-codes/validate', {
+		}>('/payments/discount-codes/validate', {
 			method: 'POST',
 			body: JSON.stringify({ code })
 		});
@@ -746,7 +754,7 @@ export const api = {
 
 	// Wallet
 	getWalletBalance() {
-		return request<{ points: number; credits: number }>('/wallet/balance');
+		return request<{ points: number; credits: number }>('/me/wallet');
 	},
 
 	// Pricing Plans
@@ -785,10 +793,10 @@ export const api = {
 		const p = new URLSearchParams();
 		if (params?.limit) p.set('limit', String(params.limit));
 		const q = p.toString();
-		return request<WalletLedgerEntry[]>('/wallet/ledger' + (q ? '?' + q : ''));
+		return request<WalletLedgerEntry[]>('/me/wallet/ledger' + (q ? '?' + q : ''));
 	},
 	convertWallet(data: { points: number }) {
-		return request<{ points: number; credits: number }>('/wallet/convert', {
+		return request<{ points: number; credits: number }>('/me/wallet/convert', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -799,15 +807,15 @@ export const api = {
 		const p = new URLSearchParams();
 		if (params?.limit) p.set('limit', String(params.limit));
 		const q = p.toString();
-		return request<PaymentListItem[]>('/payments' + (q ? '?' + q : ''));
+		return request<PaymentListItem[]>('/me/payments' + (q ? '?' + q : ''));
 	},
 
 	// Subscriptions
 	getActiveSubscription() {
-		return request<SubscriptionDetail | null>('/subscriptions/active');
+		return request<SubscriptionDetail | null>('/me/subscription');
 	},
-	cancelSubscription(id: string) {
-		return request<{ success: boolean }>('/subscriptions/' + id + '/cancel', { method: 'PATCH' });
+	cancelSubscription() {
+		return request<{ success: boolean }>('/me/subscription/cancel', { method: 'POST' });
 	},
 
 	// Search
@@ -829,10 +837,10 @@ export const api = {
 		return request<UserProfile[]>('/users' + (q ? '?' + q : ''));
 	},
 	getMe() {
-		return request<UserProfile>('/users/me');
+		return request<UserProfile>('/me');
 	},
 	updateMe(data: { display_name?: string; bio?: string; location?: string }) {
-		return request<UserProfile>('/users/me', {
+		return request<UserProfile>('/me/profile', {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
@@ -843,7 +851,7 @@ export const api = {
 		const p = new URLSearchParams();
 		if (params?.limit) p.set('limit', String(params.limit));
 		const q = p.toString();
-		return request<ComparisonType[]>('/comparison/types' + (q ? '?' + q : ''));
+		return request<ComparisonType[]>('/comparisons/types' + (q ? '?' + q : ''));
 	},
 
 	// Media
@@ -915,10 +923,10 @@ export const api = {
 
 	// Ads
 	renderAd(slot: string) {
-		return request<AdRender>('/ads/render?slot=' + encodeURIComponent(slot));
+		return request<AdRender>('/ads/serve?slot=' + encodeURIComponent(slot));
 	},
 	trackAdEvent(adId: string, event: 'impression' | 'click') {
-		return request<{ tracked: boolean }>('/ads/events/ingest', {
+		return request<{ tracked: boolean }>('/ads/events', {
 			method: 'POST',
 			body: JSON.stringify({ ad_id: adId, event })
 		});
@@ -930,7 +938,7 @@ export const api = {
 		if (params?.limit) p.set('limit', String(params.limit));
 		if (params?.cursor) p.set('cursor', params.cursor);
 		const q = p.toString();
-		return request<{ items: FeedItem[]; has_more: boolean }>('/feed/primary' + (q ? '?' + q : ''));
+		return request<{ items: FeedItem[]; has_more: boolean }>('/feed' + (q ? '?' + q : ''));
 	},
 	getSpaceFeed(spaceId: string, params?: { limit?: number; offset?: number; cursor?: string }) {
 		const p = new URLSearchParams();
@@ -953,7 +961,7 @@ export const api = {
 		if (params?.limit) p.set('limit', String(params.limit));
 		if (params?.offset) p.set('offset', String(params.offset));
 		const q = p.toString();
-		return request<{ items: FeedItem[]; has_more: boolean }>('/feed/explore' + (q ? '?' + q : ''));
+		return request<{ items: FeedItem[]; has_more: boolean }>('/explore' + (q ? '?' + q : ''));
 	},
 
 	// Onboarding recommendations
@@ -963,12 +971,12 @@ export const api = {
 
 	// Comparison create + matrix
 	createComparison(data: { type_id: string; title: string; items: Array<{ name: string; values: Record<string, string> }> }) {
-		return request<{ id: string; slug: string }>('/comparison', {
+		return request<{ id: string; slug: string }>('/comparisons', {
 			method: 'POST', body: JSON.stringify(data)
 		});
 	},
 	getComparisonMatrix(id: string) {
-		return request<{ dimensions: Array<{ id: string; name: string }>; items: Array<{ id: string; name: string; values: Record<string, string> }> }>('/comparison/' + id + '/matrix');
+		return request<{ dimensions: Array<{ id: string; name: string }>; items: Array<{ id: string; name: string; values: Record<string, string> }> }>('/comparisons/' + id + '/matrix');
 	},
 
 	// Space creation
@@ -1038,7 +1046,7 @@ export const api = {
 		return request<{ public_key: string }>('/push/vapid-key');
 	},
 	subscribePush(subscription: PushSubscriptionJSON) {
-		return request<{ subscribed: boolean }>('/push/subscribe', {
+		return request<{ subscribed: boolean }>('/me/push-tokens', {
 			method: 'POST',
 			body: JSON.stringify({ subscription })
 		});
@@ -1046,32 +1054,32 @@ export const api = {
 
 	// ── AI Editor Assist (AUDIT-FE wiring) ───────────────────────────────────
 	aiImprove(content: string, instruction?: string) {
-		return request<{ result: string }>('/ai/improve', {
+		return request<{ result: string }>('/ai/assist/improve', {
 			method: 'POST',
 			body: JSON.stringify({ content, instruction })
 		});
 	},
 	aiSummarize(content: string) {
-		return request<{ result: string }>('/ai/summarize', {
+		return request<{ result: string }>('/ai/assist/summarize', {
 			method: 'POST',
 			body: JSON.stringify({ content })
 		});
 	},
 	aiTranslate(content: string, target_language: string) {
-		return request<{ result: string }>('/ai/translate', {
+		return request<{ result: string }>('/ai/assist/translate', {
 			method: 'POST',
 			body: JSON.stringify({ content, target_language })
 		});
 	},
 	aiGenerateTags(content: string, title?: string) {
-		return request<{ tags: string[] }>('/ai/generate-tags', {
+		return request<{ tags: string[] }>('/ai/assist/generate-tags', {
 			method: 'POST',
 			body: JSON.stringify({ content, title })
 		});
 	},
 	aiGenerateOG(content: string, title?: string) {
 		return request<{ og_title: string; og_description: string; og_image_prompt?: string }>(
-			'/ai/generate-og',
+			'/ai/assist/generate-og',
 			{ method: 'POST', body: JSON.stringify({ content, title }) }
 		);
 	},

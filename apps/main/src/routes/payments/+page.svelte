@@ -96,7 +96,7 @@
 		cancelling = true;
 		errorMessage = '';
 		try {
-			await api.cancelSubscription(subscription.id);
+			await api.cancelSubscription();
 			subscription = { ...subscription, status: 'cancelled' };
 		} catch {
 			errorMessage = 'Failed to cancel subscription. Please try again.';

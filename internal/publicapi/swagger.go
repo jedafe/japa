@@ -1,7 +1,6 @@
 package publicapi
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 )
@@ -25,7 +24,7 @@ const swaggerUIHTML = `<!DOCTYPE html>
     <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
     <script>
         SwaggerUIBundle({
-            url: "/api/v1/developer/swagger.json",
+            url: "/api/v1/docs/openapi.json",
             dom_id: '#swagger-ui',
             presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
             layout: "BaseLayout",
@@ -43,18 +42,5 @@ func HandleSwaggerUI(w http.ResponseWriter, _ *http.Request) {
 
 	if _, err := w.Write([]byte(swaggerUIHTML)); err != nil {
 		slog.Warn("swagger ui: write error", "error", err)
-	}
-}
-
-// HandleSwaggerJSON serves the public OpenAPI spec as JSON.
-func HandleSwaggerJSON(w http.ResponseWriter, _ *http.Request) {
-	spec := GetPublicOpenAPISpec()
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	w.WriteHeader(http.StatusOK)
-
-	if err := json.NewEncoder(w).Encode(spec); err != nil {
-		slog.Warn("swagger json: encode error", "error", err)
 	}
 }

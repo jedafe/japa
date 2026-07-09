@@ -701,6 +701,35 @@ func (h *Handlers) CancelSubscription(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": subscription})
 }
 
+// CancelMySubscription handles POST /api/v1/me/subscription/cancel — cancels
+// the caller's own active subscription (catalog: no ID in the path, derived
+// from the authenticated user via GetActiveSubscription).
+func (h *Handlers) CancelMySubscription(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	active, err := h.Service.GetActiveSubscription(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	subscription, err := h.Service.CancelSubscription(r.Context(), active.ID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": subscription})
+}
+
 // ---------------------------------------------------------------------------
 // Discount Code Handlers
 // ---------------------------------------------------------------------------

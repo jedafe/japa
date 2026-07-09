@@ -24,7 +24,7 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 	const fields = fieldsResult.ok && fieldsResult.data ? fieldsResult.data : [];
 
 	const reviewsResult = await apiFetch<ReviewAggregate>(
-		`/reviews/aggregate?entity_type=space&entity_id=${space.id}`,
+		`/reviews/space/${space.id}/aggregate`,
 		{ headers }
 	);
 	const reviewAggregate = reviewsResult.ok && reviewsResult.data ? reviewsResult.data : null;

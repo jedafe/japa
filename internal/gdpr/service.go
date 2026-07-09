@@ -187,6 +187,13 @@ func (s *Service) GetDataExportRequest(ctx context.Context, id, tenantID pgtype.
 	return s.store.getDataExportRequest(ctx, id, tenantID)
 }
 
+// GetLatestDataExportRequest returns the caller's most recent export request.
+// The bool is false if they have never requested one (catalog: GET
+// /me/data-export/status).
+func (s *Service) GetLatestDataExportRequest(ctx context.Context, userID, tenantID pgtype.UUID) (gen.DataExportRequest, bool, error) {
+	return s.store.getLatestDataExportRequestByUser(ctx, userID, tenantID)
+}
+
 // ProcessDataExport collects user data, generates JSON, and stores a signed URL.
 // This is called by the Asynq worker.
 func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) error {
