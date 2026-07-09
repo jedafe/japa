@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -449,4 +450,324 @@ func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID p
 	}
 
 	return sent, nil
+}
+
+// ─── User Moderation (P5.6 — Task 21) ────────────────────────────────────
+
+// BanUser handles POST /admin/users/:id/ban.
+func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	var input struct {
+		Reason string `json:"reason"`
+		Days   int    `json:"days"` // 0 = permanent
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	ctx := r.Context()
+	_, err := h.DB.Writer.Exec(ctx,
+		`INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, expires_at, created_at)
+		 VALUES ($1, (SELECT tenant_id FROM users WHERE id=$1), 'ban', $2,
+		         CASE WHEN $3 > 0 THEN now() + ($3 || ' days')::interval ELSE NULL END, now())
+		 ON CONFLICT DO NOTHING`,
+		userID, input.Reason, input.Days)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "banned"})
+}
+
+// UnbanUser handles DELETE /admin/users/:id/ban.
+func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`DELETE FROM user_moderation_actions WHERE user_id = $1 AND action = 'ban'`, userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unban user")
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ListUserBans handles GET /admin/users/:id/bans.
+func (h *Handlers) ListUserBans(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	rows, err := h.DB.Reader.Query(r.Context(),
+		`SELECT id, action, reason, expires_at, created_at FROM user_moderation_actions
+		 WHERE user_id = $1 AND action = 'ban' ORDER BY created_at DESC`, userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list bans")
+		return
+	}
+	defer rows.Close()
+	type banRow struct {
+		ID        string  `json:"id"`
+		Action    string  `json:"action"`
+		Reason    string  `json:"reason"`
+		ExpiresAt *string `json:"expires_at"`
+		CreatedAt string  `json:"created_at"`
+	}
+	var bans []banRow
+	for rows.Next() {
+		var b banRow
+		_ = rows.Scan(&b.ID, &b.Action, &b.Reason, &b.ExpiresAt, &b.CreatedAt)
+		bans = append(bans, b)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": bans})
+}
+
+// WarnUser handles POST /admin/users/:id/warn.
+func (h *Handlers) WarnUser(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, created_at)
+		 VALUES ($1, (SELECT tenant_id FROM users WHERE id=$1), 'warning', $2, now())`,
+		userID, input.Reason)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to warn user")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "warned"})
+}
+
+// ListUserWarnings handles GET /admin/users/:id/warnings.
+func (h *Handlers) ListUserWarnings(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	rows, err := h.DB.Reader.Query(r.Context(),
+		`SELECT id, reason, created_at FROM user_moderation_actions
+		 WHERE user_id = $1 AND action = 'warning' ORDER BY created_at DESC`, userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list warnings")
+		return
+	}
+	defer rows.Close()
+	type warnRow struct {
+		ID        string `json:"id"`
+		Reason    string `json:"reason"`
+		CreatedAt string `json:"created_at"`
+	}
+	var warnings []warnRow
+	for rows.Next() {
+		var w warnRow
+		_ = rows.Scan(&w.ID, &w.Reason, &w.CreatedAt)
+		warnings = append(warnings, w)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": warnings})
+}
+
+// DeleteUserWarning handles DELETE /admin/users/:id/warnings/:warningId.
+func (h *Handlers) DeleteUserWarning(w http.ResponseWriter, r *http.Request) {
+	warningID := chi.URLParam(r, "warningId")
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`DELETE FROM user_moderation_actions WHERE id = $1 AND action = 'warning'`, warningID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete warning")
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// UpdateUserStatus handles PATCH /admin/users/:id/status.
+func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	var input struct {
+		Status string `json:"status"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`UPDATE users SET status = $2, updated_at = now() WHERE id = $1`, userID, input.Status)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user_id": userID, "status": input.Status})
+}
+
+// UpdateUserGroup handles PATCH /admin/users/:id/group.
+func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	var input struct {
+		GroupID string `json:"group_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`INSERT INTO user_group_memberships (user_id, group_id) VALUES ($1, $2)
+		 ON CONFLICT (user_id, group_id) DO NOTHING`, userID, input.GroupID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user group")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user_id": userID})
+}
+
+// ─── Organization Verify (P5.6 — Task 10) ───────────────────────────────
+
+// VerifyOrganization handles POST /admin/organizations/:id/verify.
+func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`UPDATE organizations SET verified = true, updated_at = now() WHERE id = $1`, orgID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": orgID, "verified": true})
+}
+
+// UnverifyOrganization handles DELETE /admin/organizations/:id/verify.
+func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`UPDATE organizations SET verified = false, updated_at = now() WHERE id = $1`, orgID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// ─── Appeals (P5.6 — Task 22) ───────────────────────────────────────────
+
+// ListAppeals handles GET /admin/appeals.
+func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.DB.Reader.Query(r.Context(),
+		`SELECT id, user_id, entity_type, entity_id, reason, status, created_at
+		 FROM moderation_appeals ORDER BY created_at DESC LIMIT 50`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list appeals")
+		return
+	}
+	defer rows.Close()
+	var appeals []map[string]any
+	for rows.Next() {
+		var id, userID, entityType, entityID, reason, status, createdAt string
+		_ = rows.Scan(&id, &userID, &entityType, &entityID, &reason, &status, &createdAt)
+		appeals = append(appeals, map[string]any{
+			"id": id, "user_id": userID, "entity_type": entityType,
+			"entity_id": entityID, "reason": reason, "status": status, "created_at": createdAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": appeals})
+}
+
+// GetAppeal handles GET /admin/appeals/:id.
+func (h *Handlers) GetAppeal(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var appealID, userID, entityType, entityID, reason, status, createdAt string
+	err := h.DB.Reader.QueryRow(r.Context(),
+		`SELECT id, user_id, entity_type, entity_id, reason, status, created_at
+		 FROM moderation_appeals WHERE id = $1`, id).
+		Scan(&appealID, &userID, &entityType, &entityID, &reason, &status, &createdAt)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "Appeal not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"id": appealID, "user_id": userID, "entity_type": entityType,
+		"entity_id": entityID, "reason": reason, "status": status, "created_at": createdAt,
+	}})
+}
+
+// UpdateAppeal handles PATCH /admin/appeals/:id.
+func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var input struct {
+		Status string `json:"status"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`UPDATE moderation_appeals SET status = $2, updated_at = now() WHERE id = $1`, id, input.Status)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update appeal")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": input.Status})
+}
+
+// ─── Moderation Queue Assign (P5.6 — Task 26) ───────────────────────────
+
+// AssignModerationItem handles PATCH /admin/moderation-queue/:id/assign.
+func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var input struct {
+		AssigneeID string `json:"assignee_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`UPDATE content_reports SET assigned_to = $2, status = 'in_review', updated_at = now() WHERE id = $1`, id, input.AssigneeID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to assign moderation item")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "assignee_id": input.AssigneeID})
+}
+
+// ─── Content Moderation (P5.6 — Task 23) ────────────────────────────────
+
+// RemoveContent handles POST /admin/content/:id/remove.
+func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`UPDATE contents SET status = 'removed', updated_at = now() WHERE id = $1`, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to remove content")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": "removed"})
+}
+
+// RestoreContent handles POST /admin/content/:id/restore.
+func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`UPDATE contents SET status = 'draft', updated_at = now() WHERE id = $1 AND status = 'removed'`, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to restore content")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": "restored"})
+}
+
+// ─── Broadcasts (P5.6 — Task 4) ──────────────────────────────────────────
+
+// ListBroadcasts handles GET /admin/broadcasts.
+func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
+	_, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.DB.Reader.Query(r.Context(),
+		`SELECT id, title, body, sent_by, sent_at, recipient_count
+		 FROM admin_broadcasts ORDER BY sent_at DESC LIMIT 50`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list broadcasts")
+		return
+	}
+	defer rows.Close()
+	var broadcasts []map[string]any
+	for rows.Next() {
+		var id, title, body, sentBy, sentAt string
+		var recipientCount int
+		_ = rows.Scan(&id, &title, &body, &sentBy, &sentAt, &recipientCount)
+		broadcasts = append(broadcasts, map[string]any{
+			"id": id, "title": title, "body": body, "sent_by": sentBy,
+			"sent_at": sentAt, "recipient_count": recipientCount,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": broadcasts})
+}
+
+// DeleteBroadcast handles DELETE /admin/broadcasts/:id.
+func (h *Handlers) DeleteBroadcast(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	_, err := h.DB.Writer.Exec(r.Context(),
+		`DELETE FROM admin_broadcasts WHERE id = $1`, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete broadcast")
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
 }

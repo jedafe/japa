@@ -429,3 +429,56 @@ func (h *Handlers) RemoveAllowedIP(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]string{"status": "removed"},
 	})
 }
+
+// ─── P5.6 Me API Key Extras ──────────────────────────────────────────────
+
+// GetAPIKey handles GET /me/api-keys/:id — returns a single API key (P5.6).
+func (h *Handlers) GetAPIKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	keyID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		return
+	}
+	var key APIKey
+	err = h.Service.store.dbPool.QueryRow(r.Context(),
+		`SELECT id, name, key_prefix, scopes, status, created_at, last_used_at
+		 FROM api_keys WHERE id = $1 AND user_id = $2`,
+		keyID, user.UserID).
+		Scan(&key.ID, &key.Name, &key.KeyPrefix, &key.Scopes, &key.Status, &key.CreatedAt, &key.LastUsedAt)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "API key not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": key})
+}
+
+// UpdateAPIKey handles PATCH /me/api-keys/:id — updates an API key (P5.6).
+func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	keyID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		return
+	}
+	var input struct {
+		Name   string `json:"name"`
+		Scopes string `json:"scopes"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	_, err = h.Service.store.dbPool.Exec(r.Context(),
+		`UPDATE api_keys SET name = COALESCE(NULLIF($3,''), name),
+		 scopes = COALESCE(NULLIF($4,''), scopes), updated_at = now()
+		 WHERE id = $1 AND user_id = $2`, keyID, user.UserID, input.Name, input.Scopes)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update API key")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": keyID.String()}})
+}

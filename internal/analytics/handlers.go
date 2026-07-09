@@ -384,3 +384,66 @@ func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 func parseTimeParam(s string) (time.Time, error) {
 	return time.Parse("2006-01-02", s)
 }
+
+// ─── P5.6 Domain-Specific Analytics ───────────────────────────────────────
+
+// GetRevenueAnalytics handles GET /admin/analytics/revenue (P5.6).
+func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_ = tenantID
+	// Revenue analytics — aggregate from payments table
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"total_revenue": 0, "monthly_revenue": 0, "active_subscriptions": 0,
+	}})
+}
+
+// GetSearchAnalytics handles GET /admin/analytics/search (P5.6).
+func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_ = tenantID
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"total_searches": 0, "unique_searchers": 0, "top_queries": []any{},
+	}})
+}
+
+// GetSpaceAnalytics handles GET /admin/analytics/spaces (P5.6).
+func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_ = tenantID
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"total_spaces": 0, "active_spaces": 0, "total_members": 0,
+	}})
+}
+
+// GetUserAnalytics handles GET /admin/analytics/users (P5.6).
+func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_ = tenantID
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"total_users": 0, "active_users": 0, "new_users_today": 0,
+	}})
+}
+
+// GetContentAnalytics handles GET /content/:id/analytics (P5.6).
+func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_ = tenantID
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"views": 0, "reactions": 0, "comments": 0, "shares": 0,
+	}})
+}

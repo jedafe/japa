@@ -23,6 +23,7 @@ INFRA_PREFIXES = ("/health", "/ready")
 def collapse_params(p: str) -> str:
     p = re.sub(r"\{(\w+)\}", r":\1", p)      # chi {x} -> :x
     p = re.sub(r":\w+", ":x", p)             # collapse param NAMES for structural compare
+    p = p.split("?")[0]                       # strip query parameters
     return p.rstrip("/") or "/"
 
 

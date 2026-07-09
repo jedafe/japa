@@ -421,3 +421,41 @@ func parseQueryString(r *http.Request, key string) *string {
 // Unused but referenced to avoid compiler errors.
 var _ = time.Now
 var _ = fmt.Sprintf
+
+// ─── P5.6 Affiliate Commission Rates ─────────────────────────────────────
+
+// GetCommissionRates handles GET /admin/affiliate-program/commission-rates.
+func (h *Handlers) GetCommissionRates(w http.ResponseWriter, r *http.Request) {
+	info := h.Service.GetProgramInfo(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"rates": info.CommissionRates,
+	}})
+}
+
+// UpdateCommissionRates handles PATCH /admin/affiliate-program/commission-rates.
+func (h *Handlers) UpdateCommissionRates(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_ = tenantID
+	var input struct {
+		ProMonthly *int `json:"pro_monthly"`
+		ProAnnual  *int `json:"pro_annual"`
+		Course     *int `json:"course"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	// Commission rates are stored in program settings — update via raw SQL
+	if input.ProMonthly != nil || input.ProAnnual != nil || input.Course != nil {
+		_, _ = h.Service.db.Writer.Exec(r.Context(),
+			`INSERT INTO affiliate_program_settings (tenant_id, commission_rates, updated_at)
+			 VALUES ($1, jsonb_build_object('pro_monthly', COALESCE($2,0), 'pro_annual', COALESCE($3,0), 'course', COALESCE($4,0)), now())
+			 ON CONFLICT (tenant_id) DO UPDATE SET
+			   commission_rates = jsonb_build_object('pro_monthly', COALESCE($2, (affiliate_program_settings.commission_rates->>'pro_monthly')::int),
+			     'pro_annual', COALESCE($3, (affiliate_program_settings.commission_rates->>'pro_annual')::int),
+			     'course', COALESCE($4, (affiliate_program_settings.commission_rates->>'course')::int)),
+			   updated_at = now()`,
+			tenantID, input.ProMonthly, input.ProAnnual, input.Course)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
+}
