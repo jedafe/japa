@@ -152,6 +152,21 @@ func (q *Queries) DeleteFormStep(ctx context.Context, arg DeleteFormStepParams) 
 	return err
 }
 
+const deleteFormSubmission = `-- name: DeleteFormSubmission :exec
+DELETE FROM form_submissions
+WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteFormSubmissionParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteFormSubmission(ctx context.Context, arg DeleteFormSubmissionParams) error {
+	_, err := q.db.Exec(ctx, deleteFormSubmission, arg.ID, arg.TenantID)
+	return err
+}
+
 const getFormByID = `-- name: GetFormByID :one
 SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label,
        success_message, status, is_system, created_at

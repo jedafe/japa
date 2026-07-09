@@ -681,6 +681,29 @@ func (q *Queries) UpdateCustomFieldGroup(ctx context.Context, arg UpdateCustomFi
 	return i, err
 }
 
+const updateCustomFieldPosition = `-- name: UpdateCustomFieldPosition :exec
+UPDATE custom_fields
+SET position = $1
+WHERE id = $2 AND group_id = $3 AND tenant_id = $4 AND is_system = false
+`
+
+type UpdateCustomFieldPositionParams struct {
+	Position int32       `json:"position"`
+	ID       pgtype.UUID `json:"id"`
+	GroupID  pgtype.UUID `json:"group_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateCustomFieldPosition(ctx context.Context, arg UpdateCustomFieldPositionParams) error {
+	_, err := q.db.Exec(ctx, updateCustomFieldPosition,
+		arg.Position,
+		arg.ID,
+		arg.GroupID,
+		arg.TenantID,
+	)
+	return err
+}
+
 const upsertCustomFieldValue = `-- name: UpsertCustomFieldValue :one
 INSERT INTO custom_field_values (field_id, entity_type, entity_id, value_text, value_number, value_bool, value_date, value_json)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

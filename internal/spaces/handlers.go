@@ -1455,3 +1455,139 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"left": true}})
 }
+
+// ─── Admin Space Extras (P5.6 — Task 12) ─────────────────────────────────
+
+// ListJoinRequests handles GET /admin/spaces/:id/join-requests.
+func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "id")
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.Service.db.Reader.Query(r.Context(),
+		`SELECT sm.id, sm.user_id, u.username, sm.role, sm.created_at
+		 FROM space_members sm JOIN users u ON u.id = sm.user_id
+		 WHERE sm.space_id = $1 AND sm.tenant_id = $2 AND sm.status = 'pending'
+		 ORDER BY sm.created_at DESC`, spaceID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
+		return
+	}
+	defer rows.Close()
+	var requests []map[string]any
+	for rows.Next() {
+		var id, userID, username, role, createdAt string
+		_ = rows.Scan(&id, &userID, &username, &role, &createdAt)
+		requests = append(requests, map[string]any{
+			"id": id, "user_id": userID, "username": username, "role": role, "created_at": createdAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": requests})
+}
+
+// UpdateJoinRequest handles PATCH /admin/spaces/:id/join-requests/:requestId.
+func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "id")
+	requestID := chi.URLParam(r, "requestId")
+	var input struct {
+		Status string `json:"status"` // "approved" or "rejected"
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_, err := h.Service.db.Writer.Exec(r.Context(),
+		`UPDATE space_members SET status = $3, updated_at = now()
+		 WHERE id = $1 AND space_id = $2 AND tenant_id = $4`,
+		requestID, spaceID, input.Status, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": requestID, "status": input.Status})
+}
+
+// UpdateSpaceStatus handles PATCH /admin/spaces/:id/status.
+func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "id")
+	var input struct {
+		Status string `json:"status"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	_, err := h.Service.db.Writer.Exec(r.Context(),
+		`UPDATE spaces SET status = $3, updated_at = now() WHERE id = $1 AND tenant_id = $2`,
+		spaceID, tenantID, input.Status)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update space status")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": spaceID, "status": input.Status})
+}
+
+// GetSpaceAnalytics handles GET /spaces/:id/analytics.
+func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "id")
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	var memberCount, contentCount, viewCount int
+	_ = h.Service.db.Reader.QueryRow(r.Context(),
+		`SELECT COUNT(*) FROM space_members WHERE space_id = $1 AND tenant_id = $2`, spaceID, tenantID).Scan(&memberCount)
+	_ = h.Service.db.Reader.QueryRow(r.Context(),
+		`SELECT COUNT(*) FROM contents WHERE space_id = $1 AND tenant_id = $2 AND status = 'published'`, spaceID, tenantID).Scan(&contentCount)
+	_ = h.Service.db.Reader.QueryRow(r.Context(),
+		`SELECT COALESCE(SUM(view_count), 0) FROM content_views WHERE space_id = $1 AND tenant_id = $2`, spaceID, tenantID).Scan(&viewCount)
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"member_count": memberCount, "content_count": contentCount, "view_count": viewCount,
+	}})
+}
+
+// ReorderPinned handles PATCH /spaces/:id/pinned/reorder.
+func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "id")
+	var input struct {
+		Order []string `json:"order"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	for i, contentID := range input.Order {
+		_, _ = h.Service.db.Writer.Exec(r.Context(),
+			`UPDATE space_pins SET position = $3 WHERE space_id = $1 AND content_id = $2 AND tenant_id = $4`,
+			spaceID, contentID, i, tenantID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+}
+
+// SuggestParentSpaces handles GET /spaces/suggest-parents.
+func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.Service.db.Reader.Query(r.Context(),
+		`SELECT id, name, slug FROM spaces WHERE tenant_id = $1 AND status = 'active'
+		 AND space_type_id IN (SELECT id FROM space_types WHERE slug = 'category')
+		 ORDER BY name LIMIT 20`, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to suggest parents")
+		return
+	}
+	defer rows.Close()
+	var spaces []map[string]any
+	for rows.Next() {
+		var id, name, slug string
+		_ = rows.Scan(&id, &name, &slug)
+		spaces = append(spaces, map[string]any{"id": id, "name": name, "slug": slug})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+}

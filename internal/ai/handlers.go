@@ -741,3 +741,38 @@ func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": models})
 }
+
+// ─── P5.6 AI Conversations ───────────────────────────────────────────────
+
+// HandleListConversations handles GET /ai/conversations (P5.6).
+func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+	// Conversation history is stored in Honcho — list context entries as conversations
+	entries, err := h.Honcho.GetContext(r.Context(), user.UserID.String())
+	if err != nil {
+		// Honcho may not be configured — return empty list
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
+}
+
+// HandleGetConversation handles GET /ai/conversations/:id (P5.6).
+func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+	// Conversation history is stored in Honcho — return context entries
+	entries, err := h.Honcho.GetContext(r.Context(), user.UserID.String())
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
+}

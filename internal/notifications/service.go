@@ -240,3 +240,27 @@ func SplitNames(names string) string {
 
 	return strings.TrimSpace(parts[0])
 }
+
+// CreateNotificationType inserts a new notification type definition (P5.6).
+func (s *Service) CreateNotificationType(ctx context.Context, key, label string, description *string, enabled bool) error {
+	_, err := s.db.Writer.Exec(ctx,
+		`INSERT INTO notification_types (key, label, description, enabled, default_in_app, default_email, default_push)
+		 VALUES ($1, $2, $3, $4, true, true, false)
+		 ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, description = EXCLUDED.description`,
+		key, label, description, enabled)
+	return err
+}
+
+// UpdateNotificationType updates an existing notification type (P5.6).
+func (s *Service) UpdateNotificationType(ctx context.Context, key, label string, description *string, enabled bool) error {
+	_, err := s.db.Writer.Exec(ctx,
+		`UPDATE notification_types SET label = $2, description = $3, enabled = $4 WHERE key = $1`,
+		key, label, description, enabled)
+	return err
+}
+
+// DeleteNotificationType removes a notification type (P5.6).
+func (s *Service) DeleteNotificationType(ctx context.Context, key string) error {
+	_, err := s.db.Writer.Exec(ctx, `DELETE FROM notification_types WHERE key = $1`, key)
+	return err
+}
