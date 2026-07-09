@@ -23,6 +23,20 @@ func requestWithURLParam(method, target, param, value, body string) *http.Reques
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
 
+// requestWithURLParams is the two-param variant of requestWithURLParam, for
+// nested admin routes like /admin/field-groups/{id}/fields/{fid} that carry
+// two distinct IDs in the same path.
+func requestWithURLParams(method, target string, params map[string]string, body string) *http.Request {
+	rctx := chi.NewRouteContext()
+	for k, v := range params {
+		rctx.URLParams.Add(k, v)
+	}
+
+	r := httptest.NewRequest(method, target, strings.NewReader(body))
+
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+}
+
 // decodeErrorResponse unmarshals an error envelope from the response body,
 // failing the test when the body is not valid JSON.
 func decodeErrorResponse(t *testing.T, body []byte) errorResponse {
@@ -202,6 +216,257 @@ func TestSubmitForm_InvalidBody(t *testing.T) {
 
 	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_body" {
 		t.Errorf("error.code = %q, want invalid_body", got.Error.Code)
+	}
+}
+
+func TestUpdateFieldInGroup_InvalidFieldID(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(nil, nil)
+
+	const groupID = "550e8400-e29b-41d4-a716-446655440000"
+
+	body := `{"label":"Test","field_type":"text"}`
+	r := requestWithURLParams(
+		http.MethodPatch,
+		"/api/v1/admin/field-groups/"+groupID+"/fields/not-a-uuid",
+		map[string]string{"id": groupID, "fid": "not-a-uuid"},
+		body,
+	)
+	rr := httptest.NewRecorder()
+	h.UpdateFieldInGroup(rr, r)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_id" {
+		t.Errorf("error.code = %q, want invalid_id", got.Error.Code)
+	}
+}
+
+func TestUpdateFieldInGroup_InvalidFieldType(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(nil, nil)
+
+	const groupID = "550e8400-e29b-41d4-a716-446655440000"
+	const fieldID = "660e8400-e29b-41d4-a716-446655440000"
+
+	body := `{"label":"Test","field_type":"invalid"}`
+	r := requestWithURLParams(
+		http.MethodPatch,
+		"/api/v1/admin/field-groups/"+groupID+"/fields/"+fieldID,
+		map[string]string{"id": groupID, "fid": fieldID},
+		body,
+	)
+	rr := httptest.NewRecorder()
+	h.UpdateFieldInGroup(rr, r)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_field_type" {
+		t.Errorf("error.code = %q, want invalid_field_type", got.Error.Code)
+	}
+}
+
+func TestDeleteFieldInGroup_InvalidFieldID(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(nil, nil)
+
+	const groupID = "550e8400-e29b-41d4-a716-446655440000"
+
+	r := requestWithURLParams(
+		http.MethodDelete,
+		"/api/v1/admin/field-groups/"+groupID+"/fields/not-a-uuid",
+		map[string]string{"id": groupID, "fid": "not-a-uuid"},
+		"",
+	)
+	rr := httptest.NewRecorder()
+	h.DeleteFieldInGroup(rr, r)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_id" {
+		t.Errorf("error.code = %q, want invalid_id", got.Error.Code)
+	}
+}
+
+func TestReorderFields_InvalidGroupID(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(nil, nil)
+
+	r := requestWithURLParam(
+		http.MethodPost,
+		"/api/v1/admin/field-groups/not-a-uuid/fields/reorder",
+		"id", "not-a-uuid", `{"fields":[]}`,
+	)
+	rr := httptest.NewRecorder()
+	h.ReorderFields(rr, r)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_id" {
+		t.Errorf("error.code = %q, want invalid_id", got.Error.Code)
+	}
+}
+
+func TestReorderFields_InvalidBody(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(nil, nil)
+
+	const groupID = "550e8400-e29b-41d4-a716-446655440000"
+
+	r := requestWithURLParam(
+		http.MethodPost,
+		"/api/v1/admin/field-groups/"+groupID+"/fields/reorder",
+		"id", groupID, `{not json`,
+	)
+	rr := httptest.NewRecorder()
+	h.ReorderFields(rr, r)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_body" {
+		t.Errorf("error.code = %q, want invalid_body", got.Error.Code)
+	}
+}
+
+func TestGetFormSubmission_InvalidFormID(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(nil, nil)
+
+	const subID = "550e8400-e29b-41d4-a716-446655440000"
+
+	r := requestWithURLParams(
+		http.MethodGet,
+		"/api/v1/admin/forms/not-a-uuid/submissions/"+subID,
+		map[string]string{"id": "not-a-uuid", "sub_id": subID},
+		"",
+	)
+	rr := httptest.NewRecorder()
+	h.GetFormSubmission(rr, r)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_id" {
+		t.Errorf("error.code = %q, want invalid_id", got.Error.Code)
+	}
+}
+
+func TestGetFormSubmission_InvalidSubmissionID(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(nil, nil)
+
+	const formID = "550e8400-e29b-41d4-a716-446655440000"
+
+	r := requestWithURLParams(
+		http.MethodGet,
+		"/api/v1/admin/forms/"+formID+"/submissions/not-a-uuid",
+		map[string]string{"id": formID, "sub_id": "not-a-uuid"},
+		"",
+	)
+	rr := httptest.NewRecorder()
+	h.GetFormSubmission(rr, r)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_id" {
+		t.Errorf("error.code = %q, want invalid_id", got.Error.Code)
+	}
+}
+
+func TestUpdateFormSubmission_InvalidBody(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(nil, nil)
+
+	const formID = "550e8400-e29b-41d4-a716-446655440000"
+	const subID = "660e8400-e29b-41d4-a716-446655440000"
+
+	r := requestWithURLParams(
+		http.MethodPatch,
+		"/api/v1/admin/forms/"+formID+"/submissions/"+subID,
+		map[string]string{"id": formID, "sub_id": subID},
+		`{not json`,
+	)
+	rr := httptest.NewRecorder()
+	h.UpdateFormSubmission(rr, r)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_body" {
+		t.Errorf("error.code = %q, want invalid_body", got.Error.Code)
+	}
+}
+
+func TestUpdateFormSubmission_MissingStatus(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(nil, nil)
+
+	const formID = "550e8400-e29b-41d4-a716-446655440000"
+	const subID = "660e8400-e29b-41d4-a716-446655440000"
+
+	r := requestWithURLParams(
+		http.MethodPatch,
+		"/api/v1/admin/forms/"+formID+"/submissions/"+subID,
+		map[string]string{"id": formID, "sub_id": subID},
+		`{}`,
+	)
+	rr := httptest.NewRecorder()
+	h.UpdateFormSubmission(rr, r)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "missing_fields" {
+		t.Errorf("error.code = %q, want missing_fields", got.Error.Code)
+	}
+}
+
+func TestDeleteFormSubmission_InvalidSubmissionID(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(nil, nil)
+
+	const formID = "550e8400-e29b-41d4-a716-446655440000"
+
+	r := requestWithURLParams(
+		http.MethodDelete,
+		"/api/v1/admin/forms/"+formID+"/submissions/not-a-uuid",
+		map[string]string{"id": formID, "sub_id": "not-a-uuid"},
+		"",
+	)
+	rr := httptest.NewRecorder()
+	h.DeleteFormSubmission(rr, r)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	if got := decodeErrorResponse(t, rr.Body.Bytes()); got.Error.Code != "invalid_id" {
+		t.Errorf("error.code = %q, want invalid_id", got.Error.Code)
 	}
 }
 
