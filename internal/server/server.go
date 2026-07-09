@@ -1278,6 +1278,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/wallet/rules", walletHandlers.CreateOrUpdateRule)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
 					Patch("/admin/wallet/rules/{id}/toggle", walletHandlers.ToggleRule)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
+					Delete("/admin/wallet/rules/{id}", walletHandlers.DeleteRule)
 				// Admin adjustments
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
 					Post("/admin/wallet/adjust", walletHandlers.AdminAdjust)
