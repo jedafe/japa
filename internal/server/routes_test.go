@@ -74,8 +74,9 @@ type routeEntry struct {
 }
 
 // parseServerRoutes extracts route registrations from server.go. It tracks
-// the /auth sub-route scope so relative registrations inside that block get
-// the /auth prefix. This mirrors the logic in scripts/route_diff.py.
+// the /auth and /control sub-route scopes so relative registrations inside
+// those blocks get the correct prefix. This mirrors the logic in
+// scripts/route_diff.py.
 func parseServerRoutes(path string) ([]routeEntry, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -84,7 +85,8 @@ func parseServerRoutes(path string) ([]routeEntry, error) {
 	defer f.Close()
 
 	var routes []routeEntry
-	var authDepth *int
+	var routePrefix *string
+	prefixDepth := 0
 	depth := 0
 	re := regexp.MustCompile(`(?:^|[^A-Za-z])(Get|Post|Put|Patch|Delete)\("(/[^"]*)"`)
 
@@ -98,10 +100,17 @@ func parseServerRoutes(path string) ([]routeEntry, error) {
 
 		if strings.Contains(line, `.Route("/auth"`) {
 			d := depth
-			authDepth = &d
+			p := "/auth"
+			routePrefix = &p
+			prefixDepth = d
+		} else if strings.Contains(line, `.Route("/control"`) {
+			d := depth
+			p := "/control"
+			routePrefix = &p
+			prefixDepth = d
 		}
-		if authDepth != nil && depth < *authDepth {
-			authDepth = nil
+		if routePrefix != nil && depth < prefixDepth {
+			routePrefix = nil
 		}
 
 		m := re.FindStringSubmatch(line)
@@ -112,8 +121,8 @@ func parseServerRoutes(path string) ([]routeEntry, error) {
 		method := strings.ToUpper(m[1])
 		rpath := m[2]
 
-		if authDepth != nil && !strings.HasPrefix(rpath, "/auth") {
-			rpath = "/auth" + rpath
+		if routePrefix != nil && !strings.HasPrefix(rpath, *routePrefix) {
+			rpath = *routePrefix + rpath
 		}
 
 		routes = append(routes, routeEntry{
