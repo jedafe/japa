@@ -235,3 +235,119 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 		"error": map[string]string{"code": code, "message": message},
 	})
 }
+
+// CreateTag handles POST /api/v1/admin/tags.
+func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Name        string  `json:"name"`
+		Slug        string  `json:"slug"`
+		Description *string `json:"description"`
+		Color       *string `json:"color"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		return
+	}
+
+	slug := input.Slug
+	if slug == "" {
+		slug = content.Slugify(input.Name)
+	}
+
+	if input.Description != nil {
+		sanitized := content.SanitizeText(*input.Description)
+		input.Description = &sanitized
+	}
+
+	tag, err := h.service.CreateTag(r.Context(), tenantID, CreateTagInput{
+		Name:        content.SanitizeText(input.Name),
+		Slug:        slug,
+		Description: input.Description,
+		Color:       input.Color,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create tag")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": tag})
+}
+
+// UpdateTag handles PATCH /api/v1/admin/tags/{id}.
+func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var input struct {
+		Name        string  `json:"name"`
+		Description *string `json:"description"`
+		Color       *string `json:"color"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		return
+	}
+
+	if input.Description != nil {
+		sanitized := content.SanitizeText(*input.Description)
+		input.Description = &sanitized
+	}
+
+	tag, err := h.service.UpdateTag(r.Context(), id, tenantID, UpdateTagInput{
+		Name:        content.SanitizeText(input.Name),
+		Description: input.Description,
+		Color:       input.Color,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update tag")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+}
+
+// DeleteTag handles DELETE /api/v1/admin/tags/{id}.
+func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.service.DeleteTag(r.Context(), id, tenantID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tag")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+}

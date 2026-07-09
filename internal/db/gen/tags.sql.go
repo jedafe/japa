@@ -11,6 +11,59 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createTag = `-- name: CreateTag :one
+
+INSERT INTO tags (tenant_id, name, slug, description, color)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
+`
+
+type CreateTagParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	Description *string     `json:"description"`
+	Color       *string     `json:"color"`
+}
+
+// Admin CRUD (catalog: POST/PATCH/DELETE /admin/tags).
+func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (Tag, error) {
+	row := q.db.QueryRow(ctx, createTag,
+		arg.TenantID,
+		arg.Name,
+		arg.Slug,
+		arg.Description,
+		arg.Color,
+	)
+	var i Tag
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.Color,
+		&i.FollowerCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deleteTag = `-- name: DeleteTag :exec
+DELETE FROM tags WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteTagParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteTag(ctx context.Context, arg DeleteTagParams) error {
+	_, err := q.db.Exec(ctx, deleteTag, arg.ID, arg.TenantID)
+	return err
+}
+
 const getTagBySlug = `-- name: GetTagBySlug :one
 SELECT id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
 FROM tags
@@ -79,4 +132,42 @@ func (q *Queries) ListTagsByTenant(ctx context.Context, tenantID pgtype.UUID) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateTag = `-- name: UpdateTag :one
+UPDATE tags
+SET name = $1, description = $2, color = $3, updated_at = now()
+WHERE id = $4 AND tenant_id = $5
+RETURNING id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
+`
+
+type UpdateTagParams struct {
+	Name        string      `json:"name"`
+	Description *string     `json:"description"`
+	Color       *string     `json:"color"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, error) {
+	row := q.db.QueryRow(ctx, updateTag,
+		arg.Name,
+		arg.Description,
+		arg.Color,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i Tag
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.Color,
+		&i.FollowerCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
