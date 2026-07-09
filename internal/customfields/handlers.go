@@ -392,7 +392,21 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 // UpdateField handles PATCH /api/v1/custom-fields/{id}. Key and group_id are
 // immutable and therefore not accepted in the request body.
 func (h *Handlers) UpdateField(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	h.updateFieldByParam(w, r, "id")
+}
+
+// UpdateFieldInGroup handles PATCH /api/v1/admin/field-groups/{id}/fields/{fid}.
+// The admin route nests the field under its owning group in the URL, so the
+// field ID travels in the "fid" param instead of "id" (which is already
+// taken by the group ID) — the rest of the logic is identical to UpdateField.
+func (h *Handlers) UpdateFieldInGroup(w http.ResponseWriter, r *http.Request) {
+	h.updateFieldByParam(w, r, "fid")
+}
+
+// updateFieldByParam implements the shared PATCH-field logic for UpdateField
+// and UpdateFieldInGroup, reading the field ID from idParam.
+func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, idParam string) {
+	id, err := parseUUIDParam(r, idParam)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
@@ -456,7 +470,19 @@ func (h *Handlers) UpdateField(w http.ResponseWriter, r *http.Request) {
 
 // DeleteField handles DELETE /api/v1/custom-fields/{id}.
 func (h *Handlers) DeleteField(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	h.deleteFieldByParam(w, r, "id")
+}
+
+// DeleteFieldInGroup handles DELETE /api/v1/admin/field-groups/{id}/fields/{fid}.
+// See UpdateFieldInGroup for why the field ID is read from "fid" here.
+func (h *Handlers) DeleteFieldInGroup(w http.ResponseWriter, r *http.Request) {
+	h.deleteFieldByParam(w, r, "fid")
+}
+
+// deleteFieldByParam implements the shared DELETE-field logic for DeleteField
+// and DeleteFieldInGroup, reading the field ID from idParam.
+func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, idParam string) {
+	id, err := parseUUIDParam(r, idParam)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
@@ -473,6 +499,51 @@ func (h *Handlers) DeleteField(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// ReorderFields handles POST /api/v1/admin/field-groups/{id}/fields/reorder
+// — bulk position update across a group's fields, one call per field to
+// Service.UpdateFieldPosition. Mirrors the comparison package's
+// ReorderComparisonItems handler (no new per-field validation beyond ID
+// parsing; the database scopes each update to the given group and tenant).
+func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
+	groupID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var req struct {
+		Fields []struct {
+			ID       string `json:"id"`
+			Position int32  `json:"position"`
+		} `json:"fields"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	for _, f := range req.Fields {
+		var fieldID pgtype.UUID
+		if err := fieldID.Scan(f.ID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+f.ID)
+			return
+		}
+
+		if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, tenantID, f.Position); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 }
 
 // ---------------------------------------------------------------------------
@@ -965,4 +1036,130 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": submissions})
+}
+
+// GetFormSubmission handles GET /api/v1/admin/forms/{id}/submissions/{sub_id}.
+func (h *Handlers) GetFormSubmission(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	id, err := parseUUIDParam(r, "sub_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	submission, err := h.Service.GetFormSubmission(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if submission.FormID != formID {
+		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": submission})
+}
+
+// UpdateFormSubmission handles PATCH /api/v1/admin/forms/{id}/submissions/{sub_id}.
+// Only the processing status is mutable; the submitted field values are
+// immutable once recorded.
+func (h *Handlers) UpdateFormSubmission(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	id, err := parseUUIDParam(r, "sub_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var req struct {
+		Status string `json:"status"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if strings.TrimSpace(req.Status) == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "Status is required")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	submission, err := h.Service.GetFormSubmission(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if submission.FormID != formID {
+		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		return
+	}
+
+	if err := h.Service.UpdateFormSubmissionStatus(r.Context(), id, tenantID, req.Status); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	submission.Status = req.Status
+	writeJSON(w, http.StatusOK, map[string]any{"data": submission})
+}
+
+// DeleteFormSubmission handles DELETE /api/v1/admin/forms/{id}/submissions/{sub_id}.
+func (h *Handlers) DeleteFormSubmission(w http.ResponseWriter, r *http.Request) {
+	formID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	id, err := parseUUIDParam(r, "sub_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	submission, err := h.Service.GetFormSubmission(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if submission.FormID != formID {
+		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		return
+	}
+
+	if err := h.Service.DeleteFormSubmission(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

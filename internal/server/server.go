@@ -636,6 +636,38 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
 				Get("/forms/{id}/submissions", cfHandlers.ListFormSubmissions)
 
+			// Admin field-group routes — the same underlying handlers as the
+			// /custom-field-groups block above, mounted a second time under
+			// /admin per catalog (an admin-facing management surface distinct
+			// from the tenant-scoped API the SPA consumes at the bare paths).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.view")).
+				Get("/admin/field-groups", cfHandlers.ListFieldGroups)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.create")).
+				Post("/admin/field-groups", cfHandlers.CreateFieldGroup)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.edit")).
+				Patch("/admin/field-groups/{id}", cfHandlers.UpdateFieldGroup)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.delete")).
+				Delete("/admin/field-groups/{id}", cfHandlers.DeleteFieldGroup)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.field.create")).
+				Post("/admin/field-groups/{id}/fields", cfHandlers.CreateField)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.field.edit")).
+				Patch("/admin/field-groups/{id}/fields/{fid}", cfHandlers.UpdateFieldInGroup)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.field.delete")).
+				Delete("/admin/field-groups/{id}/fields/{fid}", cfHandlers.DeleteFieldInGroup)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.field.edit")).
+				Post("/admin/field-groups/{id}/fields/reorder", cfHandlers.ReorderFields)
+
+			// Admin form submission single-item routes — the list already
+			// exists at /forms/{id}/submissions above; these add the
+			// per-submission GET/PATCH/DELETE the catalog documents under
+			// /admin/forms.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
+				Get("/admin/forms/{id}/submissions/{sub_id}", cfHandlers.GetFormSubmission)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.edit")).
+				Patch("/admin/forms/{id}/submissions/{sub_id}", cfHandlers.UpdateFormSubmission)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.delete")).
+				Delete("/admin/forms/{id}/submissions/{sub_id}", cfHandlers.DeleteFormSubmission)
+
 			// Space type routes — reads stay bare (any user creating a space needs
 			// the type list for e.g. a dropdown); writes move under /admin per
 			// catalog (management of the type definitions themselves is admin-only).
@@ -2029,6 +2061,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 // reads, following the existing read/write split convention.
 func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.Store) {
 	permissions := []rbac.Permission{
+		{Key: "custom_fields.group.view", Description: "View custom field groups (admin listing)"},
 		{Key: "custom_fields.group.create", Description: "Create custom field groups"},
 		{Key: "custom_fields.group.edit", Description: "Edit custom field groups"},
 		{Key: "custom_fields.group.delete", Description: "Delete custom field groups"},
@@ -2040,6 +2073,8 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "forms.edit", Description: "Edit forms"},
 		{Key: "forms.delete", Description: "Delete forms"},
 		{Key: "forms.submissions.view", Description: "View form submissions"},
+		{Key: "forms.submissions.edit", Description: "Edit form submission status"},
+		{Key: "forms.submissions.delete", Description: "Delete form submissions"},
 		{Key: "spaces.create", Description: "Create spaces"},
 		{Key: "spaces.edit", Description: "Edit spaces"},
 		{Key: "spaces.delete", Description: "Delete spaces"},

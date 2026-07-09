@@ -84,6 +84,11 @@ RETURNING id, group_id, tenant_id, label, key, field_type, options, embed_platfo
 DELETE FROM custom_fields
 WHERE id = @id AND tenant_id = @tenant_id AND is_system = false;
 
+-- name: UpdateCustomFieldPosition :exec
+UPDATE custom_fields
+SET position = @position
+WHERE id = @id AND group_id = @group_id AND tenant_id = @tenant_id AND is_system = false;
+
 -- =====================
 -- Group Assignments
 -- =====================
