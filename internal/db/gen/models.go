@@ -1826,6 +1826,7 @@ type Tenant struct {
 	Domain    *string            `json:"domain"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	Status    string             `json:"status"`
 }
 
 type Ticket struct {
