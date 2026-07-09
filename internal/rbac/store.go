@@ -484,3 +484,62 @@ func slugify(name string) string {
 
 	return slug
 }
+
+// DeleteRole removes a role and all its permission/group assignments (P5.6).
+func (s *Store) DeleteRole(ctx context.Context, roleID pgtype.UUID) error {
+	_, err := s.db.Writer.Exec(ctx, `
+		DELETE FROM role_permissions WHERE role_id = $1;
+		DELETE FROM group_roles WHERE role_id = $1;
+		DELETE FROM roles WHERE id = $1;
+	`, roleID)
+	if err != nil {
+		return fmt.Errorf("deleting role: %w", err)
+	}
+	return nil
+}
+
+// UpdateRole updates a role's name and description (P5.6).
+func (s *Store) UpdateRole(ctx context.Context, roleID pgtype.UUID, name, description string) error {
+	_, err := s.db.Writer.Exec(ctx,
+		`UPDATE roles SET name = $2, description = $3 WHERE id = $1`,
+		roleID, name, description)
+	if err != nil {
+		return fmt.Errorf("updating role: %w", err)
+	}
+	return nil
+}
+
+// SetRolePermissions replaces all permissions for a role (P5.6).
+func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, permKeys []string) error {
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Remove existing
+	if _, err := tx.Exec(ctx, `DELETE FROM role_permissions WHERE role_id = $1`, roleID); err != nil {
+		return err
+	}
+	// Add new
+	for _, key := range permKeys {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO role_permissions (role_id, permission_id)
+			 SELECT $1, id FROM permissions WHERE key = $2
+			 ON CONFLICT DO NOTHING`, roleID, key); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// UpdateGroup updates a group's name and slug (P5.6).
+func (s *Store) UpdateGroup(ctx context.Context, groupID pgtype.UUID, name, slug string) error {
+	_, err := s.db.Writer.Exec(ctx,
+		`UPDATE user_groups SET name = $2, slug = $3 WHERE id = $1`,
+		groupID, name, slug)
+	if err != nil {
+		return fmt.Errorf("updating group: %w", err)
+	}
+	return nil
+}
