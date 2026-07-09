@@ -1573,10 +1573,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/followers", tagsHandlers.GetTagFollowers)
-			// NOTE (admin gaps): admin tag CRUD (POST/PATCH/DELETE /admin/tags) does
-			// not exist yet — there is currently no way to create a general tag at
-			// all, so content_tags/AddContentTag is effectively unreachable until
-			// that's implemented.
+			// Admin tag CRUD (previously missing entirely — content_tags/
+			// AddContentTag was unreachable since there was no way to create a tag).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.create")).
+				Post("/admin/tags", tagsHandlers.CreateTag)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
+				Patch("/admin/tags/{id}", tagsHandlers.UpdateTag)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.delete")).
+				Delete("/admin/tags/{id}", tagsHandlers.DeleteTag)
+			// NOTE (P5): POST/DELETE /admin/tags/:id/moderators deferred — no
+			// tag_moderators table exists (would need a migration).
+
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.analytics.search")).
 				Get("/admin/search/analytics", searchHandlers.SearchAdminAnalytics)
 
@@ -1970,6 +1977,9 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "space_types.create", Description: "Create space types"},
 		{Key: "space_types.edit", Description: "Edit space types"},
 		{Key: "space_types.delete", Description: "Delete space types"},
+		{Key: "tags.create", Description: "Create general tags"},
+		{Key: "tags.edit", Description: "Edit general tags"},
+		{Key: "tags.delete", Description: "Delete general tags"},
 		{Key: "spaces.admin", Description: "Manage space permission presets"},
 		{Key: "content.create", Description: "Create content"},
 		{Key: "content.edit", Description: "Edit content"},
