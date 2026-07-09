@@ -630,15 +630,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
 				Get("/forms/{id}/submissions", cfHandlers.ListFormSubmissions)
 
-			// Space type routes
+			// Space type routes — reads stay bare (any user creating a space needs
+			// the type list for e.g. a dropdown); writes move under /admin per
+			// catalog (management of the type definitions themselves is admin-only).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/space-types", spaceHandlers.ListSpaceTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/space-types/{id}", spaceHandlers.GetSpaceType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.create")).
-				Post("/space-types", spaceHandlers.CreateSpaceType)
+				Post("/admin/space-types", spaceHandlers.CreateSpaceType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.edit")).
-				Patch("/space-types/{id}", spaceHandlers.UpdateSpaceType)
+				Patch("/admin/space-types/{id}", spaceHandlers.UpdateSpaceType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.delete")).
-				Delete("/space-types/{id}", spaceHandlers.DeleteSpaceType)
+				Delete("/admin/space-types/{id}", spaceHandlers.DeleteSpaceType)
 
 			// Space routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces", spaceHandlers.ListSpaces)
@@ -1239,13 +1241,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// and possibly payment-gateway re-authorization, not just a status flip.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage")).
 				Patch("/subscriptions/{id}/cancel", paymentHandlers.CancelSubscription)
-			// Discount codes
+			// Discount codes — admin-only per catalog (/admin/discount-codes).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
-				Post("/discount-codes", paymentHandlers.CreateDiscountCode)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/discount-codes", paymentHandlers.ListDiscountCodes)
+				Post("/admin/discount-codes", paymentHandlers.CreateDiscountCode)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
+				Get("/admin/discount-codes", paymentHandlers.ListDiscountCodes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/payments/discount-codes/validate", paymentHandlers.ValidateDiscountCode)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
-				Delete("/discount-codes/{id}", paymentHandlers.DeleteDiscountCode)
+				Delete("/admin/discount-codes/{id}", paymentHandlers.DeleteDiscountCode)
+			// NOTE (P5): PATCH /admin/discount-codes/:id and GET .../usage
+			// deferred — no UpdateDiscountCode or usage-tracking service method exists.
 
 			// Wallet & Credits routes — gated by feature.wallet (Section 28)
 			r.With(features.Gate(featureChecker, "feature.wallet")).Group(func(r chi.Router) {
