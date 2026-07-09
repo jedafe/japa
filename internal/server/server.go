@@ -318,7 +318,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Professional Profiles subsystem (Section 33 — Professional Profiles).
 	professionalService := professional.NewService(database)
-	professionalHandlers := professional.NewHandlers(professionalService, rbacResolver)
+	professionalHandlers := professional.NewHandlers(professionalService, rbacResolver, followService)
 
 	// Organization system (Section 07).
 	orgService := organizations.NewService(database)
@@ -1112,6 +1112,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
 					Post("/comparisons/{id}/items", comparisonHandlers.CreateComparisonItem)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
+					Post("/comparisons/{id}/items/reorder", comparisonHandlers.ReorderComparisonItems)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
 					Patch("/comparisons/items/{id}", comparisonHandlers.UpdateComparisonItem)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
 					Delete("/comparisons/items/{id}", comparisonHandlers.DeleteComparisonItem)
@@ -1146,6 +1148,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/profiles/{id}", professionalHandlers.UpdateProfessionalProfile)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
 					Delete("/profiles/{id}", professionalHandlers.DeleteProfessionalProfile)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/profiles/{id}/follow", professionalHandlers.ToggleFollow)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/profiles/{id}/follow", professionalHandlers.ToggleFollow)
 
 				// Member management routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
