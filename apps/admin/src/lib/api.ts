@@ -103,11 +103,11 @@ export const walletApi = {
 export const spaceTypesApi = {
 	list: (params?: string) => api<unknown>(`/space-types${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string; description?: string; is_university: boolean; icon?: string }) =>
-		api('/space-types', { method: 'POST', body }),
+		api('/admin/space-types', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; slug?: string; description?: string; is_university?: boolean; icon?: string }) =>
-		api(`/space-types/${id}`, { method: 'PATCH', body }),
+		api(`/admin/space-types/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
-		api(`/space-types/${id}`, { method: 'DELETE' }),
+		api(`/admin/space-types/${id}`, { method: 'DELETE' }),
 };
 
 // ─── User Impersonation ────────────────────────────────────────────
