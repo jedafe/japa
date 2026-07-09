@@ -239,7 +239,7 @@ func TestUnreadCounter_NilClient(t *testing.T) {
 func TestCreateSpace_MissingFields(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(nil, nil)
+	h := NewHandlers(nil, nil, nil)
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/spaces", strings.NewReader(`{}`))
 	h.CreateSpace(rr, r)
@@ -256,7 +256,7 @@ func TestCreateSpace_MissingFields(t *testing.T) {
 func TestCreateSpace_InvalidLevel(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(nil, nil)
+	h := NewHandlers(nil, nil, nil)
 	rr := httptest.NewRecorder()
 	body := `{"name":"Test","slug":"test","space_type_id":"550e8400-e29b-41d4-a716-446655440000","level":"planet"}`
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/spaces", strings.NewReader(body))
@@ -274,7 +274,7 @@ func TestCreateSpace_InvalidLevel(t *testing.T) {
 func TestCreateSpaceType_InvalidBody(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(nil, nil)
+	h := NewHandlers(nil, nil, nil)
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/space-types", strings.NewReader(`{not json`))
 	h.CreateSpaceType(rr, r)
@@ -291,7 +291,7 @@ func TestCreateSpaceType_InvalidBody(t *testing.T) {
 func TestListSpaceTypes_NoTenant(t *testing.T) {
 	t.Parallel()
 
-	h := NewHandlers(nil, nil)
+	h := NewHandlers(nil, nil, nil)
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/space-types", nil)
 	h.ListSpaceTypes(rr, r)
