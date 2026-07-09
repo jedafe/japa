@@ -24,7 +24,7 @@
 		sending = true;
 		resultMsg = '';
 		try {
-			await api('/admin/broadcast', {
+			await api('/admin/broadcasts', {
 				method: 'POST',
 				body: {
 					title,

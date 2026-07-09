@@ -251,7 +251,7 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
-// AcceptMessageRequest handles POST /api/v1/dm/message-requests/{id}/accept.
+// AcceptMessageRequest handles POST /api/v1/dm/requests/{id}/accept.
 func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -281,7 +281,7 @@ func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
-// DeclineMessageRequest handles POST /api/v1/dm/message-requests/{id}/decline.
+// DeclineMessageRequest handles POST /api/v1/dm/requests/{id}/decline.
 func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -305,6 +305,36 @@ func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request)
 
 	if err := h.dmService.HandleMessageRequest(r.Context(), tenantID, conversationID, user.UserID, MessageRequestDeclined); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to decline message request")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+}
+
+// BlockMessageRequest handles POST /api/v1/dm/requests/{id}/block.
+func (h *Handlers) BlockMessageRequest(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	tenantID, ok := requireTenantFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	conversationIDStr := chi.URLParam(r, "id")
+
+	var conversationID pgtype.UUID
+
+	if err := conversationID.Scan(conversationIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		return
+	}
+
+	if err := h.dmService.HandleMessageRequest(r.Context(), tenantID, conversationID, user.UserID, MessageRequestBlocked); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to block message request")
 		return
 	}
 
