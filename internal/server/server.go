@@ -675,6 +675,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/spaces/{slug}/mute", spaceHandlers.UnmuteSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/mute-status", spaceHandlers.GetMuteStatus)
+
+			// Space content & pinned posts
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+				Get("/spaces/{slug}/content", spaceHandlers.ListSpaceContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+				Get("/spaces/{slug}/pinned", spaceHandlers.ListPinned)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+				Post("/spaces/{slug}/pinned", spaceHandlers.AddPinned)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+				Delete("/spaces/{slug}/pinned/{content_id}", spaceHandlers.RemovePinned)
+			// NOTE (P5): PATCH /spaces/:id/pinned/reorder deferred — no
+			// ReorderPinnedContent service method exists yet.
+
+			// Dedicated leave (catalog: DELETE /spaces/:id/leave), split from
+			// the join/leave toggle above.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+				Delete("/spaces/{slug}/leave", spaceHandlers.Leave)
 			// catalog: POST /spaces/:id/report — takes a raw ID (like the other
 			// report routes), not the slug the rest of this block resolves on.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/spaces/{id}/report", reportsHandlers.ReportSpace)
@@ -1539,6 +1556,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Search routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/search", searchHandlers.Search)
 			r.Get("/search/autocomplete", searchHandlers.Autocomplete)
+			// catalog: GET /spaces/search — space-discovery search (distinct from
+			// /spaces/{id}/search below, which searches one space's content).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/spaces/search", searchHandlers.SearchSpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/search", searchHandlers.SearchSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/search", searchHandlers.SearchTag)
 
