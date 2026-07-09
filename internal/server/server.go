@@ -211,10 +211,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	embedResolver := customfields.NewEmbedResolver()
 	cfHandlers := customfields.NewHandlers(cfService, embedResolver)
 
+	// Content subsystem (Section 14 — Content Type System). Service created
+	// early because spaces/blog handlers below need it for their
+	// content-related sub-resources (space content/pinned, blog post CRUD).
+	contentService := content.NewService(database)
+
 	// Spaces subsystem (Section 05 — Geo-First Space System).
 	spaceService := spaces.NewService(database)
 	spaceUnread := spaces.NewUnreadCounter(vkClient)
-	spaceHandlers := spaces.NewHandlers(spaceService, spaceUnread)
+	spaceHandlers := spaces.NewHandlers(spaceService, spaceUnread, contentService)
 
 	// Geo HTTP handlers — /api/v1/geo/*. The hierarchy endpoints reuse
 	// spaceService (countries/states/cities are seeded as spaces).
@@ -233,8 +238,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	reportsService := reports.NewService(database)
 	reportsHandlers := reports.NewHandlers(reportsService)
 
-	// Content subsystem (Section 14 — Content Type System).
-	contentService := content.NewService(database)
+	// Content HTTP handlers (Service created earlier, above spaceService).
 	contentHandlers := content.NewHandlers(contentService)
 
 	// Renderer subsystem (Section 15 — Block Editor SSR).
@@ -1001,7 +1005,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/blog", blogHandlers.ListPosts)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), rbac.RequirePermission(rbacResolver, "content.create")).
 					Post("/blog", blogHandlers.CreatePost)
-				r.Get("/blog/{slug}", contentHandlers.GetContent)
+				r.Get("/blog/{slug}", blogHandlers.GetPost)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
 					Patch("/blog/{id}", contentHandlers.UpdateContent)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).

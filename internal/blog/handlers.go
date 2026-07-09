@@ -39,6 +39,8 @@ const statusInReview = "in_review"
 // ContentService is the subset of content.Service the blog post handlers need.
 type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
+	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
+	GetContentBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentBySlugRow, error)
 	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTypeRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 }
@@ -827,7 +829,48 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": posts})
+	// This route is public (no auth middleware) — ListContentsByType has no
+	// status filter, so drafts/archived posts must be filtered out here rather
+	// than exposed to anonymous readers.
+	published := make([]gen.ListContentsByTypeRow, 0, len(posts))
+
+	for _, p := range posts {
+		if p.Status == content.StatusPublished {
+			published = append(published, p)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": published})
+}
+
+// GetPost handles GET /api/v1/blog/{slug} — a single published blog post.
+// Public (no auth middleware); only content_type=blog_post and
+// status=published are visible here — anything else 404s rather than
+// disclosing the existence/content of drafts or unrelated content types.
+func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		return
+	}
+
+	post, err := h.content.GetContentBySlug(r.Context(), slug, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		return
+	}
+
+	if post.ContentType != contentTypeBlogPost || post.Status != content.StatusPublished {
+		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": post})
 }
 
 // CreatePost handles POST /api/v1/blog — creates a blog post (content_type
@@ -875,8 +918,8 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 		ContentType: contentTypeBlogPost,
 		Title:       input.Title,
 		Slug:        input.Slug,
-		Body:        input.Body,
-		BodyHtml:    input.BodyHtml,
+		Body:        content.SanitizeText(input.Body),
+		BodyHtml:    content.SanitizeHTML(input.BodyHtml),
 		Status:      input.Status,
 		Visibility:  input.Visibility,
 	})
@@ -907,6 +950,19 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	existing, err := h.content.GetContent(r.Context(), contentID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		return
+	}
+
+	// A blog-specific action must not be usable to change the status of
+	// unrelated content (forum threads, pages, etc.) reached by guessing IDs.
+	if existing.ContentType != contentTypeBlogPost {
+		writeError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
+		return
+	}
+
 	post, err := h.content.UpdateContentStatus(r.Context(), contentID, tenantID, statusInReview)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to submit post for review")
@@ -932,6 +988,17 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	existing, err := h.content.GetContent(r.Context(), contentID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		return
+	}
+
+	if existing.ContentType != contentTypeBlogPost {
+		writeError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 		return
 	}
 
