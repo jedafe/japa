@@ -88,3 +88,7 @@ WHERE id = @id AND tenant_id = @tenant_id;
 UPDATE form_submissions
 SET status = @status
 WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: DeleteFormSubmission :exec
+DELETE FROM form_submissions
+WHERE id = @id AND tenant_id = @tenant_id;

@@ -417,3 +417,82 @@ func parseUUID(s string) (pgtype.UUID, error) {
 
 	return u, nil
 }
+
+// DeleteRole handles DELETE /admin/roles/:id (P5.6).
+func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
+	roleID, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid role ID")
+		return
+	}
+	if err := h.store.DeleteRole(r.Context(), roleID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete role")
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// UpdateRole handles PATCH /admin/roles/:id (P5.6).
+func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
+	roleID, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid role ID")
+		return
+	}
+	var input struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
+		return
+	}
+	if err := h.store.UpdateRole(r.Context(), roleID, input.Name, input.Description); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update role")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": roleID.String()})
+}
+
+// SetRolePermissions handles PATCH /admin/roles/:id/permissions (P5.6).
+func (h *Handlers) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
+	roleID, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid role ID")
+		return
+	}
+	var input struct {
+		Permissions []string `json:"permissions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
+		return
+	}
+	if err := h.store.SetRolePermissions(r.Context(), roleID, input.Permissions); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to set role permissions")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"role_id": roleID.String()})
+}
+
+// UpdateGroup handles PATCH /admin/user-groups/:id (P5.6).
+func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	groupID, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
+		return
+	}
+	var input struct {
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
+		return
+	}
+	if err := h.store.UpdateGroup(r.Context(), groupID, input.Name, input.Slug); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update group")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": groupID.String()})
+}

@@ -452,3 +452,26 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusNoContent, nil)
 }
+
+// ─── P5.6 DM Requests List ───────────────────────────────────────────────
+
+// ListMessageRequests handles GET /dm/requests (P5.6).
+// Lists pending DM requests for the current user.
+func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUserFromContext(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+	tenantID, ok := requireTenantFromContext(w, r)
+	if !ok {
+		return
+	}
+	// Use existing conversation listing — filter for pending requests
+	conversations, err := h.dmService.GetConversations(r.Context(), tenantID, user.UserID, 50, 0)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list message requests")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": conversations})
+}

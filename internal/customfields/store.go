@@ -163,6 +163,23 @@ func (s *Service) DeleteField(ctx context.Context, id, tenantID pgtype.UUID) err
 	return nil
 }
 
+// UpdateFieldPosition updates a single field's position within its group,
+// scoped to the tenant. Used by ReorderFields to persist a bulk reorder as a
+// sequence of single-field updates, mirroring the comparison package's
+// ReorderComparisonItem.
+func (s *Service) UpdateFieldPosition(ctx context.Context, id, groupID, tenantID pgtype.UUID, position int32) error {
+	if err := s.write.UpdateCustomFieldPosition(ctx, gen.UpdateCustomFieldPositionParams{
+		Position: position,
+		ID:       id,
+		GroupID:  groupID,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("updating custom field position: %w", err)
+	}
+
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Group Assignments
 // ---------------------------------------------------------------------------
@@ -458,6 +475,18 @@ func (s *Service) UpdateFormSubmissionStatus(ctx context.Context, id, tenantID p
 		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("updating form submission status: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteFormSubmission deletes a submission, scoped to the tenant.
+func (s *Service) DeleteFormSubmission(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteFormSubmission(ctx, gen.DeleteFormSubmissionParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("deleting form submission: %w", err)
 	}
 
 	return nil
