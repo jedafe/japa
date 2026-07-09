@@ -5,8 +5,8 @@ import { apiFetch } from '$lib/server/api';
 export const load: PageServerLoad = async ({ params }) => {
 	try {
 		const [lessonResult, trackResult] = await Promise.all([
-			apiFetch<unknown>(`/learning/tracks/${params.trackSlug}/modules/${params.moduleSlug}/lessons/${params.lessonSlug}`),
-			apiFetch<{ id: string; slug: string; title: string; modules: { slug: string; title: string; lessons: { id: string; slug: string; title: string; duration_minutes: number }[] }[] }>(`/learning/tracks/${params.trackSlug}`)
+			apiFetch<unknown>(`/learn/tracks/${params.trackSlug}/modules/${params.moduleSlug}/lessons/${params.lessonSlug}`),
+			apiFetch<{ id: string; slug: string; title: string; modules: { slug: string; title: string; lessons: { id: string; slug: string; title: string; duration_minutes: number }[] }[] }>(`/learn/tracks/${params.trackSlug}`)
 		]);
 
 		if (!lessonResult.ok || !lessonResult.data) {

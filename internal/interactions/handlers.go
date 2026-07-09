@@ -230,6 +230,37 @@ func (h *Handlers) UnmuteUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetUserMuteStatus handles GET /api/v1/users/{user_id}/mute-status.
+func (h *Handlers) GetUserMuteStatus(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	targetID, err := parseUUIDParam(r, "user_id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
+
+		return
+	}
+
+	muted, err := h.service.IsUserMuted(r.Context(), tenantID, user.UserID, targetID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check mute status")
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"muted": muted},
+	})
+}
+
 // ListMutedUsers handles GET /api/v1/users/muted.
 func (h *Handlers) ListMutedUsers(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

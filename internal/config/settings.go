@@ -169,3 +169,31 @@ func (s *Settings) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key stri
 	}
 	return v
 }
+
+// GetPublicSettings returns all settings marked as public for the given tenant.
+func (s *Settings) GetPublicSettings(ctx context.Context, tenantID pgtype.UUID) (map[string]any, error) {
+	rows, err := s.db.Reader.Query(ctx,
+		`SELECT key, value FROM system_settings WHERE tenant_id = $1 AND is_public = true`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying public settings: %w", err)
+	}
+	defer rows.Close()
+
+	settings := make(map[string]any)
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, fmt.Errorf("scanning public setting: %w", err)
+		}
+		var parsed any
+		if json.Unmarshal([]byte(value), &parsed) == nil {
+			settings[key] = parsed
+		} else {
+			settings[key] = value
+		}
+	}
+
+	return settings, rows.Err()
+}

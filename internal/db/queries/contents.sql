@@ -100,6 +100,20 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at;
 
+-- name: ScheduleContent :one
+-- Sets status='scheduled' and publish_at without touching title/body/other
+-- fields (catalog: POST /content/:id/schedule). The scheduled_publish Asynq
+-- task (enqueued by the caller with ProcessAt=publish_at) flips status to
+-- 'published' when the time arrives.
+UPDATE contents
+SET status = 'scheduled', publish_at = @publish_at, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+          field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+          created_at, updated_at;
+
 -- name: IncrementContentView :exec
 UPDATE contents SET view_count = view_count + 1 WHERE id = @id AND tenant_id = @tenant_id;
 

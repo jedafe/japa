@@ -5,7 +5,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 	const { token } = await parent();
 
 	const [balanceRes, ledgerRes] = await Promise.allSettled([
-		apiFetch<{ points: number; credits: number }>('/wallet/balance', {}, token ?? undefined),
+		apiFetch<{ points: number; credits: number }>('/me/wallet', {}, token ?? undefined),
 		apiFetch<Array<{
 			id: string;
 			amount: number;
@@ -13,7 +13,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 			type: string;
 			description: string;
 			created_at: string;
-		}>>('/wallet/ledger?limit=30', {}, token ?? undefined)
+		}>>('/me/wallet/ledger?limit=30', {}, token ?? undefined)
 	]);
 
 	const balance =

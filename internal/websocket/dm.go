@@ -425,6 +425,8 @@ func (s *DMService) HandleMessageRequest(ctx context.Context, tenantID, conversa
 		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestAccepted)
 	case MessageRequestDeclined:
 		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestDeclined)
+	case MessageRequestBlocked:
+		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestBlocked)
 	default:
 		return fmt.Errorf("invalid action: %s", action)
 	}

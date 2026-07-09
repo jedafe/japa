@@ -52,7 +52,7 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-	const result = await apiFetch<ProfessionalProfile>(`/professional-profiles/${params.slug}`, { headers });
+	const result = await apiFetch<ProfessionalProfile>(`/profiles/${params.slug}`, { headers });
 
 	if (!result.ok || !result.data) {
 		throw { status: 404, message: 'Profile not found' };

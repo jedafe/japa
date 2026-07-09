@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -229,7 +230,10 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 
 // OpenAPIHandler serves the OpenAPI 3.0.3 specification as JSON.
 func (h *Handlers) OpenAPIHandler(w http.ResponseWriter, _ *http.Request) {
-	spec := GetOpenAPISpec()
+	// Canonical spec lives in internal/publicapi (the more complete generator);
+	// serving it here too avoids two independently hand-maintained specs
+	// drifting apart (§6.4 dedupe).
+	spec := publicapi.GetPublicOpenAPISpec()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -337,7 +341,7 @@ const playgroundHTML = `<!DOCTYPE html>
 <div class="header">
   <h1>API Playground</h1>
   <nav>
-    <a href="/docs/api/openapi.json">OpenAPI Spec</a>
+    <a href="/docs/openapi.json">OpenAPI Spec</a>
     <a href="/">Documentation Home</a>
   </nav>
 </div>

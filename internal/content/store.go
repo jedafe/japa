@@ -3,6 +3,7 @@ package content
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -277,6 +278,23 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.U
 	})
 	if err != nil {
 		return gen.UpdateContentStatusRow{}, fmt.Errorf("updating content status: %w", err)
+	}
+
+	return content, nil
+}
+
+// ScheduleContent sets status='scheduled' and publish_at for a future publish
+// time, without touching title/body/other fields (catalog: POST
+// /content/:id/schedule). Callers must also enqueue the scheduled_publish
+// Asynq task with ProcessAt=publishAt for the actual publish to happen.
+func (s *Service) ScheduleContent(ctx context.Context, id, tenantID pgtype.UUID, publishAt time.Time) (gen.ScheduleContentRow, error) {
+	content, err := s.write.ScheduleContent(ctx, gen.ScheduleContentParams{
+		PublishAt: pgtype.Timestamptz{Time: publishAt, Valid: true},
+		ID:        id,
+		TenantID:  tenantID,
+	})
+	if err != nil {
+		return gen.ScheduleContentRow{}, fmt.Errorf("scheduling content: %w", err)
 	}
 
 	return content, nil

@@ -883,3 +883,51 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": results})
 }
+
+// ReorderComparisonItems handles POST /api/v1/comparisons/{id}/items/reorder
+// — bulk position update across a comparison's items, one call per item to
+// the existing Service.ReorderComparisonItem (no new service logic).
+func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	comparisonID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+		return
+	}
+
+	var input struct {
+		Items []struct {
+			ID       string `json:"id"`
+			Position int32  `json:"position"`
+		} `json:"items"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	for _, item := range input.Items {
+		var itemID pgtype.UUID
+		if err := itemID.Scan(item.ID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_item_id", "Invalid item id: "+item.ID)
+			return
+		}
+
+		if err := h.Service.ReorderComparisonItem(r.Context(), itemID, comparisonID, tenantID, item.Position); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+}

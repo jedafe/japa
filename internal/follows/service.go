@@ -121,6 +121,32 @@ func (s *Service) GetFollowing(ctx context.Context, tenantID, followerID pgtype.
 	return result, nil
 }
 
+// GetFollowingByType returns paginated entities of one entity_type that a
+// user follows (catalog: GET /me/followed-tags passes entityType "tag").
+func (s *Service) GetFollowingByType(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, limit, offset int32) ([]FollowingInfo, error) {
+	rows, err := s.store.getFollowingByType(ctx, tenantID, followerID, entityType, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("getting following by type: %w", err)
+	}
+
+	result := make([]FollowingInfo, len(rows))
+	for i, r := range rows {
+		result[i] = FollowingInfo{
+			Follow: gen.Follow{
+				ID:         r.ID,
+				TenantID:   r.TenantID,
+				FollowerID: r.FollowerID,
+				EntityType: r.EntityType,
+				EntityID:   r.EntityID,
+				CreatedAt:  r.CreatedAt,
+			},
+			EntityName: r.EntityName,
+		}
+	}
+
+	return result, nil
+}
+
 // CountFollowers returns the follower count for an entity.
 func (s *Service) CountFollowers(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (int32, error) {
 	return s.store.countFollowers(ctx, tenantID, entityType, entityID)
