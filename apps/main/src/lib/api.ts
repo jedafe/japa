@@ -452,12 +452,12 @@ export const api = {
 		});
 	},
 	acceptDMRequest(conversationId: string) {
-		return request<{ success: boolean }>('/dm/message-requests/' + conversationId + '/accept', {
+		return request<{ success: boolean }>('/dm/requests/' + conversationId + '/accept', {
 			method: 'POST'
 		});
 	},
 	declineDMRequest(conversationId: string) {
-		return request<{ success: boolean }>('/dm/message-requests/' + conversationId + '/decline', {
+		return request<{ success: boolean }>('/dm/requests/' + conversationId + '/decline', {
 			method: 'POST'
 		});
 	},

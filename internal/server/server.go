@@ -522,7 +522,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
 		// Universal RSS feeds (public — no auth required, tenant-scoped)
 		r.Get("/feed.xml", rsspkg.HandleFeed(database.Reader, "all"))
-		r.Get("/blog/feed.xml", rsspkg.HandleFeed(database.Reader, "blog"))
 		r.Get("/spaces/{slug}/feed.xml", rsspkg.HandleSpaceFeed(database.Reader))
 		r.Get("/tags/{slug}/feed.xml", rsspkg.HandleTagFeed(database.Reader))
 		r.Get("/users/{username}/feed.xml", rsspkg.HandleUserFeed(database.Reader))
@@ -844,10 +843,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mute-status", interactionsHandlers.GetUserMuteStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/users/{id}/report", reportsHandlers.ReportUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-users", interactionsHandlers.ListMutedUsers)
-
-			// Space Mutes (Section 52)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/spaces/{space_id}/mute", interactionsHandlers.MuteSpace)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/spaces/{space_id}/mute", interactionsHandlers.UnmuteSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-spaces", interactionsHandlers.ListMutedSpaces)
 
 			// Notification System routes (Section 35 — Notification System)
@@ -941,8 +936,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/dm/conversations/{id}/messages/{mid}", wsHandlers.DeleteMessage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/message-requests/{id}/accept", wsHandlers.AcceptMessageRequest)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/message-requests/{id}/decline", wsHandlers.DeclineMessageRequest)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/accept", wsHandlers.AcceptMessageRequest)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/decline", wsHandlers.DeclineMessageRequest)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/block", wsHandlers.BlockMessageRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/dm/privacy", wsHandlers.UpdateDMPrivacy)
 			})
 
@@ -1235,12 +1231,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/subscriptions", paymentHandlers.ListSubscriptions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/subscription", paymentHandlers.GetActiveSubscription)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/subscription/cancel", paymentHandlers.CancelMySubscription)
-			// NOTE (P5): /me/subscription/reactivate has no safe wiring yet —
-			// CancelSubscription is a hard cutoff (status='canceled', cancel_at=now()),
-			// so reactivating needs a product decision on billing-period recomputation
-			// and possibly payment-gateway re-authorization, not just a status flip.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage")).
-				Patch("/subscriptions/{id}/cancel", paymentHandlers.CancelSubscription)
 			// Discount codes — admin-only per catalog (/admin/discount-codes).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
 				Post("/admin/discount-codes", paymentHandlers.CreateDiscountCode)
@@ -1936,17 +1926,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/me/permissions", rbacHandlers.GetUserPermissions)
 
-			// Admin Moderation routes (stubs)
+			// Admin Moderation routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
-				Get("/admin/moderation", adminHandlers.ListModeration)
+				Get("/admin/moderation-queue", adminHandlers.ListModeration)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
-				Post("/admin/moderation/bulk", adminHandlers.BulkModeration)
+				Post("/admin/moderation-queue/bulk", adminHandlers.BulkModeration)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
-				Post("/admin/moderation/{id}/appeal", adminHandlers.AppealModeration)
+				Post("/admin/moderation-queue/{id}/appeal", adminHandlers.AppealModeration)
 
-			// Admin Broadcast route (stub)
+			// Admin Broadcast route
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
-				Post("/admin/broadcast", adminHandlers.Broadcast)
+				Post("/admin/broadcasts", adminHandlers.Broadcast)
 		})
 	})
 
