@@ -302,7 +302,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Blog Extension subsystem (Section 24 — Blog Extension).
 	blogService := blog.NewService(database)
-	blogHandlers := blog.NewHandlers(blogService)
+	blogHandlers := blog.NewHandlers(blogService, contentService)
 
 	// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
 	reviewService := reviews.NewService(database)
@@ -995,6 +995,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Blog Extension routes — gated by feature.blog (Section 24)
 			r.With(features.Gate(featureChecker, "feature.blog")).Group(func(r chi.Router) {
+				// Base post CRUD — blog posts are content rows (content_type=
+				// blog_post), so this reuses the existing content.* permission
+				// nodes rather than inventing blog-specific ones.
+				r.Get("/blog", blogHandlers.ListPosts)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), rbac.RequirePermission(rbacResolver, "content.create")).
+					Post("/blog", blogHandlers.CreatePost)
+				r.Get("/blog/{slug}", contentHandlers.GetContent)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+					Patch("/blog/{id}", contentHandlers.UpdateContent)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
+					Delete("/blog/{id}", contentHandlers.DeleteContent)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+					Post("/blog/{id}/submit-for-review", blogHandlers.SubmitForReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.feature")).
+					Post("/blog/{id}/feature", blogHandlers.FeaturePostByID)
+
 				// Series routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.create")).
 					Post("/blog/series", blogHandlers.CreateSeries)
