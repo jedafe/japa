@@ -88,7 +88,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		if isOriginAllowed(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Request-ID")
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Max-Age", "300")
 		}
@@ -127,8 +127,8 @@ func isOriginAllowed(origin string) bool {
 
 	allowedCSV := os.Getenv("JC_CORS_ORIGINS")
 	if allowedCSV == "" {
-		// Fall back to hardcoded production origins if env var not set.
-		return isDefaultProductionOrigin(origin)
+		// Fall back to production origins derived from JC_SITE_URL if env var not set.
+		return isDefaultProductionOrigin(origin, os.Getenv("JC_SITE_URL"))
 	}
 
 	for _, allowed := range strings.Split(allowedCSV, ",") {
@@ -162,17 +162,39 @@ func isLocalOrigin(origin string) bool {
 	return host == "localhost" || host == "127.0.0.1" || host == "[::1]"
 }
 
-// isDefaultProductionOrigin checks against the hardcoded production origins
-// when JC_CORS_ORIGINS is not set.
-func isDefaultProductionOrigin(origin string) bool {
-	allowed := []string{
-		"https://japaconnect.com",
-		"https://www.japaconnect.com",
-		"https://admin.japaconnect.com",
-		"https://control.japaconnect.com",
-		"https://docs.japaconnect.com",
-		"https://learn.japaconnect.com",
+// isDefaultProductionOrigin checks against the production origins derived
+// from JC_SITE_URL when JC_CORS_ORIGINS is not set.
+func isDefaultProductionOrigin(origin string, siteURL string) bool {
+	if siteURL == "" {
+		return false
 	}
+
+	// Extract domain from siteURL (e.g. "https://example.com" -> "example.com")
+	domain := siteURL
+	if idx := len("https://"); len(domain) > idx && domain[:idx] == "https://" {
+		domain = domain[idx:]
+	} else if idx := len("http://"); len(domain) > idx && domain[:idx] == "http://" {
+		domain = domain[idx:]
+	}
+	// Remove trailing path
+	for i, c := range domain {
+		if c == '/' {
+			domain = domain[:i]
+			break
+		}
+	}
+
+	// Generate allowed origins from domain
+	allowed := []string{
+		"https://" + domain,
+		"https://www." + domain,
+		"https://admin." + domain,
+		"https://control." + domain,
+		"https://docs." + domain,
+		"https://learn." + domain,
+		"https://api." + domain,
+	}
+
 	for _, a := range allowed {
 		if origin == a {
 			return true

@@ -35,7 +35,7 @@ type Config struct {
 	JWTSecret                string // JC_JWT_SECRET — signing secret for JWT access tokens (empty = random in dev)
 	JWTKeyID                 string // JC_JWT_KEY_ID — key ID for JWT kid header, defaults to "key-dev"
 	SiteName                 string // JC_SITE_NAME — site name for LLMS.txt and branding
-	SiteURL                  string // JC_SITE_URL — public-facing base URL (e.g. https://japaconnect.com)
+	SiteURL                  string // JC_SITE_URL — public-facing base URL (e.g. https://example.com)
 	SiteDescription          string // JC_SITE_DESCRIPTION — site description for LLMS.txt
 	OAuthGoogleID            string // JC_OAUTH_GOOGLE_CLIENT_ID — Google OAuth client ID
 	OAuthGoogleSecret        string // JC_OAUTH_GOOGLE_CLIENT_SECRET — Google OAuth client secret
@@ -47,14 +47,14 @@ type Config struct {
 	OAuthApplePrivateKeyPath string // JC_OAUTH_APPLE_PRIVATE_KEY_PATH — path to .p8 private key file
 	OAuthFacebookAppID       string // JC_OAUTH_FACEBOOK_APP_ID — Facebook App ID
 	OAuthFacebookAppSecret   string // JC_OAUTH_FACEBOOK_APP_SECRET — Facebook App Secret
-	OAuthRedirectBase        string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.japaconnect.com)
+	OAuthRedirectBase        string // JC_OAUTH_REDIRECT_BASE — base URL for OAuth callbacks (e.g. https://api.example.com)
 	TOTPEncryptionKey        string // JC_TOTP_ENCRYPTION_KEY — AES-256 key for encrypting TOTP secrets at rest (32-byte hex or base64)
 	StripeWebhookSecret      string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret (whsec_...)
 	NOWPaymentsIPNSecret     string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC secret
 	PaystackSecretKey          string // JC_PAYSTACK_SECRET_KEY — Paystack webhook HMAC secret
 	XiaomiAPIKey             string // JC_XIAOMI_API_KEY — Xiaomi MiMo API key (tp- for Token Plan, sk- for Pay-as-you-go)
 	CORSOrigins              string // JC_CORS_ORIGINS — comma-separated allowed CORS origins for production
-	CookieDomain             string // JC_COOKIE_DOMAIN — cookie domain for cross-subdomain session sharing (e.g. ".japaconnect.com")
+	CookieDomain             string // JC_COOKIE_DOMAIN — cookie domain for cross-subdomain session sharing (e.g. ".example.com")
 	InternalToken            string // JC_INTERNAL_TOKEN — shared secret for internal service-to-service endpoints (render helpers)
 }
 
@@ -86,7 +86,7 @@ func Load() (Config, error) {
 		Port:                     os.Getenv("JC_PORT"),
 		JWTSecret:                os.Getenv("JC_JWT_SECRET"),
 		JWTKeyID:                 os.Getenv("JC_JWT_KEY_ID"),
-		SiteName:                 os.Getenv("JC_SITE_NAME"),
+		SiteName:                 getEnvWithFallback("JC_SITE_NAME", "JC_SITE_TITLE"),
 		SiteURL:                  os.Getenv("JC_SITE_URL"),
 		SiteDescription:          os.Getenv("JC_SITE_DESCRIPTION"),
 		OAuthGoogleID:            os.Getenv("JC_OAUTH_GOOGLE_CLIENT_ID"),
@@ -110,7 +110,9 @@ func Load() (Config, error) {
 		InternalToken:            os.Getenv("JC_INTERNAL_TOKEN"),
 	}
 
-	applyDefaults(&cfg)
+	if err := applyDefaults(&cfg); err != nil {
+		return Config{}, err
+	}
 
 	return cfg, nil
 }
@@ -118,11 +120,10 @@ func Load() (Config, error) {
 // applyDefaults fills in development-safe values for any field that is empty.
 // Production deployments should set every variable explicitly — these defaults
 // exist only so local development works without a full environment.
-func applyDefaults(cfg *Config) {
+func applyDefaults(cfg *Config) error {
 	if cfg.DatabaseURL == "" {
 		if cfg.Env == "production" {
-			slog.Error("JC_DATABASE_URL is required in production")
-			os.Exit(1)
+			return fmt.Errorf("JC_DATABASE_URL is required in production")
 		}
 		cfg.DatabaseURL = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable"
 	}
@@ -164,7 +165,12 @@ func applyDefaults(cfg *Config) {
 	}
 
 	if cfg.SiteName == "" {
-		cfg.SiteName = "JapaConnect"
+		// Support both JC_SITE_NAME and JC_SITE_TITLE for backward compatibility
+		if title := os.Getenv("JC_SITE_TITLE"); title != "" {
+			cfg.SiteName = title
+		} else {
+			cfg.SiteName = "JapaConnect"
+		}
 	}
 
 	if cfg.SiteURL == "" {
@@ -180,11 +186,11 @@ func applyDefaults(cfg *Config) {
 	}
 
 	// CookieDomain defaults to empty in development (cookie scoped to exact host).
-	// In production, set JC_COOKIE_DOMAIN explicitly (e.g. ".japaconnect.com").
+	// In production, set JC_COOKIE_DOMAIN explicitly (e.g. ".example.com").
 	if cfg.IsProduction() && cfg.CookieDomain == "" {
-		slog.Error("JC_COOKIE_DOMAIN must be set in production for cross-subdomain session sharing")
-		os.Exit(1)
+		return fmt.Errorf("JC_COOKIE_DOMAIN must be set in production for cross-subdomain session sharing")
 	}
+	return nil
 }
 
 // IsProduction returns true when the environment is set to production.
@@ -192,6 +198,15 @@ func applyDefaults(cfg *Config) {
 // enforcing HTTPS or enabling error reporting.
 func (c Config) IsProduction() bool {
 	return strings.EqualFold(c.Env, "production")
+}
+
+// getEnvWithFallback returns the value of the first env var that is set.
+// If primary is empty, returns fallback. If both are empty, returns "".
+func getEnvWithFallback(primary, fallback string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	return os.Getenv(fallback)
 }
 
 // IsDevelopment returns true when the environment is not production.

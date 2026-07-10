@@ -8,7 +8,7 @@ package email
 //
 // Template variables:
 //   - {{.SiteName}}   — "JapaConnect" or the configured site name
-//   - {{.SiteURL}}     — base URL of the site (e.g. https://japaconnect.com)
+//   - {{.SiteURL}}     — base URL of the site (e.g. https://example.com)
 //   - {{.UserName}}    — display name of the recipient (optional, may be empty)
 //   - {{.ActionURL}}   — the primary action link (reset password, verify email)
 //   - {{.Expiry}}      — human-readable expiry string (e.g. "1 hour", "24 hours")

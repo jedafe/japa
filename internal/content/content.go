@@ -21,6 +21,7 @@ import (
 // Content status values stored in the contents.status column.
 const (
 	StatusDraft     = "draft"
+	StatusPending   = "pending"
 	StatusPublished = "published"
 	StatusScheduled = "scheduled"
 	StatusArchived  = "archived"

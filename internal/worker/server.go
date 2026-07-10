@@ -91,10 +91,10 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	_, _ = scheduler.Register("0 3 * * *", asynq.NewTask(TypeSecurityScan, nil))
 
 	// Weekly: prune old feeds, prune audit logs, DM cleanup, prune push tokens.
-	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePruneOldFeeds, nil))
+	// _, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePruneOldFeeds, nil)) // TODO: implement feed pruning
 	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePruneAuditLogs, nil))
-	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeDMCleanupDeclinedRequests, nil))
-	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePrunePushTokens, nil))
+	// _, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeDMCleanupDeclinedRequests, nil)) // TODO: implement DM cleanup
+	// _, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePrunePushTokens, nil)) // TODO: implement push token pruning
 
 	// Coupon expiry check — hourly.
 	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeCouponExpireCheck, nil))

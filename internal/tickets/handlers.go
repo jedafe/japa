@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
@@ -76,13 +77,11 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case strings.Contains(err.Error(), "already_exists"):
+	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case strings.Contains(err.Error(), "duplicate"):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case strings.Contains(err.Error(), "invalid status transition"):
+	case errors.Is(err, errpkg.ErrInvalidStatusTransition):
 		writeError(w, http.StatusBadRequest, "invalid_transition", err.Error())
-	case strings.Contains(err.Error(), "required"):
+	case errors.Is(err, errpkg.ErrRequired):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")

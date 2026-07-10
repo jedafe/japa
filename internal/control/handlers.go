@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db"
@@ -15,6 +16,7 @@ import (
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Handlers holds dependencies for control panel HTTP handlers.
@@ -24,6 +26,7 @@ type Handlers struct {
 	FeatureChecker   *features.Checker
 	SpamStore        *spam.Store
 	PublicAPI        *publicapi.Handlers
+	Inspector        *asynq.Inspector
 	StartTime        time.Time
 }
 
@@ -37,6 +40,11 @@ func NewHandlers(service *Service, database *db.DB, featureChecker *features.Che
 		PublicAPI:      publicAPI,
 		StartTime:      time.Now(),
 	}
+}
+
+// SetInspector injects the Asynq inspector for queue monitoring.
+func (h *Handlers) SetInspector(inspector *asynq.Inspector) {
+	h.Inspector = inspector
 }
 
 // ---------------------------------------------------------------------------
@@ -378,15 +386,19 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Queue Monitor Handlers (stubs — require Asynq inspector)
+// Queue Monitor Handlers (wired to Asynq inspector — BE-040)
 // ---------------------------------------------------------------------------
 
 func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"message": "Queue stats require Asynq inspector integration",
-		},
-	})
+	if h.Inspector == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"message": "Queue stats require Asynq inspector integration",
+			},
+		})
+		return
+	}
+	worker.HandleQueueStats(h.Inspector)(w, r)
 }
 
 func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
@@ -395,19 +407,19 @@ func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) RetryDLQTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error": map[string]string{"code": "not_implemented", "message": "DLQ retry requires Asynq inspector integration"},
+		"error": map[string]string{"code": "not_implemented", "message": "DLQ retry not yet implemented"},
 	})
 }
 
 func (h *Handlers) DiscardDLQTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error": map[string]string{"code": "not_implemented", "message": "DLQ discard requires Asynq inspector integration"},
+		"error": map[string]string{"code": "not_implemented", "message": "DLQ discard not yet implemented"},
 	})
 }
 
 func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error": map[string]string{"code": "not_implemented", "message": "DLQ purge requires Asynq inspector integration"},
+		"error": map[string]string{"code": "not_implemented", "message": "DLQ purge not yet implemented"},
 	})
 }
 

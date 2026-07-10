@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -67,13 +68,11 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case strings.Contains(err.Error(), "already_exists"):
+	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case strings.Contains(err.Error(), "duplicate"):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case strings.Contains(err.Error(), "required"):
+	case errors.Is(err, errpkg.ErrRequired):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
-	case strings.Contains(err.Error(), "invalid consent_type"):
+	case errors.Is(err, errpkg.ErrInvalid):
 		writeError(w, http.StatusBadRequest, "invalid_consent_type", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
@@ -476,7 +475,7 @@ func (h *Handlers) ExecuteDeletion(w http.ResponseWriter, r *http.Request) {
 	}
 	// Mark the deletion request as executed — actual deletion is async via worker
 	_, err := h.Service.db.Writer.Exec(r.Context(),
-		`UPDATE gdpr_deletion_requests SET status = 'executed', executed_at = now(), updated_at = now()
+		`UPDATE account_deletion_requests SET status = 'completed', completed_at = now()
 		 WHERE id = $1 AND status = 'pending'`, requestID)
 	if err != nil {
 		handleServiceError(w, err)

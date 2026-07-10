@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -96,7 +97,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "feature_disabled", err.Error())
 	case errors.Is(err, ErrInvalidProductType):
 		writeError(w, http.StatusBadRequest, "invalid_product_type", err.Error())
-	case strings.Contains(err.Error(), "required"):
+	case errors.Is(err, errpkg.ErrRequired):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
@@ -444,7 +445,10 @@ func (h *Handlers) UpdateCommissionRates(w http.ResponseWriter, r *http.Request)
 		ProAnnual  *int `json:"pro_annual"`
 		Course     *int `json:"course"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	// Commission rates are stored in program settings — update via raw SQL
 	if input.ProMonthly != nil || input.ProAnnual != nil || input.Course != nil {
 		_, _ = h.Service.db.Writer.Exec(r.Context(),

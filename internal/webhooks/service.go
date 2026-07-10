@@ -23,14 +23,15 @@ type webhooksSettingsReader interface {
 type Service struct {
 	store    *Store
 	settings webhooksSettingsReader
+	siteName string
 }
 
 // SetSettings injects the hot-reloadable settings reader (AUDIT-BE-009).
 func (s *Service) SetSettings(r webhooksSettingsReader) { s.settings = r }
 
 // NewService creates a Service backed by the given database pool.
-func NewService(database *db.DB) *Service {
-	return &Service{store: NewStore(database)}
+func NewService(database *db.DB, siteName string) *Service {
+	return &Service{store: NewStore(database), siteName: siteName}
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +184,7 @@ func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.
 
 	testPayload := map[string]any{
 		"type":    "test",
-		"message": "This is a test webhook delivery from JapaConnect",
+		"message": fmt.Sprintf("This is a test webhook delivery from %s", s.siteName),
 	}
 
 	var eventID pgtype.UUID
