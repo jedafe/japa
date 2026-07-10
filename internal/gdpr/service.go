@@ -42,10 +42,11 @@ type Service struct {
 	enqueuer       Enqueuer
 	honchoEraser   HonchoEraser
 	sessionDeleter SessionDeleter
+	siteName       string
 }
 
 // NewService creates a Service backed by the given database pool.
-func NewService(database *db.DB) *Service {
+func NewService(database *db.DB, siteName string) *Service {
 	return &Service{
 		store: &Store{
 			read:  gen.New(database.Reader),
@@ -53,12 +54,13 @@ func NewService(database *db.DB) *Service {
 		},
 		db:       database,
 		enqueuer: &noopEnqueuer{},
+		siteName: siteName,
 	}
 }
 
 // NewServiceWithEnqueuer creates a Service with a custom enqueuer for background tasks.
-func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
-	svc := NewService(database)
+func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer, siteName string) *Service {
+	svc := NewService(database, siteName)
 	svc.enqueuer = enqueuer
 
 	return svc
@@ -542,7 +544,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 			"tenant_id": tenantID.String(),
 			"generated": time.Now().UTC().Format(time.RFC3339),
 			"version":   "1.0",
-			"platform":  "JapaConnect",
+			"platform":  s.siteName,
 		},
 	}
 

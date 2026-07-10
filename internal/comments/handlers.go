@@ -13,6 +13,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -20,12 +22,18 @@ const defaultPageSize int32 = 20
 
 // Handlers holds dependencies for comment HTTP handlers.
 type Handlers struct {
-	Service *Service
+	Service      *Service
+	SpamPipeline *spam.SpamPipeline
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// SetSpamPipeline injects the spam detection pipeline for comment safety checks.
+func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) {
+	h.SpamPipeline = p
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -189,6 +197,27 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	if input.ParentID != nil && *input.ParentID != "" {
 		if err := createInput.ParentID.Scan(*input.ParentID); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_parent_id", "Invalid parent_id format")
+			return
+		}
+	}
+
+	// Spam pipeline check — multi-layer content safety (BE-034).
+	if h.SpamPipeline != nil {
+		clientIP := r.Header.Get("X-Forwarded-For")
+		if clientIP == "" {
+			clientIP = r.RemoteAddr
+		}
+		spamResult, err := h.SpamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
+			Content:    input.Body,
+			UserID:     user.UserID,
+			IP:         clientIP,
+			UserType:   "existing",
+			EntityType: "comment",
+		})
+		if err != nil {
+			slog.Warn("spam check failed", "error", err)
+		} else if spamResult.Blocked {
+			writeError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
 			return
 		}
 	}
@@ -368,9 +397,9 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case strings.Contains(err.Error(), "duplicate"):
+	case errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case strings.Contains(err.Error(), "maximum comment depth"):
+	case errors.Is(err, errpkg.ErrMaxDepth):
 		writeError(w, http.StatusBadRequest, "depth_exceeded", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")

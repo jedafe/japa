@@ -3,7 +3,7 @@ package notifications
 // Task names for Asynq queue.
 const (
 	TaskDispatchBatch = "notification:dispatch_batch"
-	TaskPushDelivery  = "push:delivery"
+	TaskPushDelivery  = "push:deliver"
 )
 
 // NotificationDispatchPayload is the payload for the dispatch_batch task.

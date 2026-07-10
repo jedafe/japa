@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -93,9 +94,9 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "provider_has_coupons", err.Error())
 	case errors.Is(err, ErrCouponAlreadyExists):
 		writeError(w, http.StatusConflict, "already_exists", err.Error())
-	case strings.Contains(err.Error(), "duplicate"):
+	case errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case strings.Contains(err.Error(), "required"):
+	case errors.Is(err, errpkg.ErrRequired):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")

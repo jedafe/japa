@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -47,14 +48,15 @@ type ContentService interface {
 
 // Handlers holds dependencies for blog HTTP handlers.
 type Handlers struct {
-	Service *Service
-	content ContentService
-	siteURL string
+	Service  *Service
+	content  ContentService
+	siteURL  string
+	siteName string
 }
 
 // NewHandlers creates Handlers with the given Service.
-func NewHandlers(service *Service, contentService ContentService, siteURL string) *Handlers {
-	return &Handlers{Service: service, content: contentService, siteURL: siteURL}
+func NewHandlers(service *Service, contentService ContentService, siteURL string, siteName string) *Handlers {
+	return &Handlers{Service: service, content: contentService, siteURL: siteURL, siteName: siteName}
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +100,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case strings.Contains(err.Error(), "duplicate"):
+	case errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
@@ -798,7 +800,7 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
-	if err := generateRSSXML(w, posts, h.siteURL); err != nil {
+	if err := generateRSSXML(w, posts, h.siteURL, h.siteName); err != nil {
 		// Headers already sent, just log the error.
 		return
 	}

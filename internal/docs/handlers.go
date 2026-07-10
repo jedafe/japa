@@ -10,19 +10,21 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers holds dependencies for documentation HTTP handlers.
 type Handlers struct {
-	Service *Service
-	siteURL string
+	Service  *Service
+	siteURL  string
+	siteName string
 }
 
 // NewHandlers creates Handlers with the given Service.
-func NewHandlers(service *Service, siteURL string) *Handlers {
-	return &Handlers{Service: service, siteURL: siteURL}
+func NewHandlers(service *Service, siteURL string, siteName string) *Handlers {
+	return &Handlers{Service: service, siteURL: siteURL, siteName: siteName}
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -60,7 +62,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case strings.Contains(err.Error(), "duplicate"):
+	case errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
@@ -226,7 +228,7 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// API Playground & OpenAPI Spec (Section 44 — docs.japaconnect.com)
+// API Playground & OpenAPI Spec (Section 44 — docs subdomain)
 // ---------------------------------------------------------------------------
 
 // OpenAPIHandler serves the OpenAPI 3.0.3 specification as JSON.
@@ -234,7 +236,7 @@ func (h *Handlers) OpenAPIHandler(w http.ResponseWriter, _ *http.Request) {
 	// Canonical spec lives in internal/publicapi (the more complete generator);
 	// serving it here too avoids two independently hand-maintained specs
 	// drifting apart (§6.4 dedupe).
-	spec := publicapi.GetPublicOpenAPISpec(h.siteURL)
+	spec := publicapi.GetPublicOpenAPISpec(h.siteURL, h.siteName)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

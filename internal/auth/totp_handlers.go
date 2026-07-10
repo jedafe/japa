@@ -10,7 +10,8 @@ import (
 
 // TOTPHandlers holds dependencies for TOTP HTTP handlers.
 type TOTPHandlers struct {
-	Store TOTPStore
+	Store    TOTPStore
+	SiteName string
 }
 
 // HandleSetup handles POST /api/v1/auth/totp/setup.
@@ -38,7 +39,7 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 
 	// We need the email for the QR code label. Fetch from existing record
 	// or use a placeholder — the user object from JWT doesn't carry email.
-	secret, qrURL, err := GenerateTOTPSecret(user.UserID.String(), "user@"+user.UserID.String()+".local")
+	secret, qrURL, err := GenerateTOTPSecret(user.UserID.String(), "user@"+user.UserID.String()+".local", h.SiteName)
 	if err != nil {
 		slog.Error("generate TOTP secret", "error", err)
 		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to generate 2FA secret")

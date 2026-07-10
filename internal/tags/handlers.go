@@ -363,7 +363,10 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		UserID string `json:"user_id"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{
 		"tag_id": id.String(), "user_id": input.UserID, "status": "pending_migration",
 	}})

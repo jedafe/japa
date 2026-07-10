@@ -1,14 +1,17 @@
 package publicapi
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 )
 
-const swaggerUIHTML = `<!DOCTYPE html>
+// swaggerUIHTML returns the Swagger UI HTML with the given site name.
+func swaggerUIHTML(siteName string) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>JapaConnect Public API — Swagger UI</title>
+    <title>%s Public API — Swagger UI</title>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
@@ -32,15 +35,18 @@ const swaggerUIHTML = `<!DOCTYPE html>
         });
     </script>
 </body>
-</html>`
+</html>`, siteName)
+}
 
 // HandleSwaggerUI serves the Swagger UI HTML page for the public API.
-func HandleSwaggerUI(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", "default-src 'self' 'unsafe-inline' 'unsafe-eval' unpkg.com")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+func HandleSwaggerUI(siteName string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", "default-src 'self' 'unsafe-inline' 'unsafe-eval' unpkg.com")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
 
-	if _, err := w.Write([]byte(swaggerUIHTML)); err != nil {
-		slog.Warn("swagger ui: write error", "error", err)
+		if _, err := w.Write([]byte(swaggerUIHTML(siteName))); err != nil {
+			slog.Warn("swagger ui: write error", "error", err)
+		}
 	}
 }

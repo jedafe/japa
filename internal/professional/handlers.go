@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 
+	errpkg "github.com/jedafe/japa/internal/errors"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -89,15 +91,13 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case strings.Contains(err.Error(), "already_exists"):
+	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case strings.Contains(err.Error(), "duplicate"):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case strings.Contains(err.Error(), "not a member"):
+	case errors.Is(err, errpkg.ErrForbidden):
 		writeError(w, http.StatusForbidden, "not_member", "User is not a member of this profile")
-	case strings.Contains(err.Error(), "invalid or expired invitation"):
+	case errors.Is(err, errpkg.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Invalid or expired invitation")
-	case strings.Contains(err.Error(), "invitation has expired"):
+	case errors.Is(err, errpkg.ErrExpired):
 		writeError(w, http.StatusGone, "expired", "Invitation has expired")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
@@ -1444,7 +1444,10 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 		Email string `json:"email"`
 		Role  string `json:"role"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	if input.Email == "" {
 		writeError(w, http.StatusBadRequest, "missing_email", "Email is required")
 		return
@@ -1473,7 +1476,10 @@ func (h *Handlers) AcceptProfileInvitation(w http.ResponseWriter, r *http.Reques
 	var input struct {
 		Token string `json:"token"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	if input.Token == "" {
 		writeError(w, http.StatusBadRequest, "missing_token", "Token is required")
 		return
