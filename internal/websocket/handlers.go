@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -23,11 +24,12 @@ var wsUpgrader = websocket.Upgrader{
 
 // Handlers holds dependencies for WebSocket and DM HTTP handlers.
 type Handlers struct {
-	service     *Service
-	dmService   *DMService
-	hub         *Hub
-	vkClient    *valkey.Client
-	keyRotation *auth.KeyRotation
+	service      *Service
+	dmService    *DMService
+	hub          *Hub
+	vkClient     *valkey.Client
+	keyRotation  *auth.KeyRotation
+	spamPipeline *spam.SpamPipeline
 }
 
 // NewHandlers creates Handlers with the given dependencies.
@@ -39,6 +41,11 @@ func NewHandlers(service *Service, dmService *DMService, hub *Hub, vkClient *val
 		vkClient:    vkClient,
 		keyRotation: kr,
 	}
+}
+
+// SetSpamPipeline injects the spam detection pipeline for DM safety checks.
+func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) {
+	h.spamPipeline = p
 }
 
 // requireUser extracts the authenticated user from context.

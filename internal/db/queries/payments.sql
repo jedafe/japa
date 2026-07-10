@@ -119,6 +119,19 @@ WHERE id = @id AND tenant_id = @tenant_id
   AND status = 'active'
 RETURNING *;
 
+-- name: SoftDeleteSubscription :exec
+UPDATE subscriptions
+SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: ReactivateSubscription :one
+UPDATE subscriptions
+SET status = 'active', cancelled_at = NULL, updated_at = now()
+WHERE user_id = @user_id AND tenant_id = @tenant_id AND status = 'cancelled'
+ORDER BY updated_at DESC
+LIMIT 1
+RETURNING *;
+
 -- =====================
 -- Discount Codes
 -- =====================
@@ -151,6 +164,12 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: DeleteDiscountCode :exec
 DELETE FROM discount_codes
 WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: UpdateDiscountCode :one
+UPDATE discount_codes
+SET code = COALESCE(NULLIF(@new_code, ''), code), updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING id, code, updated_at;
 
 -- =====================
 -- Discount Code Uses

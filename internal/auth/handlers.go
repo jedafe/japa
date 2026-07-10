@@ -16,6 +16,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/email"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
@@ -31,7 +32,7 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 	VKClient     *valkey.Client // Valkey client for per-email rate limiting
 	SiteName     string         // Brand name for email templates (e.g. "JapaConnect")
 	SupportURL   string         // Support page URL for email footers
-	CookieDomain string         // Cookie domain for cross-subdomain sharing (e.g. ".japaconnect.com"), empty = exact host
+	CookieDomain string         // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
 }
 
 // Querier is the interface for database operations needed by auth handlers.
@@ -159,7 +160,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.DB.CreateUser(r.Context(), tenant.ID, req.Email, req.Username, passwordHash)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") {
+		if errors.Is(err, errpkg.ErrDuplicate) {
 			writeError(w, http.StatusConflict, "email_exists", "Email or username already in use")
 			return
 		}
@@ -541,7 +542,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	// Render the HTML email body.
 	siteName := h.SiteName
 	if siteName == "" {
-		siteName = "JapaConnect"
+		siteName = "App"
 	}
 
 	supportURL := h.SupportURL
@@ -833,7 +834,7 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	// Render the HTML email body.
 	siteName := h.SiteName
 	if siteName == "" {
-		siteName = "JapaConnect"
+		siteName = "App"
 	}
 
 	supportURL := h.SupportURL

@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -78,7 +79,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case strings.Contains(err.Error(), "duplicate"):
+	case errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
@@ -1501,7 +1502,10 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Status string `json:"status"` // "approved" or "rejected"
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -1529,7 +1533,10 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Status string `json:"status"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -1584,7 +1591,10 @@ func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Order []string `json:"order"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	for i, contentIDStr := range input.Order {
 		var contentID pgtype.UUID
 		if scanErr := contentID.Scan(contentIDStr); scanErr != nil {

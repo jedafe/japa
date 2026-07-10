@@ -21,19 +21,20 @@ func NewService(store *Store, dbPool *pgxpool.Pool) *Service {
 }
 
 // StartImpersonation begins impersonating a target user.
-// It sets the Valkey key with a 30-minute TTL and logs the action
-// to the audit_logs table for compliance.
+// It logs the action to audit_logs FIRST for compliance (Rule 10),
+// then sets the Valkey key with a 30-minute TTL. A failed audit log
+// write aborts the impersonation — we never proceed without an audit trail.
 func (s *Service) StartImpersonation(ctx context.Context, adminID, targetUserID pgtype.UUID) error {
-	if err := s.store.SetImpersonation(ctx, adminID, targetUserID, DefaultImpersonationTTL); err != nil {
-		return fmt.Errorf("set impersonation: %w", err)
-	}
-
-	// Log to audit_logs for compliance.
+	// Log to audit_logs FIRST — Rule 10 requires this before setting state.
 	if _, err := s.dbPool.Exec(ctx, `
 		INSERT INTO audit_logs (tenant_id, user_id, action, resource_type, resource_id, metadata)
 		VALUES ($1, $2, 'impersonation.start', 'user', $3, jsonb_build_object('admin_id', $2, 'target_id', $3))
 	`, adminID, adminID, targetUserID); err != nil {
-		slog.Warn("impersonation: failed to write audit log", "error", err)
+		return fmt.Errorf("abort impersonation: audit log failed: %w", err)
+	}
+
+	if err := s.store.SetImpersonation(ctx, adminID, targetUserID, DefaultImpersonationTTL); err != nil {
+		return fmt.Errorf("set impersonation: %w", err)
 	}
 
 	slog.Info("impersonation started", "admin", adminID.String(), "target", targetUserID.String())
@@ -47,12 +48,14 @@ func (s *Service) EndImpersonation(ctx context.Context, adminID pgtype.UUID) err
 		return fmt.Errorf("clear impersonation: %w", err)
 	}
 
-	// Log the end of impersonation.
+	// Log the end of impersonation (Rule 10 — audit trail required).
 	if _, err := s.dbPool.Exec(ctx, `
 		INSERT INTO audit_logs (tenant_id, user_id, action, resource_type, resource_id, metadata)
 		VALUES ($1, $2, 'impersonation.end', 'user', $2, jsonb_build_object('admin_id', $2))
 	`, adminID, adminID); err != nil {
-		slog.Warn("impersonation: failed to write audit log", "error", err)
+		// EndImpersonation already cleared state — log warning but don't fail
+		// (the state is already cleared, so returning an error would be misleading).
+		slog.Warn("impersonation: failed to write audit log for end", "error", err)
 	}
 
 	slog.Info("impersonation ended", "admin", adminID.String())

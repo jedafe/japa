@@ -136,7 +136,7 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	rows, err := h.reader.Query(r.Context(),
-		`SELECT slug FROM general_tags WHERE tenant_id = $1 ORDER BY name`, t.ID)
+		`SELECT slug FROM tags WHERE tenant_id = $1 ORDER BY name`, t.ID)
 	if err != nil {
 		http.Error(w, "Failed to generate sitemap", http.StatusInternalServerError)
 		return

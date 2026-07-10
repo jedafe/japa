@@ -1,4 +1,19 @@
--- Auth queries: refresh tokens, TOTP, OAuth, password reset, email verification, API keys.
+-- Auth queries: refresh tokens, TOTP, OAuth, password reset, email verification, API keys, user management.
+
+-- =====================
+-- User Management
+-- =====================
+
+-- name: CreateUser :one
+INSERT INTO users (tenant_id, email, username, password_hash)
+VALUES (@tenant_id, @email, @username, @password_hash)
+RETURNING id;
+
+-- name: GetUserByEmail :one
+SELECT id, tenant_id, email, password_hash, username, profile_type, status
+FROM users
+WHERE tenant_id = @tenant_id AND email = @email
+LIMIT 1;
 
 -- =====================
 -- Refresh Tokens
@@ -164,3 +179,18 @@ WHERE id = @id AND tenant_id = @tenant_id;
 -- name: DeleteExpiredAPIKeys :exec
 DELETE FROM api_keys
 WHERE expires_at IS NOT NULL AND expires_at < now() AND status = 'active';
+
+-- =====================
+-- Password History
+-- =====================
+
+-- name: InsertPasswordHistory :exec
+INSERT INTO password_history (tenant_id, user_id, password_hash)
+VALUES (@tenant_id, @user_id, @password_hash);
+
+-- name: GetRecentPasswordHashes :many
+SELECT password_hash
+FROM password_history
+WHERE user_id = @user_id
+ORDER BY created_at DESC
+LIMIT @hash_limit;
