@@ -320,6 +320,23 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListWebhookEvents handles GET /webhook-events — returns available webhook event types.
+func (h *Handlers) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
+	events := []map[string]string{
+		{ "key": "content.published", "label": "Content Published", "description": "When content is published" },
+		{ "key": "content.updated", "label": "Content Updated", "description": "When content is updated" },
+		{ "key": "content.deleted", "label": "Content Deleted", "description": "When content is deleted" },
+		{ "key": "claim.approved", "label": "Claim Approved", "description": "When an ownership claim is approved" },
+		{ "key": "claim.rejected", "label": "Claim Rejected", "description": "When an ownership claim is rejected" },
+		{ "key": "review.created", "label": "Review Created", "description": "When a new review is created" },
+		{ "key": "organization.verified", "label": "Organization Verified", "description": "When an organization is verified" },
+		{ "key": "payment.succeeded", "label": "Payment Succeeded", "description": "When a payment succeeds" },
+		{ "key": "payment.failed", "label": "Payment Failed", "description": "When a payment fails" },
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": events})
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

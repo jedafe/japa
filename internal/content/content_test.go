@@ -239,25 +239,3 @@ func TestParsePageSize(t *testing.T) {
 		}
 	}
 }
-
-// ---------------------------------------------------------------------------
-// NoopEnqueuer
-// ---------------------------------------------------------------------------
-
-func TestNewNoopEnqueuer(t *testing.T) {
-	t.Parallel()
-
-	enq := NewNoopEnqueuer()
-	if enq == nil {
-		t.Fatal("NewNoopEnqueuer returned nil")
-	}
-
-	uid := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
-	if err := enq.EnqueueScheduledPublish(t.Context(), uid); err != nil {
-		t.Errorf("EnqueueScheduledPublish returned error: %v", err)
-	}
-
-	if err := enq.EnqueueComputeScores(t.Context(), uid); err != nil {
-		t.Errorf("EnqueueComputeScores returned error: %v", err)
-	}
-}

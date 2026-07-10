@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	errtracking "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/server"
@@ -38,6 +39,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+
+	// Flush error tracking on any exit path. Deferred early so it runs
+	// after config is loaded but before anything else — covers normal
+	// shutdown, signal-triggered exit, and fatal errors. See AUDIT-BE-002.
+	defer errtracking.Flush(2)
 
 	slog.Info("starting JapaConnect API", "config", cfg.String())
 

@@ -14,8 +14,11 @@
 		ClipboardList,
 		Link,
 		ExternalLink,
+		Loader2,
 	} from 'lucide-svelte';
 	import LinkPreview from '$lib/components/editor/LinkPreview.svelte';
+	import { api } from '$lib/api';
+	import { onMount } from 'svelte';
 
 	interface CustomField {
 		key: string;
@@ -65,6 +68,23 @@
 	let previewUrl = $state('');
 	let previewUrlInput = $state('');
 	let showPreview = $state(false);
+	let spaces = $state<{ id: string; name: string }[]>([]);
+	let spacesLoading = $state(true);
+
+	onMount(async () => {
+		try {
+			const result: any = await api.listSpaces({ limit: 100 });
+			if (Array.isArray(result)) {
+				spaces = result.map((s: any) => ({ id: s.id || s.slug, name: s.name }));
+			} else if (result?.data) {
+				spaces = (result.data as any[]).map((s) => ({ id: s.id || s.slug, name: s.name }));
+			}
+		} catch {
+			spaces = [];
+		} finally {
+			spacesLoading = false;
+		}
+	});
 
 	function checkLinkPreview() {
 		const trimmed = previewUrlInput.trim();
@@ -99,17 +119,6 @@
 			checkLinkPreview();
 		}
 	}
-
-	const spaces = [
-		{ id: 'general', label: 'General Discussion' },
-		{ id: 'visa', label: 'Visa & Immigration' },
-		{ id: 'housing', label: 'Housing & Accommodation' },
-		{ id: 'jobs', label: 'Job Opportunities' },
-		{ id: 'culture', label: 'Culture & Lifestyle' },
-		{ id: 'healthcare', label: 'Healthcare' },
-		{ id: 'education', label: 'Education' },
-		{ id: 'finance', label: 'Finance & Banking' },
-	];
 
 	function addTags() {
 		const newTags = tagInput
@@ -258,17 +267,24 @@
 			</summary>
 			<div class="px-4 pb-4">
 				<div class="relative">
-					<select
-						value={spaceId || ''}
-						onchange={handleSpaceChange}
-						class="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2 pr-10 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-					>
-						<option value="">No space</option>
-						{#each spaces as space}
-							<option value={space.id}>{space.label}</option>
-						{/each}
-					</select>
-					<ChevronDown class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
+					{#if spacesLoading}
+						<div class="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400">
+							<Loader2 class="h-3.5 w-3.5 animate-spin" />
+							Loading spaces...
+						</div>
+					{:else}
+						<select
+							value={spaceId || ''}
+							onchange={handleSpaceChange}
+							class="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2 pr-10 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+						>
+							<option value="">No space</option>
+							{#each spaces as space}
+								<option value={space.id}>{space.name}</option>
+							{/each}
+						</select>
+						<ChevronDown class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
+					{/if}
 				</div>
 			</div>
 		</details>

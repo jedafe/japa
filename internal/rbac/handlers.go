@@ -272,8 +272,7 @@ func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
 
 // CreateRoleInput is the request body for creating a role.
 type CreateRoleInput struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name string `json:"name"`
 }
 
 // CreateRole handles POST /api/v1/admin/rbac/roles.
@@ -295,7 +294,7 @@ func (h *Handlers) CreateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.store.CreateRole(r.Context(), tenantID, input.Name, input.Description)
+	id, err := h.store.CreateRole(r.Context(), tenantID, input.Name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create role")
 		return
@@ -440,14 +439,13 @@ func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
 		return
 	}
-	if err := h.store.UpdateRole(r.Context(), roleID, input.Name, input.Description); err != nil {
+	if err := h.store.UpdateRole(r.Context(), roleID, input.Name); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update role")
 		return
 	}
@@ -495,4 +493,25 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": groupID.String()})
+}
+
+// ListScopes handles GET /developer/scopes — returns available API scopes.
+func (h *Handlers) ListScopes(w http.ResponseWriter, r *http.Request) {
+	scopes := []map[string]string{
+		{ "value": "api.read.*", "label": "Read All", "description": "Read access to all resources" },
+		{ "value": "content.read", "label": "Read Content", "description": "Read content and articles" },
+		{ "value": "content.create", "label": "Create Content", "description": "Create new content" },
+		{ "value": "content.edit", "label": "Edit Content", "description": "Edit existing content" },
+		{ "value": "content.delete", "label": "Delete Content", "description": "Delete content" },
+		{ "value": "spaces.read", "label": "Read Spaces", "description": "Read spaces and communities" },
+		{ "value": "spaces.create", "label": "Create Spaces", "description": "Create new spaces" },
+		{ "value": "forum.read", "label": "Read Forum", "description": "Read forum threads and replies" },
+		{ "value": "forum.create", "label": "Create Forum", "description": "Create forum threads and replies" },
+		{ "value": "users.read", "label": "Read Users", "description": "Read user profiles" },
+		{ "value": "media.upload", "label": "Upload Media", "description": "Upload media files" },
+		{ "value": "notifications.read", "label": "Read Notifications", "description": "Read notifications" },
+		{ "value": "search", "label": "Search", "description": "Use search functionality" },
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": scopes})
 }

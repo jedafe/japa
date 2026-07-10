@@ -1,41 +1,12 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { enhance } from '$app/forms';
 	import { GraduationCap, Mail, Lock, Loader2 } from 'lucide-svelte';
+
+	let { form } = $props();
 
 	let email = $state('');
 	let password = $state('');
-	let error = $state('');
 	let loading = $state(false);
-
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
-		error = '';
-		loading = true;
-
-		try {
-			const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
-			const res = await fetch(`${apiBase}/auth/login`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email, password })
-			});
-
-			const body = await res.json();
-			if (!res.ok || body.error) {
-				error = body.error?.message || 'Login failed. Please check your credentials.';
-				return;
-			}
-
-			if (body.data?.token) {
-				document.cookie = `learn_token=${body.data.token}; path=/; SameSite=Lax`;
-			}
-			goto('/');
-		} catch {
-			error = 'Network error. Please try again.';
-		} finally {
-			loading = false;
-		}
-	}
 </script>
 
 <svelte:head>
@@ -57,16 +28,22 @@
 			</div>
 		</div>
 
-		{#if error}
+		{#if form?.error}
 			<div
 				class="mb-4 rounded-lg border px-4 py-3 text-sm"
 				style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
 			>
-				{error}
+				{form.error}
 			</div>
 		{/if}
 
-		<form onsubmit={handleSubmit} class="space-y-4">
+		<form method="POST" use:enhance={() => {
+			loading = true;
+			return async ({ update }) => {
+				await update();
+				loading = false;
+			};
+		}} class="space-y-4">
 			<div>
 				<label for="email" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">
 					Email

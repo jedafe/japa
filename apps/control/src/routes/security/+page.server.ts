@@ -2,7 +2,7 @@ import type { PageServerLoad } from './$types';
 import { API_BASE } from '$lib/server/api';
 
 export const load: PageServerLoad = async ({ cookies }) => {
-	const token = cookies.get('control_token');
+	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = {};
 	if (token) headers.Authorization = `Bearer ${token}`;
 

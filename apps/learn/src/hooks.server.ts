@@ -1,10 +1,8 @@
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
-import { API_BASE_URL } from '$lib/server/api';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
 
-/** Routes that require an authenticated user. */
-const PROTECTED_ROUTES = ['/certificates'];
+const PROTECTED_ROUTES = ['/certificates', '/dashboard'];
 
-/** Check if a pathname requires authentication. */
 function isProtectedRoute(pathname: string): boolean {
 	return PROTECTED_ROUTES.some(
 		(route) => pathname === route || pathname.startsWith(`${route}/`)
@@ -12,36 +10,49 @@ function isProtectedRoute(pathname: string): boolean {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
-	const token = event.cookies.get('learn_token') ?? event.cookies.get('jc_token');
+	const token = event.cookies.get('jc_token');
 
 	if (token) {
 		try {
-			const res = await fetch(`${API_BASE_URL}/me`, {
-				headers: { Authorization: `Bearer ${token}` }
+			const meRes = await fetch(`${PUBLIC_JC_API_URL}/api/v1/me`, {
+				headers: { Authorization: `Bearer ${token}` },
 			});
-			if (res.ok) {
-				const { data } = await res.json();
-				event.locals.user = {
-					id: data.id,
-					email: data.email,
-					username: data.username,
-					displayName: data.display_name,
-					avatarUrl: data.avatar_url
-				};
+
+			if (meRes.ok) {
+				const { data } = await meRes.json();
+				event.locals.user = data;
 				event.locals.token = token;
 			} else {
 				event.locals.user = null;
+				event.locals.token = null;
 			}
 		} catch {
 			event.locals.user = null;
+			event.locals.token = null;
 		}
 	} else {
 		event.locals.user = null;
+		event.locals.token = null;
 	}
 
-	// Redirect unauthenticated users away from protected routes.
+	try {
+		const flagsRes = await fetch(`${PUBLIC_JC_API_URL}/api/v1/feature-flags`, {
+			headers: token ? { Authorization: `Bearer ${token}` } : {},
+		});
+		if (flagsRes.ok) {
+			const { data } = await flagsRes.json();
+			event.locals.featureFlags = data;
+			if (data && data['feature.learning_platform'] === false) {
+				event.locals.platformDisabled = true;
+			}
+		}
+	} catch {
+		event.locals.featureFlags = {};
+	}
+
 	if (isProtectedRoute(event.url.pathname) && !event.locals.user) {
-		throw redirect(303, '/login');
+		const redirectTo = encodeURIComponent(event.url.href);
+		throw redirect(303, `https://japaconnect.com/login?redirectTo=${redirectTo}`);
 	}
 
 	const response = await resolve(event);
@@ -51,6 +62,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 export const handleError: HandleServerError = ({ error }) => {
 	return {
 		code: 'INTERNAL_ERROR',
-		message: 'Internal error'
+		message: 'Internal error',
 	};
 };

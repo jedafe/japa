@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // TestHandleUserFeed_MissingUsername verifies the handler returns 400
@@ -15,8 +15,8 @@ import (
 func TestHandleUserFeed_MissingUsername(t *testing.T) {
 	t.Parallel()
 
-	pool := (*pgxpool.Pool)(nil) // unused — handler returns before query
-	handler := HandleUserFeed(pool)
+	q := (*gen.Queries)(nil) // unused — handler returns before query
+	handler := HandleUserFeed(q)
 
 	req := httptest.NewRequest(http.MethodGet, "/users//feed.xml", nil)
 	w := httptest.NewRecorder()
@@ -36,8 +36,8 @@ func TestHandleUserFeed_MissingUsername(t *testing.T) {
 func TestHandleUserFeed_MissingTenant(t *testing.T) {
 	t.Parallel()
 
-	pool := (*pgxpool.Pool)(nil)
-	handler := HandleUserFeed(pool)
+	q := (*gen.Queries)(nil)
+	handler := HandleUserFeed(q)
 
 	req := httptest.NewRequest(http.MethodGet, "/users/alice/feed.xml", nil)
 	w := httptest.NewRecorder()
@@ -57,8 +57,8 @@ func TestHandleUserFeed_MissingTenant(t *testing.T) {
 func TestHandleUserFeed_InvalidTenant(t *testing.T) {
 	t.Parallel()
 
-	pool := (*pgxpool.Pool)(nil)
-	handler := HandleUserFeed(pool)
+	q := (*gen.Queries)(nil)
+	handler := HandleUserFeed(q)
 
 	req := httptest.NewRequest(http.MethodGet, "/users/bob/feed.xml", nil)
 	// Context without a tenant ID.
