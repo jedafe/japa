@@ -49,11 +49,12 @@ type ContentService interface {
 type Handlers struct {
 	Service *Service
 	content ContentService
+	siteURL string
 }
 
 // NewHandlers creates Handlers with the given Service.
-func NewHandlers(service *Service, contentService ContentService) *Handlers {
-	return &Handlers{Service: service, content: contentService}
+func NewHandlers(service *Service, contentService ContentService, siteURL string) *Handlers {
+	return &Handlers{Service: service, content: contentService, siteURL: siteURL}
 }
 
 // ---------------------------------------------------------------------------
@@ -797,7 +798,7 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
-	if err := generateRSSXML(w, posts); err != nil {
+	if err := generateRSSXML(w, posts, h.siteURL); err != nil {
 		// Headers already sent, just log the error.
 		return
 	}

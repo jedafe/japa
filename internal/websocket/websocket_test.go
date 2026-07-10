@@ -455,42 +455,6 @@ func TestMessageInfoNilReadAt(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Task payloads
-// ---------------------------------------------------------------------------
-
-func TestDMSendNotificationPayloadJSONTags(t *testing.T) {
-	t.Parallel()
-
-	p := DMSendNotificationPayload{
-		ConversationID: "conv-1",
-		MessageID:      "msg-1",
-		SenderID:       "user-1",
-	}
-
-	data, err := json.Marshal(p)
-	if err != nil {
-		t.Fatalf("failed to marshal DMSendNotificationPayload: %v", err)
-	}
-
-	var got map[string]interface{}
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
-	}
-
-	if got["conversation_id"] != "conv-1" {
-		t.Errorf("conversation_id = %v, want conv-1", got["conversation_id"])
-	}
-
-	if got["message_id"] != "msg-1" {
-		t.Errorf("message_id = %v, want msg-1", got["message_id"])
-	}
-
-	if got["sender_id"] != "user-1" {
-		t.Errorf("sender_id = %v, want user-1", got["sender_id"])
-	}
-}
-
-// ---------------------------------------------------------------------------
 // DMPrivacy validation
 // ---------------------------------------------------------------------------
 

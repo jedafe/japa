@@ -1,15 +1,9 @@
 import { writable } from 'svelte/store';
+import { apiFetch } from '$lib/api/client';
 
-/** Resolved permission keys for the current admin user. */
 export const permissions = writable<string[]>([]);
-
-/** Whether permissions have been loaded from the backend. */
 export const permissionsLoaded = writable(false);
 
-/**
- * Check if the current user has a specific permission.
- * Returns false until permissions are loaded.
- */
 export function hasPermission(permKey: string): boolean {
 	let result = false;
 	const unsub = permissions.subscribe((perms) => {
@@ -19,9 +13,6 @@ export function hasPermission(permKey: string): boolean {
 	return result;
 }
 
-/**
- * Check if the current user has ALL of the given permissions.
- */
 export function hasAllPermissions(permKeys: string[]): boolean {
 	let result = false;
 	const unsub = permissions.subscribe((perms) => {
@@ -31,9 +22,6 @@ export function hasAllPermissions(permKeys: string[]): boolean {
 	return result;
 }
 
-/**
- * Check if the current user has ANY of the given permissions.
- */
 export function hasAnyPermission(permKeys: string[]): boolean {
 	let result = false;
 	const unsub = permissions.subscribe((perms) => {
@@ -43,10 +31,6 @@ export function hasAnyPermission(permKeys: string[]): boolean {
 	return result;
 }
 
-/**
- * Fetch the current user's permissions from the backend and update the store.
- * Should be called once after authentication.
- */
 export async function fetchPermissions(token: string | null): Promise<void> {
 	if (!token) {
 		permissions.set([]);
@@ -54,22 +38,12 @@ export async function fetchPermissions(token: string | null): Promise<void> {
 		return;
 	}
 
-	try {
-		const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
-		const res = await fetch(`${apiBase}/me/permissions`, {
-			headers: { Authorization: `Bearer ${token}` }
-		});
+	const result = await apiFetch<{ permissions: string[] }>('/me/permissions');
 
-		if (res.ok) {
-			const body = await res.json();
-			const perms = body.permissions ?? body.data?.permissions ?? [];
-			permissions.set(perms);
-		} else {
-			permissions.set([]);
-		}
-	} catch {
+	if (result.data) {
+		permissions.set(result.data.permissions ?? []);
+	} else {
 		permissions.set([]);
-	} finally {
-		permissionsLoaded.set(true);
 	}
+	permissionsLoaded.set(true);
 }

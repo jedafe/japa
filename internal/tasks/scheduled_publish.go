@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -64,30 +65,25 @@ func (sp *ScheduledPublisher) PublishReadyContent(ctx context.Context) (int, err
 		return 0, nil
 	}
 
-	published := 0
-
-	for _, pc := range pending {
-		_, err := sp.database.Writer.Exec(ctx, `
-			UPDATE contents
-			SET status = 'published',
-			    published_at = COALESCE(published_at, now()),
-			    updated_at = now()
-			WHERE id = $1
-			  AND tenant_id = $2
-			  AND status = 'draft'
-		`, pc.id, pc.tenantID)
-		if err != nil {
-			slog.Error("scheduled_publish: failed to publish content",
-				"content_id", pc.id.String(), "error", err)
-			continue
-		}
-
-		published++
-
-		slog.Info("scheduled_publish: content published",
-			"content_id", pc.id.String(),
-			"tenant_id", pc.tenantID.String())
+	// Batch update: publish all pending content in a single statement.
+	ids := make([]pgtype.UUID, len(pending))
+	for i, pc := range pending {
+		ids[i] = pc.id
 	}
+
+	tag, err := sp.database.Writer.Exec(ctx, `
+		UPDATE contents
+		SET status = 'published',
+		    published_at = COALESCE(published_at, now()),
+		    updated_at = now()
+		WHERE id = ANY($1)
+		  AND status = 'draft'
+	`, ids)
+	if err != nil {
+		return 0, fmt.Errorf("batch publishing content: %w", err)
+	}
+
+	published := int(tag.RowsAffected())
 
 	if published > 0 {
 		slog.Info("scheduled_publish: batch complete", "published", published, "total", len(pending))

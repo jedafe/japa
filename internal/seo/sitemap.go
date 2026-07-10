@@ -25,11 +25,6 @@ func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool) *SitemapHandl
 	return &SitemapHandler{queries: queries, reader: reader}
 }
 
-// Route mounts the sitemap routes.
-func (h *SitemapHandler) Route(r chi.Router) {
-	r.Get("/sitemap.xml", h.ServeSitemap)
-}
-
 // urlset is the root XML element for sitemaps.
 type urlset struct {
 	XMLName xml.Name   `xml:"urlset"`

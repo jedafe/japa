@@ -55,6 +55,7 @@ type Config struct {
 	XiaomiAPIKey             string // JC_XIAOMI_API_KEY — Xiaomi MiMo API key (tp- for Token Plan, sk- for Pay-as-you-go)
 	CORSOrigins              string // JC_CORS_ORIGINS — comma-separated allowed CORS origins for production
 	CookieDomain             string // JC_COOKIE_DOMAIN — cookie domain for cross-subdomain session sharing (e.g. ".japaconnect.com")
+	InternalToken            string // JC_INTERNAL_TOKEN — shared secret for internal service-to-service endpoints (render helpers)
 }
 
 // Load reads all JC_ environment variables and returns a populated Config.
@@ -106,6 +107,7 @@ func Load() (Config, error) {
 		XiaomiAPIKey:             os.Getenv("JC_XIAOMI_API_KEY"),
 		CORSOrigins:              os.Getenv("JC_CORS_ORIGINS"),
 		CookieDomain:             os.Getenv("JC_COOKIE_DOMAIN"),
+		InternalToken:            os.Getenv("JC_INTERNAL_TOKEN"),
 	}
 
 	applyDefaults(&cfg)
@@ -179,6 +181,10 @@ func applyDefaults(cfg *Config) {
 
 	// CookieDomain defaults to empty in development (cookie scoped to exact host).
 	// In production, set JC_COOKIE_DOMAIN explicitly (e.g. ".japaconnect.com").
+	if cfg.IsProduction() && cfg.CookieDomain == "" {
+		slog.Error("JC_COOKIE_DOMAIN must be set in production for cross-subdomain session sharing")
+		os.Exit(1)
+	}
 }
 
 // IsProduction returns true when the environment is set to production.

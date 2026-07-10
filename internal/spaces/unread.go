@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/valkey"
@@ -40,8 +41,15 @@ func (c *UnreadCounter) Increment(ctx context.Context, userID, spaceID pgtype.UU
 		return nil
 	}
 
-	if err := c.rdb.Incr(ctx, unreadKey(userID, spaceID)).Err(); err != nil {
+	key := unreadKey(userID, spaceID)
+
+	if err := c.rdb.Incr(ctx, key).Err(); err != nil {
 		return fmt.Errorf("incrementing space unread count: %w", err)
+	}
+
+	// Attach a 24-hour TTL so stale counters are evicted automatically.
+	if err := c.rdb.Expire(ctx, key, 24*time.Hour).Err(); err != nil {
+		return fmt.Errorf("setting space unread TTL: %w", err)
 	}
 
 	return nil
@@ -54,8 +62,15 @@ func (c *UnreadCounter) Reset(ctx context.Context, userID, spaceID pgtype.UUID) 
 		return nil
 	}
 
-	if err := c.rdb.Set(ctx, unreadKey(userID, spaceID), 0, 0).Err(); err != nil {
+	key := unreadKey(userID, spaceID)
+
+	if err := c.rdb.Set(ctx, key, 0, 0).Err(); err != nil {
 		return fmt.Errorf("resetting space unread count: %w", err)
+	}
+
+	// Attach a 24-hour TTL so the key expires even after a reset.
+	if err := c.rdb.Expire(ctx, key, 24*time.Hour).Err(); err != nil {
+		return fmt.Errorf("setting space unread TTL: %w", err)
 	}
 
 	return nil

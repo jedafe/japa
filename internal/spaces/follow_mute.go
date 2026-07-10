@@ -28,11 +28,10 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, space
 			return false, fmt.Errorf("unfollowing space: %w", err)
 		}
 
-		_, err = s.db.Writer.Exec(ctx, `
-			UPDATE spaces SET follower_count = follower_count - 1
-			WHERE id = $1 AND tenant_id = $2 AND follower_count > 0
-		`, spaceID, tenantID)
-		if err != nil {
+		if err := s.write.DecrementSpaceFollowerCount(ctx, gen.DecrementSpaceFollowerCountParams{
+			ID:       spaceID,
+			TenantID: tenantID,
+		}); err != nil {
 			return false, fmt.Errorf("decrementing follower count: %w", err)
 		}
 
@@ -49,11 +48,10 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, space
 		return false, fmt.Errorf("following space: %w", err)
 	}
 
-	_, err = s.db.Writer.Exec(ctx, `
-		UPDATE spaces SET follower_count = follower_count + 1
-		WHERE id = $1 AND tenant_id = $2
-	`, spaceID, tenantID)
-	if err != nil {
+	if err := s.write.IncrementSpaceFollowerCount(ctx, gen.IncrementSpaceFollowerCountParams{
+		ID:       spaceID,
+		TenantID: tenantID,
+	}); err != nil {
 		return false, fmt.Errorf("incrementing follower count: %w", err)
 	}
 

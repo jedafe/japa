@@ -430,20 +430,16 @@ func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID p
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	sent := 0
-
-	for _, uid := range userIDs {
-		_, err := tx.Exec(ctx, `
-			INSERT INTO notifications (tenant_id, recipient_id, notification_type, actor_type, actor_id, title, body, created_at, updated_at)
-			VALUES ($1, $2, 'system_announcement', 'system', $3, $4, $5, now(), now())
-		`, tenantID, uid, senderID, title, body)
-		if err != nil {
-			slog.Warn("broadcast: inserting notification", "user_id", uid.String(), "error", err)
-			continue
-		}
-
-		sent++
+	// Batch insert notifications using unnest for a single round-trip.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO notifications (tenant_id, recipient_id, notification_type, actor_type, actor_id, title, body, created_at, updated_at)
+		SELECT $1, unnest($2::uuid[]), 'system_announcement', 'system', $3, $4, $5, now(), now()
+	`, tenantID, userIDs, senderID, title, body)
+	if err != nil {
+		return 0, fmt.Errorf("batch inserting broadcast notifications: %w", err)
 	}
+
+	sent := len(userIDs)
 
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("committing broadcast: %w", err)

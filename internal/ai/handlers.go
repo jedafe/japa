@@ -776,3 +776,15 @@ func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
 }
+
+// HandleListCategories handles GET /ai/categories — returns available AI categories.
+func (h *Handlers) HandleListCategories(w http.ResponseWriter, r *http.Request) {
+	categories := []map[string]string{
+		{ "value": "content_generation", "label": "Content Generation", "description": "Generate blog posts, articles, and other content" },
+		{ "value": "chat", "label": "Chat", "description": "Conversational AI assistant" },
+		{ "value": "moderation", "label": "Moderation", "description": "Content moderation and safety" },
+		{ "value": "embedding", "label": "Embedding", "description": "Vector embeddings for search and recommendations" },
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": categories})
+}

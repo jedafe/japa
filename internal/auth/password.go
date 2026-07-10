@@ -33,7 +33,6 @@ type PasswordHistoryQuerier interface {
 }
 
 // PasswordPolicy defines the rules for acceptable passwords.
-// These defaults can be overridden by system_settings at runtime.
 type PasswordPolicy struct {
 	MinLength     int
 	MaxLength     int
@@ -45,13 +44,6 @@ type PasswordPolicy struct {
 }
 
 // DefaultPasswordPolicy returns the default password policy.
-// Admin can override these via system_settings keys:
-//
-//	auth.password.min_length (default: 8)
-//	auth.password.require_uppercase (default: true)
-//	auth.password.require_number (default: true)
-//	auth.password.require_symbol (default: false)
-//	auth.password.max_length (default: 128)
 func DefaultPasswordPolicy() PasswordPolicy {
 	return PasswordPolicy{
 		MinLength:     8,

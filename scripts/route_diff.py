@@ -83,6 +83,7 @@ def main():
     code = parse_server(SERVER)
     cat = parse_catalog(CATALOG)
     code = {r for r in code if not r[1].startswith(INFRA_PREFIXES)}
+    cat = {r for r in cat if not r[1].startswith(INFRA_PREFIXES)}
 
     only_cat = sorted(cat - code)
     only_code = sorted(code - cat)

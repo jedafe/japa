@@ -1,10 +1,9 @@
 // Package middleware provides cross-cutting HTTP middleware for JapaConnect.
 //
 // CORS middleware sets the headers that allow cross-origin requests from
-// configured frontend domains. Origins are read from the system_settings
-// cors.allowed_origins key (or JC_CORS_ORIGINS env var). The middleware
-// short-circuits OPTIONS preflight requests with a 204 so the browser can
-// proceed with the actual request immediately.
+// configured frontend domains. Origins are passed as a list to the CORS
+// constructor. The middleware short-circuits OPTIONS preflight requests
+// with a 204 so the browser can proceed with the actual request immediately.
 package middleware
 
 import (
@@ -16,9 +15,6 @@ import (
 // allowed origins. Origins are matched exactly — no wildcard support.
 // When the request Origin header is empty or not in the allowed set,
 // no CORS headers are set and the request passes through normally.
-//
-// The allowedOrigins parameter is typically populated from system_settings
-// cors.allowed_origins or the JC_CORS_ORIGINS environment variable.
 func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 	originSet := make(map[string]struct{}, len(allowedOrigins))
 	for _, o := range allowedOrigins {

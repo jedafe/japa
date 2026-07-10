@@ -24,6 +24,7 @@ type SettingDef struct {
 	Type    string   `json:"type"` // "text", "number", "toggle", "select"
 	Value   any      `json:"value,omitempty"`
 	Options []string `json:"options,omitempty"`
+	Masked  bool     `json:"masked,omitempty"` // true for secrets — API returns "***"
 }
 
 // SettingCategory groups related settings with display metadata.
@@ -90,6 +91,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "max_login_attempts", Label: "Max Login Attempts", Type: "number"},
 			{Key: "lockout_duration_minutes", Label: "Lockout Duration (min)", Type: "number"},
 			{Key: "require_email_verification", Label: "Require Email Verification", Type: "toggle"},
+			{Key: "cors.allowed_origins", Label: "CORS Allowed Origins (comma-separated)", Type: "text"},
 		},
 	},
 	"appearance": {
@@ -121,6 +123,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "require_content_review", Label: "Require Content Review", Type: "toggle"},
 			{Key: "max_upload_size_mb", Label: "Max Upload Size (MB)", Type: "number"},
 			{Key: "allowed_upload_types", Label: "Allowed Upload Types", Type: "text"},
+			{Key: "link_preview.blacklist", Label: "Link Preview Blacklist (comma-separated domains)", Type: "text"},
 		},
 	},
 	"payment": {
@@ -129,9 +132,9 @@ var defaultSettings = map[string]SettingCategory{
 		Settings: []SettingDef{
 			{Key: "currency", Label: "Currency", Type: "select", Options: []string{"NGN", "USD", "GBP", "EUR"}},
 			{Key: "paystack_public_key", Label: "Paystack Public Key", Type: "text"},
-			{Key: "paystack_secret_key", Label: "Paystack Secret Key", Type: "text"},
+			{Key: "paystack_secret_key", Label: "Paystack Secret Key", Type: "text", Masked: true},
 			{Key: "stripe_public_key", Label: "Stripe Public Key", Type: "text"},
-			{Key: "stripe_secret_key", Label: "Stripe Secret Key", Type: "text"},
+			{Key: "stripe_secret_key", Label: "Stripe Secret Key", Type: "text", Masked: true},
 		},
 	},
 	"media": {
@@ -139,8 +142,8 @@ var defaultSettings = map[string]SettingCategory{
 		Label: "Media",
 		Settings: []SettingDef{
 			{Key: "imgproxy_enabled", Label: "imgproxy Enabled", Type: "toggle"},
-			{Key: "imgproxy_key", Label: "imgproxy Key", Type: "text"},
-			{Key: "imgproxy_salt", Label: "imgproxy Salt", Type: "text"},
+			{Key: "imgproxy_key", Label: "imgproxy Key", Type: "text", Masked: true},
+			{Key: "imgproxy_salt", Label: "imgproxy Salt", Type: "text", Masked: true},
 			{Key: "max_image_width", Label: "Max Image Width (px)", Type: "number"},
 			{Key: "max_image_height", Label: "Max Image Height (px)", Type: "number"},
 		},
@@ -161,7 +164,7 @@ var defaultSettings = map[string]SettingCategory{
 		Label: "Integrations",
 		Settings: []SettingDef{
 			{Key: "meilisearch_url", Label: "Meilisearch URL", Type: "text"},
-			{Key: "meilisearch_key", Label: "Meilisearch Key", Type: "text"},
+			{Key: "meilisearch_key", Label: "Meilisearch Key", Type: "text", Masked: true},
 			{Key: "honcho_enabled", Label: "Honcho Enabled", Type: "toggle"},
 			{Key: "honcho_url", Label: "Honcho URL", Type: "text"},
 		},
@@ -300,7 +303,11 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 		for i, s := range def.Settings {
 			settings[i] = s
 			if val, exists := stored[s.Key]; exists {
-				settings[i].Value = val
+				if s.Masked {
+					settings[i].Value = "***"
+				} else {
+					settings[i].Value = val
+				}
 			}
 		}
 

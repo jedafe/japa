@@ -531,6 +531,16 @@ type ContentTypeJsonldTemplate struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ContentView struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	ContentID pgtype.UUID        `json:"content_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	SpaceID   pgtype.UUID        `json:"space_id"`
+	ViewedAt  pgtype.Timestamptz `json:"viewed_at"`
+	IpHash    *string            `json:"ip_hash"`
+}
+
 type Coupon struct {
 	ID            pgtype.UUID        `json:"id"`
 	TenantID      pgtype.UUID        `json:"tenant_id"`
@@ -733,6 +743,17 @@ type EmailVerification struct {
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type Enrollment struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	AccessType  string             `json:"access_type"`
+	ProgressPct pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
 }
 
 type ExternalDataSource struct {
@@ -1008,6 +1029,18 @@ type LessonProgress struct {
 	LessonID    pgtype.UUID        `json:"lesson_id"`
 	Status      string             `json:"status"`
 	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type LessonQuiz struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	LessonID    pgtype.UUID        `json:"lesson_id"`
+	Question    string             `json:"question"`
+	Options     string             `json:"options"`
+	Answer      string             `json:"answer"`
+	Explanation *string            `json:"explanation"`
+	Position    int32              `json:"position"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -1711,6 +1744,7 @@ type SpaceMember struct {
 	TenantID pgtype.UUID        `json:"tenant_id"`
 	Role     string             `json:"role"`
 	JoinedAt pgtype.Timestamptz `json:"joined_at"`
+	Status   string             `json:"status"`
 }
 
 type SpaceModerator struct {
@@ -1758,6 +1792,7 @@ type SpacePinnedPost struct {
 	PinnedBy  pgtype.UUID        `json:"pinned_by"`
 	Position  int32              `json:"position"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
 }
 
 type SpaceRule struct {
@@ -1805,6 +1840,7 @@ type SystemSetting struct {
 	Value     []byte             `json:"value"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	IsPublic  bool               `json:"is_public"`
 }
 
 type Tag struct {

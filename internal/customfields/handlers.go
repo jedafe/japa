@@ -1163,3 +1163,18 @@ func (h *Handlers) DeleteFormSubmission(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
+
+// ListEntityTypes handles GET /custom-field-entity-types — returns available entity types for custom fields.
+func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
+	entityTypes := []map[string]string{
+		{ "value": "user_profile", "label": "User Profile" },
+		{ "value": "content", "label": "Content" },
+		{ "value": "space", "label": "Space" },
+		{ "value": "organization", "label": "Organization" },
+		{ "value": "tag", "label": "Tag" },
+		{ "value": "ticket_type", "label": "Ticket Type" },
+		{ "value": "form", "label": "Form" },
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": entityTypes})
+}

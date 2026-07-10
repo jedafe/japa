@@ -42,7 +42,7 @@
 	<div class="flex h-14 items-center justify-between px-4">
 		<!-- Left: hamburger (mobile) + logo -->
 		<div class="flex items-center gap-3">
-			<button class="p-1 md:hidden" onclick={onsidenavToggle} aria-label="Toggle navigation">
+			<button class="flex h-11 w-11 items-center justify-center rounded-lg p-2.5 md:hidden" onclick={onsidenavToggle} aria-label="Toggle navigation">
 				<Menu class="h-5 w-5" />
 			</button>
 			<a href="/" class="text-lg font-bold" style="color: var(--color-primary)">JapaConnect</a>
@@ -72,20 +72,20 @@
 
 		<!-- Right: search link (mobile), notifications, user -->
 		<div class="flex items-center gap-1">
-			<a
-				href="/search"
-				class="rounded-md p-2 hover:bg-black/5 dark:hover:bg-white/10 md:hidden"
-				aria-label="Search"
-			>
+		<a
+			href="/search"
+			class="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 md:hidden"
+			aria-label="Search"
+		>
 				<Search class="h-5 w-5" style="color: var(--color-muted)" />
 			</a>
 
 			{#if user}
-				<a
-					href="/notifications"
-					class="relative rounded-xl p-2 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-					aria-label={t('nav.notifications')}
-				>
+			<a
+				href="/notifications"
+				class="relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+				aria-label={t('nav.notifications')}
+			>
 					<Bell class="h-5 w-5" style="color: var(--color-muted)" />
 					{#if notificationCount > 0}
 						<span

@@ -435,33 +435,29 @@ func (s *Service) ListMembers(ctx context.Context, spaceID, tenantID pgtype.UUID
 		limit = 20
 	}
 
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.created_at
-		FROM space_members sm
-		JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
-		LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
-		WHERE sm.space_id = $1 AND sm.tenant_id = $2
-		ORDER BY sm.created_at DESC
-		LIMIT $3 OFFSET $4
-	`, spaceID, tenantID, limit, offset)
+	rows, err := s.read.ListSpaceMembersWithProfile(ctx, gen.ListSpaceMembersWithProfileParams{
+		SpaceID:    spaceID,
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing space members: %w", err)
 	}
 
-	defer rows.Close()
+	members := make([]SpaceMemberRow, 0, len(rows))
 
-	var members []SpaceMemberRow
-
-	for rows.Next() {
-		var m SpaceMemberRow
-		if err := rows.Scan(&m.UserID, &m.Username, &m.DisplayName, &m.AvatarURL, &m.JoinedAt); err != nil {
-			return nil, fmt.Errorf("scanning space member: %w", err)
-		}
-
-		members = append(members, m)
+	for _, r := range rows {
+		members = append(members, SpaceMemberRow{
+			UserID:      r.UserID,
+			Username:    r.Username,
+			DisplayName: r.DisplayName,
+			AvatarURL:   r.AvatarUrl,
+			JoinedAt:    r.JoinedAt,
+		})
 	}
 
-	return members, rows.Err()
+	return members, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -525,12 +521,10 @@ func (s *Service) IsModerator(ctx context.Context, spaceID, userID pgtype.UUID) 
 // AddParentSpace links a space to a parent space via the junction table.
 // The self-reference check is enforced at the database level (CHECK constraint).
 func (s *Service) AddParentSpace(ctx context.Context, spaceID, parentSpaceID pgtype.UUID) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO space_parent_spaces (space_id, parent_space_id)
-		VALUES ($1, $2)
-		ON CONFLICT DO NOTHING
-	`, spaceID, parentSpaceID)
-	if err != nil {
+	if err := s.write.AddParentSpace(ctx, gen.AddParentSpaceParams{
+		SpaceID:       spaceID,
+		ParentSpaceID: parentSpaceID,
+	}); err != nil {
 		return fmt.Errorf("adding parent space: %w", err)
 	}
 
@@ -539,16 +533,11 @@ func (s *Service) AddParentSpace(ctx context.Context, spaceID, parentSpaceID pgt
 
 // RemoveParentSpace unlinks a space from a parent space.
 func (s *Service) RemoveParentSpace(ctx context.Context, spaceID, parentSpaceID pgtype.UUID) error {
-	tag, err := s.db.Writer.Exec(ctx, `
-		DELETE FROM space_parent_spaces
-		WHERE space_id = $1 AND parent_space_id = $2
-	`, spaceID, parentSpaceID)
-	if err != nil {
+	if err := s.write.RemoveParentSpace(ctx, gen.RemoveParentSpaceParams{
+		SpaceID:       spaceID,
+		ParentSpaceID: parentSpaceID,
+	}); err != nil {
 		return fmt.Errorf("removing parent space: %w", err)
-	}
-
-	if tag.RowsAffected() == 0 {
-		return pgx.ErrNoRows
 	}
 
 	return nil
@@ -557,73 +546,27 @@ func (s *Service) RemoveParentSpace(ctx context.Context, spaceID, parentSpaceID 
 // GetParentSpaces returns every parent space for the given space, resolved
 // through the junction table and scoped to the tenant.
 func (s *Service) GetParentSpaces(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.Space, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT s.id, s.tenant_id, s.space_type_id, s.parent_id, s.name, s.slug,
-		       s.description, s.wiki_content, s.geo_code, s.level, s.member_count,
-		       s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
-		       s.joining_perm, s.status, s.created_at, s.updated_at
-		FROM spaces s
-		JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
-		WHERE sps.space_id = $1 AND s.tenant_id = $2
-		ORDER BY s.name
-	`, spaceID, tenantID)
+	spaces, err := s.read.GetParentSpacesBySpaceID(ctx, gen.GetParentSpacesBySpaceIDParams{
+		SpaceID:  spaceID,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("querying parent spaces: %w", err)
 	}
-	defer rows.Close()
 
-	var spaces []gen.Space
-
-	for rows.Next() {
-		var sp gen.Space
-		if err := rows.Scan(
-			&sp.ID, &sp.TenantID, &sp.SpaceTypeID, &sp.ParentID, &sp.Name, &sp.Slug,
-			&sp.Description, &sp.WikiContent, &sp.GeoCode, &sp.Level, &sp.MemberCount,
-			&sp.Visibility, &sp.PostingPerm, &sp.ReplyingPerm, &sp.CommentingPerm,
-			&sp.JoiningPerm, &sp.Status, &sp.CreatedAt, &sp.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scanning parent space: %w", err)
-		}
-
-		spaces = append(spaces, sp)
-	}
-
-	return spaces, rows.Err()
+	return spaces, nil
 }
 
 // GetChildSpaces returns every child space for the given space, resolved
 // through the junction table and scoped to the tenant.
 func (s *Service) GetChildSpaces(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.Space, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT s.id, s.tenant_id, s.space_type_id, s.parent_id, s.name, s.slug,
-		       s.description, s.wiki_content, s.geo_code, s.level, s.member_count,
-		       s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
-		       s.joining_perm, s.status, s.created_at, s.updated_at
-		FROM spaces s
-		JOIN space_parent_spaces sps ON sps.space_id = s.id
-		WHERE sps.parent_space_id = $1 AND s.tenant_id = $2
-		ORDER BY s.name
-	`, spaceID, tenantID)
+	spaces, err := s.read.GetChildSpacesByParentID(ctx, gen.GetChildSpacesByParentIDParams{
+		ParentSpaceID: spaceID,
+		TenantID:      tenantID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("querying child spaces: %w", err)
 	}
-	defer rows.Close()
 
-	var spaces []gen.Space
-
-	for rows.Next() {
-		var sp gen.Space
-		if err := rows.Scan(
-			&sp.ID, &sp.TenantID, &sp.SpaceTypeID, &sp.ParentID, &sp.Name, &sp.Slug,
-			&sp.Description, &sp.WikiContent, &sp.GeoCode, &sp.Level, &sp.MemberCount,
-			&sp.Visibility, &sp.PostingPerm, &sp.ReplyingPerm, &sp.CommentingPerm,
-			&sp.JoiningPerm, &sp.Status, &sp.CreatedAt, &sp.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scanning child space: %w", err)
-		}
-
-		spaces = append(spaces, sp)
-	}
-
-	return spaces, rows.Err()
+	return spaces, nil
 }

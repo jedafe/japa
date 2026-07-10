@@ -37,10 +37,10 @@ type RSSItem struct {
 }
 
 // generateRSSXML writes an RSS 2.0 XML feed to the given writer.
-func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow) error {
+func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow, siteURL string) error {
 	channel := RSSChannel{
 		Title:       "JapaConnect Blog",
-		Link:        "https://japaconnect.com/blog",
+		Link:        siteURL + "/blog",
 		Description: "Insights and stories from the Nigerian diaspora community",
 		Language:    "en-us",
 		Items:       make([]RSSItem, 0, len(posts)),
@@ -56,7 +56,7 @@ func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow) error 
 
 		item := RSSItem{
 			Title:       p.Title,
-			Link:        "https://japaconnect.com/blog/" + p.Slug,
+			Link:        siteURL + "/blog/" + p.Slug,
 			GUID:        guid,
 			Description: p.BodyHtml,
 			PubDate:     pubDate,
