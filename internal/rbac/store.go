@@ -8,19 +8,26 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // Store provides CRUD operations for RBAC entities.
 // After any mutation that affects permission resolution, the Store calls
 // InvalidateUserCache on affected users so the L1/L2 caches stay consistent.
 type Store struct {
-	db   *db.DB
-	rbac *RBAC // nil-safe: if nil, cache invalidation is skipped
+	read  *gen.Queries
+	write *gen.Queries
+	db    *db.DB
+	rbac  *RBAC // nil-safe: if nil, cache invalidation is skipped
 }
 
 // NewStore creates a Store backed by the given database.
 func NewStore(database *db.DB) *Store {
-	return &Store{db: database}
+	return &Store{
+		read:  gen.New(database.Reader),
+		write: gen.New(database.Writer),
+		db:    database,
+	}
 }
 
 // SetRBAC wires the RBAC resolver into the store so mutation methods can
@@ -47,28 +54,14 @@ func (s *Store) invalidateGroupCache(ctx context.Context, groupID pgtype.UUID) {
 		return
 	}
 
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT user_id FROM user_group_memberships WHERE group_id = $1
-	`, groupID)
+	rows, err := s.read.ListGroupMembersByGroupID(ctx, groupID)
 	if err != nil {
 		slog.Warn("rbac: failed to list group members for cache invalidation", "group_id", groupID, "error", err)
 		return
 	}
 
-	defer rows.Close()
-
-	for rows.Next() {
-		var userID pgtype.UUID
-		if err := rows.Scan(&userID); err != nil {
-			slog.Warn("rbac: failed to scan user_id for group cache invalidation", "group_id", groupID, "error", err)
-			continue
-		}
-
+	for _, userID := range rows {
 		s.invalidateUserCache(ctx, userID)
-	}
-
-	if err := rows.Err(); err != nil {
-		slog.Warn("rbac: error iterating group members for cache invalidation", "group_id", groupID, "error", err)
 	}
 }
 
@@ -79,13 +72,11 @@ func (s *Store) CreateGroup(ctx context.Context, tenantID pgtype.UUID, name, slu
 		return pgtype.UUID{}, fmt.Errorf("cannot create system group %s via API", slug)
 	}
 
-	var id pgtype.UUID
-
-	err := s.db.Writer.QueryRow(ctx, `
-		INSERT INTO user_groups (tenant_id, name, slug)
-		VALUES ($1, $2, $3)
-		RETURNING id
-	`, tenantID, name, slug).Scan(&id)
+	id, err := s.write.CreateUserGroup(ctx, gen.CreateUserGroupParams{
+		TenantID: tenantID,
+		Name:     name,
+		Slug:     slug,
+	})
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("creating group: %w", err)
 	}
@@ -96,13 +87,13 @@ func (s *Store) CreateGroup(ctx context.Context, tenantID pgtype.UUID, name, slu
 // DeleteGroup deletes a user group. System groups cannot be deleted.
 func (s *Store) DeleteGroup(ctx context.Context, tenantID pgtype.UUID, slug string) error {
 	if IsSystemGroup(slug) {
-		return fmt.Errorf("cannot delete system group %s", slug)
+		return fmt.Errorf("cannot delete system group %s via API", slug)
 	}
 
-	_, err := s.db.Writer.Exec(ctx, `
-		DELETE FROM user_groups WHERE tenant_id = $1 AND slug = $2 AND is_system = false
-	`, tenantID, slug)
-	if err != nil {
+	if err := s.write.DeleteUserGroup(ctx, gen.DeleteUserGroupParams{
+		TenantID: tenantID,
+		Slug:     slug,
+	}); err != nil {
 		return fmt.Errorf("deleting group: %w", err)
 	}
 
@@ -111,12 +102,11 @@ func (s *Store) DeleteGroup(ctx context.Context, tenantID pgtype.UUID, slug stri
 
 // AddUserToGroup adds a user to a group and invalidates the user's cache.
 func (s *Store) AddUserToGroup(ctx context.Context, tenantID, userID, groupID pgtype.UUID) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO user_group_memberships (tenant_id, user_id, group_id)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (tenant_id, user_id, group_id) DO NOTHING
-	`, tenantID, userID, groupID)
-	if err != nil {
+	if err := s.write.AddUserToGroup(ctx, gen.AddUserToGroupParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		GroupID:  groupID,
+	}); err != nil {
 		return fmt.Errorf("adding user to group: %w", err)
 	}
 
@@ -127,11 +117,11 @@ func (s *Store) AddUserToGroup(ctx context.Context, tenantID, userID, groupID pg
 
 // RemoveUserFromGroup removes a user from a group and invalidates the user's cache.
 func (s *Store) RemoveUserFromGroup(ctx context.Context, tenantID, userID, groupID pgtype.UUID) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		DELETE FROM user_group_memberships
-		WHERE tenant_id = $1 AND user_id = $2 AND group_id = $3
-	`, tenantID, userID, groupID)
-	if err != nil {
+	if err := s.write.RemoveUserFromGroup(ctx, gen.RemoveUserFromGroupParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		GroupID:  groupID,
+	}); err != nil {
 		return fmt.Errorf("removing user from group: %w", err)
 	}
 
@@ -143,12 +133,10 @@ func (s *Store) RemoveUserFromGroup(ctx context.Context, tenantID, userID, group
 // RegisterPermission creates a permission node if it doesn't exist.
 // Called at application startup for all known permission keys.
 func (s *Store) RegisterPermission(ctx context.Context, key, description string) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO permissions (key, description)
-		VALUES ($1, $2)
-		ON CONFLICT (key) DO NOTHING
-	`, key, description)
-	if err != nil {
+	if err := s.write.RegisterPermission(ctx, gen.RegisterPermissionParams{
+		Key:         key,
+		Description: &description,
+	}); err != nil {
 		return fmt.Errorf("registering permission %s: %w", key, err)
 	}
 
@@ -158,32 +146,21 @@ func (s *Store) RegisterPermission(ctx context.Context, key, description string)
 // AssignPermissionToRole grants a permission to a role and invalidates cache
 // for every user in groups that hold this role.
 func (s *Store) AssignPermissionToRole(ctx context.Context, roleID pgtype.UUID, permKey string) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO role_permissions (role_id, permission_id)
-		SELECT $1, id FROM permissions WHERE key = $2
-		ON CONFLICT DO NOTHING
-	`, roleID, permKey)
-	if err != nil {
+	if err := s.write.AssignPermissionToRole(ctx, gen.AssignPermissionToRoleParams{
+		RoleID:  roleID,
+		PermKey: permKey,
+	}); err != nil {
 		return fmt.Errorf("assigning permission %s to role: %w", permKey, err)
 	}
 
 	// Find all groups that hold this role and invalidate their members' caches.
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT group_id FROM group_roles WHERE role_id = $1
-	`, roleID)
+	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
 	if err != nil {
 		slog.Warn("rbac: failed to list groups for role cache invalidation", "role_id", roleID, "error", err)
 		return nil // mutation succeeded — don't fail on cache invalidation
 	}
 
-	defer rows.Close()
-
-	for rows.Next() {
-		var groupID pgtype.UUID
-		if err := rows.Scan(&groupID); err != nil {
-			continue
-		}
-
+	for _, groupID := range groupIDs {
 		s.invalidateGroupCache(ctx, groupID)
 	}
 
@@ -193,12 +170,10 @@ func (s *Store) AssignPermissionToRole(ctx context.Context, roleID pgtype.UUID, 
 // AssignRoleToGroup grants a role to a group and invalidates cache for every
 // member of that group (their permissions just changed).
 func (s *Store) AssignRoleToGroup(ctx context.Context, groupID, roleID pgtype.UUID) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO group_roles (group_id, role_id)
-		VALUES ($1, $2)
-		ON CONFLICT DO NOTHING
-	`, groupID, roleID)
-	if err != nil {
+	if err := s.write.AssignRoleToGroup(ctx, gen.AssignRoleToGroupParams{
+		GroupID: groupID,
+		RoleID:  roleID,
+	}); err != nil {
 		return fmt.Errorf("assigning role to group: %w", err)
 	}
 
@@ -213,30 +188,21 @@ func (s *Store) AssignRoleToGroup(ctx context.Context, groupID, roleID pgtype.UU
 
 // ListGroups returns all user groups for a tenant, ordered by name.
 func (s *Store) ListGroups(ctx context.Context, tenantID pgtype.UUID) ([]Group, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, name, slug, is_system
-		FROM user_groups
-		WHERE tenant_id = $1
-		ORDER BY name
-	`, tenantID)
+	rows, err := s.read.ListUserGroupsByTenant(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing groups: %w", err)
 	}
-	defer rows.Close()
 
-	var groups []Group
+	groups := make([]Group, 0, len(rows))
 
-	for rows.Next() {
-		var g Group
-		if err := rows.Scan(&g.ID, &g.TenantID, &g.Name, &g.Slug, &g.IsSystem); err != nil {
-			return nil, fmt.Errorf("scanning group: %w", err)
-		}
-
-		groups = append(groups, g)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating groups: %w", err)
+	for _, r := range rows {
+		groups = append(groups, Group{
+			ID:       r.ID,
+			TenantID: r.TenantID,
+			Name:     r.Name,
+			Slug:     r.Slug,
+			IsSystem: r.IsSystem,
+		})
 	}
 
 	return groups, nil
@@ -251,31 +217,22 @@ type GroupMember struct {
 
 // ListGroupMembers returns all members of a group.
 func (s *Store) ListGroupMembers(ctx context.Context, groupID, tenantID pgtype.UUID) ([]GroupMember, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT u.id, u.username, COALESCE(u.display_name, '')
-		FROM user_group_memberships ugm
-		JOIN users u ON ugm.user_id = u.id
-		WHERE ugm.group_id = $1 AND ugm.tenant_id = $2
-		ORDER BY u.username
-	`, groupID, tenantID)
+	rows, err := s.read.ListGroupMembersWithUser(ctx, gen.ListGroupMembersWithUserParams{
+		GroupID:  groupID,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing group members: %w", err)
 	}
-	defer rows.Close()
 
-	var members []GroupMember
+	members := make([]GroupMember, 0, len(rows))
 
-	for rows.Next() {
-		var m GroupMember
-		if err := rows.Scan(&m.ID, &m.Username, &m.DisplayName); err != nil {
-			return nil, fmt.Errorf("scanning member: %w", err)
-		}
-
-		members = append(members, m)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating members: %w", err)
+	for _, r := range rows {
+		members = append(members, GroupMember{
+			ID:          r.ID,
+			Username:    r.Username,
+			DisplayName: r.DisplayName,
+		})
 	}
 
 	return members, nil
@@ -283,29 +240,23 @@ func (s *Store) ListGroupMembers(ctx context.Context, groupID, tenantID pgtype.U
 
 // ListPermissions returns all registered permission nodes.
 func (s *Store) ListPermissions(ctx context.Context) ([]Permission, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT key, description
-		FROM permissions
-		ORDER BY key
-	`)
+	rows, err := s.read.ListAllPermissions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing permissions: %w", err)
 	}
-	defer rows.Close()
 
-	var perms []Permission
+	perms := make([]Permission, 0, len(rows))
 
-	for rows.Next() {
-		var p Permission
-		if err := rows.Scan(&p.Key, &p.Description); err != nil {
-			return nil, fmt.Errorf("scanning permission: %w", err)
+	for _, r := range rows {
+		desc := ""
+		if r.Description != nil {
+			desc = *r.Description
 		}
 
-		perms = append(perms, p)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating permissions: %w", err)
+		perms = append(perms, Permission{
+			Key:         r.Key,
+			Description: desc,
+		})
 	}
 
 	return perms, nil
@@ -313,50 +264,36 @@ func (s *Store) ListPermissions(ctx context.Context) ([]Permission, error) {
 
 // Role represents a user role.
 type Role struct {
-	ID          pgtype.UUID `json:"id"`
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
 }
 
 // ListRoles returns all roles.
 func (s *Store) ListRoles(ctx context.Context) ([]Role, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, name, COALESCE(description, '')
-		FROM user_roles
-		ORDER BY name
-	`)
+	rows, err := s.read.ListAllRoles(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing roles: %w", err)
 	}
-	defer rows.Close()
 
-	var roles []Role
+	roles := make([]Role, 0, len(rows))
 
-	for rows.Next() {
-		var r Role
-		if err := rows.Scan(&r.ID, &r.Name, &r.Description); err != nil {
-			return nil, fmt.Errorf("scanning role: %w", err)
-		}
-
-		roles = append(roles, r)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating roles: %w", err)
+	for _, r := range rows {
+		roles = append(roles, Role{
+			ID:   r.ID,
+			Name: r.Name,
+		})
 	}
 
 	return roles, nil
 }
 
 // CreateRole creates a new role and returns its ID.
-func (s *Store) CreateRole(ctx context.Context, tenantID pgtype.UUID, name, _ string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-
-	err := s.db.Writer.QueryRow(ctx, `
-		INSERT INTO user_roles (tenant_id, name, slug)
-		VALUES ($1, $2, $3)
-		RETURNING id
-	`, tenantID, name, slugify(name)).Scan(&id)
+func (s *Store) CreateRole(ctx context.Context, tenantID pgtype.UUID, name string) (pgtype.UUID, error) {
+	id, err := s.write.CreateUserRole(ctx, gen.CreateUserRoleParams{
+		TenantID: tenantID,
+		Name:     name,
+		Slug:     slugify(name),
+	})
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("creating role: %w", err)
 	}
@@ -366,31 +303,23 @@ func (s *Store) CreateRole(ctx context.Context, tenantID pgtype.UUID, name, _ st
 
 // ListRolePermissions returns all permissions assigned to a role.
 func (s *Store) ListRolePermissions(ctx context.Context, roleID pgtype.UUID) ([]Permission, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT p.key, p.description
-		FROM role_permissions rp
-		JOIN permissions p ON rp.permission_id = p.id
-		WHERE rp.role_id = $1
-		ORDER BY p.key
-	`, roleID)
+	rows, err := s.read.ListRolePermissionsByKey(ctx, roleID)
 	if err != nil {
 		return nil, fmt.Errorf("listing role permissions: %w", err)
 	}
-	defer rows.Close()
 
-	var perms []Permission
+	perms := make([]Permission, 0, len(rows))
 
-	for rows.Next() {
-		var p Permission
-		if err := rows.Scan(&p.Key, &p.Description); err != nil {
-			return nil, fmt.Errorf("scanning permission: %w", err)
+	for _, r := range rows {
+		desc := ""
+		if r.Description != nil {
+			desc = *r.Description
 		}
 
-		perms = append(perms, p)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating permissions: %w", err)
+		perms = append(perms, Permission{
+			Key:         r.Key,
+			Description: desc,
+		})
 	}
 
 	return perms, nil
@@ -398,31 +327,18 @@ func (s *Store) ListRolePermissions(ctx context.Context, roleID pgtype.UUID) ([]
 
 // ListGroupRoles returns all roles assigned to a group.
 func (s *Store) ListGroupRoles(ctx context.Context, groupID pgtype.UUID) ([]Role, error) {
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT ur.id, ur.name, COALESCE(ur.description, '')
-		FROM group_roles gr
-		JOIN user_roles ur ON gr.role_id = ur.id
-		WHERE gr.group_id = $1
-		ORDER BY ur.name
-	`, groupID)
+	rows, err := s.read.ListGroupRolesByGroupID(ctx, groupID)
 	if err != nil {
 		return nil, fmt.Errorf("listing group roles: %w", err)
 	}
-	defer rows.Close()
 
-	var roles []Role
+	roles := make([]Role, 0, len(rows))
 
-	for rows.Next() {
-		var r Role
-		if err := rows.Scan(&r.ID, &r.Name, &r.Description); err != nil {
-			return nil, fmt.Errorf("scanning role: %w", err)
-		}
-
-		roles = append(roles, r)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating roles: %w", err)
+	for _, r := range rows {
+		roles = append(roles, Role{
+			ID:   r.ID,
+			Name: r.Name,
+		})
 	}
 
 	return roles, nil
@@ -430,10 +346,10 @@ func (s *Store) ListGroupRoles(ctx context.Context, groupID pgtype.UUID) ([]Role
 
 // RemoveRoleFromGroup removes a role from a group and invalidates cache.
 func (s *Store) RemoveRoleFromGroup(ctx context.Context, groupID, roleID pgtype.UUID) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		DELETE FROM group_roles WHERE group_id = $1 AND role_id = $2
-	`, groupID, roleID)
-	if err != nil {
+	if err := s.write.RemoveRoleFromGroup(ctx, gen.RemoveRoleFromGroupParams{
+		GroupID: groupID,
+		RoleID:  roleID,
+	}); err != nil {
 		return fmt.Errorf("removing role from group: %w", err)
 	}
 
@@ -445,31 +361,21 @@ func (s *Store) RemoveRoleFromGroup(ctx context.Context, groupID, roleID pgtype.
 // RemovePermissionFromRole revokes a permission from a role and invalidates
 // cache for all affected groups.
 func (s *Store) RemovePermissionFromRole(ctx context.Context, roleID pgtype.UUID, permKey string) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		DELETE FROM role_permissions
-		WHERE role_id = $1 AND permission_id = (SELECT id FROM permissions WHERE key = $2)
-	`, roleID, permKey)
-	if err != nil {
+	if err := s.write.RemovePermissionFromRole(ctx, gen.RemovePermissionFromRoleParams{
+		RoleID:  roleID,
+		PermKey: permKey,
+	}); err != nil {
 		return fmt.Errorf("removing permission from role: %w", err)
 	}
 
 	// Invalidate cache for all groups that hold this role.
-	rows, err := s.db.Reader.Query(ctx, `
-		SELECT group_id FROM group_roles WHERE role_id = $1
-	`, roleID)
+	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
 	if err != nil {
 		slog.Warn("rbac: failed to list groups for cache invalidation", "role_id", roleID, "error", err)
 		return nil
 	}
 
-	defer rows.Close()
-
-	for rows.Next() {
-		var groupID pgtype.UUID
-		if err := rows.Scan(&groupID); err != nil {
-			continue
-		}
-
+	for _, groupID := range groupIDs {
 		s.invalidateGroupCache(ctx, groupID)
 	}
 
@@ -487,23 +393,18 @@ func slugify(name string) string {
 
 // DeleteRole removes a role and all its permission/group assignments (P5.6).
 func (s *Store) DeleteRole(ctx context.Context, roleID pgtype.UUID) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		DELETE FROM role_permissions WHERE role_id = $1;
-		DELETE FROM group_roles WHERE role_id = $1;
-		DELETE FROM roles WHERE id = $1;
-	`, roleID)
-	if err != nil {
+	if err := s.write.DeleteUserRole(ctx, roleID); err != nil {
 		return fmt.Errorf("deleting role: %w", err)
 	}
 	return nil
 }
 
-// UpdateRole updates a role's name and description (P5.6).
-func (s *Store) UpdateRole(ctx context.Context, roleID pgtype.UUID, name, description string) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`UPDATE roles SET name = $2, description = $3 WHERE id = $1`,
-		roleID, name, description)
-	if err != nil {
+// UpdateRole updates a role's name (P5.6).
+func (s *Store) UpdateRole(ctx context.Context, roleID pgtype.UUID, name string) error {
+	if err := s.write.UpdateUserRole(ctx, gen.UpdateUserRoleParams{
+		ID:   roleID,
+		Name: name,
+	}); err != nil {
 		return fmt.Errorf("updating role: %w", err)
 	}
 	return nil
@@ -517,16 +418,18 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 	}
 	defer tx.Rollback(ctx)
 
+	q := gen.New(tx)
+
 	// Remove existing
-	if _, err := tx.Exec(ctx, `DELETE FROM role_permissions WHERE role_id = $1`, roleID); err != nil {
+	if err := q.DeleteRolePermissionsByRoleID(ctx, roleID); err != nil {
 		return err
 	}
 	// Add new
 	for _, key := range permKeys {
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO role_permissions (role_id, permission_id)
-			 SELECT $1, id FROM permissions WHERE key = $2
-			 ON CONFLICT DO NOTHING`, roleID, key); err != nil {
+		if err := q.InsertRolePermissionByKey(ctx, gen.InsertRolePermissionByKeyParams{
+			RoleID:  roleID,
+			PermKey: key,
+		}); err != nil {
 			return err
 		}
 	}
@@ -535,10 +438,11 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 
 // UpdateGroup updates a group's name and slug (P5.6).
 func (s *Store) UpdateGroup(ctx context.Context, groupID pgtype.UUID, name, slug string) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`UPDATE user_groups SET name = $2, slug = $3 WHERE id = $1`,
-		groupID, name, slug)
-	if err != nil {
+	if err := s.write.UpdateUserGroup(ctx, gen.UpdateUserGroupParams{
+		ID:   groupID,
+		Name: name,
+		Slug: slug,
+	}); err != nil {
 		return fmt.Errorf("updating group: %w", err)
 	}
 	return nil

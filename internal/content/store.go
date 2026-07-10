@@ -359,7 +359,7 @@ func (s *Service) GetContentRevision(ctx context.Context, id, contentID pgtype.U
 // PinContent pins a content row to a space. The pinnedBy user and position
 // are recorded. If the content is already pinned, the unique constraint
 // prevents a duplicate.
-func (s *Service) PinContent(ctx context.Context, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.SpacePinnedPost, error) {
+func (s *Service) PinContent(ctx context.Context, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.PinContentToSpaceRow, error) {
 	pin, err := s.write.PinContentToSpace(ctx, gen.PinContentToSpaceParams{
 		SpaceID:   spaceID,
 		ContentID: contentID,
@@ -367,7 +367,7 @@ func (s *Service) PinContent(ctx context.Context, spaceID, contentID, pinnedBy p
 		Position:  position,
 	})
 	if err != nil {
-		return gen.SpacePinnedPost{}, fmt.Errorf("pinning content to space: %w", err)
+		return gen.PinContentToSpaceRow{}, fmt.Errorf("pinning content to space: %w", err)
 	}
 
 	return pin, nil
@@ -386,7 +386,7 @@ func (s *Service) UnpinContent(ctx context.Context, spaceID, contentID pgtype.UU
 }
 
 // ListPinnedContent returns all pinned posts for a space, ordered by position.
-func (s *Service) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]gen.SpacePinnedPost, error) {
+func (s *Service) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]gen.ListPinnedContentRow, error) {
 	pins, err := s.read.ListPinnedContent(ctx, spaceID)
 	if err != nil {
 		return nil, fmt.Errorf("listing pinned content: %w", err)

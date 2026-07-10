@@ -166,7 +166,7 @@ type InsertMediaParams struct {
 }
 
 // Media system queries (Section 34).
-// Two-step upload: pre-sign → client uploads to MinIO → confirm.
+// Two-step upload: pre-sign → client uploads to SeaweedFS → confirm.
 // =====================
 // Insert
 // =====================

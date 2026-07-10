@@ -173,15 +173,6 @@ func (h *OAuthHandlers) issueToken(w http.ResponseWriter, _ *http.Request, userI
 	})
 }
 
-// RegisterOAuthRoutes registers the OAuth routes on the given router.
-// Called from server.go during startup.
-func RegisterOAuthRoutes(r chi.Router, handlers *OAuthHandlers, _ *KeyRotation) {
-	r.Route("/oauth", func(r chi.Router) {
-		r.Post("/{provider}/initiate", handlers.HandleInitiate)
-		r.Get("/{provider}/callback", handlers.HandleCallback)
-	})
-}
-
 // RequireAuthRoute wraps RequireAuth for convenience in route registration.
 func RequireAuthRoute(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	return RequireAuth(kr, vkClient)

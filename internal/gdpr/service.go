@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -370,6 +372,18 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 
 			return fmt.Errorf("deleting honcho context for user %s: %w", request.UserID, err)
 		}
+	} else if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+		// AUDIT-BE-019: In production, Honcho erasure is mandatory.
+		// A nil eraser means the service was misconfigured — fail the
+		// entire deletion job so it retries after correct wiring.
+		if _, statusErr := s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
+			ID:     requestID,
+			Status: string(DeletionFailed),
+		}); statusErr != nil {
+			slog.Error("update deletion status to failed", "error", statusErr)
+		}
+
+		return fmt.Errorf("honcho eraser not configured — required in production for user %s", request.UserID)
 	} else {
 		slog.Warn("honcho eraser not configured, skipping AI context deletion",
 			"request_id", requestID, "user_id", request.UserID)

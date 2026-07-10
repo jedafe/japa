@@ -277,3 +277,116 @@ ORDER BY sm.created_at ASC;
 SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
 FROM space_moderators
 WHERE space_id = @space_id AND user_id = @user_id;
+
+-- =====================
+-- Space Members (with profile data)
+-- =====================
+
+-- name: ListSpaceMembersWithProfile :many
+SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at
+FROM space_members sm
+JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+WHERE sm.space_id = @space_id AND sm.tenant_id = @tenant_id
+ORDER BY sm.joined_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- =====================
+-- Space Parent Spaces (Many-to-Many Hierarchy)
+-- =====================
+
+-- name: AddParentSpace :exec
+INSERT INTO space_parent_spaces (space_id, parent_space_id)
+VALUES (@space_id, @parent_space_id)
+ON CONFLICT DO NOTHING;
+
+-- name: RemoveParentSpace :exec
+DELETE FROM space_parent_spaces
+WHERE space_id = @space_id AND parent_space_id = @parent_space_id;
+
+-- name: GetParentSpacesBySpaceID :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
+WHERE sps.space_id = @space_id AND s.tenant_id = @tenant_id
+ORDER BY s.name;
+
+-- name: GetChildSpacesByParentID :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE sps.parent_space_id = @parent_space_id AND s.tenant_id = @tenant_id
+ORDER BY s.name;
+
+-- =====================
+-- Space Admin Queries (handlers)
+-- =====================
+
+-- =====================
+-- Space Join Requests
+-- =====================
+
+-- name: ListSpaceJoinRequests :many
+SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status
+FROM space_members sm
+JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+WHERE sm.space_id = @space_id AND sm.tenant_id = @tenant_id AND sm.status = 'pending'
+ORDER BY sm.joined_at ASC;
+
+-- name: UpdateSpaceJoinRequest :exec
+UPDATE space_members
+SET status = @status
+WHERE space_id = @space_id AND user_id = @user_id AND tenant_id = @tenant_id;
+
+-- =====================
+-- Space Content Views
+-- =====================
+
+-- name: SumSpaceContentViews :one
+SELECT COUNT(*) AS count
+FROM content_views
+WHERE space_id = @space_id AND tenant_id = @tenant_id;
+
+-- =====================
+-- Space Pinned Posts
+-- =====================
+
+-- name: UpdateSpacePinPosition :exec
+UPDATE space_pinned_posts
+SET position = @position
+WHERE space_id = @space_id AND content_id = @content_id;
+
+-- name: UpdateSpaceStatus :exec
+UPDATE spaces SET status = @status, updated_at = now() WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: CountSpacePublishedContent :one
+SELECT COUNT(*) AS count
+FROM contents
+WHERE space_id = @space_id AND tenant_id = @tenant_id AND status = 'published';
+
+-- name: SuggestParentSpaces :many
+SELECT s.id, s.name, s.slug FROM spaces s
+WHERE s.tenant_id = @tenant_id AND s.status = 'active'
+  AND s.space_type_id IN (SELECT id FROM space_types WHERE slug = 'category')
+ORDER BY s.name LIMIT 20;
+
+-- =====================
+-- Space Follower Count
+-- =====================
+
+-- name: IncrementSpaceFollowerCount :exec
+UPDATE spaces SET follower_count = follower_count + 1
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: DecrementSpaceFollowerCount :exec
+UPDATE spaces SET follower_count = follower_count - 1
+WHERE id = @id AND tenant_id = @tenant_id AND follower_count > 0;

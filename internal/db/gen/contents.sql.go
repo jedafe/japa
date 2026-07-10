@@ -1298,15 +1298,24 @@ WHERE spp.space_id = $1
 ORDER BY spp.position ASC, spp.created_at ASC
 `
 
-func (q *Queries) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]SpacePinnedPost, error) {
+type ListPinnedContentRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	SpaceID   pgtype.UUID        `json:"space_id"`
+	ContentID pgtype.UUID        `json:"content_id"`
+	PinnedBy  pgtype.UUID        `json:"pinned_by"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]ListPinnedContentRow, error) {
 	rows, err := q.db.Query(ctx, listPinnedContent, spaceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SpacePinnedPost
+	var items []ListPinnedContentRow
 	for rows.Next() {
-		var i SpacePinnedPost
+		var i ListPinnedContentRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SpaceID,
@@ -1339,17 +1348,26 @@ type PinContentToSpaceParams struct {
 	Position  int32       `json:"position"`
 }
 
+type PinContentToSpaceRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	SpaceID   pgtype.UUID        `json:"space_id"`
+	ContentID pgtype.UUID        `json:"content_id"`
+	PinnedBy  pgtype.UUID        `json:"pinned_by"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 // =====================
 // Space Pinned Posts
 // =====================
-func (q *Queries) PinContentToSpace(ctx context.Context, arg PinContentToSpaceParams) (SpacePinnedPost, error) {
+func (q *Queries) PinContentToSpace(ctx context.Context, arg PinContentToSpaceParams) (PinContentToSpaceRow, error) {
 	row := q.db.QueryRow(ctx, pinContentToSpace,
 		arg.SpaceID,
 		arg.ContentID,
 		arg.PinnedBy,
 		arg.Position,
 	)
-	var i SpacePinnedPost
+	var i PinContentToSpaceRow
 	err := row.Scan(
 		&i.ID,
 		&i.SpaceID,

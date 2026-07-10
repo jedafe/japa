@@ -1,19 +1,5 @@
 -- +migrate Up
 
--- Newsletter subscribers
-CREATE TABLE IF NOT EXISTS newsletter_subscribers (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    email text NOT NULL,
-    user_id uuid REFERENCES users(id) ON DELETE SET NULL,
-    status text NOT NULL DEFAULT 'active',
-    subscribed_at timestamptz NOT NULL DEFAULT now(),
-    unsubscribed_at timestamptz,
-    UNIQUE(tenant_id, email)
-);
-CREATE INDEX IF NOT EXISTS idx_newsletter_subscribers_tenant ON newsletter_subscribers(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_newsletter_subscribers_user ON newsletter_subscribers(user_id);
-
 -- Newsletter lists
 CREATE TABLE IF NOT EXISTS newsletter_lists (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -26,47 +12,12 @@ CREATE TABLE IF NOT EXISTS newsletter_lists (
 );
 CREATE INDEX IF NOT EXISTS idx_newsletter_lists_tenant ON newsletter_lists(tenant_id);
 
--- Newsletter campaigns
-CREATE TABLE IF NOT EXISTS newsletter_campaigns (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    list_id uuid NOT NULL REFERENCES newsletter_lists(id) ON DELETE CASCADE,
-    subject text NOT NULL,
-    html_body text NOT NULL,
-    status text NOT NULL DEFAULT 'draft',
-    scheduled_at timestamptz,
-    sent_at timestamptz,
-    recipient_count int NOT NULL DEFAULT 0,
-    created_by uuid REFERENCES users(id) ON DELETE SET NULL,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_newsletter_campaigns_tenant ON newsletter_campaigns(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_newsletter_campaigns_list ON newsletter_campaigns(list_id);
-CREATE INDEX IF NOT EXISTS idx_newsletter_campaigns_status ON newsletter_campaigns(status);
-
 -- Newsletter list ↔ subscriber junction
 CREATE TABLE IF NOT EXISTS newsletter_list_subscribers (
     list_id uuid NOT NULL REFERENCES newsletter_lists(id) ON DELETE CASCADE,
     subscriber_id uuid NOT NULL REFERENCES newsletter_subscribers(id) ON DELETE CASCADE,
     PRIMARY KEY (list_id, subscriber_id)
 );
-
--- Referrals
-CREATE TABLE IF NOT EXISTS referrals (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    code text NOT NULL UNIQUE,
-    referrer_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    referee_id uuid REFERENCES users(id) ON DELETE SET NULL,
-    status text NOT NULL DEFAULT 'pending',
-    qualified_at timestamptz,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    expires_at timestamptz
-);
-CREATE INDEX IF NOT EXISTS idx_referrals_tenant ON referrals(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id);
-CREATE INDEX IF NOT EXISTS idx_referrals_referee ON referrals(referee_id);
-CREATE INDEX IF NOT EXISTS idx_referrals_code ON referrals(code);
 
 -- Mentorship profiles
 CREATE TABLE IF NOT EXISTS mentorship_profiles (
@@ -196,8 +147,5 @@ DROP TABLE IF EXISTS ads_campaigns;
 DROP TABLE IF EXISTS mentor_reviews;
 DROP TABLE IF EXISTS mentor_sessions;
 DROP TABLE IF EXISTS mentorship_profiles;
-DROP TABLE IF EXISTS referrals;
 DROP TABLE IF EXISTS newsletter_list_subscribers;
-DROP TABLE IF EXISTS newsletter_campaigns;
 DROP TABLE IF EXISTS newsletter_lists;
-DROP TABLE IF EXISTS newsletter_subscribers;

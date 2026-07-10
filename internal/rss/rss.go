@@ -12,9 +12,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -55,7 +54,7 @@ type RSSItem struct { //nolint:revive // stuttering type name preserved for API 
 // HandleFeed serves the universal feed (/feed.xml) and blog-only feed
 // (/blog/feed.xml). The feedType parameter selects the content filter:
 // "all" returns all published content, "blog" returns only blog posts.
-func HandleFeed(pool *pgxpool.Pool, feedType string) http.HandlerFunc {
+func HandleFeed(q *gen.Queries, feedType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := tenant.IDFromContext(r.Context())
 		if tenantID == (pgtype.UUID{}) {
@@ -63,16 +62,29 @@ func HandleFeed(pool *pgxpool.Pool, feedType string) http.HandlerFunc {
 			return
 		}
 
-		var contentFilter string
+		var items []RSSItem
+		var err error
 
 		switch feedType {
 		case "blog":
-			contentFilter = "AND c.content_type = 'blog_post'"
+			rows, qErr := q.ListRSSFeedItemsByContentType(r.Context(), gen.ListRSSFeedItemsByContentTypeParams{
+				TenantID:    tenantID,
+				ContentType: "blog_post",
+			})
+			if qErr != nil {
+				err = qErr
+			} else {
+				items = feedItemsFromContentTypeRows(rows)
+			}
 		default:
-			contentFilter = ""
+			rows, qErr := q.ListRSSFeedItems(r.Context(), tenantID)
+			if qErr != nil {
+				err = qErr
+			} else {
+				items = feedItemsFromAllRows(rows)
+			}
 		}
 
-		items, err := queryFeedItems(r, pool, tenantID, contentFilter)
 		if err != nil {
 			slog.Error("rss: query feed", "feed_type", feedType, "error", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -86,7 +98,7 @@ func HandleFeed(pool *pgxpool.Pool, feedType string) http.HandlerFunc {
 }
 
 // HandleSpaceFeed serves a space-specific RSS feed at /spaces/{slug}/feed.xml.
-func HandleSpaceFeed(pool *pgxpool.Pool) http.HandlerFunc {
+func HandleSpaceFeed(q *gen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		slug := chi.URLParam(r, "slug")
 		if slug == "" {
@@ -100,30 +112,25 @@ func HandleSpaceFeed(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		rows, err := pool.Query(r.Context(), `
-			SELECT c.title, c.slug, LEFT(c.body, 200), c.created_at, u.username
-			FROM contents c
-			JOIN users u ON c.author_user_id = u.id
-			JOIN spaces s ON c.space_id = s.id
-			WHERE c.tenant_id = $1 AND c.status = 'published' AND s.slug = $2
-			ORDER BY c.created_at DESC
-			LIMIT 20`, tenantID, slug)
+		rows, err := q.ListRSSSpaceFeedItems(r.Context(), gen.ListRSSSpaceFeedItemsParams{
+			TenantID: tenantID,
+			Slug:     slug,
+		})
 		if err != nil {
 			slog.Error("rss: query space feed", "slug", slug, "error", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
 
 			return
 		}
-		defer rows.Close()
 
-		items := scanFeedItems(rows)
+		items := feedItemsFromSpaceRows(rows)
 		serveRSSFeed(w, "JapaConnect — "+slug, "https://japaconnect.com/spaces/"+slug,
 			"Posts from the "+slug+" space", items)
 	}
 }
 
 // HandleTagFeed serves a tag-specific RSS feed at /tags/{slug}/feed.xml.
-func HandleTagFeed(pool *pgxpool.Pool) http.HandlerFunc {
+func HandleTagFeed(q *gen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		slug := chi.URLParam(r, "slug")
 		if slug == "" {
@@ -137,31 +144,25 @@ func HandleTagFeed(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		rows, err := pool.Query(r.Context(), `
-			SELECT c.title, c.slug, LEFT(c.body, 200), c.created_at, u.username
-			FROM contents c
-			JOIN users u ON c.author_user_id = u.id
-			JOIN content_tags ct ON ct.content_id = c.id
-			JOIN tags t ON ct.tag_id = t.id
-			WHERE c.tenant_id = $1 AND c.status = 'published' AND t.slug = $2
-			ORDER BY c.created_at DESC
-			LIMIT 20`, tenantID, slug)
+		rows, err := q.ListRSSTagFeedItems(r.Context(), gen.ListRSSTagFeedItemsParams{
+			TenantID: tenantID,
+			Slug:     slug,
+		})
 		if err != nil {
 			slog.Error("rss: query tag feed", "slug", slug, "error", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
 
 			return
 		}
-		defer rows.Close()
 
-		items := scanFeedItems(rows)
+		items := feedItemsFromTagRows(rows)
 		serveRSSFeed(w, "JapaConnect — #"+slug, "https://japaconnect.com/tags/"+slug,
 			"Posts tagged #"+slug, items)
 	}
 }
 
 // HandleUserFeed serves a user-specific RSS feed at /users/{username}/feed.xml.
-func HandleUserFeed(pool *pgxpool.Pool) http.HandlerFunc {
+func HandleUserFeed(q *gen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		username := chi.URLParam(r, "username")
 		if username == "" {
@@ -175,22 +176,18 @@ func HandleUserFeed(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		rows, err := pool.Query(r.Context(), `
-			SELECT c.title, c.slug, LEFT(c.body, 200), c.created_at, u.username
-			FROM contents c
-			JOIN users u ON c.author_user_id = u.id
-			WHERE c.tenant_id = $1 AND c.status = 'published' AND u.username = $2
-			ORDER BY c.created_at DESC
-			LIMIT 20`, tenantID, username)
+		rows, err := q.ListRSSUserFeedItems(r.Context(), gen.ListRSSUserFeedItemsParams{
+			TenantID: tenantID,
+			Username: username,
+		})
 		if err != nil {
 			slog.Error("rss: query user feed", "username", username, "error", err)
 			http.Error(w, "Internal error", http.StatusInternalServerError)
 
 			return
 		}
-		defer rows.Close()
 
-		items := scanFeedItems(rows)
+		items := feedItemsFromUserRows(rows)
 		serveRSSFeed(w, "JapaConnect — "+username, "https://japaconnect.com/users/"+username,
 			"Posts by "+username, items)
 	}
@@ -200,39 +197,90 @@ func HandleUserFeed(pool *pgxpool.Pool) http.HandlerFunc {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// queryFeedItems runs the common feed query with an optional content type filter.
-func queryFeedItems(r *http.Request, pool *pgxpool.Pool, tenantID pgtype.UUID, contentFilter string) ([]RSSItem, error) {
-	rows, err := pool.Query(r.Context(), `
-		SELECT c.title, c.slug, LEFT(c.body, 200), c.created_at, u.username
-		FROM contents c
-		JOIN users u ON c.author_user_id = u.id
-		WHERE c.tenant_id = $1 AND c.status = 'published' `+contentFilter+`
-		ORDER BY c.created_at DESC
-		LIMIT 20`, tenantID)
-	if err != nil {
-		return nil, err
+// formatTime formats a pgtype.Timestamptz as RFC1123Z.
+func formatTime(t pgtype.Timestamptz) string {
+	if t.Valid {
+		return t.Time.Format(time.RFC1123Z)
 	}
-	defer rows.Close()
 
-	return scanFeedItems(rows), nil
+	return ""
 }
 
-// scanFeedItems iterates rows and builds RSS items, skipping any scan errors.
-func scanFeedItems(rows pgx.Rows) []RSSItem {
-	items := make([]RSSItem, 0, 20)
+// feedItemsFromContentTypeRows converts ListRSSFeedItemsByContentTypeRow to RSS items.
+func feedItemsFromContentTypeRows(rows []gen.ListRSSFeedItemsByContentTypeRow) []RSSItem {
+	items := make([]RSSItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, RSSItem{
+			Title:       row.Title,
+			Link:        "https://japaconnect.com/content/" + row.Slug,
+			Description: row.Left,
+			PubDate:     formatTime(row.CreatedAt),
+			Author:      row.Username,
+		})
+	}
 
-	for rows.Next() {
-		var item RSSItem
+	return items
+}
 
-		var createdAt time.Time
-		if err := rows.Scan(&item.Title, &item.Link, &item.Description, &createdAt, &item.Author); err != nil {
-			slog.Warn("rss: scan row", "error", err)
-			continue
-		}
+// feedItemsFromAllRows converts ListRSSFeedItemsRow to RSS items.
+func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow) []RSSItem {
+	items := make([]RSSItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, RSSItem{
+			Title:       row.Title,
+			Link:        "https://japaconnect.com/content/" + row.Slug,
+			Description: row.Left,
+			PubDate:     formatTime(row.CreatedAt),
+			Author:      row.Username,
+		})
+	}
 
-		item.Link = "https://japaconnect.com/content/" + item.Link
-		item.PubDate = createdAt.Format(time.RFC1123Z)
-		items = append(items, item)
+	return items
+}
+
+// feedItemsFromSpaceRows converts ListRSSSpaceFeedItemsRow to RSS items.
+func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow) []RSSItem {
+	items := make([]RSSItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, RSSItem{
+			Title:       row.Title,
+			Link:        "https://japaconnect.com/content/" + row.Slug,
+			Description: row.Left,
+			PubDate:     formatTime(row.CreatedAt),
+			Author:      row.Username,
+		})
+	}
+
+	return items
+}
+
+// feedItemsFromTagRows converts ListRSSTagFeedItemsRow to RSS items.
+func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow) []RSSItem {
+	items := make([]RSSItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, RSSItem{
+			Title:       row.Title,
+			Link:        "https://japaconnect.com/content/" + row.Slug,
+			Description: row.Left,
+			PubDate:     formatTime(row.CreatedAt),
+			Author:      row.Username,
+		})
+	}
+
+	return items
+}
+
+// feedItemsFromUserRows converts ListRSSUserFeedItemsRow to RSS items.
+func feedItemsFromUserRows(rows []gen.ListRSSUserFeedItemsRow) []RSSItem {
+	items := make([]RSSItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, RSSItem{
+			Title:       row.Title,
+			Link:        "https://japaconnect.com/content/" + row.Slug,
+			Description: row.Left,
+			PubDate:     formatTime(row.CreatedAt),
+			Author:      row.Username,
+		})
 	}
 
 	return items

@@ -21,7 +21,12 @@
 	let searchQuery = $state('');
 	let filterEntityType = $state('');
 
-	const entityTypes = ['content', 'user', 'space', 'tag'];
+	let entityTypes = $state<{ value: string; label: string }[]>([
+		{ value: 'content', label: 'Content' },
+		{ value: 'user', label: 'User' },
+		{ value: 'space', label: 'Space' },
+		{ value: 'tag', label: 'Tag' }
+	]);
 
 	async function load() {
 		loading = true;
@@ -29,9 +34,9 @@
 		if (searchQuery) params.set('search', searchQuery);
 		if (filterEntityType) params.set('entity_type', filterEntityType);
 		try {
-			const result = await api<FieldDefinition[]>(`/custom-field-groups?${params}`);
-			if (result.ok) {
-				fields = result.data ?? [];
+			const result = await api<{ data: FieldDefinition[] }>(`/custom-field-groups?${params}`);
+			if (result.ok && result.data) {
+				fields = result.data.data ?? [];
 			}
 		} catch {
 			// API not available
@@ -40,11 +45,17 @@
 		}
 	}
 
-	function handleFilter() {
-		load();
-	}
-
-	onMount(load);
+	onMount(async () => {
+		try {
+			const types = await api.listCustomFieldEntityTypes();
+			if (Array.isArray(types) && types.length > 0) {
+				entityTypes = types;
+			}
+		} catch {
+			// Keep default entity types
+		}
+		await load();
+	});
 </script>
 
 <svelte:head>
@@ -89,7 +100,7 @@
 		>
 			<option value="">{t('common.all')}</option>
 			{#each entityTypes as et}
-				<option value={et}>{et}</option>
+				<option value={et.value}>{et.label}</option>
 			{/each}
 		</select>
 	</div>

@@ -14,6 +14,7 @@
 		Key
 	} from 'lucide-svelte';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { onMount } from 'svelte';
 
 	let { data } = $props();
 
@@ -32,19 +33,28 @@
 	let deliveries = $state<WebhookDelivery[]>([]);
 	let deliveriesLoading = $state(false);
 
-	const availableEvents = [
-		'content.created',
-		'content.updated',
-		'content.deleted',
-		'user.followed',
-		'user.unfollowed',
-		'payment.completed',
-		'payment.failed',
-		'space.member_joined',
-		'space.member_left',
-		'review.created',
-		'review.flagged'
-	];
+	let availableEvents = $state<{ key: string; label: string; description: string }[]>([]);
+
+	onMount(async () => {
+		try {
+			const events = await api.listWebhookEvents();
+			if (Array.isArray(events)) {
+				availableEvents = events;
+			}
+		} catch {
+			availableEvents = [
+				{ key: 'content.published', label: 'Content Published', description: 'When content is published' },
+				{ key: 'content.updated', label: 'Content Updated', description: 'When content is updated' },
+				{ key: 'content.deleted', label: 'Content Deleted', description: 'When content is deleted' },
+				{ key: 'claim.approved', label: 'Claim Approved', description: 'When an ownership claim is approved' },
+				{ key: 'claim.rejected', label: 'Claim Rejected', description: 'When an ownership claim is rejected' },
+				{ key: 'review.created', label: 'Review Created', description: 'When a new review is created' },
+				{ key: 'organization.verified', label: 'Organization Verified', description: 'When an organization is verified' },
+				{ key: 'payment.succeeded', label: 'Payment Succeeded', description: 'When a payment succeeds' },
+				{ key: 'payment.failed', label: 'Payment Failed', description: 'When a payment fails' }
+			];
+		}
+	});
 
 	async function loadWebhooks() {
 		errorMessage = '';
@@ -325,16 +335,17 @@
 							<button
 								type="button"
 								class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
-								style="background: {selectedEvents.includes(event)
+								style="background: {selectedEvents.includes(event.key)
 									? 'var(--color-primary)'
-									: 'var(--color-background)'}; color: {selectedEvents.includes(event)
+									: 'var(--color-background)'}; color: {selectedEvents.includes(event.key)
 									? 'white'
-									: 'var(--color-foreground)'}; border: 1px solid {selectedEvents.includes(event)
+									: 'var(--color-foreground)'}; border: 1px solid {selectedEvents.includes(event.key)
 									? 'transparent'
 									: 'var(--color-border)'}"
-								onclick={() => toggleEvent(event)}
+								onclick={() => toggleEvent(event.key)}
+								title={event.description}
 							>
-								{event}
+								{event.label}
 							</button>
 						{/each}
 					</div>

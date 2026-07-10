@@ -28,14 +28,14 @@ import (
 const defaultPageSize int32 = 20
 
 // Task type constant for embedding generation — matches worker.TypeAIGenerateContentEmbedding.
-const taskTypeAIGenerateContentEmbedding = "ai:generate_content_embedding"
+const taskTypeAIGenerateContentEmbedding = "content:generate_embedding"
 
 // Task type constant for scheduled publishing — matches worker.TypeScheduledPublish.
 // NOTE: this intentionally does NOT reuse content.TaskTypeScheduledPublish
 // ("content:scheduled_publish") from tasks.go — that constant's noopEnqueuer
 // was never wired to a real handler; the worker package's registered handler
-// listens for the plain "scheduled_publish" string used here.
-const taskTypeScheduledPublish = "scheduled_publish"
+// listens for the "content:publish_scheduled" string used here.
+const taskTypeScheduledPublish = "content:publish_scheduled"
 
 // TaskEnqueueClient is the interface for enqueueing background tasks.
 // The Asynq client satisfies this interface. A nil client means tasks
@@ -1115,4 +1115,19 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": contents})
+}
+
+// ListContentTypes handles GET /content-types — returns available content types.
+func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
+	types := []map[string]string{
+		{ "value": "discussion", "label": "Discussion" },
+		{ "value": "blog_post", "label": "Blog Post" },
+		{ "value": "page", "label": "Page" },
+		{ "value": "comparison", "label": "Comparison" },
+		{ "value": "question", "label": "Question" },
+		{ "value": "article", "label": "Article" },
+		{ "value": "guide", "label": "Guide" },
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": types})
 }

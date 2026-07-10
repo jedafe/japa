@@ -27,10 +27,8 @@ const (
 	countrySpaceType  = "00000000-0000-0000-0000-000000000060"
 )
 
-// Default admin credentials.
+// Default admin display values (non-sensitive).
 const (
-	adminEmail       = "admin@japaconnect.com"
-	adminPassword    = "Admin123!"
 	adminUsername    = "admin"
 	adminDisplayName = "Platform Admin"
 )
@@ -60,6 +58,22 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Source admin credentials from environment variables (AUDIT-BE-017).
+	adminEmail := os.Getenv("JC_SEED_ADMIN_EMAIL")
+	adminPassword := os.Getenv("JC_SEED_ADMIN_PASSWORD")
+
+	if adminEmail == "" {
+		adminEmail = "admin@japaconnect.com"
+	}
+
+	if adminPassword == "" {
+		if cfg.IsProduction() {
+			return fmt.Errorf("JC_SEED_ADMIN_PASSWORD must be set in production")
+		}
+		slog.Warn("JC_SEED_ADMIN_PASSWORD not set, using default dev password")
+		adminPassword = "Admin123!"
 	}
 
 	ctx := context.Background()

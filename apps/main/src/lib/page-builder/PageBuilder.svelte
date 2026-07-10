@@ -5,19 +5,8 @@
 	import type { BlockInstance } from './types';
 	import { getBlockTypeByType, createBlockInstance } from './registry';
 	import SortableBlock from './SortableBlock.svelte';
-	import {
-		HeroBlock,
-		RichTextBlock,
-		ImageBlock,
-		CTABlock,
-		StatsBlock,
-		FAQBlock,
-		TestimonialBlock,
-		ComparisonBlock,
-		FormEmbedBlock,
-		SpacerBlock,
-		DynamicListingBlock,
-	} from './blocks/index.js';
+	import { onMount } from 'svelte';
+	import type { Component } from 'svelte';
 
 	interface Props {
 		blocks: BlockInstance[];
@@ -27,8 +16,8 @@
 
 	let { blocks, readOnly = false, onChange }: Props = $props();
 
-	/** Live region for keyboard reorder announcements. */
 	let liveRegion: HTMLDivElement | undefined = $state();
+	let blockComponents = $state<Record<string, Component>>({});
 
 	function announce(message: string) {
 		if (liveRegion) {
@@ -37,19 +26,18 @@
 		}
 	}
 
-	/** Map block_type to its Svelte component. */
-	const BLOCK_COMPONENTS: Record<string, typeof HeroBlock> = {
-		hero: HeroBlock,
-		rich_text: RichTextBlock,
-		image: ImageBlock,
-		cta: CTABlock,
-		stats: StatsBlock,
-		faq: FAQBlock,
-		testimonial: TestimonialBlock,
-		comparison: ComparisonBlock,
-		form: FormEmbedBlock,
-		spacer: SpacerBlock,
-		dynamic_listing: DynamicListingBlock,
+	const BLOCK_IMPORTS: Record<string, () => Promise<Component>> = {
+		hero: async () => (await import('./blocks/HeroBlock.svelte')).default,
+		rich_text: async () => (await import('./blocks/RichTextBlock.svelte')).default,
+		image: async () => (await import('./blocks/ImageBlock.svelte')).default,
+		cta: async () => (await import('./blocks/CTABlock.svelte')).default,
+		stats: async () => (await import('./blocks/StatsBlock.svelte')).default,
+		faq: async () => (await import('./blocks/FAQBlock.svelte')).default,
+		testimonial: async () => (await import('./blocks/TestimonialBlock.svelte')).default,
+		comparison: async () => (await import('./blocks/ComparisonBlock.svelte')).default,
+		form: async () => (await import('./blocks/FormEmbedBlock.svelte')).default,
+		spacer: async () => (await import('./blocks/SpacerBlock.svelte')).default,
+		dynamic_listing: async () => (await import('./blocks/DynamicListingBlock.svelte')).default,
 	};
 
 	// ── DnD event handlers ──────────────────────────────────────────
@@ -122,9 +110,19 @@
 		return getBlockTypeByType(blockType)?.name ?? blockType;
 	}
 
-	function getBlockComponent(blockType: string): typeof HeroBlock | undefined {
-		return BLOCK_COMPONENTS[blockType];
+	function getBlockComponent(blockType: string): Component | undefined {
+		return blockComponents[blockType];
 	}
+
+	onMount(async () => {
+		const entries = await Promise.all(
+			Object.entries(BLOCK_IMPORTS).map(async ([key, loader]) => {
+				const comp = await loader();
+				return [key, comp] as const;
+			})
+		);
+		blockComponents = Object.fromEntries(entries);
+	});
 
 	let isEmpty = $derived(blocks.length === 0);
 </script>

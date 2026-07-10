@@ -217,10 +217,10 @@ func HandleNotificationDispatchBatch(ctx context.Context, t *asynq.Task) error {
 
 // HandleWebhookDelivery delivers a queued webhook to the registered endpoint.
 func HandleWebhookDelivery(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:webhook_delivery", "payload", t.Payload())
+	slog.Info("task:webhook:deliver", "payload", t.Payload())
 
 	if webhookProcessor == nil {
-		slog.Warn("task:webhook_delivery: no webhook processor registered, skipping")
+		slog.Warn("task:webhook:deliver: no webhook processor registered, skipping")
 		return nil
 	}
 
@@ -229,13 +229,13 @@ func HandleWebhookDelivery(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:webhook_delivery: invalid payload", "error", err)
+		slog.Error("task:webhook:deliver: invalid payload", "error", err)
 		return err
 	}
 
 	var deliveryID pgtype.UUID
 	if err := deliveryID.Scan(payload.DeliveryID); err != nil {
-		slog.Error("task:webhook_delivery: invalid delivery_id", "error", err)
+		slog.Error("task:webhook:deliver: invalid delivery_id", "error", err)
 		return err
 	}
 
@@ -244,11 +244,11 @@ func HandleWebhookDelivery(ctx context.Context, t *asynq.Task) error {
 
 // HandlePaymentWebhookProcess processes an incoming payment webhook event and updates payment status.
 func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:payment_webhook_process", "payload", t.Payload())
+	slog.Info("task:payment:process_webhook", "payload", t.Payload())
 
 	queries, err := requireDB()
 	if err != nil {
-		slog.Warn("task:payment_webhook_process: no database, skipping", "error", err)
+		slog.Warn("task:payment:process_webhook: no database, skipping", "error", err)
 		return nil
 	}
 
@@ -259,13 +259,13 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:payment_webhook_process: invalid payload", "error", err)
+		slog.Error("task:payment:process_webhook: invalid payload", "error", err)
 		return err
 	}
 
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
-		return fmt.Errorf("task:payment_webhook_process: %w", err)
+		return fmt.Errorf("task:payment:process_webhook: %w", err)
 	}
 
 	// Look up pending payments and match by provider_ref.
@@ -274,7 +274,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		Status:   "pending",
 	})
 	if err != nil {
-		slog.Error("task:payment_webhook_process: failed to list pending payments", "error", err)
+		slog.Error("task:payment:process_webhook: failed to list pending payments", "error", err)
 		return err
 	}
 
@@ -287,20 +287,20 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 				ID:       p.ID,
 				TenantID: tenantID,
 			}); err != nil {
-				slog.Error("task:payment_webhook_process: failed to update payment",
+				slog.Error("task:payment:process_webhook: failed to update payment",
 					"payment_id", p.ID, "error", err)
 				continue
 			}
 
 			updated++
 
-			slog.Info("task:payment_webhook_process: payment updated",
+			slog.Info("task:payment:process_webhook: payment updated",
 				"payment_id", p.ID, "status", payload.Status)
 		}
 	}
 
 	if updated == 0 {
-		slog.Warn("task:payment_webhook_process: no matching payment found",
+		slog.Warn("task:payment:process_webhook: no matching payment found",
 			"event_id", payload.EventID)
 	}
 
@@ -371,7 +371,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 
 // HandleEmailSend sends a single transactional email via SMTP.
 func HandleEmailSend(_ context.Context, t *asynq.Task) error {
-	slog.Info("task:email_send", "payload", t.Payload())
+	slog.Info("task:email:send", "payload", t.Payload())
 
 	var payload struct {
 		To      string `json:"to"`
@@ -381,30 +381,30 @@ func HandleEmailSend(_ context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:email_send: invalid payload", "error", err)
+		slog.Error("task:email:send: invalid payload", "error", err)
 		return err
 	}
 
 	if payload.To == "" || payload.Subject == "" {
-		return errors.New("task:email_send: to and subject are required")
+		return errors.New("task:email:send: to and subject are required")
 	}
 
 	if err := sendEmail(payload.To, payload.Subject, payload.Body, payload.HTML); err != nil {
-		slog.Error("task:email_send: failed", "to", payload.To, "error", err)
+		slog.Error("task:email:send: failed", "to", payload.To, "error", err)
 		return err
 	}
 
-	slog.Info("task:email_send: sent", "to", payload.To)
+	slog.Info("task:email:send: sent", "to", payload.To)
 
 	return nil
 }
 
 // HandleSearchIndexSync synchronizes an entity to the Meilisearch index.
 func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:search_index_sync", "payload", t.Payload())
+	slog.Info("task:search:index_entity", "payload", t.Payload())
 
 	if searchIndexer == nil {
-		slog.Warn("task:search_index_sync: no search indexer registered, skipping")
+		slog.Warn("task:search:index_entity: no search indexer registered, skipping")
 		return nil
 	}
 
@@ -416,7 +416,7 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:search_index_sync: invalid payload", "error", err)
+		slog.Error("task:search:index_entity: invalid payload", "error", err)
 		return err
 	}
 
@@ -427,19 +427,19 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if entityIDStr == "" {
-		slog.Error("task:search_index_sync: missing entity_id")
+		slog.Error("task:search:index_entity: missing entity_id")
 		return errors.New("missing entity_id")
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(entityIDStr); err != nil {
-		slog.Error("task:search_index_sync: invalid entity_id", "value", entityIDStr, "error", err)
+		slog.Error("task:search:index_entity: invalid entity_id", "value", entityIDStr, "error", err)
 		return err
 	}
 
 	var tenantID pgtype.UUID
 	if err := tenantID.Scan(payload.TenantID); err != nil {
-		slog.Error("task:search_index_sync: invalid tenant_id", "value", payload.TenantID, "error", err)
+		slog.Error("task:search:index_entity: invalid tenant_id", "value", payload.TenantID, "error", err)
 		return err
 	}
 
@@ -460,17 +460,17 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 	case "tag":
 		return searchIndexer.IndexTag(ctx, entityID.Bytes, tenantID.Bytes)
 	default:
-		slog.Warn("task:search_index_sync: unknown entity type, skipping", "entity_type", entityType)
+		slog.Warn("task:search:index_entity: unknown entity type, skipping", "entity_type", entityType)
 		return nil
 	}
 }
 
 // HandleImageProcessing processes uploaded images through imgproxy for resizing and optimization.
 func HandleImageProcessing(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:image_processing", "payload", t.Payload())
+	slog.Info("task:content:process_image", "payload", t.Payload())
 
 	if imageProcessor == nil {
-		slog.Warn("task:image_processing: no image processor registered, skipping")
+		slog.Warn("task:content:process_image: no image processor registered, skipping")
 		return nil
 	}
 
@@ -483,22 +483,22 @@ func HandleImageProcessing(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:image_processing: invalid payload", "error", err)
+		slog.Error("task:content:process_image: invalid payload", "error", err)
 		return err
 	}
 
 	if payload.MediaID == "" {
-		slog.Error("task:image_processing: missing media_id in payload")
+		slog.Error("task:content:process_image: missing media_id in payload")
 		return errors.New("missing media_id")
 	}
 
 	if err := imageProcessor.ProcessImage(ctx, payload.MediaID, payload.TenantID, payload.Operation, payload.Width, payload.Height); err != nil {
-		slog.Error("task:image_processing: failed",
+		slog.Error("task:content:process_image: failed",
 			"media_id", payload.MediaID, "operation", payload.Operation, "error", err)
 		return err
 	}
 
-	slog.Info("task:image_processing: completed",
+	slog.Info("task:content:process_image: completed",
 		"media_id", payload.MediaID,
 		"operation", payload.Operation,
 		"width", payload.Width,
@@ -509,10 +509,10 @@ func HandleImageProcessing(ctx context.Context, t *asynq.Task) error {
 
 // HandleAITaskProcessing executes an AI task through the configured provider.
 func HandleAITaskProcessing(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:ai_task_processing", "payload", t.Payload())
+	slog.Info("task:ai:process_task", "payload", t.Payload())
 
 	if aiProcessor == nil {
-		slog.Warn("task:ai_task_processing: no ai processor registered, skipping")
+		slog.Warn("task:ai:process_task: no ai processor registered, skipping")
 		return nil
 	}
 
@@ -524,17 +524,17 @@ func HandleAITaskProcessing(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:ai_task_processing: invalid payload", "error", err)
+		slog.Error("task:ai:process_task: invalid payload", "error", err)
 		return err
 	}
 
 	if err := aiProcessor.ProcessAITask(ctx, payload.TaskType, payload.Prompt, payload.ModelID, payload.RequestID); err != nil {
-		slog.Error("task:ai_task_processing: failed",
+		slog.Error("task:ai:process_task: failed",
 			"task_type", payload.TaskType, "request_id", payload.RequestID, "error", err)
 		return err
 	}
 
-	slog.Info("task:ai_task_processing: processed",
+	slog.Info("task:ai:process_task: processed",
 		"task_type", payload.TaskType,
 		"model_id", payload.ModelID,
 		"request_id", payload.RequestID)
@@ -544,11 +544,11 @@ func HandleAITaskProcessing(ctx context.Context, t *asynq.Task) error {
 
 // HandleEngagementCountUpdate recalculates engagement counts for a content entity.
 func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:engagement_count_update", "payload", t.Payload())
+	slog.Info("task:content:update_engagement", "payload", t.Payload())
 
 	queries, err := requireDB()
 	if err != nil {
-		slog.Warn("task:engagement_count_update: no database, skipping", "error", err)
+		slog.Warn("task:content:update_engagement: no database, skipping", "error", err)
 		return nil
 	}
 
@@ -560,31 +560,31 @@ func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:engagement_count_update: invalid payload", "error", err)
+		slog.Error("task:content:update_engagement: invalid payload", "error", err)
 		return err
 	}
 
 	if payload.EntityType != "content" {
-		slog.Info("task:engagement_count_update: non-content entity, skipping",
+		slog.Info("task:content:update_engagement: non-content entity, skipping",
 			"entity_type", payload.EntityType)
 		return nil
 	}
 
 	entityID, err := scanUUID(payload.EntityID)
 	if err != nil {
-		return fmt.Errorf("task:engagement_count_update: %w", err)
+		return fmt.Errorf("task:content:update_engagement: %w", err)
 	}
 
 	// Fetch current scores.
 	score, err := queries.GetContentScore(ctx, entityID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Warn("task:engagement_count_update: no content_score found",
+			slog.Warn("task:content:update_engagement: no content_score found",
 				"content_id", payload.EntityID)
 			return nil
 		}
 
-		slog.Error("task:engagement_count_update: failed to get content score",
+		slog.Error("task:content:update_engagement: failed to get content score",
 			"content_id", payload.EntityID, "error", err)
 
 		return err
@@ -611,12 +611,12 @@ func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 		BookmarkCount: bookmarkCount,
 		ContentID:     entityID,
 	}); err != nil {
-		slog.Error("task:engagement_count_update: failed to update score",
+		slog.Error("task:content:update_engagement: failed to update score",
 			"content_id", payload.EntityID, "error", err)
 		return err
 	}
 
-	slog.Info("task:engagement_count_update: score updated",
+	slog.Info("task:content:update_engagement: score updated",
 		"content_id", payload.EntityID,
 		"engagement_type", payload.EngagementType,
 		"delta", payload.Delta)
@@ -626,10 +626,10 @@ func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 
 // HandleModerationScan runs content through the spam and moderation pipeline.
 func HandleModerationScan(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:moderation_scan", "payload", t.Payload())
+	slog.Info("task:content:scan_moderation", "payload", t.Payload())
 
 	if moderationProcessor == nil {
-		slog.Warn("task:moderation_scan: no moderation processor registered, skipping")
+		slog.Warn("task:content:scan_moderation: no moderation processor registered, skipping")
 		return nil
 	}
 
@@ -640,17 +640,17 @@ func HandleModerationScan(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:moderation_scan: invalid payload", "error", err)
+		slog.Error("task:content:scan_moderation: invalid payload", "error", err)
 		return err
 	}
 
 	if err := moderationProcessor.ScanContent(ctx, payload.EntityType, payload.EntityID, payload.TenantID); err != nil {
-		slog.Error("task:moderation_scan: scan failed",
+		slog.Error("task:content:scan_moderation: scan failed",
 			"entity_type", payload.EntityType, "entity_id", payload.EntityID, "error", err)
 		return err
 	}
 
-	slog.Info("task:moderation_scan: scanned",
+	slog.Info("task:content:scan_moderation: scanned",
 		"entity_type", payload.EntityType,
 		"entity_id", payload.EntityID)
 
@@ -659,11 +659,11 @@ func HandleModerationScan(ctx context.Context, t *asynq.Task) error {
 
 // HandleScheduledPublish publishes content that has reached its scheduled publish time.
 func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:scheduled_publish", "payload", t.Payload())
+	slog.Info("task:content:publish_scheduled", "payload", t.Payload())
 
 	queries, err := requireDB()
 	if err != nil {
-		slog.Warn("task:scheduled_publish: no database, skipping", "error", err)
+		slog.Warn("task:content:publish_scheduled: no database, skipping", "error", err)
 		return nil
 	}
 
@@ -673,18 +673,18 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:scheduled_publish: invalid payload", "error", err)
+		slog.Error("task:content:publish_scheduled: invalid payload", "error", err)
 		return err
 	}
 
 	contentID, err := scanUUID(payload.ContentID)
 	if err != nil {
-		return fmt.Errorf("task:scheduled_publish: %w", err)
+		return fmt.Errorf("task:content:publish_scheduled: %w", err)
 	}
 
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
-		return fmt.Errorf("task:scheduled_publish: %w", err)
+		return fmt.Errorf("task:content:publish_scheduled: %w", err)
 	}
 
 	// Update the content status to published.
@@ -693,12 +693,12 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 		ID:       contentID,
 		TenantID: tenantID,
 	}); err != nil {
-		slog.Error("task:scheduled_publish: failed to publish",
+		slog.Error("task:content:publish_scheduled: failed to publish",
 			"content_id", payload.ContentID, "error", err)
 		return err
 	}
 
-	slog.Info("task:scheduled_publish: content published",
+	slog.Info("task:content:publish_scheduled: content published",
 		"content_id", payload.ContentID)
 
 	return nil
@@ -706,10 +706,10 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 
 // HandleLinkPreviewFetch fetches and stores OpenGraph metadata for a URL.
 func HandleLinkPreviewFetch(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:link_preview_fetch", "payload", t.Payload())
+	slog.Info("task:content:fetch_link_preview", "payload", t.Payload())
 
 	if linkPreviewProcessor == nil {
-		slog.Warn("task:link_preview_fetch: no link preview processor registered, skipping")
+		slog.Warn("task:content:fetch_link_preview: no link preview processor registered, skipping")
 		return nil
 	}
 
@@ -720,22 +720,22 @@ func HandleLinkPreviewFetch(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:link_preview_fetch: invalid payload", "error", err)
+		slog.Error("task:content:fetch_link_preview: invalid payload", "error", err)
 		return err
 	}
 
 	if payload.URL == "" {
-		slog.Error("task:link_preview_fetch: missing url in payload")
+		slog.Error("task:content:fetch_link_preview: missing url in payload")
 		return errors.New("missing url")
 	}
 
 	if err := linkPreviewProcessor.FetchAndStore(ctx, payload.URL, payload.BlockID, payload.TenantID); err != nil {
-		slog.Error("task:link_preview_fetch: failed",
+		slog.Error("task:content:fetch_link_preview: failed",
 			"url", payload.URL, "error", err)
 		return err
 	}
 
-	slog.Info("task:link_preview_fetch: fetched",
+	slog.Info("task:content:fetch_link_preview: fetched",
 		"url", payload.URL, "block_id", payload.BlockID)
 
 	return nil
@@ -743,10 +743,10 @@ func HandleLinkPreviewFetch(ctx context.Context, t *asynq.Task) error {
 
 // HandleLanguagePackAITranslate translates a language pack using AI.
 func HandleLanguagePackAITranslate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:language_pack_ai_translate", "payload", t.Payload())
+	slog.Info("task:i18n:translate_language_pack", "payload", t.Payload())
 
 	if aiTranslateProcessor == nil {
-		slog.Warn("task:language_pack_ai_translate: no ai translate processor registered, skipping")
+		slog.Warn("task:i18n:translate_language_pack: no ai translate processor registered, skipping")
 		return nil
 	}
 
@@ -758,17 +758,17 @@ func HandleLanguagePackAITranslate(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:language_pack_ai_translate: invalid payload", "error", err)
+		slog.Error("task:i18n:translate_language_pack: invalid payload", "error", err)
 		return err
 	}
 
 	if err := aiTranslateProcessor.TranslatePack(ctx, payload.PackID, payload.SourceLang, payload.TargetLang, payload.TenantID); err != nil {
-		slog.Error("task:language_pack_ai_translate: translation failed",
+		slog.Error("task:i18n:translate_language_pack: translation failed",
 			"pack_id", payload.PackID, "error", err)
 		return err
 	}
 
-	slog.Info("task:language_pack_ai_translate: translation queued",
+	slog.Info("task:i18n:translate_language_pack: translation queued",
 		"pack_id", payload.PackID,
 		"source", payload.SourceLang,
 		"target", payload.TargetLang)
@@ -778,10 +778,10 @@ func HandleLanguagePackAITranslate(ctx context.Context, t *asynq.Task) error {
 
 // HandleMediaScan scans uploaded media for viruses and validates file integrity.
 func HandleMediaScan(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:media_scan", "payload", t.Payload())
+	slog.Info("task:content:scan_media", "payload", t.Payload())
 
 	if mediaScanProcessor == nil {
-		slog.Warn("task:media_scan: no media scan processor registered, skipping")
+		slog.Warn("task:content:scan_media: no media scan processor registered, skipping")
 		return nil
 	}
 
@@ -790,12 +790,12 @@ func HandleMediaScan(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:media_scan: invalid payload", "error", err)
+		slog.Error("task:content:scan_media: invalid payload", "error", err)
 		return err
 	}
 
 	if payload.MediaID == "" {
-		slog.Error("task:media_scan: missing media_id in payload")
+		slog.Error("task:content:scan_media: missing media_id in payload")
 		return errors.New("missing media_id")
 	}
 
@@ -1003,10 +1003,10 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 
 // HandleAIGenerateContentEmbedding generates a vector embedding for content search.
 func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:ai:generate_content_embedding", "payload", t.Payload())
+	slog.Info("task:content:generate_embedding", "payload", t.Payload())
 
 	if contentEmbedder == nil {
-		slog.Warn("task:ai:generate_content_embedding: no content embedder registered, skipping")
+		slog.Warn("task:content:generate_embedding: no content embedder registered, skipping")
 		return nil
 	}
 
@@ -1017,22 +1017,22 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:ai:generate_content_embedding: invalid payload", "error", err)
+		slog.Error("task:content:generate_embedding: invalid payload", "error", err)
 		return err
 	}
 
 	contentID, err := scanUUID(payload.ContentID)
 	if err != nil {
-		return fmt.Errorf("task:ai:generate_content_embedding: %w", err)
+		return fmt.Errorf("task:content:generate_embedding: %w", err)
 	}
 
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
-		return fmt.Errorf("task:ai:generate_content_embedding: %w", err)
+		return fmt.Errorf("task:content:generate_embedding: %w", err)
 	}
 
 	if payload.Text == "" {
-		slog.Warn("task:ai:generate_content_embedding: empty text, skipping",
+		slog.Warn("task:content:generate_embedding: empty text, skipping",
 			"content_id", payload.ContentID)
 		return nil
 	}
@@ -1042,11 +1042,11 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 
 // HandleReviewAggregateRecalc recalculates the aggregate rating for a reviewable entity.
 func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:review_aggregate_recalc", "payload", t.Payload())
+	slog.Info("task:content:recalc_review_aggregate", "payload", t.Payload())
 
 	queries, err := requireDB()
 	if err != nil {
-		slog.Warn("task:review_aggregate_recalc: no database, skipping", "error", err)
+		slog.Warn("task:content:recalc_review_aggregate: no database, skipping", "error", err)
 		return nil
 	}
 
@@ -1057,18 +1057,18 @@ func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:review_aggregate_recalc: invalid payload", "error", err)
+		slog.Error("task:content:recalc_review_aggregate: invalid payload", "error", err)
 		return err
 	}
 
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
-		return fmt.Errorf("task:review_aggregate_recalc: %w", err)
+		return fmt.Errorf("task:content:recalc_review_aggregate: %w", err)
 	}
 
 	entityID, err := scanUUID(payload.EntityID)
 	if err != nil {
-		return fmt.Errorf("task:review_aggregate_recalc: %w", err)
+		return fmt.Errorf("task:content:recalc_review_aggregate: %w", err)
 	}
 
 	// List published reviews for this entity.
@@ -1080,7 +1080,7 @@ func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
 		PageLimit:  10000,
 	})
 	if err != nil {
-		slog.Error("task:review_aggregate_recalc: failed to list reviews",
+		slog.Error("task:content:recalc_review_aggregate: failed to list reviews",
 			"entity_type", payload.EntityType, "entity_id", payload.EntityID, "error", err)
 		return err
 	}
@@ -1108,12 +1108,12 @@ func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
 		EntityID:   entityID,
 	})
 	if err != nil {
-		slog.Error("task:review_aggregate_recalc: failed to upsert aggregate",
+		slog.Error("task:content:recalc_review_aggregate: failed to upsert aggregate",
 			"entity_type", payload.EntityType, "entity_id", payload.EntityID, "error", err)
 		return err
 	}
 
-	slog.Info("task:review_aggregate_recalc: aggregate updated",
+	slog.Info("task:content:recalc_review_aggregate: aggregate updated",
 		"entity_type", payload.EntityType, "entity_id", payload.EntityID,
 		"review_count", publishedCount, "avg_rating", fmt.Sprintf("%.1f", avgRating))
 
@@ -1216,7 +1216,7 @@ func HandleLearningUpdateTrackCompletion(ctx context.Context, t *asynq.Task) err
 
 // HandleVideoProcessing processes uploaded video files for transcoding and thumbnail generation.
 func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:video_processing", "payload", t.Payload())
+	slog.Info("task:content:process_video", "payload", t.Payload())
 
 	var payload struct {
 		MediaID   string `json:"media_id"`
@@ -1225,29 +1225,29 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:video_processing: invalid payload", "error", err)
+		slog.Error("task:content:process_video: invalid payload", "error", err)
 		return err
 	}
 
 	if videoProcessor == nil {
-		slog.Warn("task:video_processing: no video processor registered, skipping")
+		slog.Warn("task:content:process_video: no video processor registered, skipping")
 		return nil
 	}
 
 	queries, err := requireDB()
 	if err != nil {
-		slog.Warn("task:video_processing: no database, skipping", "error", err)
+		slog.Warn("task:content:process_video: no database, skipping", "error", err)
 		return nil
 	}
 
 	mediaID, err := scanUUID(payload.MediaID)
 	if err != nil {
-		return fmt.Errorf("task:video_processing: %w", err)
+		return fmt.Errorf("task:content:process_video: %w", err)
 	}
 
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
-		return fmt.Errorf("task:video_processing: %w", err)
+		return fmt.Errorf("task:content:process_video: %w", err)
 	}
 
 	// Look up the media record to get the current storage path.
@@ -1256,9 +1256,9 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 		TenantID: tenantID,
 	})
 	if err != nil {
-		slog.Error("task:video_processing: media not found",
+		slog.Error("task:content:process_video: media not found",
 			"media_id", payload.MediaID, "error", err)
-		return fmt.Errorf("task:video_processing: media not found: %w", err)
+		return fmt.Errorf("task:content:process_video: media not found: %w", err)
 	}
 
 	inputPath := media.StoragePath
@@ -1270,26 +1270,26 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 	case "transcode":
 		outputPath = inputPath + ".transcoded.mp4"
 		if err := videoProcessor.Transcode(ctx, inputPath, outputPath); err != nil {
-			slog.Error("task:video_processing: transcode failed",
+			slog.Error("task:content:process_video: transcode failed",
 				"media_id", payload.MediaID, "error", err)
-			return fmt.Errorf("task:video_processing: transcode: %w", err)
+			return fmt.Errorf("task:content:process_video: transcode: %w", err)
 		}
 	case "thumbnail":
 		outputPath = inputPath + ".thumb.jpg"
 		if err := videoProcessor.GenerateThumbnail(ctx, inputPath, outputPath, "00:00:01"); err != nil {
-			slog.Error("task:video_processing: thumbnail failed",
+			slog.Error("task:content:process_video: thumbnail failed",
 				"media_id", payload.MediaID, "error", err)
-			return fmt.Errorf("task:video_processing: thumbnail: %w", err)
+			return fmt.Errorf("task:content:process_video: thumbnail: %w", err)
 		}
 	case "compress":
 		outputPath = inputPath + ".compressed.mp4"
 		if err := videoProcessor.Compress(ctx, inputPath, outputPath); err != nil {
-			slog.Error("task:video_processing: compress failed",
+			slog.Error("task:content:process_video: compress failed",
 				"media_id", payload.MediaID, "error", err)
-			return fmt.Errorf("task:video_processing: compress: %w", err)
+			return fmt.Errorf("task:content:process_video: compress: %w", err)
 		}
 	default:
-		return fmt.Errorf("task:video_processing: unknown operation %q", payload.Operation)
+		return fmt.Errorf("task:content:process_video: unknown operation %q", payload.Operation)
 	}
 
 	// Update the media record to point to the processed file.
@@ -1297,12 +1297,12 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 		`UPDATE media SET storage_path = $1 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL`,
 		outputPath, mediaID, tenantID)
 	if err != nil {
-		slog.Error("task:video_processing: failed to update storage path",
+		slog.Error("task:content:process_video: failed to update storage path",
 			"media_id", payload.MediaID, "new_path", outputPath, "error", err)
-		return fmt.Errorf("task:video_processing: update storage path: %w", err)
+		return fmt.Errorf("task:content:process_video: update storage path: %w", err)
 	}
 
-	slog.Info("task:video_processing: completed",
+	slog.Info("task:content:process_video: completed",
 		"media_id", payload.MediaID,
 		"operation", payload.Operation,
 		"output_path", outputPath)
@@ -1460,7 +1460,7 @@ func HandleWalletProcessActivityEvent(ctx context.Context, t *asynq.Task) error 
 
 // HandleNewsletterSend sends a newsletter campaign to all subscribers.
 func HandleNewsletterSend(_ context.Context, t *asynq.Task) error {
-	slog.Info("task:newsletter_send", "payload", t.Payload())
+	slog.Info("task:newsletter:send", "payload", t.Payload())
 
 	var payload struct {
 		NewsletterID string   `json:"newsletter_id"`
@@ -1471,7 +1471,7 @@ func HandleNewsletterSend(_ context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:newsletter_send: invalid payload", "error", err)
+		slog.Error("task:newsletter:send: invalid payload", "error", err)
 		return err
 	}
 
@@ -1480,7 +1480,7 @@ func HandleNewsletterSend(_ context.Context, t *asynq.Task) error {
 
 	for _, recipient := range payload.Recipients {
 		if err := sendEmail(recipient, payload.Subject, payload.HTMLBody, true); err != nil {
-			slog.Error("task:newsletter_send: email failed",
+			slog.Error("task:newsletter:send: email failed",
 				"recipient", recipient, "error", err)
 
 			failed++
@@ -1491,7 +1491,7 @@ func HandleNewsletterSend(_ context.Context, t *asynq.Task) error {
 		sent++
 	}
 
-	slog.Info("task:newsletter_send: batch complete",
+	slog.Info("task:newsletter:send: batch complete",
 		"newsletter_id", payload.NewsletterID,
 		"sent", sent, "failed", failed,
 		"total", len(payload.Recipients))
@@ -1505,10 +1505,10 @@ func HandleNewsletterSend(_ context.Context, t *asynq.Task) error {
 
 // HandleDigestEmail sends a digest email summarizing recent activity to a user.
 func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:digest_email", "payload", t.Payload())
+	slog.Info("task:email:send_digest", "payload", t.Payload())
 
 	if dbPool == nil {
-		slog.Warn("task:digest_email: no database, skipping")
+		slog.Warn("task:email:send_digest: no database, skipping")
 		return nil
 	}
 
@@ -1520,18 +1520,18 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:digest_email: invalid payload", "error", err)
+		slog.Error("task:email:send_digest: invalid payload", "error", err)
 		return err
 	}
 
 	userID, err := scanUUID(payload.UserID)
 	if err != nil {
-		return fmt.Errorf("task:digest_email: %w", err)
+		return fmt.Errorf("task:email:send_digest: %w", err)
 	}
 
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
-		return fmt.Errorf("task:digest_email: %w", err)
+		return fmt.Errorf("task:email:send_digest: %w", err)
 	}
 
 	// Fetch user's feed items for the digest period.
@@ -1545,7 +1545,7 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 		 LIMIT 20`,
 		userID, tenantID)
 	if err != nil {
-		slog.Error("task:digest_email: failed to fetch feed",
+		slog.Error("task:email:send_digest: failed to fetch feed",
 			"user_id", payload.UserID, "error", err)
 		return err
 	}
@@ -1574,11 +1574,11 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	body.WriteString("</ul>\n")
 
 	if err := feedItems.Err(); err != nil {
-		slog.Error("task:digest_email: row iteration error", "error", err)
+		slog.Error("task:email:send_digest: row iteration error", "error", err)
 	}
 
 	if itemCount == 0 {
-		slog.Info("task:digest_email: no items, skipping",
+		slog.Info("task:email:send_digest: no items, skipping",
 			"user_id", payload.UserID)
 		return nil
 	}
@@ -1586,12 +1586,12 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	if err := sendEmail(payload.Email,
 		fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(payload.Period)),
 		body.String(), true); err != nil {
-		slog.Error("task:digest_email: email failed",
+		slog.Error("task:email:send_digest: email failed",
 			"user_id", payload.UserID, "error", err)
 		return err
 	}
 
-	slog.Info("task:digest_email: sent",
+	slog.Info("task:email:send_digest: sent",
 		"user_id", payload.UserID, "items", itemCount)
 
 	return nil
@@ -1599,10 +1599,10 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 
 // HandleSitemapGenerate regenerates the XML sitemap for the tenant.
 func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:sitemap_generate", "payload", t.Payload())
+	slog.Info("task:sitemap:generate", "payload", t.Payload())
 
 	if dbPool == nil {
-		slog.Warn("task:sitemap_generate: no database, skipping")
+		slog.Warn("task:sitemap:generate: no database, skipping")
 		return nil
 	}
 
@@ -1612,13 +1612,13 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:sitemap_generate: invalid payload", "error", err)
+		slog.Error("task:sitemap:generate: invalid payload", "error", err)
 		return err
 	}
 
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
-		return fmt.Errorf("task:sitemap_generate: %w", err)
+		return fmt.Errorf("task:sitemap:generate: %w", err)
 	}
 
 	// Generate sitemap XML from published content.
@@ -1629,7 +1629,7 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 		 LIMIT 10000`,
 		tenantID)
 	if err != nil {
-		slog.Error("task:sitemap_generate: failed to list content", "error", err)
+		slog.Error("task:sitemap:generate: failed to list content", "error", err)
 		return err
 	}
 	defer rows.Close()
@@ -1663,11 +1663,11 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := os.WriteFile("sitemap.xml", []byte(sitemap.String()), 0o600); err != nil {
-		slog.Error("task:sitemap_generate: failed to write file", "error", err)
+		slog.Error("task:sitemap:generate: failed to write file", "error", err)
 		return err
 	}
 
-	slog.Info("task:sitemap_generate: sitemap written", "url_count", urlCount)
+	slog.Info("task:sitemap:generate: sitemap written", "url_count", urlCount)
 
 	return nil
 }
@@ -1757,10 +1757,10 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 
 // HandleDataExport generates a GDPR data export archive for a user.
 func HandleDataExport(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:data_export", "payload", t.Payload())
+	slog.Info("task:data:export_user_data", "payload", t.Payload())
 
 	if gdprProcessor == nil {
-		slog.Warn("task:data_export: no GDPR processor registered, skipping")
+		slog.Warn("task:data:export_user_data: no GDPR processor registered, skipping")
 		return nil
 	}
 
@@ -1771,13 +1771,13 @@ func HandleDataExport(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:data_export: invalid payload", "error", err)
+		slog.Error("task:data:export_user_data: invalid payload", "error", err)
 		return err
 	}
 
 	var requestID pgtype.UUID
 	if err := requestID.Scan(payload.RequestID); err != nil {
-		slog.Error("task:data_export: invalid request_id", "error", err)
+		slog.Error("task:data:export_user_data: invalid request_id", "error", err)
 		return err
 	}
 
@@ -1786,10 +1786,10 @@ func HandleDataExport(ctx context.Context, t *asynq.Task) error {
 
 // HandleAccountDeletionCleanup performs the final cleanup after an account deletion request.
 func HandleAccountDeletionCleanup(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:account_deletion_cleanup", "payload", t.Payload())
+	slog.Info("task:account:deletion_cleanup", "payload", t.Payload())
 
 	if gdprProcessor == nil {
-		slog.Warn("task:account_deletion_cleanup: no GDPR processor registered, skipping")
+		slog.Warn("task:account:deletion_cleanup: no GDPR processor registered, skipping")
 		return nil
 	}
 
@@ -1800,13 +1800,13 @@ func HandleAccountDeletionCleanup(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:account_deletion_cleanup: invalid payload", "error", err)
+		slog.Error("task:account:deletion_cleanup: invalid payload", "error", err)
 		return err
 	}
 
 	var requestID pgtype.UUID
 	if err := requestID.Scan(payload.RequestID); err != nil {
-		slog.Error("task:account_deletion_cleanup: invalid request_id", "error", err)
+		slog.Error("task:account:deletion_cleanup: invalid request_id", "error", err)
 		return err
 	}
 
@@ -1815,11 +1815,11 @@ func HandleAccountDeletionCleanup(ctx context.Context, t *asynq.Task) error {
 
 // HandleAdEventIngest ingests an ad impression or click event for analytics.
 func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:ad_event_ingest", "payload", t.Payload())
+	slog.Info("task:ad:ingest_event_batch", "payload", t.Payload())
 
 	queries, err := requireDB()
 	if err != nil {
-		slog.Warn("task:ad_event_ingest: no database, skipping", "error", err)
+		slog.Warn("task:ad:ingest_event_batch: no database, skipping", "error", err)
 		return nil
 	}
 
@@ -1831,23 +1831,23 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:ad_event_ingest: invalid payload", "error", err)
+		slog.Error("task:ad:ingest_event_batch: invalid payload", "error", err)
 		return err
 	}
 
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
-		return fmt.Errorf("task:ad_event_ingest: %w", err)
+		return fmt.Errorf("task:ad:ingest_event_batch: %w", err)
 	}
 
 	campaignID, err := scanUUID(payload.CampaignID)
 	if err != nil {
-		return fmt.Errorf("task:ad_event_ingest: %w", err)
+		return fmt.Errorf("task:ad:ingest_event_batch: %w", err)
 	}
 
 	userID, err := scanUUID(payload.UserID)
 	if err != nil {
-		return fmt.Errorf("task:ad_event_ingest: %w", err)
+		return fmt.Errorf("task:ad:ingest_event_batch: %w", err)
 	}
 
 	if _, err := queries.InsertAdEvent(ctx, gen.InsertAdEventParams{
@@ -1856,12 +1856,12 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 		UserID:     userID,
 		EventType:  payload.EventType,
 	}); err != nil {
-		slog.Error("task:ad_event_ingest: failed to insert event",
+		slog.Error("task:ad:ingest_event_batch: failed to insert event",
 			"campaign_id", payload.CampaignID, "error", err)
 		return err
 	}
 
-	slog.Info("task:ad_event_ingest: event recorded",
+	slog.Info("task:ad:ingest_event_batch: event recorded",
 		"campaign_id", payload.CampaignID,
 		"event_type", payload.EventType)
 
@@ -2184,10 +2184,10 @@ func HandleLearningIssueCertificate(ctx context.Context, t *asynq.Task) error {
 
 // HandleDBManualVacuum runs a manual VACUUM on high-churn database tables.
 func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:db_manual_vacuum", "payload", t.Payload())
+	slog.Info("task:db:manual_vacuum", "payload", t.Payload())
 
 	if dbPool == nil {
-		slog.Warn("task:db_manual_vacuum: no database, skipping")
+		slog.Warn("task:db:manual_vacuum: no database, skipping")
 		return nil
 	}
 
@@ -2197,7 +2197,7 @@ func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:db_manual_vacuum: invalid payload", "error", err)
+		slog.Error("task:db:manual_vacuum: invalid payload", "error", err)
 		return err
 	}
 
@@ -2208,28 +2208,28 @@ func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
 
 	if payload.TableName != "" {
 		if !isValidTableName(payload.TableName) {
-			return fmt.Errorf("task:db_manual_vacuum: invalid table name %q", payload.TableName)
+			return fmt.Errorf("task:db:manual_vacuum: invalid table name %q", payload.TableName)
 		}
 
 		vacuumSQL += " " + payload.TableName
 	}
 
 	if _, err := dbPool.Writer.Exec(ctx, vacuumSQL); err != nil {
-		slog.Error("task:db_manual_vacuum: vacuum failed", "error", err)
+		slog.Error("task:db:manual_vacuum: vacuum failed", "error", err)
 		return err
 	}
 
-	slog.Info("task:db_manual_vacuum: vacuum complete", "sql", vacuumSQL)
+	slog.Info("task:db:manual_vacuum: vacuum complete", "sql", vacuumSQL)
 
 	return nil
 }
 
 // HandleNewsletterDigest compiles and sends a weekly newsletter digest.
 func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:newsletter_digest", "payload", t.Payload())
+	slog.Info("task:newsletter:digest", "payload", t.Payload())
 
 	if dbPool == nil {
-		slog.Warn("task:newsletter_digest: no database, skipping")
+		slog.Warn("task:newsletter:digest: no database, skipping")
 		return nil
 	}
 
@@ -2238,13 +2238,13 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:newsletter_digest: invalid payload", "error", err)
+		slog.Error("task:newsletter:digest: invalid payload", "error", err)
 		return err
 	}
 
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
-		return fmt.Errorf("task:newsletter_digest: %w", err)
+		return fmt.Errorf("task:newsletter:digest: %w", err)
 	}
 
 	// Fetch recent published content for the digest.
@@ -2255,7 +2255,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		 LIMIT 10`,
 		tenantID)
 	if err != nil {
-		slog.Error("task:newsletter_digest: failed to list content", "error", err)
+		slog.Error("task:newsletter:digest: failed to list content", "error", err)
 		return err
 	}
 	defer rows.Close()
@@ -2273,7 +2273,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		itemCount++
 	}
 
-	slog.Info("task:newsletter_digest: digest prepared",
+	slog.Info("task:newsletter:digest: digest prepared",
 		"tenant_id", payload.TenantID,
 		"item_count", itemCount)
 
@@ -2448,10 +2448,10 @@ func RegisterPushDelivery(d interface {
 
 // HandleScheduledPublishSweep sweeps for content past its scheduled publish time and publishes it.
 func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
-	slog.Info("task:scheduled_publish_sweep: starting sweep")
+	slog.Info("task:content:publish_sweep: starting sweep")
 
 	if dbPool == nil {
-		slog.Warn("task:scheduled_publish_sweep: no database, skipping")
+		slog.Warn("task:content:publish_sweep: no database, skipping")
 		return nil
 	}
 
@@ -2466,7 +2466,7 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 		LIMIT 100
 	`)
 	if err != nil {
-		slog.Error("task:scheduled_publish_sweep: query failed", "error", err)
+		slog.Error("task:content:publish_sweep: query failed", "error", err)
 		return err
 	}
 	defer rows.Close()
@@ -2481,7 +2481,7 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 	for rows.Next() {
 		var pc pendingContent
 		if err := rows.Scan(&pc.id, &pc.tenantID); err != nil {
-			slog.Error("task:scheduled_publish_sweep: scan error", "error", err)
+			slog.Error("task:content:publish_sweep: scan error", "error", err)
 			continue
 		}
 
@@ -2493,7 +2493,7 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 	}
 
 	if len(pending) == 0 {
-		slog.Info("task:scheduled_publish_sweep: no content ready to publish")
+		slog.Info("task:content:publish_sweep: no content ready to publish")
 		return nil
 	}
 
@@ -2510,18 +2510,18 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 			  AND status = 'draft'
 		`, pc.id, pc.tenantID)
 		if err != nil {
-			slog.Error("task:scheduled_publish_sweep: failed to publish",
+			slog.Error("task:content:publish_sweep: failed to publish",
 				"content_id", pc.id.String(), "error", err)
 			continue
 		}
 
 		published++
 
-		slog.Info("task:scheduled_publish_sweep: content published",
+		slog.Info("task:content:publish_sweep: content published",
 			"content_id", pc.id.String())
 	}
 
-	slog.Info("task:scheduled_publish_sweep: sweep complete",
+	slog.Info("task:content:publish_sweep: sweep complete",
 		"published", published, "total", len(pending))
 
 	return nil
@@ -2532,10 +2532,10 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 //
 // HandleVelocityScoreRecalc recalculates velocity scores for spam detection.
 func HandleVelocityScoreRecalc(ctx context.Context, _ *asynq.Task) error {
-	slog.Info("task:velocity_score_recalc: starting recalculation")
+	slog.Info("task:maintenance:recalc_velocity_scores: starting recalculation")
 
 	if dbPool == nil {
-		slog.Warn("task:velocity_score_recalc: no database, skipping")
+		slog.Warn("task:maintenance:recalc_velocity_scores: no database, skipping")
 		return nil
 	}
 
@@ -2551,7 +2551,7 @@ func HandleVelocityScoreRecalc(ctx context.Context, _ *asynq.Task) error {
 		ON CONFLICT (content_id) DO NOTHING
 	`)
 	if err != nil {
-		slog.Error("task:velocity_score_recalc: failed to ensure engagement rows", "error", err)
+		slog.Error("task:maintenance:recalc_velocity_scores: failed to ensure engagement rows", "error", err)
 		return err
 	}
 
@@ -2578,12 +2578,12 @@ func HandleVelocityScoreRecalc(ctx context.Context, _ *asynq.Task) error {
 		  AND c.created_at >= now() - INTERVAL '30 days'
 	`)
 	if err != nil {
-		slog.Error("task:velocity_score_recalc: recalculation failed", "error", err)
+		slog.Error("task:maintenance:recalc_velocity_scores: recalculation failed", "error", err)
 		return err
 	}
 
 	rowsAffected := result.RowsAffected()
-	slog.Info("task:velocity_score_recalc: complete", "updated", rowsAffected)
+	slog.Info("task:maintenance:recalc_velocity_scores: complete", "updated", rowsAffected)
 
 	return nil
 }
