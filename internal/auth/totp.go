@@ -26,8 +26,8 @@ import (
 	"github.com/pquerna/otp/totp"
 )
 
-// TOTPIssuer is the issuer label shown in authenticator apps.
-const TOTPIssuer = "JapaConnect"
+// defaultTOTPIssuer is the fallback issuer label shown in authenticator apps.
+const defaultTOTPIssuer = "App"
 
 // TOTPStore defines the database operations required for TOTP lifecycle.
 type TOTPStore interface {
@@ -47,13 +47,17 @@ type TOTPRecord struct {
 // Returns the raw secret (for QR code generation) and an otpauth:// URL
 // that authenticator apps can scan. The secret is NOT stored — call
 // EnableTOTP after the user verifies a code.
-func GenerateTOTPSecret(userID, email string) (secret, qrCodeURL string, err error) {
+func GenerateTOTPSecret(userID, email, issuer string) (secret, qrCodeURL string, err error) {
 	if userID == "" || email == "" {
 		return "", "", errors.New("user ID and email are required")
 	}
 
+	if issuer == "" {
+		issuer = defaultTOTPIssuer
+	}
+
 	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      TOTPIssuer,
+		Issuer:      issuer,
 		AccountName: email,
 	})
 	if err != nil {

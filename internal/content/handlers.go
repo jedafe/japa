@@ -22,6 +22,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -46,13 +48,19 @@ type TaskEnqueueClient interface {
 
 // Handlers holds dependencies for content HTTP handlers.
 type Handlers struct {
-	Service     *Service
-	AsynqClient TaskEnqueueClient
+	Service      *Service
+	AsynqClient  TaskEnqueueClient
+	SpamPipeline *spam.SpamPipeline
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// SetSpamPipeline injects the spam detection pipeline for content safety checks.
+func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) {
+	h.SpamPipeline = p
 }
 
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
@@ -96,7 +104,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case strings.Contains(err.Error(), "duplicate"):
+	case errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
@@ -267,6 +275,29 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Spam pipeline check — multi-layer content safety (BE-034).
+	if h.SpamPipeline != nil {
+		clientIP := r.Header.Get("X-Forwarded-For")
+		if clientIP == "" {
+			clientIP = r.RemoteAddr
+		}
+		spamResult, err := h.SpamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
+			Content:    input.Body,
+			UserID:     user.UserID,
+			IP:         clientIP,
+			UserType:   "existing",
+			EntityType: "post",
+		})
+		if err != nil {
+			slog.Warn("spam check failed", "error", err)
+		} else if spamResult.Blocked {
+			writeError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
+			return
+		} else if spamResult.Flagged {
+			createInput.Status = StatusPending // hold for moderation review
+		}
+	}
+
 	content, err := h.Service.CreateContent(r.Context(), tenantID, createInput)
 	if err != nil {
 		handleServiceError(w, err)
@@ -412,10 +443,8 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Compute content hash for duplicate detection (Rule 12).
-	if input.Body != "" {
-		hash := ComputeContentHash(input.Body)
-		updateInput.ContentHash = &hash
-	}
+	hash := ComputeContentHash(input.Body)
+	updateInput.ContentHash = &hash
 
 	if input.GeoSpaceID != nil && *input.GeoSpaceID != "" {
 		if err := updateInput.GeoSpaceID.Scan(*input.GeoSpaceID); err != nil {
@@ -475,6 +504,12 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 
 // PublishContent handles POST /api/v1/content/{id}/publish.
 func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	_ = user // used for RBAC audit trail
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -497,6 +532,12 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 
 // ArchiveContent handles POST /api/v1/content/{id}/archive.
 func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	_ = user // used for RBAC audit trail
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -1019,6 +1060,12 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 
 // RemoveContentTag handles DELETE /api/v1/content/{id}/tags/{tagId}.
 func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	_ = user // used for RBAC audit trail
+
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")

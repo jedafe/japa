@@ -457,7 +457,10 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 		Days   int    `json:"days"` // 0 = permanent
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	ctx := r.Context()
 	_, err := h.DB.Writer.Exec(ctx,
 		`INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, expires_at, created_at)
@@ -517,7 +520,10 @@ func (h *Handlers) WarnUser(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Reason string `json:"reason"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	_, err := h.DB.Writer.Exec(r.Context(),
 		`INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, created_at)
 		 VALUES ($1, (SELECT tenant_id FROM users WHERE id=$1), 'warning', $2, now())`,
@@ -572,7 +578,10 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Status string `json:"status"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	_, err := h.DB.Writer.Exec(r.Context(),
 		`UPDATE users SET status = $2, updated_at = now() WHERE id = $1`, userID, input.Status)
 	if err != nil {
@@ -588,7 +597,10 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		GroupID string `json:"group_id"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	_, err := h.DB.Writer.Exec(r.Context(),
 		`INSERT INTO user_group_memberships (user_id, group_id) VALUES ($1, $2)
 		 ON CONFLICT (user_id, group_id) DO NOTHING`, userID, input.GroupID)
@@ -673,7 +685,10 @@ func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Status string `json:"status"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	_, err := h.DB.Writer.Exec(r.Context(),
 		`UPDATE moderation_appeals SET status = $2, updated_at = now() WHERE id = $1`, id, input.Status)
 	if err != nil {
@@ -691,7 +706,10 @@ func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) 
 	var input struct {
 		AssigneeID string `json:"assignee_id"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	_, err := h.DB.Writer.Exec(r.Context(),
 		`UPDATE content_reports SET assigned_to = $2, status = 'in_review', updated_at = now() WHERE id = $1`, id, input.AssigneeID)
 	if err != nil {

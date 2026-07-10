@@ -101,21 +101,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	geoipUpdater := geoip.NewUpdater(cfg.MaxmindLicenseKey, cfg.GeoIPDBPath, geoipReader)
 	worker.RegisterGeoIPUpdater(geoipUpdater)
 
-	// CORS middleware — read allowed origins from system_settings at startup.
-	// Origins are comma-separated under 'security.cors.allowed_origins'.
-	var corsOrigins []string
-	var corsStr string
-	if err := database.Reader.QueryRow(context.Background(),
-		`SELECT COALESCE(value, '') FROM system_settings WHERE key = 'security.cors.allowed_origins' LIMIT 1`).Scan(&corsStr); err == nil && corsStr != "" {
-		corsOrigins = strings.Split(corsStr, ",")
-		for i := range corsOrigins {
-			corsOrigins[i] = strings.TrimSpace(corsOrigins[i])
-		}
-		slog.Info("CORS: allowed origins loaded from system_settings", "count", len(corsOrigins))
-	}
-	if len(corsOrigins) > 0 {
-		r.Use(mw.CORS(corsOrigins))
-	}
+	// Register site name for worker handlers (RSS feeds, LLMS.txt, emails).
+	worker.RegisterSiteName(cfg.SiteName)
 
 	// IP block middleware — reject blocked IPs before they reach any handler.
 	// Runs after RealIP (so the resolved IP is available) but before all
@@ -152,7 +139,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// age, content length). Used by content creation and DM handlers.
 	spamStore := spam.NewStore(database)
 	spamPipeline := spam.NewPipeline(spamStore, vkClient, database)
-	_ = spamPipeline // passed to handlers that need content safety checks
 
 	// Auth handlers and DB store
 	authStore := auth.NewDBStore(database)
@@ -217,12 +203,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// RBAC admin management handlers.
 	rbacHandlers := rbac.NewHandlers(rbacStore, rbacResolver)
 
-	// Bootstrap permission keys and the super_admin role at startup. All
-	// operations are idempotent; failures are logged but never crash the
-	// server so a temporarily unhealthy database does not prevent boot.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	bootstrapPermissions(ctx, database, rbacStore)
+	// Permission bootstrap is now handled by migration 000099_seed_data.sql.
+	// The runtime bootstrap path was removed per AUDIT-BE-039 to avoid
+	// maintaining two independent permission seeds.
 
 	// Custom field and form subsystem (Section 06).
 	cfService := customfields.NewService(database)
@@ -258,6 +241,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Content HTTP handlers (Service created earlier, above spaceService).
 	contentHandlers := content.NewHandlers(contentService)
+	contentHandlers.SetSpamPipeline(spamPipeline)
 
 	// Renderer subsystem (Section 15 — Block Editor SSR).
 	rendererInstance := renderer.New("scripts/tiptap-ssr.ts", vkClient)
@@ -287,6 +271,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Comments subsystem (Section 49 — Unified Comments).
 	commentsService := comments.NewService(database)
 	commentsHandlers := comments.NewHandlers(commentsService)
+	commentsHandlers.SetSpamPipeline(spamPipeline)
 
 	// Interactions subsystem (Sections 41, 52 — Blocks & Mutes).
 	interactionsService := interactions.NewService(database)
@@ -308,15 +293,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	notificationService.SetAsynqClient(asynqClient)
 	authHandlers.AsynqClient = asynqClient
 	contentHandlers.AsynqClient = asynqClient
-	// Wire link preview blacklist from system_settings (AUDIT-BE-010).
+	// Wire password policy from system_settings (BE-054).
+	if defaultTenantPW, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && defaultTenantPW != nil {
+		authHandlers.Policy = auth.PasswordPolicyFromSettings(context.Background(), settingsService, defaultTenantPW.ID)
+	}
+	// Wire link preview blacklist from system_settings (AUDIT-BE-010, BE-037).
 	// The blacklist is comma-separated domains stored under 'content.link_preview.blacklist'.
-	if blacklistStr, err := settingsService.GetSetting(context.Background(), pgtype.UUID{}, "content.link_preview.blacklist"); err == nil && blacklistStr != "" {
-		blacklist := strings.Split(blacklistStr, ",")
-		for i := range blacklist {
-			blacklist[i] = strings.TrimSpace(blacklist[i])
+	// Resolve the default tenant ID for settings lookup.
+	if defaultTenant, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && defaultTenant != nil {
+		if blacklistStr, err := settingsService.GetSetting(context.Background(), defaultTenant.ID, "content.link_preview.blacklist"); err == nil && blacklistStr != "" {
+			blacklist := strings.Split(blacklistStr, ",")
+			for i := range blacklist {
+				blacklist[i] = strings.TrimSpace(blacklist[i])
+			}
+			linkPreviewFetcher.SetBlacklist(blacklist)
+			slog.Info("link preview: blacklist loaded from system_settings", "count", len(blacklist))
 		}
-		linkPreviewFetcher.SetBlacklist(blacklist)
-		slog.Info("link preview: blacklist loaded from system_settings", "count", len(blacklist))
+	} else {
+		slog.Warn("link preview: could not resolve default tenant for blacklist", "error", err)
 	}
 
 	// Feed System subsystem (Section 32 — Activity Feed / Timeline).
@@ -334,7 +328,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Blog Extension subsystem (Section 24 — Blog Extension).
 	blogService := blog.NewService(database)
-	blogHandlers := blog.NewHandlers(blogService, contentService, cfg.SiteURL)
+	blogHandlers := blog.NewHandlers(blogService, contentService, cfg.SiteURL, cfg.SiteName)
 
 	// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
 	reviewService := reviews.NewService(database)
@@ -383,7 +377,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	i18nHandlers := i18n.NewHandlers(i18nService)
 
 	// GDPR / NDPR Compliance subsystem (Section 19).
-	gdprService := gdpr.NewServiceWithEnqueuer(database, taskEnqueuer)
+	gdprService := gdpr.NewServiceWithEnqueuer(database, taskEnqueuer, cfg.SiteName)
 	gdprService.SetHonchoEraser(honcho.NewClient(cfg.HonchoURL))
 	gdprHandlers := gdpr.NewHandlers(gdprService)
 
@@ -408,7 +402,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Webhook Delivery subsystem — registers the processor so the Asynq
 	// webhook_delivery handler can fetch, sign, and deliver outgoing webhooks.
-	webhookService := webhooks.NewService(database)
+	webhookService := webhooks.NewService(database, cfg.SiteName)
 	webhookService.SetSettings(settingsService)
 	webhookHandlers := webhooks.NewHandlers(webhookService)
 	webhookAdapter := webhooks.NewWorkerAdapter(webhookService)
@@ -420,7 +414,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Documentation System subsystem (Section 44).
 	docsService := docs.NewService(database)
-	docsHandlers := docs.NewHandlers(docsService, cfg.SiteURL)
+	docsHandlers := docs.NewHandlers(docsService, cfg.SiteURL, cfg.SiteName)
 
 	// Admin Settings subsystem.
 	adminHandlers := admin.NewHandlers(database)
@@ -499,6 +493,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	impersonationHandlers := impersonation.NewHandlers(impersonationService)
 
 	// Public API & Developer Portal subsystem (Section 47).
+	publicapi.SetSiteURL(cfg.SiteURL)
 	publicAPIStore := publicapi.NewStore(database.Writer)
 	publicAPIService := publicapi.NewService(publicAPIStore)
 	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
@@ -533,7 +528,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// SEO & Performance subsystem (Section 26).
 	seoQueries := gen.New(database.Writer)
 	sitemapHandler := seo.NewSitemapHandler(seoQueries, database.Reader)
-	ogImageHandler := seo.NewOGImageHandler(database.Reader)
+	ogImageHandler := seo.NewOGImageHandler(database.Reader, cfg.SiteName)
 
 	// Config handlers for public settings endpoint.
 	configHandlers := config.NewHandlers(settingsService)
@@ -541,6 +536,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Control panel handlers (super-admin).
 	controlService := control.NewService(database)
 	controlHandlers := control.NewHandlers(controlService, database, featureChecker, spamStore, publicAPIHandlers)
+	// Wire Asynq inspector for queue monitoring (BE-040).
+	workerCfg := worker.DefaultConfig()
+	inspector := asynq.NewInspector(asynq.RedisClientOpt{
+		Addr:     workerCfg.RedisAddr,
+		Password: workerCfg.RedisPassword,
+		DB:       workerCfg.RedisDB,
+	})
+	controlHandlers.SetInspector(inspector)
 
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
@@ -560,15 +563,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/sitemap-users.xml", sitemapHandler.ServeUsersSitemap)
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
 		// Universal RSS feeds (public — no auth required, tenant-scoped)
-		r.Get("/feed.xml", rsspkg.HandleFeed(gen.New(database.Reader), "all"))
-		r.Get("/spaces/{slug}/feed.xml", rsspkg.HandleSpaceFeed(gen.New(database.Reader)))
-		r.Get("/tags/{slug}/feed.xml", rsspkg.HandleTagFeed(gen.New(database.Reader)))
-		r.Get("/users/{username}/feed.xml", rsspkg.HandleUserFeed(gen.New(database.Reader)))
+		r.Get("/feed.xml", rsspkg.HandleFeed(gen.New(database.Reader), "all", cfg.SiteURL, cfg.SiteName))
+		r.Get("/spaces/{slug}/feed.xml", rsspkg.HandleSpaceFeed(gen.New(database.Reader), cfg.SiteURL, cfg.SiteName))
+		r.Get("/tags/{slug}/feed.xml", rsspkg.HandleTagFeed(gen.New(database.Reader), cfg.SiteURL, cfg.SiteName))
+		r.Get("/users/{username}/feed.xml", rsspkg.HandleUserFeed(gen.New(database.Reader), cfg.SiteURL, cfg.SiteName))
 
 		// Public settings endpoint (no auth required, tenant-scoped)
 		r.Get("/site/settings/public", configHandlers.GetPublicSettings)
 
-		// API Playground & OpenAPI Spec (Section 44 — docs.japaconnect.com)
+		// API Playground & OpenAPI Spec (Section 44 — docs subdomain)
 		r.Get("/docs/api/playground", docsHandlers.APIPlaygroundHandler)
 		// catalog: GET /docs/openapi.json (single canonical spec, §6.4 dedupe)
 		r.Get("/docs/openapi.json", docsHandlers.OpenAPIHandler)
@@ -581,6 +584,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Baseline rate limit for all API routes (ADR-022).
 			// Tighter tiers are applied to specific subgroups below.
 			r.Use(mw.RateLimit(vkClient.Redis(), "loose"))
+
+			// Ban enforcement middleware (BE-035) — checks Valkey cache then
+			// falls back to DB lookup for active bans on user_moderation_actions.
+			r.Use(mw.BanEnforcement(vkClient.Redis(), func(ctx context.Context, userID string) (bool, *time.Time) {
+				var banned bool
+				var expiresAt *time.Time
+				err := database.Reader.QueryRow(ctx,
+					`SELECT EXISTS(
+						SELECT 1 FROM user_moderation_actions
+						WHERE user_id = $1 AND action = 'ban'
+						AND (expires_at IS NULL OR expires_at > now())
+					)`, userID).Scan(&banned)
+				if err != nil || !banned {
+					return false, nil
+				}
+				_ = database.Reader.QueryRow(ctx,
+					`SELECT expires_at FROM user_moderation_actions
+					WHERE user_id = $1 AND action = 'ban'
+					AND (expires_at IS NULL OR expires_at > now())
+					ORDER BY created_at DESC LIMIT 1`, userID).Scan(&expiresAt)
+				return true, expiresAt
+			}))
 
 			// Bot detection middleware — identifies known bots from User-Agent
 			// and stores bot info in request context for downstream handlers.
@@ -1003,6 +1028,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			wsDMStore := websocket.NewDMStore(gen.New(database.Reader), gen.New(database.Writer))
 			wsDMService := websocket.NewDMService(wsDMStore, wsHub)
 			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
+			wsHandlers.SetSpamPipeline(spamPipeline)
 
 			// WebSocket + DM routes — gated by feature.dm (Section 10)
 			r.With(features.Gate(featureChecker, "feature.dm")).Group(func(r chi.Router) {
@@ -1341,12 +1367,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.refund"),
 				mw.IdempotencyMiddleware(vkClient.Redis())).
 				Post("/payments/{id}/refund", paymentHandlers.RefundPayment)
-			// Subscriptions
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage")).
+			// Subscriptions — idempotency middleware prevents duplicate subscription creation/cancellation.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage"),
+				mw.IdempotencyMiddleware(vkClient.Redis())).
 				Post("/subscriptions", paymentHandlers.CreateSubscription)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/subscriptions", paymentHandlers.ListSubscriptions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/subscription", paymentHandlers.GetActiveSubscription)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/subscription/cancel", paymentHandlers.CancelMySubscription)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.IdempotencyMiddleware(vkClient.Redis())).
+				Post("/me/subscription/cancel", paymentHandlers.CancelMySubscription)
 			// Discount codes — admin-only per catalog (/admin/discount-codes).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
 				Post("/admin/discount-codes", paymentHandlers.CreateDiscountCode)
@@ -1601,7 +1629,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Developer Portal — Swagger UI (public, no auth). The spec it fetches
 			// is the canonical /docs/openapi.json (§6.4 dedupe — no second route).
-			r.Get("/developer/swagger", publicapi.HandleSwaggerUI)
+			r.Get("/developer/swagger", publicapi.HandleSwaggerUI(cfg.SiteName))
 
 			// Developer Portal — API Key management (Section 47)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
