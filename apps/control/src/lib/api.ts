@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
+import { apiFetch } from './api/client';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
 
 type FetchOptions = {
 	method?: string;
@@ -15,34 +16,23 @@ export function setToken(token: string | null) {
 }
 
 export async function api<T>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
-	const headers: Record<string, string> = {
-		'Content-Type': 'application/json'
-	};
+	const headers: Record<string, string> = {};
 	if (jwtToken) {
 		headers['Authorization'] = `Bearer ${jwtToken}`;
 	}
 
-	try {
-		const res = await fetch(`${API_BASE}${path}`, {
-			method: opts.method ?? 'GET',
-			headers,
-			body: opts.body ? JSON.stringify(opts.body) : undefined,
-			signal: opts.signal
-		});
+	const result = await apiFetch<T>(path, {
+		method: opts.method ?? 'GET',
+		headers,
+		body: opts.body ? JSON.stringify(opts.body) : undefined,
+		signal: opts.signal,
+	});
 
-		if (!res.ok) {
-			const text = await res.text().catch(() => '');
-			return { ok: false, error: `API ${res.status}: ${text || res.statusText}` };
-		}
-
-		const data = await res.json();
-		return { ok: true, data };
-	} catch (e) {
-		return { ok: false, error: e instanceof Error ? e.message : 'Network error' };
+	if (result.error) {
+		return { ok: false, error: result.error.message };
 	}
+	return { ok: true, data: result.data as T };
 }
-
-// ── Queue Monitoring Types ──
 
 export interface QueueInfo {
 	name: string;
@@ -60,8 +50,6 @@ export interface QueueStats {
 	total_completed_24h: number;
 	total_failed_24h: number;
 }
-
-// ── Database Health Types ──
 
 export interface SlowQuery {
 	query: string;

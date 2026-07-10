@@ -11,6 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addParentSpace = `-- name: AddParentSpace :exec
+
+INSERT INTO space_parent_spaces (space_id, parent_space_id)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type AddParentSpaceParams struct {
+	SpaceID       pgtype.UUID `json:"space_id"`
+	ParentSpaceID pgtype.UUID `json:"parent_space_id"`
+}
+
+// =====================
+// Space Parent Spaces (Many-to-Many Hierarchy)
+// =====================
+func (q *Queries) AddParentSpace(ctx context.Context, arg AddParentSpaceParams) error {
+	_, err := q.db.Exec(ctx, addParentSpace, arg.SpaceID, arg.ParentSpaceID)
+	return err
+}
+
 const addSpaceMember = `-- name: AddSpaceMember :exec
 INSERT INTO space_members (space_id, user_id, tenant_id, role)
 VALUES ($1, $2, $3, 'member')
@@ -94,6 +114,24 @@ type CountSpaceMembersParams struct {
 
 func (q *Queries) CountSpaceMembers(ctx context.Context, arg CountSpaceMembersParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countSpaceMembers, arg.SpaceID, arg.TenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countSpacePublishedContent = `-- name: CountSpacePublishedContent :one
+SELECT COUNT(*) AS count
+FROM contents
+WHERE space_id = $1 AND tenant_id = $2 AND status = 'published'
+`
+
+type CountSpacePublishedContentParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) CountSpacePublishedContent(ctx context.Context, arg CountSpacePublishedContentParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSpacePublishedContent, arg.SpaceID, arg.TenantID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -254,6 +292,21 @@ func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams
 	return i, err
 }
 
+const decrementSpaceFollowerCount = `-- name: DecrementSpaceFollowerCount :exec
+UPDATE spaces SET follower_count = follower_count - 1
+WHERE id = $1 AND tenant_id = $2 AND follower_count > 0
+`
+
+type DecrementSpaceFollowerCountParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DecrementSpaceFollowerCount(ctx context.Context, arg DecrementSpaceFollowerCountParams) error {
+	_, err := q.db.Exec(ctx, decrementSpaceFollowerCount, arg.ID, arg.TenantID)
+	return err
+}
+
 const deleteSpace = `-- name: DeleteSpace :exec
 DELETE FROM spaces
 WHERE id = $1 AND tenant_id = $2
@@ -297,6 +350,128 @@ type DeleteSpaceTypeParams struct {
 func (q *Queries) DeleteSpaceType(ctx context.Context, arg DeleteSpaceTypeParams) error {
 	_, err := q.db.Exec(ctx, deleteSpaceType, arg.ID, arg.TenantID)
 	return err
+}
+
+const getChildSpacesByParentID = `-- name: GetChildSpacesByParentID :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE sps.parent_space_id = $1 AND s.tenant_id = $2
+ORDER BY s.name
+`
+
+type GetChildSpacesByParentIDParams struct {
+	ParentSpaceID pgtype.UUID `json:"parent_space_id"`
+	TenantID      pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetChildSpacesByParentID(ctx context.Context, arg GetChildSpacesByParentIDParams) ([]Space, error) {
+	rows, err := q.db.Query(ctx, getChildSpacesByParentID, arg.ParentSpaceID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Space
+	for rows.Next() {
+		var i Space
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getParentSpacesBySpaceID = `-- name: GetParentSpacesBySpaceID :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
+WHERE sps.space_id = $1 AND s.tenant_id = $2
+ORDER BY s.name
+`
+
+type GetParentSpacesBySpaceIDParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetParentSpacesBySpaceID(ctx context.Context, arg GetParentSpacesBySpaceIDParams) ([]Space, error) {
+	rows, err := q.db.Query(ctx, getParentSpacesBySpaceID, arg.SpaceID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Space
+	for rows.Next() {
+		var i Space
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getPermissionPresetByName = `-- name: GetPermissionPresetByName :one
@@ -520,6 +695,25 @@ func (q *Queries) IncrementSpaceCount(ctx context.Context, arg IncrementSpaceCou
 	return err
 }
 
+const incrementSpaceFollowerCount = `-- name: IncrementSpaceFollowerCount :exec
+
+UPDATE spaces SET follower_count = follower_count + 1
+WHERE id = $1 AND tenant_id = $2
+`
+
+type IncrementSpaceFollowerCountParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================
+// Space Follower Count
+// =====================
+func (q *Queries) IncrementSpaceFollowerCount(ctx context.Context, arg IncrementSpaceFollowerCountParams) error {
+	_, err := q.db.Exec(ctx, incrementSpaceFollowerCount, arg.ID, arg.TenantID)
+	return err
+}
+
 const listChildSpaces = `-- name: ListChildSpaces :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
@@ -677,6 +871,124 @@ func (q *Queries) ListPermissionPresetsByTenant(ctx context.Context, tenantID pg
 			&i.IsSystem,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaceJoinRequests = `-- name: ListSpaceJoinRequests :many
+
+
+SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status
+FROM space_members sm
+JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+WHERE sm.space_id = $1 AND sm.tenant_id = $2 AND sm.status = 'pending'
+ORDER BY sm.joined_at ASC
+`
+
+type ListSpaceJoinRequestsParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type ListSpaceJoinRequestsRow struct {
+	UserID      pgtype.UUID        `json:"user_id"`
+	Username    string             `json:"username"`
+	DisplayName *string            `json:"display_name"`
+	AvatarUrl   *string            `json:"avatar_url"`
+	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
+	Status      string             `json:"status"`
+}
+
+// =====================
+// Space Admin Queries (handlers)
+// =====================
+// =====================
+// Space Join Requests
+// =====================
+func (q *Queries) ListSpaceJoinRequests(ctx context.Context, arg ListSpaceJoinRequestsParams) ([]ListSpaceJoinRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceJoinRequests, arg.SpaceID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceJoinRequestsRow
+	for rows.Next() {
+		var i ListSpaceJoinRequestsRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
+			&i.JoinedAt,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaceMembersWithProfile = `-- name: ListSpaceMembersWithProfile :many
+
+SELECT sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at
+FROM space_members sm
+JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+WHERE sm.space_id = $1 AND sm.tenant_id = $2
+ORDER BY sm.joined_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListSpaceMembersWithProfileParams struct {
+	SpaceID    pgtype.UUID `json:"space_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListSpaceMembersWithProfileRow struct {
+	UserID      pgtype.UUID        `json:"user_id"`
+	Username    string             `json:"username"`
+	DisplayName *string            `json:"display_name"`
+	AvatarUrl   *string            `json:"avatar_url"`
+	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
+}
+
+// =====================
+// Space Members (with profile data)
+// =====================
+func (q *Queries) ListSpaceMembersWithProfile(ctx context.Context, arg ListSpaceMembersWithProfileParams) ([]ListSpaceMembersWithProfileRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceMembersWithProfile,
+		arg.SpaceID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceMembersWithProfileRow
+	for rows.Next() {
+		var i ListSpaceMembersWithProfileRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
+			&i.JoinedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1186,6 +1498,21 @@ func (q *Queries) ListStatesByCountryGeoCode(ctx context.Context, arg ListStates
 	return items, nil
 }
 
+const removeParentSpace = `-- name: RemoveParentSpace :exec
+DELETE FROM space_parent_spaces
+WHERE space_id = $1 AND parent_space_id = $2
+`
+
+type RemoveParentSpaceParams struct {
+	SpaceID       pgtype.UUID `json:"space_id"`
+	ParentSpaceID pgtype.UUID `json:"parent_space_id"`
+}
+
+func (q *Queries) RemoveParentSpace(ctx context.Context, arg RemoveParentSpaceParams) error {
+	_, err := q.db.Exec(ctx, removeParentSpace, arg.SpaceID, arg.ParentSpaceID)
+	return err
+}
+
 const removeSpaceMember = `-- name: RemoveSpaceMember :exec
 DELETE FROM space_members
 WHERE space_id = $1 AND user_id = $2 AND tenant_id = $3
@@ -1215,6 +1542,61 @@ type RemoveSpaceModeratorParams struct {
 func (q *Queries) RemoveSpaceModerator(ctx context.Context, arg RemoveSpaceModeratorParams) error {
 	_, err := q.db.Exec(ctx, removeSpaceModerator, arg.SpaceID, arg.UserID)
 	return err
+}
+
+const suggestParentSpaces = `-- name: SuggestParentSpaces :many
+SELECT s.id, s.name, s.slug FROM spaces s
+WHERE s.tenant_id = $1 AND s.status = 'active'
+  AND s.space_type_id IN (SELECT id FROM space_types WHERE slug = 'category')
+ORDER BY s.name LIMIT 20
+`
+
+type SuggestParentSpacesRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+	Slug string      `json:"slug"`
+}
+
+func (q *Queries) SuggestParentSpaces(ctx context.Context, tenantID pgtype.UUID) ([]SuggestParentSpacesRow, error) {
+	rows, err := q.db.Query(ctx, suggestParentSpaces, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SuggestParentSpacesRow
+	for rows.Next() {
+		var i SuggestParentSpacesRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const sumSpaceContentViews = `-- name: SumSpaceContentViews :one
+
+SELECT COUNT(*) AS count
+FROM content_views
+WHERE space_id = $1 AND tenant_id = $2
+`
+
+type SumSpaceContentViewsParams struct {
+	SpaceID  pgtype.UUID `json:"space_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// =====================
+// Space Content Views
+// =====================
+func (q *Queries) SumSpaceContentViews(ctx context.Context, arg SumSpaceContentViewsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, sumSpaceContentViews, arg.SpaceID, arg.TenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const updatePermissionPreset = `-- name: UpdatePermissionPreset :one
@@ -1334,6 +1716,50 @@ func (q *Queries) UpdateSpace(ctx context.Context, arg UpdateSpaceParams) (Space
 	return i, err
 }
 
+const updateSpaceJoinRequest = `-- name: UpdateSpaceJoinRequest :exec
+UPDATE space_members
+SET status = $1
+WHERE space_id = $2 AND user_id = $3 AND tenant_id = $4
+`
+
+type UpdateSpaceJoinRequestParams struct {
+	Status   string      `json:"status"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateSpaceJoinRequest(ctx context.Context, arg UpdateSpaceJoinRequestParams) error {
+	_, err := q.db.Exec(ctx, updateSpaceJoinRequest,
+		arg.Status,
+		arg.SpaceID,
+		arg.UserID,
+		arg.TenantID,
+	)
+	return err
+}
+
+const updateSpacePinPosition = `-- name: UpdateSpacePinPosition :exec
+
+UPDATE space_pinned_posts
+SET position = $1
+WHERE space_id = $2 AND content_id = $3
+`
+
+type UpdateSpacePinPositionParams struct {
+	Position  int32       `json:"position"`
+	SpaceID   pgtype.UUID `json:"space_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+// =====================
+// Space Pinned Posts
+// =====================
+func (q *Queries) UpdateSpacePinPosition(ctx context.Context, arg UpdateSpacePinPositionParams) error {
+	_, err := q.db.Exec(ctx, updateSpacePinPosition, arg.Position, arg.SpaceID, arg.ContentID)
+	return err
+}
+
 const updateSpaceRule = `-- name: UpdateSpaceRule :one
 UPDATE space_rules
 SET title = $1, body = $2, position = $3
@@ -1368,6 +1794,21 @@ func (q *Queries) UpdateSpaceRule(ctx context.Context, arg UpdateSpaceRuleParams
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateSpaceStatus = `-- name: UpdateSpaceStatus :exec
+UPDATE spaces SET status = $1, updated_at = now() WHERE id = $2 AND tenant_id = $3
+`
+
+type UpdateSpaceStatusParams struct {
+	Status   string      `json:"status"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateSpaceStatus(ctx context.Context, arg UpdateSpaceStatusParams) error {
+	_, err := q.db.Exec(ctx, updateSpaceStatus, arg.Status, arg.ID, arg.TenantID)
+	return err
 }
 
 const updateSpaceType = `-- name: UpdateSpaceType :one

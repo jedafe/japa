@@ -3,7 +3,11 @@
 	import { aiApi, type HitlReview, type GenerateResult } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles } from 'lucide-svelte';
+	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles, AlertTriangle } from 'lucide-svelte';
+	import { hasPermission } from '$lib/stores/permissions';
+
+	const canGenerate = $derived(hasPermission('ai.context.generate'));
+	const canReviewHitl = $derived(hasPermission('ai.context.review'));
 
 	// ─── Generator State ──────────────────────────────────────────
 	let prompt = $state('');
@@ -14,20 +18,29 @@
 	let generateError = $state('');
 	let copied = $state(false);
 
-	const categories = [
-		{ value: 'blog_post', labelKey: 'ai.category.blog_post' },
-		{ value: 'forum_reply', labelKey: 'ai.category.forum_reply' },
-		{ value: 'social_media', labelKey: 'ai.category.social_media' },
-		{ value: 'email', labelKey: 'ai.category.email' },
-		{ value: 'summary', labelKey: 'ai.category.summary' },
-		{ value: 'translation', labelKey: 'ai.category.translation' }
-	];
+	let categories = $state<{ value: string; label: string; description: string }[]>([
+		{ value: 'blog_post', label: 'Blog Post', description: 'Generate blog post content' },
+		{ value: 'forum_reply', label: 'Forum Reply', description: 'Generate forum reply content' },
+		{ value: 'social_media', label: 'Social Media', description: 'Generate social media content' },
+		{ value: 'email', label: 'Email', description: 'Generate email content' },
+		{ value: 'summary', label: 'Summary', description: 'Generate summary content' },
+		{ value: 'translation', label: 'Translation', description: 'Generate translation content' }
+	]);
 
 	let models = $state<{ value: string; label: string }[]>([
 		{ value: '', label: 'Default' }
 	]);
 
 	onMount(async () => {
+		try {
+			const cats = await aiApi.listCategories();
+			if (Array.isArray(cats) && cats.length > 0) {
+				categories = cats;
+			}
+		} catch {
+			// Keep default categories
+		}
+
 		try {
 			const res = await aiApi.listModels();
 			if (res.ok && res.data.length > 0) {
@@ -198,11 +211,12 @@
 <p class="mb-6 text-sm" style="color: var(--color-muted)">{t('ai.description')}</p>
 
 <!-- ═══ Section A: AI Content Generator ═══ -->
-<section class="mb-8 rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-	<h2 class="mb-4 flex items-center gap-2 text-lg font-semibold">
-		<Sparkles class="h-5 w-5" style="color: var(--color-primary)" />
-		{t('ai.generator')}
-	</h2>
+{#if canGenerate}
+	<section class="mb-8 rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
+		<h2 class="mb-4 flex items-center gap-2 text-lg font-semibold">
+			<Sparkles class="h-5 w-5" style="color: var(--color-primary)" />
+			{t('ai.generator')}
+		</h2>
 
 	<div class="space-y-4">
 		<div>
@@ -227,7 +241,7 @@
 					bind:value={category}
 				>
 					{#each categories as cat}
-						<option value={cat.value}>{t(cat.labelKey)}</option>
+						<option value={cat.value}>{cat.label}</option>
 					{/each}
 				</select>
 			</div>
@@ -297,9 +311,18 @@
 		{/if}
 	</div>
 </section>
+{:else}
+	<section class="mb-8 rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
+		<div class="flex items-center gap-3 text-sm" style="color: var(--color-muted)">
+			<AlertTriangle class="h-5 w-5" />
+			You don't have permission to use AI generation.
+		</div>
+	</section>
+{/if}
 
 <!-- ═══ Section B: HITL Review Queue ═══ -->
-<section>
+{#if canReviewHitl}
+	<section>
 	<h2 class="mb-4 flex items-center gap-2 text-lg font-semibold">
 		<Eye class="h-5 w-5" style="color: var(--color-primary)" />
 		{t('ai.hitl_queue')}
@@ -401,9 +424,10 @@
 				<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => changePage(-1)}>&larr;</button>
 				<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => changePage(1)}>&rarr;</button>
 			</div>
-		</div>
-	{/if}
+	</div>
+{/if}
 </section>
+{/if}
 
 <!-- ═══ Review Modal ═══ -->
 <Modal bind:open={showReviewModal} title={t('ai.review_title')}>

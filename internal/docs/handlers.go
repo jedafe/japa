@@ -17,11 +17,12 @@ import (
 // Handlers holds dependencies for documentation HTTP handlers.
 type Handlers struct {
 	Service *Service
+	siteURL string
 }
 
 // NewHandlers creates Handlers with the given Service.
-func NewHandlers(service *Service) *Handlers {
-	return &Handlers{Service: service}
+func NewHandlers(service *Service, siteURL string) *Handlers {
+	return &Handlers{Service: service, siteURL: siteURL}
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -233,7 +234,7 @@ func (h *Handlers) OpenAPIHandler(w http.ResponseWriter, _ *http.Request) {
 	// Canonical spec lives in internal/publicapi (the more complete generator);
 	// serving it here too avoids two independently hand-maintained specs
 	// drifting apart (§6.4 dedupe).
-	spec := publicapi.GetPublicOpenAPISpec()
+	spec := publicapi.GetPublicOpenAPISpec(h.siteURL)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

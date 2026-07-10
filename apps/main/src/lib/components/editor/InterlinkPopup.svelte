@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { api } from '$lib/api';
 
 	interface Props {
 		position: { top: number; left: number };
@@ -13,15 +14,28 @@
 	let query = $state('');
 	let items = $state<{ id: string; type: string; label: string }[]>([]);
 	let selectedIndex = $state(0);
+	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
 	$effect(() => {
 		if (query) {
-			items = [
-				{ id: '1', type: 'content', label: 'How to Apply for a Visa' },
-				{ id: '2', type: 'space', label: 'Canada' },
-				{ id: '3', type: 'content', label: 'Job Search Tips' },
-			].filter(i => i.label.toLowerCase().includes(query.toLowerCase()));
-			selectedIndex = 0;
+			clearTimeout(debounceTimer);
+			debounceTimer = setTimeout(async () => {
+				try {
+					const result = await api.search(query, { limit: 10 });
+					if (Array.isArray(result)) {
+						items = result.map((item: any) => ({
+							id: item.id,
+							type: item.type || 'content',
+							label: item.title || item.name || item.label || ''
+						}));
+					} else {
+						items = [];
+					}
+					selectedIndex = 0;
+				} catch {
+					items = [];
+				}
+			}, 200);
 		} else {
 			items = [];
 		}

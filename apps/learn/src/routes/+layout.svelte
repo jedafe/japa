@@ -68,15 +68,15 @@
 				{#if data.user}
 					<div class="flex items-center gap-3">
 						<div class="flex items-center gap-2">
-							{#if data.user.avatarUrl}
-								<img src={data.user.avatarUrl} alt="" class="h-8 w-8 rounded-full object-cover" />
+							{#if data.user.avatar_url}
+								<img src={data.user.avatar_url} alt="" class="h-8 w-8 rounded-full object-cover" />
 							{:else}
 								<div class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium text-white" style="background-color: var(--color-primary)">
-									{(data.user.displayName ?? data.user.username ?? 'U').charAt(0).toUpperCase()}
+									{(data.user.display_name ?? data.user.username ?? 'U').charAt(0).toUpperCase()}
 								</div>
 							{/if}
 							<span class="text-sm font-medium" style="color: var(--color-foreground)">
-								{data.user.displayName ?? data.user.username}
+								{data.user.display_name ?? data.user.username}
 							</span>
 						</div>
 						<button
@@ -132,15 +132,15 @@
 					{/each}
 					{#if data.user}
 						<div class="mt-2 flex items-center gap-2 border-t px-3 py-2" style="border-color: var(--color-border)">
-							{#if data.user.avatarUrl}
-								<img src={data.user.avatarUrl} alt="" class="h-8 w-8 rounded-full object-cover" />
+							{#if data.user.avatar_url}
+								<img src={data.user.avatar_url} alt="" class="h-8 w-8 rounded-full object-cover" />
 							{:else}
 								<div class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium text-white" style="background-color: var(--color-primary)">
-									{(data.user.displayName ?? data.user.username ?? 'U').charAt(0).toUpperCase()}
+									{(data.user.display_name ?? data.user.username ?? 'U').charAt(0).toUpperCase()}
 								</div>
 							{/if}
 							<span class="text-sm font-medium" style="color: var(--color-foreground)">
-								{data.user.displayName ?? data.user.username}
+								{data.user.display_name ?? data.user.username}
 							</span>
 						</div>
 						<button

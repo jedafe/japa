@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
+import { apiFetch } from './api/client';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
 
 type FetchOptions = {
 	method?: string;
@@ -15,36 +16,23 @@ export function setToken(token: string | null) {
 }
 
 export async function api<T>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
-	const headers: Record<string, string> = {
-		'Content-Type': 'application/json'
-	};
+	const headers: Record<string, string> = {};
 	if (jwtToken) {
 		headers['Authorization'] = `Bearer ${jwtToken}`;
 	}
 
-	try {
-		const res = await fetch(`${API_BASE}${path}`, {
-			method: opts.method ?? 'GET',
-			headers,
-			body: opts.body ? JSON.stringify(opts.body) : undefined,
-			signal: opts.signal
-		});
+	const result = await apiFetch<T>(path, {
+		method: opts.method ?? 'GET',
+		headers,
+		body: opts.body ? JSON.stringify(opts.body) : undefined,
+		signal: opts.signal,
+	});
 
-		if (!res.ok) {
-			const text = await res.text().catch(() => '');
-			return { ok: false, error: `API ${res.status}: ${text || res.statusText}` };
-		}
-
-		const raw = await res.json();
-		// Unwrap the backend's { data: ... } envelope so callers get the payload directly.
-		const data = raw && typeof raw === 'object' && 'data' in raw ? raw.data : raw;
-		return { ok: true, data };
-	} catch (e) {
-		return { ok: false, error: e instanceof Error ? e.message : 'Network error' };
+	if (result.error) {
+		return { ok: false, error: result.error.message };
 	}
+	return { ok: true, data: result.data as T };
 }
-
-// ─── Spam Management ───────────────────────────────────────────────
 
 export const spamApi = {
 	getIpBlocks: (params?: string) => api<unknown>(`/admin/spam/ip-blocks${params ? `?${params}` : ''}`),
@@ -64,8 +52,6 @@ export const spamApi = {
 		api(`/admin/spam/user-blocks/${id}`, { method: 'DELETE' }),
 };
 
-// ─── Ticket Types ──────────────────────────────────────────────────
-
 export const ticketTypesApi = {
 	list: (params?: string) => api<unknown>(`/admin/ticket-types${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string; description?: string; default_priority: string; is_active: boolean }) =>
@@ -76,16 +62,10 @@ export const ticketTypesApi = {
 		api(`/admin/ticket-types/${id}`, { method: 'DELETE' }),
 };
 
-// ─── Wallet Management ─────────────────────────────────────────────
-
 export const walletApi = {
 	getRules: (params?: string) => api<unknown>(`/admin/wallet/rules${params ? `?${params}` : ''}`),
 	createRule: (body: { event_type: string; points_value: number; description?: string; is_active: boolean }) =>
 		api('/admin/wallet/rules', { method: 'POST', body }),
-	// NOTE: backend only has PATCH /admin/wallet/rules/:id/toggle (is_active only) —
-	// no full-update route exists for event_type/points_value/description yet.
-	// This call will 404 until that's implemented; pre-existing gap, not caused by
-	// the /wallet -> /admin/wallet prefix rename.
 	updateRule: (id: string, body: { event_type?: string; points_value?: number; description?: string; is_active?: boolean }) =>
 		api(`/admin/wallet/rules/${id}`, { method: 'PATCH', body }),
 
@@ -98,8 +78,6 @@ export const walletApi = {
 		api('/admin/wallet/adjust', { method: 'POST', body }),
 };
 
-// ─── Space Types ───────────────────────────────────────────────────
-
 export const spaceTypesApi = {
 	list: (params?: string) => api<unknown>(`/space-types${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string; description?: string; is_university: boolean; icon?: string }) =>
@@ -110,8 +88,6 @@ export const spaceTypesApi = {
 		api(`/admin/space-types/${id}`, { method: 'DELETE' }),
 };
 
-// ─── User Impersonation ────────────────────────────────────────────
-
 export const impersonationApi = {
 	start: (userId: string) =>
 		api<{ token: string }>('/admin/impersonate', { method: 'POST', body: { user_id: userId } }),
@@ -120,8 +96,6 @@ export const impersonationApi = {
 	status: () =>
 		api<{ impersonating: boolean; username?: string; user_id?: string }>('/admin/impersonate/status'),
 };
-
-// ─── Documentation Management ──────────────────────────────────────
 
 export const docsApi = {
 	list: (params?: string) => api<unknown>(`/admin/docs${params ? `?${params}` : ''}`),
@@ -133,8 +107,6 @@ export const docsApi = {
 		api(`/admin/docs/${id}`, { method: 'DELETE' }),
 };
 
-// ─── Ad Slot Types ─────────────────────────────────────────────────
-
 export const adSlotTypesApi = {
 	list: (params?: string) => api<unknown>(`/admin/ads/slot-types${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string; width: number; height: number; description?: string }) =>
@@ -145,8 +117,6 @@ export const adSlotTypesApi = {
 		api(`/admin/ads/slot-types/${id}`, { method: 'DELETE' }),
 };
 
-// ─── Ad Boosts ─────────────────────────────────────────────────────
-
 export const adBoostsApi = {
 	list: (params?: string) => api<unknown>(`/admin/ads/boosts${params ? `?${params}` : ''}`),
 	create: (body: { organization_id: string; space_id: string; boost_type: string; start_date: string; end_date: string }) =>
@@ -156,8 +126,6 @@ export const adBoostsApi = {
 	delete: (id: string) =>
 		api(`/admin/ads/boosts/${id}`, { method: 'DELETE' }),
 };
-
-// ─── Comparison Types (Admin) ──────────────────────────────────────
 
 export interface ComparisonType {
 	id: string;
@@ -192,8 +160,6 @@ export const comparisonAdminApi = {
 	setTypeAccess: (id: string, body: { allowed_groups: string[]; allowed_roles: string[] }) =>
 		api<{ updated: boolean }>(`/comparisons/types/${id}/access`, { method: 'PUT', body }),
 };
-
-// ─── Professional Profile Types & Members (Admin) ──────────────────
 
 export interface ProfileType {
 	id: string;
@@ -243,7 +209,103 @@ export const professionalAdminApi = {
 		api<ProfileInvitation>(`/profiles/${profileId}/invitations`, { method: 'POST', body }),
 };
 
-// ─── AI Core ───────────────────────────────────────────────────────
+export interface UserDetail {
+	id: string;
+	username: string;
+	email: string;
+	groups: string[];
+	status: string;
+	avatar_url?: string;
+	created_at: string;
+	last_login_at?: string;
+}
+
+export interface UserActivity {
+	type: string;
+	content: string;
+	created_at: string;
+}
+
+export interface AiContextEntry {
+	id: string;
+	entry_type: string;
+	content: string;
+	created_at: string;
+}
+
+export interface UserSession {
+	id: string;
+	ip_address: string;
+	device: string;
+	started_at: string;
+}
+
+export interface UserGroup {
+	id: string;
+	name: string;
+	description: string;
+	member_count: number;
+	permissions: string[];
+}
+
+export interface UserRole {
+	id: string;
+	name: string;
+	permissions: string[];
+	user_count: number;
+}
+
+export const permissionsApi = {
+	list: () => api<string[]>('/admin/permissions'),
+};
+
+export const userManagementApi = {
+	getUser: (userId: string) => api<UserDetail>(`/users/${userId}`),
+	getUserActivity: (userId: string, params?: string) =>
+		api<{ activities: UserActivity[]; total: number }>(`/users/${userId}/activity${params ? `?${params}` : ''}`),
+
+	getAiContext: (userId: string) =>
+		api<AiContextEntry[]>(`/admin/ai/context/${userId}`),
+	deleteAiContextEntry: (userId: string, entryId: string) =>
+		api<{ deleted: boolean }>(`/admin/ai/context/${userId}/${entryId}`, { method: 'DELETE' }),
+
+	getUserSessions: (userId: string) =>
+		api<UserSession[]>(`/users/${userId}/sessions`),
+
+	issueWarning: (userId: string, body: { reason: string }) =>
+		api(`/admin/users/${userId}/warn`, { method: 'POST', body }),
+	banUser: (userId: string) =>
+		api(`/admin/users/${userId}/ban`, { method: 'POST' }),
+	unbanUser: (userId: string) =>
+		api(`/admin/users/${userId}/unban`, { method: 'POST' }),
+	suspendUser: (userId: string) =>
+		api(`/admin/users/${userId}/suspend`, { method: 'POST' }),
+	changeGroup: (userId: string, body: { groups: string[] }) =>
+		api(`/admin/users/${userId}/groups`, { method: 'PUT', body }),
+	deleteUser: (userId: string) =>
+		api(`/admin/users/${userId}`, { method: 'DELETE' }),
+
+	listGroups: (params?: string) =>
+		api<{ groups: UserGroup[]; total: number }>(`/admin/user-groups${params ? `?${params}` : ''}`),
+	createGroup: (body: { name: string; description: string; permissions: string[] }) =>
+		api<UserGroup>('/admin/user-groups', { method: 'POST', body }),
+	updateGroup: (id: string, body: { name?: string; description?: string; permissions?: string[] }) =>
+		api<UserGroup>(`/admin/user-groups/${id}`, { method: 'PATCH', body }),
+	deleteGroup: (id: string) =>
+		api<{ deleted: boolean }>(`/admin/user-groups/${id}`, { method: 'DELETE' }),
+
+	listRoles: (params?: string) =>
+		api<{ roles: UserRole[]; total: number }>(`/admin/roles${params ? `?${params}` : ''}`),
+	createRole: (body: { name: string; permissions: string[] }) =>
+		api<UserRole>('/admin/roles', { method: 'POST', body }),
+	updateRole: (id: string, body: { name?: string; permissions?: string[] }) =>
+		api<UserRole>(`/admin/roles/${id}`, { method: 'PATCH', body }),
+	deleteRole: (id: string) =>
+		api<{ deleted: boolean }>(`/admin/roles/${id}`, { method: 'DELETE' }),
+
+	listCustomFieldEntityTypes: () =>
+		api<Array<{ value: string; label: string }>>('/custom-field-entity-types'),
+};
 
 export interface HitlReview {
 	id: string;
@@ -287,11 +349,12 @@ export const aiApi = {
 	rejectHitlReview: (id: string, reason: string) =>
 		api<{ rejected: boolean }>(`/ai/hitl/${id}/reject`, { method: 'POST', body: { reason } }),
 
+	listCategories: () =>
+		api<Array<{ value: string; label: string; description: string }>>('/ai/categories'),
+
 	listModels: () =>
 		api<Array<{ id: string; label: string }>>('/admin/ai/models'),
 };
-
-// ─── JSON-LD Templates ─────────────────────────────────────────────
 
 export const jsonLdApi = {
 	getTemplates: () => api<Record<string, unknown>>('/content/jsonld-templates'),
@@ -302,8 +365,6 @@ export const jsonLdApi = {
 		}),
 };
 
-// ─── Page Builder Block Types ──────────────────────────────────────
-
 export interface BlockType {
 	name: string;
 	description: string;
@@ -313,4 +374,50 @@ export interface BlockType {
 
 export const pageBuilderApi = {
 	getBlockTypes: () => api<BlockType[]>('/page-builder/block-types'),
+};
+
+export const spacesAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/spaces${params ? `?${params}` : ''}`),
+	suspend: (id: string, body: { reason: string }) =>
+		api(`/admin/spaces/${id}/suspend`, { method: 'POST', body }),
+	assignModerator: (id: string, body: { username: string }) =>
+		api(`/admin/spaces/${id}/moderators`, { method: 'POST', body }),
+};
+
+export const tagsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/tags${params ? `?${params}` : ''}`),
+	create: (body: { name: string; slug: string }) =>
+		api('/admin/tags', { method: 'POST', body }),
+	update: (id: string, body: { name?: string; slug?: string }) =>
+		api(`/admin/tags/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api(`/admin/tags/${id}`, { method: 'DELETE' }),
+};
+
+export const organisationsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/organisations${params ? `?${params}` : ''}`),
+	verify: (id: string, body: { verified: boolean }) =>
+		api(`/admin/organisations/${id}/verify`, { method: 'POST', body }),
+	claim: (id: string, body: { note?: string }) =>
+		api(`/admin/organisations/${id}/claim`, { method: 'POST', body }),
+};
+
+export const reactionsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/reaction-types${params ? `?${params}` : ''}`),
+	create: (body: { name: string; emoji: string; category: string; is_active: boolean }) =>
+		api('/admin/reaction-types', { method: 'POST', body }),
+	update: (id: string, body: { name?: string; emoji?: string; category?: string; is_active?: boolean }) =>
+		api(`/admin/reaction-types/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api(`/admin/reaction-types/${id}`, { method: 'DELETE' }),
+};
+
+export const universitiesAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/universities${params ? `?${params}` : ''}`),
+	create: (body: { name: string; domain: string; verified: boolean }) =>
+		api('/admin/universities', { method: 'POST', body }),
+	update: (id: string, body: { name?: string; domain?: string; verified?: boolean }) =>
+		api(`/admin/universities/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api(`/admin/universities/${id}`, { method: 'DELETE' }),
 };

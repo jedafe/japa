@@ -71,11 +71,6 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Velocity score recalculation — every 5 minutes.
 	_, _ = scheduler.Register("*/5 * * * *", asynq.NewTask(TypeVelocityScoreRecalc, nil))
 
-	// ── Phase 31 — Full cron schedule from Section 11 catalog ───────
-
-	// Every 10 min: velocity score update for Rising sort.
-	_, _ = scheduler.Register("*/10 * * * *", asynq.NewTask(TypeMaintenanceUpdateVelocityScores, nil))
-
 	// Every 15 min: check ticket SLA breaches.
 	_, _ = scheduler.Register("*/15 * * * *", asynq.NewTask(TypeMaintenanceCheckSLABreaches, nil))
 

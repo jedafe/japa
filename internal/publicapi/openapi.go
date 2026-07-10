@@ -3,7 +3,7 @@ package publicapi
 // GetPublicOpenAPISpec returns an OpenAPI 3.0.3 spec scoped to the public
 // developer API. Only read-only endpoints exposed via X-API-Key auth are
 // included. The spec is served at /api/v1/developer/swagger.json.
-func GetPublicOpenAPISpec() map[string]any {
+func GetPublicOpenAPISpec(siteURL string) map[string]any {
 	return map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
@@ -17,7 +17,7 @@ func GetPublicOpenAPISpec() map[string]any {
 			},
 		},
 		"servers": []any{
-			map[string]any{"url": "https://api.japaconnect.com/v1", "description": "Production"},
+			map[string]any{"url": siteURL + "/api/v1", "description": "Production"},
 			map[string]any{"url": "http://localhost:8080/api/v1", "description": "Local development"},
 		},
 		"security": []any{

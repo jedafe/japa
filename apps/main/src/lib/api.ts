@@ -407,6 +407,9 @@ export const api = {
 	createTicket(data: { subject: string; description: string; type_id?: string; priority?: string; email?: string; field_values?: Record<string, unknown> }) {
 		return request<Ticket>('/tickets', { method: 'POST', body: JSON.stringify(data) });
 	},
+	listTicketTypes() {
+		return request<Array<{ id: string; name: string; slug: string; description?: string; default_priority: string; is_active: boolean }>>('/ticket-types');
+	},
 	listTickets(params?: { status?: string; page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
 		if (params?.status) p.set('status', params.status);
@@ -1258,6 +1261,31 @@ export const api = {
 	},
 	getSpacePermissionPreset(name: string) {
 		return request<SpacePermissionPreset>(`/space-permission-presets/${name}`);
+	},
+
+	// ── Webhook events (AUDIT-FE-014) ─────────────────────────────────────
+	listWebhookEvents() {
+		return request<Array<{ key: string; label: string; description: string }>>('/webhook-events');
+	},
+
+	// ── Content types (AUDIT-FE-016) ──────────────────────────────────────
+	listContentTypes() {
+		return request<Array<{ value: string; label: string }>>('/content-types');
+	},
+
+	// ── Custom field entity types (AUDIT-FE-019) ──────────────────────────
+	listCustomFieldEntityTypes() {
+		return request<Array<{ value: string; label: string }>>('/custom-field-entity-types');
+	},
+
+	// ── AI categories (AUDIT-FE-020) ──────────────────────────────────────
+	listAICategories() {
+		return request<Array<{ value: string; label: string; description: string }>>('/ai/categories');
+	},
+
+	// ── Developer API scopes (AUDIT-FE-015) ───────────────────────────────
+	listDeveloperScopes() {
+		return request<Array<{ value: string; label: string; description: string }>>('/developer/scopes');
 	}
 };
 

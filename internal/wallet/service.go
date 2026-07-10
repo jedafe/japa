@@ -302,6 +302,12 @@ func (s *Service) SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID
 
 	qtx := s.store.write.WithTx(tx)
 
+	// Serialize concurrent balance mutations for this user. See AUDIT-BE-005.
+	lockKey := "wallet:" + tenantID.String() + ":" + userID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return 0, fmt.Errorf("acquiring wallet lock: %w", err)
+	}
+
 	// Get current credits balance within the transaction.
 	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 		TenantID:   tenantID,
@@ -385,6 +391,12 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID 
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
+
+	// Serialize concurrent balance mutations for the target user. See AUDIT-BE-005.
+	lockKey := "wallet:" + tenantID.String() + ":" + targetUserID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return 0, fmt.Errorf("acquiring wallet lock: %w", err)
+	}
 
 	// Get current balance within the transaction.
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{

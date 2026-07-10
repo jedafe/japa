@@ -202,14 +202,26 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.
 		return nil, nil
 	}
 
-	rows, err := s.db.Reader.Query(ctx, `
+	// Build an ILIKE pattern for each tag so the SQL can pre-filter spaces
+	// whose name or description mentions at least one of the user's interests.
+	likePatterns := make([]string, 0, len(tags))
+	args := []any{tenantID}
+	for i, tag := range tags {
+		args = append(args, "%"+strings.ToLower(tag)+"%")
+		likePatterns = append(likePatterns, fmt.Sprintf("(LOWER(s.name) LIKE $%d OR LOWER(s.description) LIKE $%d)", i+2, i+2))
+	}
+
+	query := fmt.Sprintf(`
 		SELECT s.id, s.name, s.slug, s.avatar_url, s.description
 		FROM spaces s
 		WHERE s.tenant_id = $1
 		  AND s.status = 'active'
+		  AND (%s)
 		ORDER BY s.follower_count DESC
 		LIMIT 10
-	`, tenantID)
+	`, strings.Join(likePatterns, " OR "))
+
+	rows, err := s.db.Reader.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("querying spaces for recommendations: %w", err)
 	}

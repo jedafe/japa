@@ -15,40 +15,40 @@ const (
 	// ---- Critical tier (immediate processing, highest concurrency) ----.
 
 	TypeNotificationDispatchBatch = "notification:dispatch_batch"
-	TypeWebhookDelivery           = "webhook_delivery"
-	TypePaymentWebhookProcess     = "payment_webhook_process"
+	TypeWebhookDelivery           = "webhook:deliver"
+	TypePaymentWebhookProcess     = "payment:process_webhook"
 	TypeTicketSendConfirmation    = "ticket:send_confirmation"
-	TypePushDelivery              = "push:delivery"
+	TypePushDelivery              = "push:deliver"
 
 	// ---- Default tier (standard background processing) ----.
 
-	TypeEmailSend                     = "email_send"
-	TypeSearchIndexSync               = "search_index_sync"
-	TypeImageProcessing               = "image_processing"
-	TypeAITaskProcessing              = "ai_task_processing"
-	TypeEngagementCountUpdate         = "engagement_count_update"
-	TypeModerationScan                = "moderation_scan"
-	TypeScheduledPublish              = "scheduled_publish"
-	TypeLinkPreviewFetch              = "link_preview_fetch"
-	TypeLanguagePackAITranslate       = "language_pack_ai_translate"
-	TypeMediaScan                     = "media_scan"
+	TypeEmailSend                     = "email:send"
+	TypeSearchIndexSync               = "search:index_entity"
+	TypeImageProcessing               = "content:process_image"
+	TypeAITaskProcessing              = "ai:process_task"
+	TypeEngagementCountUpdate         = "content:update_engagement"
+	TypeModerationScan                = "content:scan_moderation"
+	TypeScheduledPublish              = "content:publish_scheduled"
+	TypeLinkPreviewFetch              = "content:fetch_link_preview"
+	TypeLanguagePackAITranslate       = "i18n:translate_language_pack"
+	TypeMediaScan                     = "content:scan_media"
 	TypeContentFanOutToFeeds          = "content:fan_out_to_feeds"
-	TypeAIGenerateContentEmbedding    = "ai:generate_content_embedding"
-	TypeReviewAggregateRecalc         = "review_aggregate_recalc"
+	TypeAIGenerateContentEmbedding    = "content:generate_embedding"
+	TypeReviewAggregateRecalc         = "content:recalc_review_aggregate"
 	TypeTicketSendStatusUpdate        = "ticket:send_status_update"
 	TypeLearningUpdateTrackCompletion = "learning:update_track_completion"
-	TypeVideoProcessing               = "video_processing"
+	TypeVideoProcessing               = "content:process_video"
 	TypeWalletProcessActivityEvent    = "wallet:process_activity_event"
-	TypeNewsletterSend                = "newsletter_send"
+	TypeNewsletterSend                = "newsletter:send"
 
 	// ---- Low tier (background maintenance, lowest concurrency) ----.
 
-	TypeDigestEmail                     = "digest_email"
-	TypeSitemapGenerate                 = "sitemap_generate"
+	TypeDigestEmail                     = "email:send_digest"
+	TypeSitemapGenerate                 = "sitemap:generate"
 	TypeRSSRegenerate                   = "rss:regenerate"
-	TypeDataExport                      = "data_export"
-	TypeAccountDeletionCleanup          = "account_deletion_cleanup"
-	TypeAdEventIngest                   = "ad_event_ingest"
+	TypeDataExport                      = "data:export_user_data"
+	TypeAccountDeletionCleanup          = "account:deletion_cleanup"
+	TypeAdEventIngest                   = "ad:ingest_event_batch"
 	TypeMaintenanceUpdateVelocityScores = "maintenance:update_velocity_scores"
 	TypeMaintenanceCheckSLABreaches     = "maintenance:check_sla_breaches"
 	TypeMaintenanceUpdateGeoIPDB        = "maintenance:update_geoip_db"
@@ -57,8 +57,8 @@ const (
 	TypeSecurityScan                    = "security:scan"
 	TypeMaintenanceRegenerateLLMsTxt    = "maintenance:regenerate_llms_txt"
 	TypeLearningIssueCertificate        = "learning:issue_certificate"
-	TypeDBManualVacuum                  = "db_manual_vacuum"
-	TypeNewsletterDigest                = "newsletter_digest"
+	TypeDBManualVacuum                  = "db:manual_vacuum"
+	TypeNewsletterDigest                = "newsletter:digest"
 	TypeComputeTrending                 = "maintenance:compute_trending"
 	TypeComputeSuggestions              = "maintenance:compute_suggestions"
 
@@ -78,8 +78,8 @@ const (
 
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
-	TypeScheduledPublishSweep = "scheduled_publish_sweep"
-	TypeVelocityScoreRecalc   = "velocity_score_recalc"
+	TypeScheduledPublishSweep = "content:publish_sweep"
+	TypeVelocityScoreRecalc   = "maintenance:recalc_velocity_scores"
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
