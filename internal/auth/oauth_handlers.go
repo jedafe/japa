@@ -15,7 +15,7 @@ type OAuthHandlers struct {
 	Config       OAuthConfig
 	Store        OAuthStore
 	KeyRot       *KeyRotation
-	CookieDomain string // Cookie domain for cross-subdomain sharing (e.g. ".japaconnect.com"), empty = exact host
+	CookieDomain string // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
 }
 
 // HandleInitiate handles POST /api/v1/auth/oauth/{provider}/initiate.

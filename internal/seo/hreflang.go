@@ -17,7 +17,7 @@ func HreflangLink(lang, href string) string {
 
 // HreflangAlternate returns all hreflang <link> tags for a page,
 // including an x-default pointing to the root-language version.
-// baseURL should be the origin (e.g. "https://japaconnect.com").
+// baseURL should be the origin (e.g. "https://example.com").
 // path should be the page path without a language prefix (e.g. "/guide").
 func HreflangAlternate(baseURL, path string, languages []string) string {
 	if len(languages) == 0 {

@@ -54,7 +54,7 @@ type RSSItem struct { //nolint:revive // stuttering type name preserved for API 
 // HandleFeed serves the universal feed (/feed.xml) and blog-only feed
 // (/blog/feed.xml). The feedType parameter selects the content filter:
 // "all" returns all published content, "blog" returns only blog posts.
-func HandleFeed(q *gen.Queries, feedType string) http.HandlerFunc {
+func HandleFeed(q *gen.Queries, feedType string, siteURL string, siteName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tenantID := tenant.IDFromContext(r.Context())
 		if tenantID == (pgtype.UUID{}) {
@@ -74,14 +74,14 @@ func HandleFeed(q *gen.Queries, feedType string) http.HandlerFunc {
 			if qErr != nil {
 				err = qErr
 			} else {
-				items = feedItemsFromContentTypeRows(rows)
+				items = feedItemsFromContentTypeRows(rows, siteURL)
 			}
 		default:
 			rows, qErr := q.ListRSSFeedItems(r.Context(), tenantID)
 			if qErr != nil {
 				err = qErr
 			} else {
-				items = feedItemsFromAllRows(rows)
+				items = feedItemsFromAllRows(rows, siteURL)
 			}
 		}
 
@@ -92,13 +92,13 @@ func HandleFeed(q *gen.Queries, feedType string) http.HandlerFunc {
 			return
 		}
 
-		serveRSSFeed(w, "JapaConnect", "https://japaconnect.com",
+		serveRSSFeed(w, siteName, siteURL,
 			"Community platform for the Nigerian diaspora", items)
 	}
 }
 
 // HandleSpaceFeed serves a space-specific RSS feed at /spaces/{slug}/feed.xml.
-func HandleSpaceFeed(q *gen.Queries) http.HandlerFunc {
+func HandleSpaceFeed(q *gen.Queries, siteURL string, siteName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		slug := chi.URLParam(r, "slug")
 		if slug == "" {
@@ -123,14 +123,14 @@ func HandleSpaceFeed(q *gen.Queries) http.HandlerFunc {
 			return
 		}
 
-		items := feedItemsFromSpaceRows(rows)
-		serveRSSFeed(w, "JapaConnect — "+slug, "https://japaconnect.com/spaces/"+slug,
+		items := feedItemsFromSpaceRows(rows, siteURL)
+		serveRSSFeed(w, siteName+" — "+slug, siteURL+"/spaces/"+slug,
 			"Posts from the "+slug+" space", items)
 	}
 }
 
 // HandleTagFeed serves a tag-specific RSS feed at /tags/{slug}/feed.xml.
-func HandleTagFeed(q *gen.Queries) http.HandlerFunc {
+func HandleTagFeed(q *gen.Queries, siteURL string, siteName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		slug := chi.URLParam(r, "slug")
 		if slug == "" {
@@ -155,14 +155,14 @@ func HandleTagFeed(q *gen.Queries) http.HandlerFunc {
 			return
 		}
 
-		items := feedItemsFromTagRows(rows)
-		serveRSSFeed(w, "JapaConnect — #"+slug, "https://japaconnect.com/tags/"+slug,
+		items := feedItemsFromTagRows(rows, siteURL)
+		serveRSSFeed(w, siteName+" — #"+slug, siteURL+"/tags/"+slug,
 			"Posts tagged #"+slug, items)
 	}
 }
 
 // HandleUserFeed serves a user-specific RSS feed at /users/{username}/feed.xml.
-func HandleUserFeed(q *gen.Queries) http.HandlerFunc {
+func HandleUserFeed(q *gen.Queries, siteURL string, siteName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		username := chi.URLParam(r, "username")
 		if username == "" {
@@ -187,8 +187,8 @@ func HandleUserFeed(q *gen.Queries) http.HandlerFunc {
 			return
 		}
 
-		items := feedItemsFromUserRows(rows)
-		serveRSSFeed(w, "JapaConnect — "+username, "https://japaconnect.com/users/"+username,
+		items := feedItemsFromUserRows(rows, siteURL)
+		serveRSSFeed(w, siteName+" — "+username, siteURL+"/users/"+username,
 			"Posts by "+username, items)
 	}
 }
@@ -207,12 +207,12 @@ func formatTime(t pgtype.Timestamptz) string {
 }
 
 // feedItemsFromContentTypeRows converts ListRSSFeedItemsByContentTypeRow to RSS items.
-func feedItemsFromContentTypeRows(rows []gen.ListRSSFeedItemsByContentTypeRow) []RSSItem {
+func feedItemsFromContentTypeRows(rows []gen.ListRSSFeedItemsByContentTypeRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, RSSItem{
 			Title:       row.Title,
-			Link:        "https://japaconnect.com/content/" + row.Slug,
+			Link:        siteURL + "/content/" + row.Slug,
 			Description: row.Left,
 			PubDate:     formatTime(row.CreatedAt),
 			Author:      row.Username,
@@ -223,12 +223,12 @@ func feedItemsFromContentTypeRows(rows []gen.ListRSSFeedItemsByContentTypeRow) [
 }
 
 // feedItemsFromAllRows converts ListRSSFeedItemsRow to RSS items.
-func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow) []RSSItem {
+func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, RSSItem{
 			Title:       row.Title,
-			Link:        "https://japaconnect.com/content/" + row.Slug,
+			Link:        siteURL + "/content/" + row.Slug,
 			Description: row.Left,
 			PubDate:     formatTime(row.CreatedAt),
 			Author:      row.Username,
@@ -239,12 +239,12 @@ func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow) []RSSItem {
 }
 
 // feedItemsFromSpaceRows converts ListRSSSpaceFeedItemsRow to RSS items.
-func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow) []RSSItem {
+func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, RSSItem{
 			Title:       row.Title,
-			Link:        "https://japaconnect.com/content/" + row.Slug,
+			Link:        siteURL + "/content/" + row.Slug,
 			Description: row.Left,
 			PubDate:     formatTime(row.CreatedAt),
 			Author:      row.Username,
@@ -255,12 +255,12 @@ func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow) []RSSItem {
 }
 
 // feedItemsFromTagRows converts ListRSSTagFeedItemsRow to RSS items.
-func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow) []RSSItem {
+func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, RSSItem{
 			Title:       row.Title,
-			Link:        "https://japaconnect.com/content/" + row.Slug,
+			Link:        siteURL + "/content/" + row.Slug,
 			Description: row.Left,
 			PubDate:     formatTime(row.CreatedAt),
 			Author:      row.Username,
@@ -271,12 +271,12 @@ func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow) []RSSItem {
 }
 
 // feedItemsFromUserRows converts ListRSSUserFeedItemsRow to RSS items.
-func feedItemsFromUserRows(rows []gen.ListRSSUserFeedItemsRow) []RSSItem {
+func feedItemsFromUserRows(rows []gen.ListRSSUserFeedItemsRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, RSSItem{
 			Title:       row.Title,
-			Link:        "https://japaconnect.com/content/" + row.Slug,
+			Link:        siteURL + "/content/" + row.Slug,
 			Description: row.Left,
 			PubDate:     formatTime(row.CreatedAt),
 			Author:      row.Username,

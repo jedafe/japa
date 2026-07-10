@@ -56,6 +56,26 @@ func DefaultPasswordPolicy() PasswordPolicy {
 	}
 }
 
+// SettingsReader defines the interface for reading settings from the database.
+type SettingsReader interface {
+	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) bool
+}
+
+// PasswordPolicyFromSettings returns a password policy configured from system_settings.
+// Falls back to defaults for any unset values.
+func PasswordPolicyFromSettings(ctx context.Context, reader SettingsReader, tenantID pgtype.UUID) PasswordPolicy {
+	return PasswordPolicy{
+		MinLength:     reader.GetSettingInt(ctx, tenantID, "auth.password.min_length", 8),
+		MaxLength:     128, // not configurable via settings
+		RequireUpper:  reader.GetSettingBool(ctx, tenantID, "auth.password.require_uppercase"),
+		RequireNumber: true, // not configurable via settings
+		RequireSymbol: false, // not configurable via settings
+		CheckBreach:   true, // not configurable via settings
+		HistoryCount:  5, // not configurable via settings
+	}
+}
+
 // ValidatePassword checks a password against the policy.
 // Returns nil if the password passes, or an error describing
 // which requirement was not met.

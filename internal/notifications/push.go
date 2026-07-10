@@ -28,7 +28,8 @@ func NewPushDelivery() *PushDelivery {
 
 	subject := os.Getenv("JC_VAPID_SUBJECT")
 	if subject == "" {
-		subject = "mailto:admin@japaconnect.com"
+		// Default to a generic subject if not configured
+		subject = "mailto:noreply@example.com"
 	}
 
 	if privKey == "" || pubKey == "" {

@@ -24,8 +24,9 @@ import (
 
 // OGImageHandler handles OG image generation requests.
 type OGImageHandler struct {
-	reader *pgxpool.Pool
-	face   font.Face
+	reader   *pgxpool.Pool
+	face     font.Face
+	siteName string
 }
 
 // NewOGImageHandler creates a new OG image handler.
@@ -33,9 +34,9 @@ type OGImageHandler struct {
 // font (golang.org/x/image/font/gofont/goregular). If font loading fails
 // the handler still works — text rendering degrades gracefully to a
 // fallback bitmap approach.
-func NewOGImageHandler(reader *pgxpool.Pool) *OGImageHandler {
+func NewOGImageHandler(reader *pgxpool.Pool, siteName string) *OGImageHandler {
 	face := loadFontFace(48)
-	return &OGImageHandler{reader: reader, face: face}
+	return &OGImageHandler{reader: reader, face: face, siteName: siteName}
 }
 
 // loadFontFace creates an opentype font face at the given size from the
@@ -112,7 +113,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 
 	// Fallback to brand defaults when no content matched.
 	if title == "" {
-		title = "JapaConnect"
+		title = h.siteName
 		subtitle = "Community Platform"
 	}
 

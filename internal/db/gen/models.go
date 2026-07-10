@@ -97,19 +97,13 @@ type AdSlotType struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
-type AdsCampaign struct {
-	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
-	AdvertiserID  pgtype.UUID        `json:"advertiser_id"`
-	Name          string             `json:"name"`
-	Placement     string             `json:"placement"`
-	BudgetCredits int32              `json:"budget_credits"`
-	SpentCredits  int32              `json:"spent_credits"`
-	Status        string             `json:"status"`
-	StartDate     pgtype.Timestamptz `json:"start_date"`
-	EndDate       pgtype.Timestamptz `json:"end_date"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+type AdminBroadcast struct {
+	ID             pgtype.UUID        `json:"id"`
+	Title          string             `json:"title"`
+	Body           string             `json:"body"`
+	SentBy         pgtype.UUID        `json:"sent_by"`
+	SentAt         pgtype.Timestamptz `json:"sent_at"`
+	RecipientCount int32              `json:"recipient_count"`
 }
 
 type AffiliateLinkEvent struct {
@@ -135,6 +129,12 @@ type AffiliateProgramMember struct {
 	TotalEarnedCredits pgtype.Numeric     `json:"total_earned_credits"`
 	PayoutMethod       *string            `json:"payout_method"`
 	Notes              *string            `json:"notes"`
+}
+
+type AffiliateProgramSetting struct {
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	CommissionRates []byte             `json:"commission_rates"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type AffiliateProvider struct {
@@ -1125,6 +1125,17 @@ type MentorshipProgram struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ModerationAppeal struct {
+	ID         pgtype.UUID        `json:"id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Reason     string             `json:"reason"`
+	Status     string             `json:"status"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
 type MvDailyContentStat struct {
 	Day           pgtype.Date `json:"day"`
 	TenantID      pgtype.UUID `json:"tenant_id"`
@@ -1155,17 +1166,15 @@ type MvUserEngagementStat struct {
 }
 
 type NewsletterCampaign struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	ListID         pgtype.UUID        `json:"list_id"`
-	Subject        string             `json:"subject"`
-	HtmlBody       string             `json:"html_body"`
-	Status         string             `json:"status"`
-	ScheduledAt    pgtype.Timestamptz `json:"scheduled_at"`
-	SentAt         pgtype.Timestamptz `json:"sent_at"`
-	RecipientCount int32              `json:"recipient_count"`
-	CreatedBy      pgtype.UUID        `json:"created_by"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Name      string             `json:"name"`
+	Subject   string             `json:"subject"`
+	Html      string             `json:"html"`
+	Status    string             `json:"status"`
+	SentAt    pgtype.Timestamptz `json:"sent_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type NewsletterList struct {
@@ -1183,13 +1192,12 @@ type NewsletterListSubscriber struct {
 }
 
 type NewsletterSubscriber struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	Email          string             `json:"email"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Status         string             `json:"status"`
-	SubscribedAt   pgtype.Timestamptz `json:"subscribed_at"`
-	UnsubscribedAt pgtype.Timestamptz `json:"unsubscribed_at"`
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Email     string             `json:"email"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type Notification struct {
@@ -1611,15 +1619,14 @@ type ReactionType struct {
 }
 
 type Referral struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
-	Code        string             `json:"code"`
-	ReferrerID  pgtype.UUID        `json:"referrer_id"`
-	RefereeID   pgtype.UUID        `json:"referee_id"`
-	Status      string             `json:"status"`
-	QualifiedAt pgtype.Timestamptz `json:"qualified_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	ReferrerID   pgtype.UUID        `json:"referrer_id"`
+	RefereeID    pgtype.UUID        `json:"referee_id"`
+	ReferralCode string             `json:"referral_code"`
+	Status       string             `json:"status"`
+	RewardPaidAt pgtype.Timestamptz `json:"reward_paid_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type ReferralProgram struct {
@@ -1966,18 +1973,19 @@ type TrendingSnapshot struct {
 }
 
 type User struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	Email           string             `json:"email"`
-	EmailVerifiedAt pgtype.Timestamptz `json:"email_verified_at"`
-	PasswordHash    *string            `json:"password_hash"`
-	Username        string             `json:"username"`
-	ProfileType     string             `json:"profile_type"`
-	Status          string             `json:"status"`
-	LastLoginAt     pgtype.Timestamptz `json:"last_login_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	FollowerCount   int32              `json:"follower_count"`
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Email               string             `json:"email"`
+	EmailVerifiedAt     pgtype.Timestamptz `json:"email_verified_at"`
+	PasswordHash        *string            `json:"password_hash"`
+	Username            string             `json:"username"`
+	ProfileType         string             `json:"profile_type"`
+	Status              string             `json:"status"`
+	LastLoginAt         pgtype.Timestamptz `json:"last_login_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	FollowerCount       int32              `json:"follower_count"`
+	ForcePasswordChange bool               `json:"force_password_change"`
 }
 
 type UserAffiliateLink struct {
@@ -2036,6 +2044,16 @@ type UserGroupPromotion struct {
 	TriggerValue  []byte             `json:"trigger_value"`
 	IsActive      bool               `json:"is_active"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type UserModerationAction struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Action    string             `json:"action"`
+	Reason    *string            `json:"reason"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type UserMute struct {

@@ -218,6 +218,27 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Spam pipeline check — multi-layer content safety (BE-034).
+	if h.spamPipeline != nil {
+		clientIP := r.Header.Get("X-Forwarded-For")
+		if clientIP == "" {
+			clientIP = r.RemoteAddr
+		}
+		spamResult, err := h.spamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
+			Content:    req.Body,
+			UserID:     user.UserID,
+			IP:         clientIP,
+			UserType:   "existing",
+			EntityType: "message",
+		})
+		if err != nil {
+			slog.Warn("spam check failed", "error", err)
+		} else if spamResult.Blocked {
+			writeError(w, http.StatusForbidden, "message_blocked", "Message blocked by safety filters")
+			return
+		}
+	}
+
 	if err := h.dmService.SendMessage(r.Context(), tenantID, conversationID, user.UserID, req.Body); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to send message")
 		return

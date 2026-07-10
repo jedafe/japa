@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -26,6 +27,14 @@ type Handlers struct {
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// siteURL is the base URL for the site, set during initialization.
+var siteURL string
+
+// SetSiteURL sets the base URL for the site (e.g. "https://example.com").
+func SetSiteURL(url string) {
+	siteURL = url
 }
 
 // ---------------------------------------------------------------------------
@@ -65,19 +74,17 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case strings.Contains(err.Error(), "already_exists"):
+	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case strings.Contains(err.Error(), "duplicate"):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
-	case strings.Contains(err.Error(), "required"):
+	case errors.Is(err, errpkg.ErrRequired):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
-	case strings.Contains(err.Error(), "invalid"):
+	case errors.Is(err, errpkg.ErrInvalid):
 		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
-	case strings.Contains(err.Error(), "expired"):
+	case errors.Is(err, errpkg.ErrExpired):
 		writeError(w, http.StatusUnauthorized, "key_expired", err.Error())
-	case strings.Contains(err.Error(), "not found"):
+	case errors.Is(err, errpkg.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
-	case strings.Contains(err.Error(), "does not belong"):
+	case errors.Is(err, errpkg.ErrBelongsToAnother):
 		writeError(w, http.StatusForbidden, "forbidden", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
@@ -96,12 +103,16 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
+	docsURL := siteURL + "/docs#section/Errors"
+	if siteURL == "" {
+		docsURL = "/docs#section/Errors"
+	}
 	writeJSON(w, status, map[string]any{
 		"error": map[string]any{
 			"code":    code,
 			"message": message,
 			"status":  status,
-			"docs":    "https://api.japaconnect.com/docs#section/Errors",
+			"docs":    docsURL,
 		},
 	})
 }
@@ -471,7 +482,10 @@ func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		Name   string `json:"name"`
 		Scopes string `json:"scopes"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
 	_, err = h.Service.store.dbPool.Exec(r.Context(),
 		`UPDATE api_keys SET name = COALESCE(NULLIF($3,''), name),
 		 scopes = COALESCE(NULLIF($4,''), scopes), updated_at = now()
