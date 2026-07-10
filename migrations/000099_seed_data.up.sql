@@ -85,111 +85,303 @@ INSERT INTO system_settings (tenant_id, key, value) VALUES
 ON CONFLICT (tenant_id, key) DO NOTHING;
 
 -- ============================================================
--- 2. Permission Nodes (comprehensive per Section 03 + amendments)
+-- 2. Permission Nodes (flat taxonomy — matches bootstrapPermissions in server.go)
+--    Routes gate on these flat nodes; the .own/.any granularity was superseded.
 -- ============================================================
 INSERT INTO permissions (key, description) VALUES
-    -- Content
-    ('content.create', 'Create content (posts, discussions, pages)'),
-    ('content.edit.own', 'Edit own content'),
-    ('content.edit.any', 'Edit any content'),
-    ('content.delete.own', 'Delete own content'),
-    ('content.delete.any', 'Delete any content'),
+    -- Content Core (Section 14)
+    ('content.create', 'Create content'),
+    ('content.edit', 'Edit content'),
+    ('content.delete', 'Delete content'),
+    ('content.revisions.view', 'View content revisions'),
+    ('content.pin', 'Pin content to spaces'),
+    ('content.reaction_types.manage', 'Manage reaction types'),
+    ('content.reactions.add', 'Add reactions to content'),
+    ('content.reactions.remove', 'Remove reactions from content'),
+    ('content.scores.view', 'View content scores'),
+    ('content.jsonld.manage', 'Manage JSON-LD templates'),
+    ('content.scheduled.view', 'View scheduled content'),
     ('content.publish', 'Publish content'),
     ('content.schedule', 'Schedule content for future publish'),
-    -- Blog
-    ('blog.create', 'Create blog posts'),
-    ('blog.edit.own', 'Edit own blog posts'),
-    ('blog.edit.any', 'Edit any blog posts'),
-    ('blog.publish', 'Publish blog posts'),
-    ('blog.review', 'Review blog submissions'),
-    -- Forum
-    ('forum.create', 'Create forum discussions'),
-    ('forum.vote', 'Vote on forum posts'),
-    ('forum.solve', 'Mark forum posts as solved'),
-    ('forum.poll.create', 'Create polls in forum'),
-    -- Pages
-    ('content.page_builder.create', 'Create pages via page builder'),
-    -- Spaces
-    ('spaces.create', 'Create custom spaces'),
-    ('spaces.moderate.assigned', 'Moderate assigned spaces'),
+    -- Page Builder (Section 16)
+    ('content.page_builder.create', 'Create pages with page builder'),
+    ('content.page_builder.edit', 'Edit pages with page builder'),
+    ('content.page_builder.delete', 'Delete page builder pages'),
+    ('content.render', 'Render content via TipTap SSR'),
+    ('pagebuilder.blocks.manage', 'Manage page builder blocks'),
+    ('pagebuilder.templates.manage', 'Manage page builder templates'),
+    ('pagebuilder.themes.manage', 'Manage page builder themes'),
+    ('pages.manage', 'Manage pages (create, edit, delete)'),
+    ('pages.publish', 'Publish and archive pages'),
+    -- Custom Fields (Section 06)
+    ('custom_fields.group.view', 'View custom field groups'),
+    ('custom_fields.group.create', 'Create custom field groups'),
+    ('custom_fields.group.edit', 'Edit custom field groups'),
+    ('custom_fields.group.delete', 'Delete custom field groups'),
+    ('custom_fields.field.create', 'Create custom fields'),
+    ('custom_fields.field.edit', 'Edit custom fields'),
+    ('custom_fields.field.delete', 'Delete custom fields'),
+    ('custom_fields.values.set', 'Set custom field values'),
+    -- Forms (Section 33)
+    ('forms.create', 'Create forms'),
+    ('forms.edit', 'Edit forms'),
+    ('forms.delete', 'Delete forms'),
+    ('forms.submissions.view', 'View form submissions'),
+    ('forms.submissions.edit', 'Edit form submission status'),
+    ('forms.submissions.delete', 'Delete form submissions'),
+    -- Spaces (Section 05)
+    ('spaces.create', 'Create spaces'),
+    ('spaces.edit', 'Edit spaces'),
+    ('spaces.delete', 'Delete spaces'),
+    ('spaces.moderate', 'Moderate spaces (manage rules and pins)'),
     ('spaces.moderate.any', 'Moderate any space'),
-    ('spaces.moderator.assign', 'Assign space moderators'),
-    -- Moderation
-    ('moderation.report', 'Report content or users'),
-    ('moderation.warn', 'Issue user warnings'),
-    ('moderation.ban', 'Ban users'),
-    ('moderation.appeal.review', 'Review moderation appeals'),
-    ('moderation.content.review', 'Review flagged content'),
-    ('moderation.broadcast', 'Send broadcast notifications'),
-    -- Media
+    ('spaces.moderate.assigned', 'Assign or remove space moderators'),
+    ('spaces.admin', 'Manage space permission presets'),
+    -- Space Types (Section 05)
+    ('space_types.create', 'Create space types'),
+    ('space_types.edit', 'Edit space types'),
+    ('space_types.delete', 'Delete space types'),
+    -- Tags
+    ('tags.create', 'Create general tags'),
+    ('tags.edit', 'Edit general tags'),
+    ('tags.delete', 'Delete general tags'),
+    ('tags.manage', 'Manage tags and tag moderators'),
+    -- Forum Q&A (Section 08)
+    ('forum.thread.create', 'Create forum threads'),
+    ('forum.thread.edit_own', 'Edit own forum threads'),
+    ('forum.thread.edit_any', 'Edit any forum thread (admin)'),
+    ('forum.thread.delete_own', 'Delete own forum threads'),
+    ('forum.thread.delete_any', 'Delete any forum thread (admin)'),
+    ('forum.thread.solve', 'Mark forum threads as solved'),
+    ('forum.reply.create', 'Create forum replies'),
+    ('forum.reply.edit_own', 'Edit own forum replies'),
+    ('forum.reply.edit_any', 'Edit any forum reply (admin)'),
+    ('forum.reply.delete_own', 'Delete own forum replies'),
+    ('forum.reply.delete_any', 'Delete any forum reply (admin)'),
+    ('forum.vote', 'Vote on forum threads and replies'),
+    ('forum.bookmark.manage', 'Manage forum bookmarks'),
+    ('forum.poll.create', 'Create forum polls'),
+    ('forum.poll.vote', 'Vote on forum polls'),
+    ('forum.tag.create', 'Create forum tags'),
+    ('forum.tag.edit', 'Edit forum tags'),
+    ('forum.tag.moderate', 'Moderate forum tags'),
+    ('forum.admin', 'Admin-only forum management'),
+    -- Blog Extension (Section 24)
+    ('blog.create', 'Create blog posts'),
+    ('blog.edit_own', 'Edit own blog posts'),
+    ('blog.edit_any', 'Edit any blog post (admin)'),
+    ('blog.publish', 'Publish blog posts'),
+    ('blog.feature', 'Feature/unfeature blog posts'),
+    ('blog.series.create', 'Create blog series'),
+    ('blog.series.edit', 'Edit blog series'),
+    ('blog.series.delete', 'Delete blog series'),
+    ('blog.review.create', 'Create content reviews'),
+    ('blog.review.manage', 'Manage content review status'),
+    ('blog.review', 'Review blog submissions'),
+    ('blog.rss.view', 'View RSS feed'),
+    -- Reviews (Section 29)
+    ('reviews.create', 'Create reviews'),
+    ('reviews.edit_own', 'Edit own reviews'),
+    ('reviews.edit_any', 'Edit any review (admin)'),
+    ('reviews.delete_own', 'Delete own reviews'),
+    ('reviews.delete_any', 'Delete any review (admin)'),
+    ('reviews.flag', 'Flag reviews for moderation'),
+    ('reviews.moderate', 'Moderate review status'),
+    ('reviews.aggregate.view', 'View review aggregates'),
+    -- Comparison System (Section 30)
+    ('comparison.type.create', 'Create comparison types'),
+    ('comparison.type.edit', 'Edit comparison types'),
+    ('comparison.type.delete', 'Delete comparison types'),
+    ('comparison.type.access.manage', 'Manage comparison type access'),
+    ('comparison.create', 'Create comparisons'),
+    ('comparison.edit_own', 'Edit own comparisons'),
+    ('comparison.edit_any', 'Edit any comparison (admin)'),
+    ('comparison.delete_own', 'Delete own comparisons'),
+    ('comparison.delete_any', 'Delete any comparison (admin)'),
+    ('comparison.item.manage', 'Manage comparison items'),
+    ('comparison.dimension.manage', 'Manage comparison dimensions'),
+    ('comparison.value.manage', 'Manage comparison values'),
+    -- Professional Profiles (Section 33)
+    ('professional_profile.type.create', 'Create professional profile types'),
+    ('professional_profile.type.view', 'View professional profile types'),
+    ('professional_profile.create', 'Create professional profiles'),
+    ('professional_profile.edit_own', 'Edit own professional profiles'),
+    ('professional_profile.edit_any', 'Edit any professional profile (admin)'),
+    ('professional_profile.delete_own', 'Delete own professional profiles'),
+    ('professional_profile.delete_any', 'Delete any professional profile (admin)'),
+    ('professional_profile.member.manage', 'Manage professional profile members'),
+    ('professional_profile.invite', 'Send professional profile invitations'),
+    ('professional_profile.author.switch', 'Switch authorship to professional profile'),
+    ('professional.create', 'Create professional profiles'),
+    ('professional.manage', 'Manage professional profiles'),
+    -- Social Graph (Section 10)
+    ('follows.create', 'Follow users and spaces'),
+    ('follows.toggle', 'Follow/unfollow entities'),
+    ('follows.view', 'View follower/following lists'),
+    -- Notifications (Section 12)
+    ('notifications.view', 'View notifications'),
+    ('notifications.manage', 'Manage notification types'),
+    -- DMs (Section 15)
+    ('dm.send', 'Send direct messages'),
+    ('dm.view', 'View direct messages'),
+    ('dm.request', 'Initiate DM requests'),
+    ('dm.manage_privacy', 'Manage DM privacy settings'),
+    -- Media (Section 13)
     ('media.upload', 'Upload media files'),
-    ('media.delete.own', 'Delete own media'),
-    ('media.delete.any', 'Delete any media'),
+    ('media.view_own', 'View own uploaded media'),
+    ('media.view_all', 'View all media (admin)'),
+    ('media.delete_own', 'Delete own uploaded media'),
+    ('media.delete_any', 'Delete any media (admin)'),
+    ('media.video.upload', 'Upload video files'),
+    ('media.library.view_own', 'View own media library'),
+    ('media.library.view_all', 'View all media library (admin)'),
+    ('media.quarantine.manage', 'Review and manage quarantined media'),
     -- Reactions
     ('reactions.create', 'React to content'),
     ('reactions.delete.own', 'Remove own reactions'),
     -- Bookmarks
     ('bookmarks.create', 'Create bookmarks'),
     ('bookmarks.manage', 'Manage bookmark folders'),
-    -- Tags
-    ('tags.create', 'Create tags'),
-    ('tags.manage', 'Manage tags and tag moderators'),
-    -- Follows
-    ('follows.create', 'Follow users and spaces'),
-    -- Notifications
-    ('notifications.manage', 'Manage notification preferences'),
-    -- DMs
-    ('dm.send', 'Send direct messages'),
-    ('dm.request', 'Initiate DM requests'),
-    -- Wallet
+    -- Wallet & Credits (Section 28)
+    ('wallet.points.balance', 'View points balance'),
+    ('wallet.credits.balance', 'View credits balance'),
+    ('wallet.points.earn', 'Earn points'),
+    ('wallet.credits.spend', 'Spend credits'),
+    ('wallet.points.convert', 'Convert points to credits'),
+    ('wallet.credits.purchase', 'Purchase credits'),
     ('wallet.view', 'View wallet balances'),
     ('wallet.convert', 'Convert points to credits'),
-    -- Payments
-    ('payments.create', 'Create payment intents'),
+    ('wallet.admin.adjust', 'Admin balance adjustment'),
+    ('wallet.admin.rules.manage', 'Manage activity point rules'),
+    ('wallet.admin.settings.manage', 'Manage wallet settings'),
+    -- Payment Core (Section 17)
+    ('payments.create', 'Create payments'),
+    ('payments.view_own', 'View own payments'),
+    ('payments.view_any', 'View any payment (admin)'),
     ('payments.view.own', 'View own payment history'),
-    -- Learning
+    ('payments.refund', 'Refund payments'),
+    ('payments.webhook', 'Handle payment webhooks'),
+    ('payments.subscriptions.manage', 'Manage subscriptions'),
+    ('payments.discount_codes.manage', 'Manage discount codes'),
+    -- Learning Platform (Section 36)
+    ('learning.view', 'View published learning tracks'),
+    ('learning.progress.update', 'Update lesson progress'),
+    ('learning.certificate.issue', 'Issue learning certificates'),
+    ('learning.admin.manage', 'Manage learning tracks, modules, and lessons'),
     ('learning.enroll', 'Enroll in learning tracks'),
     ('learning.manage', 'Manage learning tracks and content'),
-    -- Tickets
+    -- Tickets (Section 38)
+    ('tickets.submit', 'Submit support tickets'),
+    ('tickets.view_own', 'View own tickets'),
     ('tickets.create', 'Create support tickets'),
+    ('tickets.admin', 'Admin ticket management'),
+    ('tickets.type.manage', 'Manage ticket types'),
     ('tickets.manage', 'Manage all tickets'),
-    -- Webhooks
+    -- Webhooks (Section 23)
     ('webhooks.manage', 'Manage webhooks'),
-    -- Organizations
+    ('integrations.webhooks.manage', 'Manage webhook endpoint configurations'),
+    -- Organizations (Section 04)
     ('organizations.create', 'Create organizations'),
     ('organizations.manage', 'Manage organization members'),
-    -- Professional
-    ('professional.create', 'Create professional profiles'),
-    ('professional.manage', 'Manage professional profiles'),
-    -- Search
+    -- Search (Section 09)
     ('search.analytics.view', 'View search analytics'),
-    -- Analytics
+    -- Analytics (Section 40)
     ('analytics.view.own', 'View own analytics'),
     ('analytics.view.all', 'View all analytics'),
-    -- API Keys
+    ('analytics.admin', 'View analytics dashboard and security scan results'),
+    ('analytics.cache.flush', 'Flush platform caches (admin-only)'),
+    ('admin.analytics.search', 'Admin analytics search'),
+    -- API Keys (Section 47)
     ('api.keys.self_manage', 'Create and revoke own API keys'),
     ('api.keys.view.all', 'View all API keys'),
     ('api.keys.manage', 'Manage all API keys (suspend, revoke, tier)'),
     ('api.keys.analytics.view', 'View per-key API usage analytics'),
-    -- Docs
+    -- Documentation (Section 44)
     ('docs.manage', 'Manage documentation pages'),
-    -- Affiliate
+    ('docs.admin', 'Manage documentation pages (create, edit, delete, review)'),
+    -- Affiliate (Section 55/56)
     ('affiliate.enroll', 'Enroll in affiliate program'),
     ('affiliate.manage', 'Manage affiliate program'),
-    -- AI Context
-    ('ai.context.points_balance', 'Access points balance in AI context'),
+    ('affiliate.admin.manage', 'Affiliate admin manage'),
+    ('affiliate.admin.view', 'Affiliate admin view'),
+    ('affiliate.providers.manage', 'Manage affiliate providers'),
+    -- AI Context (Section 20)
+    ('ai.context.points_balance', 'View AI credit/points balance'),
     ('ai.context.course_progress', 'Access course progress in AI context'),
     ('ai.context.mentorship_activity', 'Access mentorship activity in AI context'),
     ('ai.context.forum_activity', 'Access forum activity in AI context'),
     ('ai.context.referral_activity', 'Access referral activity in AI context'),
     ('ai.context.moderation_history', 'Access moderation history in AI context'),
-    -- Admin
-    ('admin.settings.manage', 'Manage platform settings'),
+    ('ai.context.admin_view', 'View AI usage analytics (admin)'),
+    ('ai.context.admin_delete_entry', 'Delete AI context entries (admin)'),
+    ('ai.generate', 'Generate AI content via the AI gateway'),
+    ('ai.hitl.review', 'Review and approve/reject AI-generated output'),
+    ('ai.tools.manage', 'Manage AI tool configurations and enablement'),
+    -- Admin Core
+    ('admin.settings', 'Manage platform settings'),
+    ('admin.settings.manage', 'Manage platform settings (alias)'),
     ('admin.users.manage', 'Manage user accounts'),
+    ('admin.users.list', 'List users (admin)'),
     ('admin.groups.manage', 'Manage user groups and roles'),
+    ('admin.rbac.manage', 'Manage RBAC groups, roles, and permissions'),
     ('admin.spaces.manage', 'Manage all spaces'),
     ('admin.feature_flags.manage', 'Toggle feature flags'),
-    ('admin.i18n.manage', 'Manage translations and languages')
+    ('admin.i18n.manage', 'Manage translations and languages'),
+    ('admin.moderation', 'Manage content moderation queue'),
+    ('admin.broadcast', 'Send broadcast messages to users'),
+    ('admin.impersonate', 'Impersonate other users for support/debugging'),
+    -- Moderation (Section 51)
+    ('moderation.report', 'Report content or users'),
+    ('moderation.warn', 'Issue user warnings'),
+    ('moderation.ban', 'Ban users'),
+    ('moderation.appeal.review', 'Review moderation appeals'),
+    ('moderation.content.review', 'Review flagged content'),
+    ('moderation.broadcast', 'Send broadcast notifications'),
+    ('reports.review', 'Review and action content reports (admin/moderators)'),
+    -- Spam & Safety (Section 41)
+    ('spam.ip_block.manage', 'Manage IP blocks'),
+    ('spam.censored_words.manage', 'Manage censored word list'),
+    ('spam.user_block.manage', 'Block/unblock users'),
+    -- Bots (Section 43)
+    ('bots.admin', 'Administer known bots and crawler policies'),
+    -- GDPR (Section 19)
+    ('gdpr.audit_logs.view', 'View audit logs (super_admin)'),
+    ('gdpr.consents.view', 'View consent records (admin)'),
+    ('gdpr.data_exports.view', 'View data export requests (admin)'),
+    ('gdpr.deletions.view', 'View account deletion requests (admin)'),
+    -- Geo (Phase 30)
+    ('geo.lookup', 'Resolve arbitrary IP addresses via GeoIP'),
+    -- Link Preview
+    ('link_preview.fetch', 'Fetch link previews from external URLs'),
+    -- Feature Flags (Section 42)
+    ('features.manage', 'Toggle feature flags for a tenant'),
+    -- Feature Check Keys
+    ('feature.blog', 'Feature flag: Blog'),
+    ('feature.forum', 'Feature flag: Forum'),
+    ('feature.dm', 'Feature flag: DMs'),
+    ('feature.wallet', 'Feature flag: Wallet'),
+    ('feature.ai_chat', 'Feature flag: AI Chat'),
+    ('feature.professional', 'Feature flag: Professional profiles'),
+    ('feature.ratings_reviews', 'Feature flag: Ratings & Reviews'),
+    -- Coupons & Referrals (Section 55/56)
+    ('coupons.manage', 'Manage coupons'),
+    ('referral.admin', 'Manage referral program settings and view referrals'),
+    -- Newsletter (Section 33)
+    ('newsletter.admin', 'Manage newsletter subscribers and campaigns'),
+    -- Mentorship (Section 35)
+    ('mentorship.admin', 'Manage mentorship programs and matches'),
+    -- Super-admin Control Panel (Section 21)
+    ('control.panel.access', 'Access super-admin control panel'),
+    ('control.tenants.manage', 'Manage tenants'),
+    ('control.settings.manage', 'Manage system settings'),
+    ('control.feature_flags.manage', 'Manage feature flags'),
+    ('control.health.view', 'View infrastructure health'),
+    ('control.queue.manage', 'Manage job queue'),
+    ('control.cache.manage', 'Manage cache'),
+    ('control.security.manage', 'Manage security settings'),
+    ('control.api_keys.manage', 'Manage API keys'),
+    ('control.ai_budget.manage', 'Manage AI budget'),
+    ('control.audit_logs.view', 'View audit logs')
 ON CONFLICT (key) DO NOTHING;
 
 -- ============================================================
@@ -240,33 +432,41 @@ WHERE ur.tenant_id = '00000000-0000-0000-0000-000000000001'
   AND ur.slug = 'super_admin'
 ON CONFLICT DO NOTHING;
 
--- Member role permissions (standard member capabilities)
+-- Member role permissions (standard member capabilities — flat taxonomy)
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT ur.id, p.id
 FROM user_roles ur, permissions p
 WHERE ur.tenant_id = '00000000-0000-0000-0000-000000000001'
   AND ur.slug = 'member'
   AND p.key IN (
-    'content.create', 'content.edit.own', 'content.delete.own', 'content.publish',
-    'blog.create', 'blog.edit.own',
-    'forum.create', 'forum.vote',
+    'content.create', 'content.edit', 'content.reactions.add', 'content.reactions.remove',
+    'content.render', 'content.revisions.view', 'content.pin',
+    'blog.create', 'blog.edit_own',
+    'forum.thread.create', 'forum.thread.edit_own', 'forum.thread.delete_own',
+    'forum.reply.create', 'forum.reply.edit_own', 'forum.reply.delete_own',
+    'forum.vote', 'forum.poll.vote',
     'spaces.create',
-    'moderation.report',
-    'media.upload', 'media.delete.own',
+    'moderation.report', 'reports.review',
+    'media.upload', 'media.delete_own', 'media.view_own', 'media.library.view_own',
+    'media.video.upload',
     'reactions.create', 'reactions.delete.own',
     'bookmarks.create', 'bookmarks.manage',
     'tags.create',
-    'follows.create',
-    'notifications.manage',
-    'dm.send', 'dm.request',
-    'wallet.view', 'wallet.convert',
-    'payments.create', 'payments.view.own',
-    'learning.enroll',
-    'tickets.create',
+    'follows.create', 'follows.toggle', 'follows.view',
+    'notifications.view', 'notifications.manage',
+    'dm.send', 'dm.view', 'dm.request', 'dm.manage_privacy',
+    'wallet.points.balance', 'wallet.credits.balance', 'wallet.view', 'wallet.convert',
+    'wallet.points.earn', 'wallet.credits.spend', 'wallet.points.convert',
+    'payments.create', 'payments.view_own',
+    'learning.enroll', 'learning.view', 'learning.progress.update',
+    'tickets.submit', 'tickets.view_own',
     'organizations.create',
-    'professional.create',
+    'professional.create', 'professional_profile.create',
+    'professional_profile.edit_own', 'professional_profile.delete_own',
     'analytics.view.own',
-    'api.keys.self_manage'
+    'api.keys.self_manage',
+    'reviews.create', 'reviews.edit_own', 'reviews.delete_own',
+    'comparison.create', 'comparison.edit_own', 'comparison.delete_own'
   )
 ON CONFLICT DO NOTHING;
 

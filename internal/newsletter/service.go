@@ -94,7 +94,7 @@ func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID, tenantID 
 		return fmt.Errorf("marshalling newsletter payload: %w", err)
 	}
 
-	task := asynq.NewTask("newsletter_send", payload)
+	task := asynq.NewTask("newsletter:send", payload)
 
 	info, err := s.client.Enqueue(task, asynq.Queue("default"))
 	if err != nil {

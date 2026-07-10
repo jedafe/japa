@@ -1,20 +1,49 @@
 import type { LayoutServerLoad } from './$types';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
+import type { Enrollment } from '$lib/api/types';
 
 export const load: LayoutServerLoad = async ({ locals, cookies }) => {
-	const token = cookies.get('learn_token') ?? cookies.get('jc_token');
+	const user = locals.user;
+	const token = locals.token;
+	const platformDisabled = locals.platformDisabled ?? false;
 	const localeCode = cookies.get('jc_locale') ?? 'en';
 
 	let translations: Record<string, string> = {};
 	try {
-		translations = await import(`$lib/locales/${localeCode}.json`).then((m) => m.default);
+		const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/i18n/packs/${localeCode}`);
+		if (res.ok) {
+			const body = await res.json();
+			translations = body?.data ?? body ?? {};
+		}
 	} catch {
-		translations = await import('$lib/locales/en.json').then((m) => m.default);
+		// Graceful degradation
 	}
 
+	let enrollments: Enrollment[] = [];
+	if (user && token) {
+		try {
+			const enrollRes = await fetch(`${PUBLIC_JC_API_URL}/api/v1/me/enrollments`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			if (enrollRes.ok) {
+				const { data } = await enrollRes.json();
+				enrollments = data ?? [];
+			}
+		} catch {
+			enrollments = [];
+		}
+	}
+
+	const enrolledTrackIds = new Set(enrollments.map((e) => e.track_id));
+
 	return {
-		user: locals.user,
-		token: token ?? null,
+		user,
+		token,
+		isAuth: !!user,
+		platformDisabled,
+		enrollments,
+		enrolledTrackIds: Array.from(enrolledTrackIds),
 		locale: localeCode,
-		translations
+		translations,
 	};
 };

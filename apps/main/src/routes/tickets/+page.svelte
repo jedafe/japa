@@ -3,6 +3,7 @@
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type Ticket } from '$lib/api';
 	import autoAnimate from '@formkit/auto-animate';
+	import { onMount } from 'svelte';
 
 	let { data } = $props();
 
@@ -11,6 +12,7 @@
 	let filter = $state<'all' | 'open' | 'in_progress' | 'resolved' | 'closed'>('all');
 	let currentPage = $state(0);
 	let totalPages = $state(1);
+	let categoryLabels = $state<Record<string, string>>({});
 
 	const filterOptions = [
 		{ value: 'all' as const, label: 'All' },
@@ -20,14 +22,23 @@
 		{ value: 'closed' as const, label: 'Closed' }
 	];
 
-	const categoryLabels: Record<string, string> = {
-		account: 'Account',
-		billing: 'Billing',
-		technical: 'Technical',
-		content: 'Content',
-		feature_request: 'Feature Request',
-		other: 'Other'
-	};
+	onMount(async () => {
+		try {
+			const types = await api.listTicketTypes();
+			if (Array.isArray(types)) {
+				categoryLabels = Object.fromEntries(types.map((t) => [t.slug, t.name]));
+			}
+		} catch {
+			categoryLabels = {
+				account: 'Account',
+				billing: 'Billing',
+				technical: 'Technical',
+				content: 'Content',
+				feature_request: 'Feature Request',
+				other: 'Other'
+			};
+		}
+	});
 
 	async function loadTickets() {
 		loading = true;

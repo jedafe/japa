@@ -14,6 +14,8 @@
 	let copiedKey = $state(false);
 	let errorMessage = $state('');
 
+	let availableScopes = $state<{ value: string; label: string; description: string }[]>([]);
+
 	onMount(async () => {
 		try {
 			keys = await api.listDeveloperKeys();
@@ -22,57 +24,30 @@
 		} finally {
 			loading = false;
 		}
-	});
 
-	async function createKey() {
-		if (!newKeyName.trim()) return;
 		try {
-			const result = await api.createDeveloperKey({ name: newKeyName.trim(), scopes: newKeyScopes });
-			createdKey = result.key;
-			keys = [...keys, result.key_info];
-			showCreate = false;
-			newKeyName = '';
-			errorMessage = '';
-		} catch (e) {
-			errorMessage = 'Failed to create API key.';
+			const scopes = await api.listDeveloperScopes();
+			if (Array.isArray(scopes)) {
+				availableScopes = scopes;
+			}
+		} catch {
+			availableScopes = [
+				{ value: 'api.read.*', label: 'Read All', description: 'Read access to all resources' },
+				{ value: 'content.read', label: 'Read Content', description: 'Read content and articles' },
+				{ value: 'content.create', label: 'Create Content', description: 'Create new content' },
+				{ value: 'content.edit', label: 'Edit Content', description: 'Edit existing content' },
+				{ value: 'content.delete', label: 'Delete Content', description: 'Delete content' },
+				{ value: 'spaces.read', label: 'Read Spaces', description: 'Read spaces and communities' },
+				{ value: 'spaces.create', label: 'Create Spaces', description: 'Create new spaces' },
+				{ value: 'forum.read', label: 'Read Forum', description: 'Read forum threads and replies' },
+				{ value: 'forum.create', label: 'Create Forum', description: 'Create forum threads and replies' },
+				{ value: 'users.read', label: 'Read Users', description: 'Read user profiles' },
+				{ value: 'media.upload', label: 'Upload Media', description: 'Upload media files' },
+				{ value: 'notifications.read', label: 'Read Notifications', description: 'Read notifications' },
+				{ value: 'search', label: 'Search', description: 'Use search functionality' }
+			];
 		}
-	}
-
-	async function revokeKey(id: string) {
-		if (!confirm('Revoke this key? This cannot be undone.')) return;
-		try {
-			await api.revokeDeveloperKey(id);
-			keys = keys.filter((k) => k.id !== id);
-			errorMessage = '';
-		} catch (e) {
-			errorMessage = 'Failed to revoke API key.';
-		}
-	}
-
-	function copyKey() {
-		if (!createdKey) return;
-		navigator.clipboard.writeText(createdKey);
-		copiedKey = true;
-		setTimeout(() => (copiedKey = false), 2000);
-	}
-
-	function formatDate(iso: string): string {
-		return new Date(iso).toLocaleDateString('en-US', {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric'
-		});
-	}
-
-	const availableScopes = [
-		'api.read.*',
-		'api.write.*',
-		'api.read.content',
-		'api.write.content',
-		'api.read.users',
-		'api.read.spaces'
-	];
-</script>
+	});</script>
 
 <svelte:head>
 	<title>Developer Portal | JapaConnect</title>
@@ -293,20 +268,20 @@
 					<p class="mb-2 text-xs font-medium" style="color: var(--color-muted)">Scopes</p>
 					<div class="flex flex-wrap gap-2">
 						{#each availableScopes as scope}
-							<label class="flex items-center gap-1.5 text-xs" style="color: var(--color-foreground)">
+							<label class="flex items-center gap-1.5 text-xs" style="color: var(--color-foreground)" title={scope.description}>
 								<input
 									type="checkbox"
-									checked={newKeyScopes.includes(scope)}
+									checked={newKeyScopes.includes(scope.value)}
 									onchange={() => {
-										if (newKeyScopes.includes(scope)) {
-											newKeyScopes = newKeyScopes.filter((s) => s !== scope);
+										if (newKeyScopes.includes(scope.value)) {
+											newKeyScopes = newKeyScopes.filter((s) => s !== scope.value);
 										} else {
-											newKeyScopes = [...newKeyScopes, scope];
+											newKeyScopes = [...newKeyScopes, scope.value];
 										}
 									}}
 									class="rounded"
 								/>
-								{scope}
+								{scope.label}
 							</label>
 						{/each}
 					</div>

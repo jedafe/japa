@@ -3,6 +3,7 @@
 	import { enhance } from '$app/forms';
 	import { api } from '$lib/api';
 	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
 
 	let { data, form } = $props();
 
@@ -10,7 +11,20 @@
 	let prefs = $state(data.prefs);
 	let saving = $state(false);
 
-	// ── Web Push subscription state ───────────────────────────────────────────
+	const iconMap: Record<string, typeof Mail> = {
+		email: Mail,
+		push: Smartphone,
+		follow: Users,
+		comment: MessageCircle,
+		mention: AtSign,
+		dm: Send,
+		group: Users,
+		marketing: Mail
+	};
+
+	let notificationTypes = $state<{ key: string; label: string; description: string; icon: typeof Mail }[]>([]);
+	let typesLoading = $state(true);
+
 	let pushSupported = $state(false);
 	let pushSubscribed = $state(false);
 	let pushLoading = $state(false);
@@ -59,56 +73,43 @@
 		return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 	}
 
-	const notificationTypes = [
-		{
-			key: 'email',
-			label: 'Email notifications',
-			description: 'Receive email updates for important activity',
-			icon: Mail
-		},
-		{
-			key: 'push',
-			label: 'Push notifications',
-			description: 'Get browser push notifications',
-			icon: Smartphone
-		},
-		{
-			key: 'follow',
-			label: 'Follow notifications',
-			description: 'When someone follows you',
-			icon: Users
-		},
-		{
-			key: 'comment',
-			label: 'Comment notifications',
-			description: 'When someone comments on your posts',
-			icon: MessageCircle
-		},
-		{
-			key: 'mention',
-			label: 'Mention notifications',
-			description: 'When someone mentions you',
-			icon: AtSign
-		},
-		{
-			key: 'dm',
-			label: 'Direct message notifications',
-			description: 'When you receive a new message',
-			icon: Send
-		},
-		{
-			key: 'group',
-			label: 'Group notifications',
-			description: 'Updates from your spaces and groups',
-			icon: Users
-		},
-		{
-			key: 'marketing',
-			label: 'Marketing emails',
-			description: 'Product updates and community highlights',
-			icon: Mail
+	onMount(async () => {
+		try {
+			const types = await api.getNotificationTypes();
+			if (Array.isArray(types)) {
+				notificationTypes = types.map((t) => ({
+					key: t.key,
+					label: t.label,
+					description: t.description,
+					icon: iconMap[t.key] || Bell
+				}));
+			} else {
+				notificationTypes = [
+					{ key: 'email', label: 'Email notifications', description: 'Receive email updates for important activity', icon: Mail },
+					{ key: 'push', label: 'Push notifications', description: 'Get browser push notifications', icon: Smartphone },
+					{ key: 'follow', label: 'Follow notifications', description: 'When someone follows you', icon: Users },
+					{ key: 'comment', label: 'Comment notifications', description: 'When someone comments on your posts', icon: MessageCircle },
+					{ key: 'mention', label: 'Mention notifications', description: 'When someone mentions you', icon: AtSign },
+					{ key: 'dm', label: 'Direct message notifications', description: 'When you receive a new message', icon: Send },
+					{ key: 'group', label: 'Group notifications', description: 'Updates from your spaces and groups', icon: Users },
+					{ key: 'marketing', label: 'Marketing emails', description: 'Product updates and community highlights', icon: Mail }
+				];
+			}
+		} catch {
+			notificationTypes = [
+				{ key: 'email', label: 'Email notifications', description: 'Receive email updates for important activity', icon: Mail },
+				{ key: 'push', label: 'Push notifications', description: 'Get browser push notifications', icon: Smartphone },
+				{ key: 'follow', label: 'Follow notifications', description: 'When someone follows you', icon: Users },
+				{ key: 'comment', label: 'Comment notifications', description: 'When someone comments on your posts', icon: MessageCircle },
+				{ key: 'mention', label: 'Mention notifications', description: 'When someone mentions you', icon: AtSign },
+				{ key: 'dm', label: 'Direct message notifications', description: 'When you receive a new message', icon: Send },
+				{ key: 'group', label: 'Group notifications', description: 'Updates from your spaces and groups', icon: Users },
+				{ key: 'marketing', label: 'Marketing emails', description: 'Product updates and community highlights', icon: Mail }
+			];
+		} finally {
+			typesLoading = false;
 		}
-	];
+	});
 
 	function toggleChannel(typeKey: string, channel: 'in_app' | 'email' | 'push') {
 		prefs = {

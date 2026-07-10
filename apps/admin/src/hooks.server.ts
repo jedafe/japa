@@ -1,71 +1,54 @@
-import type { Handle, HandleServerError } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { building } from '$app/environment';
-import { API_BASE } from '$lib/server/api';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
+
+const PUBLIC_ROUTES = ['/login', '/_app'];
+
+function isPublicRoute(pathname: string): boolean {
+	return PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
+}
 
 export const handle: Handle = async ({ event, resolve }) => {
-	// During the static build, skip auth so adapter-static can generate the
-	// SPA fallback page without being redirected. In production there is no
-	// server runtime; auth is enforced client-side by the universal layout.
 	if (building) {
 		return resolve(event);
 	}
 
-	const path = event.url.pathname;
-
-	// Allow public paths and static assets through without auth
-	if (path.startsWith('/login') || path.startsWith('/_app') || path.includes('.')) {
+	if (isPublicRoute(event.url.pathname) || event.url.pathname.includes('.')) {
 		return resolve(event);
 	}
 
-	const token = event.cookies.get('admin_token');
+	const token = event.cookies.get('jc_token');
 
 	if (!token) {
-		// No token — redirect to login
-		return new Response(null, {
-			status: 303,
-			headers: { location: '/login' }
-		});
+		throw redirect(303, '/login');
 	}
 
-	// Validate token against backend
 	try {
-		const res = await fetch(`${API_BASE}/me`, {
-			headers: { Authorization: `Bearer ${token}` }
+		const meRes = await fetch(`${PUBLIC_JC_API_URL}/api/v1/me`, {
+			headers: { Authorization: `Bearer ${token}` },
 		});
 
-		if (res.ok) {
-			const body = await res.json();
-			const user = body.data ?? body;
-			event.locals.user = {
-				id: user.id,
-				email: user.email,
-				username: user.username,
-				displayName: user.display_name ?? user.username
-			};
+		if (meRes.ok) {
+			const { data } = await meRes.json();
+			event.locals.user = data;
 			event.locals.token = token;
 		} else {
-			// Invalid token — clear cookie and redirect to login
-			event.cookies.delete('admin_token', { path: '/' });
-			return new Response(null, {
-				status: 303,
-				headers: { location: '/login' }
-			});
+			event.cookies.delete('jc_token', { path: '/' });
+			throw redirect(303, '/login');
 		}
-	} catch {
-		// Backend unreachable — clear cookie and redirect to login
-		event.cookies.delete('admin_token', { path: '/' });
-		return new Response(null, {
-			status: 303,
-			headers: { location: '/login' }
-		});
+	} catch (e) {
+		if (e instanceof Response) throw e;
+		event.cookies.delete('jc_token', { path: '/' });
+		throw redirect(303, '/login');
 	}
 
-	return resolve(event);
+	const response = await resolve(event);
+	return response;
 };
 
 export const handleError: HandleServerError = ({ error }) => {
 	return {
 		code: 'INTERNAL_ERROR',
-		message: 'Internal error'
+		message: 'Internal error',
 	};
 };

@@ -134,8 +134,7 @@ func ValidateRedirectURL(urlStr string) error {
 	return nil
 }
 
-// IsBlockedDomain checks whether a domain is in the admin blacklist.
-// The blacklist is loaded from system_settings (content.link_preview.blacklist).
+// IsBlockedDomain checks whether a domain is in the provided blacklist.
 func IsBlockedDomain(host string, blacklist []string) bool {
 	host = strings.ToLower(host)
 

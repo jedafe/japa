@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -99,6 +100,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// can atomically swap in a fresh MaxMind database weekly.
 	geoipUpdater := geoip.NewUpdater(cfg.MaxmindLicenseKey, cfg.GeoIPDBPath, geoipReader)
 	worker.RegisterGeoIPUpdater(geoipUpdater)
+
+	// CORS middleware — read allowed origins from system_settings at startup.
+	// Origins are comma-separated under 'security.cors.allowed_origins'.
+	var corsOrigins []string
+	var corsStr string
+	if err := database.Reader.QueryRow(context.Background(),
+		`SELECT COALESCE(value, '') FROM system_settings WHERE key = 'security.cors.allowed_origins' LIMIT 1`).Scan(&corsStr); err == nil && corsStr != "" {
+		corsOrigins = strings.Split(corsStr, ",")
+		for i := range corsOrigins {
+			corsOrigins[i] = strings.TrimSpace(corsOrigins[i])
+		}
+		slog.Info("CORS: allowed origins loaded from system_settings", "count", len(corsOrigins))
+	}
+	if len(corsOrigins) > 0 {
+		r.Use(mw.CORS(corsOrigins))
+	}
 
 	// IP block middleware — reject blocked IPs before they reach any handler.
 	// Runs after RealIP (so the resolved IP is available) but before all
@@ -291,6 +308,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	notificationService.SetAsynqClient(asynqClient)
 	authHandlers.AsynqClient = asynqClient
 	contentHandlers.AsynqClient = asynqClient
+	// Wire link preview blacklist from system_settings (AUDIT-BE-010).
+	// The blacklist is comma-separated domains stored under 'content.link_preview.blacklist'.
+	if blacklistStr, err := settingsService.GetSetting(context.Background(), pgtype.UUID{}, "content.link_preview.blacklist"); err == nil && blacklistStr != "" {
+		blacklist := strings.Split(blacklistStr, ",")
+		for i := range blacklist {
+			blacklist[i] = strings.TrimSpace(blacklist[i])
+		}
+		linkPreviewFetcher.SetBlacklist(blacklist)
+		slog.Info("link preview: blacklist loaded from system_settings", "count", len(blacklist))
+	}
 
 	// Feed System subsystem (Section 32 — Activity Feed / Timeline).
 	feedService := feed.NewService(database)
@@ -307,7 +334,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Blog Extension subsystem (Section 24 — Blog Extension).
 	blogService := blog.NewService(database)
-	blogHandlers := blog.NewHandlers(blogService, contentService)
+	blogHandlers := blog.NewHandlers(blogService, contentService, cfg.SiteURL)
 
 	// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
 	reviewService := reviews.NewService(database)
@@ -393,7 +420,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Documentation System subsystem (Section 44).
 	docsService := docs.NewService(database)
-	docsHandlers := docs.NewHandlers(docsService)
+	docsHandlers := docs.NewHandlers(docsService, cfg.SiteURL)
 
 	// Admin Settings subsystem.
 	adminHandlers := admin.NewHandlers(database)
@@ -533,10 +560,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/sitemap-users.xml", sitemapHandler.ServeUsersSitemap)
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
 		// Universal RSS feeds (public — no auth required, tenant-scoped)
-		r.Get("/feed.xml", rsspkg.HandleFeed(database.Reader, "all"))
-		r.Get("/spaces/{slug}/feed.xml", rsspkg.HandleSpaceFeed(database.Reader))
-		r.Get("/tags/{slug}/feed.xml", rsspkg.HandleTagFeed(database.Reader))
-		r.Get("/users/{username}/feed.xml", rsspkg.HandleUserFeed(database.Reader))
+		r.Get("/feed.xml", rsspkg.HandleFeed(gen.New(database.Reader), "all"))
+		r.Get("/spaces/{slug}/feed.xml", rsspkg.HandleSpaceFeed(gen.New(database.Reader)))
+		r.Get("/tags/{slug}/feed.xml", rsspkg.HandleTagFeed(gen.New(database.Reader)))
+		r.Get("/users/{username}/feed.xml", rsspkg.HandleUserFeed(gen.New(database.Reader)))
 
 		// Public settings endpoint (no auth required, tenant-scoped)
 		r.Get("/site/settings/public", configHandlers.GetPublicSettings)
@@ -599,6 +626,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/custom-field-groups", cfHandlers.ListFieldGroups)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/custom-field-groups/{id}", cfHandlers.GetFieldGroup)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/custom-field-groups/{id}/fields", cfHandlers.ListFieldsByGroup)
+			// Custom field entity types (public — for frontend entity type selection)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/custom-field-entity-types", cfHandlers.ListEntityTypes)
 			// Write (require auth + permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.create")).
 				Post("/custom-field-groups", cfHandlers.CreateFieldGroup)
@@ -729,8 +758,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/spaces/{slug}/pinned", spaceHandlers.AddPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Delete("/spaces/{slug}/pinned/{content_id}", spaceHandlers.RemovePinned)
-			// NOTE (P5): PATCH /spaces/:id/pinned/reorder deferred — no
-			// ReorderPinnedContent service method exists yet.
 
 			// Dedicated leave (catalog: DELETE /spaces/:id/leave), split from
 			// the join/leave toggle above.
@@ -780,6 +807,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Read (require auth)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content", contentHandlers.ListContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{slug}", contentHandlers.GetContent)
+			// Content types (public — for frontend content type selection)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content-types", contentHandlers.ListContentTypes)
 			// Update/Delete (require auth + permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
 				Patch("/content/{id}", contentHandlers.UpdateContent)
@@ -919,6 +948,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public trending endpoints (no auth required)
 			r.Get("/trending/content", trendingHandlers.GetTrendingContent)
 			r.Get("/trending/tags", trendingHandlers.GetTrendingTags)
+			// Catalog alias: /tags/trending
+			r.Get("/tags/trending", trendingHandlers.GetTrendingTags)
 			r.Get("/trending/spaces", trendingHandlers.GetTrendingSpaces)
 			r.Get("/trending/users", trendingHandlers.GetTrendingUsers)
 
@@ -1291,11 +1322,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/organizations/invitations/{token}/accept", orgHandlers.AcceptInvitation)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/claim-ownership", orgHandlers.ClaimOwnership)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/claim-ownership", orgHandlers.ListClaims)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/claim-ownership/{id}", orgHandlers.ReviewClaim)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Patch("/claim-ownership/{id}", orgHandlers.ReviewClaim)
 
 			// Payment Core routes (Section 17 — Payment Core)
-			// Payment initiation
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.create")).
+			// Payment initiation — idempotency middleware prevents duplicate charges
+			// when clients retry a failed POST. See AUDIT-BE-004 / Rule 9.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.create"),
+				mw.IdempotencyMiddleware(vkClient.Redis())).
 				Post("/payments/intent", paymentHandlers.InitiatePayment)
 			// Webhooks (public - no auth required)
 			r.Post("/payments/webhook/paystack", paymentHandlers.HandlePaystackWebhook)
@@ -1304,8 +1337,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Payment listing and details (catalog: /me/payments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments", paymentHandlers.ListPayments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments/{id}", paymentHandlers.GetPayment)
-			// Refunds
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.refund")).
+			// Refunds — idempotency middleware prevents duplicate refund processing. See AUDIT-BE-004 / Rule 9.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.refund"),
+				mw.IdempotencyMiddleware(vkClient.Redis())).
 				Post("/payments/{id}/refund", paymentHandlers.RefundPayment)
 			// Subscriptions
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.subscriptions.manage")).
@@ -1335,8 +1369,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/wallet/credits", walletHandlers.GetCreditsBalance)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
 					Get("/me/wallet/ledger", walletHandlers.GetLedger)
-				// Conversion
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.convert")).
+				// Conversion — idempotency middleware prevents duplicate point-to-credit conversions. See AUDIT-BE-004 / Rule 9.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.convert"),
+					mw.IdempotencyMiddleware(vkClient.Redis())).
 					Post("/me/wallet/convert", walletHandlers.ConvertPoints)
 				// Settings (admin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
@@ -1631,6 +1666,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/reports", reportsHandlers.ListMyReports)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
+			// Admin user routes (catalog: /admin/users)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users", usersHandlers.ListUsers)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users/{id}", usersHandlers.GetUserByUsername)
 
 			// Onboarding routes (Section 09)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/onboarding/status", onboardingHandlers.GetStatus)
@@ -1722,6 +1760,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.context.admin_view")).
 				Get("/admin/ai/usage", aiHandlers.HandleGetAIUsage)
 
+			// AI categories (public — for frontend AI category selection)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/ai/categories", aiHandlers.HandleListCategories)
+
 			// Webhook admin CRUD routes (Section 23 — Integrations)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 				Get("/admin/webhooks", webhookHandlers.ListWebhooks)
@@ -1749,6 +1791,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 			Post("/admin/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
 
+		// Webhook event types (public — for frontend webhook configuration)
+		r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			Get("/webhook-events", webhookHandlers.ListWebhookEvents)
+
 			// Newsletter admin routes (Section 33 — Newsletter)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
 				Get("/admin/newsletter/subscribers", newsletterHandlers.ListSubscribers)
@@ -1774,9 +1820,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/coupons/{id}", couponHandlers.GetCoupon)
 			r.Post("/coupons/{id}/click", couponHandlers.RecordCouponClick)
 
-			// Render helpers (internal — called by Go renderer)
-			r.Get("/render/coupon/{id}", couponHandlers.RenderCoupon)
-			r.Get("/render/affiliate-link", couponHandlers.RenderAffiliateLink)
+			// Render helpers (internal — called by Go renderer, AUDIT-BE-022).
+			// Gated by InternalGuard: only service-to-service calls or
+			// loopback requests are allowed.
+			r.With(mw.InternalGuard(cfg.InternalToken)).Get("/render/coupon/{id}", couponHandlers.RenderCoupon)
+			r.With(mw.InternalGuard(cfg.InternalToken)).Get("/render/affiliate-link", couponHandlers.RenderAffiliateLink)
 
 			// Admin: affiliate provider CRUD
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.providers.manage")).
@@ -2059,6 +2107,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/me/permissions", rbacHandlers.GetUserPermissions)
 
+			// API scopes (public — for developer portal scope selection)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/developer/scopes", rbacHandlers.ListScopes)
+
 			// Admin Moderation routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/moderation-queue", adminHandlers.ListModeration)
@@ -2123,8 +2175,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/spaces/{id}/join-requests/{requestId}", spaceHandlers.UpdateJoinRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Patch("/admin/spaces/{id}/status", spaceHandlers.UpdateSpaceStatus)
-			// Public space extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/analytics", spaceHandlers.GetSpaceAnalytics)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+				Post("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Patch("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/suggest-parents", spaceHandlers.SuggestParentSpaces)
@@ -2226,6 +2279,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/appeals/{id}", adminHandlers.UpdateAppeal)
 
 			// Task 23: Content admin moderation
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
+				Get("/admin/content/{id}/remove", adminHandlers.RemoveContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
 				Post("/admin/content/{id}/remove", adminHandlers.RemoveContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
