@@ -216,7 +216,19 @@ func RecordContentCreation(ctx context.Context, rdb *valkey.Client, tenantID, us
 	member := time.Now().Format(time.RFC3339Nano)
 	score := float64(time.Now().UnixMilli())
 
-	return rdb.Redis().ZAdd(ctx, key, valkeycompat.Z{Score: score, Member: member}).Err()
+	rClient := rdb.Redis()
+
+	if err := rClient.ZAdd(ctx, key, valkeycompat.Z{Score: score, Member: member}).Err(); err != nil {
+		return err
+	}
+
+	// Attach a 1-hour TTL so the sorted set expires after the 10-min
+	// sliding window plus ample buffer.
+	if err := rClient.Expire(ctx, key, time.Hour).Err(); err != nil {
+		return fmt.Errorf("setting spam rate TTL: %w", err)
+	}
+
+	return nil
 }
 
 // checkContentHash looks for duplicate content by comparing the SHA-256 hash

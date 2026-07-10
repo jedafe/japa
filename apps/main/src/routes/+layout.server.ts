@@ -5,16 +5,27 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-	const flagsResult = await apiFetch<Record<string, boolean>>('/feature-flags');
-	const flags = flagsResult.ok && flagsResult.data ? flagsResult.data : {};
+	let flags: Record<string, boolean> = {};
+	try {
+		const flagsResult = await apiFetch<Record<string, boolean>>('/feature-flags');
+		if (flagsResult.ok && flagsResult.data) {
+			flags = flagsResult.data;
+		}
+	} catch {
+		// Feature flags are non-critical; degrade gracefully
+	}
 
 	let notificationCount = 0;
 	if (locals.user) {
-		const countResult = await apiFetch<{ count: number }>('/notifications/unread-count', {
-			headers
-		});
-		if (countResult.ok && countResult.data) {
-			notificationCount = countResult.data.count;
+		try {
+			const countResult = await apiFetch<{ count: number }>('/notifications/unread-count', {
+				headers
+			});
+			if (countResult.ok && countResult.data) {
+				notificationCount = countResult.data.count;
+			}
+		} catch {
+			// Notification count is non-critical; default to 0
 		}
 	}
 
@@ -22,8 +33,15 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
 		?? (locals.user as any)?.language
 		?? 'en';
 
-	const translationsResult = await apiFetch<{ data: Record<string, string> }>(`/i18n/packs/${locale}`);
-	const translations = translationsResult.ok && translationsResult.data?.data ? translationsResult.data.data : {};
+	let translations: Record<string, string> = {};
+	try {
+		const translationsResult = await apiFetch<{ data: Record<string, string> }>(`/i18n/packs/${locale}`);
+		if (translationsResult.ok && translationsResult.data?.data) {
+			translations = translationsResult.data.data;
+		}
+	} catch {
+		// Translations are non-critical; degrade gracefully
+	}
 
 	return {
 		user: locals.user,

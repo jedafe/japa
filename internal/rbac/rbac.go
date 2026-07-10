@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -62,6 +63,7 @@ type UserContext struct {
 // L2 = Valkey (shared across server instances, 5min TTL).
 // DB  = source of truth (queried only on L1+L2 miss).
 type RBAC struct {
+	read  *gen.Queries
 	db    *db.DB
 	cache *permissionCache
 	vk    valkeycompat.Cmdable // nil when Valkey is unavailable (graceful degradation)
@@ -86,7 +88,8 @@ type permissionCache struct {
 // A background goroutine evicts L1 cache entries older than 60 seconds.
 func New(database *db.DB, vkClient valkeycompat.Cmdable) *RBAC {
 	r := &RBAC{
-		db: database,
+		read: gen.New(database.Reader),
+		db:   database,
 		cache: &permissionCache{
 			entries: make(map[string]*cacheEntry),
 		},
@@ -146,66 +149,38 @@ func (r *RBAC) GetUserContext(ctx context.Context, userID, tenantID pgtype.UUID)
 
 // loadUserContext queries the database for the user's groups and permissions.
 func (r *RBAC) loadUserContext(ctx context.Context, userID, tenantID pgtype.UUID) (*UserContext, error) {
-	query := `
-		SELECT DISTINCT p.key
-		FROM user_group_memberships ugm
-		JOIN user_groups ug ON ugm.group_id = ug.id
-		JOIN group_roles gr ON gr.group_id = ug.id
-		JOIN user_roles ur ON gr.role_id = ur.id
-		JOIN role_permissions rp ON rp.role_id = ur.id
-		JOIN permissions p ON rp.permission_id = p.id
-		WHERE ugm.tenant_id = $1 AND ugm.user_id = $2
-	`
-
-	rows, err := r.db.Reader.Query(ctx, query, tenantID, userID)
+	permRows, err := r.read.ResolveUserPermissions(ctx, gen.ResolveUserPermissionsParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("querying user permissions: %w", err)
 	}
 
-	defer rows.Close()
+	permissions := make(map[string]bool, len(permRows))
 
-	permissions := make(map[string]bool)
-
-	for rows.Next() {
-		var key string
-		if err := rows.Scan(&key); err != nil {
-			return nil, fmt.Errorf("scanning permission key: %w", err)
-		}
-
+	for _, key := range permRows {
 		permissions[key] = true
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating permission rows: %w", err)
-	}
-
-	groupQuery := `
-		SELECT ug.id, ug.tenant_id, ug.name, ug.slug, ug.is_system
-		FROM user_group_memberships ugm
-		JOIN user_groups ug ON ugm.group_id = ug.id
-		WHERE ugm.tenant_id = $1 AND ugm.user_id = $2
-	`
-
-	groupRows, err := r.db.Reader.Query(ctx, groupQuery, tenantID, userID)
+	groupRows, err := r.read.ResolveUserGroups(ctx, gen.ResolveUserGroupsParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("querying user groups: %w", err)
 	}
 
-	defer groupRows.Close()
+	groups := make([]Group, 0, len(groupRows))
 
-	var groups []Group
-
-	for groupRows.Next() {
-		var g Group
-		if err := groupRows.Scan(&g.ID, &g.TenantID, &g.Name, &g.Slug, &g.IsSystem); err != nil {
-			return nil, fmt.Errorf("scanning group: %w", err)
-		}
-
-		groups = append(groups, g)
-	}
-
-	if err := groupRows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating group rows: %w", err)
+	for _, g := range groupRows {
+		groups = append(groups, Group{
+			ID:       g.ID,
+			TenantID: g.TenantID,
+			Name:     g.Name,
+			Slug:     g.Slug,
+			IsSystem: g.IsSystem,
+		})
 	}
 
 	return &UserContext{

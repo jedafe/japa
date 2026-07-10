@@ -60,11 +60,6 @@ func loadFontFace(size float64) font.Face {
 	return face
 }
 
-// Route mounts the OG image routes.
-func (h *OGImageHandler) Route(r chi.Router) {
-	r.Get("/og/{id}.png", h.ServeOGImage)
-}
-
 // contentMeta holds the minimal data needed to render an OG image.
 type contentMeta struct {
 	Title       string
