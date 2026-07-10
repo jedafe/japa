@@ -22,7 +22,7 @@ import (
 // never reach back into a service or database to resolve missing values.
 type TemplateData struct {
 	SiteName   string // Brand name shown in header and footer (e.g. "JapaConnect")
-	SiteURL    string // Base URL of the site (e.g. "https://japaconnect.com")
+	SiteURL    string // Base URL of the site (e.g. "https://example.com")
 	UserName   string // Display name of the recipient; empty string omits the greeting
 	ActionURL  string // Primary action link (reset password, verify email, dashboard)
 	Expiry     string // Human-readable expiry for the action link (e.g. "1 hour", "24 hours")

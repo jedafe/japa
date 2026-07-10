@@ -3,17 +3,17 @@ package publicapi
 // GetPublicOpenAPISpec returns an OpenAPI 3.0.3 spec scoped to the public
 // developer API. Only read-only endpoints exposed via X-API-Key auth are
 // included. The spec is served at /api/v1/developer/swagger.json.
-func GetPublicOpenAPISpec(siteURL string) map[string]any {
+func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
 	return map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
-			"title":       "JapaConnect Public API",
+			"title":       siteName + " Public API",
 			"version":     "1.0.0",
-			"description": "Public API for the JapaConnect platform. Requires API key authentication via the X-API-Key header.",
+			"description": "Public API for the " + siteName + " platform. Requires API key authentication via the X-API-Key header.",
 			"contact": map[string]any{
-				"name":  "JapaConnect Developer Support",
-				"email": "api@japaconnect.com",
-				"url":   "https://docs.japaconnect.com",
+				"name":  siteName + " Developer Support",
+				"email": "api@" + extractDomain(siteURL),
+				"url":   siteURL + "/docs",
 			},
 		},
 		"servers": []any{
@@ -550,4 +550,23 @@ func buildPublicResponses() map[string]any {
 			},
 		},
 	}
+}
+
+// extractDomain extracts the domain from a URL (e.g. "https://example.com" -> "example.com").
+func extractDomain(url string) string {
+	// Remove protocol
+	domain := url
+	if idx := len("https://"); len(domain) > idx && domain[:idx] == "https://" {
+		domain = domain[idx:]
+	} else if idx := len("http://"); len(domain) > idx && domain[:idx] == "http://" {
+		domain = domain[idx:]
+	}
+	// Remove trailing path
+	for i, c := range domain {
+		if c == '/' {
+			domain = domain[:i]
+			break
+		}
+	}
+	return domain
 }

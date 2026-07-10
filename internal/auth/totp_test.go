@@ -7,7 +7,7 @@ import (
 func TestGenerateTOTPSecret(t *testing.T) {
 	t.Parallel()
 
-	secret, qrURL, err := GenerateTOTPSecret("user-123", "test@example.com")
+	secret, qrURL, err := GenerateTOTPSecret("user-123", "test@example.com", "TestApp")
 	if err != nil {
 		t.Fatalf("GenerateTOTPSecret failed: %v", err)
 	}
@@ -28,12 +28,12 @@ func TestGenerateTOTPSecret(t *testing.T) {
 func TestGenerateTOTPSecret_EmptyInputs(t *testing.T) {
 	t.Parallel()
 
-	_, _, err := GenerateTOTPSecret("", "test@example.com")
+	_, _, err := GenerateTOTPSecret("", "test@example.com", "TestApp")
 	if err == nil {
 		t.Error("expected error for empty user ID")
 	}
 
-	_, _, err = GenerateTOTPSecret("user-123", "")
+	_, _, err = GenerateTOTPSecret("user-123", "", "TestApp")
 	if err == nil {
 		t.Error("expected error for empty email")
 	}
@@ -42,7 +42,7 @@ func TestGenerateTOTPSecret_EmptyInputs(t *testing.T) {
 func TestVerifyTOTP_ValidCode(t *testing.T) {
 	t.Parallel()
 	// Generate a secret and create a valid code from it
-	secret, _, err := GenerateTOTPSecret("user-123", "test@example.com")
+	secret, _, err := GenerateTOTPSecret("user-123", "test@example.com", "TestApp")
 	if err != nil {
 		t.Fatalf("GenerateTOTPSecret failed: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestVerifyTOTP_ValidCode(t *testing.T) {
 func TestVerifyTOTP_InvalidCode(t *testing.T) {
 	t.Parallel()
 
-	secret, _, err := GenerateTOTPSecret("user-123", "test@example.com")
+	secret, _, err := GenerateTOTPSecret("user-123", "test@example.com", "TestApp")
 	if err != nil {
 		t.Fatalf("GenerateTOTPSecret failed: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestSanitizeCode(t *testing.T) {
 func TestTOTPIssuer(t *testing.T) {
 	t.Parallel()
 
-	if TOTPIssuer != "JapaConnect" {
-		t.Errorf("TOTPIssuer = %q, want %q", TOTPIssuer, "JapaConnect")
+	if defaultTOTPIssuer != "App" {
+		t.Errorf("defaultTOTPIssuer = %q, want %q", defaultTOTPIssuer, "App")
 	}
 }

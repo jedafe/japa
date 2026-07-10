@@ -155,7 +155,6 @@ func (q *Queries) CreatePasswordResetToken(ctx context.Context, arg CreatePasswo
 
 const createRefreshToken = `-- name: CreateRefreshToken :exec
 
-
 INSERT INTO refresh_tokens (tenant_id, user_id, token_hash, expires_at)
 VALUES ($1, $2, $3, $4)
 `
@@ -167,7 +166,6 @@ type CreateRefreshTokenParams struct {
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 }
 
-// Auth queries: refresh tokens, TOTP, OAuth, password reset, email verification, API keys.
 // =====================
 // Refresh Tokens
 // =====================
@@ -217,6 +215,37 @@ func (q *Queries) CreateTOTPCredentials(ctx context.Context, arg CreateTOTPCrede
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const createUser = `-- name: CreateUser :one
+
+
+INSERT INTO users (tenant_id, email, username, password_hash)
+VALUES ($1, $2, $3, $4)
+RETURNING id
+`
+
+type CreateUserParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	Email        string      `json:"email"`
+	Username     string      `json:"username"`
+	PasswordHash *string     `json:"password_hash"`
+}
+
+// Auth queries: refresh tokens, TOTP, OAuth, password reset, email verification, API keys, user management.
+// =====================
+// User Management
+// =====================
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createUser,
+		arg.TenantID,
+		arg.Email,
+		arg.Username,
+		arg.PasswordHash,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const deleteExpiredAPIKeys = `-- name: DeleteExpiredAPIKeys :exec
@@ -441,6 +470,39 @@ func (q *Queries) GetPasswordResetTokenByHash(ctx context.Context, arg GetPasswo
 	return i, err
 }
 
+const getRecentPasswordHashes = `-- name: GetRecentPasswordHashes :many
+SELECT password_hash
+FROM password_history
+WHERE user_id = $1
+ORDER BY created_at DESC
+LIMIT $2
+`
+
+type GetRecentPasswordHashesParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	HashLimit int32       `json:"hash_limit"`
+}
+
+func (q *Queries) GetRecentPasswordHashes(ctx context.Context, arg GetRecentPasswordHashesParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, getRecentPasswordHashes, arg.UserID, arg.HashLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var password_hash string
+		if err := rows.Scan(&password_hash); err != nil {
+			return nil, err
+		}
+		items = append(items, password_hash)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRefreshTokenByHash = `-- name: GetRefreshTokenByHash :one
 SELECT id, tenant_id, user_id, token_hash, expires_at, revoked_at, created_at, updated_at
 FROM refresh_tokens
@@ -499,6 +561,43 @@ func (q *Queries) GetTOTPCredentials(ctx context.Context, arg GetTOTPCredentials
 	return i, err
 }
 
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, tenant_id, email, password_hash, username, profile_type, status
+FROM users
+WHERE tenant_id = $1 AND email = $2
+LIMIT 1
+`
+
+type GetUserByEmailParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Email    string      `json:"email"`
+}
+
+type GetUserByEmailRow struct {
+	ID           pgtype.UUID `json:"id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	Email        string      `json:"email"`
+	PasswordHash *string     `json:"password_hash"`
+	Username     string      `json:"username"`
+	ProfileType  string      `json:"profile_type"`
+	Status       string      `json:"status"`
+}
+
+func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) (GetUserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, arg.TenantID, arg.Email)
+	var i GetUserByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Username,
+		&i.ProfileType,
+		&i.Status,
+	)
+	return i, err
+}
+
 const incrementAPIKeyUsage = `-- name: IncrementAPIKeyUsage :exec
 UPDATE api_keys
 SET last_used_at = now(), request_count = request_count + 1, updated_at = now()
@@ -512,6 +611,26 @@ type IncrementAPIKeyUsageParams struct {
 
 func (q *Queries) IncrementAPIKeyUsage(ctx context.Context, arg IncrementAPIKeyUsageParams) error {
 	_, err := q.db.Exec(ctx, incrementAPIKeyUsage, arg.ID, arg.TenantID)
+	return err
+}
+
+const insertPasswordHistory = `-- name: InsertPasswordHistory :exec
+
+INSERT INTO password_history (tenant_id, user_id, password_hash)
+VALUES ($1, $2, $3)
+`
+
+type InsertPasswordHistoryParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	PasswordHash string      `json:"password_hash"`
+}
+
+// =====================
+// Password History
+// =====================
+func (q *Queries) InsertPasswordHistory(ctx context.Context, arg InsertPasswordHistoryParams) error {
+	_, err := q.db.Exec(ctx, insertPasswordHistory, arg.TenantID, arg.UserID, arg.PasswordHash)
 	return err
 }
 

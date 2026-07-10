@@ -21,6 +21,7 @@ import (
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -29,7 +30,8 @@ import (
 // ---------------------------------------------------------------------------
 
 var (
-	dbPool *db.DB
+	dbPool  *db.DB
+	siteName string
 	//nolint:unused // set by RegisterRedis
 	rdb interface {
 		Ping(ctx context.Context) error
@@ -39,6 +41,11 @@ var (
 // RegisterDBPool sets the database connection pool for worker handlers.
 func RegisterDBPool(d *db.DB) {
 	dbPool = d
+}
+
+// RegisterSiteName sets the site name for worker handlers.
+func RegisterSiteName(name string) {
+	siteName = name
 }
 
 // RegisterRedis sets the Valkey/Redis client for worker handlers.
@@ -1714,7 +1721,7 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 	rss.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 	rss.WriteString("<rss version=\"2.0\">\n")
 	rss.WriteString("<channel>\n")
-	rss.WriteString("  <title>JapaConnect</title>\n")
+	rss.WriteString(fmt.Sprintf("  <title>%s</title>\n", siteName))
 	rss.WriteString(fmt.Sprintf("  <link>%s</link>\n", payload.BaseURL))
 	rss.WriteString("  <description>Nigerian diaspora community platform</description>\n")
 
@@ -2115,7 +2122,7 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 
 	var llms strings.Builder
 
-	llms.WriteString("# JapaConnect\n\n")
+	llms.WriteString(fmt.Sprintf("# %s\n\n", siteName))
 	llms.WriteString("A community platform for the Nigerian diaspora.\n\n")
 	llms.WriteString("## Pages\n\n")
 
@@ -2422,8 +2429,7 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 
 // isSubscriptionExpired checks if an error indicates a 410 Gone response.
 func isSubscriptionExpired(err error) bool {
-	return err != nil && (strings.Contains(err.Error(), "410 Gone") ||
-		strings.Contains(err.Error(), "subscription expired"))
+	return err != nil && errors.Is(err, errpkg.ErrExpired)
 }
 
 // pushDelivery holds the push notification delivery dependency.
@@ -2594,7 +2600,7 @@ func HandleVelocityScoreRecalc(ctx context.Context, _ *asynq.Task) error {
 
 // wrapHTMLEmail wraps an HTML body in a minimal responsive email template.
 func wrapHTMLEmail(body string) string {
-	return `<!DOCTYPE html>
+	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2602,7 +2608,7 @@ func wrapHTMLEmail(body string) string {
 <title></title>
 <style>
   body { margin: 0; padding: 0; background-color: #f4f4f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-  .wrapper { width: 100%; background-color: #f4f4f7; padding: 40px 0; }
+  .wrapper { width: 100%%; background-color: #f4f4f7; padding: 40px 0; }
   .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
   .content { padding: 32px; color: #333333; font-size: 15px; line-height: 1.6; }
   .footer { padding: 24px 32px; text-align: center; font-size: 12px; color: #999999; border-top: 1px solid #eeeeee; }
@@ -2616,12 +2622,12 @@ func wrapHTMLEmail(body string) string {
 <body>
 <div class="wrapper">
   <div class="container">
-    <div class="content">` + body + `</div>
-    <div class="footer">JapaConnect &mdash; Your journey, connected.</div>
+    <div class="content">%s</div>
+    <div class="footer">%s &mdash; Your journey, connected.</div>
   </div>
 </div>
 </body>
-</html>`
+</html>`, body, siteName)
 }
 
 // smtpConfig holds parsed SMTP configuration from environment variables.
@@ -2765,27 +2771,53 @@ func isValidTableName(name string) bool {
 
 // ── Missing Phase 31 Task Handlers (stub implementations) ───────────
 
-// HandleMaintenanceCheckExpiredBans lifts expired user_bans.
-func HandleMaintenanceCheckExpiredBans(_ context.Context, _ *asynq.Task) error {
+// HandleMaintenanceCheckExpiredBans lifts expired user_moderation_actions with action='ban'.
+func HandleMaintenanceCheckExpiredBans(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:check_expired_bans — lifting expired bans")
-	db, err := requireDB()
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement ban expiry logic
-	_ = db
+	// Mark expired bans as 'unban' actions.
+	result, err := dbPool.Writer.Exec(ctx, `
+		UPDATE user_moderation_actions
+		SET action = 'unban'
+		WHERE action = 'ban'
+		AND expires_at IS NOT NULL
+		AND expires_at < now()
+	`)
+	if err != nil {
+		slog.Error("maintenance:check_expired_bans failed", "error", err)
+		return err
+	}
+	rows := result.RowsAffected()
+	if rows > 0 {
+		slog.Info("maintenance:check_expired_bans — lifted expired bans", "count", rows)
+	}
 	return nil
 }
 
 // HandleMaintenanceCheckExpiredBoosts expires organization_boosts past ends_at.
-func HandleMaintenanceCheckExpiredBoosts(_ context.Context, _ *asynq.Task) error {
+func HandleMaintenanceCheckExpiredBoosts(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:check_expired_boosts — expiring boosts")
-	db, err := requireDB()
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement boost expiry logic
-	_ = db
+	result, err := dbPool.Writer.Exec(ctx, `
+		UPDATE organization_boosts
+		SET status = 'expired'
+		WHERE status = 'active'
+		AND ends_at < now()
+	`)
+	if err != nil {
+		slog.Error("maintenance:check_expired_boosts failed", "error", err)
+		return err
+	}
+	rows := result.RowsAffected()
+	if rows > 0 {
+		slog.Info("maintenance:check_expired_boosts — expired boosts", "count", rows)
+	}
 	return nil
 }
 
@@ -2801,15 +2833,25 @@ func HandleMaintenancePruneOldFeeds(_ context.Context, _ *asynq.Task) error {
 	return nil
 }
 
-// HandleMaintenancePruneAuditLogs deletes audit_logs rows older than retention.
-func HandleMaintenancePruneAuditLogs(_ context.Context, _ *asynq.Task) error {
+// HandleMaintenancePruneAuditLogs deletes audit_logs rows older than 90 days.
+func HandleMaintenancePruneAuditLogs(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_audit_logs — pruning old audit logs")
-	db, err := requireDB()
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement audit log pruning
-	_ = db
+	result, err := dbPool.Writer.Exec(ctx, `
+		DELETE FROM audit_logs
+		WHERE created_at < now() - interval '90 days'
+	`)
+	if err != nil {
+		slog.Error("maintenance:prune_audit_logs failed", "error", err)
+		return err
+	}
+	rows := result.RowsAffected()
+	if rows > 0 {
+		slog.Info("maintenance:prune_audit_logs — pruned old audit logs", "count", rows)
+	}
 	return nil
 }
 
@@ -2850,14 +2892,27 @@ func HandleCouponTrackEvents(_ context.Context, t *asynq.Task) error {
 }
 
 // HandleCouponExpireCheck marks past-expiry coupons as expired.
-func HandleCouponExpireCheck(_ context.Context, _ *asynq.Task) error {
+func HandleCouponExpireCheck(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("coupon:expire_check — checking for expired coupons")
-	db, err := requireDB()
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement coupon expiry check
-	_ = db
+	result, err := dbPool.Writer.Exec(ctx, `
+		UPDATE coupons
+		SET status = 'expired'
+		WHERE status = 'active'
+		AND expires_at IS NOT NULL
+		AND expires_at < now()
+	`)
+	if err != nil {
+		slog.Error("coupon:expire_check failed", "error", err)
+		return err
+	}
+	rows := result.RowsAffected()
+	if rows > 0 {
+		slog.Info("coupon:expire_check — expired coupons", "count", rows)
+	}
 	return nil
 }
 
@@ -2886,13 +2941,28 @@ func HandleAffiliateCreditCommission(_ context.Context, _ *asynq.Task) error {
 }
 
 // HandleAffiliateExpireCheck deactivates links for suspended/banned members.
-func HandleAffiliateExpireCheck(_ context.Context, _ *asynq.Task) error {
+func HandleAffiliateExpireCheck(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("affiliate:expire_check — deactivating links for suspended members")
-	db, err := requireDB()
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement affiliate link expiry
-	_ = db
+	result, err := dbPool.Writer.Exec(ctx, `
+		UPDATE user_affiliate_links
+		SET is_active = false
+		WHERE is_active = true
+		AND user_id IN (
+			SELECT user_id FROM affiliate_program_members
+			WHERE status IN ('suspended', 'banned')
+		)
+	`)
+	if err != nil {
+		slog.Error("affiliate:expire_check failed", "error", err)
+		return err
+	}
+	rows := result.RowsAffected()
+	if rows > 0 {
+		slog.Info("affiliate:expire_check — deactivated links", "count", rows)
+	}
 	return nil
 }
