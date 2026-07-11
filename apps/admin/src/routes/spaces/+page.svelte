@@ -41,13 +41,14 @@
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const params = new URLSearchParams({ page: String(page) });
+		const params = new URLSearchParams();
 		if (filterStatus) params.set('status', filterStatus);
 		try {
-			const result = await api<{ items: Space[]; page: number; total_pages: number }>(`/admin/spaces?${params}`);
+			const result = await api<{ data: Space[] }>(`/spaces?${params}`);
 			if (result.ok) {
-				spaces = result.data.items;
-				totalPages = result.data.total_pages;
+				const list = Array.isArray(result.data) ? result.data : (result.data.data ?? []);
+				spaces = filterStatus ? list.filter((s) => s.status === filterStatus) : list;
+				totalPages = 1;
 			} else {
 				errorMessage = result.error;
 			}
@@ -75,9 +76,9 @@
 		acting = true;
 		errorMessage = '';
 		try {
-			const result = await api(`/admin/spaces/${suspendTarget.id}/suspend`, {
-				method: 'POST',
-				body: { reason: suspendReason.trim() }
+			const result = await api(`/admin/spaces/${suspendTarget.id}/status`, {
+				method: 'PATCH',
+				body: { status: 'suspended', reason: suspendReason.trim() }
 			});
 			if (result.ok) {
 				showSuspendModal = false;

@@ -32,12 +32,13 @@
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const params = new URLSearchParams({ page: String(page) });
 		try {
-			const result = await api<{ items: Tag[]; page: number; total_pages: number }>(`/admin/tags?${params}`);
+			// List lives at the public /tags route (admin CRUD stays under
+			// /admin/tags); it returns a plain unpaginated array.
+			const result = await api<Tag[]>('/tags');
 			if (result.ok) {
-				tags = result.data.items;
-				totalPages = result.data.total_pages;
+				tags = Array.isArray(result.data) ? result.data : [];
+				totalPages = 1;
 			} else {
 				errorMessage = result.error;
 			}

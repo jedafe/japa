@@ -12,14 +12,14 @@ vi.mock('$app/navigation', () => ({
 }));
 
 describe('Login +page.svelte', () => {
-	it('renders the JapaAdmin heading', () => {
+	it('renders the JapaConnect Admin heading', () => {
 		render(Page);
-		expect(screen.getByText('JapaAdmin')).toBeTruthy();
+		expect(screen.getByText('JapaConnect Admin')).toBeTruthy();
 	});
 
 	it('renders the sign-in subtitle', () => {
 		render(Page);
-		expect(screen.getByText('Sign in to the admin panel')).toBeTruthy();
+		expect(screen.getByText('Content Moderation & Management')).toBeTruthy();
 	});
 
 	it('shows email and password inputs', () => {

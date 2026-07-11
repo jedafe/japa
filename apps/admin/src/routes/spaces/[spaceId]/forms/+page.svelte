@@ -7,8 +7,8 @@
 	type FormDef = {
 		id: string;
 		name: string;
-		description: string;
-		submission_count: number;
+		description?: string;
+		submission_count?: number;
 		created_at: string;
 	};
 
@@ -22,9 +22,9 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<FormDef[]>(`/spaces/${spaceId}/forms`);
+			const result = await api<{ data: FormDef[] }>(`/forms?space_id=${spaceId}`);
 			if (result.ok) {
-				forms = result.data;
+				forms = Array.isArray(result.data) ? result.data : (result.data.data ?? []);
 			}
 		} catch {
 			errorMessage = t('space_forms.load_error');

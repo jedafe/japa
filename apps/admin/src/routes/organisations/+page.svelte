@@ -8,12 +8,12 @@
 	type Organisation = {
 		id: string;
 		name: string;
-		owner: string;
-		owner_id: string;
+		owner_user_id?: string;
 		member_count: number;
 		verified: boolean;
 		created_at: string;
-		domain?: string;
+		slug?: string;
+		status?: string;
 	};
 
 	let orgs = $state<Organisation[]>([]);
@@ -35,13 +35,13 @@
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const params = new URLSearchParams({ page: String(page) });
+		const params = new URLSearchParams();
 		if (filterVerified) params.set('verified', filterVerified);
 		try {
-			const result = await api<{ items: Organisation[]; page: number; total_pages: number }>(`/admin/organisations?${params}`);
+			const result = await api<{ data: Organisation[] }>(`/organizations?${params}`);
 			if (result.ok) {
-				orgs = result.data.items;
-				totalPages = result.data.total_pages;
+				orgs = Array.isArray(result.data) ? result.data : (result.data.data ?? []);
+				totalPages = 1;
 			} else {
 				errorMessage = result.error;
 			}
@@ -61,10 +61,9 @@
 	async function toggleVerify(org: Organisation) {
 		errorMessage = '';
 		try {
-			const result = await api(`/admin/organisations/${org.id}/verify`, {
-				method: 'POST',
-				body: { verified: !org.verified }
-			});
+			const result = org.verified
+				? await api(`/admin/organizations/${org.id}/verify`, { method: 'DELETE' })
+				: await api(`/admin/organizations/${org.id}/verify`, { method: 'POST', body: { verified: true } });
 			if (result.ok) {
 				org.verified = !org.verified;
 				orgs = orgs;
@@ -86,7 +85,7 @@
 		if (!claimOrg) return;
 		errorMessage = '';
 		try {
-			const result = await api(`/admin/organisations/${claimOrg.id}/claim`, {
+			const result = await api(`/admin/organizations/${claimOrg.id}/claim`, {
 				method: 'POST',
 				body: { note: claimNote.trim() }
 			});
@@ -147,7 +146,7 @@
 								<p class="text-xs" style="color: var(--color-muted)">{org.domain}</p>
 							{/if}
 						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{org.owner}</td>
+						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{org.owner_user_id ?? '—'}</td>
 						<td class="px-4 py-3 text-xs font-medium">{org.member_count.toLocaleString()}</td>
 						<td class="px-4 py-3">
 							<span class="inline-block rounded-full px-2 py-0.5 text-xs {org.verified ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">

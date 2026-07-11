@@ -81,8 +81,8 @@
 		acting = true;
 		errorMessage = '';
 		try {
-			const body = actionReason.trim() ? { reason: actionReason.trim() } : {};
-			const result = await api(`/admin/reports/${actionReport.id}/${actionType}`, { method: 'POST', body });
+			const body = { action: actionType, ...(actionReason.trim() ? { reason: actionReason.trim() } : {}) };
+			const result = await api(`/admin/reports/${actionReport.id}`, { method: 'PATCH', body });
 			if (result.ok) {
 				showActionModal = false;
 				load();
