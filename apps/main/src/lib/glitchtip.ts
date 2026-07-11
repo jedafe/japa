@@ -1,11 +1,12 @@
 import { browser } from '$app/environment';
+import { PUBLIC_JC_GLITCHTIP_DSN } from '$env/static/public';
 
 let initialized = false;
 
 export function initGlitchTip() {
 	if (initialized || !browser) return;
 
-	const dsn = import.meta.env.VITE_GLITCHTIP_DSN;
+	const dsn = PUBLIC_JC_GLITCHTIP_DSN;
 	if (!dsn) return;
 
 	try {

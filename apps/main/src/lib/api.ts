@@ -1,4 +1,6 @@
-export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
+
+export const API_BASE = `${PUBLIC_JC_API_URL}/api/v1`;
 
 interface ApiOk<T> {
 	data: T;

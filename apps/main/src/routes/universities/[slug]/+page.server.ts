@@ -30,7 +30,7 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 	const reviewAggregate = reviewsResult.ok && reviewsResult.data ? reviewsResult.data : null;
 
 	const followersResult = await apiFetch<Follower[]>(
-		`/follows/space/${space.id}/followers`,
+		`/spaces/${space.id}/followers`,
 		{ headers }
 	);
 	const followers = followersResult.ok && followersResult.data ? followersResult.data : [];

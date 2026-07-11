@@ -15,6 +15,10 @@ describe('shouldInitErrorTracking', () => {
 		expect(shouldInitErrorTracking('', false)).toBe(false);
 	});
 
+	it('is false when the DSN env var is not defined at all', () => {
+		expect(shouldInitErrorTracking(undefined, false)).toBe(false);
+	});
+
 	it('is false in dev mode even with a DSN set', () => {
 		expect(shouldInitErrorTracking('https://key@glitchtip.example/1', true)).toBe(false);
 	});
