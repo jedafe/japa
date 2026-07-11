@@ -29,7 +29,7 @@
 
 	let { data } = $props();
 
-	const pageData = data as typeof data & { providers: any[] };
+	const pageData = $derived(data as typeof data & { providers: any[] });
 
 	// Map backend providers to frontend ProviderOption type with icons
 	const providerIcons: Record<string, typeof CreditCard> = {
@@ -39,15 +39,17 @@
 		credit: Wallet
 	};
 
-	const providers: ProviderOption[] = (pageData.providers ?? [])
-		.filter((p: any) => p.enabled)
-		.map((p: any) => ({
-			id: p.id as PaymentProvider,
-			name: p.name,
-			description: p.description,
-			icon: providerIcons[p.id] ?? CreditCard,
-			enabled: p.enabled
-		}));
+	const providers: ProviderOption[] = $derived(
+		(pageData.providers ?? [])
+			.filter((p: any) => p.enabled)
+			.map((p: any) => ({
+				id: p.id as PaymentProvider,
+				name: p.name,
+				description: p.description,
+				icon: providerIcons[p.id] ?? CreditCard,
+				enabled: p.enabled
+			}))
+	);
 
 	let amount = $derived(Number(page.url.searchParams.get('amount') ?? '0'));
 	let purpose = $derived(page.url.searchParams.get('purpose') ?? 'general');

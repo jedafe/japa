@@ -17,7 +17,7 @@
 
 	let { data } = $props();
 
-	let notifications = $state(data.notifications);
+	let notifications = $derived(data.notifications);
 	let markingRead = $state<string | null>(null);
 	let errorMessage = $state('');
 	let listContainer: HTMLDivElement | undefined = $state();

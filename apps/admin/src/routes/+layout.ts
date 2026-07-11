@@ -3,18 +3,15 @@ import { browser } from '$app/environment';
 import { locale } from '$lib/stores/i18n.svelte';
 import { fetchPermissions } from '$lib/stores/permissions';
 import { apiFetch } from '$lib/api/client';
+import { user, setPermissions } from '$lib/stores/auth';
 import type { User } from '$lib/api/types';
 
 export const ssr = false;
 
 export const load: LayoutLoad = async () => {
 	let localeCode = 'en';
-	let token: string | null = null;
 
 	if (browser) {
-		const tokenMatch = document.cookie.split('; ').find((c) => c.startsWith('jc_token='));
-		token = tokenMatch?.split('=')[1] ?? null;
-
 		const localeMatch = document.cookie.match(/jc_locale=([^;]+)/);
 		if (localeMatch) localeCode = localeMatch[1];
 	}
@@ -24,15 +21,22 @@ export const load: LayoutLoad = async () => {
 		.catch(() => ({}));
 	locale.init(localeCode, translations);
 
-	if (token) {
-		await fetchPermissions(token);
+	let userData: User | null = null;
+	const result = await apiFetch<User>('/me');
+	if (result.status !== 401) {
+		userData = result.data;
 	}
 
-	let user: User | null = null;
-	if (token) {
-		const result = await apiFetch<User>('/me');
-		user = result.data;
+	if (browser) {
+		user.set(userData);
 	}
 
-	return { token, user };
+	await fetchPermissions(null);
+
+	const permsResult = await apiFetch<{ permissions: string[] }>('/me/permissions');
+	if (browser && permsResult.data) {
+		setPermissions(permsResult.data.permissions ?? []);
+	}
+
+	return { user: userData };
 };

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { RefreshCw } from 'lucide-svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
@@ -27,6 +28,12 @@
 	let filterContentType = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
 	let errorMessage = $state('');
+
+	// Polling state
+	let lastCount = $state(0);
+	let newItemsCount = $state(0);
+	let isPolling = $state(false);
+	let pollingInterval: ReturnType<typeof setInterval> | undefined;
 
 	// Expandable detail
 	let expandedId = $state<string | null>(null);
@@ -56,6 +63,8 @@
 			if (result.ok) {
 				items = result.data.items;
 				totalPages = result.data.total_pages;
+				lastCount = items.length;
+				newItemsCount = 0;
 			} else {
 				errorMessage = result.error;
 			}
@@ -64,6 +73,41 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	function startPolling() {
+		pollingInterval = setInterval(async () => {
+			const params = new URLSearchParams({ page: '0' });
+			if (filterType) params.set('type', filterType);
+			if (filterStatus) params.set('status', filterStatus);
+			if (filterContentType) params.set('content_type', filterContentType);
+			try {
+				const result = await api<{ items: ModItem[]; page: number; total_pages: number }>(`/admin/moderation-queue?${params}`);
+				if (result.ok) {
+					const newCount = result.data.items.length;
+					if (lastCount > 0 && newCount > lastCount) {
+						newItemsCount = newCount - lastCount;
+					}
+					lastCount = newCount;
+				}
+			} catch {
+				// Silently fail polling — user can manually refresh
+			}
+		}, 30_000);
+		isPolling = true;
+	}
+
+	function stopPolling() {
+		if (pollingInterval !== undefined) {
+			clearInterval(pollingInterval);
+			pollingInterval = undefined;
+		}
+		isPolling = false;
+	}
+
+	function refreshList() {
+		newItemsCount = 0;
+		load();
 	}
 
 	function handleFilter(values: Record<string, string>) {
@@ -163,20 +207,54 @@
 		}
 	}
 
-	onMount(load);
+	onMount(() => {
+		load();
+		// Initialize lastCount after first load completes
+		setTimeout(() => {
+			lastCount = items.length;
+			startPolling();
+		}, 1000);
+	});
+
+	onDestroy(() => {
+		stopPolling();
+	});
 </script>
 
 <svelte:head>
 	<title>{t('moderation.title')} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('moderation.title')}</h1>
+<div class="mb-1 flex items-center gap-2">
+	<h1 class="text-2xl font-bold tracking-tight">{t('moderation.title')}</h1>
+	{#if isPolling}
+		<span class="relative flex h-2.5 w-2.5" title="Auto-refresh active">
+			<span class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75" style="background-color: var(--color-success)"></span>
+			<span class="relative inline-flex h-2.5 w-2.5 rounded-full" style="background-color: var(--color-success)"></span>
+		</span>
+	{/if}
+</div>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
 		{errorMessage}
 	</div>
 {/if}
+
+{#if newItemsCount > 0}
+	<div class="mb-4 flex items-center gap-3 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-info); background-color: color-mix(in srgb, var(--color-info) 8%, transparent); color: var(--color-info)">
+		<span class="font-medium">{newItemsCount} new {newItemsCount === 1 ? 'item' : 'items'}</span>
+		<button
+			class="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
+			style="background-color: var(--color-info)"
+			onclick={refreshList}
+		>
+			<RefreshCw class="h-3 w-3" />
+			Show
+		</button>
+	</div>
+{/if}
+
 <p class="mb-4 text-sm" style="color: var(--color-muted)">{t('moderation.description')}</p>
 
 <FilterBar filters={filterDefs} onApply={handleFilter} />

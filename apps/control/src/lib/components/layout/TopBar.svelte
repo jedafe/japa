@@ -11,8 +11,11 @@
 	}
 
 	function logout() {
-		document.cookie = 'jc_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-		window.location.href = '/login';
+		const form = document.createElement('form');
+		form.method = 'POST';
+		form.action = '/logout';
+		document.body.appendChild(form);
+		form.submit();
 	}
 </script>
 

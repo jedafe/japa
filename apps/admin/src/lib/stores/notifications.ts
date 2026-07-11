@@ -1,0 +1,68 @@
+import { writable, derived } from 'svelte/store';
+import { browser } from '$app/environment';
+
+export interface AdminNotification {
+	id: string;
+	title: string;
+	body: string;
+	type: 'info' | 'warning' | 'error' | 'success';
+	read: boolean;
+	created_at: string;
+	link?: string;
+}
+
+const _notifications = writable<AdminNotification[]>([]);
+export const unreadCount = derived(_notifications, ($n) => $n.filter((n) => !n.read).length);
+
+let initialized = false;
+
+export function initNotifications() {
+	if (initialized || !browser) return;
+	initialized = true;
+
+	fetchNotifications();
+	setInterval(fetchNotifications, 60_000);
+}
+
+async function fetchNotifications() {
+	try {
+		const res = await fetch('/api/v1/control/notifications?limit=20');
+		if (res.ok) {
+			const { data } = await res.json();
+			_notifications.set(data ?? []);
+		}
+	} catch {
+		// degrade gracefully
+	}
+}
+
+export function addNotification(notification: Omit<AdminNotification, 'id' | 'read' | 'created_at'>) {
+	const id = crypto.randomUUID();
+	const newNotif: AdminNotification = {
+		...notification,
+		id,
+		read: false,
+		created_at: new Date().toISOString()
+	};
+	_notifications.update((prev) => [newNotif, ...prev].slice(0, 50));
+}
+
+export async function markRead(id: string) {
+	_notifications.update((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+	try {
+		await fetch(`/api/v1/control/notifications/${id}/read`, { method: 'POST' });
+	} catch {
+		// best effort
+	}
+}
+
+export async function markAllRead() {
+	_notifications.update((prev) => prev.map((n) => ({ ...n, read: true })));
+	try {
+		await fetch('/api/v1/control/notifications/read-all', { method: 'POST' });
+	} catch {
+		// best effort
+	}
+}
+
+export const notifications = { subscribe: _notifications.subscribe };

@@ -15,8 +15,8 @@
 
 	let { data } = $props();
 
-	let ticket = $state(data.ticket as Ticket | null);
-	let comments = $state(data.comments as TicketComment[]);
+	let ticket = $derived(data.ticket as Ticket | null);
+	let comments = $derived(data.comments as TicketComment[]);
 	let error = $state('');
 	let commentBody = $state('');
 	let submittingComment = $state(false);

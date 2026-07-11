@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
 
 export const actions: Actions = {
 	default: async ({ request, cookies, fetch }) => {
@@ -11,7 +12,7 @@ export const actions: Actions = {
 			return fail(400, { error: 'Email and password are required.' });
 		}
 
-		const apiBase = import.meta.env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
+		const apiBase = PUBLIC_JC_API_URL ?? 'http://localhost:8080';
 		const apiUrl = `${apiBase}/api/v1/auth/login`;
 
 		try {
@@ -29,12 +30,12 @@ export const actions: Actions = {
 				});
 			}
 
-			const token = body.data?.token;
+			const token = body.data?.access_token;
 			if (!token) {
 				return fail(500, { error: 'Login succeeded but no token was returned.' });
 			}
 
-			cookies.set('learn_token', token, {
+			cookies.set('jc_token', token, {
 				path: '/',
 				httpOnly: true,
 				secure: true,

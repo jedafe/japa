@@ -770,6 +770,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
 WHERE ct.tag_id = $1 AND c.tenant_id = $2 AND c.status = 'published'
+  AND c.auto_hidden = false
   AND (c.created_at < $3 OR ($3 IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT $4
@@ -955,6 +956,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = $1 AND space_id = $2
+  AND auto_hidden = false
   AND (created_at < $3 OR ($3 IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT $4
@@ -1060,6 +1062,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = $1
+  AND auto_hidden = false
   AND (created_at < $2 OR ($2 IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT $3
@@ -1159,6 +1162,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = $1 AND content_type = $2
+  AND auto_hidden = false
   AND (created_at < $3 OR ($3 IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT $4

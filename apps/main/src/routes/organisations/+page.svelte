@@ -6,7 +6,7 @@
 
 	let { data } = $props();
 
-	let organisations = $state(data.organisations);
+	let organisations = $derived(data.organisations);
 	let loading = $state(false);
 	let searchQuery = $state('');
 

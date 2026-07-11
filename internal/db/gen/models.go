@@ -425,6 +425,8 @@ type Content struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	AuthorProfileID pgtype.UUID        `json:"author_profile_id"`
+	AutoHidden      bool               `json:"auto_hidden"`
+	AutoHiddenAt    pgtype.Timestamptz `json:"auto_hidden_at"`
 }
 
 type ContentEngagement struct {

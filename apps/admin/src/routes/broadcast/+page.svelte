@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api } from '$lib/api';
+	import { onMount } from 'svelte';
+	import { api, userManagementApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	let title = $state('');
@@ -10,14 +11,24 @@
 	let resultMsg = $state('');
 	let resultType = $state<'success' | 'error'>('success');
 
-	const scopes = [
-		{ value: 'all', label: t('broadcast.audiences.all') },
-		{ value: 'group:moderator', label: t('broadcast.audiences.moderators') },
-		{ value: 'group:admin', label: t('broadcast.audiences.admins') },
-		{ value: 'geo:NG', label: t('broadcast.audiences.nigeria') },
-		{ value: 'geo:US', label: t('broadcast.audiences.us') },
-		{ value: 'geo:GB', label: t('broadcast.audiences.uk') }
-	];
+	let scopes = $state([
+		{ value: 'all', label: t('broadcast.audiences.all') }
+	]);
+
+	onMount(async () => {
+		try {
+			const result = await userManagementApi.listGroups();
+			if (result.ok) {
+				const groupScopes = result.data.groups.map((g) => ({
+					value: `group:${g.name}`,
+					label: g.name
+				}));
+				scopes = [...scopes, ...groupScopes];
+			}
+		} catch {
+			// Keep default scopes
+		}
+	});
 
 	async function sendBroadcast() {
 		if (!title || !message) return;

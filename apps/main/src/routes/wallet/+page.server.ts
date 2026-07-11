@@ -1,8 +1,10 @@
 import type { PageServerLoad } from './$types';
 import { apiFetch } from '$lib/server/api';
+import { redirect } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async ({ parent }) => {
-	const { token } = await parent();
+	const { token, user } = await parent();
+	if (!user) throw redirect(303, '/login');
 
 	const [balanceRes, ledgerRes] = await Promise.allSettled([
 		apiFetch<{ points: number; credits: number }>('/me/wallet', {}, token ?? undefined),

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import EditorHeader from './EditorHeader.svelte';
 	import EditorSidebar from './EditorSidebar.svelte';
 
@@ -137,13 +138,19 @@
 					class="mb-6 w-full border-none bg-transparent text-4xl font-bold tracking-tight text-gray-900 placeholder-gray-300 outline-none dark:text-gray-100 dark:placeholder-gray-600"
 				/>
 
-				<!-- TipTap Editor Placeholder -->
+				<!-- TipTap Editor -->
 				<div class="min-h-[500px]">
-					{#if content}
-						{@html content}
+					{#if browser}
+						{#await import('$lib/components/editor/Editor.svelte') then { default: EditorComponent }}
+							<EditorComponent
+								content={initialContent}
+								onChange={(json) => { content = json; }}
+								placeholder="Start writing..."
+							/>
+						{/await}
 					{:else}
 						<p class="text-lg leading-relaxed text-gray-400 dark:text-gray-500">
-							Start writing...
+							Loading editor...
 						</p>
 					{/if}
 				</div>

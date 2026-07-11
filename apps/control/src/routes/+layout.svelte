@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { setUser, setPermissions, clearUser } from '$lib/stores/auth';
+	import { setUser, setPermissions, clearUser, hasPermission } from '$lib/stores/auth';
+	import { initGlitchTip } from '$lib/glitchtip';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
+	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import '../app.css';
 	import {
 		LayoutDashboard,
@@ -13,9 +15,19 @@
 		Key,
 		Menu,
 		X,
+		AlertTriangle,
+		Settings,
+		Flag,
+		Building2,
+		DollarSign,
+		Clock,
 	} from 'lucide-svelte';
 
 	let { children, data } = $props();
+
+	$effect(() => {
+		initGlitchTip();
+	});
 
 	let sidebarOpen = $state(false);
 
@@ -31,14 +43,28 @@
 	});
 
 	const nav = $derived([
-		{ label: 'Dashboard', href: '/', icon: LayoutDashboard },
-		{ label: 'Queue', href: '/queue', icon: ListTodo },
-		{ label: 'DB Health', href: '/db', icon: Database },
-		{ label: 'Audit', href: '/audit', icon: ScrollText },
-		{ label: 'Security', href: '/security', icon: Shield },
-		{ label: 'API Keys', href: '/api-keys', icon: Key },
-		{ label: 'Cache', href: '/cache', icon: Trash2 }
+		{ label: 'Dashboard', href: '/', icon: LayoutDashboard, permission: 'control.dashboard' },
+		{ label: 'Queue', href: '/queue', icon: ListTodo, permission: 'control.queue' },
+		{ label: 'Dead Letter Queue', href: '/dlq', icon: AlertTriangle, permission: 'control.queue' },
+		{ label: 'DB Health', href: '/db', icon: Database, permission: 'control.db' },
+		{ label: 'Audit', href: '/audit', icon: ScrollText, permission: 'control.audit' },
+		{ label: 'Security', href: '/security', icon: Shield, permission: 'control.security' },
+		{ label: 'API Keys', href: '/api-keys', icon: Key, permission: 'control.api_keys' },
+		{ label: 'Cache', href: '/cache', icon: Trash2, permission: 'control.cache' },
+		{ label: 'Settings', href: '/settings', icon: Settings, permission: 'control.settings' },
+		{ label: 'Feature Flags', href: '/feature-flags', icon: Flag, permission: 'control.feature_flags' },
+		{ label: 'Tenants', href: '/tenants', icon: Building2, permission: 'control.tenants' },
+		{ label: 'AI Budget', href: '/ai-budget', icon: DollarSign, permission: 'control.ai_budget' },
+		{ label: 'Cron Jobs', href: '/cron', icon: Clock, permission: 'control.cron' },
 	]);
+
+	const pagePermission = $derived(
+		nav.find((item) =>
+			item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href)
+		)?.permission
+	);
+
+	const canAccess = $derived(!pagePermission || hasPermission(pagePermission) || hasPermission('*'));
 </script>
 
 <svelte:head>
@@ -65,7 +91,7 @@
 		<div class="flex h-14 items-center border-b border-gray-200 px-4 dark:border-gray-700">
 			<span class="text-sm font-bold tracking-wide uppercase text-blue-600">Control Panel</span>
 		</div>
-		<nav class="flex-1 space-y-1 p-3">
+		<nav class="flex-1 space-y-1 overflow-y-auto p-3">
 			{#each nav as item}
 				{@const isActive = item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href)}
 				<a
@@ -92,7 +118,11 @@
 		<TopBar />
 		<main class="flex-1 overflow-y-auto">
 			<div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 md:px-8">
-				{@render children()}
+				{#if canAccess}
+					{@render children()}
+				{:else}
+					<AccessDenied />
+				{/if}
 			</div>
 		</main>
 	</div>

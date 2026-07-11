@@ -1,4 +1,4 @@
-import { API_BASE } from '$lib/server/api';
+import { API_V1_BASE } from '$lib/server/api';
 
 export async function load({ locals, cookies }: { locals: App.Locals; cookies: { get(name: string): string | undefined } }) {
 	const token = cookies.get('jc_token');
@@ -6,7 +6,7 @@ export async function load({ locals, cookies }: { locals: App.Locals; cookies: {
 
 	let translations: Record<string, string> = {};
 	try {
-		const res = await fetch(`${API_BASE}/i18n/packs/${localeCode}`);
+		const res = await fetch(`${API_V1_BASE}/i18n/packs/${localeCode}`);
 		if (res.ok) {
 			const body = await res.json();
 			translations = body?.data ?? body ?? {};

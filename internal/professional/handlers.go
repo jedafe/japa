@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"time"
 	"strconv"
-	"strings"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
 

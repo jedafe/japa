@@ -2,6 +2,8 @@ import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { API_BASE_URL, apiFetch } from '$lib/server/api';
 import type { FeatureFlags } from '$lib/types';
 
+const SUPPORTED_LOCALES = ['en', 'fr', 'yo', 'ha'];
+
 /** Routes that require an authenticated user. */
 const PROTECTED_ROUTES = [
 	'/notifications',
@@ -12,7 +14,12 @@ const PROTECTED_ROUTES = [
 	'/messages',
 	'/payments',
 	'/checkout',
-	'/dashboard'
+	'/dashboard',
+	'/wallet',
+	'/tickets',
+	'/professional',
+	'/spaces/new',
+	'/comparisons/new'
 ];
 
 /** Check if a pathname requires authentication. */
@@ -21,6 +28,23 @@ function isProtectedRoute(pathname: string): boolean {
 		(route) => pathname === route || pathname.startsWith(`${route}/`)
 	);
 }
+
+/** Resolve path-based locale (/fr/blog → /blog, sets cookie). */
+function resolveLocale(pathname: string): { lang: string; cleanPath: string } | null {
+	const match = pathname.match(/^\/(fr|en|yo|ha)(\/|$)/);
+	if (!match) return null;
+	return { lang: match[1], cleanPath: pathname.slice(match[0].length) || '/' };
+}
+
+export const reroute = ({ url }: { url: URL }) => {
+	const result = resolveLocale(url.pathname);
+	if (!result) return;
+	const { lang, cleanPath } = result;
+	const newUrl = new URL(url);
+	newUrl.pathname = cleanPath;
+	newUrl.searchParams.set('_lang', lang);
+	return newUrl;
+};
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const token = event.cookies.get('jc_token');
@@ -38,7 +62,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 					email: data.email,
 					username: data.username,
 					displayName: data.display_name,
-					avatarUrl: data.avatar_url,
+					avatarUrl: data.url_avatar,
 					profileType: data.profile_type,
 					status: data.status
 				};
@@ -55,6 +79,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Redirect unauthenticated users away from protected routes.
 	if (isProtectedRoute(event.url.pathname) && !event.locals.user) {
 		throw redirect(303, '/login');
+	}
+
+	// Handle locale from path-based routing.
+	const urlLang = event.url.searchParams.get('_lang');
+	if (urlLang && SUPPORTED_LOCALES.includes(urlLang)) {
+		event.cookies.set('jc_locale', urlLang, {
+			path: '/',
+			maxAge: 60 * 60 * 24 * 365,
+			sameSite: 'lax'
+		});
 	}
 
 	// Fetch feature flags from the backend.

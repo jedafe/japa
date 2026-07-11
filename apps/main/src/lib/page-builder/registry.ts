@@ -143,6 +143,50 @@ const BLOCK_TYPES: BlockDefinition[] = [
 		},
 		category: 'data',
 	},
+	{
+		type: 'countdown',
+		name: 'Countdown',
+		description: 'Countdown timer to a target date and time',
+		icon: 'timer',
+		default_props: {
+			target_date: '',
+			title: '',
+			show_days: true,
+			show_hours: true,
+			show_minutes: true,
+			show_seconds: true,
+			expired_text: 'Event has started!',
+		},
+		category: 'interactive',
+	},
+	{
+		type: 'table_of_contents',
+		name: 'Table of Contents',
+		description: 'Auto-generated table of contents from page headings',
+		icon: 'list-tree',
+		default_props: {
+			items: [],
+			title: 'Table of Contents',
+			ordered: false,
+			smooth_scroll: true,
+		},
+		category: 'navigation',
+	},
+	{
+		type: 'slider',
+		name: 'Image Slider',
+		description: 'Image carousel/slider with navigation controls',
+		icon: 'gallery-horizontal',
+		default_props: {
+			slides: [],
+			autoplay: false,
+			interval_ms: 5000,
+			show_dots: true,
+			show_arrows: true,
+			height: 400,
+		},
+		category: 'media',
+	},
 ];
 
 /** Returns all registered block definitions. */

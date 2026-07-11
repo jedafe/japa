@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
+
+const API_BASE = PUBLIC_JC_API_URL ?? 'http://localhost:8080/api/v1';
 
 interface ApiOk<T> {
 	data: T;
@@ -52,19 +54,42 @@ export const api = {
 			`/learn/tracks/${trackSlug}/modules/${moduleSlug}/lessons/${lessonSlug}`
 		);
 	},
-	updateProgress(lessonId: string, data: { completed: boolean }) {
-		return request<{ progress: number }>('/learn/lessons/' + lessonId + '/progress', {
+	updateProgress(lessonId: string, data: { status: string }) {
+		return request<{ id: string; status: string; completed_at: string | null }>('/learn/lessons/' + lessonId + '/progress', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	},
+	completeLesson(lessonId: string) {
+		return request<{ id: string; status: string; completed_at: string | null }>('/learn/lessons/' + lessonId + '/complete', {
+			method: 'POST'
+		});
+	},
 	getProgress(trackId: string) {
-		return request<{ track_id: string; progress: number; completed_lessons: string[] }>(
+		return request<{ completed: number; total: number; percent: number }>(
 			'/learn/progress/' + trackId
 		);
 	},
 	getCertificates() {
 		return request<Certificate[]>('/me/certificates');
+	},
+	enroll(trackId: string) {
+		return request<{ enrollment: Enrollment }>('/me/enrollments', {
+			method: 'POST',
+			body: JSON.stringify({ track_id: trackId })
+		});
+	},
+	submitQuiz(quizId: string, answers: Record<string, number>) {
+		return request<QuizResult>('/learn/quizzes/' + quizId + '/submit', {
+			method: 'POST',
+			body: JSON.stringify({ answers })
+		});
+	},
+	getCertificate(certId: string) {
+		return request<CertificateDetail>('/certificates/' + certId);
+	},
+	downloadCertificate(certId: string) {
+		return request<{ download_url?: string; certificate_number?: string; message?: string }>('/certificates/' + certId + '/download');
 	}
 };
 
@@ -111,12 +136,50 @@ export interface Lesson {
 	duration_minutes: number;
 	order: number;
 	module_id: string;
+	video_url?: string;
+	quiz_id?: string;
+	quiz?: QuizQuestion[];
+}
+
+export interface QuizQuestion {
+	id: string;
+	question: string;
+	options: string[];
+	explanation?: string;
+	correct_index?: number;
 }
 
 export interface Certificate {
 	id: string;
 	track_id: string;
-	track_title: string;
+	certificate_number: string;
 	issued_at: string;
-	certificate_url?: string;
+	media_id?: string;
+}
+
+export interface Enrollment {
+	id: string;
+	track_id: string;
+	enrolled_at: string;
+	status: string;
+	progress_pct?: number;
+}
+
+export interface QuizResult {
+	score: number;
+	passed: boolean;
+	correct_answers: number;
+	total: number;
+	correct: string[];
+}
+
+export interface CertificateDetail {
+	id: string;
+	track_id: string;
+	track_title: string;
+	user_id: string;
+	username: string;
+	issued_at: string;
+	certificate_number: string;
+	completed_at: string;
 }

@@ -69,6 +69,7 @@ const (
 	TypeMaintenancePruneOldFeeds        = "maintenance:prune_old_feeds"
 	TypeMaintenancePruneAuditLogs       = "maintenance:prune_audit_logs"
 	TypeMaintenancePrunePushTokens      = "maintenance:prune_push_tokens"
+	TypeModerationAutoHide              = "moderation:auto_hide"
 	TypeDMCleanupDeclinedRequests       = "dm:cleanup_declined_requests"
 	TypeCouponTrackEvents               = "coupon:track_events"
 	TypeCouponExpireCheck               = "coupon:expire_check"
@@ -135,14 +136,15 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// Missing Phase 31 task handlers (catalog amendments)
 	mux.HandleFunc(TypeMaintenanceCheckExpiredBans, HandleMaintenanceCheckExpiredBans)
 	mux.HandleFunc(TypeMaintenanceCheckExpiredBoosts, HandleMaintenanceCheckExpiredBoosts)
-	// mux.HandleFunc(TypeMaintenancePruneOldFeeds, HandleMaintenancePruneOldFeeds) // TODO: implement feed pruning
+	mux.HandleFunc(TypeMaintenancePruneOldFeeds, HandleMaintenancePruneOldFeeds)
 	mux.HandleFunc(TypeMaintenancePruneAuditLogs, HandleMaintenancePruneAuditLogs)
-	// mux.HandleFunc(TypeMaintenancePrunePushTokens, HandleMaintenancePrunePushTokens) // TODO: implement push token pruning
-	// mux.HandleFunc(TypeDMCleanupDeclinedRequests, HandleDMCleanupDeclinedRequests) // TODO: implement DM cleanup
-	// mux.HandleFunc(TypeCouponTrackEvents, HandleCouponTrackEvents) // TODO: implement coupon event flush
+	mux.HandleFunc(TypeMaintenancePrunePushTokens, HandleMaintenancePrunePushTokens)
+	mux.HandleFunc(TypeModerationAutoHide, HandleModerationAutoHide)
+	mux.HandleFunc(TypeDMCleanupDeclinedRequests, HandleDMCleanupDeclinedRequests)
+	mux.HandleFunc(TypeCouponTrackEvents, HandleCouponTrackEvents)
 	mux.HandleFunc(TypeCouponExpireCheck, HandleCouponExpireCheck)
-	// mux.HandleFunc(TypeAffiliateRecordClick, HandleAffiliateRecordClick) // TODO: implement click recording
-	// mux.HandleFunc(TypeAffiliateCreditCommission, HandleAffiliateCreditCommission) // TODO: implement commission crediting
+	mux.HandleFunc(TypeAffiliateRecordClick, HandleAffiliateRecordClick)
+	mux.HandleFunc(TypeAffiliateCreditCommission, HandleAffiliateCreditCommission)
 	mux.HandleFunc(TypeAffiliateExpireCheck, HandleAffiliateExpireCheck)
 
 	// Periodic sweep handlers
