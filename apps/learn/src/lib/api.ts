@@ -1,6 +1,6 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 
-const API_BASE = PUBLIC_JC_API_URL ?? 'http://localhost:8080/api/v1';
+const API_BASE = `${PUBLIC_JC_API_URL}/api/v1`;
 
 interface ApiOk<T> {
 	data: T;
