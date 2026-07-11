@@ -1,4 +1,5 @@
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+import * as Sentry from '@sentry/sveltekit';
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 
 const PUBLIC_ROUTES = ['/login', '/_app'];
@@ -53,6 +54,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 };
 
 export const handleError: HandleServerError = ({ error }) => {
+	Sentry.captureException(error);
 	return {
 		code: 'INTERNAL_ERROR',
 		message: 'Internal error',
