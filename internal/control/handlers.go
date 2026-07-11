@@ -28,6 +28,7 @@ type Handlers struct {
 	SpamStore        *spam.Store
 	PublicAPI        *publicapi.Handlers
 	Inspector        *asynq.Inspector
+	Client           *asynq.Client
 	RBAC             *rbac.RBAC
 	StartTime        time.Time
 }
@@ -47,6 +48,11 @@ func NewHandlers(service *Service, database *db.DB, featureChecker *features.Che
 // SetInspector injects the Asynq inspector for queue monitoring.
 func (h *Handlers) SetInspector(inspector *asynq.Inspector) {
 	h.Inspector = inspector
+}
+
+// SetClient injects the Asynq client used to enqueue cron/scheduler tasks on demand.
+func (h *Handlers) SetClient(client *asynq.Client) {
+	h.Client = client
 }
 
 // SetRBAC injects the RBAC resolver for cache operations.
@@ -406,6 +412,72 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	worker.HandleQueueStats(h.Inspector)(w, r)
+}
+
+// ListCronJobs handles GET /api/v1/control/cron/jobs.
+// Returns the periodic scheduler entries (cron jobs) registered with Asynq.
+func (h *Handlers) ListCronJobs(w http.ResponseWriter, r *http.Request) {
+	if h.Inspector == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+
+	entries, err := h.Inspector.SchedulerEntries()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "scheduler_error", "Failed to load cron jobs")
+		return
+	}
+
+	jobs := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		taskType := ""
+		if e.Task != nil {
+			taskType = e.Task.Type()
+		}
+		jobs = append(jobs, map[string]any{
+			"id":          e.ID,
+			"spec":        e.Spec,
+			"type":        taskType,
+			"next_run_at": e.Next.Format("2006-01-02T15:04:05Z"),
+			"prev_run_at": e.Prev.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": jobs})
+}
+
+// TriggerCronJob handles POST /api/v1/control/cron/jobs/{id}/trigger.
+// Enqueues the scheduler entry's task immediately (one-off run).
+func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
+	if h.Client == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_client", "Asynq client not available")
+		return
+	}
+	if h.Inspector == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Asynq inspector not available")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	entries, err := h.Inspector.SchedulerEntries()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "scheduler_error", "Failed to load cron jobs")
+		return
+	}
+
+	for _, e := range entries {
+		if e.ID != id || e.Task == nil {
+			continue
+		}
+		if _, err := h.Client.Enqueue(e.Task); err != nil {
+			writeError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": e.ID, "status": "enqueued"}})
+		return
+	}
+
+	writeError(w, http.StatusNotFound, "not_found", "Cron job not found")
 }
 
 func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {

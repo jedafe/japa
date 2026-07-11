@@ -3,10 +3,13 @@ package gdpr
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ---------------------------------------------------------------------------
@@ -149,7 +152,7 @@ func TestHandleServiceError(t *testing.T) {
 		wantErrCode string
 	}{
 		{"generic error", fmt.Errorf("something went wrong"), 500, "internal_error"},
-		{"required field", fmt.Errorf("name is required"), 400, "validation_error"},
+		{"required field", errors.Join(errpkg.ErrRequired, fmt.Errorf("name is required")), 400, "validation_error"},
 	}
 
 	for _, tt := range tests {

@@ -841,6 +841,78 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": boost})
 }
 
+// UpdateBoost handles PATCH /api/v1/admin/ads/boosts/{id}.
+func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
+		return
+	}
+
+	var input struct {
+		Status   *string `json:"status"`
+		EndDate  *string `json:"end_date"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	var endDate *time.Time
+	if input.EndDate != nil && *input.EndDate != "" {
+		t, perr := time.Parse(time.RFC3339, *input.EndDate)
+		if perr != nil {
+			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
+			return
+		}
+		endDate = &t
+	}
+
+	boost, err := h.Service.UpdateBoost(r.Context(), id, tenantID, input.Status, endDate)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": boost})
+}
+
+// DeleteBoost handles DELETE /api/v1/admin/ads/boosts/{id}.
+func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
+		return
+	}
+
+	if err := h.Service.DeleteBoost(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
 // ─── P5.6 Advertising Extras ─────────────────────────────────────────────
 
 // UpdateCampaign handles PATCH /admin/ads/campaigns/:id.

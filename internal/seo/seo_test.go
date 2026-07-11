@@ -334,7 +334,7 @@ func TestHreflangAlternate_CustomLanguages(t *testing.T) {
 func TestServeOGImage(t *testing.T) {
 	t.Parallel()
 
-	h := NewOGImageHandler(nil)
+	h := NewOGImageHandler(nil, "Test Site")
 	req := httptest.NewRequest(http.MethodGet, "/og/00000000-0000-0000-0000-000000000001.png", nil)
 	rec := httptest.NewRecorder()
 
@@ -362,7 +362,7 @@ func TestServeOGImage(t *testing.T) {
 func TestNewOGImageHandler(t *testing.T) {
 	t.Parallel()
 
-	h := NewOGImageHandler(nil)
+	h := NewOGImageHandler(nil, "Test Site")
 	if h == nil {
 		t.Fatal("NewOGImageHandler should return non-nil")
 	}

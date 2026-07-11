@@ -11,6 +11,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countUserActivity = `-- name: CountUserActivity :one
+SELECT (SELECT count(*) FROM contents c
+        WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL)
+     + (SELECT count(*) FROM comments cm
+        WHERE cm.tenant_id = $1 AND cm.author_user_id = $2 AND cm.deleted_at IS NULL) AS total
+`
+
+type CountUserActivityParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+}
+
+func (q *Queries) CountUserActivity(ctx context.Context, arg CountUserActivityParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countUserActivity, arg.TenantID, arg.AuthorID)
+	var total int32
+	err := row.Scan(&total)
+	return total, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*)::int AS count
 FROM users
@@ -318,6 +337,56 @@ func (q *Queries) ListOAuthAccounts(ctx context.Context, arg ListOAuthAccountsPa
 	return items, nil
 }
 
+const listUserActivity = `-- name: ListUserActivity :many
+SELECT activity.type, activity.content, activity.created_at
+FROM (
+    SELECT 'content'::text AS type, c.title AS content, c.created_at
+    FROM contents c
+    WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
+    UNION ALL
+    SELECT 'comment'::text AS type, left(cm.body, 240) AS content, cm.created_at
+    FROM comments cm
+    WHERE cm.tenant_id = $1 AND cm.author_user_id = $2 AND cm.deleted_at IS NULL
+) activity
+ORDER BY activity.created_at DESC
+LIMIT $3
+`
+
+type ListUserActivityParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+	Limit    int32       `json:"limit"`
+}
+
+type ListUserActivityRow struct {
+	Type      string             `json:"type"`
+	Content   string             `json:"content"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// Recent authored contents and comments merged into one feed, newest first
+// (admin user-detail activity tab). Comment bodies are truncated so a long
+// comment cannot bloat the list payload.
+func (q *Queries) ListUserActivity(ctx context.Context, arg ListUserActivityParams) ([]ListUserActivityRow, error) {
+	rows, err := q.db.Query(ctx, listUserActivity, arg.TenantID, arg.AuthorID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserActivityRow
+	for rows.Next() {
+		var i ListUserActivityRow
+		if err := rows.Scan(&i.Type, &i.Content, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserBookmarks = `-- name: ListUserBookmarks :many
 SELECT b.id, b.entity_type, b.entity_id, b.folder, b.created_at
 FROM bookmarks b
@@ -552,6 +621,20 @@ type RevokeUserSessionParams struct {
 
 func (q *Queries) RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) error {
 	_, err := q.db.Exec(ctx, revokeUserSession, arg.ID, arg.UserID)
+	return err
+}
+
+const softDeleteUser = `-- name: SoftDeleteUser :exec
+UPDATE users SET status = 'deleted', updated_at = now() WHERE id = $1 AND tenant_id = $2
+`
+
+type SoftDeleteUserParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) SoftDeleteUser(ctx context.Context, arg SoftDeleteUserParams) error {
+	_, err := q.db.Exec(ctx, softDeleteUser, arg.ID, arg.TenantID)
 	return err
 }
 

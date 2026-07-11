@@ -46,6 +46,21 @@ type ListUsersResponse struct {
 	TotalPages int32          `json:"total_pages"`
 }
 
+// UserActivityItem is one row in the admin user-activity feed: a content
+// item the user authored (content = title) or a comment (content = body,
+// truncated server-side).
+type UserActivityItem struct {
+	Type      string `json:"type"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"created_at"`
+}
+
+// UserActivityResponse is the API response for GET /admin/users/{id}/activity.
+type UserActivityResponse struct {
+	Activities []UserActivityItem `json:"activities"`
+	Total      int32              `json:"total"`
+}
+
 // UserListItem is a condensed user record for list endpoints.
 type UserListItem struct {
 	ID            string `json:"id"`

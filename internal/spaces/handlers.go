@@ -1024,6 +1024,132 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": mods})
 }
 
+// AdminAssignModerator handles POST /api/v1/admin/spaces/{id}/moderators.
+// Admin-scoped variant of the space moderator assignment that resolves the
+// space by ID (not slug) and accepts either a user_id or username.
+func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	spaceID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		return
+	}
+
+	space, err := h.Service.GetSpaceByID(r.Context(), tenantID, spaceID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var req struct {
+		UserID   string `json:"user_id"`
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	var targetUserID pgtype.UUID
+	switch {
+	case req.UserID != "":
+		if err := targetUserID.Scan(req.UserID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
+			return
+		}
+	case req.Username != "":
+		targetUserID, err = h.Service.GetUserIDByUsername(r.Context(), tenantID, req.Username)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
+		return
+	}
+
+	if err := h.Service.AssignModerator(r.Context(), gen.AssignSpaceModeratorParams{
+		TenantID:         tenantID,
+		SpaceID:          space.ID,
+		UserID:           targetUserID,
+		AssignedBy:       "site_admin",
+		AssignedByUserID: user.UserID,
+	}); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"data": map[string]any{
+			"space_id": space.ID.String(),
+			"user_id":  targetUserID.String(),
+		},
+	})
+}
+
+// AdminRemoveModerator handles DELETE /api/v1/admin/spaces/{id}/moderators/{userId}.
+func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if user := auth.FromContext(r.Context()); user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	spaceID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		return
+	}
+
+	space, err := h.Service.GetSpaceByID(r.Context(), tenantID, spaceID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var targetUserID pgtype.UUID
+	switch {
+	case chi.URLParam(r, "userId") != "":
+		if err := targetUserID.Scan(chi.URLParam(r, "userId")); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid userId format")
+			return
+		}
+	case chi.URLParam(r, "username") != "":
+		targetUserID, err = h.Service.GetUserIDByUsername(r.Context(), tenantID, chi.URLParam(r, "username"))
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "missing_fields", "userId or username is required")
+		return
+	}
+
+	if err := h.Service.RemoveModerator(r.Context(), space.ID, targetUserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"space_id": space.ID.String(),
+			"user_id":  targetUserID.String(),
+		},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Space Parent Spaces (Many-to-Many Hierarchy) Handlers
 // ---------------------------------------------------------------------------

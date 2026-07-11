@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -36,7 +38,7 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 
 		depth = parent.Depth + 1
 		if depth > 3 {
-			return gen.Comment{}, errors.New("maximum comment depth exceeded (max 3)")
+			return gen.Comment{}, fmt.Errorf("comment depth %d exceeds maximum 3: %w", depth, errpkg.ErrMaxDepth)
 		}
 	}
 
@@ -178,6 +180,10 @@ func (s *Service) VoteComment(ctx context.Context, tenantID, commentID, userID p
 		UserID:    userID,
 		Value:     value,
 	}); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return fmt.Errorf("duplicate vote: %w", errpkg.ErrDuplicate)
+		}
 		return fmt.Errorf("voting on comment: %w", err)
 	}
 

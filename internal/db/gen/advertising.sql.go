@@ -229,6 +229,21 @@ func (q *Queries) DeleteAdSlotType(ctx context.Context, arg DeleteAdSlotTypePara
 	return err
 }
 
+const deleteOrganizationBoost = `-- name: DeleteOrganizationBoost :exec
+DELETE FROM organization_boosts
+WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteOrganizationBoostParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteOrganizationBoost(ctx context.Context, arg DeleteOrganizationBoostParams) error {
+	_, err := q.db.Exec(ctx, deleteOrganizationBoost, arg.ID, arg.TenantID)
+	return err
+}
+
 const endOrganizationBoost = `-- name: EndOrganizationBoost :one
 UPDATE organization_boosts
 SET status = 'ended', end_date = now()
@@ -1018,6 +1033,42 @@ func (q *Queries) UpdateAdSlotTypeDetails(ctx context.Context, arg UpdateAdSlotT
 		&i.Description,
 		&i.MaxDisplayPerPage,
 		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateOrganizationBoost = `-- name: UpdateOrganizationBoost :one
+UPDATE organization_boosts
+SET status = $1, end_date = $2
+WHERE id = $3 AND tenant_id = $4
+RETURNING id, tenant_id, organization_id, campaign_id, boost_type, status, start_date, end_date, created_at
+`
+
+type UpdateOrganizationBoostParams struct {
+	Status   *string            `json:"status"`
+	EndDate  pgtype.Timestamptz `json:"end_date"`
+	ID       pgtype.UUID        `json:"id"`
+	TenantID pgtype.UUID        `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateOrganizationBoost(ctx context.Context, arg UpdateOrganizationBoostParams) (OrganizationBoost, error) {
+	row := q.db.QueryRow(ctx, updateOrganizationBoost,
+		arg.Status,
+		arg.EndDate,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i OrganizationBoost
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.OrganizationID,
+		&i.CampaignID,
+		&i.BoostType,
+		&i.Status,
+		&i.StartDate,
+		&i.EndDate,
 		&i.CreatedAt,
 	)
 	return i, err

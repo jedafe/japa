@@ -674,33 +674,6 @@ func (h *Handlers) GetActiveSubscription(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"data": subscription})
 }
 
-// CancelSubscription handles PATCH /api/v1/subscriptions/{id}/cancel.
-func (h *Handlers) CancelSubscription(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid subscription ID")
-		return
-	}
-
-	subscription, err := h.Service.CancelSubscription(r.Context(), id, tenantID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": subscription})
-}
-
 // CancelMySubscription handles POST /api/v1/me/subscription/cancel — cancels
 // the caller's own active subscription (catalog: no ID in the path, derived
 // from the authenticated user via GetActiveSubscription).

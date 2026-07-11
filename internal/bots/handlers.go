@@ -146,6 +146,29 @@ func (h *Handlers) ListKnownBots(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": bots})
 }
 
+// GetKnownBot returns a single known bot by ID.
+// GET /api/v1/admin/bots/{id}.
+func (h *Handlers) GetKnownBot(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid bot ID")
+		return
+	}
+
+	bot, err := h.Service.GetKnownBotByID(r.Context(), tenantID, id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": bot})
+}
+
 // CreateKnownBot creates a new known bot entry.
 // POST /api/v1/admin/bots.
 func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
