@@ -52,6 +52,7 @@
 	let showGroupModal = $state(false);
 	let warningReason = $state('');
 	let selectedGroups = $state<string[]>([]);
+	let groupOptions = $state<string[]>(['user', 'moderator', 'admin', 'super_admin']);
 	let actionError = $state('');
 	let actionSuccess = $state('');
 
@@ -182,6 +183,14 @@
 			const d = status.data as { impersonating: boolean; username?: string };
 			impersonating = d.impersonating;
 			impersonatingUsername = d.username ?? '';
+		}
+		try {
+			const groupsResult = await userManagementApi.listGroups();
+			if (groupsResult.ok) {
+				groupOptions = groupsResult.data.groups.map((g) => g.name);
+			}
+		} catch {
+			// Keep default group options
 		}
 	});
 </script>
@@ -453,7 +462,7 @@
 <!-- Change Group Modal -->
 <Modal bind:open={showGroupModal} title={t('users.detail.change_group')} onConfirm={handleGroupChange} confirmLabel={t('common.save')}>
 	<div class="space-y-2">
-		{#each ['user', 'moderator', 'admin', 'super_admin'] as group}
+		{#each groupOptions as group}
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" value={group} bind:group={selectedGroups} class="rounded" />
 				{group}

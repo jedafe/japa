@@ -36,6 +36,7 @@ var (
 	rdb interface {
 		Ping(ctx context.Context) error
 	}
+	taskEnqueuer *Enqueuer
 )
 
 // RegisterDBPool sets the database connection pool for worker handlers.
@@ -46,6 +47,12 @@ func RegisterDBPool(d *db.DB) {
 // RegisterSiteName sets the site name for worker handlers.
 func RegisterSiteName(name string) {
 	siteName = name
+}
+
+// RegisterTaskEnqueuer sets the task enqueuer for worker handlers that need
+// to enqueue follow-up tasks (e.g. payment webhook → affiliate commission).
+func RegisterTaskEnqueuer(e *Enqueuer) {
+	taskEnqueuer = e
 }
 
 // RegisterRedis sets the Valkey/Redis client for worker handlers.
@@ -303,6 +310,19 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 
 			slog.Info("task:payment:process_webhook: payment updated",
 				"payment_id", p.ID, "status", payload.Status)
+
+			// Enqueue affiliate commission crediting on successful payment.
+			if payload.Status == "succeeded" && taskEnqueuer != nil {
+				commissionPayload, _ := json.Marshal(map[string]string{
+					"payment_id": p.ID.String(),
+					"user_id":    p.UserID.String(),
+					"amount":     fmt.Sprintf("%d", p.Amount),
+				})
+				if err := taskEnqueuer.Enqueue(TypeAffiliateCreditCommission, commissionPayload); err != nil {
+					slog.Error("task:payment:process_webhook: failed to enqueue affiliate commission",
+						"payment_id", p.ID, "error", err)
+				}
+			}
 		}
 	}
 
@@ -2060,11 +2080,6 @@ func HandleAnalyticsRefreshViews(ctx context.Context, t *asynq.Task) error {
 func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:security:scan", "payload", t.Payload())
 
-	if analyticsProcessor == nil {
-		slog.Warn("task:security:scan: no analytics processor registered, skipping")
-		return nil
-	}
-
 	var payload struct {
 		TenantID string `json:"tenant_id"`
 	}
@@ -2080,7 +2095,43 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	return analyticsProcessor.RunSecurityScan(ctx, tenantID.Bytes)
+	if dbPool == nil {
+		slog.Warn("task:security:scan: no database, skipping")
+		return nil
+	}
+
+	// Find media with status 'uploaded' that need scanning.
+	rows, err := dbPool.Reader.Query(ctx, `
+		SELECT id, file_path FROM media
+		WHERE tenant_id = $1 AND status = 'uploaded'
+		ORDER BY created_at ASC
+		LIMIT 50
+	`, tenantID)
+	if err != nil {
+		slog.Error("task:security:scan: query failed", "error", err)
+		return err
+	}
+	defer rows.Close()
+
+	scanCount := 0
+	for rows.Next() {
+		var id pgtype.UUID
+		var filePath string
+		if err := rows.Scan(&id, &filePath); err != nil {
+			continue
+		}
+		// Enqueue each media for ClamAV scan via the moderation processor.
+		if moderationProcessor != nil {
+			if err := moderationProcessor.ScanContent(ctx, "media", id.String(), payload.TenantID); err != nil {
+				slog.Error("task:security:scan: scan enqueue failed", "media_id", id.String(), "error", err)
+			} else {
+				scanCount++
+			}
+		}
+	}
+
+	slog.Info("task:security:scan: complete", "scanned_count", scanCount)
+	return nil
 }
 
 // HandleMaintenanceRegenerateLLMsTxt regenerates the llms.txt file for the tenant.
@@ -2321,15 +2372,15 @@ func HandleComputeSuggestions(ctx context.Context, t *asynq.Task) error {
 
 // HandlePushDelivery delivers a push notification to a user's registered device.
 func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:push:delivery", "payload", t.Payload())
+	slog.Info("task:push:deliver", "payload", t.Payload())
 
 	if pushDelivery == nil {
-		slog.Warn("task:push:delivery: no push delivery registered, skipping")
+		slog.Warn("task:push:deliver: no push delivery registered, skipping")
 		return nil
 	}
 
 	if !pushDelivery.IsEnabled() {
-		slog.Warn("task:push:delivery: VAPID keys not configured, skipping")
+		slog.Warn("task:push:deliver: VAPID keys not configured, skipping")
 		return nil
 	}
 
@@ -2341,17 +2392,17 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:push:delivery: invalid payload", "error", err)
+		slog.Error("task:push:deliver: invalid payload", "error", err)
 		return err
 	}
 
 	userID, err := scanUUID(payload.UserID)
 	if err != nil {
-		return fmt.Errorf("task:push:delivery: %w", err)
+		return fmt.Errorf("task:push:deliver: %w", err)
 	}
 
 	if dbPool == nil {
-		slog.Warn("task:push:delivery: no database, skipping")
+		slog.Warn("task:push:deliver: no database, skipping")
 		return nil
 	}
 
@@ -2360,7 +2411,7 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 		`SELECT id, endpoint, p256dh, auth_key FROM push_subscriptions WHERE user_id = $1`,
 		userID)
 	if err != nil {
-		slog.Error("task:push:delivery: failed to query subscriptions",
+		slog.Error("task:push:deliver: failed to query subscriptions",
 			"user_id", payload.UserID, "error", err)
 		return nil // non-fatal: subscriptions may not exist yet
 	}
@@ -2390,7 +2441,7 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 
 		var endpoint, p256dh, authKey string
 		if err := rows.Scan(&id, &endpoint, &p256dh, &authKey); err != nil {
-			slog.Error("task:push:delivery: scan error", "error", err)
+			slog.Error("task:push:deliver: scan error", "error", err)
 
 			failed++
 
@@ -2398,13 +2449,13 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 		}
 
 		if err := pushDelivery.Send(ctx, endpoint, p256dh, authKey, pushJSON); err != nil {
-			slog.Error("task:push:delivery: send failed",
+			slog.Error("task:push:deliver: send failed",
 				"user_id", payload.UserID, "endpoint", endpoint[:min(30, len(endpoint))], "error", err)
 
 			failed++
 			// If subscription expired (410), remove it.
 			if isSubscriptionExpired(err) {
-				slog.Info("task:push:delivery: removing expired subscription",
+				slog.Info("task:push:deliver: removing expired subscription",
 					"user_id", payload.UserID)
 
 				_, _ = dbPool.Writer.Exec(ctx,
@@ -2418,10 +2469,10 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if err := rows.Err(); err != nil {
-		slog.Error("task:push:delivery: row iteration error", "error", err)
+		slog.Error("task:push:deliver: row iteration error", "error", err)
 	}
 
-	slog.Info("task:push:delivery: complete",
+	slog.Info("task:push:deliver: complete",
 		"user_id", payload.UserID, "sent", sent, "failed", failed)
 
 	return nil
@@ -2821,15 +2872,25 @@ func HandleMaintenanceCheckExpiredBoosts(ctx context.Context, _ *asynq.Task) err
 	return nil
 }
 
-// HandleMaintenancePruneOldFeeds deletes feeds rows older than retention window.
-func HandleMaintenancePruneOldFeeds(_ context.Context, _ *asynq.Task) error {
+// HandleMaintenancePruneOldFeeds deletes feeds rows older than 30 days.
+func HandleMaintenancePruneOldFeeds(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_old_feeds — pruning old feed entries")
-	db, err := requireDB()
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement feed pruning logic
-	_ = db
+	result, err := dbPool.Writer.Exec(ctx, `
+		DELETE FROM feeds
+		WHERE created_at < now() - interval '30 days'
+	`)
+	if err != nil {
+		slog.Error("maintenance:prune_old_feeds failed", "error", err)
+		return err
+	}
+	rows := result.RowsAffected()
+	if rows > 0 {
+		slog.Info("maintenance:prune_old_feeds — pruned old feeds", "count", rows)
+	}
 	return nil
 }
 
@@ -2855,39 +2916,196 @@ func HandleMaintenancePruneAuditLogs(ctx context.Context, _ *asynq.Task) error {
 	return nil
 }
 
-// HandleMaintenancePrunePushTokens deletes stale/unresponsive push tokens.
-func HandleMaintenancePrunePushTokens(_ context.Context, _ *asynq.Task) error {
+// HandleMaintenancePrunePushTokens deletes stale/unresponsive push tokens older than 90 days.
+func HandleMaintenancePrunePushTokens(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_push_tokens — pruning stale push tokens")
-	db, err := requireDB()
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement push token pruning
-	_ = db
+	result, err := dbPool.Writer.Exec(ctx, `
+		DELETE FROM push_tokens
+		WHERE last_used_at < now() - interval '90 days'
+		   OR (last_used_at IS NULL AND created_at < now() - interval '30 days')
+	`)
+	if err != nil {
+		slog.Error("maintenance:prune_push_tokens failed", "error", err)
+		return err
+	}
+	rows := result.RowsAffected()
+	if rows > 0 {
+		slog.Info("maintenance:prune_push_tokens — pruned stale tokens", "count", rows)
+	}
+	return nil
+}
+
+// HandleModerationAutoHide checks if a reported entity has reached the
+// auto-hide threshold and archives it. Enqueued after each report is created.
+func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:moderation:auto_hide", "payload", t.Payload())
+
+	if dbPool == nil {
+		slog.Warn("task:moderation:auto_hide: no database, skipping")
+		return nil
+	}
+
+	var payload struct {
+		EntityType string `json:"entity_type"`
+		EntityID   string `json:"entity_id"`
+		TenantID   string `json:"tenant_id"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:moderation:auto_hide: invalid payload", "error", err)
+		return err
+	}
+
+	tenantID, err := scanUUID(payload.TenantID)
+	if err != nil {
+		return fmt.Errorf("task:moderation:auto_hide: %w", err)
+	}
+
+	entityID, err := scanUUID(payload.EntityID)
+	if err != nil {
+		return fmt.Errorf("task:moderation:auto_hide: %w", err)
+	}
+
+	// Read the auto-hide threshold from system settings (default: 3 reports).
+	threshold := 3
+	if appSettings != nil {
+		threshold = appSettings.GetIntOr(ctx, tenantID, "moderation.auto_hide_report_count", 3)
+	}
+
+	// Count pending reports for this entity.
+	var reportCount int
+	err = dbPool.Reader.QueryRow(ctx,
+		`SELECT COUNT(*) FROM content_reports
+		 WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
+		   AND status = 'pending'`,
+		tenantID, payload.EntityType, entityID).Scan(&reportCount)
+	if err != nil {
+		slog.Error("task:moderation:auto_hide: failed to count reports",
+			"entity_type", payload.EntityType, "entity_id", payload.EntityID, "error", err)
+		return err
+	}
+
+	if reportCount < threshold {
+		slog.Info("task:moderation:auto_hide: below threshold, skipping",
+			"entity_type", payload.EntityType, "entity_id", payload.EntityID,
+			"report_count", reportCount, "threshold", threshold)
+		return nil
+	}
+
+	// Archive the entity based on its type.
+	switch payload.EntityType {
+	case "content":
+		result, err := dbPool.Writer.Exec(ctx,
+			`UPDATE contents SET status = 'archived', updated_at = now()
+			 WHERE id = $1 AND tenant_id = $2 AND status != 'archived'`,
+			entityID, tenantID)
+		if err != nil {
+			slog.Error("task:moderation:auto_hide: failed to archive content",
+				"content_id", payload.EntityID, "error", err)
+			return err
+		}
+		if n := result.RowsAffected(); n > 0 {
+			slog.Info("task:moderation:auto_hide: content archived",
+				"content_id", payload.EntityID, "report_count", reportCount)
+		}
+
+	case "comment":
+		result, err := dbPool.Writer.Exec(ctx,
+			`UPDATE comments SET deleted_at = now()
+			 WHERE id = $1 AND deleted_at IS NULL`,
+			entityID)
+		if err != nil {
+			slog.Error("task:moderation:auto_hide: failed to hide comment",
+				"comment_id", payload.EntityID, "error", err)
+			return err
+		}
+		if n := result.RowsAffected(); n > 0 {
+			slog.Info("task:moderation:auto_hide: comment hidden",
+				"comment_id", payload.EntityID, "report_count", reportCount)
+		}
+
+	case "message":
+		result, err := dbPool.Writer.Exec(ctx,
+			`UPDATE dm_messages SET deleted_at = now()
+			 WHERE id = $1 AND deleted_at IS NULL`,
+			entityID)
+		if err != nil {
+			slog.Error("task:moderation:auto_hide: failed to hide message",
+				"message_id", payload.EntityID, "error", err)
+			return err
+		}
+		if n := result.RowsAffected(); n > 0 {
+			slog.Info("task:moderation:auto_hide: message hidden",
+				"message_id", payload.EntityID, "report_count", reportCount)
+		}
+
+	default:
+		// user/space reports require human review — log but don't auto-hide.
+		slog.Info("task:moderation:auto_hide: entity type requires human review",
+			"entity_type", payload.EntityType, "entity_id", payload.EntityID,
+			"report_count", reportCount)
+	}
+
 	return nil
 }
 
 // HandleDMCleanupDeclinedRequests purges dm_requests declined > 90 days ago.
-func HandleDMCleanupDeclinedRequests(_ context.Context, _ *asynq.Task) error {
+func HandleDMCleanupDeclinedRequests(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("dm:cleanup_declined_requests — purging old declined requests")
-	db, err := requireDB()
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement DM request cleanup
-	_ = db
+	result, err := dbPool.Writer.Exec(ctx, `
+		DELETE FROM dm_requests
+		WHERE status = 'declined'
+		AND updated_at < now() - interval '90 days'
+	`)
+	if err != nil {
+		slog.Error("dm:cleanup_declined_requests failed", "error", err)
+		return err
+	}
+	rows := result.RowsAffected()
+	if rows > 0 {
+		slog.Info("dm:cleanup_declined_requests — purged old declined requests", "count", rows)
+	}
 	return nil
 }
 
 // HandleCouponTrackEvents flushes coupon_events to aggregate counters.
-func HandleCouponTrackEvents(_ context.Context, t *asynq.Task) error {
+func HandleCouponTrackEvents(ctx context.Context, t *asynq.Task) error {
 	slog.Info("coupon:track_events — flushing coupon event counters")
-	db, err := requireDB()
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement coupon event flush
-	_ = db
+	// Aggregate coupon usage counts from events table
+	result, err := dbPool.Writer.Exec(ctx, `
+		UPDATE discount_codes dc
+		SET uses_count = (
+			SELECT COUNT(*)::int
+			FROM coupon_events ce
+			WHERE ce.coupon_code = dc.code
+			  AND ce.created_at > dc.updated_at
+		)
+		WHERE EXISTS (
+			SELECT 1 FROM coupon_events ce
+			WHERE ce.coupon_code = dc.code
+			  AND ce.created_at > dc.updated_at
+		)
+	`)
+	if err != nil {
+		slog.Error("coupon:track_events failed", "error", err)
+		return err
+	}
+	rows := result.RowsAffected()
+	if rows > 0 {
+		slog.Info("coupon:track_events — flushed coupon event counters", "count", rows)
+	}
 	return nil
 }
 
@@ -2917,26 +3135,116 @@ func HandleCouponExpireCheck(ctx context.Context, _ *asynq.Task) error {
 }
 
 // HandleAffiliateRecordClick persists click event to affiliate_link_events.
-func HandleAffiliateRecordClick(_ context.Context, _ *asynq.Task) error {
+func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 	slog.Info("affiliate:record_click — persisting click event")
-	db, err := requireDB()
+
+	var payload struct {
+		LinkID   string `json:"link_id"`
+		UserID   string `json:"user_id"`
+		IPAddr   string `json:"ip_addr"`
+		UserAgent string `json:"user_agent"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("affiliate:record_click: invalid payload", "error", err)
+		return err
+	}
+
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement affiliate click recording
-	_ = db
+
+	linkID, err := scanUUID(payload.LinkID)
+	if err != nil {
+		return fmt.Errorf("affiliate:record_click: %w", err)
+	}
+
+	var userID pgtype.UUID
+	if payload.UserID != "" {
+		if uidErr := userID.Scan(payload.UserID); uidErr != nil {
+			slog.Warn("affiliate:record_click: invalid user_id", "error", uidErr)
+		}
+	}
+
+	_, err = dbPool.Writer.Exec(ctx, `
+		INSERT INTO affiliate_link_events (link_id, user_id, event_type, ip_addr, user_agent, created_at)
+		VALUES ($1, $2, 'click', $3, $4, now())
+	`, linkID, userID, payload.IPAddr, payload.UserAgent)
+	if err != nil {
+		slog.Error("affiliate:record_click failed", "error", err)
+		return err
+	}
+
+	slog.Info("affiliate:record_click — recorded", "link_id", payload.LinkID)
 	return nil
 }
 
 // HandleAffiliateCreditCommission credits commission after payment succeeds.
-func HandleAffiliateCreditCommission(_ context.Context, _ *asynq.Task) error {
+func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	slog.Info("affiliate:credit_commission — crediting commission")
-	db, err := requireDB()
+
+	var payload struct {
+		PaymentID string  `json:"payment_id"`
+		UserID    string  `json:"user_id"`
+		Amount    float64 `json:"amount"`
+		LinkCode  string  `json:"link_code"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("affiliate:credit_commission: invalid payload", "error", err)
+		return err
+	}
+
+	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// TODO: implement commission crediting
-	_ = db
+
+	// Look up the affiliate link and member to determine commission rate
+	var commissionRate int
+	var memberUserID pgtype.UUID
+	err = dbPool.Reader.QueryRow(ctx, `
+		SELECT apm.user_id, COALESCE(aps.commission_rates->>'pro_monthly', '0')::int
+		FROM affiliate_program_members apm
+		JOIN user_affiliate_links ual ON ual.user_id = apm.user_id
+		JOIN affiliate_program_settings aps ON aps.tenant_id = apm.tenant_id
+		WHERE ual.link_code = $1 AND apm.status = 'active' AND ual.is_active = true
+	`, payload.LinkCode).Scan(&memberUserID, &commissionRate)
+	if err != nil {
+		slog.Warn("affiliate:credit_commission: link not found or inactive", "link_code", payload.LinkCode, "error", err)
+		return nil // not an error — link may be invalid
+	}
+
+	if commissionRate <= 0 {
+		slog.Info("affiliate:credit_commission: no commission rate configured")
+		return nil
+	}
+
+	// Calculate commission (percentage of payment amount)
+	commission := int64(float64(payload.Amount) * float64(commissionRate) / 100.0)
+	if commission <= 0 {
+		return nil
+	}
+
+	paymentID, err := scanUUID(payload.PaymentID)
+	if err != nil {
+		return fmt.Errorf("affiliate:credit_commission: %w", err)
+	}
+
+	// Credit the affiliate member's wallet
+	_, err = dbPool.Writer.Exec(ctx, `
+		INSERT INTO wallet_transactions (tenant_id, user_id, amount, transaction_type, reference_type, reference_id, description, created_at)
+		SELECT apm.tenant_id, apm.user_id, $1, 'credit', 'affiliate_commission', $2, 'Affiliate commission', now()
+		FROM affiliate_program_members apm
+		WHERE apm.user_id = $3 AND apm.status = 'active'
+	`, commission, paymentID, memberUserID)
+	if err != nil {
+		slog.Error("affiliate:credit_commission: failed to credit wallet", "error", err)
+		return err
+	}
+
+	slog.Info("affiliate:credit_commission — credited", "amount", commission, "link_code", payload.LinkCode)
 	return nil
 }
 

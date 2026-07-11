@@ -14,6 +14,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/publicapi"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
@@ -27,6 +28,7 @@ type Handlers struct {
 	SpamStore        *spam.Store
 	PublicAPI        *publicapi.Handlers
 	Inspector        *asynq.Inspector
+	RBAC             *rbac.RBAC
 	StartTime        time.Time
 }
 
@@ -45,6 +47,11 @@ func NewHandlers(service *Service, database *db.DB, featureChecker *features.Che
 // SetInspector injects the Asynq inspector for queue monitoring.
 func (h *Handlers) SetInspector(inspector *asynq.Inspector) {
 	h.Inspector = inspector
+}
+
+// SetRBAC injects the RBAC resolver for cache operations.
+func (h *Handlers) SetRBAC(r *rbac.RBAC) {
+	h.RBAC = r
 }
 
 // ---------------------------------------------------------------------------
@@ -402,25 +409,95 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+	if h.Inspector == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+
+	var tasks []map[string]any
+
+	for _, queueName := range []string{"critical", "default", "low"} {
+		entries, err := h.Inspector.ListRetryTasks(queueName)
+		if err != nil {
+			slog.Warn("dlq: list tasks failed", "queue", queueName, "error", err)
+			continue
+		}
+		for _, entry := range entries {
+			tasks = append(tasks, map[string]any{
+				"id":          entry.ID,
+				"type":        entry.Type,
+				"queue":       queueName,
+				"payload":     string(entry.Payload),
+				"error":       entry.LastErr,
+				"retries":     entry.Retried,
+				"max_retries": entry.MaxRetry,
+				"last_failed": entry.LastFailedAt.Format("2006-01-02T15:04:05Z"),
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": tasks})
 }
 
 func (h *Handlers) RetryDLQTask(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error": map[string]string{"code": "not_implemented", "message": "DLQ retry not yet implemented"},
-	})
+	if h.Inspector == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		return
+	}
+
+	taskID := chi.URLParam(r, "task_id")
+
+	for _, queueName := range []string{"critical", "default", "low"} {
+		if err := h.Inspector.RunTask(queueName, taskID); err != nil {
+			continue
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "retried"}})
+		return
+	}
+
+	writeError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
 }
 
 func (h *Handlers) DiscardDLQTask(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error": map[string]string{"code": "not_implemented", "message": "DLQ discard not yet implemented"},
-	})
+	if h.Inspector == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		return
+	}
+
+	taskID := chi.URLParam(r, "task_id")
+
+	for _, queueName := range []string{"critical", "default", "low"} {
+		if err := h.Inspector.DeleteTask(queueName, taskID); err != nil {
+			continue
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "discarded"}})
+		return
+	}
+
+	writeError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
 }
 
 func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error": map[string]string{"code": "not_implemented", "message": "DLQ purge not yet implemented"},
-	})
+	if h.Inspector == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		return
+	}
+
+	totalDiscarded := 0
+
+	for _, queueName := range []string{"critical", "default", "low"} {
+		entries, err := h.Inspector.ListRetryTasks(queueName)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if err := h.Inspector.DeleteTask(queueName, entry.ID); err == nil {
+				totalDiscarded++
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"discarded": totalDiscarded}})
 }
 
 // ---------------------------------------------------------------------------
@@ -436,8 +513,13 @@ func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error": map[string]string{"code": "not_implemented", "message": "Cache flush requires Valkey FLUSHDB integration"},
+	if h.RBAC == nil {
+		writeError(w, http.StatusServiceUnavailable, "rbac_unavailable", "RBAC not configured")
+		return
+	}
+	h.RBAC.InvalidateAllCache(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"message": "Permission cache flushed"},
 	})
 }
 

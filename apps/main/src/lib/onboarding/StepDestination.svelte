@@ -14,24 +14,9 @@
 	// Detected current location (from IP) — shown as helpful context, not a hard input.
 	let detectedCountry = $state('');
 
-	onMount(async () => {
-		try {
-			const geo = await api.geoMe();
-			if (geo.country) detectedCountry = geo.country;
-		} catch {
-			// geo detection is best-effort
-		}
-	});
-
-	const destinations = [
-		{ value: 'canada', label: 'Canada' },
-		{ value: 'uk', label: 'United Kingdom' },
-		{ value: 'usa', label: 'United States' },
-		{ value: 'germany', label: 'Germany' },
-		{ value: 'ireland', label: 'Ireland' },
-		{ value: 'australia', label: 'Australia' },
+	let destinations = $state([
 		{ value: 'not_sure', label: 'Not sure yet' }
-	];
+	]);
 
 	const goals = [
 		{ value: 'education', label: 'Education' },
@@ -40,6 +25,21 @@
 		{ value: 'family', label: 'Family' },
 		{ value: 'not_sure', label: 'Not sure yet' }
 	];
+
+	onMount(async () => {
+		try {
+			const [geo, countries] = await Promise.all([api.geoMe(), api.geoCountries()]);
+			if (geo.country) detectedCountry = geo.country;
+			if (Array.isArray(countries) && countries.length > 0) {
+				destinations = [
+					...countries.map((c) => ({ value: c.code.toLowerCase(), label: c.name })),
+					{ value: 'not_sure', label: 'Not sure yet' }
+				];
+			}
+		} catch {
+			// geo/countries are best-effort fallback
+		}
+	});
 
 	function handleNext() {
 		onupdate({ destination, primary_goal: primaryGoal });

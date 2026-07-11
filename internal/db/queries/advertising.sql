@@ -38,6 +38,15 @@ SET max_display_per_page = @max_display_per_page,
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING *;
 
+-- name: UpdateAdSlotTypeDetails :one
+UPDATE ad_slot_types
+SET slot_name = @slot_name, description = @description
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING *;
+
+-- name: DeleteAdSlotType :exec
+DELETE FROM ad_slot_types WHERE id = @id AND tenant_id = @tenant_id;
+
 -- =====================
 -- Ad Campaigns
 -- =====================
@@ -97,6 +106,19 @@ RETURNING *;
 UPDATE ad_campaigns
 SET spent = spent + @amount, updated_at = now()
 WHERE id = @id;
+
+-- name: DeleteAdCampaign :exec
+DELETE FROM ad_campaigns
+WHERE id = @id AND tenant_id = @tenant_id AND status IN ('draft', 'ended');
+
+-- name: GetCampaignStats :one
+SELECT
+    COALESCE(SUM(impressions), 0)::bigint AS impressions,
+    COALESCE(SUM(clicks), 0)::bigint AS clicks,
+    COUNT(DISTINCT user_id)::bigint AS unique_users,
+    COALESCE(SUM(conversions), 0)::bigint AS conversions
+FROM ad_events
+WHERE campaign_id = @campaign_id AND tenant_id = @tenant_id;
 
 -- =====================
 -- Ad Events (batched ingestion)

@@ -1,7 +1,12 @@
 <script lang="ts">
-	import { setUser, setPermissions, clearUser } from '$lib/stores/auth';
+	import { onMount } from 'svelte';
+	import { setUser, setPermissions, clearUser, hasPermission } from '$lib/stores/auth';
+	import { initNotifications, addNotification } from '$lib/stores/notifications';
+	import { wsClient } from '$lib/websocket';
+	import { initGlitchTip } from '$lib/glitchtip';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
+	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import '../app.css';
 	import { page } from '$app/state';
 
@@ -10,10 +15,69 @@
 	$effect(() => {
 		if (data.user) {
 			setUser(data.user);
-			setPermissions(data.user.permissions ?? []);
+			setPermissions(data.permissions ?? []);
 		} else {
 			clearUser();
 		}
+	});
+
+	const PAGE_PERMISSIONS: Record<string, string> = {
+		'/users': 'admin.users.view',
+		'/content': 'admin.content.view',
+		'/moderation': 'admin.moderation.view',
+		'/analytics': 'admin.analytics.view',
+		'/settings': 'admin.settings.view',
+		'/roles': 'admin.roles.view',
+		'/audit-logs': 'admin.audit.view',
+		'/advertising': 'admin.advertising.view',
+		'/payments': 'admin.payments.view',
+		'/ai': 'admin.ai.view',
+		'/feature-flags': 'admin.feature_flags.view',
+		'/gdpr': 'admin.moderation.view',
+		'/moderation/alerts': 'admin.moderation.view'
+	};
+
+	let requiredPermission = $derived.by(() => {
+		const path = page.url.pathname;
+		for (const [prefix, perm] of Object.entries(PAGE_PERMISSIONS)) {
+			if (path === prefix || path.startsWith(prefix + '/')) {
+				return perm;
+			}
+		}
+		return '';
+	});
+
+	let hasAccess = $derived(
+		!requiredPermission || hasPermission(requiredPermission) || hasPermission('*')
+	);
+
+	onMount(() => {
+		initGlitchTip();
+		initNotifications();
+		wsClient.connect(data.token);
+
+		const unsubNotification = wsClient.on('notification', (msg: any) => {
+			addNotification({
+				title: msg.title ?? 'Notification',
+				body: msg.body ?? '',
+				type: msg.type ?? 'info',
+				link: msg.link
+			});
+		});
+
+		const unsubAudit = wsClient.on('audit_log', (msg: any) => {
+			addNotification({
+				title: 'Audit Event',
+				body: `${msg.action_type ?? 'action'} on ${msg.entity_type ?? 'entity'}`,
+				type: 'info'
+			});
+		});
+
+		return () => {
+			unsubNotification();
+			unsubAudit();
+			wsClient.disconnect();
+		};
 	});
 </script>
 
@@ -28,7 +92,11 @@
 		<TopBar />
 		<main class="flex-1 overflow-y-auto">
 			<div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 md:px-8">
-				{@render children()}
+				{#if hasAccess}
+					{@render children()}
+				{:else}
+					<AccessDenied {requiredPermission} />
+				{/if}
 			</div>
 		</main>
 	</div>

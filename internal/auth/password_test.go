@@ -88,7 +88,7 @@ func TestBcryptCost(t *testing.T) {
 // Password History
 // ---------------------------------------------------------------------------
 
-// mockHistoryStore is a minimal in-memory implementation of PasswordHistoryQuerier
+// mockHistoryStore is a minimal in-memory implementation of PasswordHistoryReader
 // used to test CheckPasswordHistory without a database.
 type mockHistoryStore struct {
 	hashes []string // most recent first
@@ -103,12 +103,6 @@ func (m *mockHistoryStore) GetRecentPasswordHashes(_ context.Context, _ pgtype.U
 	copy(out, m.hashes[:limit])
 
 	return out, nil
-}
-
-func (m *mockHistoryStore) InsertPasswordHistory(_ context.Context, _, _ pgtype.UUID, hash string) error {
-	// Prepend (newest first) to simulate real DB ordering.
-	m.hashes = append([]string{hash}, m.hashes...)
-	return nil
 }
 
 // mustTestUUID scans a UUID string into pgtype.UUID, failing the test on error.

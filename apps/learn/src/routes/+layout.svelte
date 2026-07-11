@@ -2,6 +2,7 @@
 	import '../app.css';
 	import { t, locale } from '$lib/stores/i18n.svelte';
 	import { setToken } from '$lib/api';
+	import { initGlitchTip } from '$lib/glitchtip';
 	import { GraduationCap, BookOpen, Award, Menu, X, User, LogOut } from 'lucide-svelte';
 	import { onNavigate } from '$app/navigation';
 
@@ -10,6 +11,7 @@
 	let mobileMenuOpen = $state(false);
 
 	$effect(() => {
+		initGlitchTip();
 		setToken(data.token ?? null);
 	});
 
@@ -29,20 +31,44 @@
 
 	const navLinks = [
 		{ href: '/', label: 'Tracks', icon: BookOpen },
+		{ href: '/dashboard', label: 'Dashboard', icon: GraduationCap },
 		{ href: '/certificates', label: 'My Certificates', icon: Award }
 	];
 
 	function logout() {
-		document.cookie = 'learn_token=; path=/; max-age=0';
-		document.cookie = 'jc_token=; path=/; max-age=0';
-		window.location.href = '/login';
+		// Use a form POST to the server-side logout route to properly clear the httpOnly cookie.
+		const form = document.createElement('form');
+		form.method = 'POST';
+		form.action = '/logout';
+		document.body.appendChild(form);
+		form.submit();
 	}
 </script>
 
 <svelte:head>
 	<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 	<meta name="description" content="JapaConnect Learn — structured learning tracks for your journey abroad" />
+	<!-- Umami Analytics (Section 40) — only in production -->
+	{#if import.meta.env.MODE !== 'development'}
+		{#if import.meta.env.PUBLIC_JC_UMAMI_URL}
+			<script
+				defer
+				data-website-id={import.meta.env.PUBLIC_JC_UMAMI_SITE_ID}
+				src="{import.meta.env.PUBLIC_JC_UMAMI_URL}/script.js"
+			></script>
+		{/if}
+	{/if}
 </svelte:head>
+
+{#if data.platformDisabled}
+	<div class="flex min-h-screen items-center justify-center px-4">
+		<div class="text-center">
+			<GraduationCap class="mx-auto h-12 w-12 mb-4" style="color: var(--color-primary)" />
+			<h1 class="text-2xl font-bold tracking-tight mb-2">{t('learn.coming_soon')}</h1>
+			<p class="text-sm" style="color: var(--color-muted)">{t('learn.coming_soon_desc')}</p>
+		</div>
+	</div>
+{:else}
 
 <div class="flex min-h-screen flex-col">
 	<header class="sticky top-0 z-40 border-b backdrop-blur-sm" style="border-color: var(--color-border); background-color: color-mix(in srgb, var(--color-background) 85%, transparent)">
@@ -175,3 +201,4 @@
 		{t('footer.copyright')}
 	</footer>
 </div>
+{/if}

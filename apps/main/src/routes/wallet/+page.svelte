@@ -21,8 +21,8 @@
 
 	let { data } = $props();
 
-	let balance = $state(data.balance);
-	let ledger = $state(data.ledger);
+	let balance = $derived(data.balance);
+	let ledger = $derived(data.ledger);
 	let converting = $state(false);
 	let errorMessage = $state('');
 	let successMessage = $state('');

@@ -99,3 +99,35 @@ export interface SearchResult {
 	highlights: string[];
 	url: string;
 }
+
+// ─── API Key Management (Developer self-service) ─────────────────────────
+
+export interface ApiKey {
+	id: string;
+	name: string;
+	key_prefix: string;
+	scopes: string[];
+	rate_limit_tier: string;
+	status: string;
+	last_used_at: string | null;
+	request_count: number;
+	expires_at: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateApiKeyInput {
+	name: string;
+	scopes: string[];
+	rate_limit_tier: string;
+}
+
+export interface CreateApiKeyResponse {
+	key: string; // Full secret — shown only once
+	id: string;
+	name: string;
+	key_prefix: string;
+	scopes: string[];
+	status: string;
+	created_at: string;
+}

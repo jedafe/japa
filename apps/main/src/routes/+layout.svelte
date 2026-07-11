@@ -12,6 +12,7 @@
 	import { wsClient } from '$lib/websocket';
 	import { realtime, initRealtimeListeners } from '$lib/stores/realtime.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
+	import { initGlitchTip } from '$lib/glitchtip';
 	import Toast from '$lib/components/Toast.svelte';
 
 	let { children, data } = $props();
@@ -21,6 +22,7 @@
 
 	$effect(() => {
 		theme.init('system');
+		initGlitchTip();
 	});
 
 	$effect(() => {
@@ -104,6 +106,20 @@
 <svelte:head>
 	<link rel="icon" href={favicon} />
 	<meta name="description" content="JapaConnect — community platform for the Nigerian diaspora" />
+	{#each ['en', 'fr', 'yo', 'ha'] as langCode}
+		<link rel="alternate" hreflang={langCode} href="https://japaconnect.com/{langCode}{page.url.pathname}" />
+	{/each}
+	<link rel="alternate" hreflang="x-default" href="https://japaconnect.com{page.url.pathname}" />
+	<!-- Umami Analytics (Section 40) — only in production -->
+	{#if import.meta.env.MODE !== 'development'}
+		{#if import.meta.env.PUBLIC_JC_UMAMI_URL}
+			<script
+				defer
+				data-website-id={import.meta.env.PUBLIC_JC_UMAMI_SITE_ID}
+				src="{import.meta.env.PUBLIC_JC_UMAMI_URL}/script.js"
+			></script>
+		{/if}
+	{/if}
 </svelte:head>
 
 <div class="flex min-h-screen flex-col">

@@ -315,6 +315,13 @@ func (r *RBAC) ClearCache() {
 	r.cache.entries = make(map[string]*cacheEntry)
 }
 
+// InvalidatePermCache removes a single user's permission entries from Valkey.
+// Ref: japaconnect-engineering/sections/03-rbac.md (Amendment: Permission Cache Invalidation)
+// Called after: group reassignment, role grant/revoke, ban create, moderator assignment/removal.
+func InvalidatePermCache(ctx context.Context, v valkeycompat.Cmdable, userID pgtype.UUID) error {
+	return v.Del(ctx, permCacheKeyPrefix+userID.String()).Err()
+}
+
 // cleanupLoop periodically evicts cache entries older than maxAge.
 func (c *permissionCache) cleanupLoop(maxAge time.Duration) {
 	ticker := time.NewTicker(maxAge)

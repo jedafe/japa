@@ -5,7 +5,7 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	const token = cookies.get('jc_token');
 
 	try {
-		const res = await fetch(`${API_BASE}/admin/analytics/overview`, {
+		const res = await fetch(`${API_BASE}/control/queue/stats`, {
 			headers: {
 				Authorization: `Bearer ${token}`,
 				'Content-Type': 'application/json'
@@ -20,7 +20,7 @@ export const load: PageServerLoad = async ({ cookies }) => {
 		const data = body?.data ?? body ?? {};
 
 		return {
-			queueStats: data.queues ?? null,
+			queueStats: data ?? null,
 			error: null
 		};
 	} catch (e) {

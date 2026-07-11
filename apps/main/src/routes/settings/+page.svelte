@@ -3,6 +3,7 @@
 	import { User, Bell, Shield, Loader2, Save, Trash2, KeyRound, Lock } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { onMount } from 'svelte';
+	import { Button, Input, Textarea } from '$lib/components/ui';
 
 	type TabId = 'profile' | 'notifications' | 'account';
 
@@ -61,8 +62,8 @@
 
 		try {
 			await api.requestAccountDeletion();
-			document.cookie = 'jc_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
-			goto('/');
+			// Redirect to server-side logout to properly clear the httpOnly cookie.
+			goto('/logout');
 		} catch {
 			deleteError = 'Network error. Please try again.';
 		} finally {
@@ -157,55 +158,46 @@
 						<label for="display_name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							Display Name
 						</label>
-						<input
+						<Input
 							id="display_name"
 							type="text"
 							bind:value={profile.display_name}
-							class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
-							style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 						/>
 					</div>
 					<div>
 						<label for="bio" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							Bio
 						</label>
-						<textarea
+						<Textarea
 							id="bio"
 							bind:value={profile.bio}
-							rows="3"
-							class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
-							style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-						></textarea>
+							rows={3}
+						/>
 					</div>
 					<div>
 						<label for="location" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							Location
 						</label>
-						<input
+						<Input
 							id="location"
 							type="text"
 							bind:value={profile.location}
 							placeholder="e.g. Lagos, Nigeria"
-							class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
-							style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 						/>
 					</div>
 					{#if errorMessage}
 						<p class="text-sm" style="color: var(--color-danger)">{errorMessage}</p>
 					{/if}
-					<button
+					<Button
 						onclick={saveProfile}
 						disabled={saving}
-						class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-						style="background-color: var(--color-primary)"
+						loading={saving}
 					>
-						{#if saving}
-							<Loader2 class="h-4 w-4 animate-spin" />
-						{:else}
+						{#if !saving}
 							<Save class="h-4 w-4" />
 						{/if}
 						{saved ? 'Saved!' : 'Save changes'}
-					</button>
+					</Button>
 				</div>
 
 			{:else if activeTab === 'notifications'}
@@ -288,34 +280,29 @@
 								<p class="text-sm" style="color: var(--color-danger)">
 									Type <strong>DELETE</strong> to confirm:
 								</p>
-								<input
+								<Input
 									type="text"
 									bind:value={deleteConfirmText}
 									placeholder="DELETE"
-									class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--color-danger)]"
-									style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 								/>
 								<div class="flex gap-2">
-									<button
+									<Button
+										variant="danger"
 										onclick={deleteAccount}
 										disabled={deleteLoading || deleteConfirmText !== 'DELETE'}
-										class="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-										style="background-color: var(--color-danger)"
+										loading={deleteLoading}
 									>
-										{#if deleteLoading}
-											<Loader2 class="h-4 w-4 animate-spin" />
-										{:else}
+										{#if !deleteLoading}
 											<Trash2 class="h-4 w-4" />
 										{/if}
 										Permanently delete
-									</button>
-									<button
+									</Button>
+									<Button
+										variant="secondary"
 										onclick={() => { showDeleteConfirm = false; deleteConfirmText = ''; deleteError = ''; }}
-										class="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-										style="border-color: var(--color-border); color: var(--color-foreground)"
 									>
 										Cancel
-									</button>
+									</Button>
 								</div>
 							</div>
 						{/if}

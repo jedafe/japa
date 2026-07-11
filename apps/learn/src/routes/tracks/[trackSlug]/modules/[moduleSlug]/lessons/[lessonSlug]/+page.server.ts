@@ -1,15 +1,20 @@
 import type { PageServerLoad } from './$types';
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, cookies }) => {
 	try {
+		const token = cookies.get('jc_token') ?? cookies.get('learn_token') ?? undefined;
+
 		const [lessonResult, trackResult] = await Promise.all([
-			apiFetch<unknown>(`/learn/tracks/${params.trackSlug}/modules/${params.moduleSlug}/lessons/${params.lessonSlug}`),
-			apiFetch<{ id: string; slug: string; title: string; modules: { slug: string; title: string; lessons: { id: string; slug: string; title: string; duration_minutes: number }[] }[] }>(`/learn/tracks/${params.trackSlug}`)
+			apiFetch<unknown>(`/learn/tracks/${params.trackSlug}/modules/${params.moduleSlug}/lessons/${params.lessonSlug}`, {}, token),
+			apiFetch<{ id: string; slug: string; title: string; modules: { slug: string; title: string; lessons: { id: string; slug: string; title: string; duration_minutes: number }[] }[] }>(`/learn/tracks/${params.trackSlug}`, {}, token)
 		]);
 
 		if (!lessonResult.ok || !lessonResult.data) {
+			if (lessonResult.status === 403) {
+				throw redirect(303, `/tracks/${params.trackSlug}`);
+			}
 			throw error(404, { code: 'NOT_FOUND', message: 'Lesson not found' });
 		}
 		if (!trackResult.ok || !trackResult.data) {

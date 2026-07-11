@@ -11,6 +11,110 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const autoHideContent = `-- name: AutoHideContent :one
+UPDATE contents
+SET auto_hidden = true, auto_hidden_at = now()
+WHERE id = $1 AND tenant_id = $2 AND auto_hidden = false
+RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+          field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+          created_at, updated_at
+`
+
+type AutoHideContentParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type AutoHideContentRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) AutoHideContent(ctx context.Context, arg AutoHideContentParams) (AutoHideContentRow, error) {
+	row := q.db.QueryRow(ctx, autoHideContent, arg.ID, arg.TenantID)
+	var i AutoHideContentRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AuthorID,
+		&i.SpaceID,
+		&i.ContentType,
+		&i.Title,
+		&i.Slug,
+		&i.Body,
+		&i.BodyHtml,
+		&i.FieldValues,
+		&i.ContentHash,
+		&i.GeoSpaceID,
+		&i.HeaderImageID,
+		&i.FeaturedImageID,
+		&i.CanonicalUrl,
+		&i.Status,
+		&i.Visibility,
+		&i.IsLocked,
+		&i.IsPinned,
+		&i.ReadTimeMinutes,
+		&i.ViewCount,
+		&i.CommentCount,
+		&i.ShareCount,
+		&i.ReshareCount,
+		&i.PublishAt,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const countPendingReportsForEntity = `-- name: CountPendingReportsForEntity :one
+SELECT COUNT(*)::int FROM content_reports
+WHERE tenant_id = $1
+  AND entity_type = $2
+  AND entity_id = $3
+  AND status = 'pending'
+`
+
+type CountPendingReportsForEntityParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+func (q *Queries) CountPendingReportsForEntity(ctx context.Context, arg CountPendingReportsForEntityParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countPendingReportsForEntity, arg.TenantID, arg.EntityType, arg.EntityID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createReport = `-- name: CreateReport :one
 
 INSERT INTO content_reports (tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls)

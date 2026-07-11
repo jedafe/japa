@@ -46,6 +46,7 @@
 		media: 'Media',
 		interactive: 'Interactive',
 		data: 'Data',
+		navigation: 'Navigation',
 	};
 
 	const CATEGORY_ORDER: BlockCategory[] = [
@@ -54,6 +55,7 @@
 		'media',
 		'interactive',
 		'data',
+		'navigation',
 	];
 
 	let allBlockTypes = $derived(getBlockTypes());

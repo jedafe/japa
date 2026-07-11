@@ -9,22 +9,23 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/admin"
 	"github.com/jedafe/japa/internal/advertising"
+	"github.com/jedafe/japa/internal/affiliate"
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/analytics"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/blog"
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/bots"
-	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/comments"
+	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/config"
-	"github.com/jedafe/japa/internal/control"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/control"
 	"github.com/jedafe/japa/internal/coupons"
-	"github.com/jedafe/japa/internal/affiliate"
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -34,12 +35,12 @@ import (
 	"github.com/jedafe/japa/internal/feed"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/forum"
-	"github.com/jedafe/japa/internal/interactions"
 	"github.com/jedafe/japa/internal/gdpr"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/honcho"
 	"github.com/jedafe/japa/internal/i18n"
 	"github.com/jedafe/japa/internal/impersonation"
+	"github.com/jedafe/japa/internal/interactions"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/media"
@@ -48,9 +49,9 @@ import (
 	"github.com/jedafe/japa/internal/newsletter"
 	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/onboarding"
+	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/pagebuilder"
 	"github.com/jedafe/japa/internal/payments"
-	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/professional"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
@@ -66,13 +67,13 @@ import (
 	"github.com/jedafe/japa/internal/tags"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/tickets"
+	"github.com/jedafe/japa/internal/trending"
+	"github.com/jedafe/japa/internal/universities"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/webhooks"
 	"github.com/jedafe/japa/internal/websocket"
-	"github.com/jedafe/japa/internal/trending"
-	"github.com/jedafe/japa/internal/universities"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -145,6 +146,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	bruteForce := auth.NewValkeyBruteForceStore(vkClient.Redis())
 	authHandlers := &auth.AuthHandlers{
 		DB:          authStore,
+		Queries:     authStore.Queries(),
 		KeyRotation: kr,
 		BruteForce:  bruteForce,
 		Policy:      auth.DefaultPasswordPolicy(),
@@ -222,6 +224,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spaceUnread := spaces.NewUnreadCounter(vkClient)
 	spaceHandlers := spaces.NewHandlers(spaceService, spaceUnread, contentService)
 
+	// Register space auto-populate processor for the worker's space:auto_populate task.
+	spaceAutoPopulateAdapter := spaces.NewProcessorAdapter(spaceService)
+	worker.RegisterSpaceAutoPopulateProcessor(spaceAutoPopulateAdapter)
+
 	// Geo HTTP handlers — /api/v1/geo/*. The hierarchy endpoints reuse
 	// spaceService (countries/states/cities are seeded as spaces).
 	geoHandlers := geoip.NewHandlers(geoipReader, spaceService)
@@ -235,9 +241,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	bookmarkFoldersService := bookmarkfolders.NewService(database)
 	bookmarkFoldersHandlers := bookmarkfolders.NewHandlers(bookmarkFoldersService)
 
+	// Create Asynq client for enqueuing background tasks (push delivery, etc.)
+	asynqClient := worker.NewClient(worker.DefaultConfig())
+	// Shared adapter so feature services enqueue real tasks instead of the
+	// per-package noopEnqueuer that silently drops them (AUDIT-BE-001).
+	taskEnqueuer := worker.NewEnqueuer(asynqClient)
+	// Wire the enqueuer into the worker package so task handlers (e.g.
+	// payment webhook) can enqueue follow-up tasks like affiliate commission.
+	worker.RegisterTaskEnqueuer(taskEnqueuer)
+
+	// Hot-reloadable system settings (AUDIT-BE-009). Previously config.NewSettings
+	// was never instantiated, so documented operational limits were dead and
+	// services used compiled-in constants. Instantiate once and inject where limits
+	// are read.
+	settingsService := config.NewSettings(database, vkClient.Redis())
+
 	// Content Reports & Flagging subsystem (Section 51).
-	reportsService := reports.NewService(database)
+	reportsService := reports.NewService(database, settingsService)
 	reportsHandlers := reports.NewHandlers(reportsService)
+	reportsHandlers.SetEnqueuer(taskEnqueuer)
 
 	// Content HTTP handlers (Service created earlier, above spaceService).
 	contentHandlers := content.NewHandlers(contentService)
@@ -277,16 +299,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	interactionsService := interactions.NewService(database)
 	interactionsHandlers := interactions.NewHandlers(interactionsService)
 
-	// Create Asynq client for enqueuing background tasks (push delivery, etc.)
-	asynqClient := worker.NewClient(worker.DefaultConfig())
-	// Shared adapter so feature services enqueue real tasks instead of the
-	// per-package noopEnqueuer that silently drops them (AUDIT-BE-001).
-	taskEnqueuer := worker.NewEnqueuer(asynqClient)
-	// Hot-reloadable system settings (AUDIT-BE-009). Previously config.NewSettings
-	// was never instantiated, so documented operational limits were dead and
-	// services used compiled-in constants. Instantiate once and inject where limits
-	// are read.
-	settingsService := config.NewSettings(database, vkClient.Redis())
 	worker.RegisterSettings(settingsService)
 	// Inject into services with hot-reloadable moderation/ops limits (AUDIT-BE-009).
 	spamPipeline.SetSettings(settingsService)
@@ -376,6 +388,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	i18nService := i18n.NewService(database)
 	i18nHandlers := i18n.NewHandlers(i18nService)
 
+	// Register AI translate processor for the worker's i18n:translate_language_pack task.
+	i18nTranslateAdapter := i18n.NewProcessorAdapter(i18nService)
+	worker.RegisterAITranslateProcessor(i18nTranslateAdapter)
+
 	// GDPR / NDPR Compliance subsystem (Section 19).
 	gdprService := gdpr.NewServiceWithEnqueuer(database, taskEnqueuer, cfg.SiteName)
 	gdprService.SetHonchoEraser(honcho.NewClient(cfg.HonchoURL))
@@ -387,6 +403,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Media subsystem (Section 34 — Media System).
 	mediaService := media.NewService(database)
+
+	// Register image processor for the worker's content:process_image task.
+	mediaImageAdapter := media.NewProcessorAdapter(mediaService)
+	worker.RegisterImageProcessor(mediaImageAdapter)
 
 	// ClamAV virus scanner — connects to the ClamAV daemon for media
 	// scanning. The ScanProcessor orchestrates the full scan flow: read
@@ -418,6 +438,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Admin Settings subsystem.
 	adminHandlers := admin.NewHandlers(database)
+	adminHandlers.SetRBAC(rbacResolver)
+	adminHandlers.SetValkey(vkClient.Redis())
 
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
@@ -434,6 +456,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Learning Platform subsystem (Section 36).
 	learningStore := learning.NewStore(database)
 	learningHandlers := learning.NewHandlers(learningStore)
+
+	// Register learning processor for the worker's learning tasks.
+	learningAdapter := learning.NewProcessorAdapter(learningStore)
+	worker.RegisterLearningProcessor(learningAdapter)
 
 	// Newsletter subsystem (Section 33).
 	newsletterService := newsletter.NewService(database)
@@ -482,9 +508,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	cacheFlusher := analytics.NewCacheFlusher(vkClient)
 	analyticsHandlers.SetCacheFlusher(cacheFlusher)
 
-	// Register no-op implementations for any processor interface that hasn't
-	// been wired to a real service yet. This ensures all Asynq task handlers
-	// degrade gracefully instead of crashing on a nil interface.
+	// Register AI and moderation processor adapters so the ai:process_task
+	// and content:scan_moderation background handlers use real implementations
+	// instead of noops. Must come before RegisterNoopProcessors() so the noop
+	// guard (if nil → register noop) sees the real adapters.
+	aiProcessorAdapter := ai.NewWorkerAdapter(aiDispatcher)
+	worker.RegisterAIProcessor(aiProcessorAdapter)
+
+	moderationProcessorAdapter := spam.NewWorkerAdapter(spamPipeline)
+	worker.RegisterModerationProcessor(moderationProcessorAdapter)
+
+	// Register no-op implementations for any remaining processor interface
+	// that hasn't been wired to a real service yet. This ensures all Asynq
+	// task handlers degrade gracefully instead of crashing on a nil interface.
 	worker.RegisterNoopProcessors()
 
 	// Admin Impersonation subsystem (Section 46).
@@ -544,6 +580,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		DB:       workerCfg.RedisDB,
 	})
 	controlHandlers.SetInspector(inspector)
+	controlHandlers.SetRBAC(rbacResolver)
 
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
@@ -631,10 +668,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/verify-email", authHandlers.HandleVerifyEmail)
 				r.Post("/resend-verification", authHandlers.HandleResendVerification)
 
-			// OAuth social login routes.
-			// POST returns auth_url as JSON for frontend-driven redirect.
-			r.Post("/oauth/{provider}/initiate", oauthHandlers.HandleInitiate)
-			r.Get("/oauth/{provider}/callback", oauthHandlers.HandleCallback)
+				// OAuth social login routes.
+				// POST returns auth_url as JSON for frontend-driven redirect.
+				r.Post("/oauth/{provider}/initiate", oauthHandlers.HandleInitiate)
+				r.Get("/oauth/{provider}/callback", oauthHandlers.HandleCallback)
 			})
 
 			// Feature flags endpoint (public - frontend needs flags to
@@ -962,7 +999,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/push-tokens", notificationHandlers.HandlePushUnsubscribe)
 
 			// Feed routes (Section 32 — Activity Feed / Timeline)
-			r.Get("/explore", feedHandlers.GetExploreFeed) // public — no auth required (catalog: /explore)
+			r.Get("/explore", feedHandlers.GetExploreFeed)                                           // public — no auth required (catalog: /explore)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed) // catalog: /feed (primary timeline)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/space/{space_id}", feedHandlers.GetSpaceFeed)
 			// catalog: GET /spaces/:id/feed — same handler, param name matches (space_id).
@@ -1039,17 +1076,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ws/online", wsHandlers.GetOnlineUsers)
 
 				// Direct Messaging
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/dm/conversations", wsHandlers.ListConversations)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations", wsHandlers.InitiateConversation)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/dm/conversations/{id}/messages", wsHandlers.ListMessages)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/messages", wsHandlers.SendMessage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/dm/conversations/{id}/messages/{mid}", wsHandlers.EditMessage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/dm/conversations/{id}/messages/{mid}", wsHandlers.DeleteMessage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/accept", wsHandlers.AcceptMessageRequest)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/decline", wsHandlers.DeclineMessageRequest)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/block", wsHandlers.BlockMessageRequest)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/dm/conversations", wsHandlers.ListConversations)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations", wsHandlers.InitiateConversation)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/dm/conversations/{id}/messages", wsHandlers.ListMessages)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/messages", wsHandlers.SendMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/dm/conversations/{id}/messages/{mid}", wsHandlers.EditMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/dm/conversations/{id}/messages/{mid}", wsHandlers.DeleteMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/accept", wsHandlers.AcceptMessageRequest)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/decline", wsHandlers.DeclineMessageRequest)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/block", wsHandlers.BlockMessageRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/dm/privacy", wsHandlers.UpdateDMPrivacy)
 			})
 
@@ -1186,19 +1223,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Universal Ratings & Reviews routes — gated by feature.ratings_reviews (Section 29)
-		r.With(features.Gate(featureChecker, "feature.ratings_reviews")).Group(func(r chi.Router) {
-			// catalog: /reviews/:entity_type/:entity_id[/aggregate]; bare /reviews
-			// (reviewer-scoped list) kept as a documented extra.
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews/{entity_type}/{entity_id}", reviewHandlers.CreateReview)
-			r.Get("/reviews", reviewHandlers.ListReviews)
-			r.Get("/reviews/{entity_type}/{entity_id}", reviewHandlers.ListReviews)
-			r.Get("/reviews/{entity_type}/{entity_id}/aggregate", reviewHandlers.GetAggregate)
-			r.Get("/reviews/{id}", reviewHandlers.GetReview)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/admin/reviews/{id}", reviewHandlers.ModerateReview)
-		})
+			r.With(features.Gate(featureChecker, "feature.ratings_reviews")).Group(func(r chi.Router) {
+				// catalog: /reviews/:entity_type/:entity_id[/aggregate]; bare /reviews
+				// (reviewer-scoped list) kept as a documented extra.
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews/{entity_type}/{entity_id}", reviewHandlers.CreateReview)
+				r.Get("/reviews", reviewHandlers.ListReviews)
+				r.Get("/reviews/{entity_type}/{entity_id}", reviewHandlers.ListReviews)
+				r.Get("/reviews/{entity_type}/{entity_id}/aggregate", reviewHandlers.GetAggregate)
+				r.Get("/reviews/{id}", reviewHandlers.GetReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/admin/reviews/{id}", reviewHandlers.ModerateReview)
+			})
 
 			// Generic Comparison System routes — gated by feature.comparison (Section 30)
 			r.With(features.Gate(featureChecker, "feature.comparison")).Group(func(r chi.Router) {
@@ -1232,13 +1269,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons/{id}", comparisonHandlers.GetComparison)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons/{id}/matrix", comparisonHandlers.GetComparisonMatrix)
 
-			// Public comparison list (P5.6 — Task 2)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons", comparisonHandlers.ListComparisonTypes)
-			// Comparison update/delete at top level (P5.6 — Task 2, catalog paths)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.edit_own")).
-				Patch("/comparisons/{id}", comparisonHandlers.UpdateComparisonItem)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.delete_own")).
-				Delete("/comparisons/{id}", comparisonHandlers.DeleteComparisonItem)
+				// Public comparison list (P5.6 — Task 2)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons", comparisonHandlers.ListComparisonTypes)
+				// Comparison update/delete at top level (P5.6 — Task 2, catalog paths)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.edit_own")).
+					Patch("/comparisons/{id}", comparisonHandlers.UpdateComparisonItem)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.delete_own")).
+					Delete("/comparisons/{id}", comparisonHandlers.DeleteComparisonItem)
 
 				// Item routes — catalog uses /comparisons/:id for items
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
@@ -1443,20 +1480,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/ads/serve", adHandlers.RenderSlot)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
 				Post("/ads/events", adHandlers.IngestEvents)
-		// Slot types (admin)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
-			Get("/admin/ads/slot-types", adHandlers.ListSlotTypes)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
-			Post("/admin/ads/slot-types", adHandlers.CreateSlotType)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
-			Put("/admin/ads/slot-types/{id}", adHandlers.UpdateSlotType)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
-			Delete("/admin/ads/slot-types/{id}", adHandlers.DeleteSlotType)
+			// Slot types (admin)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
+				Get("/admin/ads/slot-types", adHandlers.ListSlotTypes)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
+				Post("/admin/ads/slot-types", adHandlers.CreateSlotType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
+				Put("/admin/ads/slot-types/{id}", adHandlers.UpdateSlotType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
+				Delete("/admin/ads/slot-types/{id}", adHandlers.DeleteSlotType)
 
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
-			Delete("/admin/ads/campaigns/{id}", adHandlers.DeleteCampaign)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.stats.view")).
-			Get("/admin/ads/campaigns/{id}/stats", adHandlers.GetCampaignStats)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Delete("/admin/ads/campaigns/{id}", adHandlers.DeleteCampaign)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.stats.view")).
+				Get("/admin/ads/campaigns/{id}/stats", adHandlers.GetCampaignStats)
 			// Organization boosts
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
 				Post("/admin/ads/boosts", adHandlers.CreateBoost)
@@ -1475,22 +1512,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/me/tickets", ticketHandlers.ListMyTickets)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/me/tickets/{id}", ticketHandlers.GetMyTicket)
-		r.With(auth.RequireAuth(kr, vkClient.Redis())).
-			Post("/me/tickets/{id}/comments", ticketHandlers.AddReply)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/me/tickets/{id}/comments", ticketHandlers.AddReply)
 
-		r.With(auth.RequireAuth(kr, vkClient.Redis())).
-			Post("/me/tickets/{id}/attachments", ticketHandlers.AddAttachment)
-		r.With(auth.RequireAuth(kr, vkClient.Redis())).
-			Get("/me/tickets/{id}/attachments", ticketHandlers.ListAttachments)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/me/tickets/{id}/attachments", ticketHandlers.AddAttachment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/me/tickets/{id}/attachments", ticketHandlers.ListAttachments)
 
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
-			Get("/admin/tickets", ticketHandlers.ListTickets)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+				Get("/admin/tickets", ticketHandlers.ListTickets)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
 				Get("/admin/tickets/{id}", ticketHandlers.GetTicket)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
 				Patch("/admin/tickets/{id}", ticketHandlers.UpdateTicket)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
-			Post("/admin/tickets/{id}/notes", ticketHandlers.AddInternalNote)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
+				Post("/admin/tickets/{id}/notes", ticketHandlers.AddInternalNote)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.admin")).
 				Get("/admin/tickets/{id}/events", ticketHandlers.GetTicketEvents)
 			// Catalog alias: /admin/tickets/:id/comments → same handler as /notes (P5.6 — Task 5)
@@ -1646,10 +1683,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/me/api-keys/{id}/ip-allowlist", publicAPIHandlers.ListAllowedIPs)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
 				Post("/me/api-keys/{id}/ip-allowlist", publicAPIHandlers.AddAllowedIP)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
-			Delete("/me/api-keys/{id}/ip-allowlist/{ipId}", publicAPIHandlers.RemoveAllowedIP)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
+				Delete("/me/api-keys/{id}/ip-allowlist/{ipId}", publicAPIHandlers.RemoveAllowedIP)
 
-		// User Profile & Preferences routes (catalog: /me, /me/profile)
+				// User Profile & Preferences routes (catalog: /me, /me/profile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me", usersHandlers.GetMyProfile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/profile", usersHandlers.UpdateMyProfile)
 			// NOTE (§6.3 dedupe): /me/preferences overlaps /me/notification-preferences;
@@ -1803,25 +1840,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Put("/admin/webhooks/{id}", webhookHandlers.UpdateWebhook)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
 				Delete("/admin/webhooks/{id}", webhookHandlers.DeleteWebhook)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
-			Post("/admin/webhooks/{id}/test", webhookHandlers.TestWebhook)
-	r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
-		Get("/admin/webhooks/{id}/deliveries", webhookHandlers.ListDeliveries)
-	r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
-		Post("/admin/webhooks/{id}/retry/{delivery_id}", webhookHandlers.RetryDelivery)
-		// Catalog: PATCH /admin/webhooks/:id (P5.6 — Task 8)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
-			Patch("/admin/webhooks/{id}", webhookHandlers.UpdateWebhook)
-		// Catalog: POST /admin/webhooks/:id/verify (P5.6 — Task 8 — reuses TestWebhook)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
-			Post("/admin/webhooks/{id}/verify", webhookHandlers.TestWebhook)
-		// Catalog: POST /admin/webhooks/:id/deliveries/:delivery_id/retry (P5.6 — Task 8)
-		r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
-			Post("/admin/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+				Post("/admin/webhooks/{id}/test", webhookHandlers.TestWebhook)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+				Get("/admin/webhooks/{id}/deliveries", webhookHandlers.ListDeliveries)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+				Post("/admin/webhooks/{id}/retry/{delivery_id}", webhookHandlers.RetryDelivery)
+			// Catalog: PATCH /admin/webhooks/:id (P5.6 — Task 8)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+				Patch("/admin/webhooks/{id}", webhookHandlers.UpdateWebhook)
+			// Catalog: POST /admin/webhooks/:id/verify (P5.6 — Task 8 — reuses TestWebhook)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+				Post("/admin/webhooks/{id}/verify", webhookHandlers.TestWebhook)
+			// Catalog: POST /admin/webhooks/:id/deliveries/:delivery_id/retry (P5.6 — Task 8)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+				Post("/admin/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
 
-		// Webhook event types (public — for frontend webhook configuration)
-		r.With(auth.RequireAuth(kr, vkClient.Redis())).
-			Get("/webhook-events", webhookHandlers.ListWebhookEvents)
+			// Webhook event types (public — for frontend webhook configuration)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/webhook-events", webhookHandlers.ListWebhookEvents)
 
 			// Newsletter admin routes (Section 33 — Newsletter)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
@@ -2077,24 +2114,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
 				Patch("/admin/pages/{id}/blocks/reorder", pagebuilderHandlers.ReorderBlocks)
 
-		// Public page endpoint (no auth required)
-		r.Get("/pages/{slug}", pagebuilderHandlers.GetPublishedPage)
+			// Public page endpoint (no auth required)
+			r.Get("/pages/{slug}", pagebuilderHandlers.GetPublishedPage)
 
-		// Public page-templates endpoints (read-only, no auth required)
-		r.Get("/page-templates", pagebuilderHandlers.ListTemplates)
-		r.Get("/page-templates/{id}", pagebuilderHandlers.GetTemplate)
+			// Public page-templates endpoints (read-only, no auth required)
+			r.Get("/page-templates", pagebuilderHandlers.ListTemplates)
+			r.Get("/page-templates/{id}", pagebuilderHandlers.GetTemplate)
 
-		// Admin widgets CRUD (P5.6 — Task 27, catalog: /admin/widgets)
-		r.Group(func(r chi.Router) {
-			r.Use(auth.RequireAuth(kr, vkClient.Redis()))
-			r.Use(rbac.RequirePermission(rbacResolver, "pagebuilder.blocks.manage"))
-			r.Get("/admin/widgets", pagebuilderHandlers.ListBlocks)
-			r.Post("/admin/widgets", pagebuilderHandlers.CreateBlock)
-			r.Patch("/admin/widgets/{id}", pagebuilderHandlers.UpdateBlock)
-			r.Delete("/admin/widgets/{id}", pagebuilderHandlers.DeleteBlock)
-		})
+			// Admin widgets CRUD (P5.6 — Task 27, catalog: /admin/widgets)
+			r.Group(func(r chi.Router) {
+				r.Use(auth.RequireAuth(kr, vkClient.Redis()))
+				r.Use(rbac.RequirePermission(rbacResolver, "pagebuilder.blocks.manage"))
+				r.Get("/admin/widgets", pagebuilderHandlers.ListBlocks)
+				r.Post("/admin/widgets", pagebuilderHandlers.CreateBlock)
+				r.Patch("/admin/widgets/{id}", pagebuilderHandlers.UpdateBlock)
+				r.Delete("/admin/widgets/{id}", pagebuilderHandlers.DeleteBlock)
+			})
 
-		// Platform Settings (admin)
+			// Platform Settings (admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Get("/admin/settings", adminHandlers.ListSettings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).

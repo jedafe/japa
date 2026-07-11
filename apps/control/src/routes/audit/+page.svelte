@@ -53,7 +53,7 @@
 				entries: AuditEntry[];
 				page: number;
 				total_pages: number;
-			}>(`/admin/audit-logs?${buildQuery()}`);
+			}>(`/control/audit-logs?${buildQuery()}`);
 			if (result.ok) {
 				entries = result.data.entries;
 				totalPages = result.data.total_pages;

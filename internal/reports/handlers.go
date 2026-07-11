@@ -15,14 +15,26 @@ import (
 
 const defaultPageSize int32 = 20
 
+// TaskEnqueuer is the interface for enqueuing background tasks.
+// *worker.Enqueuer satisfies this structurally.
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
 // Handlers holds dependencies for report HTTP handlers.
 type Handlers struct {
-	service *Service
+	service  *Service
+	enqueuer TaskEnqueuer
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
+}
+
+// SetEnqueuer injects the task enqueuer for background job dispatch.
+func (h *Handlers) SetEnqueuer(e TaskEnqueuer) {
+	h.enqueuer = e
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -90,6 +102,20 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 	if err != nil {
 		writeServiceError(w, err)
 		return
+	}
+
+	// Enqueue auto-hide check after each report. Best-effort — log and
+	// continue if enqueue fails (the report was already persisted).
+	if h.enqueuer != nil {
+		payload, _ := json.Marshal(map[string]string{
+			"entity_type": entityType,
+			"entity_id":   entityID.String(),
+			"tenant_id":   tenantID.String(),
+		})
+		if err := h.enqueuer.Enqueue("moderation:auto_hide", payload); err != nil {
+			slog.Warn("reports: failed to enqueue moderation:auto_hide",
+				"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": report})
