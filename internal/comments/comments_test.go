@@ -10,13 +10,15 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
-// Sentinel-like errors for testing handleServiceError.
+// Sentinel-like errors for testing handleServiceError. These must wrap the
+// errpkg sentinels so that errors.Is() matches in handleServiceError.
 var (
 	errNoRows        = pgx.ErrNoRows
-	errDuplicate     = errors.New("duplicate key value violates unique constraint")
-	errDepthExceeded = errors.New("maximum comment depth exceeded (max 3)")
+	errDuplicate     = errors.Join(errpkg.ErrDuplicate, errors.New("duplicate key value violates unique constraint"))
+	errDepthExceeded = errors.Join(errpkg.ErrMaxDepth, errors.New("maximum comment depth exceeded (max 3)"))
 	errGeneric       = errors.New("something went wrong")
 )
 

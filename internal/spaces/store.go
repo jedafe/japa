@@ -486,6 +486,25 @@ func (s *Service) RemoveModerator(ctx context.Context, spaceID, userID pgtype.UU
 	return nil
 }
 
+// GetUserIDByUsername resolves a username to a user ID within the tenant.
+func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if err := s.db.Reader.QueryRow(ctx,
+		`SELECT id FROM users WHERE username = $1 AND tenant_id = $2`, username, tenantID,
+	).Scan(&id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return id, fmt.Errorf("user not found")
+		}
+		return id, fmt.Errorf("resolving username: %w", err)
+	}
+	return id, nil
+}
+
+// GetSpaceByID returns a space by its ID within the tenant.
+func (s *Service) GetSpaceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Space, error) {
+	return s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{TenantID: tenantID, ID: id})
+}
+
 // ListModerators returns every moderator assigned to the given space,
 // including their username and display name.
 func (s *Service) ListModerators(ctx context.Context, spaceID pgtype.UUID) ([]gen.ListSpaceModeratorsRow, error) {

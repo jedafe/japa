@@ -278,6 +278,35 @@ func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": series})
 }
 
+// ListSeriesPosts handles GET /api/v1/blog/series/{id}/posts — lists all posts in a series.
+func (h *Handlers) ListSeriesPosts(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid series ID")
+		return
+	}
+
+	// Verify the series exists and belongs to this tenant.
+	_, err = h.Service.GetSeries(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	posts, err := h.Service.ListPostsInSeries(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": posts})
+}
+
 // UpdateSeries handles PATCH /api/v1/blog/series/{id}.
 func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)

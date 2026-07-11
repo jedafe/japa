@@ -454,26 +454,6 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deactivated"}})
 }
 
-// RequestGDPRDeletion handles DELETE /api/v1/me (GDPR erasure request).
-func (h *Handlers) RequestGDPRDeletion(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	// Delegate to the GDPR package's deletion request.
-	// This is a simplified version — in production, this would call the GDPR service.
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"data": map[string]string{
-			"status": "deletion_requested",
-			"message": "Your account deletion request has been received. " +
-				"You will receive a confirmation email. The deletion will be processed within 30 days.",
-		},
-	})
-
-	_ = user
-}
-
 // RequestDataExportRequest is the input for requesting data export.
 type RequestDataExportRequest struct {
 	Format string `json:"format,omitempty"`

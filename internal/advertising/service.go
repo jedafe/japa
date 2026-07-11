@@ -353,3 +353,25 @@ func (s *Service) EndBoost(ctx context.Context, id, tenantID pgtype.UUID) (Organ
 		TenantID: tenantID,
 	})
 }
+
+// UpdateBoost updates an existing boost's status and/or end date.
+func (s *Service) UpdateBoost(ctx context.Context, id, tenantID pgtype.UUID, status *string, endDate *time.Time) (OrganizationBoost, error) {
+	var ed pgtype.Timestamptz
+	if endDate != nil {
+		ed = pgtype.Timestamptz{Time: *endDate, Valid: true}
+	}
+	return s.store.Queries().UpdateOrganizationBoost(ctx, gen.UpdateOrganizationBoostParams{
+		ID:       id,
+		TenantID: tenantID,
+		Status:   status,
+		EndDate:  ed,
+	})
+}
+
+// DeleteBoost removes a boost.
+func (s *Service) DeleteBoost(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.store.Queries().DeleteOrganizationBoost(ctx, gen.DeleteOrganizationBoostParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+}

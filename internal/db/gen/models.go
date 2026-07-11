@@ -1127,6 +1127,23 @@ type MentorshipProgram struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ModerationAlert struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	AlertType      string             `json:"alert_type"`
+	Severity       string             `json:"severity"`
+	Title          string             `json:"title"`
+	Description    *string            `json:"description"`
+	Status         string             `json:"status"`
+	Meta           []byte             `json:"meta"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	AcknowledgedAt pgtype.Timestamptz `json:"acknowledged_at"`
+	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
+	AcknowledgedBy pgtype.UUID        `json:"acknowledged_by"`
+	ResolvedBy     pgtype.UUID        `json:"resolved_by"`
+}
+
 type ModerationAppeal struct {
 	ID         pgtype.UUID        `json:"id"`
 	UserID     pgtype.UUID        `json:"user_id"`

@@ -580,6 +580,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		DB:       workerCfg.RedisDB,
 	})
 	controlHandlers.SetInspector(inspector)
+	controlClient := asynq.NewClient(asynq.RedisClientOpt{
+		Addr:     workerCfg.RedisAddr,
+		Password: workerCfg.RedisPassword,
+		DB:       workerCfg.RedisDB,
+	})
+	controlHandlers.SetClient(controlClient)
 	controlHandlers.SetRBAC(rbacResolver)
 
 	// Infrastructure routes bypass tenant middleware
@@ -1201,6 +1207,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/blog/series/{id}/posts/{postId}", blogHandlers.RemovePostFromSeries)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
 					Patch("/blog/series/{id}/posts/reorder", blogHandlers.ReorderSeriesPosts)
+				// List posts in a series (public — server-side fetched by frontend)
+				r.Get("/blog/series/{id}/posts", blogHandlers.ListSeriesPosts)
 
 				// Review routes (admin workflow — keep auth-required)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.create")).
@@ -1423,6 +1431,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// NOTE (P5): PATCH /admin/discount-codes/:id and GET .../usage
 			// deferred — no UpdateDiscountCode or usage-tracking service method exists.
 
+			// Pricing and payment providers (public — catalog: /pricing/plans, /payment-providers)
+			r.Get("/pricing/plans", paymentHandlers.ListPricingPlans)
+			r.Get("/payment-providers", paymentHandlers.ListPaymentProviders)
+
 			// Wallet & Credits routes — gated by feature.wallet (Section 28)
 			r.With(features.Gate(featureChecker, "feature.wallet")).Group(func(r chi.Router) {
 				// Balance and ledger (catalog: /me/wallet)
@@ -1503,6 +1515,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/ads/boosts/active", adHandlers.ListActiveBoosts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
 				Post("/admin/ads/boosts/{id}/end", adHandlers.EndBoost)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Patch("/admin/ads/boosts/{id}", adHandlers.UpdateBoost)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.campaign.manage")).
+				Delete("/admin/ads/boosts/{id}", adHandlers.DeleteBoost)
 
 			// Ticket System routes (Section 38 — Ticket System)
 			// User portal (catalog: /tickets, /me/tickets)
@@ -1605,6 +1621,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Bot & Crawler Management routes (Section 43)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bots.admin")).
 				Get("/admin/bots", botHandlers.ListKnownBots)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bots.admin")).
+				Get("/admin/bots/{id}", botHandlers.GetKnownBot)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bots.admin")).
 				Post("/admin/bots", botHandlers.CreateKnownBot)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bots.admin")).
@@ -1734,6 +1752,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Admin user routes (catalog: /admin/users)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users/{id}", usersHandlers.GetUserByUsername)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Get("/admin/users/{id}/sessions", usersHandlers.ListUserSessions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Get("/admin/users/{id}/activity", usersHandlers.ListUserActivity)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.delete")).Delete("/admin/users/{id}", usersHandlers.DeleteUser)
 
 			// Onboarding routes (Section 09)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/onboarding/status", onboardingHandlers.GetStatus)
@@ -1824,6 +1845,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// AI Usage admin route (stub until ai_usage_log table exists)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.context.admin_view")).
 				Get("/admin/ai/usage", aiHandlers.HandleGetAIUsage)
+			// AI models admin route — lists available AI models
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.tools.manage")).
+				Get("/admin/ai/models", aiHandlers.HandleListModels)
 
 			// AI categories (public — for frontend AI category selection)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -2183,6 +2207,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/moderation-queue/bulk", adminHandlers.BulkModeration)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Post("/admin/moderation-queue/{id}/appeal", adminHandlers.AppealModeration)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.alerts.manage")).
+				Get("/admin/moderation/alerts", adminHandlers.ListModerationAlerts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.alerts.manage")).
+				Post("/admin/moderation/alerts/{id}/acknowledge", adminHandlers.AcknowledgeModerationAlert)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.alerts.manage")).
+				Post("/admin/moderation/alerts/{id}/resolve", adminHandlers.ResolveModerationAlert)
 
 			// Admin Broadcast route
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
@@ -2232,6 +2262,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/organizations/{id}/verify", adminHandlers.VerifyOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Delete("/admin/organizations/{id}/verify", adminHandlers.UnverifyOrganization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/organizations/{id}/claim", adminHandlers.ClaimOrganization)
 
 			// Task 12: Spaces admin extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
@@ -2240,6 +2272,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/spaces/{id}/join-requests/{requestId}", spaceHandlers.UpdateJoinRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Patch("/admin/spaces/{id}/status", spaceHandlers.UpdateSpaceStatus)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderator.assign")).
+				Post("/admin/spaces/{id}/moderators", spaceHandlers.AdminAssignModerator)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderator.assign")).
+				Delete("/admin/spaces/{id}/moderators/{userId}", spaceHandlers.AdminRemoveModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/analytics", spaceHandlers.GetSpaceAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)
@@ -2491,6 +2527,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Delete("/queue/dlq/{task_id}", controlHandlers.DiscardDLQTask)
 			r.Post("/queue/dlq/discard-all", controlHandlers.DiscardAllDLQ)
 
+			// Cron / Scheduler jobs (audit C3)
+			r.Get("/cron/jobs", controlHandlers.ListCronJobs)
+			r.Post("/cron/jobs/{id}/trigger", controlHandlers.TriggerCronJob)
+
 			// Cache Management
 			r.Get("/cache/stats", controlHandlers.CacheStats)
 			r.Post("/cache/flush", controlHandlers.FlushCache)
@@ -2500,6 +2540,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/security/ip-blocks", controlHandlers.ListIPBlocks)
 			r.Post("/security/ip-blocks", controlHandlers.CreateIPBlock)
 			r.Delete("/security/ip-blocks/{id}", controlHandlers.DeleteIPBlock)
+			r.Post("/security/{id}/resolve", analyticsHandlers.ResolveSecurityScanResult)
 
 			// API Keys (moved from /admin/api-keys)
 			r.Get("/api-keys", publicAPIHandlers.ListAllKeys)

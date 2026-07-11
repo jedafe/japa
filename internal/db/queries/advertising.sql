@@ -215,3 +215,13 @@ UPDATE organization_boosts
 SET status = 'ended', end_date = now()
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING *;
+
+-- name: UpdateOrganizationBoost :one
+UPDATE organization_boosts
+SET status = sqlc.narg(status), end_date = sqlc.narg(end_date)
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING *;
+
+-- name: DeleteOrganizationBoost :exec
+DELETE FROM organization_boosts
+WHERE id = @id AND tenant_id = @tenant_id;

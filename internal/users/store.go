@@ -150,6 +150,21 @@ func (s *Store) listUserSessions(ctx context.Context, userID pgtype.UUID) ([]gen
 	return s.read.ListUserSessions(ctx, userID)
 }
 
+func (s *Store) listUserActivity(ctx context.Context, tenantID, userID pgtype.UUID, limit int32) ([]gen.ListUserActivityRow, error) {
+	return s.read.ListUserActivity(ctx, gen.ListUserActivityParams{
+		TenantID: tenantID,
+		AuthorID: userID,
+		Limit:    limit,
+	})
+}
+
+func (s *Store) countUserActivity(ctx context.Context, tenantID, userID pgtype.UUID) (int32, error) {
+	return s.read.CountUserActivity(ctx, gen.CountUserActivityParams{
+		TenantID: tenantID,
+		AuthorID: userID,
+	})
+}
+
 func (s *Store) revokeUserSession(ctx context.Context, sessionID, userID pgtype.UUID) error {
 	return s.write.RevokeUserSession(ctx, gen.RevokeUserSessionParams{
 		ID:     sessionID,
@@ -203,6 +218,14 @@ func (s *Store) listUserBookmarks(ctx context.Context, userID pgtype.UUID, limit
 
 func (s *Store) deactivateUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
 	return s.write.DeactivateUser(ctx, gen.DeactivateUserParams{
+		TenantID: tenantID,
+		ID:       userID,
+	})
+}
+
+// SoftDeleteUser marks a user as deleted (soft delete) without removing the row.
+func (s *Store) SoftDeleteUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
+	return s.write.SoftDeleteUser(ctx, gen.SoftDeleteUserParams{
 		TenantID: tenantID,
 		ID:       userID,
 	})

@@ -206,6 +206,96 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
+// ListUserSessions handles GET /api/v1/admin/users/{id}/sessions.
+// Admin-scoped variant of /me/sessions that lists sessions for any user.
+func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireTenant(w, r); !ok {
+		return
+	}
+	if user := auth.FromContext(r.Context()); user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	sessions, err := h.Service.ListSessions(r.Context(), userID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": sessions})
+}
+
+// ListUserActivity handles GET /api/v1/admin/users/{id}/activity.
+// Merged feed of the user's authored content and comments, newest first.
+func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if user := auth.FromContext(r.Context()); user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	limit := int32(defaultPageSize)
+	if s := r.URL.Query().Get("limit"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			if n > maxPageSize {
+				n = maxPageSize
+			}
+			limit = int32(n)
+		}
+	}
+
+	activity, err := h.Service.ListUserActivity(r.Context(), tenantID, userID, limit)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": activity})
+}
+
+// DeleteUser handles DELETE /api/v1/admin/users/{id}.
+// Soft-deletes the user (status = 'deleted') to comply with the GDPR erasure
+// model — the row is retained and only a confirmed erasure request may hard-delete.
+func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if user := auth.FromContext(r.Context()); user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	if err := h.Service.SoftDeleteUser(r.Context(), tenantID, userID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"id": userID.String(), "status": "deleted"})
+}
+
 // ---------------------------------------------------------------------------
 // Preferences Handlers
 // ---------------------------------------------------------------------------
