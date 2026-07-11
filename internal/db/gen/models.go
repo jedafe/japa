@@ -811,6 +811,7 @@ type Form struct {
 	Status         string             `json:"status"`
 	IsSystem       bool               `json:"is_system"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	SpaceID        pgtype.UUID        `json:"space_id"`
 }
 
 type FormStep struct {

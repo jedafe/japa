@@ -733,6 +733,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/forms/{id}", cfHandlers.UpdateForm)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.delete")).
 				Delete("/forms/{id}", cfHandlers.DeleteForm)
+			// Space-scoped form creation (the builder UI posts here)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.create")).
+				Post("/spaces/{spaceId}/forms", cfHandlers.CreateSpaceForm)
 			// Submission listing (require auth + permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.submissions.view")).
 				Get("/forms/{id}/submissions", cfHandlers.ListFormSubmissions)

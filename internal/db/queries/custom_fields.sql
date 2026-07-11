@@ -99,6 +99,11 @@ FROM custom_field_group_assignments
 WHERE entity_class = @entity_class
 ORDER BY position ASC;
 
+-- name: GetAssignmentByEntity :one
+SELECT id, group_id, entity_class, entity_id, position, created_at
+FROM custom_field_group_assignments
+WHERE entity_class = @entity_class AND entity_id = @entity_id;
+
 -- name: CreateAssignment :one
 INSERT INTO custom_field_group_assignments (group_id, entity_class, entity_id, position)
 VALUES (@group_id, @entity_class, sqlc.narg(entity_id), @position)

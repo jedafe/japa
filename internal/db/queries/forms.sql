@@ -5,37 +5,53 @@
 -- =====================
 
 -- name: ListFormsByTenant :many
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label,
-       success_message, status, is_system, created_at
+SELECT id, tenant_id, space_id, name, slug, description, is_multi_step,
+       submit_label, success_message, status, is_system, created_at
 FROM forms
 WHERE tenant_id = @tenant_id
 ORDER BY created_at DESC, id DESC;
 
+-- name: ListFormsBySpace :many
+SELECT f.id, f.tenant_id, f.space_id, f.name, f.slug, f.description,
+       f.is_multi_step, f.submit_label, f.success_message, f.status,
+       f.is_system, f.created_at,
+       COALESCE(fc.cnt, 0)::bigint AS submission_count
+FROM forms f
+LEFT JOIN LATERAL (
+    SELECT count(*) AS cnt
+    FROM form_submissions fs
+    WHERE fs.form_id = f.id
+) fc ON true
+WHERE f.tenant_id = @tenant_id AND f.space_id = @space_id
+ORDER BY f.created_at DESC, f.id DESC;
+
 -- name: GetFormByID :one
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label,
-       success_message, status, is_system, created_at
+SELECT id, tenant_id, space_id, name, slug, description, is_multi_step,
+       submit_label, success_message, status, is_system, created_at
 FROM forms
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: GetFormBySlug :one
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label,
-       success_message, status, is_system, created_at
+SELECT id, tenant_id, space_id, name, slug, description, is_multi_step,
+       submit_label, success_message, status, is_system, created_at
 FROM forms
 WHERE slug = @slug AND tenant_id = @tenant_id;
 
 -- name: CreateForm :one
-INSERT INTO forms (tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system)
-VALUES (@tenant_id, @name, @slug, sqlc.narg(description), @is_multi_step, @submit_label, sqlc.narg(success_message), @status, @is_system)
-RETURNING id, tenant_id, name, slug, description, is_multi_step, submit_label,
-          success_message, status, is_system, created_at;
+INSERT INTO forms (tenant_id, space_id, name, slug, description, is_multi_step,
+                    submit_label, success_message, status, is_system)
+VALUES (@tenant_id, sqlc.narg(space_id), @name, @slug, sqlc.narg(description),
+        @is_multi_step, @submit_label, sqlc.narg(success_message), @status, @is_system)
+RETURNING id, tenant_id, space_id, name, slug, description, is_multi_step,
+          submit_label, success_message, status, is_system, created_at;
 
 -- name: UpdateForm :one
 UPDATE forms
 SET name = @name, description = sqlc.narg(description), is_multi_step = @is_multi_step,
     submit_label = @submit_label, success_message = sqlc.narg(success_message), status = @status
 WHERE id = @id AND tenant_id = @tenant_id AND is_system = false
-RETURNING id, tenant_id, name, slug, description, is_multi_step, submit_label,
-          success_message, status, is_system, created_at;
+RETURNING id, tenant_id, space_id, name, slug, description, is_multi_step,
+          submit_label, success_message, status, is_system, created_at;
 
 -- name: DeleteForm :exec
 DELETE FROM forms

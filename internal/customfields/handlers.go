@@ -729,6 +729,25 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// When space_id is provided, filter forms to that space and include
+	// submission counts. The space-scoped forms builder UI relies on this.
+	if spaceIDStr := r.URL.Query().Get("space_id"); spaceIDStr != "" {
+		var spaceID pgtype.UUID
+		if err := spaceID.Scan(spaceIDStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
+			return
+		}
+
+		forms, err := h.Service.ListFormsBySpace(r.Context(), tenantID, spaceID)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"data": forms})
+		return
+	}
+
 	forms, err := h.Service.ListForms(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -738,8 +757,9 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": forms})
 }
 
-// GetForm handles GET /api/v1/forms/{id}. It returns the form together with its
-// steps so a single request can render a complete multi-step editor.
+// GetForm handles GET /api/v1/forms/{id}. It returns the form together with
+// its fields (via the custom field group assignment) so the frontend can
+// render the form definition and field list.
 func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -758,14 +778,58 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	steps, err := h.Service.ListFormSteps(r.Context(), form.ID)
+	// Fetch fields attached via the custom field group assignment.
+	fields, err := h.Service.GetFormFields(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
+	// Map custom fields to the shape the frontend expects.
+	type fieldJSON struct {
+		ID        string   `json:"id"`
+		Label     string   `json:"label"`
+		Type      string   `json:"type"`
+		Required  bool     `json:"required"`
+		SortOrder int32    `json:"sort_order"`
+		Options   []string `json:"options"`
+	}
+
+	fieldList := make([]fieldJSON, 0, len(fields))
+	for _, f := range fields {
+		var options []string
+		if f.Options != nil {
+			// Options is stored as JSONB; parse into string slice for radio/select.
+			var raw []struct {
+				Value string `json:"value"`
+				Label string `json:"label"`
+			}
+			if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
+				options = make([]string, len(raw))
+				for i, o := range raw {
+					options[i] = o.Label
+				}
+			}
+		}
+
+		fieldList = append(fieldList, fieldJSON{
+			ID:        f.ID.String(),
+			Label:     f.Label,
+			Type:      f.FieldType,
+			Required:  f.IsRequired,
+			SortOrder: f.Position,
+			Options:   options,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"form": form, "steps": steps},
+		"data": map[string]any{
+			"id":          form.ID,
+			"name":        form.Name,
+			"description": form.Description,
+			"fields":      fieldList,
+			"created_at":  form.CreatedAt,
+		},
 	})
 }
 
@@ -819,6 +883,110 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": form})
+}
+
+// CreateSpaceForm handles POST /api/v1/spaces/{spaceId}/forms.
+// It creates a form scoped to the given space, auto-generates a slug from the
+// name, and creates the form's field definitions in one transaction.
+func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
+	spaceID, err := parseUUIDParam(r, "spaceId")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Fields      []struct {
+			Label     string   `json:"label"`
+			Type      string   `json:"type"`
+			Required  bool     `json:"required"`
+			SortOrder int32    `json:"sort_order"`
+			Options   []string `json:"options"`
+		} `json:"fields"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		return
+	}
+
+	if len(req.Fields) == 0 {
+		writeError(w, http.StatusBadRequest, "missing_fields", "At least one field is required")
+		return
+	}
+
+	// Auto-generate slug from name: lowercase, replace non-alphanum with
+	// hyphens, collapse runs, trim edges.
+	slug := strings.ToLower(strings.TrimSpace(req.Name))
+	slug = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == ' ' {
+			return r
+		}
+		return -1
+	}, slug)
+	slug = strings.ReplaceAll(slug, " ", "-")
+	for strings.Contains(slug, "--") {
+		slug = strings.ReplaceAll(slug, "--", "-")
+	}
+	slug = strings.Trim(slug, "-")
+	if slug == "" {
+		slug = "form"
+	}
+
+	// Build field definitions, mapping the frontend's simple options []string
+	// to the JSONB format the custom_fields table expects.
+	fieldDefs := make([]FormFieldDef, len(req.Fields))
+	for i, f := range req.Fields {
+		fieldDefs[i] = FormFieldDef{
+			Label:     strings.TrimSpace(f.Label),
+			Key:       strings.ToLower(strings.ReplaceAll(strings.TrimSpace(f.Label), " ", "_")),
+			FieldType: f.Type,
+			Required:  f.Required,
+			Position:  f.SortOrder,
+		}
+
+		if f.Type == "radio" && len(f.Options) > 0 {
+			type option struct {
+				Value string `json:"value"`
+				Label string `json:"label"`
+			}
+			opts := make([]option, len(f.Options))
+			for j, o := range f.Options {
+				opts[j] = option{Value: o, Label: o}
+			}
+			optsJSON, err := json.Marshal(opts)
+			if err == nil {
+				fieldDefs[i].Options = optsJSON
+			}
+		}
+	}
+
+	var desc *string
+	if d := strings.TrimSpace(req.Description); d != "" {
+		desc = &d
+	}
+
+	form, err := h.Service.CreateFormWithFields(r.Context(), tenantID, spaceID, req.Name, slug, desc, fieldDefs)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"data": map[string]any{"id": form.ID, "slug": form.Slug},
+	})
 }
 
 // UpdateForm handles PATCH /api/v1/forms/{id}. Slug is immutable and therefore
