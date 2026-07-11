@@ -26,10 +26,11 @@
 		"vitest": "^4.1.8"
 	},
 	"dependencies": {
+		"@formkit/auto-animate": "^0.8.2",
+		"@sentry/sveltekit": "^10.65.0",
 		"bits-ui": "^2.18.1",
-		"lucide-svelte": "^1.0.1",
-		"mode-watcher": "^1.0.2",
 		"clsx": "^2.1.1",
-		"@formkit/auto-animate": "^0.8.2"
+		"lucide-svelte": "^1.0.1",
+		"mode-watcher": "^1.0.2"
 	}
 }
