@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Inbox } from 'lucide-svelte';
 
-	let { title = 'Nothing here yet', description = '', class: className = '', children } = $props();
+	let { title = 'Nothing here yet', description = '', class: className = '', children = undefined } = $props();
 </script>
 
 <div class="flex flex-col items-center justify-center py-12 {className}">
@@ -10,7 +10,9 @@
 	{#if description}
 		<p class="text-sm text-gray-500 dark:text-gray-400">{description}</p>
 	{/if}
-	<div class="mt-4">
-		{@render children()}
-	</div>
+	{#if children}
+		<div class="mt-4">
+			{@render children()}
+		</div>
+	{/if}
 </div>

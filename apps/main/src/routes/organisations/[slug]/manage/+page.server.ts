@@ -26,8 +26,8 @@ interface Invitation {
 	id: string;
 	email: string;
 	role: string;
-	created_at: string;
-	expires_at: string;
+	created_at?: string;
+	expires_at?: string;
 }
 
 export const load: PageServerLoad = async ({ params, cookies }) => {
@@ -41,7 +41,7 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 	});
 
 	if (!orgResult.ok || !orgResult.data) {
-		throw error(404, 'Organisation not found');
+		throw error(404, { code: 'not_found', message: 'Organisation not found' });
 	}
 
 	const org = orgResult.data;

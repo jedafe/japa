@@ -53,6 +53,8 @@
 	let warningReason = $state('');
 	let selectedGroups = $state<string[]>([]);
 	let groupOptions = $state<string[]>(['user', 'moderator', 'admin', 'super_admin']);
+	// name → id, filled from listGroups; membership calls need group IDs.
+	let groupIdsByName = $state<Record<string, string>>({});
 	let actionError = $state('');
 	let actionSuccess = $state('');
 
@@ -129,7 +131,7 @@
 
 	async function handleSuspend() {
 		showSuspendConfirm = false;
-		const result = await userManagementApi.suspendUser(userId);
+		const result = await userManagementApi.suspendUser(userId, { status: 'suspended' });
 		if (result.ok) { flash(t('users.detail.suspend_success')); loadUser(); }
 		else flash(t('users.detail.action_error'), true);
 	}
@@ -153,8 +155,26 @@
 
 	async function handleGroupChange() {
 		showGroupModal = false;
-		const result = await userManagementApi.changeGroup(userId, { groups: selectedGroups });
-		if (result.ok) { flash(t('users.detail.group_changed')); loadUser(); }
+		const current = new Set(user?.groups ?? []);
+		const selected = new Set(selectedGroups);
+		const added = selectedGroups.filter((g) => !current.has(g));
+		const removed = [...current].filter((g) => !selected.has(g));
+
+		let allOk = true;
+		for (const name of added) {
+			const groupId = groupIdsByName[name];
+			if (!groupId) { allOk = false; continue; }
+			const result = await userManagementApi.addGroupMember(groupId, userId);
+			if (!result.ok) allOk = false;
+		}
+		for (const name of removed) {
+			const groupId = groupIdsByName[name];
+			if (!groupId) { allOk = false; continue; }
+			const result = await userManagementApi.removeGroupMember(groupId, userId);
+			if (!result.ok) allOk = false;
+		}
+
+		if (allOk) { flash(t('users.detail.group_changed')); loadUser(); }
 		else flash(t('users.detail.action_error'), true);
 	}
 
@@ -188,6 +208,9 @@
 			const groupsResult = await userManagementApi.listGroups();
 			if (groupsResult.ok) {
 				groupOptions = groupsResult.data.groups.map((g) => g.name);
+				groupIdsByName = Object.fromEntries(
+					groupsResult.data.groups.map((g) => [g.name, g.id])
+				);
 			}
 		} catch {
 			// Keep default group options
