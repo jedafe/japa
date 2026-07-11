@@ -1,10 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 
-// Pin API_BASE to a known non-localhost value so the assertion is hermetic
+// Pin the API base to a known non-localhost value so the assertion is hermetic
 // (independent of whether PRIVATE_API_BASE_URL happens to be set in the
 // ambient env). This proves the action builds its URL from the server
-// api module's API_BASE rather than a hardcoded (and undefined) Vite env var.
-vi.mock('$lib/server/api', () => ({ API_BASE: 'https://api.japaconnect.com/api/v1' }));
+// api module's API_V1_BASE rather than a hardcoded (and undefined) Vite env var.
+vi.mock('$lib/server/api', () => ({
+	API_BASE: 'https://api.japaconnect.com',
+	API_V1_BASE: 'https://api.japaconnect.com/api/v1'
+}));
 
 import { actions } from './+page.server';
 

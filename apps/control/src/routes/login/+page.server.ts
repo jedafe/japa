@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import type { Actions } from './$types';
-import { API_BASE } from '$lib/server/api';
+import { API_V1_BASE } from '$lib/server/api';
 
 export const actions: Actions = {
 	default: async ({ request, cookies, fetch }) => {
@@ -17,7 +18,7 @@ export const actions: Actions = {
 		// redirect() throws, so it must live OUTSIDE this block — otherwise a
 		// successful login's redirect is caught here and turned into a 502.
 		try {
-			const res = await fetch(`${API_BASE}/auth/login`, {
+			const res = await fetch(`${API_V1_BASE}/auth/login`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ email, password })
@@ -40,12 +41,14 @@ export const actions: Actions = {
 			return fail(500, { error: 'Login succeeded but no token was returned.' });
 		}
 
+		const cookieDomain = env.JC_COOKIE_DOMAIN || undefined;
+
 		cookies.set('jc_token', token, {
 			path: '/',
 			httpOnly: true,
 			secure: true,
 			sameSite: 'lax',
-			domain: '.japaconnect.com',
+			...(cookieDomain ? { domain: cookieDomain } : {}),
 			maxAge: 60 * 60 * 24 * 7
 		});
 

@@ -46,7 +46,7 @@
 
 	async function revokeKey(id: string) {
 		if (!confirm('Permanently revoke this key? The developer will lose access immediately.')) return;
-		const result = await api(`/control/api-keys/${id}/revoke`, { method: 'POST' });
+		const result = await api(`/control/api-keys/${id}/suspend`, { method: 'POST' });
 		if (result.ok) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'revoked' } : k));
 		} else {
