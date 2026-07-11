@@ -117,7 +117,7 @@
 		</button>
 
 		{#if $user}
-			<div class="relative">
+			<div class="relative" data-user-menu>
 				<button
 					type="button"
 					class="flex items-center gap-2 rounded p-1 hover:bg-gray-100 dark:hover:bg-gray-800"

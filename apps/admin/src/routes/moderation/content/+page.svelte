@@ -45,7 +45,7 @@
 		if (filterType) params.set('type', filterType);
 		if (filterStatus) params.set('status', filterStatus);
 		try {
-			const result = await api<{ items: ContentItem[]; page: number; total_pages: number }>(`/admin/content?${params}`);
+			const result = await api<{ items: ContentItem[]; page: number; total_pages: number }>(`/content?${params}`);
 			if (result.ok) {
 				items = result.data.items;
 				totalPages = result.data.total_pages;
@@ -70,24 +70,6 @@
 		expandedId = expandedId === id ? null : id;
 	}
 
-	async function toggleFeature(item: ContentItem) {
-		errorMessage = '';
-		try {
-			const result = await api(`/admin/content/${item.id}/feature`, {
-				method: 'POST',
-				body: { featured: !item.is_featured }
-			});
-			if (result.ok) {
-				item.is_featured = !item.is_featured;
-				items = items;
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
 	function confirmDelete(item: ContentItem) {
 		deleteTarget = item;
 		showDeleteModal = true;
@@ -97,7 +79,7 @@
 		if (!deleteTarget) return;
 		errorMessage = '';
 		try {
-			const result = await api(`/admin/content/${deleteTarget.id}`, { method: 'DELETE' });
+			const result = await api(`/admin/content/${deleteTarget.id}/remove`, { method: 'POST' });
 			if (result.ok) {
 				showDeleteModal = false;
 				load();
@@ -209,13 +191,6 @@
 							<div class="flex items-center gap-1">
 								<button
 									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: {item.is_featured ? 'var(--color-warning)' : 'var(--color-muted)'}"
-									onclick={() => toggleFeature(item)}
-								>
-									{item.is_featured ? 'Unfeature' : 'Feature'}
-								</button>
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
 									style="color: var(--color-danger)"
 									onclick={() => confirmDelete(item)}
 								>
@@ -249,13 +224,6 @@
 									</div>
 								{/if}
 								<div class="mt-3 flex gap-2">
-									<button
-										class="rounded-md px-3 py-1.5 text-xs font-medium"
-										style="background-color: {item.is_featured ? 'var(--color-warning)' : 'var(--color-primary)'}; color: white"
-										onclick={() => toggleFeature(item)}
-									>
-										{item.is_featured ? 'Unfeature' : 'Feature'}
-									</button>
 									<button
 										class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
 										style="background-color: var(--color-danger)"

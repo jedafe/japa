@@ -110,9 +110,13 @@
 	}
 
 	onMount(async () => {
-		const groupsResult = await userManagementApi.listGroups();
-		if (groupsResult.ok) {
-			groupOptions = groupsResult.data.groups.map((g) => g.name);
+		try {
+			const groupsResult = await userManagementApi.listGroups();
+			if (groupsResult.ok) {
+				groupOptions = groupsResult.data.groups.map((g) => g.name);
+			}
+		} catch {
+			/* group filter options are optional — the list still loads */
 		}
 		load();
 		checkImpersonationStatus();

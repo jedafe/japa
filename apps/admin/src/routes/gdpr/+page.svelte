@@ -39,7 +39,7 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<{ requests: GdprRequest[] }>('/admin/gdpr/requests');
+			const result = await api<{ requests: GdprRequest[] }>('/admin/gdpr/deletion-requests');
 			if (result.ok) {
 				requests = result.data.requests;
 			} else {
@@ -60,7 +60,7 @@
 	async function processRequest(request: GdprRequest) {
 		processing = true;
 		try {
-			const result = await api(`/admin/gdpr/requests/${request.id}/process`, { method: 'POST' });
+			const result = await api(`/admin/gdpr/deletion-requests/${request.id}/execute`, { method: 'POST' });
 			if (result.ok) {
 				showDetailModal = false;
 				load();

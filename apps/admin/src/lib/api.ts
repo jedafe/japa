@@ -48,8 +48,8 @@ export const spamApi = {
 		api(`/admin/spam/censored-words/${id}`, { method: 'DELETE' }),
 
 	getUserBlocks: (params?: string) => api<unknown>(`/admin/spam/user-blocks${params ? `?${params}` : ''}`),
-	deleteUserBlock: (id: string) =>
-		api(`/admin/spam/user-blocks/${id}`, { method: 'DELETE' }),
+	deleteUserBlock: (blockerId: string, blockedId: string) =>
+		api(`/admin/spam/user-blocks/${blockerId}/${blockedId}`, { method: 'DELETE' }),
 };
 
 export const ticketTypesApi = {
@@ -98,7 +98,7 @@ export const impersonationApi = {
 };
 
 export const docsApi = {
-	list: (params?: string) => api<unknown>(`/admin/docs${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/admin/docs/pages${params ? `?${params}` : ''}`),
 	create: (body: { title: string; slug: string; audience: string; body: string }) =>
 		api('/admin/docs', { method: 'POST', body }),
 	update: (id: string, body: { title?: string; slug?: string; audience?: string; body?: string; status?: string }) =>
@@ -112,7 +112,7 @@ export const adSlotTypesApi = {
 	create: (body: { name: string; slug: string; width: number; height: number; description?: string }) =>
 		api('/admin/ads/slot-types', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; slug?: string; width?: number; height?: number; description?: string }) =>
-		api(`/admin/ads/slot-types/${id}`, { method: 'PATCH', body }),
+		api(`/admin/ads/slot-types/${id}`, { method: 'PUT', body }),
 	delete: (id: string) =>
 		api(`/admin/ads/slot-types/${id}`, { method: 'DELETE' }),
 };
@@ -262,7 +262,7 @@ export const permissionsApi = {
 export const userManagementApi = {
 	getUser: (userId: string) => api<UserDetail>(`/users/${userId}`),
 	getUserActivity: (userId: string, params?: string) =>
-		api<{ activities: UserActivity[]; total: number }>(`/users/${userId}/activity${params ? `?${params}` : ''}`),
+		api<{ activities: UserActivity[]; total: number }>(`/admin/users/${userId}/activity${params ? `?${params}` : ''}`),
 
 	getAiContext: (userId: string) =>
 		api<AiContextEntry[]>(`/admin/ai/context/${userId}`),
@@ -270,18 +270,18 @@ export const userManagementApi = {
 		api<{ deleted: boolean }>(`/admin/ai/context/${userId}/${entryId}`, { method: 'DELETE' }),
 
 	getUserSessions: (userId: string) =>
-		api<UserSession[]>(`/users/${userId}/sessions`),
+		api<UserSession[]>(`/admin/users/${userId}/sessions`),
 
 	issueWarning: (userId: string, body: { reason: string }) =>
 		api(`/admin/users/${userId}/warn`, { method: 'POST', body }),
 	banUser: (userId: string) =>
 		api(`/admin/users/${userId}/ban`, { method: 'POST' }),
 	unbanUser: (userId: string) =>
-		api(`/admin/users/${userId}/unban`, { method: 'POST' }),
-	suspendUser: (userId: string) =>
-		api(`/admin/users/${userId}/suspend`, { method: 'POST' }),
-	changeGroup: (userId: string, body: { groups: string[] }) =>
-		api(`/admin/users/${userId}/groups`, { method: 'PUT', body }),
+		api(`/admin/users/${userId}/ban`, { method: 'DELETE' }),
+	suspendUser: (userId: string, body: { status: string; reason?: string }) =>
+		api(`/admin/users/${userId}/status`, { method: 'PATCH', body }),
+	changeGroup: (userId: string, body: { group: string }) =>
+		api(`/admin/users/${userId}/group`, { method: 'PATCH', body }),
 	deleteUser: (userId: string) =>
 		api(`/admin/users/${userId}`, { method: 'DELETE' }),
 
@@ -377,15 +377,15 @@ export const pageBuilderApi = {
 };
 
 export const spacesAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/spaces${params ? `?${params}` : ''}`),
-	suspend: (id: string, body: { reason: string }) =>
-		api(`/admin/spaces/${id}/suspend`, { method: 'POST', body }),
+	list: (params?: string) => api<unknown>(`/spaces${params ? `?${params}` : ''}`),
+	suspend: (id: string, body: { status: string; reason?: string }) =>
+		api(`/admin/spaces/${id}/status`, { method: 'PATCH', body }),
 	assignModerator: (id: string, body: { username: string }) =>
 		api(`/admin/spaces/${id}/moderators`, { method: 'POST', body }),
 };
 
 export const tagsAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/tags${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/tags${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string }) =>
 		api('/admin/tags', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; slug?: string }) =>
@@ -395,25 +395,25 @@ export const tagsAdminApi = {
 };
 
 export const organisationsAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/organisations${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/organizations${params ? `?${params}` : ''}`),
 	verify: (id: string, body: { verified: boolean }) =>
-		api(`/admin/organisations/${id}/verify`, { method: 'POST', body }),
+		api(`/admin/organizations/${id}/verify`, { method: 'POST', body }),
 	claim: (id: string, body: { note?: string }) =>
-		api(`/admin/organisations/${id}/claim`, { method: 'POST', body }),
+		api(`/admin/organizations/${id}/claim`, { method: 'POST', body }),
 };
 
 export const reactionsAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/reaction-types${params ? `?${params}` : ''}`),
-	create: (body: { name: string; emoji: string; category: string; is_active: boolean }) =>
-		api('/admin/reaction-types', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; emoji?: string; category?: string; is_active?: boolean }) =>
-		api(`/admin/reaction-types/${id}`, { method: 'PATCH', body }),
-	delete: (id: string) =>
-		api(`/admin/reaction-types/${id}`, { method: 'DELETE' }),
+	list: (params?: string) => api<unknown>(`/reaction-types${params ? `?${params}` : ''}`),
+	create: (body: { key: string; emoji: string; label: string; enabled: boolean }) =>
+		api('/reaction-types', { method: 'POST', body }),
+	update: (key: string, body: { emoji?: string; label?: string; enabled?: boolean }) =>
+		api(`/reaction-types/${key}`, { method: 'PATCH', body }),
+	delete: (key: string) =>
+		api(`/reaction-types/${key}`, { method: 'DELETE' }),
 };
 
 export const universitiesAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/universities${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/universities${params ? `?${params}` : ''}`),
 	create: (body: { name: string; domain: string; verified: boolean }) =>
 		api('/admin/universities', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; domain?: string; verified?: boolean }) =>

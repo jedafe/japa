@@ -33,12 +33,13 @@
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const params = new URLSearchParams({ page: String(page) });
 		try {
-			const result = await api<{ items: University[]; page: number; total_pages: number }>(`/admin/universities?${params}`);
+			// List lives at the public /universities route (admin CRUD stays
+			// under /admin/universities); it returns a plain unpaginated array.
+			const result = await api<University[]>('/universities');
 			if (result.ok) {
-				universities = result.data.items;
-				totalPages = result.data.total_pages;
+				universities = Array.isArray(result.data) ? result.data : [];
+				totalPages = 1;
 			} else {
 				errorMessage = result.error;
 			}
