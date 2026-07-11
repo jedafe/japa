@@ -18,7 +18,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies, url }) => {
 	let notificationCount = 0;
 	if (locals.user) {
 		try {
-			const countResult = await apiFetch<{ count: number }>('/notifications/unread-count', {
+			const countResult = await apiFetch<{ count: number }>('/me/notifications/unread-count', {
 				headers
 			});
 			if (countResult.ok && countResult.data) {

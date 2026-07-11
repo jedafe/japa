@@ -1,4 +1,6 @@
-const SITE_URL = import.meta.env.VITE_SITE_URL || 'https://japaconnect.com';
+import { PUBLIC_JC_SITE_URL } from '$env/static/public';
+
+const SITE_URL = PUBLIC_JC_SITE_URL || 'https://japaconnect.com';
 
 export interface PageMetadata {
 	id?: string;

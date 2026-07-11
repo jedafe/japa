@@ -3,7 +3,7 @@
 
 	let { schema }: { schema: JsonLdSchema } = $props();
 
-	const jsonLdString = $derived(JSON.stringify(schema, null, 2));
+	const jsonLdString = $derived(JSON.stringify(schema, null, 2).replace(/</g, '\\u003c'));
 </script>
 
 <svelte:head>
