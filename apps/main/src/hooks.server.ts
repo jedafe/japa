@@ -1,4 +1,5 @@
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+import * as Sentry from '@sentry/sveltekit';
 import { API_BASE_URL, apiFetch } from '$lib/server/api';
 import type { FeatureFlags } from '$lib/types';
 
@@ -75,6 +76,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 };
 
 export const handleError: HandleServerError = ({ error }) => {
+	Sentry.captureException(error);
 	return {
 		code: 'INTERNAL_ERROR',
 		message: 'Internal error'
