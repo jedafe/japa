@@ -3,9 +3,11 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { spamApi } from '$lib/api';
 
-	type IpBlock = { id: string; ip_cidr: string; reason: string; created_by: string; expires_at: string };
-	type CensoredWord = { id: string; pattern: string; action: string; replacement: string; created_at: string };
-	type UserBlock = { id: string; username: string; reason: string; blocked_at: string };
+	// Row shapes mirror the backend JSON (internal/db/gen models); these
+	// endpoints return `{"data": [...]}` arrays without pagination.
+	type IpBlock = { id: string; cidr: string; block_type: string; reason: string | null; blocked_by?: string; expires_at?: string | null; created_at?: string };
+	type CensoredWord = { id: string; pattern: string; action: string; replacement: string | null; created_at?: string };
+	type UserBlock = { blocker_id: string; blocked_id: string; created_at?: string };
 
 	type Tab = 'ip-blocks' | 'censored-words' | 'user-blocks';
 
@@ -13,30 +15,25 @@
 
 	// IP Blocks
 	let ipBlocks = $state<IpBlock[]>([]);
-	let ipPage = $state(0);
-	let ipTotalPages = $state(1);
 	let ipLoading = $state(false);
 
 	// Censored Words
 	let censoredWords = $state<CensoredWord[]>([]);
-	let cwPage = $state(0);
-	let cwTotalPages = $state(1);
 	let cwLoading = $state(false);
 
 	// User Blocks
 	let userBlocks = $state<UserBlock[]>([]);
-	let ubPage = $state(0);
-	let ubTotalPages = $state(1);
 	let ubLoading = $state(false);
 
 	// Modals
 	let showIpModal = $state(false);
 	let showCwModal = $state(false);
 	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<{ type: string; id: string } | null>(null);
+	// User blocks are keyed by (blocker_id, blocked_id), not a single id.
+	let deleteTarget = $state<{ type: string; id: string; secondaryId?: string } | null>(null);
 
 	// IP Block form
-	let ipForm = $state({ ip_cidr: '', reason: '', expires_at: '' });
+	let ipForm = $state({ cidr: '', block_type: 'full', reason: '', expires_at: '' });
 	let ipSaving = $state(false);
 
 	// Censored Word form
@@ -53,36 +50,27 @@
 
 	async function loadIpBlocks() {
 		ipLoading = true;
-		const params = new URLSearchParams({ page: String(ipPage) });
-		const result = await spamApi.getIpBlocks(params.toString());
+		const result = await spamApi.getIpBlocks();
 		if (result.ok) {
-			const data = result.data as { items: IpBlock[]; total_pages: number };
-			ipBlocks = data.items ?? [];
-			ipTotalPages = data.total_pages ?? 1;
+			ipBlocks = (result.data as IpBlock[]) ?? [];
 		}
 		ipLoading = false;
 	}
 
 	async function loadCensoredWords() {
 		cwLoading = true;
-		const params = new URLSearchParams({ page: String(cwPage) });
-		const result = await spamApi.getCensoredWords(params.toString());
+		const result = await spamApi.getCensoredWords();
 		if (result.ok) {
-			const data = result.data as { items: CensoredWord[]; total_pages: number };
-			censoredWords = data.items ?? [];
-			cwTotalPages = data.total_pages ?? 1;
+			censoredWords = (result.data as CensoredWord[]) ?? [];
 		}
 		cwLoading = false;
 	}
 
 	async function loadUserBlocks() {
 		ubLoading = true;
-		const params = new URLSearchParams({ page: String(ubPage) });
-		const result = await spamApi.getUserBlocks(params.toString());
+		const result = await spamApi.getUserBlocks();
 		if (result.ok) {
-			const data = result.data as { items: UserBlock[]; total_pages: number };
-			userBlocks = data.items ?? [];
-			ubTotalPages = data.total_pages ?? 1;
+			userBlocks = (result.data as UserBlock[]) ?? [];
 		}
 		ubLoading = false;
 	}
@@ -96,18 +84,19 @@
 	}
 
 	async function submitIpBlock() {
-		if (!ipForm.ip_cidr.trim()) return;
+		if (!ipForm.cidr.trim()) return;
 		ipSaving = true;
 		errorMessage = '';
-		const body: { ip_cidr: string; reason: string; expires_at?: string } = {
-			ip_cidr: ipForm.ip_cidr.trim(),
-			reason: ipForm.reason.trim()
+		const body: { cidr: string; block_type: string; reason?: string; expires_at?: string } = {
+			cidr: ipForm.cidr.trim(),
+			block_type: ipForm.block_type
 		};
+		if (ipForm.reason.trim()) body.reason = ipForm.reason.trim();
 		if (ipForm.expires_at) body.expires_at = ipForm.expires_at;
 		const result = await spamApi.createIpBlock(body);
 		if (result.ok) {
 			showIpModal = false;
-			ipForm = { ip_cidr: '', reason: '', expires_at: '' };
+			ipForm = { cidr: '', block_type: 'full', reason: '', expires_at: '' };
 			loadIpBlocks();
 		} else {
 			errorMessage = result.error;
@@ -135,19 +124,19 @@
 		cwSaving = false;
 	}
 
-	function confirmDelete(type: string, id: string) {
-		deleteTarget = { type, id };
+	function confirmDelete(type: string, id: string, secondaryId?: string) {
+		deleteTarget = { type, id, secondaryId };
 		showDeleteConfirm = true;
 	}
 
 	async function executeDelete() {
 		if (!deleteTarget) return;
 		errorMessage = '';
-		const { type, id } = deleteTarget;
+		const { type, id, secondaryId } = deleteTarget;
 		let result;
 		if (type === 'ip-block') result = await spamApi.deleteIpBlock(id);
 		else if (type === 'censored-word') result = await spamApi.deleteCensoredWord(id);
-		else result = await spamApi.deleteUserBlock(id);
+		else result = await spamApi.deleteUserBlock(id, secondaryId ?? '');
 
 		if (result.ok) {
 			showDeleteConfirm = false;
@@ -195,7 +184,7 @@
 		<button
 			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
 			style="background-color: var(--color-primary)"
-			onclick={() => { ipForm = { ip_cidr: '', reason: '', expires_at: '' }; showIpModal = true; }}
+			onclick={() => { ipForm = { cidr: '', block_type: 'full', reason: '', expires_at: '' }; showIpModal = true; }}
 		>
 			Add IP Block
 		</button>
@@ -209,8 +198,8 @@
 				<thead>
 					<tr style="border-color: var(--color-border)">
 						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">IP / CIDR</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Type</th>
 						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Reason</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Created By</th>
 						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Expires</th>
 						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 					</tr>
@@ -218,9 +207,9 @@
 				<tbody>
 					{#each ipBlocks as block}
 						<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
-							<td class="px-4 py-3 font-medium font-mono text-xs">{block.ip_cidr}</td>
-							<td class="px-4 py-3" style="color: var(--color-muted)">{block.reason}</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{block.created_by}</td>
+							<td class="px-4 py-3 font-medium font-mono text-xs">{block.cidr}</td>
+							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{block.block_type}</td>
+							<td class="px-4 py-3" style="color: var(--color-muted)">{block.reason ?? '—'}</td>
 							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{block.expires_at || 'Never'}</td>
 							<td class="px-4 py-3">
 								<button
@@ -241,13 +230,6 @@
 			</table>
 		</div>
 
-		<div class="mt-3 flex items-center justify-between">
-			<p class="text-xs" style="color: var(--color-muted)">Page {ipPage + 1} of {ipTotalPages}</p>
-			<div class="flex gap-1">
-				<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={ipPage === 0} onclick={() => { ipPage--; loadIpBlocks(); }}>&larr;</button>
-				<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={ipPage >= ipTotalPages - 1} onclick={() => { ipPage++; loadIpBlocks(); }}>&rarr;</button>
-			</div>
-		</div>
 	{/if}
 {/if}
 
@@ -301,13 +283,6 @@
 			</table>
 		</div>
 
-		<div class="mt-3 flex items-center justify-between">
-			<p class="text-xs" style="color: var(--color-muted)">Page {cwPage + 1} of {cwTotalPages}</p>
-			<div class="flex gap-1">
-				<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={cwPage === 0} onclick={() => { cwPage--; loadCensoredWords(); }}>&larr;</button>
-				<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={cwPage >= cwTotalPages - 1} onclick={() => { cwPage++; loadCensoredWords(); }}>&rarr;</button>
-			</div>
-		</div>
 	{/if}
 {/if}
 
@@ -320,8 +295,8 @@
 			<table class="w-full text-sm">
 				<thead>
 					<tr style="border-color: var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Username</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Reason</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Blocker</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Blocked</th>
 						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Blocked At</th>
 						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 					</tr>
@@ -329,14 +304,14 @@
 				<tbody>
 					{#each userBlocks as ub}
 						<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
-							<td class="px-4 py-3 font-medium">{ub.username}</td>
-							<td class="px-4 py-3" style="color: var(--color-muted)">{ub.reason}</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{ub.blocked_at}</td>
+							<td class="px-4 py-3 font-mono text-xs">{ub.blocker_id}</td>
+							<td class="px-4 py-3 font-mono text-xs">{ub.blocked_id}</td>
+							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{ub.created_at ?? '—'}</td>
 							<td class="px-4 py-3">
 								<button
 									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
 									style="color: var(--color-danger)"
-									onclick={() => confirmDelete('user-block', ub.id)}
+									onclick={() => confirmDelete('user-block', ub.blocker_id, ub.blocked_id)}
 								>
 									Unblock
 								</button>
@@ -350,14 +325,6 @@
 				</tbody>
 			</table>
 		</div>
-
-		<div class="mt-3 flex items-center justify-between">
-			<p class="text-xs" style="color: var(--color-muted)">Page {ubPage + 1} of {ubTotalPages}</p>
-			<div class="flex gap-1">
-				<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={ubPage === 0} onclick={() => { ubPage--; loadUserBlocks(); }}>&larr;</button>
-				<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={ubPage >= ubTotalPages - 1} onclick={() => { ubPage++; loadUserBlocks(); }}>&rarr;</button>
-			</div>
-		</div>
 	{/if}
 {/if}
 
@@ -366,7 +333,16 @@
 	<div class="space-y-3">
 		<div>
 			<label for="ip-cidr" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">IP / CIDR</label>
-			<input id="ip-cidr" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="192.168.1.0/24" bind:value={ipForm.ip_cidr} />
+			<input id="ip-cidr" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="192.168.1.0/24" bind:value={ipForm.cidr} />
+		</div>
+		<div>
+			<label for="ip-block-type" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Block Type</label>
+			<select id="ip-block-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={ipForm.block_type}>
+				<option value="full">Full</option>
+				<option value="registration">Registration</option>
+				<option value="posting">Posting</option>
+				<option value="api">API</option>
+			</select>
 		</div>
 		<div>
 			<label for="ip-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Reason</label>

@@ -29,14 +29,11 @@
 		saving = true;
 		saveMessage = '';
 		try {
-			await api(`/organizations/${org.id}`, {
-				method: 'PATCH',
-				body: JSON.stringify({
-					name: editName,
-					headline: editHeadline || undefined,
-					bio: editBio || undefined,
-					is_public: editPublic
-				})
+			await api.updateOrganization(org.id, {
+				name: editName,
+				headline: editHeadline || undefined,
+				bio: editBio || undefined,
+				is_public: editPublic
 			});
 			org = { ...org, name: editName, headline: editHeadline, bio: editBio, is_public: editPublic };
 			editing = false;
@@ -53,14 +50,11 @@
 		if (!inviteEmail.trim()) return;
 		inviting = true;
 		try {
-			await api(`/organizations/${org.id}/invitations`, {
-				method: 'POST',
-				body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole })
-			});
+			await api.inviteToOrganization(org.id, inviteEmail.trim(), inviteRole);
 			inviteEmail = '';
 			// Refresh invitations
-			const result = await api<{ invitations: typeof invitations }>(`/organizations/${org.id}/invitations`);
-			if (result.ok && result.data) invitations = result.data.invitations;
+			const result = await api.listOrganizationInvitations(org.id);
+			invitations = result.invitations;
 		} catch {
 			// ignore
 		} finally {
@@ -70,7 +64,7 @@
 
 	async function removeMember(userId: string) {
 		try {
-			await api(`/organizations/${org.id}/members/${userId}`, { method: 'DELETE' });
+			await api.removeOrganizationMember(org.id, userId);
 			members = members.filter((m) => m.user_id !== userId);
 		} catch {
 			// ignore
@@ -79,19 +73,16 @@
 
 	async function updateMemberRole(userId: string, role: string) {
 		try {
-			await api(`/organizations/${org.id}/members/${userId}`, {
-				method: 'PATCH',
-				body: JSON.stringify({ role })
-			});
+			await api.updateOrganizationMember(org.id, userId, role);
 			members = members.map((m) => m.user_id === userId ? { ...m, role } : m);
 		} catch {
 			// ignore
 		}
 	}
 
-	function roleVariant(role: string): 'primary' | 'warning' | 'default' {
+	function roleVariant(role: string): 'info' | 'warning' | 'default' {
 		switch (role) {
-			case 'owner': return 'primary';
+			case 'owner': return 'info';
 			case 'admin': return 'warning';
 			default: return 'default';
 		}
@@ -190,7 +181,7 @@
 		</h2>
 
 		{#if members.length === 0}
-			<EmptyState title="No members" description="Invite people to join this organisation." />
+			<EmptyState title="No members" message="Invite people to join this organisation." />
 		{:else}
 			<div class="space-y-2">
 				{#each members as member}

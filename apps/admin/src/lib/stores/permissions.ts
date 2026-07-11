@@ -1,43 +1,29 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { apiFetch } from '$lib/api/client';
 
 export const permissions = writable<string[]>([]);
 export const permissionsLoaded = writable(false);
 
+// `'*'` is the super-admin wildcard granted by the backend RBAC resolver;
+// every check must honor it or wildcard admins see a bricked UI.
 export function hasPermission(permKey: string): boolean {
-	let result = false;
-	const unsub = permissions.subscribe((perms) => {
-		result = perms.includes(permKey);
-	});
-	unsub();
-	return result;
+	const perms = get(permissions);
+	return perms.includes(permKey) || perms.includes('*');
 }
 
 export function hasAllPermissions(permKeys: string[]): boolean {
-	let result = false;
-	const unsub = permissions.subscribe((perms) => {
-		result = permKeys.every((k) => perms.includes(k));
-	});
-	unsub();
-	return result;
+	return permKeys.every((k) => hasPermission(k));
 }
 
 export function hasAnyPermission(permKeys: string[]): boolean {
-	let result = false;
-	const unsub = permissions.subscribe((perms) => {
-		result = permKeys.some((k) => perms.includes(k));
-	});
-	unsub();
-	return result;
+	return permKeys.some((k) => hasPermission(k));
 }
 
-export async function fetchPermissions(): Promise<void> {
+export async function fetchPermissions(): Promise<string[]> {
 	const result = await apiFetch<{ permissions: string[] }>('/me/permissions');
 
-	if (result.data) {
-		permissions.set(result.data.permissions ?? []);
-	} else {
-		permissions.set([]);
-	}
+	const perms = result.data?.permissions ?? [];
+	permissions.set(perms);
 	permissionsLoaded.set(true);
+	return perms;
 }

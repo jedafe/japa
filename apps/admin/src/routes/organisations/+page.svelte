@@ -142,8 +142,8 @@
 					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3">
 							<p class="font-medium">{org.name}</p>
-							{#if org.domain}
-								<p class="text-xs" style="color: var(--color-muted)">{org.domain}</p>
+							{#if org.slug}
+								<p class="text-xs" style="color: var(--color-muted)">{org.slug}</p>
 							{/if}
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{org.owner_user_id ?? '—'}</td>
