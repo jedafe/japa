@@ -1,5 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import type { Actions } from './$types';
+import { API_V1_BASE } from '$lib/server/api';
 
 export const actions: Actions = {
 	default: async ({ request, cookies, fetch }) => {
@@ -11,10 +13,9 @@ export const actions: Actions = {
 			return fail(400, { error: 'Email and password are required.' });
 		}
 
-		const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
-
+		let token: string | undefined;
 		try {
-			const res = await fetch(`${apiBase}/auth/login`, {
+			const res = await fetch(`${API_V1_BASE}/auth/login`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ email, password })
@@ -28,23 +29,26 @@ export const actions: Actions = {
 				});
 			}
 
-			const token = body.data?.access_token;
-			if (!token) {
-				return fail(500, { error: 'Login succeeded but no token was returned.' });
-			}
-
-			cookies.set('jc_token', token, {
-				path: '/',
-				httpOnly: true,
-				secure: true,
-				sameSite: 'lax',
-				domain: '.japaconnect.com',
-				maxAge: 60 * 60 * 24 * 7
-			});
-
-			return redirect(302, '/');
+			token = body.data?.access_token;
 		} catch {
 			return fail(502, { error: 'Could not reach authentication service.' });
 		}
+
+		if (!token) {
+			return fail(500, { error: 'Login succeeded but no token was returned.' });
+		}
+
+		const cookieDomain = env.JC_COOKIE_DOMAIN || undefined;
+
+		cookies.set('jc_token', token, {
+			path: '/',
+			httpOnly: true,
+			secure: true,
+			sameSite: 'lax',
+			...(cookieDomain ? { domain: cookieDomain } : {}),
+			maxAge: 60 * 60 * 24 * 7
+		});
+
+		redirect(302, '/');
 	}
 };

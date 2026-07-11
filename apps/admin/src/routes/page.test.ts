@@ -19,17 +19,17 @@ describe('Admin +page.svelte', () => {
 		});
 	});
 
-	it('shows platform overview section after load', async () => {
+	it('shows community health section after load', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('Platform Overview')).toBeTruthy();
+			expect(screen.getByText('Community Health')).toBeTruthy();
 		});
 	});
 
-	it('shows support queue section after load', async () => {
+	it('shows moderation snapshot section after load', async () => {
 		render(Page);
 		await waitFor(() => {
-			expect(screen.getByText('Support Queue')).toBeTruthy();
+			expect(screen.getByText('Moderation Snapshot')).toBeTruthy();
 		});
 	});
 });

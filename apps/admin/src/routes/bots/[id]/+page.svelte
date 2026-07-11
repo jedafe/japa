@@ -56,7 +56,7 @@
 		successMessage = '';
 		try {
 			const result = await api(`/admin/bots/${bot.id}`, {
-				method: 'PATCH',
+				method: 'PUT',
 				body: {
 					name: editName.trim(),
 					avatar_url: editAvatarUrl.trim() || null,

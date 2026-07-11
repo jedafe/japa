@@ -5,12 +5,11 @@
 	import { t } from '$lib/stores/i18n.svelte';
 
 	type ReactionType = {
-		id: string;
-		name: string;
+		key: string;
 		emoji: string;
-		category: string;
-		usage_count: number;
-		is_active: boolean;
+		label: string;
+		enabled: boolean;
+		position: number;
 		created_at: string;
 	};
 
@@ -23,24 +22,23 @@
 	// Create/Edit modal
 	let showModal = $state(false);
 	let editingReaction = $state<ReactionType | null>(null);
-	let form = $state({ name: '', emoji: '', category: 'general', is_active: true });
+	let form = $state({ key: '', label: '', emoji: '', enabled: true });
 	let saving = $state(false);
 
 	// Delete modal
 	let showDeleteModal = $state(false);
 	let deleteTarget = $state<ReactionType | null>(null);
 
-	const categories = ['general', 'positive', 'negative', 'fun'];
-
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		const params = new URLSearchParams({ page: String(page) });
 		try {
-			const result = await api<{ items: ReactionType[]; page: number; total_pages: number }>(`/admin/reaction-types?${params}`);
+			const result = await api<{ data: ReactionType[] }>(`/reaction-types?${params}`);
 			if (result.ok) {
-				reactions = result.data.items;
-				totalPages = result.data.total_pages;
+				const list = Array.isArray(result.data) ? result.data : (result.data.data ?? []);
+				reactions = list;
+				totalPages = 1;
 			} else {
 				errorMessage = result.error;
 			}
@@ -53,34 +51,34 @@
 
 	function openCreate() {
 		editingReaction = null;
-		form = { name: '', emoji: '', category: 'general', is_active: true };
+		form = { key: '', label: '', emoji: '', enabled: true };
 		showModal = true;
 	}
 
 	function openEdit(reaction: ReactionType) {
 		editingReaction = reaction;
 		form = {
-			name: reaction.name,
+			key: reaction.key,
+			label: reaction.label,
 			emoji: reaction.emoji,
-			category: reaction.category,
-			is_active: reaction.is_active
+			enabled: reaction.enabled
 		};
 		showModal = true;
 	}
 
 	async function submit() {
-		if (!form.name.trim() || !form.emoji.trim()) return;
+		if (!form.key.trim() || !form.label.trim() || !form.emoji.trim()) return;
 		saving = true;
 		errorMessage = '';
 		const body = {
-			name: form.name.trim(),
+			key: form.key.trim(),
+			label: form.label.trim(),
 			emoji: form.emoji.trim(),
-			category: form.category,
-			is_active: form.is_active
+			enabled: form.enabled
 		};
 		const result = editingReaction
-			? await api(`/admin/reaction-types/${editingReaction.id}`, { method: 'PATCH', body })
-			: await api('/admin/reaction-types', { method: 'POST', body });
+			? await api(`/reaction-types/${editingReaction.key}`, { method: 'PATCH', body })
+			: await api('/reaction-types', { method: 'POST', body });
 		if (result.ok) {
 			showModal = false;
 			load();
@@ -98,7 +96,7 @@
 	async function executeDelete() {
 		if (!deleteTarget) return;
 		errorMessage = '';
-		const result = await api(`/admin/reaction-types/${deleteTarget.id}`, { method: 'DELETE' });
+		const result = await api(`/reaction-types/${deleteTarget.key}`, { method: 'DELETE' });
 		if (result.ok) {
 			showDeleteModal = false;
 			load();
@@ -110,15 +108,6 @@
 	function handlePageChange(p: number) {
 		page = p;
 		load();
-	}
-
-	function categoryBadge(category: string) {
-		switch (category) {
-			case 'positive': return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
-			case 'negative': return 'bg-red-500/15 text-red-700 dark:text-red-400';
-			case 'fun': return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
-			default: return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
-		}
 	}
 
 	onMount(load);
@@ -154,30 +143,22 @@
 		<table class="w-full text-sm">
 			<thead>
 				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.emoji')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.category')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.usage')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.active')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
+				<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.emoji')}</th>
+				<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.name')}</th>
+				<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.active')}</th>
+				<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 				</tr>
 			</thead>
 			<tbody>
 				{#each reactions as reaction}
 					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 text-2xl">{reaction.emoji}</td>
-						<td class="px-4 py-3 font-medium">{reaction.name}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {categoryBadge(reaction.category)}">
-								{reaction.category}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs font-medium">{reaction.usage_count.toLocaleString()}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {reaction.is_active ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
-								{reaction.is_active ? 'Active' : 'Inactive'}
-							</span>
-						</td>
+					<td class="px-4 py-3 text-2xl">{reaction.emoji}</td>
+					<td class="px-4 py-3 font-medium">{reaction.label}</td>
+					<td class="px-4 py-3">
+						<span class="inline-block rounded-full px-2 py-0.5 text-xs {reaction.enabled ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+							{reaction.enabled ? 'Active' : 'Inactive'}
+						</span>
+					</td>
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-1">
 								<button
@@ -226,6 +207,18 @@
 >
 	<div class="space-y-3">
 		<div>
+			<label for="rx-key" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Key</label>
+			<input
+				id="rx-key"
+				type="text"
+				class="w-full rounded-md border px-3 py-2 text-sm"
+				style="border-color: var(--color-border); background-color: var(--color-surface)"
+				placeholder="like"
+				bind:value={form.key}
+				disabled={!!editingReaction}
+			/>
+		</div>
+		<div>
 			<label for="rx-emoji" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('reactions.emoji')}</label>
 			<input
 				id="rx-emoji"
@@ -244,24 +237,11 @@
 				class="w-full rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-surface)"
 				placeholder="Like"
-				bind:value={form.name}
+				bind:value={form.label}
 			/>
 		</div>
-		<div>
-			<label for="rx-category" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('reactions.category')}</label>
-			<select
-				id="rx-category"
-				class="w-full rounded-md border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface)"
-				bind:value={form.category}
-			>
-				{#each categories as cat}
-					<option value={cat}>{cat}</option>
-				{/each}
-			</select>
-		</div>
 		<div class="flex items-center gap-2">
-			<input id="rx-active" type="checkbox" bind:checked={form.is_active} />
+			<input id="rx-active" type="checkbox" bind:checked={form.enabled} />
 			<label for="rx-active" class="text-sm">Active</label>
 		</div>
 	</div>

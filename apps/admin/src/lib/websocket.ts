@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
+import { PUBLIC_JC_WS_URL } from '$env/static/public';
 
-const WS_BASE_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080';
+const WS_BASE_URL = PUBLIC_JC_WS_URL ?? 'ws://localhost:8080';
 
 type EventCallback = (data: any) => void;
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
