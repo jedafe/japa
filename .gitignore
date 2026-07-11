@@ -60,3 +60,6 @@ test-results/
 
 # Sudo Credential
 .sudo
+
+# Python bytecode
+__pycache__/
