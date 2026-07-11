@@ -35,7 +35,7 @@
 
 	let { data } = $props();
 
-	const pageData = data as typeof data & { plans: any[] };
+	const pageData = $derived(data as typeof data & { plans: any[] });
 
 	// Map backend plans to frontend Plan type with icons
 	const planIcons: Record<string, typeof ShieldCheck> = {
@@ -44,16 +44,18 @@
 		business: Building2
 	};
 
-	const plans: Plan[] = (pageData.plans ?? []).map((p: any) => ({
-		id: p.id as PlanId,
-		name: p.name,
-		description: p.description,
-		monthlyPrice: p.monthly.amount,
-		yearlyPrice: p.yearly.amount,
-		icon: planIcons[p.id] ?? Zap,
-		features: p.features,
-		highlighted: p.highlighted
-	}));
+	const plans: Plan[] = $derived(
+		(pageData.plans ?? []).map((p: any) => ({
+			id: p.id as PlanId,
+			name: p.name,
+			description: p.description,
+			monthlyPrice: p.monthly.amount,
+			yearlyPrice: p.yearly.amount,
+			icon: planIcons[p.id] ?? Zap,
+			features: p.features,
+			highlighted: p.highlighted
+		}))
+	);
 
 	let billingCycle = $state<BillingCycle>('monthly');
 	let discountCode = $state('');

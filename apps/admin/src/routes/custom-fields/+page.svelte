@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
+	import { api, userManagementApi } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/stores/i18n.svelte';
 
@@ -40,16 +40,20 @@
 			}
 		} catch {
 			// API not available
-		} finally {
-			loading = false;
-		}
+	} finally {
+		loading = false;
+	}
+}
+
+	function handleFilter() {
+		load();
 	}
 
 	onMount(async () => {
 		try {
-			const types = await api.listCustomFieldEntityTypes();
-			if (Array.isArray(types) && types.length > 0) {
-				entityTypes = types;
+			const result = await userManagementApi.listCustomFieldEntityTypes();
+			if (result.ok && Array.isArray(result.data) && result.data.length > 0) {
+				entityTypes = result.data;
 			}
 		} catch {
 			// Keep default entity types

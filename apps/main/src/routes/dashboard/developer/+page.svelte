@@ -16,6 +16,40 @@
 
 	let availableScopes = $state<{ value: string; label: string; description: string }[]>([]);
 
+	function copyKey() {
+		if (createdKey) {
+			navigator.clipboard.writeText(createdKey);
+			copiedKey = true;
+			setTimeout(() => (copiedKey = false), 2000);
+		}
+	}
+
+	function formatDate(dateStr: string): string {
+		return new Date(dateStr).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+	}
+
+	async function revokeKey(id: string) {
+		try {
+			await api.revokeDeveloperKey(id);
+			keys = keys.filter((k) => k.id !== id);
+		} catch {
+			errorMessage = 'Failed to revoke key.';
+		}
+	}
+
+	async function createKey() {
+		if (!newKeyName.trim()) return;
+		try {
+			const result = await api.createDeveloperKey({ name: newKeyName, scopes: newKeyScopes });
+			createdKey = result.key;
+			keys = [...keys, result.key_info];
+			newKeyName = '';
+			showCreate = false;
+		} catch {
+			errorMessage = 'Failed to create key.';
+		}
+	}
+
 	onMount(async () => {
 		try {
 			keys = await api.listDeveloperKeys();

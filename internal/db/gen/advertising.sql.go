@@ -200,6 +200,35 @@ func (q *Queries) CreateOrganizationBoost(ctx context.Context, arg CreateOrganiz
 	return i, err
 }
 
+const deleteAdCampaign = `-- name: DeleteAdCampaign :exec
+DELETE FROM ad_campaigns
+WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'ended')
+`
+
+type DeleteAdCampaignParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteAdCampaign(ctx context.Context, arg DeleteAdCampaignParams) error {
+	_, err := q.db.Exec(ctx, deleteAdCampaign, arg.ID, arg.TenantID)
+	return err
+}
+
+const deleteAdSlotType = `-- name: DeleteAdSlotType :exec
+DELETE FROM ad_slot_types WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteAdSlotTypeParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteAdSlotType(ctx context.Context, arg DeleteAdSlotTypeParams) error {
+	_, err := q.db.Exec(ctx, deleteAdSlotType, arg.ID, arg.TenantID)
+	return err
+}
+
 const endOrganizationBoost = `-- name: EndOrganizationBoost :one
 UPDATE organization_boosts
 SET status = 'ended', end_date = now()
@@ -401,6 +430,40 @@ func (q *Queries) GetAdSlotTypeByName(ctx context.Context, arg GetAdSlotTypeByNa
 		&i.MaxDisplayPerPage,
 		&i.IsActive,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getCampaignStats = `-- name: GetCampaignStats :one
+SELECT
+    COALESCE(SUM(impressions), 0)::bigint AS impressions,
+    COALESCE(SUM(clicks), 0)::bigint AS clicks,
+    COUNT(DISTINCT user_id)::bigint AS unique_users,
+    COALESCE(SUM(conversions), 0)::bigint AS conversions
+FROM ad_events
+WHERE campaign_id = $1 AND tenant_id = $2
+`
+
+type GetCampaignStatsParams struct {
+	CampaignID pgtype.UUID `json:"campaign_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+}
+
+type GetCampaignStatsRow struct {
+	Impressions int64 `json:"impressions"`
+	Clicks      int64 `json:"clicks"`
+	UniqueUsers int64 `json:"unique_users"`
+	Conversions int64 `json:"conversions"`
+}
+
+func (q *Queries) GetCampaignStats(ctx context.Context, arg GetCampaignStatsParams) (GetCampaignStatsRow, error) {
+	row := q.db.QueryRow(ctx, getCampaignStats, arg.CampaignID, arg.TenantID)
+	var i GetCampaignStatsRow
+	err := row.Scan(
+		&i.Impressions,
+		&i.Clicks,
+		&i.UniqueUsers,
+		&i.Conversions,
 	)
 	return i, err
 }
@@ -910,6 +973,40 @@ func (q *Queries) UpdateAdSlotType(ctx context.Context, arg UpdateAdSlotTypePara
 	row := q.db.QueryRow(ctx, updateAdSlotType,
 		arg.MaxDisplayPerPage,
 		arg.IsActive,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i AdSlotType
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SlotName,
+		&i.Description,
+		&i.MaxDisplayPerPage,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateAdSlotTypeDetails = `-- name: UpdateAdSlotTypeDetails :one
+UPDATE ad_slot_types
+SET slot_name = $1, description = $2
+WHERE id = $3 AND tenant_id = $4
+RETURNING id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at
+`
+
+type UpdateAdSlotTypeDetailsParams struct {
+	SlotName    string      `json:"slot_name"`
+	Description *string     `json:"description"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateAdSlotTypeDetails(ctx context.Context, arg UpdateAdSlotTypeDetailsParams) (AdSlotType, error) {
+	row := q.db.QueryRow(ctx, updateAdSlotTypeDetails,
+		arg.SlotName,
+		arg.Description,
 		arg.ID,
 		arg.TenantID,
 	)

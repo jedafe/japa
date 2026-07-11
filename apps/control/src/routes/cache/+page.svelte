@@ -1,18 +1,20 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	let flushing = $state(false);
 	let message = $state('');
 	let messageType = $state<'success' | 'error' | ''>('');
+	let showFlushConfirm = $state(false);
 
 	async function flush() {
 		flushing = true;
 		message = '';
 		messageType = '';
 		try {
-			const result = await api('/admin/analytics/cache/flush', { method: 'POST' });
+			const result = await api('/control/cache/flush', { method: 'POST' });
 			if (result.ok) {
 				message = t('cache.flushed');
 				messageType = 'success';
@@ -39,7 +41,7 @@
 			class="rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
 			style="border-color: var(--color-border)"
 			disabled={flushing}
-			onclick={flush}
+			onclick={() => (showFlushConfirm = true)}
 		>
 			{flushing ? t('cache.flushing') : t('cache.flush_all')}
 		</button>
@@ -53,3 +55,12 @@
 		{/if}
 	</div>
 </div>
+
+<ConfirmModal
+	bind:open={showFlushConfirm}
+	title="Flush All Caches"
+	consequence="This will clear all cached data across all namespaces."
+	confirmText="FLUSH"
+	onConfirm={flush}
+	onCancel={() => {}}
+/>

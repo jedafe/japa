@@ -53,9 +53,8 @@ func (s *Service) EndImpersonation(ctx context.Context, adminID pgtype.UUID) err
 		INSERT INTO audit_logs (tenant_id, user_id, action, resource_type, resource_id, metadata)
 		VALUES ($1, $2, 'impersonation.end', 'user', $2, jsonb_build_object('admin_id', $2))
 	`, adminID, adminID); err != nil {
-		// EndImpersonation already cleared state — log warning but don't fail
-		// (the state is already cleared, so returning an error would be misleading).
-		slog.Warn("impersonation: failed to write audit log for end", "error", err)
+		// Rule 10: audit log failure is a compliance issue — return error so handler returns HTTP 500.
+		return fmt.Errorf("audit log for impersonation end: %w", err)
 	}
 
 	slog.Info("impersonation ended", "admin", adminID.String())

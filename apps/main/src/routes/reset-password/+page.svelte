@@ -3,6 +3,7 @@
 	import { Lock, Eye, EyeOff, Loader2, Check } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { Button, Input } from '$lib/components/ui';
 
 	let password = $state('');
 	let confirmPassword = $state('');
@@ -118,15 +119,14 @@
 							class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
 							style="color: var(--color-muted)"
 						/>
-						<input
+						<Input
 							id="password"
 							type={showPassword ? 'text' : 'password'}
 							required
 							minlength="8"
 							bind:value={password}
 							placeholder="••••••••"
-							class="w-full rounded-lg border py-2.5 pl-10 pr-10 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-							style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+							class="pl-10 pr-10"
 						/>
 						<button
 							type="button"
@@ -181,14 +181,13 @@
 							class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
 							style="color: var(--color-muted)"
 						/>
-						<input
+						<Input
 							id="confirm_password"
 							type={showConfirm ? 'text' : 'password'}
 							required
 							bind:value={confirmPassword}
 							placeholder="••••••••"
-							class="w-full rounded-lg border py-2.5 pl-10 pr-10 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-							style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+							class="pl-10 pr-10"
 						/>
 						<button
 							type="button"
@@ -206,18 +205,16 @@
 					</div>
 				</div>
 
-				<button
+				<Button
 					type="submit"
 					disabled={loading}
-					class="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-					style="background-color: var(--color-primary)"
+					loading={loading}
+					class="w-full"
 				>
-					{#if loading}
-						<Loader2 class="h-4 w-4 animate-spin" />
-					{:else}
+					{#if !loading}
 						{t('auth.reset_password')}
 					{/if}
-				</button>
+				</Button>
 			</form>
 
 			<p class="mt-6 text-center text-sm" style="color: var(--color-muted)">

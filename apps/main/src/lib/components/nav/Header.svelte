@@ -13,7 +13,9 @@
 	} from 'lucide-svelte';
 	import { DropdownMenu } from 'bits-ui';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t, locale } from '$lib/stores/i18n.svelte';
+	import { page } from '$app/state';
+	import LanguageToggle from '$lib/components/LanguageToggle.svelte';
 
 	let {
 		user = null,
@@ -70,7 +72,7 @@
 			</div>
 		</form>
 
-		<!-- Right: search link (mobile), notifications, user -->
+		<!-- Right: search link (mobile), language toggle, notifications, user -->
 		<div class="flex items-center gap-1">
 		<a
 			href="/search"
@@ -79,6 +81,8 @@
 		>
 				<Search class="h-5 w-5" style="color: var(--color-muted)" />
 			</a>
+
+			<LanguageToggle />
 
 			{#if user}
 			<a

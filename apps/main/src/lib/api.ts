@@ -1027,21 +1027,24 @@ export const api = {
 		return request<{ items: unknown[] }>(`/trending/spaces?limit=${limit}`);
 	},
 	getTrendingTags(limit = 10) {
-		return request<{ items: unknown[] }>(`/trending/tags?limit=${limit}`);
+		return request<{ items: { id: string; slug: string; name: string; post_count?: number }[] }>(`/trending/tags?limit=${limit}`);
 	},
 	getTrendingUsers(limit = 10) {
-		return request<{ items: unknown[] }>(`/trending/users?limit=${limit}`);
+		return request<{ items: { id: string; username: string; display_name?: string; avatar_url?: string }[] }>(`/trending/users?limit=${limit}`);
 	},
 
 	// ── Suggestions / Discovery (AUDIT-FE wiring) ─────────────────────────────
 	getSuggestedSpaces() {
-		return request<{ items: unknown[] }>('/suggestions/spaces');
+		return request<{ items: { id: string; slug: string; name: string; member_count?: number }[] }>('/suggestions/spaces');
 	},
 	getSuggestedUsers() {
-		return request<{ items: unknown[] }>('/suggestions/users');
+		return request<{ items: { id: string; username: string; display_name?: string; avatar_url?: string }[] }>('/suggestions/users');
 	},
 	getSuggestedTags() {
-		return request<{ items: unknown[] }>('/suggestions/tags');
+		return request<{ items: { id: string; slug: string; name: string; post_count?: number }[] }>('/suggestions/tags');
+	},
+	followUser(userId: string) {
+		return request<{ followed: boolean }>(`/users/${userId}/follow`, { method: 'POST' });
 	},
 
 	// ── Web Push (AUDIT-FE wiring) ────────────────────────────────────────────
@@ -1248,6 +1251,9 @@ export const api = {
 	geoLookup(query: string) {
 		return request<{ results: GeoLocation[] }>(`/geo/lookup?q=${encodeURIComponent(query)}`);
 	},
+	geoCountries() {
+		return request<Array<{ code: string; name: string }>>('/geo/countries');
+	},
 
 	// ── Space types & permission presets (AUDIT-FE closing gap) ───────────────
 	listSpaceTypes() {
@@ -1286,7 +1292,24 @@ export const api = {
 	// ── Developer API scopes (AUDIT-FE-015) ───────────────────────────────
 	listDeveloperScopes() {
 		return request<Array<{ value: string; label: string; description: string }>>('/developer/scopes');
-	}
+	},
+
+	// ── Page Builder ─────────────────────────────────────────────────────
+	createPage(data: { title: string; slug: string; page_schema: Record<string, unknown> }) {
+		return request<{ id: string; title: string; slug: string }>('/pages', {
+			method: 'POST',
+			body: JSON.stringify(data)
+		});
+	},
+	updatePage(id: string, data: { title?: string; page_schema?: Record<string, unknown> }) {
+		return request<{ id: string }>(`/pages/${id}`, {
+			method: 'PATCH',
+			body: JSON.stringify(data)
+		});
+	},
+	deletePage(id: string) {
+		return request<{ deleted: boolean }>(`/pages/${id}`, { method: 'DELETE' });
+	},
 };
 
 // Forum types

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Key, Search, Ban, Trash2 } from 'lucide-svelte';
 
 	interface AdminApiKey {
@@ -21,6 +22,8 @@
 	let loading = $state(true);
 	let filter = $state('');
 	let errorMessage = $state('');
+	let confirmOpen = $state(false);
+	let confirmAction = $state<{ type: 'revoke' | 'suspend'; key: AdminApiKey } | null>(null);
 
 	onMount(async () => {
 		const result = await api<AdminApiKey[]>('/control/api-keys');
@@ -43,7 +46,7 @@
 
 	async function revokeKey(id: string) {
 		if (!confirm('Permanently revoke this key? The developer will lose access immediately.')) return;
-		const result = await api(`/admin/api-keys/${id}/revoke`, { method: 'POST' });
+		const result = await api(`/control/api-keys/${id}/revoke`, { method: 'POST' });
 		if (result.ok) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'revoked' } : k));
 		} else {
@@ -182,7 +185,7 @@
 									<button
 										class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors"
 										style="color: #f59e0b"
-										onclick={() => suspendKey(key.id)}
+										onclick={() => (confirmAction = { type: 'suspend', key })}
 									>
 										<Ban class="h-3 w-3" />
 										Suspend
@@ -192,7 +195,7 @@
 									<button
 										class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors"
 										style="color: var(--color-danger)"
-										onclick={() => revokeKey(key.id)}
+										onclick={() => (confirmAction = { type: 'revoke', key })}
 									>
 										<Trash2 class="h-3 w-3" />
 										Revoke
@@ -205,4 +208,26 @@
 			</tbody>
 		</table>
 	</div>
+{/if}
+
+{#if confirmAction}
+	{#if confirmAction.type === 'revoke'}
+		<ConfirmModal
+			bind:open={confirmOpen}
+			title="Revoke API Key"
+			consequence="Permanently revoke key '{confirmAction.key.name}' ({confirmAction.key.key_prefix}...). This cannot be undone."
+			confirmText="REVOKE"
+			onConfirm={async () => { await revokeKey(confirmAction!.key.id); confirmAction = null; }}
+			onCancel={() => (confirmAction = null)}
+		/>
+	{:else}
+		<ConfirmModal
+			bind:open={confirmOpen}
+			title="Suspend API Key"
+			consequence="Suspend key '{confirmAction.key.name}' ({confirmAction.key.key_prefix}...). The key owner will need to generate a new key."
+			confirmText="SUSPEND"
+			onConfirm={async () => { await suspendKey(confirmAction!.key.id); confirmAction = null; }}
+			onCancel={() => (confirmAction = null)}
+		/>
+	{/if}
 {/if}

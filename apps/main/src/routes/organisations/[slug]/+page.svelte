@@ -4,8 +4,8 @@
 
 	let { data } = $props();
 
-	let org = $state(data.org);
-	let members = $state(data.members);
+	let org = $derived(data.org);
+	let members = $derived(data.members);
 
 	// Invitation state
 	let showInvite = $state(false);
@@ -128,13 +128,22 @@
 			<h2 class="flex items-center gap-2 text-lg font-semibold" style="color: var(--color-foreground)">
 				<Users class="h-5 w-5" /> Members
 			</h2>
-			<button
-				onclick={() => (showInvite = !showInvite)}
-				class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-				style="background: var(--color-primary)"
-			>
-				<UserPlus class="h-4 w-4" /> Invite
-			</button>
+			<div class="flex gap-2">
+				<a
+					href="/organisations/{org.slug}/manage"
+					class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+					style="border-color: var(--color-border)"
+				>
+					<Shield class="h-4 w-4" /> Manage
+				</a>
+				<button
+					onclick={() => (showInvite = !showInvite)}
+					class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+					style="background: var(--color-primary)"
+				>
+					<UserPlus class="h-4 w-4" /> Invite
+				</button>
+			</div>
 		</div>
 
 		{#if inviteMessage}

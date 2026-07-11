@@ -27,16 +27,28 @@ export interface DocPageSummary {
     created_at: string;
 }
 
-export async function listDocPages(audience: string): Promise<DocPageSummary[]> {
-    const res = await fetch(`${API_BASE}/docs/${audience}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+export async function listDocPages(audience: string, token?: string): Promise<DocPageSummary[]> {
+    const res = await fetch(`${API_BASE}/docs/${audience}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!res.ok) {
+        const err = new Error(`HTTP ${res.status}`) as Error & { status: number };
+        err.status = res.status;
+        throw err;
+    }
     const body = await res.json();
     return body.data ?? body ?? [];
 }
 
-export async function getDocPage(audience: string, slug: string): Promise<DocPage> {
-    const res = await fetch(`${API_BASE}/docs/${audience}/${slug}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+export async function getDocPage(audience: string, slug: string, token?: string): Promise<DocPage> {
+    const res = await fetch(`${API_BASE}/docs/${audience}/${slug}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!res.ok) {
+        const err = new Error(`HTTP ${res.status}`) as Error & { status: number };
+        err.status = res.status;
+        throw err;
+    }
     const body = await res.json();
     return body.data ?? body;
 }

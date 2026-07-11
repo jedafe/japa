@@ -7,7 +7,7 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	if (token) headers.Authorization = `Bearer ${token}`;
 
 	try {
-		const res = await fetch(`${API_BASE}/admin/analytics/overview`, { headers });
+		const res = await fetch(`${API_BASE}/control/health`, { headers });
 		if (!res.ok) return { initial: null };
 		const body = await res.json();
 		return { initial: body.data ?? body };

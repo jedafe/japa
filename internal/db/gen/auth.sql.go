@@ -376,6 +376,32 @@ func (q *Queries) GetEmailVerificationByHash(ctx context.Context, arg GetEmailVe
 	return i, err
 }
 
+const getEmailVerificationByHashGlobal = `-- name: GetEmailVerificationByHashGlobal :one
+SELECT tenant_id, user_id, expires_at, verified_at
+FROM email_verifications
+WHERE token_hash = $1
+LIMIT 1
+`
+
+type GetEmailVerificationByHashGlobalRow struct {
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
+}
+
+func (q *Queries) GetEmailVerificationByHashGlobal(ctx context.Context, tokenHash string) (GetEmailVerificationByHashGlobalRow, error) {
+	row := q.db.QueryRow(ctx, getEmailVerificationByHashGlobal, tokenHash)
+	var i GetEmailVerificationByHashGlobalRow
+	err := row.Scan(
+		&i.TenantID,
+		&i.UserID,
+		&i.ExpiresAt,
+		&i.VerifiedAt,
+	)
+	return i, err
+}
+
 const getOAuthAccountByProvider = `-- name: GetOAuthAccountByProvider :one
 
 SELECT id, tenant_id, user_id, provider, provider_user_id, created_at
@@ -470,6 +496,32 @@ func (q *Queries) GetPasswordResetTokenByHash(ctx context.Context, arg GetPasswo
 	return i, err
 }
 
+const getPasswordResetTokenByHashGlobal = `-- name: GetPasswordResetTokenByHashGlobal :one
+SELECT tenant_id, user_id, expires_at, used_at
+FROM password_reset_tokens
+WHERE token_hash = $1
+LIMIT 1
+`
+
+type GetPasswordResetTokenByHashGlobalRow struct {
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+}
+
+func (q *Queries) GetPasswordResetTokenByHashGlobal(ctx context.Context, tokenHash string) (GetPasswordResetTokenByHashGlobalRow, error) {
+	row := q.db.QueryRow(ctx, getPasswordResetTokenByHashGlobal, tokenHash)
+	var i GetPasswordResetTokenByHashGlobalRow
+	err := row.Scan(
+		&i.TenantID,
+		&i.UserID,
+		&i.ExpiresAt,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
 const getRecentPasswordHashes = `-- name: GetRecentPasswordHashes :many
 SELECT password_hash
 FROM password_history
@@ -516,6 +568,29 @@ type GetRefreshTokenByHashParams struct {
 
 func (q *Queries) GetRefreshTokenByHash(ctx context.Context, arg GetRefreshTokenByHashParams) (RefreshToken, error) {
 	row := q.db.QueryRow(ctx, getRefreshTokenByHash, arg.TokenHash, arg.TenantID)
+	var i RefreshToken
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getRefreshTokenByHashGlobal = `-- name: GetRefreshTokenByHashGlobal :one
+SELECT id, tenant_id, user_id, token_hash, expires_at, revoked_at, created_at, updated_at
+FROM refresh_tokens
+WHERE token_hash = $1
+LIMIT 1
+`
+
+func (q *Queries) GetRefreshTokenByHashGlobal(ctx context.Context, tokenHash string) (RefreshToken, error) {
+	row := q.db.QueryRow(ctx, getRefreshTokenByHashGlobal, tokenHash)
 	var i RefreshToken
 	err := row.Scan(
 		&i.ID,
@@ -762,6 +837,17 @@ func (q *Queries) ListAPIKeysByUser(ctx context.Context, arg ListAPIKeysByUserPa
 	return items, nil
 }
 
+const markEmailVerifiedByUserID = `-- name: MarkEmailVerifiedByUserID :exec
+UPDATE users
+SET email_verified_at = now(), updated_at = now()
+WHERE id = $1 AND email_verified_at IS NULL
+`
+
+func (q *Queries) MarkEmailVerifiedByUserID(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markEmailVerifiedByUserID, userID)
+	return err
+}
+
 const revokeAPIKey = `-- name: RevokeAPIKey :exec
 UPDATE api_keys
 SET status = 'revoked', updated_at = now()
@@ -811,6 +897,17 @@ func (q *Queries) RevokeRefreshToken(ctx context.Context, arg RevokeRefreshToken
 	return err
 }
 
+const revokeRefreshTokenByHash = `-- name: RevokeRefreshTokenByHash :exec
+UPDATE refresh_tokens
+SET revoked_at = now(), updated_at = now()
+WHERE token_hash = $1 AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeRefreshTokenByHash(ctx context.Context, tokenHash string) error {
+	_, err := q.db.Exec(ctx, revokeRefreshTokenByHash, tokenHash)
+	return err
+}
+
 const unlinkOAuthAccount = `-- name: UnlinkOAuthAccount :exec
 DELETE FROM oauth_accounts
 WHERE tenant_id = $1 AND user_id = $2 AND provider = $3
@@ -827,6 +924,22 @@ func (q *Queries) UnlinkOAuthAccount(ctx context.Context, arg UnlinkOAuthAccount
 	return err
 }
 
+const updateUserPasswordByUserID = `-- name: UpdateUserPasswordByUserID :exec
+UPDATE users
+SET password_hash = $1, updated_at = now()
+WHERE id = $2
+`
+
+type UpdateUserPasswordByUserIDParams struct {
+	PasswordHash *string     `json:"password_hash"`
+	UserID       pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) UpdateUserPasswordByUserID(ctx context.Context, arg UpdateUserPasswordByUserIDParams) error {
+	_, err := q.db.Exec(ctx, updateUserPasswordByUserID, arg.PasswordHash, arg.UserID)
+	return err
+}
+
 const usePasswordResetToken = `-- name: UsePasswordResetToken :exec
 UPDATE password_reset_tokens
 SET used_at = now()
@@ -840,6 +953,17 @@ type UsePasswordResetTokenParams struct {
 
 func (q *Queries) UsePasswordResetToken(ctx context.Context, arg UsePasswordResetTokenParams) error {
 	_, err := q.db.Exec(ctx, usePasswordResetToken, arg.ID, arg.TenantID)
+	return err
+}
+
+const usePasswordResetTokenByHash = `-- name: UsePasswordResetTokenByHash :exec
+UPDATE password_reset_tokens
+SET used_at = now()
+WHERE token_hash = $1 AND used_at IS NULL
+`
+
+func (q *Queries) UsePasswordResetTokenByHash(ctx context.Context, tokenHash string) error {
+	_, err := q.db.Exec(ctx, usePasswordResetTokenByHash, tokenHash)
 	return err
 }
 

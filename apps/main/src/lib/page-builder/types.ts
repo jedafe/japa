@@ -30,4 +30,4 @@ export interface PageSchema {
 }
 
 /** Valid block categories used to group blocks in the picker UI. */
-export type BlockCategory = 'layout' | 'content' | 'media' | 'interactive' | 'data';
+export type BlockCategory = 'layout' | 'content' | 'media' | 'interactive' | 'data' | 'navigation';
