@@ -40,7 +40,7 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-	const prefsResult = await apiFetch<PreferenceEntry[]>('/notification-preferences', { headers });
+	const prefsResult = await apiFetch<PreferenceEntry[]>('/me/notification-preferences', { headers });
 
 	let prefs: PrefsMap = { ...DEFAULT_PREFS };
 
@@ -74,8 +74,8 @@ export const actions: Actions = {
 				push: formData.get(`${nType}_push`) === 'on'
 			};
 
-			const result = await apiFetch(`/notification-preferences/${nType}`, {
-				method: 'PUT',
+			const result = await apiFetch(`/me/notification-preferences/${nType}`, {
+				method: 'PATCH',
 				headers,
 				body: JSON.stringify(body)
 			});

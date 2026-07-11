@@ -5,7 +5,7 @@ import type { FeatureFlags } from '$lib/types';
  * Base URL for the internal Go backend API.
  * Configured via the PRIVATE_API_BASE_URL environment variable.
  */
-export const API_BASE_URL = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080/api/v1';
+export const API_BASE_URL = `${env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080'}/api/v1`;
 
 export interface ApiResponse<T> {
 	ok: boolean;
