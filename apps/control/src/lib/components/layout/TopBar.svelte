@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import { PUBLIC_JC_ENV } from '$env/static/public';
 	import { user } from '$lib/stores/auth';
 	import { theme } from '$lib/stores/theme';
@@ -8,14 +9,6 @@
 
 	function toggleTheme() {
 		theme.update((v) => (v === 'dark' ? 'light' : 'dark'));
-	}
-
-	function logout() {
-		const form = document.createElement('form');
-		form.method = 'POST';
-		form.action = '/logout';
-		document.body.appendChild(form);
-		form.submit();
 	}
 </script>
 
@@ -51,13 +44,14 @@
 
 				{#if showDropdown}
 					<div class="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-						<button
-							type="button"
-							class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700"
-							onclick={logout}
-						>
-							Logout
-						</button>
+						<form method="POST" action="/logout" use:enhance>
+							<button
+								type="submit"
+								class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700"
+							>
+								Logout
+							</button>
+						</form>
 					</div>
 				{/if}
 			</div>
