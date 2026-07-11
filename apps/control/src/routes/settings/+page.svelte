@@ -17,7 +17,7 @@
 
 	async function load() {
 		loading = true;
-		const result = await api<SystemSetting[]>('/control/settings');
+		const result = await api<SystemSetting[]>('/control/system-settings');
 		if (result.ok) {
 			settings = result.data;
 		}
@@ -27,8 +27,8 @@
 	async function saveSetting(key: string, value: string) {
 		saving = key;
 		message = '';
-		const result = await api(`/control/settings/${key}`, {
-			method: 'PUT',
+		const result = await api(`/control/system-settings/${key}`, {
+			method: 'PATCH',
 			body: { value }
 		});
 		if (result.ok) {
