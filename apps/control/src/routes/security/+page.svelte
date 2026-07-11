@@ -40,7 +40,7 @@
 				results: ScanResult[];
 				page: number;
 				total_pages: number;
-			}>(`/admin/analytics/security?page=${page}${sev}`);
+			}>(`/control/security?page=${page}${sev}`);
 			if (result.ok) {
 				results = result.data.results;
 				totalPages = result.data.total_pages;
@@ -58,7 +58,7 @@
 	async function resolveFinding(id: string) {
 		errorMessage = '';
 		try {
-			await api(`/admin/analytics/security/${id}/resolve`, { method: 'POST' });
+			await api(`/control/security/${id}/resolve`, { method: 'POST' });
 			await load();
 		} catch {
 			errorMessage = 'Failed to resolve finding. Please try again.';

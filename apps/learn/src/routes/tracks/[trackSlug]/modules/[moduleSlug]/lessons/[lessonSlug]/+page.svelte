@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, type TrackDetail, type Lesson } from '$lib/api';
+	import { api, type TrackDetail, type Lesson, type QuizQuestion, type QuizResult } from '$lib/api';
 	import {
 		CheckCircle2,
 		Circle,
@@ -9,7 +9,11 @@
 		BookOpen,
 		Clock,
 		CheckCheck,
-		Loader2
+		Loader2,
+		Play,
+		Video,
+		XCircle,
+		CheckCircle
 	} from 'lucide-svelte';
 
 	let { data } = $props();
@@ -26,13 +30,17 @@
 	const currentModule = $derived(data.currentModule);
 	const allLessons = $derived(data.allLessons);
 
+	// Quiz state
+	let quizAnswers = $state<Record<string, number>>({});
+	let quizSubmitted = $state(false);
+	let quizResult = $state<QuizResult | null>(null);
+	let quizLoading = $state(false);
+	let quizError = $state('');
+
 	onMount(async () => {
 		try {
 			const progress = await api.getProgress(track.id);
-			completedLessons = new Set(progress.completed_lessons ?? []);
-			const total = track.lesson_count;
-			const completed = progress.completed_lessons?.length ?? 0;
-			progressPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
+			progressPercent = progress.percent;
 		} catch {
 			// No progress yet
 		}
@@ -42,7 +50,7 @@
 	async function markComplete() {
 		markingComplete = true;
 		try {
-			await api.updateProgress(lesson.id, { completed: true });
+			await api.completeLesson(lesson.id);
 			isCompleted = true;
 			completedLessons = new Set([...completedLessons, lesson.id]);
 			const total = track.lesson_count;
@@ -57,6 +65,28 @@
 
 	function isLessonDone(lessonId: string): boolean {
 		return completedLessons.has(lessonId);
+	}
+
+	async function submitQuiz() {
+		if (!lesson.quiz_id) return;
+		quizLoading = true;
+		quizError = '';
+		try {
+			quizResult = await api.submitQuiz(lesson.quiz_id, quizAnswers);
+			quizSubmitted = true;
+		} catch (e) {
+			quizError = e instanceof Error ? e.message : 'Failed to submit quiz';
+		} finally {
+			quizLoading = false;
+		}
+	}
+
+	function getVideoEmbedUrl(url: string): string {
+		const youtubeMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&]+)/);
+		if (youtubeMatch) return `https://www.youtube.com/embed/${youtubeMatch[1]}`;
+		const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+		if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+		return url;
 	}
 </script>
 
@@ -105,12 +135,109 @@
 			</div>
 
 			<!-- Lesson body -->
+			{#if lesson.video_url}
+				<div class="mb-6">
+					<div class="aspect-video overflow-hidden rounded-xl" style="border-color: var(--color-border); background-color: var(--color-surface)">
+						<iframe
+							src={getVideoEmbedUrl(lesson.video_url)}
+							class="h-full w-full"
+							allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+							allowfullscreen
+							title={lesson.title}
+						></iframe>
+					</div>
+				</div>
+			{/if}
+
 			<div
 				class="prose max-w-none"
 				style="color: var(--color-foreground)"
 			>
 				{@html lesson.body}
 			</div>
+
+			<!-- Quiz section -->
+			{#if lesson.quiz && lesson.quiz.length > 0}
+				<div class="mt-8 rounded-xl border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
+					<h3 class="mb-4 flex items-center gap-2 text-lg font-semibold">
+						<BookOpen class="h-5 w-5" style="color: var(--color-primary)" />
+						Knowledge Check
+					</h3>
+					<div class="space-y-6">
+						{#each lesson.quiz as question, qi}
+							<div>
+								<p class="mb-3 text-sm font-medium">{qi + 1}. {question.question}</p>
+								<div class="space-y-2">
+									{#each question.options as option, oi}
+										<label
+											class="flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-2.5 text-sm transition-colors"
+											style="border-color: {quizSubmitted
+												? oi === question.correct_index
+													? 'var(--color-success)'
+													: quizAnswers[question.id] === oi
+														? 'var(--color-danger)'
+														: 'var(--color-border)'
+												: quizAnswers[question.id] === oi
+													? 'var(--color-primary)'
+													: 'var(--color-border)'}; background-color: {quizSubmitted
+												? oi === question.correct_index
+													? 'color-mix(in srgb, var(--color-success) 8%, transparent)'
+													: quizAnswers[question.id] === oi
+														? 'color-mix(in srgb, var(--color-danger) 8%, transparent)'
+														: 'transparent'
+												: 'transparent'}"
+										>
+											<input
+												type="radio"
+												name="q-{question.id}"
+												value={oi}
+												disabled={quizSubmitted}
+												class="h-4 w-4"
+												onchange={() => { quizAnswers[question.id] = oi; }}
+											/>
+											{option}
+										</label>
+									{/each}
+								</div>
+								{#if quizSubmitted && question.explanation}
+									<p class="mt-2 text-xs" style="color: var(--color-muted)">{question.explanation}</p>
+								{/if}
+							</div>
+						{/each}
+					</div>
+					<div class="mt-6 flex items-center gap-4">
+						{#if !quizSubmitted}
+							<button
+								class="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+								style="background-color: var(--color-primary)"
+								disabled={Object.keys(quizAnswers).length < (lesson.quiz?.length ?? 0) || quizLoading}
+								onclick={submitQuiz}
+							>
+								{#if quizLoading}
+									<Loader2 class="h-4 w-4 animate-spin" />
+									Submitting...
+								{:else}
+									<CheckCheck class="h-4 w-4" />
+									Submit Quiz
+								{/if}
+							</button>
+							{#if quizError}
+								<p class="text-sm" style="color: var(--color-danger)">{quizError}</p>
+							{/if}
+						{:else if quizResult}
+							<div class="flex items-center gap-2 text-sm font-medium" style="color: {quizResult.passed ? 'var(--color-success)' : 'var(--color-danger)'}">
+								{#if quizResult.passed}
+									<CheckCircle class="h-5 w-5" />
+									{quizResult.score}% — Great job! ({quizResult.correct_answers}/{quizResult.total} correct)
+								{:else}
+									<XCircle class="h-5 w-5" />
+									{quizResult.score}% — Try again ({quizResult.correct_answers}/{quizResult.total} correct)
+								{/if}
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/if}
 
 			<!-- Mark complete + navigation -->
 			<div class="mt-8 space-y-4">

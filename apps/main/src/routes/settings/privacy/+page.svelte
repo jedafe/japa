@@ -2,6 +2,7 @@
 	import { ArrowLeft, Shield, Download, Trash2, Loader2, CheckCircle2 } from 'lucide-svelte';
 	import { api, getToken, type ConsentCategory } from '$lib/api';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 
 	let consents = $state<ConsentCategory[]>([]);
 	let loading = $state(true);
@@ -76,8 +77,8 @@
 		deleteError = '';
 		try {
 			await api.requestAccountDeletion();
-			document.cookie = 'jc_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
-			window.location.href = '/';
+			// Redirect to server-side logout to properly clear the httpOnly cookie.
+			goto('/logout');
 		} catch (err) {
 			deleteError = err instanceof Error ? err.message : 'Failed to request account deletion.';
 		} finally {

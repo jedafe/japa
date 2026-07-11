@@ -38,3 +38,20 @@ SET status = @status, reviewed_by = @reviewed_by, resolution_note = @resolution_
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
     status, reviewed_by, resolution_note, resolved_at, created_at;
+
+-- name: CountPendingReportsForEntity :one
+SELECT COUNT(*)::int FROM content_reports
+WHERE tenant_id = @tenant_id
+  AND entity_type = @entity_type
+  AND entity_id = @entity_id
+  AND status = 'pending';
+
+-- name: AutoHideContent :one
+UPDATE contents
+SET auto_hidden = true, auto_hidden_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND auto_hidden = false
+RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+          field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+          created_at, updated_at;

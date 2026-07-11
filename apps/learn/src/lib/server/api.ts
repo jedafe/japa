@@ -8,6 +8,7 @@ export const API_BASE_URL = (env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080'
 
 export interface ApiResponse<T> {
 	ok: boolean;
+	status: number;
 	data?: T;
 	error?: string;
 }
@@ -33,16 +34,16 @@ export async function apiFetch<T>(
 	});
 
 	if (!res.ok) {
-		return { ok: false, error: `API request failed: ${res.status}` };
+		return { ok: false, status: res.status, error: `API request failed: ${res.status}` };
 	}
 
 	try {
 		const body = await res.json();
 		if (body.error) {
-			return { ok: false, error: body.error.message || 'API error' };
+			return { ok: false, status: res.status, error: body.error.message || 'API error' };
 		}
-		return { ok: true, data: body.data };
+		return { ok: true, status: res.status, data: body.data };
 	} catch {
-		return { ok: false, error: 'Invalid JSON response' };
+		return { ok: false, status: res.status, error: 'Invalid JSON response' };
 	}
 }

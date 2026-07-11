@@ -127,9 +127,12 @@ WHERE id = @id AND tenant_id = @tenant_id;
 -- name: ReactivateSubscription :one
 UPDATE subscriptions
 SET status = 'active', cancelled_at = NULL, updated_at = now()
-WHERE user_id = @user_id AND tenant_id = @tenant_id AND status = 'cancelled'
-ORDER BY updated_at DESC
-LIMIT 1
+WHERE id = (
+    SELECT s.id FROM subscriptions s
+    WHERE s.user_id = @user_id AND s.tenant_id = @tenant_id AND s.status = 'cancelled'
+    ORDER BY s.updated_at DESC
+    LIMIT 1
+)
 RETURNING *;
 
 -- =====================
@@ -167,9 +170,9 @@ WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: UpdateDiscountCode :one
 UPDATE discount_codes
-SET code = COALESCE(NULLIF(@new_code, ''), code), updated_at = now()
+SET code = COALESCE(NULLIF(@new_code, ''), code)
 WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, code, updated_at;
+RETURNING id, code;
 
 -- =====================
 -- Discount Code Uses

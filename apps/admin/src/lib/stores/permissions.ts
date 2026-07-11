@@ -31,13 +31,7 @@ export function hasAnyPermission(permKeys: string[]): boolean {
 	return result;
 }
 
-export async function fetchPermissions(token: string | null): Promise<void> {
-	if (!token) {
-		permissions.set([]);
-		permissionsLoaded.set(true);
-		return;
-	}
-
+export async function fetchPermissions(_token?: string | null): Promise<void> {
 	const result = await apiFetch<{ permissions: string[] }>('/me/permissions');
 
 	if (result.data) {

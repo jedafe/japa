@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { GraduationCap, Mail, Lock, Loader2 } from 'lucide-svelte';
+	import { GraduationCap, Mail, Lock } from 'lucide-svelte';
+	import { Button, Input, Spinner } from '$lib/components/ui';
 
 	let { form } = $props();
 
@@ -53,14 +54,13 @@
 						class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
 						style="color: var(--color-muted)"
 					/>
-					<input
+					<Input
 						id="email"
 						type="email"
 						required
 						bind:value={email}
 						placeholder="you@example.com"
-						class="w-full rounded-lg border py-2.5 pl-10 pr-4 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-						style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+						class="pl-10"
 					/>
 				</div>
 			</div>
@@ -74,31 +74,30 @@
 						class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
 						style="color: var(--color-muted)"
 					/>
-					<input
+					<Input
 						id="password"
 						type="password"
 						required
 						bind:value={password}
 						placeholder="••••••••"
-						class="w-full rounded-lg border py-2.5 pl-10 pr-4 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-						style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+						class="pl-10"
 					/>
 				</div>
 			</div>
 
-			<button
+			<Button
 				type="submit"
+				variant="primary"
 				disabled={loading}
-				class="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-				style="background-color: var(--color-primary)"
+				loading={loading}
+				class="w-full"
 			>
 				{#if loading}
-					<Loader2 class="h-4 w-4 animate-spin" />
 					Signing in...
 				{:else}
 					Sign in
 				{/if}
-			</button>
+			</Button>
 		</form>
 
 		<p class="mt-6 text-center text-sm" style="color: var(--color-muted)">

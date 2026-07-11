@@ -1,7 +1,7 @@
 import type { LayoutServerLoad } from './$types';
 import { apiFetch } from '$lib/server/api';
 
-export const load: LayoutServerLoad = async ({ locals, cookies }) => {
+export const load: LayoutServerLoad = async ({ locals, cookies, url }) => {
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
@@ -29,7 +29,10 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
 		}
 	}
 
-	const locale = cookies.get('jc_locale')
+	// Detect locale from URL path prefix (/fr/...) or fall back to cookie/user preference
+	const pathLocale = url.pathname.startsWith('/fr') ? 'fr' : null;
+	const locale = pathLocale
+		?? cookies.get('jc_locale')
 		?? (locals.user as any)?.language
 		?? 'en';
 

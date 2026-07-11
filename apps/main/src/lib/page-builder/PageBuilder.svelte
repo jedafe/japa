@@ -38,6 +38,9 @@
 		form: async () => (await import('./blocks/FormEmbedBlock.svelte')).default,
 		spacer: async () => (await import('./blocks/SpacerBlock.svelte')).default,
 		dynamic_listing: async () => (await import('./blocks/DynamicListingBlock.svelte')).default,
+		countdown: async () => (await import('./blocks/CountdownBlock.svelte')).default,
+		table_of_contents: async () => (await import('./blocks/TocBlock.svelte')).default,
+		slider: async () => (await import('./blocks/SliderBlock.svelte')).default,
 	};
 
 	// ── DnD event handlers ──────────────────────────────────────────
