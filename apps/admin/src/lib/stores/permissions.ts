@@ -31,7 +31,7 @@ export function hasAnyPermission(permKeys: string[]): boolean {
 	return result;
 }
 
-export async function fetchPermissions(_token?: string | null): Promise<void> {
+export async function fetchPermissions(): Promise<void> {
 	const result = await apiFetch<{ permissions: string[] }>('/me/permissions');
 
 	if (result.data) {
