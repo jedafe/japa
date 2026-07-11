@@ -49,7 +49,7 @@
 		creating = true;
 		createError = '';
 
-		const result = await apiFetch<CreateApiKeyResponse>('/developer/keys', {
+		const result = await apiFetch<CreateApiKeyResponse>('/me/api-keys', {
 			method: 'POST',
 			body: JSON.stringify({
 				name: newName.trim(),
@@ -90,7 +90,7 @@
 
 	async function revokeKey(id: string) {
 		revokingId = id;
-		const result = await apiFetch(`/developer/keys/${id}`, { method: 'DELETE' });
+		const result = await apiFetch(`/me/api-keys/${id}`, { method: 'DELETE' });
 		if (result.status === 200 || result.status === 204) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'revoked' } : k));
 		}

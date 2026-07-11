@@ -1,6 +1,9 @@
 import { env } from '$env/dynamic/private';
 
-export const API_BASE = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080/api/v1';
+export const API_BASE = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
+
+/** Base URL with /api/v1 prefix for API routes. */
+export const API_V1_BASE = `${API_BASE}/api/v1`;
 
 export interface DocPage {
     id: string;
@@ -28,7 +31,7 @@ export interface DocPageSummary {
 }
 
 export async function listDocPages(audience: string, token?: string): Promise<DocPageSummary[]> {
-    const res = await fetch(`${API_BASE}/docs/${audience}`, {
+    const res = await fetch(`${API_V1_BASE}/docs/${audience}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
     if (!res.ok) {
@@ -41,7 +44,7 @@ export async function listDocPages(audience: string, token?: string): Promise<Do
 }
 
 export async function getDocPage(audience: string, slug: string, token?: string): Promise<DocPage> {
-    const res = await fetch(`${API_BASE}/docs/${audience}/${slug}`, {
+    const res = await fetch(`${API_V1_BASE}/docs/${audience}/${slug}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
     if (!res.ok) {
