@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
+import { API_BASE } from '$lib/server/api';
 
 export const actions: Actions = {
 	default: async ({ request, cookies, fetch }) => {
@@ -11,10 +12,12 @@ export const actions: Actions = {
 			return fail(400, { error: 'Email and password are required.' });
 		}
 
-		const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
-
+		let token: string | undefined;
+		// Keep the network call in its own try/catch. In SvelteKit 2
+		// redirect() throws, so it must live OUTSIDE this block — otherwise a
+		// successful login's redirect is caught here and turned into a 502.
 		try {
-			const res = await fetch(`${apiBase}/auth/login`, {
+			const res = await fetch(`${API_BASE}/auth/login`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ email, password })
@@ -28,23 +31,24 @@ export const actions: Actions = {
 				});
 			}
 
-			const token = body.data?.token;
-			if (!token) {
-				return fail(500, { error: 'Login succeeded but no token was returned.' });
-			}
-
-			cookies.set('jc_token', token, {
-				path: '/',
-				httpOnly: true,
-				secure: true,
-				sameSite: 'lax',
-				domain: '.japaconnect.com',
-				maxAge: 60 * 60 * 24 * 7
-			});
-
-			return redirect(302, '/');
+			token = body.data?.token;
 		} catch {
 			return fail(502, { error: 'Could not reach authentication service.' });
 		}
+
+		if (!token) {
+			return fail(500, { error: 'Login succeeded but no token was returned.' });
+		}
+
+		cookies.set('jc_token', token, {
+			path: '/',
+			httpOnly: true,
+			secure: true,
+			sameSite: 'lax',
+			domain: '.japaconnect.com',
+			maxAge: 60 * 60 * 24 * 7
+		});
+
+		redirect(302, '/');
 	}
 };
