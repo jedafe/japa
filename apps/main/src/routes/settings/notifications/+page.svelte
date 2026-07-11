@@ -51,7 +51,7 @@
 				pushSubscribed = false;
 			} else {
 				const keyResult = await api.getPushVapidKey();
-				const applicationServerKey = urlB64ToUint8Array(keyResult.public_key);
+				const applicationServerKey = urlB64ToUint8Array(keyResult.public_key) as BufferSource;
 				const sub = await reg.pushManager.subscribe({
 					userVisibleOnly: true,
 					applicationServerKey

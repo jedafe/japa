@@ -3,7 +3,8 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import { api, type QueueInfo, type QueueStats } from '$lib/api';
+	import { api } from '$lib/api';
+	import type { QueueInfo, QueueStats } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { ListTodo, Clock, Play, CheckCircle, XCircle, RefreshCw, X, Loader2 } from 'lucide-svelte';
 
@@ -17,16 +18,20 @@
 	let refreshing = $state(false);
 	let secondsAgo = $state(0);
 
-	interface OverviewResponse {
-		queues?: QueueStats;
+	interface QueueResponse {
+		queues?: QueueInfo[];
+		total_pending: number;
+		total_active: number;
+		total_completed_24h: number;
+		total_failed_24h: number;
 	}
 
 	async function refresh() {
 		refreshing = true;
 		try {
-			const result = await api<OverviewResponse>('/admin/analytics/overview');
+			const result = await api<QueueResponse>('/control/queue/stats');
 			if (result.ok) {
-				queueStats = result.data.queues ?? null;
+				queueStats = { queues: result.data.queues ?? [], ...result.data } as QueueStats;
 				apiAvailable = true;
 				lastRefresh = new Date();
 				secondsAgo = 0;

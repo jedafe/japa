@@ -9,3 +9,6 @@ export { default as ComparisonBlock } from './ComparisonBlock.svelte';
 export { default as FormEmbedBlock } from './FormEmbedBlock.svelte';
 export { default as SpacerBlock } from './SpacerBlock.svelte';
 export { default as DynamicListingBlock } from './DynamicListingBlock.svelte';
+export { default as CountdownBlock } from './CountdownBlock.svelte';
+export { default as TocBlock } from './TocBlock.svelte';
+export { default as SliderBlock } from './SliderBlock.svelte';

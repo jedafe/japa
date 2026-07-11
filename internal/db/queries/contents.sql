@@ -46,6 +46,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = @tenant_id
+  AND auto_hidden = false
   AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
@@ -58,6 +59,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = @tenant_id AND content_type = @content_type
+  AND auto_hidden = false
   AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
@@ -70,6 +72,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = @tenant_id AND space_id = @space_id
+  AND auto_hidden = false
   AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
@@ -248,6 +251,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
 WHERE ct.tag_id = @tag_id AND c.tenant_id = @tenant_id AND c.status = 'published'
+  AND c.auto_hidden = false
   AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;

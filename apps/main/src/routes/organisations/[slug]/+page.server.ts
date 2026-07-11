@@ -1,6 +1,5 @@
 import type { PageServerLoad } from './$types';
 import { apiFetch } from '$lib/server/api';
-import { error } from '@sveltejs/kit';
 
 interface Organization {
 	id: string;
@@ -24,14 +23,14 @@ interface OrganizationMember {
 
 export const load: PageServerLoad = async ({ params, cookies }) => {
 	const token = cookies.get('jc_token');
-	const auth = token ? { Authorization: `Bearer ${token}` } : {};
+	const auth: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
 	const orgResult = await apiFetch<Organization>(`/organizations/${params.slug}`, {
 		headers: auth
 	});
 
 	if (!orgResult.ok || !orgResult.data) {
-		throw error(404, 'Organisation not found');
+		throw new Response('Organisation not found', { status: 404 });
 	}
 
 	const org = orgResult.data;

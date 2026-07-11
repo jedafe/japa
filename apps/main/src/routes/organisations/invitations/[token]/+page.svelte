@@ -4,7 +4,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 
-	let token = $derived($page.params.token);
+	let token = $derived($page.params.token ?? '');
 	let accepting = $state(false);
 	let result = $state<'idle' | 'accepted' | 'failed'>('idle');
 	let orgSlug = $state('');

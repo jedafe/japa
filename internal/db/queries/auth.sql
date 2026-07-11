@@ -15,6 +15,16 @@ FROM users
 WHERE tenant_id = @tenant_id AND email = @email
 LIMIT 1;
 
+-- name: UpdateUserPasswordByUserID :exec
+UPDATE users
+SET password_hash = @password_hash, updated_at = now()
+WHERE id = @user_id;
+
+-- name: MarkEmailVerifiedByUserID :exec
+UPDATE users
+SET email_verified_at = now(), updated_at = now()
+WHERE id = @user_id AND email_verified_at IS NULL;
+
 -- =====================
 -- Refresh Tokens
 -- =====================
@@ -28,10 +38,21 @@ SELECT id, tenant_id, user_id, token_hash, expires_at, revoked_at, created_at, u
 FROM refresh_tokens
 WHERE token_hash = @token_hash AND tenant_id = @tenant_id;
 
+-- name: GetRefreshTokenByHashGlobal :one
+SELECT id, tenant_id, user_id, token_hash, expires_at, revoked_at, created_at, updated_at
+FROM refresh_tokens
+WHERE token_hash = @token_hash
+LIMIT 1;
+
 -- name: RevokeRefreshToken :exec
 UPDATE refresh_tokens
 SET revoked_at = now(), updated_at = now()
 WHERE token_hash = @token_hash AND tenant_id = @tenant_id AND revoked_at IS NULL;
+
+-- name: RevokeRefreshTokenByHash :exec
+UPDATE refresh_tokens
+SET revoked_at = now(), updated_at = now()
+WHERE token_hash = @token_hash AND revoked_at IS NULL;
 
 -- name: RevokeAllUserRefreshTokens :exec
 UPDATE refresh_tokens
@@ -113,10 +134,21 @@ SELECT id, tenant_id, user_id, token_hash, expires_at, used_at, created_at
 FROM password_reset_tokens
 WHERE token_hash = @token_hash AND tenant_id = @tenant_id;
 
+-- name: GetPasswordResetTokenByHashGlobal :one
+SELECT tenant_id, user_id, expires_at, used_at
+FROM password_reset_tokens
+WHERE token_hash = @token_hash
+LIMIT 1;
+
 -- name: UsePasswordResetToken :exec
 UPDATE password_reset_tokens
 SET used_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND used_at IS NULL;
+
+-- name: UsePasswordResetTokenByHash :exec
+UPDATE password_reset_tokens
+SET used_at = now()
+WHERE token_hash = @token_hash AND used_at IS NULL;
 
 -- name: InvalidateUserPasswordResetTokens :exec
 UPDATE password_reset_tokens
@@ -135,6 +167,12 @@ VALUES (@tenant_id, @user_id, @email, @token_hash, @expires_at);
 SELECT id, tenant_id, user_id, email, token_hash, expires_at, verified_at, created_at
 FROM email_verifications
 WHERE token_hash = @token_hash AND tenant_id = @tenant_id;
+
+-- name: GetEmailVerificationByHashGlobal :one
+SELECT tenant_id, user_id, expires_at, verified_at
+FROM email_verifications
+WHERE token_hash = @token_hash
+LIMIT 1;
 
 -- name: VerifyEmail :exec
 UPDATE email_verifications

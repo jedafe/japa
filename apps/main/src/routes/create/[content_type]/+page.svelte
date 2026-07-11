@@ -3,16 +3,32 @@
 	import { goto } from '$app/navigation';
 	import PostCreateLayout from '$lib/create/PostCreateLayout.svelte';
 	import { api } from '$lib/api';
+	import { onMount } from 'svelte';
 
-	const contentTypes: Record<string, { slug: string; label: string; icon: string }> = {
-		blog_post: { slug: 'blog_post', label: 'Blog Post', icon: 'file-text' },
-		discussion: { slug: 'discussion', label: 'Discussion', icon: 'message-square' },
-		guide: { slug: 'guide', label: 'Guide', icon: 'book-open' },
-		event: { slug: 'event', label: 'Event', icon: 'calendar' },
-		question: { slug: 'question', label: 'Question', icon: 'help-circle' },
-		listing: { slug: 'listing', label: 'Listing', icon: 'clipboard-list' },
-		comparison: { slug: 'comparison', label: 'Comparison', icon: 'scale' }
-	};
+	let contentTypes = $state<Record<string, { slug: string; label: string; icon: string }>>({});
+
+	onMount(async () => {
+		try {
+			const types = await api.listContentTypes();
+			if (Array.isArray(types) && types.length > 0) {
+				const mapped: Record<string, { slug: string; label: string; icon: string }> = {};
+				for (const t of types) {
+					mapped[t.value] = { slug: t.value, label: t.label, icon: 'file-text' };
+				}
+				contentTypes = mapped;
+			}
+		} catch {
+			contentTypes = {
+				blog_post: { slug: 'blog_post', label: 'Blog Post', icon: 'file-text' },
+				discussion: { slug: 'discussion', label: 'Discussion', icon: 'message-square' },
+				guide: { slug: 'guide', label: 'Guide', icon: 'book-open' },
+				event: { slug: 'event', label: 'Event', icon: 'calendar' },
+				question: { slug: 'question', label: 'Question', icon: 'help-circle' },
+				listing: { slug: 'listing', label: 'Listing', icon: 'clipboard-list' },
+				comparison: { slug: 'comparison', label: 'Comparison', icon: 'scale' }
+			};
+		}
+	});
 
 	let contentType = $derived(page.params.content_type ? contentTypes[page.params.content_type] : undefined);
 	let pageTitle = $derived(contentType ? `Create ${contentType.label} | JapaConnect` : 'Content Type Not Found | JapaConnect');

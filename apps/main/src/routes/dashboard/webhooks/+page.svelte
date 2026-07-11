@@ -18,7 +18,7 @@
 
 	let { data } = $props();
 
-	let webhooks = $state(data.webhooks);
+	let webhooks = $derived(data.webhooks);
 	let showCreate = $state(false);
 	let errorMessage = $state('');
 	let creating = $state(false);

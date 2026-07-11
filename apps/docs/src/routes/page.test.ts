@@ -1,20 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
-import Page from './+page.svelte';
+import { load } from './+page.server';
 
 describe('Docs landing page', () => {
-	it('renders the docs heading', () => {
-		const { getByText } = render(Page);
-		expect(getByText('JapaConnect Documentation')).toBeTruthy();
-	});
-
-	it('shows all audience paths', () => {
-		const { getByText } = render(Page);
-		expect(getByText('User Guide')).toBeTruthy();
-		expect(getByText('Premium')).toBeTruthy();
-		expect(getByText('Organizations')).toBeTruthy();
-		expect(getByText('Moderators')).toBeTruthy();
-		expect(getByText('API Reference')).toBeTruthy();
-		expect(getByText('Admin')).toBeTruthy();
+	it('redirects to /users', async () => {
+		try {
+			await load({} as never);
+		} catch (e: unknown) {
+			expect((e as { status: number }).status).toBe(302);
+			expect((e as { location: string }).location).toBe('/users');
+		}
 	});
 });

@@ -26,6 +26,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -1014,10 +1015,12 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	// Update via raw SQL since no UpdateDiscountCode service method exists
-	_, err = h.Service.db.Writer.Exec(r.Context(),
-		`UPDATE discount_codes SET code = COALESCE(NULLIF($3,''), code), updated_at = now()
-		 WHERE id = $1 AND tenant_id = $2`, id, tenantID, input.Code)
+	queries := gen.New(h.Service.db.Writer)
+	_, err = queries.UpdateDiscountCode(r.Context(), gen.UpdateDiscountCodeParams{
+		ID:       id,
+		TenantID: tenantID,
+		NewCode:  input.Code,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update discount code")
 		return
@@ -1051,9 +1054,11 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid subscription ID")
 		return
 	}
-	_, err = h.Service.db.Writer.Exec(r.Context(),
-		`UPDATE subscriptions SET status = 'cancelled', cancelled_at = now(), updated_at = now()
-		 WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	queries := gen.New(h.Service.db.Writer)
+	err = queries.SoftDeleteSubscription(r.Context(), gen.SoftDeleteSubscriptionParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete subscription")
 		return
@@ -1071,10 +1076,11 @@ func (h *Handlers) ReactivateSubscription(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	_, err := h.Service.db.Writer.Exec(r.Context(),
-		`UPDATE subscriptions SET status = 'active', cancelled_at = NULL, updated_at = now()
-		 WHERE user_id = $1 AND tenant_id = $2 AND status = 'cancelled'
-		 ORDER BY updated_at DESC LIMIT 1`, user.UserID, tenantID)
+	queries := gen.New(h.Service.db.Writer)
+	_, err := queries.ReactivateSubscription(r.Context(), gen.ReactivateSubscriptionParams{
+		UserID:   user.UserID,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reactivate subscription")
 		return

@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { api, setToken, impersonationApi } from '$lib/api';
+	import { api, setToken, impersonationApi, userManagementApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	type User = {
@@ -20,6 +20,7 @@
 	let loading = $state(true);
 	let searchQuery = $state('');
 	let filterGroup = $state('');
+	let groupOptions = $state<string[]>(['user', 'moderator', 'admin', 'super_admin']);
 
 	// Impersonation state
 	let impersonating = $state(false);
@@ -36,10 +37,10 @@
 		{ key: 'created_at', label: 'users.joined' }
 	];
 
-	const filterDefs = [
+	let filterDefs = $derived([
 		{ key: 'search', label: 'users.search', type: 'text' as const },
-		{ key: 'group', label: 'users.group_filter', type: 'select' as const, options: ['user', 'moderator', 'admin', 'super_admin'] }
-	];
+		{ key: 'group', label: 'users.group_filter', type: 'select' as const, options: groupOptions }
+	]);
 
 	async function load() {
 		loading = true;
@@ -104,15 +105,15 @@
 	async function endImpersonation() {
 		const result = await impersonationApi.end();
 		if (result.ok) {
-			impersonating = false;
-			impersonatingUsername = '';
-			// Reload admin token from cookie
-			const tokenMatch = document.cookie.split('; ').find((c) => c.startsWith('admin_token='));
-			if (tokenMatch) setToken(tokenMatch.split('=')[1]);
+			window.location.reload();
 		}
 	}
 
-	onMount(() => {
+	onMount(async () => {
+		const groupsResult = await userManagementApi.listGroups();
+		if (groupsResult.ok) {
+			groupOptions = groupsResult.data.groups.map((g) => g.name);
+		}
 		load();
 		checkImpersonationStatus();
 	});

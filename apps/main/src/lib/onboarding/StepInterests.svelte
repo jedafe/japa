@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { ArrowLeft, ArrowRight, Tag } from 'lucide-svelte';
+	import { onMount } from 'svelte';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { api } from '$lib/api';
 
 	let { stepData, onupdate, onnext, onback, submitting } = $props();
 
@@ -8,7 +10,7 @@
 	let selectedInterests = $state<string[]>((stepData.interests as string[]) || []);
 	const minInterests = 3;
 
-	const interests = [
+	const defaultInterests = [
 		{ id: 'immigration', label: 'Immigration' },
 		{ id: 'career', label: 'Career' },
 		{ id: 'education', label: 'Education' },
@@ -22,6 +24,18 @@
 		{ id: 'travel', label: 'Travel' },
 		{ id: 'entrepreneurship', label: 'Entrepreneurship' }
 	];
+	let interests = $state(defaultInterests);
+
+	onMount(async () => {
+		try {
+			const tags = await api.getTrendingTags(20);
+			if (tags.items && tags.items.length > 0) {
+				interests = tags.items.map((tag) => ({ id: tag.slug, label: tag.name }));
+			}
+		} catch {
+			interests = defaultInterests;
+		}
+	});
 
 	function toggleInterest(id: string) {
 		if (selectedInterests.includes(id)) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/rbac"
 )
 
 // ModerationItem represents a moderation queue item.
@@ -82,10 +83,10 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 // queryFlaggedReviews queries the reviews table for items with status='flagged'.
 func (h *Handlers) queryFlaggedReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]ModerationItem, error) {
 	rows, err := h.DB.Reader.Query(ctx, `
-		SELECT r.id, r.body, r.status, r.created_at, r.author_id,
+		SELECT r.id, r.body, r.status, r.created_at, r.reviewer_user_id,
 		       COALESCE(u.username, 'unknown') AS author_username
 		FROM reviews r
-		LEFT JOIN users u ON u.id = r.author_id
+		LEFT JOIN users u ON u.id = r.reviewer_user_id
 		WHERE r.tenant_id = $1
 		  AND r.status = 'flagged'
 		ORDER BY r.created_at DESC
@@ -439,6 +440,15 @@ func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID p
 		return 0, fmt.Errorf("batch inserting broadcast notifications: %w", err)
 	}
 
+	// Record the broadcast in admin_broadcasts so ListBroadcasts/DeleteBroadcast work.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at)
+		VALUES ($1, $2, $3, $4, now())
+	`, title, body, senderID, len(userIDs))
+	if err != nil {
+		return 0, fmt.Errorf("recording broadcast: %w", err)
+	}
+
 	sent := len(userIDs)
 
 	if err := tx.Commit(ctx); err != nil {
@@ -472,6 +482,13 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")
 		return
 	}
+	// Ref: japaconnect-engineering/sections/03-rbac.md — Rule 6: invalidate cache after ban
+	if h.Valkey != nil {
+		var uid pgtype.UUID
+		if err := uid.Scan(userID); err == nil {
+			_ = rbac.InvalidatePermCache(ctx, h.Valkey, uid)
+		}
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "banned"})
 }
 
@@ -483,6 +500,13 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unban user")
 		return
+	}
+	// Ref: japaconnect-engineering/sections/03-rbac.md — Rule 6: invalidate cache after unban
+	if h.Valkey != nil {
+		var uid pgtype.UUID
+		if err := uid.Scan(userID); err == nil {
+			_ = rbac.InvalidatePermCache(r.Context(), h.Valkey, uid)
+		}
 	}
 	writeJSON(w, http.StatusNoContent, nil)
 }
@@ -711,7 +735,7 @@ func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	_, err := h.DB.Writer.Exec(r.Context(),
-		`UPDATE content_reports SET assigned_to = $2, status = 'in_review', updated_at = now() WHERE id = $1`, id, input.AssigneeID)
+		`UPDATE content_reports SET reviewed_by = $2, status = 'reviewing' WHERE id = $1`, id, input.AssigneeID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to assign moderation item")
 		return

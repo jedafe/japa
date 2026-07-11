@@ -20,7 +20,9 @@ export async function apiFetch<T>(
 	fetchFn?: typeof fetch
 ): Promise<ApiResult<T>> {
 	const fetcher = fetchFn ?? fetch;
-	const url = `${PUBLIC_JC_API_URL}/api/v1${path}`;
+	// Control panel routes are mounted at the top level (not under /api/v1).
+	// The path should already include the correct prefix (e.g. /control/...).
+	const url = `${PUBLIC_JC_API_URL}${path}`;
 
 	try {
 		const res = await fetcher(url, {

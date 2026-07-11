@@ -1,9 +1,12 @@
 <script lang="ts">
 	import type { Certificate } from '$lib/api';
-	import { Award, Download, ExternalLink, GraduationCap, ArrowRight } from 'lucide-svelte';
+	import { api } from '$lib/api';
+	import { Award, Download, ExternalLink, GraduationCap, ArrowRight, Loader2 } from 'lucide-svelte';
 
 	let { data } = $props();
 	let certificates = $derived(data.certificates as Certificate[]);
+
+	let downloadingId = $state<string | null>(null);
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleDateString('en-US', {
@@ -11,6 +14,22 @@
 			month: 'long',
 			day: 'numeric'
 		});
+	}
+
+	async function handleDownload(certId: string) {
+		downloadingId = certId;
+		try {
+			const result = await api.downloadCertificate(certId);
+			if (result.download_url) {
+				window.open(result.download_url, '_blank');
+			} else {
+				alert(result.message ?? 'PDF not available yet');
+			}
+		} catch (e) {
+			alert(e instanceof Error ? e.message : 'Failed to get download link');
+		} finally {
+			downloadingId = null;
+		}
 	}
 </script>
 
@@ -57,7 +76,7 @@
 								<Award class="h-6 w-6" style="color: var(--color-success)" />
 							</div>
 							<div>
-								<h3 class="font-semibold" style="color: var(--color-foreground)">{cert.track_title}</h3>
+								<h3 class="font-semibold" style="color: var(--color-foreground)">Certificate #{cert.certificate_number}</h3>
 								<p class="mt-1 text-sm" style="color: var(--color-muted)">
 									Issued {formatDate(cert.issued_at)}
 								</p>
@@ -65,29 +84,28 @@
 						</div>
 
 						<div class="flex items-center gap-2">
-							{#if cert.certificate_url}
-								<a
-									href={cert.certificate_url}
-									target="_blank"
-									rel="noopener noreferrer"
-									class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-surface)]"
-									style="border-color: var(--color-border); color: var(--color-foreground)"
-								>
-									<ExternalLink class="h-4 w-4" />
-									View
-								</a>
-								<a
-									href={cert.certificate_url}
-									download
-									class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-									style="background-color: var(--color-primary)"
-								>
+							<a
+								href="/certificates/{cert.id}"
+								class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-surface)]"
+								style="border-color: var(--color-border); color: var(--color-foreground)"
+							>
+								<ExternalLink class="h-4 w-4" />
+								View
+							</a>
+							<button
+								class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+								style="background-color: var(--color-primary)"
+								disabled={downloadingId === cert.id}
+								onclick={() => handleDownload(cert.id)}
+							>
+								{#if downloadingId === cert.id}
+									<Loader2 class="h-4 w-4 animate-spin" />
+									Loading...
+								{:else}
 									<Download class="h-4 w-4" />
 									Download
-								</a>
-							{:else}
-								<span class="text-sm" style="color: var(--color-muted)">Certificate pending</span>
-							{/if}
+								{/if}
+							</button>
 						</div>
 					</div>
 				</article>
