@@ -4,6 +4,7 @@
 	import { setToken } from '$lib/api';
 	import { initGlitchTip } from '$lib/glitchtip';
 	import { GraduationCap, BookOpen, Award, Menu, X, User, LogOut } from 'lucide-svelte';
+	import { PUBLIC_JC_UMAMI_URL, PUBLIC_JC_UMAMI_SITE_ID } from '$env/static/public';
 	import { onNavigate } from '$app/navigation';
 
 	let { children, data } = $props();
@@ -50,11 +51,11 @@
 	<meta name="description" content="JapaConnect Learn — structured learning tracks for your journey abroad" />
 	<!-- Umami Analytics (Section 40) — only in production -->
 	{#if import.meta.env.MODE !== 'development'}
-		{#if import.meta.env.PUBLIC_JC_UMAMI_URL}
+		{#if PUBLIC_JC_UMAMI_URL}
 			<script
 				defer
-				data-website-id={import.meta.env.PUBLIC_JC_UMAMI_SITE_ID}
-				src="{import.meta.env.PUBLIC_JC_UMAMI_URL}/script.js"
+				data-website-id={PUBLIC_JC_UMAMI_SITE_ID}
+				src="{PUBLIC_JC_UMAMI_URL}/script.js"
 			></script>
 		{/if}
 	{/if}

@@ -10,7 +10,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	}
 
 	let keys: ApiKey[] = [];
-	const result = await apiFetch<ApiKey[]>('/developer/keys');
+	const result = await apiFetch<ApiKey[]>('/me/api-keys');
 	if (result.data) {
 		keys = result.data;
 	}
