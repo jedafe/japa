@@ -148,7 +148,7 @@
 	<Modal
 		bind:open={showDetailModal}
 		title={selectedRequest.request_type === 'erasure' ? 'GDPR Erasure Request' : 'GDPR Data Export'}
-		onConfirm={() => processRequest(selectedRequest)}
+		onConfirm={() => selectedRequest && processRequest(selectedRequest)}
 		confirmLabel={processing ? t('common.processing') : selectedRequest.status === 'pending' ? 'Process Request' : t('common.close')}
 	>
 		<div class="space-y-3 text-sm">

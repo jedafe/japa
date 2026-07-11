@@ -36,7 +36,7 @@ export async function api<T>(path: string, opts: FetchOptions = {}): Promise<Api
 
 export const spamApi = {
 	getIpBlocks: (params?: string) => api<unknown>(`/admin/spam/ip-blocks${params ? `?${params}` : ''}`),
-	createIpBlock: (body: { ip_cidr: string; reason: string; expires_at?: string }) =>
+	createIpBlock: (body: { cidr: string; block_type: string; reason?: string; expires_at?: string }) =>
 		api('/admin/spam/ip-blocks', { method: 'POST', body }),
 	deleteIpBlock: (id: string) =>
 		api(`/admin/spam/ip-blocks/${id}`, { method: 'DELETE' }),
@@ -280,8 +280,14 @@ export const userManagementApi = {
 		api(`/admin/users/${userId}/ban`, { method: 'DELETE' }),
 	suspendUser: (userId: string, body: { status: string; reason?: string }) =>
 		api(`/admin/users/${userId}/status`, { method: 'PATCH', body }),
-	changeGroup: (userId: string, body: { group: string }) =>
-		api(`/admin/users/${userId}/group`, { method: 'PATCH', body }),
+	// Group membership is managed via the RBAC user-group routes; the backend
+	// PATCH /admin/users/{id}/group endpoint only ADDS one membership by
+	// group_id and cannot remove, so a set-style "change groups" must diff
+	// against these two endpoints.
+	addGroupMember: (groupId: string, userId: string) =>
+		api(`/admin/user-groups/${groupId}/members`, { method: 'POST', body: { user_id: userId } }),
+	removeGroupMember: (groupId: string, userId: string) =>
+		api(`/admin/user-groups/${groupId}/members/${userId}`, { method: 'DELETE' }),
 	deleteUser: (userId: string) =>
 		api(`/admin/users/${userId}`, { method: 'DELETE' }),
 

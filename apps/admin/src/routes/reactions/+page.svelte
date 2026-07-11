@@ -250,6 +250,6 @@
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteModal} title={t('common.confirm')} onConfirm={executeDelete} confirmLabel={t('common.delete')}>
 	<p class="text-sm" style="color: var(--color-muted)">
-		Are you sure you want to delete the reaction type <strong>{deleteTarget?.emoji} {deleteTarget?.name}</strong>?
+		Are you sure you want to delete the reaction type <strong>{deleteTarget?.emoji} {deleteTarget?.label}</strong>?
 	</p>
 </Modal>

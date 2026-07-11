@@ -44,6 +44,41 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+  frontend:
+    name: Frontend (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [main, admin, control, learn, docs]
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # .env is gitignored; $env/static/public vars are inlined at build
+      # time, so an incomplete env contract fails the build. .env.example
+      # documents the full contract per app and doubles as the CI env.
+      - name: Provision env from example
+        run: cp .env.example .env
+
+      - name: Type check
+        run: bun run check
+
+      - name: Unit tests
+        run: bun run test
+
+      - name: Production build
+        run: bun run build
+
   test:
     name: Test
     runs-on: ubuntu-latest

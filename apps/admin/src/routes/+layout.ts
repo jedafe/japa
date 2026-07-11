@@ -3,7 +3,6 @@ import { browser } from '$app/environment';
 import { locale } from '$lib/stores/i18n.svelte';
 import { fetchPermissions } from '$lib/stores/permissions';
 import { apiFetch } from '$lib/api/client';
-import { user, setPermissions } from '$lib/stores/auth';
 import type { User } from '$lib/api/types';
 
 export const ssr = false;
@@ -28,8 +27,9 @@ export const load: LayoutLoad = async ({ url }) => {
 	// redirects to /login on a 401, which would otherwise refetch and 401
 	// again in a loop.
 	let user: User | null = null;
+	let permissions: string[] = [];
 	if (!url.pathname.startsWith('/login')) {
-		await fetchPermissions();
+		permissions = await fetchPermissions();
 		const result = await apiFetch<User>('/me');
 		user = result.data;
 	}
@@ -39,5 +39,5 @@ export const load: LayoutLoad = async ({ url }) => {
 	// users/[userId]/+page.svelte, see AUDIT-FE-ADM-007) keeps compiling.
 	// That client's Authorization-header auth model is a separate, larger
 	// issue and out of scope here.
-	return { token: null as string | null, user };
+	return { token: null as string | null, user, permissions };
 };
