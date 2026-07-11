@@ -12,7 +12,10 @@ function makeCookies(initial: Record<string, string> = {}) {
 }
 
 describe('control /logout action', () => {
-	it('best-effort calls the backend logout, deletes jc_token with the correct domain/path, and redirects to /login', async () => {
+	// The cookie domain is config-driven via JC_COOKIE_DOMAIN (ENV-7 fix);
+	// with the var unset — as in this test env and local dev — delete must be
+	// called host-only (no domain key) so the cookie actually clears.
+	it('best-effort calls the backend logout, deletes jc_token with the correct path, and redirects to /login', async () => {
 		const cookies = makeCookies({ jc_token: 'abc123' });
 		const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
 
@@ -25,10 +28,7 @@ describe('control /logout action', () => {
 			expect.stringContaining('/auth/logout'),
 			expect.objectContaining({ method: 'POST', headers: { Authorization: 'Bearer abc123' } })
 		);
-		expect(cookies.delete).toHaveBeenCalledWith('jc_token', {
-			path: '/',
-			domain: '.japaconnect.com'
-		});
+		expect(cookies.delete).toHaveBeenCalledWith('jc_token', { path: '/' });
 	});
 
 	it('still clears the cookie and redirects even if the backend call throws', async () => {
@@ -40,10 +40,7 @@ describe('control /logout action', () => {
 			location: '/login'
 		});
 
-		expect(cookies.delete).toHaveBeenCalledWith('jc_token', {
-			path: '/',
-			domain: '.japaconnect.com'
-		});
+		expect(cookies.delete).toHaveBeenCalledWith('jc_token', { path: '/' });
 	});
 
 	it('redirects without a backend call when there is no session cookie', async () => {
@@ -56,9 +53,6 @@ describe('control /logout action', () => {
 		});
 
 		expect(fetchMock).not.toHaveBeenCalled();
-		expect(cookies.delete).toHaveBeenCalledWith('jc_token', {
-			path: '/',
-			domain: '.japaconnect.com'
-		});
+		expect(cookies.delete).toHaveBeenCalledWith('jc_token', { path: '/' });
 	});
 });

@@ -26,7 +26,7 @@
 	async function toggleFlag(key: string, enabled: boolean) {
 		toggling = key;
 		const result = await api(`/control/feature-flags/${key}`, {
-			method: 'PUT',
+			method: 'PATCH',
 			body: { enabled }
 		});
 		if (result.ok) {

@@ -14,9 +14,11 @@ describe('Control +page.svelte', () => {
 
 	it('shows metric cards', () => {
 		render(Page);
-		expect(screen.getByText('Throughput')).toBeTruthy();
-		expect(screen.getByText('Latency p99')).toBeTruthy();
-		expect(screen.getByText('Error Rate')).toBeTruthy();
+		// The dashboard renders health-group metric cards (service statuses)
+		// instead of the legacy Throughput/Latency/Error Rate cards
+		// (audit F — stale test expectations).
+		expect(screen.getByText('PostgreSQL')).toBeTruthy();
+		expect(screen.getByText('API Server')).toBeTruthy();
 	});
 
 	it('shows health groups', () => {

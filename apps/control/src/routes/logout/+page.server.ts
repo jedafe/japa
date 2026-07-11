@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import type { Actions, PageServerLoad } from './$types';
-import { API_BASE } from '$lib/server/api';
+import { API_V1_BASE } from '$lib/server/api';
 
 // A direct GET to /logout (e.g. a bookmarked link) just sends the visitor
 // back to login rather than rendering anything.
@@ -18,7 +19,7 @@ export const actions: Actions = {
 			// the redirect on this — clearing jc_token below is what actually
 			// ends the session as far as this app is concerned.
 			try {
-				await fetch(`${API_BASE}/auth/logout`, {
+				await fetch(`${API_V1_BASE}/auth/logout`, {
 					method: 'POST',
 					headers: { Authorization: `Bearer ${token}` }
 				});
@@ -27,7 +28,8 @@ export const actions: Actions = {
 			}
 		}
 
-		cookies.delete('jc_token', { path: '/', domain: '.japaconnect.com' });
+		const cookieDomain = env.JC_COOKIE_DOMAIN || undefined;
+		cookies.delete('jc_token', { path: '/', ...(cookieDomain ? { domain: cookieDomain } : {}) });
 		throw redirect(303, '/login');
 	}
 };
