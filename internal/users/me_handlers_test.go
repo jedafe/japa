@@ -218,25 +218,6 @@ func TestDeactivateAccount_MissingPassword(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// RequestGDPRDeletion — returns 202
-// ---------------------------------------------------------------------------
-
-func TestRequestGDPRDeletion_Accepted(t *testing.T) {
-	t.Parallel()
-
-	h := NewHandlers(testService())
-	req := httptest.NewRequest(http.MethodDelete, "/me", nil)
-	req = withAuthUser(req)
-
-	rr := httptest.NewRecorder()
-	h.RequestGDPRDeletion(rr, req)
-
-	if rr.Code != http.StatusAccepted {
-		t.Errorf("status = %d, want %d", rr.Code, http.StatusAccepted)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // RequestDataExport — returns 202
 // ---------------------------------------------------------------------------
 

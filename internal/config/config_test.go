@@ -25,6 +25,7 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 	t.Setenv("JC_PORT", "9090")
 	t.Setenv("JC_JWT_SECRET", "test-jwt-secret-key-32-bytes-long!")
 	t.Setenv("JC_JWT_KEY_ID", "key-prod")
+	t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
 
 	cfg, err := Load()
 	if err != nil {
@@ -148,6 +149,9 @@ func TestIsProduction(t *testing.T) {
 			} else {
 				os.Unsetenv("JC_ENV")
 			}
+			// Production validation requires JC_COOKIE_DOMAIN and JC_DATABASE_URL.
+			t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
+			t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
 
 			cfg, err := Load()
 			if err != nil {
@@ -214,6 +218,8 @@ func clearAllJCEnv(t *testing.T) {
 		"JC_PORT",
 		"JC_JWT_SECRET",
 		"JC_JWT_KEY_ID",
+		"JC_COOKIE_DOMAIN",
+		"JC_XIAOMI_API_KEY",
 	} {
 		os.Unsetenv(key)
 	}

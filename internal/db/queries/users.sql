@@ -119,3 +119,29 @@ LIMIT $2 OFFSET $3;
 
 -- name: DeactivateUser :exec
 UPDATE users SET status = 'suspended', updated_at = now() WHERE id = $1 AND tenant_id = $2;
+
+-- name: SoftDeleteUser :exec
+UPDATE users SET status = 'deleted', updated_at = now() WHERE id = $1 AND tenant_id = $2;
+
+-- name: ListUserActivity :many
+-- Recent authored contents and comments merged into one feed, newest first
+-- (admin user-detail activity tab). Comment bodies are truncated so a long
+-- comment cannot bloat the list payload.
+SELECT activity.type, activity.content, activity.created_at
+FROM (
+    SELECT 'content'::text AS type, c.title AS content, c.created_at
+    FROM contents c
+    WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
+    UNION ALL
+    SELECT 'comment'::text AS type, left(cm.body, 240) AS content, cm.created_at
+    FROM comments cm
+    WHERE cm.tenant_id = $1 AND cm.author_user_id = $2 AND cm.deleted_at IS NULL
+) activity
+ORDER BY activity.created_at DESC
+LIMIT $3;
+
+-- name: CountUserActivity :one
+SELECT (SELECT count(*) FROM contents c
+        WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL)
+     + (SELECT count(*) FROM comments cm
+        WHERE cm.tenant_id = $1 AND cm.author_user_id = $2 AND cm.deleted_at IS NULL) AS total;

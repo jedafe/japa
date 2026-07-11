@@ -16,7 +16,7 @@ func TestHandleUserFeed_MissingUsername(t *testing.T) {
 	t.Parallel()
 
 	q := (*gen.Queries)(nil) // unused — handler returns before query
-	handler := HandleUserFeed(q)
+	handler := HandleUserFeed(q, "https://example.com", "Test Site")
 
 	req := httptest.NewRequest(http.MethodGet, "/users//feed.xml", nil)
 	w := httptest.NewRecorder()
@@ -37,7 +37,7 @@ func TestHandleUserFeed_MissingTenant(t *testing.T) {
 	t.Parallel()
 
 	q := (*gen.Queries)(nil)
-	handler := HandleUserFeed(q)
+	handler := HandleUserFeed(q, "https://example.com", "Test Site")
 
 	req := httptest.NewRequest(http.MethodGet, "/users/alice/feed.xml", nil)
 	w := httptest.NewRecorder()
@@ -58,7 +58,7 @@ func TestHandleUserFeed_InvalidTenant(t *testing.T) {
 	t.Parallel()
 
 	q := (*gen.Queries)(nil)
-	handler := HandleUserFeed(q)
+	handler := HandleUserFeed(q, "https://example.com", "Test Site")
 
 	req := httptest.NewRequest(http.MethodGet, "/users/bob/feed.xml", nil)
 	// Context without a tenant ID.

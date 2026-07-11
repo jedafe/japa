@@ -285,6 +285,31 @@ func (s *Service) ListSessions(ctx context.Context, userID pgtype.UUID) ([]Sessi
 	return result, nil
 }
 
+// ListUserActivity returns a merged feed of the user's authored content and
+// comments, newest first, plus the total count across both sources.
+func (s *Service) ListUserActivity(ctx context.Context, tenantID, userID pgtype.UUID, limit int32) (*UserActivityResponse, error) {
+	rows, err := s.store.listUserActivity(ctx, tenantID, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing user activity: %w", err)
+	}
+
+	total, err := s.store.countUserActivity(ctx, tenantID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("counting user activity: %w", err)
+	}
+
+	items := make([]UserActivityItem, len(rows))
+	for i, row := range rows {
+		items[i] = UserActivityItem{
+			Type:      row.Type,
+			Content:   row.Content,
+			CreatedAt: row.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		}
+	}
+
+	return &UserActivityResponse{Activities: items, Total: total}, nil
+}
+
 // RevokeSession revokes a specific session.
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID pgtype.UUID) error {
 	return s.store.revokeUserSession(ctx, sessionID, userID)
@@ -412,4 +437,9 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 // DeactivateAccount soft-deactivates the user account.
 func (s *Service) DeactivateAccount(ctx context.Context, tenantID, userID pgtype.UUID) error {
 	return s.store.deactivateUser(ctx, tenantID, userID)
+}
+
+// SoftDeleteUser soft-deletes a user account (status = 'deleted').
+func (s *Service) SoftDeleteUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
+	return s.store.SoftDeleteUser(ctx, tenantID, userID)
 }
