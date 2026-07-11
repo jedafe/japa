@@ -1,6 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { error } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
 
 interface ProgressData {
 	track_id: string;
@@ -27,7 +28,22 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 			progress = null;
 		}
 
-		return { track: result.data, progress };
+		let isEnrolled = false;
+		if (token) {
+			try {
+				const enrollRes = await fetch(`${PUBLIC_JC_API_URL}/api/v1/me/enrollments`, {
+					headers: { Authorization: `Bearer ${token}` }
+				});
+				if (enrollRes.ok) {
+					const { data } = await enrollRes.json();
+					isEnrolled = (data ?? []).some((e: { track_id: string }) => e.track_id === result.data!.id);
+				}
+			} catch {
+				isEnrolled = false;
+			}
+		}
+
+		return { track: result.data, progress, isEnrolled };
 	} catch (e) {
 		if (e && typeof e === 'object' && 'status' in e) throw e;
 		throw error(500, { code: 'LOAD_ERROR', message: 'Failed to load track' });

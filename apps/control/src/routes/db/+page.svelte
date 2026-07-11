@@ -3,7 +3,8 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import { api, type DbHealth, type TableStat, type SlowQuery } from '$lib/api';
+	import { api } from '$lib/api';
+	import type { DbHealth } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import {
 		Database,
@@ -26,16 +27,12 @@
 	let secondsAgo = $state(0);
 	let refreshing = $state(false);
 
-	interface OverviewResponse {
-		database?: DbHealth;
-	}
-
 	async function refresh() {
 		refreshing = true;
 		try {
-			const result = await api<OverviewResponse>('/admin/analytics/overview');
+			const result = await api<DbHealth>('/control/health/db');
 			if (result.ok) {
-				dbHealth = result.data.database ?? null;
+				dbHealth = result.data;
 				apiAvailable = true;
 				lastRefresh = new Date();
 				secondsAgo = 0;

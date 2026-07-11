@@ -34,7 +34,7 @@ export const actions: Actions = {
 				return fail(400, { error: message });
 			}
 
-			const token = body?.data?.token ?? body?.token;
+			const token = body?.data?.access_token;
 			if (!token) {
 				return fail(400, { error: 'No token received from server' });
 			}

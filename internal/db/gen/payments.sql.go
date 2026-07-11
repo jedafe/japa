@@ -916,6 +916,84 @@ func (q *Queries) MarkWebhookEventProcessed(ctx context.Context, arg MarkWebhook
 	return err
 }
 
+const reactivateSubscription = `-- name: ReactivateSubscription :one
+UPDATE subscriptions
+SET status = 'active', cancelled_at = NULL, updated_at = now()
+WHERE id = (
+    SELECT s.id FROM subscriptions s
+    WHERE s.user_id = $1 AND s.tenant_id = $2 AND s.status = 'cancelled'
+    ORDER BY s.updated_at DESC
+    LIMIT 1
+)
+RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at
+`
+
+type ReactivateSubscriptionParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) ReactivateSubscription(ctx context.Context, arg ReactivateSubscriptionParams) (Subscription, error) {
+	row := q.db.QueryRow(ctx, reactivateSubscription, arg.UserID, arg.TenantID)
+	var i Subscription
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.Plan,
+		&i.Provider,
+		&i.ProviderRef,
+		&i.Status,
+		&i.CurrentPeriodStart,
+		&i.CurrentPeriodEnd,
+		&i.CancelAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const softDeleteSubscription = `-- name: SoftDeleteSubscription :exec
+UPDATE subscriptions
+SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+WHERE id = $1 AND tenant_id = $2
+`
+
+type SoftDeleteSubscriptionParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) SoftDeleteSubscription(ctx context.Context, arg SoftDeleteSubscriptionParams) error {
+	_, err := q.db.Exec(ctx, softDeleteSubscription, arg.ID, arg.TenantID)
+	return err
+}
+
+const updateDiscountCode = `-- name: UpdateDiscountCode :one
+UPDATE discount_codes
+SET code = COALESCE(NULLIF($1, ''), code)
+WHERE id = $2 AND tenant_id = $3
+RETURNING id, code
+`
+
+type UpdateDiscountCodeParams struct {
+	NewCode  interface{} `json:"new_code"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type UpdateDiscountCodeRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Code string      `json:"code"`
+}
+
+func (q *Queries) UpdateDiscountCode(ctx context.Context, arg UpdateDiscountCodeParams) (UpdateDiscountCodeRow, error) {
+	row := q.db.QueryRow(ctx, updateDiscountCode, arg.NewCode, arg.ID, arg.TenantID)
+	var i UpdateDiscountCodeRow
+	err := row.Scan(&i.ID, &i.Code)
+	return i, err
+}
+
 const updatePaymentStatus = `-- name: UpdatePaymentStatus :one
 UPDATE payments
 SET status = $1, updated_at = now()

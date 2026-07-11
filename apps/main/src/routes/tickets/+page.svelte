@@ -7,7 +7,7 @@
 
 	let { data } = $props();
 
-	let tickets = $state(data.tickets);
+	let tickets = $derived(data.tickets);
 	let loading = $state(false);
 	let filter = $state<'all' | 'open' | 'in_progress' | 'resolved' | 'closed'>('all');
 	let currentPage = $state(0);

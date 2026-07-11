@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { TrackDetail } from '$lib/api';
+	import { api } from '$lib/api';
 	import {
 		BookOpen,
 		Clock,
@@ -10,15 +11,19 @@
 		ArrowRight,
 		Award,
 		ChevronDown,
-		ChevronRight
+		ChevronRight,
+		Loader2,
+		Plus
 	} from 'lucide-svelte';
 
 	let { data } = $props();
 
 	let track = $derived(data.track as TrackDetail);
 	let progress = $derived(data.progress as { progress: number; completed_lessons: string[] } | null);
+	let isEnrolled = $derived(data.isEnrolled as boolean);
 	let expandedModules = $state<Set<string>>(new Set());
 	let mounted = $state(true);
+	let enrolling = $state(false);
 
 	$effect(() => {
 		if (track && track.modules.length > 0 && expandedModules.size === 0) {
@@ -69,6 +74,18 @@
 
 	function formatDifficulty(d: string): string {
 		return d.charAt(0).toUpperCase() + d.slice(1);
+	}
+
+	async function enroll() {
+		enrolling = true;
+		try {
+			await api.enroll(track.id);
+			isEnrolled = true;
+		} catch {
+			// Handle error silently
+		} finally {
+			enrolling = false;
+		}
 	}
 </script>
 
@@ -130,8 +147,24 @@
 				{/if}
 			</div>
 
-			<!-- Sidebar actions -->
-			<div class="flex flex-row gap-3 lg:flex-col lg:items-end">
+		<!-- Sidebar actions -->
+		<div class="flex flex-row gap-3 lg:flex-col lg:items-end">
+			{#if !isEnrolled}
+				<button
+					class="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+					style="background-color: var(--color-primary)"
+					disabled={enrolling}
+					onclick={enroll}
+				>
+					{#if enrolling}
+						<Loader2 class="h-4 w-4 animate-spin" />
+						Enrolling...
+					{:else}
+						<Plus class="h-4 w-4" />
+						Enroll in Track
+					{/if}
+				</button>
+			{:else}
 				<a
 					href={getFirstIncompleteLessonUrl()}
 					class="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
@@ -141,17 +174,18 @@
 					{mounted && progress ? 'Continue Learning' : 'Start Learning'}
 					<ArrowRight class="h-4 w-4" />
 				</a>
-				{#if progressPercent === 100}
-					<a
-						href="/certificates"
-						class="flex items-center gap-2 rounded-lg border px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-80"
-						style="border-color: var(--color-success); color: var(--color-success)"
-					>
-						<Award class="h-4 w-4" />
-						View Certificate
-					</a>
-				{/if}
-			</div>
+			{/if}
+			{#if progressPercent === 100}
+				<a
+					href="/certificates"
+					class="flex items-center gap-2 rounded-lg border px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-80"
+					style="border-color: var(--color-success); color: var(--color-success)"
+				>
+					<Award class="h-4 w-4" />
+					View Certificate
+				</a>
+			{/if}
+		</div>
 		</div>
 	</section>
 

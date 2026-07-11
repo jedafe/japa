@@ -5,6 +5,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const sessionCookie = event.cookies.get('jc_token');
 
 	if (sessionCookie) {
+		event.locals.token = sessionCookie;
 		try {
 			const meRes = await fetch(`${PUBLIC_JC_API_URL}/api/v1/me`, {
 				headers: { Authorization: `Bearer ${sessionCookie}` },
@@ -21,9 +22,24 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	} else {
 		event.locals.user = null;
+		event.locals.token = null;
 	}
 
 	event.locals.isAuth = !!event.locals.user;
+
+	try {
+		const flagsRes = await fetch(`${PUBLIC_JC_API_URL}/api/v1/feature-flags`, {
+			headers: sessionCookie ? { Authorization: `Bearer ${sessionCookie}` } : {},
+		});
+		if (flagsRes.ok) {
+			const { data } = await flagsRes.json();
+			event.locals.featureFlags = data ?? {};
+		} else {
+			event.locals.featureFlags = {};
+		}
+	} catch {
+		event.locals.featureFlags = {};
+	}
 
 	const response = await resolve(event);
 	return response;

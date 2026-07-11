@@ -25,11 +25,9 @@ func (e *PasswordReusedError) Error() string {
 	return "password cannot be the same as any of your last passwords"
 }
 
-// PasswordHistoryQuerier defines the database operations needed for
-// password history checks. Implementations live in store.go.
-type PasswordHistoryQuerier interface {
+// PasswordHistoryReader defines the interface for reading password history.
+type PasswordHistoryReader interface {
 	GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error)
-	InsertPasswordHistory(ctx context.Context, tenantID, userID pgtype.UUID, passwordHash string) error
 }
 
 // PasswordPolicy defines the rules for acceptable passwords.
@@ -58,21 +56,29 @@ func DefaultPasswordPolicy() PasswordPolicy {
 
 // SettingsReader defines the interface for reading settings from the database.
 type SettingsReader interface {
-	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) bool
+	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
+	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
 }
 
 // PasswordPolicyFromSettings returns a password policy configured from system_settings.
 // Falls back to defaults for any unset values.
 func PasswordPolicyFromSettings(ctx context.Context, reader SettingsReader, tenantID pgtype.UUID) PasswordPolicy {
+	minLength := 8
+	if val, err := reader.GetSettingInt(ctx, tenantID, "auth.password.min_length"); err == nil && val > 0 {
+		minLength = val
+	}
+	requireUpper := false
+	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.require_uppercase"); err == nil {
+		requireUpper = val
+	}
 	return PasswordPolicy{
-		MinLength:     reader.GetSettingInt(ctx, tenantID, "auth.password.min_length", 8),
+		MinLength:     minLength,
 		MaxLength:     128, // not configurable via settings
-		RequireUpper:  reader.GetSettingBool(ctx, tenantID, "auth.password.require_uppercase"),
-		RequireNumber: true, // not configurable via settings
+		RequireUpper:  requireUpper,
+		RequireNumber: true,  // not configurable via settings
 		RequireSymbol: false, // not configurable via settings
-		CheckBreach:   true, // not configurable via settings
-		HistoryCount:  5, // not configurable via settings
+		CheckBreach:   true,  // not configurable via settings
+		HistoryCount:  5,     // not configurable via settings
 	}
 }
 
@@ -154,7 +160,7 @@ func VerifyPassword(hash, password string) error {
 // CheckPasswordHistory queries the last N password hashes for the given user
 // and checks whether the new password matches any of them. Returns nil if the
 // password is unique, or a PasswordReusedError if it matches a recent hash.
-func CheckPasswordHistory(ctx context.Context, store PasswordHistoryQuerier, userID pgtype.UUID, newPassword string, policy PasswordPolicy) error {
+func CheckPasswordHistory(ctx context.Context, store PasswordHistoryReader, userID pgtype.UUID, newPassword string, policy PasswordPolicy) error {
 	if policy.HistoryCount <= 0 {
 		return nil
 	}

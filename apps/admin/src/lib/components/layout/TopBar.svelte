@@ -1,22 +1,41 @@
 <script lang="ts">
-	import { PUBLIC_JC_ENV } from '$env/static/public';
+	import { PUBLIC_JC_ENV, PUBLIC_JC_API_URL } from '$env/static/public';
 	import { user } from '$lib/stores/auth';
 	import { theme } from '$lib/stores/theme';
+	import { notifications, unreadCount, markRead, markAllRead } from '$lib/stores/notifications';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
-	import { Bell, Sun, Moon } from 'lucide-svelte';
+	import { Bell, Sun, Moon, Check } from 'lucide-svelte';
 
 	let showDropdown = $state(false);
-	let unreadCount = $state(0);
+	let showNotifications = $state(false);
 
 	function toggleTheme() {
 		theme.update((v) => (v === 'dark' ? 'light' : 'dark'));
 	}
 
-	function logout() {
-		document.cookie = 'jc_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+	function closeDropdowns(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-notification-menu]') && !target.closest('[data-user-menu]')) {
+			showDropdown = false;
+			showNotifications = false;
+		}
+	}
+
+	async function logout() {
+		try {
+			await fetch(`${PUBLIC_JC_API_URL}/api/v1/auth/logout`, {
+				method: 'POST',
+				credentials: 'include'
+			});
+		} catch {
+			// Continue with client-side cleanup even if the request fails
+		}
+		user.set(null);
 		window.location.href = '/login';
 	}
 </script>
+
+<svelte:window onclick={closeDropdowns} />
 
 <header class="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 dark:border-gray-700 dark:bg-gray-900">
 	<div class="flex items-center gap-3">
@@ -29,17 +48,54 @@
 	</div>
 
 	<div class="flex items-center gap-4">
-		<button
-			type="button"
-			class="relative rounded p-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-		>
-			<Bell class="h-4 w-4" />
-			{#if unreadCount > 0}
-				<span class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-					{unreadCount}
-				</span>
+		<div class="relative" data-notification-menu>
+			<button
+				type="button"
+				class="relative rounded p-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+				onclick={() => { showNotifications = !showNotifications; showDropdown = false; }}
+			>
+				<Bell class="h-4 w-4" />
+				{#if $unreadCount > 0}
+					<span class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+						{$unreadCount}
+					</span>
+				{/if}
+			</button>
+
+			{#if showNotifications}
+				<div class="absolute right-0 top-full z-50 mt-1 w-80 rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+					<div class="flex items-center justify-between border-b border-gray-100 px-3 py-2 dark:border-gray-700">
+						<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Notifications</span>
+						<button
+							type="button"
+							class="text-xs text-blue-600 hover:underline dark:text-blue-400"
+							onclick={() => markAllRead()}
+						>
+							Mark all read
+						</button>
+					</div>
+					<div class="max-h-64 overflow-y-auto">
+						{#if $notifications.length === 0}
+							<p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">No notifications</p>
+						{:else}
+							{#each $notifications as notif}
+								<button
+									type="button"
+									class="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 {notif.read ? 'opacity-60' : ''}"
+									onclick={() => {
+										markRead(notif.id);
+										if (notif.link) window.location.href = notif.link;
+									}}
+								>
+									<p class="text-sm font-medium text-gray-800 dark:text-gray-200">{notif.title}</p>
+									<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{notif.body}</p>
+								</button>
+							{/each}
+						{/if}
+					</div>
+				</div>
 			{/if}
-		</button>
+		</div>
 
 		<button
 			type="button"

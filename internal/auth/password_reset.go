@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 const (
@@ -65,9 +66,10 @@ func GenerateVerificationToken() (token, hash string, err error) {
 
 // InvalidateAllUserSessions revokes all active refresh tokens for a user.
 // This forces the user to re-authenticate on all devices after a password reset.
-func InvalidateAllUserSessions(ctx context.Context, store Querier, userID, tenantID pgtype.UUID) error {
+func InvalidateAllUserSessions(ctx context.Context, queries *gen.Queries, userID, tenantID pgtype.UUID) error {
 	// Revoke all non-revoked refresh tokens for this user.
-	// The DBStore.RevokeRefreshToken method only revokes a single token by hash,
-	// so we need a bulk operation here.
-	return store.RevokeAllRefreshTokens(ctx, tenantID, userID)
+	return queries.RevokeAllUserRefreshTokens(ctx, gen.RevokeAllUserRefreshTokensParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
 }

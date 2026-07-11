@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiFetch } from '$lib/server/api';
+import { redirect } from '@sveltejs/kit';
 
 interface ProfessionalProfile {
 	id: string;
@@ -19,7 +20,8 @@ interface ProfileListResponse {
 	total_pages: number;
 }
 
-export const load: PageServerLoad = async ({ url, cookies }) => {
+export const load: PageServerLoad = async ({ url, cookies, locals }) => {
+	if (!locals.user) throw redirect(303, '/login');
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 

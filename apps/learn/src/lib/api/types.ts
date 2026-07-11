@@ -128,6 +128,7 @@ export interface QuizQuestion {
 	id: string;
 	question: string;
 	options: { id: string; text: string }[];
+	correct_index?: number;
 }
 
 export interface QuizResult {

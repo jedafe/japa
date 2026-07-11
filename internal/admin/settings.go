@@ -14,7 +14,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // SettingDef defines the metadata for a single setting within a category.
@@ -42,12 +44,24 @@ type SettingValue struct {
 
 // Handlers holds dependencies for admin HTTP handlers.
 type Handlers struct {
-	DB *db.DB
+	DB    *db.DB
+	RBAC  *rbac.RBAC
+	Valkey valkeycompat.Cmdable
 }
 
 // NewHandlers creates Handlers with the given database pool.
 func NewHandlers(database *db.DB) *Handlers {
 	return &Handlers{DB: database}
+}
+
+// SetRBAC injects the RBAC resolver for permission cache invalidation.
+func (h *Handlers) SetRBAC(r *rbac.RBAC) {
+	h.RBAC = r
+}
+
+// SetValkey injects the Valkey client for permission cache invalidation.
+func (h *Handlers) SetValkey(v valkeycompat.Cmdable) {
+	h.Valkey = v
 }
 
 // defaultSettings defines every available setting with its metadata.

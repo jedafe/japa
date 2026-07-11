@@ -2,7 +2,10 @@
 	import { onMount } from 'svelte';
 	import { aiApi, type GenerateResult } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { Loader2, Copy, Check, Sparkles, RotateCcw, Send, ChevronDown, ChevronUp, Clock, Zap, Trash2 } from 'lucide-svelte';
+	import { Loader2, Copy, Check, Sparkles, RotateCcw, Send, ChevronDown, ChevronUp, Clock, Zap, Trash2, AlertTriangle } from 'lucide-svelte';
+	import { hasPermission } from '$lib/stores/permissions';
+
+	const canGenerate = $derived(hasPermission('ai.context.generate'));
 
 	// ─── Form State ───────────────────────────────────────────────
 	let prompt = $state('');
@@ -26,7 +29,7 @@
 	};
 	let history = $state<HistoryEntry[]>([]);
 
-	const categories = [
+	const defaultCategories = [
 		{ value: 'blog_post', labelKey: 'ai.category.blog_post', desc: 'Long-form articles and blog posts' },
 		{ value: 'forum_reply', labelKey: 'ai.category.forum_reply', desc: 'Contextual replies for forum discussions' },
 		{ value: 'social_media', labelKey: 'ai.category.social_media', desc: 'Short posts for social platforms' },
@@ -34,6 +37,7 @@
 		{ value: 'summary', labelKey: 'ai.category.summary', desc: 'Condensed summaries of longer content' },
 		{ value: 'translation', labelKey: 'ai.category.translation', desc: 'Translate content between languages' }
 	];
+	let categories = $state(defaultCategories);
 
 	let models = $state<{ value: string; label: string }[]>([
 		{ value: '', label: 'Default' }
@@ -52,6 +56,18 @@
 				{ value: 'gpt-3.5-turbo', label: t('ai.model.gpt35') },
 				{ value: 'claude-3', label: t('ai.model.claude3') }
 			];
+		}
+		try {
+			const catsRes = await aiApi.listCategories();
+			if (catsRes.ok && Array.isArray(catsRes.data) && catsRes.data.length > 0) {
+				categories = catsRes.data.map((c: { value: string; label: string }) => ({
+					value: c.value,
+					labelKey: `ai.category.${c.value}`,
+					desc: c.label
+				}));
+			}
+		} catch {
+			categories = defaultCategories;
 		}
 	});
 
@@ -138,6 +154,15 @@
 	<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('ai.generator')}</h1>
 	<p class="text-sm" style="color: var(--color-muted)">{t('ai.generator_description')}</p>
 </div>
+
+{#if !canGenerate}
+	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
+		<div class="flex items-center gap-3 text-sm" style="color: var(--color-muted)">
+			<AlertTriangle class="h-5 w-5" />
+			You don't have permission to use AI generation.
+		</div>
+	</div>
+{:else}
 
 <div class="grid gap-6 lg:grid-cols-3">
 	<!-- ═══ Main Generator ═══ -->
@@ -342,3 +367,4 @@
 		</div>
 	</div>
 </div>
+{/if}

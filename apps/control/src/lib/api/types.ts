@@ -152,9 +152,13 @@ export interface DbHealth {
 	latency_ms: number;
 	size_bytes: number;
 	table_count: number;
-	tables: { name: string; live_rows: number; dead_rows: number; dead_ratio: number }[];
-	slow_queries: { pid: number; duration: number; state: string; query_preview: string }[];
+	index_count: number;
+	avg_query_time_ms: number;
+	tables: { name: string; live_rows: number; dead_rows: number; dead_ratio: number; row_count: number; size_bytes: number; index_count: number; last_vacuum: string | null }[];
+	slow_queries: { pid: number; duration: number; duration_ms: number; state: string; query_preview: string; query: string; timestamp: string }[];
 	indexes_unused: { name: string; table_name: string; scans: number }[];
+	connection_pool?: { active: number; idle: number; waiting: number; max: number };
+	replication?: { state: string; lag_seconds: number };
 }
 
 export interface Deployment {

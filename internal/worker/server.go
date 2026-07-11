@@ -91,13 +91,14 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	_, _ = scheduler.Register("0 3 * * *", asynq.NewTask(TypeSecurityScan, nil))
 
 	// Weekly: prune old feeds, prune audit logs, DM cleanup, prune push tokens.
-	// _, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePruneOldFeeds, nil)) // TODO: implement feed pruning
+	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePruneOldFeeds, nil))
 	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePruneAuditLogs, nil))
-	// _, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeDMCleanupDeclinedRequests, nil)) // TODO: implement DM cleanup
-	// _, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePrunePushTokens, nil)) // TODO: implement push token pruning
+	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeDMCleanupDeclinedRequests, nil))
+	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePrunePushTokens, nil))
 
-	// Coupon expiry check — hourly.
+	// Coupon expiry check + event flush — hourly.
 	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeCouponExpireCheck, nil))
+	_, _ = scheduler.Register("5 * * * *", asynq.NewTask(TypeCouponTrackEvents, nil))
 
 	// Affiliate link expiry — daily.
 	_, _ = scheduler.Register("0 4 * * *", asynq.NewTask(TypeAffiliateExpireCheck, nil))

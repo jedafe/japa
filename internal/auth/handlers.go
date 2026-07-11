@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/email"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
@@ -25,6 +26,7 @@ import (
 // AuthHandlers holds dependencies for auth HTTP handlers.
 type AuthHandlers struct { //nolint:revive // stuttering type name preserved for API compatibility
 	DB           Querier
+	Queries      *gen.Queries
 	KeyRotation  *KeyRotation
 	BruteForce   BruteForceStore
 	Policy       PasswordPolicy
@@ -37,26 +39,20 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 
 // Querier is the interface for database operations needed by auth handlers.
 type Querier interface {
-	CreateUser(ctx context.Context, tenantID pgtype.UUID, email, username, passwordHash string) (pgtype.UUID, error)
 	GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, email string) (*User, error)
-	StoreRefreshToken(ctx context.Context, tenantID, userID pgtype.UUID, tokenHash string, expiresAt time.Time) error
 	GetRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error)
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
-	RevokeAllRefreshTokens(ctx context.Context, tenantID, userID pgtype.UUID) error
 
 	// Password reset
-	StoreResetToken(ctx context.Context, tenantID, userID pgtype.UUID, tokenHash string, expiresAt time.Time) error
 	GetValidResetToken(ctx context.Context, tokenHash string) (*ResetTokenRecord, error)
 	MarkResetTokenUsed(ctx context.Context, tokenHash string) error
 	UpdateUserPassword(ctx context.Context, userID pgtype.UUID, passwordHash string) error
 
 	// Email verification
-	StoreEmailVerification(ctx context.Context, tenantID, userID pgtype.UUID, email, tokenHash string, expiresAt time.Time) error
 	GetValidVerificationToken(ctx context.Context, tokenHash string) (*VerificationTokenRecord, error)
 	MarkEmailVerified(ctx context.Context, userID pgtype.UUID) error
 
 	// Password history
-	InsertPasswordHistory(ctx context.Context, tenantID, userID pgtype.UUID, passwordHash string) error
 	GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error)
 }
 
@@ -158,7 +154,12 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.DB.CreateUser(r.Context(), tenant.ID, req.Email, req.Username, passwordHash)
+	userID, err := h.Queries.CreateUser(r.Context(), gen.CreateUserParams{
+		TenantID:     tenant.ID,
+		Email:        req.Email,
+		Username:     req.Username,
+		PasswordHash: &passwordHash,
+	})
 	if err != nil {
 		if errors.Is(err, errpkg.ErrDuplicate) {
 			writeError(w, http.StatusConflict, "email_exists", "Email or username already in use")
@@ -171,7 +172,11 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Record the initial password in history so it cannot be reused later.
-	if err := h.DB.InsertPasswordHistory(r.Context(), tenant.ID, userID, passwordHash); err != nil {
+	if err := h.Queries.InsertPasswordHistory(r.Context(), gen.InsertPasswordHistoryParams{
+		TenantID:     tenant.ID,
+		UserID:       userID,
+		PasswordHash: passwordHash,
+	}); err != nil {
 		slog.Warn("register: failed to record password history", "error", err)
 	}
 
@@ -190,7 +195,12 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	tokenHash := hashRefreshToken(refreshToken)
 	expiresAt := time.Now().Add(RefreshTokenTTL)
 
-	if err := h.DB.StoreRefreshToken(r.Context(), tenant.ID, userID, tokenHash, expiresAt); err != nil {
+	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
+		TenantID:  tenant.ID,
+		UserID:    userID,
+		TokenHash: tokenHash,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
@@ -311,7 +321,12 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	tokenHash := hashRefreshToken(refreshToken)
 	expiresAt := time.Now().Add(RefreshTokenTTL)
 
-	if err := h.DB.StoreRefreshToken(r.Context(), user.TenantID, user.ID, tokenHash, expiresAt); err != nil {
+	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
+		TenantID:  user.TenantID,
+		UserID:    user.ID,
+		TokenHash: tokenHash,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
@@ -526,7 +541,12 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	}
 
 	expiresAt := time.Now().Add(ResetTokenTTL)
-	if err := h.DB.StoreResetToken(r.Context(), t.ID, user.ID, hash, expiresAt); err != nil {
+	if err := h.Queries.CreatePasswordResetToken(r.Context(), gen.CreatePasswordResetTokenParams{
+		TenantID:  t.ID,
+		UserID:    user.ID,
+		TokenHash: hash,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	}); err != nil {
 		slog.Error("forgot-password: failed to store token", "error", err)
 		return
 	}
@@ -694,12 +714,16 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Record the new password in history to prevent reuse.
-	if err := h.DB.InsertPasswordHistory(r.Context(), rec.TenantID, rec.UserID, passwordHash); err != nil {
+	if err := h.Queries.InsertPasswordHistory(r.Context(), gen.InsertPasswordHistoryParams{
+		TenantID:     rec.TenantID,
+		UserID:       rec.UserID,
+		PasswordHash: passwordHash,
+	}); err != nil {
 		slog.Warn("reset-password: failed to record password history", "error", err)
 	}
 
 	// Invalidate all sessions for this user.
-	if err := InvalidateAllUserSessions(r.Context(), h.DB, rec.UserID, rec.TenantID); err != nil {
+	if err := InvalidateAllUserSessions(r.Context(), h.Queries, rec.UserID, rec.TenantID); err != nil {
 		slog.Error("reset-password: failed to invalidate sessions", "user_id", rec.UserID.String(), "error", err)
 	}
 
@@ -818,7 +842,13 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	}
 
 	expiresAt := time.Now().Add(VerificationTokenTTL)
-	if err := h.DB.StoreEmailVerification(r.Context(), t.ID, user.ID, user.Email, hash, expiresAt); err != nil {
+	if err := h.Queries.CreateEmailVerification(r.Context(), gen.CreateEmailVerificationParams{
+		TenantID:  t.ID,
+		UserID:    user.ID,
+		Email:     user.Email,
+		TokenHash: hash,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	}); err != nil {
 		slog.Error("resend-verification: failed to store token", "error", err)
 		return
 	}

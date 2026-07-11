@@ -5,7 +5,7 @@
 
 	let { data } = $props();
 
-	let media = $state(data.media);
+	let media = $derived(data.media);
 	let uploading = $state(false);
 	let deleting = $state<string | null>(null);
 	let errorMessage = $state('');

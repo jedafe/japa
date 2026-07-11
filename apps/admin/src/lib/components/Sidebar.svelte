@@ -24,7 +24,9 @@
 		Layout,
 		Building2,
 		Heart,
-		GraduationCap
+		GraduationCap,
+		Bell,
+		Lock
 	} from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions';
 
@@ -36,6 +38,8 @@
 		{ label: 'Dashboard', href: '/', icon: LayoutDashboard, perm: null },
 		{ label: 'Users', href: '/users', icon: Users, perm: 'admin.users.view' },
 		{ label: 'Moderation', href: '/moderation', icon: ShieldCheck, perm: 'admin.moderation' },
+		{ label: 'Moderation Alerts', href: '/moderation/alerts', icon: Bell, perm: 'admin.moderation.view' },
+		{ label: 'GDPR', href: '/gdpr', icon: Lock, perm: 'admin.moderation.view' },
 		{ label: 'Spam', href: '/spam', icon: Shield, perm: 'spam.ip_block.manage' },
 		{ label: 'Spaces', href: '/spaces', icon: Layers, perm: 'admin.settings' },
 		{ label: 'Tags', href: '/tags', icon: Tag, perm: 'admin.settings' },
