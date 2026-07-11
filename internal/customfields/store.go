@@ -2,9 +2,12 @@ package customfields
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -318,7 +321,7 @@ func (s *Service) DeleteFieldValue(ctx context.Context, fieldID pgtype.UUID, ent
 // ---------------------------------------------------------------------------
 
 // ListForms returns every form owned by the given tenant, newest first.
-func (s *Service) ListForms(ctx context.Context, tenantID pgtype.UUID) ([]gen.Form, error) {
+func (s *Service) ListForms(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListFormsByTenantRow, error) {
 	forms, err := s.read.ListFormsByTenant(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing forms: %w", err)
@@ -327,14 +330,28 @@ func (s *Service) ListForms(ctx context.Context, tenantID pgtype.UUID) ([]gen.Fo
 	return forms, nil
 }
 
+// ListFormsBySpace returns every form scoped to the given space, with
+// submission counts, newest first.
+func (s *Service) ListFormsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID) ([]gen.ListFormsBySpaceRow, error) {
+	forms, err := s.read.ListFormsBySpace(ctx, gen.ListFormsBySpaceParams{
+		TenantID: tenantID,
+		SpaceID:  spaceID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing forms by space: %w", err)
+	}
+
+	return forms, nil
+}
+
 // GetForm returns the form with the given ID, scoped to the tenant.
-func (s *Service) GetForm(ctx context.Context, id, tenantID pgtype.UUID) (gen.Form, error) {
+func (s *Service) GetForm(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetFormByIDRow, error) {
 	form, err := s.read.GetFormByID(ctx, gen.GetFormByIDParams{
 		ID:       id,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.Form{}, fmt.Errorf("getting form: %w", err)
+		return gen.GetFormByIDRow{}, fmt.Errorf("getting form: %w", err)
 	}
 
 	return form, nil
@@ -342,13 +359,13 @@ func (s *Service) GetForm(ctx context.Context, id, tenantID pgtype.UUID) (gen.Fo
 
 // GetFormBySlug returns the form matching the given slug, scoped to the
 // tenant.
-func (s *Service) GetFormBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Form, error) {
+func (s *Service) GetFormBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetFormBySlugRow, error) {
 	form, err := s.read.GetFormBySlug(ctx, gen.GetFormBySlugParams{
 		Slug:     slug,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.Form{}, fmt.Errorf("getting form by slug: %w", err)
+		return gen.GetFormBySlugRow{}, fmt.Errorf("getting form by slug: %w", err)
 	}
 
 	return form, nil
@@ -356,10 +373,10 @@ func (s *Service) GetFormBySlug(ctx context.Context, slug string, tenantID pgtyp
 
 // CreateForm creates a new form. System forms can only be seeded at install
 // time; set IsSystem to false for tenant-created forms.
-func (s *Service) CreateForm(ctx context.Context, params gen.CreateFormParams) (gen.Form, error) {
+func (s *Service) CreateForm(ctx context.Context, params gen.CreateFormParams) (gen.CreateFormRow, error) {
 	form, err := s.write.CreateForm(ctx, params)
 	if err != nil {
-		return gen.Form{}, fmt.Errorf("creating form: %w", err)
+		return gen.CreateFormRow{}, fmt.Errorf("creating form: %w", err)
 	}
 
 	return form, nil
@@ -367,10 +384,10 @@ func (s *Service) CreateForm(ctx context.Context, params gen.CreateFormParams) (
 
 // UpdateForm updates a non-system form's mutable fields. System forms are
 // protected at the database level.
-func (s *Service) UpdateForm(ctx context.Context, params gen.UpdateFormParams) (gen.Form, error) {
+func (s *Service) UpdateForm(ctx context.Context, params gen.UpdateFormParams) (gen.UpdateFormRow, error) {
 	form, err := s.write.UpdateForm(ctx, params)
 	if err != nil {
-		return gen.Form{}, fmt.Errorf("updating form: %w", err)
+		return gen.UpdateFormRow{}, fmt.Errorf("updating form: %w", err)
 	}
 
 	return form, nil
@@ -387,6 +404,105 @@ func (s *Service) DeleteForm(ctx context.Context, id, tenantID pgtype.UUID) erro
 	}
 
 	return nil
+}
+
+// FormFieldDef describes a field to be created as part of a form.
+type FormFieldDef struct {
+	Label     string
+	Key       string
+	FieldType string
+	Required  bool
+	Position  int32
+	Options   []byte // JSON array, or nil
+}
+
+// CreateFormWithFields creates a form, a backing custom field group, the
+// requested fields, and the group-to-form assignment — all in one transaction.
+// Returns the created form row (compatible with gen.Form fields).
+func (s *Service) CreateFormWithFields(ctx context.Context, tenantID, spaceID pgtype.UUID, name, slug string, description *string, fieldDefs []FormFieldDef) (gen.CreateFormRow, error) {
+	return db.WithTxResult(ctx, s.pool, func(q *gen.Queries) (gen.CreateFormRow, error) {
+		// 1. Create the form
+		form, err := q.CreateForm(ctx, gen.CreateFormParams{
+			TenantID:    tenantID,
+			SpaceID:     spaceID,
+			Name:        name,
+			Slug:        slug,
+			Description: description,
+			Status:      "draft",
+			IsSystem:    false,
+		})
+		if err != nil {
+			return gen.CreateFormRow{}, fmt.Errorf("creating form: %w", err)
+		}
+
+		// 2. Create a backing field group for this form
+		groupSlug := "form-" + slug
+		group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
+			TenantID: tenantID,
+			Name:     "Form: " + name,
+			Slug:     groupSlug,
+			IsSystem: false,
+		})
+		if err != nil {
+			return gen.CreateFormRow{}, fmt.Errorf("creating form field group: %w", err)
+		}
+
+		// 3. Create each field in the group
+		for _, fd := range fieldDefs {
+			_, err := q.CreateCustomField(ctx, gen.CreateCustomFieldParams{
+				GroupID:        group.ID,
+				TenantID:       tenantID,
+				Label:          fd.Label,
+				Key:            fd.Key,
+				FieldType:      fd.FieldType,
+				IsRequired:     fd.Required,
+				IsSystem:       false,
+				Position:       fd.Position,
+				Options:        fd.Options,
+				ShowInFrontend: true,
+			})
+			if err != nil {
+				return gen.CreateFormRow{}, fmt.Errorf("creating form field %q: %w", fd.Label, err)
+			}
+		}
+
+		// 4. Assign the group to this form (entity_class = "form")
+		if _, err := q.CreateAssignment(ctx, gen.CreateAssignmentParams{
+			GroupID:     group.ID,
+			EntityClass: "form",
+			EntityID:    form.ID,
+			Position:    0,
+		}); err != nil {
+			return gen.CreateFormRow{}, fmt.Errorf("assigning form field group: %w", err)
+		}
+
+		return form, nil
+	})
+}
+
+// GetFormFields returns the custom fields attached to a form via the
+// custom_field_group_assignments polymorphic link (entity_class = "form").
+func (s *Service) GetFormFields(ctx context.Context, formID, tenantID pgtype.UUID) ([]gen.CustomField, error) {
+	assignment, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
+		EntityClass: "form",
+		EntityID:    formID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil // form has no fields yet
+		}
+		return nil, fmt.Errorf("getting form field assignment: %w", err)
+	}
+
+	fields, err := s.read.ListCustomFieldsByGroup(ctx, gen.ListCustomFieldsByGroupParams{
+		GroupID:  assignment.GroupID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing form fields: %w", err)
+	}
+
+	return fields, nil
 }
 
 // ---------------------------------------------------------------------------

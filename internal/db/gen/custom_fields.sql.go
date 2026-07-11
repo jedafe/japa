@@ -234,6 +234,31 @@ func (q *Queries) DeleteFieldPermission(ctx context.Context, arg DeleteFieldPerm
 	return err
 }
 
+const getAssignmentByEntity = `-- name: GetAssignmentByEntity :one
+SELECT id, group_id, entity_class, entity_id, position, created_at
+FROM custom_field_group_assignments
+WHERE entity_class = $1 AND entity_id = $2
+`
+
+type GetAssignmentByEntityParams struct {
+	EntityClass string      `json:"entity_class"`
+	EntityID    pgtype.UUID `json:"entity_id"`
+}
+
+func (q *Queries) GetAssignmentByEntity(ctx context.Context, arg GetAssignmentByEntityParams) (CustomFieldGroupAssignment, error) {
+	row := q.db.QueryRow(ctx, getAssignmentByEntity, arg.EntityClass, arg.EntityID)
+	var i CustomFieldGroupAssignment
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.EntityClass,
+		&i.EntityID,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getCustomFieldByID = `-- name: GetCustomFieldByID :one
 SELECT id, group_id, tenant_id, label, key, field_type, options, embed_platforms,
        placeholder, default_value, is_required, is_system, show_in_frontend,

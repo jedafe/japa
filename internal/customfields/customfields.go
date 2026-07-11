@@ -13,6 +13,7 @@
 package customfields
 
 import (
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -70,6 +71,7 @@ var SupportedEmbedPlatforms = []string{
 type Service struct {
 	read  *gen.Queries
 	write *gen.Queries
+	pool  *pgxpool.Pool
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -77,5 +79,6 @@ func NewService(database *db.DB) *Service {
 	return &Service{
 		read:  gen.New(database.Reader),
 		write: gen.New(database.Writer),
+		pool:  database.Writer,
 	}
 }

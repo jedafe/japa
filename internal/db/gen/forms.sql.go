@@ -13,14 +13,17 @@ import (
 )
 
 const createForm = `-- name: CreateForm :one
-INSERT INTO forms (tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, tenant_id, name, slug, description, is_multi_step, submit_label,
-          success_message, status, is_system, created_at
+INSERT INTO forms (tenant_id, space_id, name, slug, description, is_multi_step,
+                    submit_label, success_message, status, is_system)
+VALUES ($1, $2, $3, $4, $5,
+        $6, $7, $8, $9, $10)
+RETURNING id, tenant_id, space_id, name, slug, description, is_multi_step,
+          submit_label, success_message, status, is_system, created_at
 `
 
 type CreateFormParams struct {
 	TenantID       pgtype.UUID `json:"tenant_id"`
+	SpaceID        pgtype.UUID `json:"space_id"`
 	Name           string      `json:"name"`
 	Slug           string      `json:"slug"`
 	Description    *string     `json:"description"`
@@ -31,9 +34,25 @@ type CreateFormParams struct {
 	IsSystem       bool        `json:"is_system"`
 }
 
-func (q *Queries) CreateForm(ctx context.Context, arg CreateFormParams) (Form, error) {
+type CreateFormRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	SpaceID        pgtype.UUID        `json:"space_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	IsMultiStep    bool               `json:"is_multi_step"`
+	SubmitLabel    string             `json:"submit_label"`
+	SuccessMessage *string            `json:"success_message"`
+	Status         string             `json:"status"`
+	IsSystem       bool               `json:"is_system"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) CreateForm(ctx context.Context, arg CreateFormParams) (CreateFormRow, error) {
 	row := q.db.QueryRow(ctx, createForm,
 		arg.TenantID,
+		arg.SpaceID,
 		arg.Name,
 		arg.Slug,
 		arg.Description,
@@ -43,10 +62,11 @@ func (q *Queries) CreateForm(ctx context.Context, arg CreateFormParams) (Form, e
 		arg.Status,
 		arg.IsSystem,
 	)
-	var i Form
+	var i CreateFormRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
+		&i.SpaceID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -168,8 +188,8 @@ func (q *Queries) DeleteFormSubmission(ctx context.Context, arg DeleteFormSubmis
 }
 
 const getFormByID = `-- name: GetFormByID :one
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label,
-       success_message, status, is_system, created_at
+SELECT id, tenant_id, space_id, name, slug, description, is_multi_step,
+       submit_label, success_message, status, is_system, created_at
 FROM forms
 WHERE id = $1 AND tenant_id = $2
 `
@@ -179,12 +199,28 @@ type GetFormByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetFormByID(ctx context.Context, arg GetFormByIDParams) (Form, error) {
+type GetFormByIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	SpaceID        pgtype.UUID        `json:"space_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	IsMultiStep    bool               `json:"is_multi_step"`
+	SubmitLabel    string             `json:"submit_label"`
+	SuccessMessage *string            `json:"success_message"`
+	Status         string             `json:"status"`
+	IsSystem       bool               `json:"is_system"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetFormByID(ctx context.Context, arg GetFormByIDParams) (GetFormByIDRow, error) {
 	row := q.db.QueryRow(ctx, getFormByID, arg.ID, arg.TenantID)
-	var i Form
+	var i GetFormByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
+		&i.SpaceID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -199,8 +235,8 @@ func (q *Queries) GetFormByID(ctx context.Context, arg GetFormByIDParams) (Form,
 }
 
 const getFormBySlug = `-- name: GetFormBySlug :one
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label,
-       success_message, status, is_system, created_at
+SELECT id, tenant_id, space_id, name, slug, description, is_multi_step,
+       submit_label, success_message, status, is_system, created_at
 FROM forms
 WHERE slug = $1 AND tenant_id = $2
 `
@@ -210,12 +246,28 @@ type GetFormBySlugParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetFormBySlug(ctx context.Context, arg GetFormBySlugParams) (Form, error) {
+type GetFormBySlugRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	SpaceID        pgtype.UUID        `json:"space_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	IsMultiStep    bool               `json:"is_multi_step"`
+	SubmitLabel    string             `json:"submit_label"`
+	SuccessMessage *string            `json:"success_message"`
+	Status         string             `json:"status"`
+	IsSystem       bool               `json:"is_system"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetFormBySlug(ctx context.Context, arg GetFormBySlugParams) (GetFormBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getFormBySlug, arg.Slug, arg.TenantID)
-	var i Form
+	var i GetFormBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
+		&i.SpaceID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -350,32 +402,118 @@ func (q *Queries) ListFormSubmissionsByForm(ctx context.Context, arg ListFormSub
 	return items, nil
 }
 
+const listFormsBySpace = `-- name: ListFormsBySpace :many
+SELECT f.id, f.tenant_id, f.space_id, f.name, f.slug, f.description,
+       f.is_multi_step, f.submit_label, f.success_message, f.status,
+       f.is_system, f.created_at,
+       COALESCE(fc.cnt, 0)::bigint AS submission_count
+FROM forms f
+LEFT JOIN LATERAL (
+    SELECT count(*) AS cnt
+    FROM form_submissions fs
+    WHERE fs.form_id = f.id
+) fc ON true
+WHERE f.tenant_id = $1 AND f.space_id = $2
+ORDER BY f.created_at DESC, f.id DESC
+`
+
+type ListFormsBySpaceParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+}
+
+type ListFormsBySpaceRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	Name            string             `json:"name"`
+	Slug            string             `json:"slug"`
+	Description     *string            `json:"description"`
+	IsMultiStep     bool               `json:"is_multi_step"`
+	SubmitLabel     string             `json:"submit_label"`
+	SuccessMessage  *string            `json:"success_message"`
+	Status          string             `json:"status"`
+	IsSystem        bool               `json:"is_system"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	SubmissionCount int64              `json:"submission_count"`
+}
+
+func (q *Queries) ListFormsBySpace(ctx context.Context, arg ListFormsBySpaceParams) ([]ListFormsBySpaceRow, error) {
+	rows, err := q.db.Query(ctx, listFormsBySpace, arg.TenantID, arg.SpaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFormsBySpaceRow
+	for rows.Next() {
+		var i ListFormsBySpaceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.SpaceID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.IsMultiStep,
+			&i.SubmitLabel,
+			&i.SuccessMessage,
+			&i.Status,
+			&i.IsSystem,
+			&i.CreatedAt,
+			&i.SubmissionCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFormsByTenant = `-- name: ListFormsByTenant :many
 
 
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label,
-       success_message, status, is_system, created_at
+SELECT id, tenant_id, space_id, name, slug, description, is_multi_step,
+       submit_label, success_message, status, is_system, created_at
 FROM forms
 WHERE tenant_id = $1
 ORDER BY created_at DESC, id DESC
 `
 
+type ListFormsByTenantRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	SpaceID        pgtype.UUID        `json:"space_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	IsMultiStep    bool               `json:"is_multi_step"`
+	SubmitLabel    string             `json:"submit_label"`
+	SuccessMessage *string            `json:"success_message"`
+	Status         string             `json:"status"`
+	IsSystem       bool               `json:"is_system"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 // Form, form step, and form submission queries.
 // =====================
 // Forms
 // =====================
-func (q *Queries) ListFormsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]Form, error) {
+func (q *Queries) ListFormsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListFormsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listFormsByTenant, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Form
+	var items []ListFormsByTenantRow
 	for rows.Next() {
-		var i Form
+		var i ListFormsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
+			&i.SpaceID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -401,8 +539,8 @@ UPDATE forms
 SET name = $1, description = $2, is_multi_step = $3,
     submit_label = $4, success_message = $5, status = $6
 WHERE id = $7 AND tenant_id = $8 AND is_system = false
-RETURNING id, tenant_id, name, slug, description, is_multi_step, submit_label,
-          success_message, status, is_system, created_at
+RETURNING id, tenant_id, space_id, name, slug, description, is_multi_step,
+          submit_label, success_message, status, is_system, created_at
 `
 
 type UpdateFormParams struct {
@@ -416,7 +554,22 @@ type UpdateFormParams struct {
 	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateForm(ctx context.Context, arg UpdateFormParams) (Form, error) {
+type UpdateFormRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	SpaceID        pgtype.UUID        `json:"space_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	IsMultiStep    bool               `json:"is_multi_step"`
+	SubmitLabel    string             `json:"submit_label"`
+	SuccessMessage *string            `json:"success_message"`
+	Status         string             `json:"status"`
+	IsSystem       bool               `json:"is_system"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) UpdateForm(ctx context.Context, arg UpdateFormParams) (UpdateFormRow, error) {
 	row := q.db.QueryRow(ctx, updateForm,
 		arg.Name,
 		arg.Description,
@@ -427,10 +580,11 @@ func (q *Queries) UpdateForm(ctx context.Context, arg UpdateFormParams) (Form, e
 		arg.ID,
 		arg.TenantID,
 	)
-	var i Form
+	var i UpdateFormRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
+		&i.SpaceID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,

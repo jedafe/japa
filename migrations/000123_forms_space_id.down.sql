@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_forms_space;
+ALTER TABLE forms DROP COLUMN IF EXISTS space_id;
