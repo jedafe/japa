@@ -12,11 +12,16 @@
 
 	let { data } = $props();
 
-	// svelte-ignore state_referenced_locally
-	let feed = $state<FeedItem[]>(data.feed ?? []);
-	let cardStyle = $state(data.cardStyle ?? 'reddit');
+	let feed = $state<FeedItem[]>([]);
+	let cardStyle = $state('reddit');
 	let offset = $state(20);
-	let hasMore = $state(feed.length >= 20);
+	let hasMore = $state(true);
+
+	$effect(() => {
+		feed = data.feed ?? [];
+		cardStyle = data.cardStyle ?? 'reddit';
+		hasMore = feed.length >= 20;
+	});
 	let loadingMore = $state(false);
 	let refreshing = $state(false);
 
@@ -24,7 +29,7 @@
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
 		try {
-			const items = await api.getFeedPrimary({ page_size: 20, cursor: String(offset) });
+			const items = await api.getFeedPrimary({ page_size: 20, page_offset: offset });
 			if (items && items.length > 0) {
 				feed = [...feed, ...items];
 				offset += items.length;

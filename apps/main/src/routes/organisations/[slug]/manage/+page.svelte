@@ -1,21 +1,31 @@
 <script lang="ts">
 	import { Building2, Users, Mail, Trash2, Save, Loader2, Shield, UserMinus } from 'lucide-svelte';
-	import { api } from '$lib/api';
+	import { api, type Organization, type OrganizationMember, type OrganizationInvitation } from '$lib/api';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 
 	let { data } = $props();
 
-	let org = $state(data.org);
-	let members = $state(data.members);
-	let invitations = $state(data.invitations);
+	let org = $state<Organization>({} as Organization);
+	let members = $state<OrganizationMember[]>([]);
+	let invitations = $state<OrganizationInvitation[]>([]);
 
 	// Edit state
 	let editing = $state(false);
-	let editName = $state(org.name);
-	let editHeadline = $state(org.headline ?? '');
-	let editBio = $state(org.bio ?? '');
-	let editPublic = $state(org.is_public);
+	let editName = $state('');
+	let editHeadline = $state('');
+	let editBio = $state('');
+	let editPublic = $state(false);
+
+	$effect(() => {
+		org = data.org;
+		members = data.members;
+		invitations = data.invitations as OrganizationInvitation[];
+		editName = data.org.name;
+		editHeadline = data.org.headline ?? '';
+		editBio = data.org.bio ?? '';
+		editPublic = data.org.is_public;
+	});
 	let saving = $state(false);
 	let saveMessage = $state('');
 
@@ -54,7 +64,7 @@
 			inviteEmail = '';
 			// Refresh invitations
 			const result = await api.listOrganizationInvitations(org.id);
-			invitations = result.invitations;
+			invitations = result ?? [];
 		} catch {
 			// ignore
 		} finally {

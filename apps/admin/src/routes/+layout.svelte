@@ -6,6 +6,7 @@
 	import { initGlitchTip } from '$lib/glitchtip';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
+	import Breadcrumb from '$lib/components/layout/Breadcrumb.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import '../app.css';
 	import { page } from '$app/state';
@@ -32,6 +33,7 @@
 		'/advertising': 'admin.advertising.view',
 		'/payments': 'admin.payments.view',
 		'/ai': 'admin.ai.view',
+		'/blog': 'blog.review.manage',
 		'/feature-flags': 'admin.feature_flags.view',
 		'/gdpr': 'admin.moderation.view',
 		'/moderation/alerts': 'admin.moderation.view'
@@ -96,7 +98,8 @@
 	<div class="flex flex-1 flex-col overflow-hidden">
 		<TopBar />
 		<main class="flex-1 overflow-y-auto">
-			<div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 md:px-8">
+			<div class="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 md:px-8">
+				<Breadcrumb />
 				{#if hasAccess}
 					{@render children()}
 				{:else}
