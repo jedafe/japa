@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { MessageCircle, Plus, Loader2 } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import { MessageCircle, Plus, Loader2, X, Settings } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type DMConversation } from '$lib/api';
 	import { isFeatureEnabled } from '$lib/stores/features.svelte';
@@ -8,6 +9,17 @@
 
 	let channels = $state<DMConversation[]>([]);
 	let loading = $state(true);
+	let showNewChat = $state(false);
+	let newChatUsername = $state('');
+	let newChatMessage = $state('');
+	let creating = $state(false);
+	let createError = $state('');
+
+	// DM Privacy
+	let showPrivacy = $state(false);
+	let privacy = $state('everyone');
+	let privacyLoading = $state(false);
+	let privacySaving = $state(false);
 
 	function timeAgo(dateStr: string): string {
 		const diff = Date.now() - new Date(dateStr).getTime();
@@ -19,6 +31,30 @@
 		return `${days}d ago`;
 	}
 
+	async function loadPrivacy() {
+		privacyLoading = true;
+		try {
+			const result = await api.getMePrivacy();
+			privacy = (result as unknown as Record<string, string>).allow_dms ?? 'everyone';
+		} catch {
+			// ignore
+		} finally {
+			privacyLoading = false;
+		}
+	}
+
+	async function savePrivacy() {
+		privacySaving = true;
+		try {
+			await api.updateMePrivacy({ allow_dms: privacy });
+			showPrivacy = false;
+		} catch {
+			// ignore
+		} finally {
+			privacySaving = false;
+		}
+	}
+
 	onMount(async () => {
 		try {
 			channels = await api.listDMConversations();
@@ -28,6 +64,24 @@
 			loading = false;
 		}
 	});
+
+	async function createConversation(e: Event) {
+		e.preventDefault();
+		if (!newChatUsername.trim() || creating) return;
+		creating = true;
+		createError = '';
+		try {
+			const result = await api.createDMConversation({
+				user_id: newChatUsername.trim(),
+				body: newChatMessage.trim() || undefined
+			});
+			goto('/messages/' + result.id);
+		} catch (err) {
+			createError = err instanceof Error ? err.message : 'Failed to create conversation';
+		} finally {
+			creating = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -52,7 +106,99 @@
 				{t('messages.subtitle')}
 			</p>
 		</div>
+		<div class="flex items-center gap-2">
+			<a href="/messages/requests" class="rounded-lg border px-3 py-2 text-sm font-medium" style="border-color: var(--color-border); color: var(--color-foreground)">
+				Requests
+			</a>
+			<button
+				onclick={() => { showPrivacy = !showPrivacy; if (showPrivacy) loadPrivacy(); }}
+				class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium"
+				style="border-color: var(--color-border); color: var(--color-foreground)"
+			>
+				<Settings class="h-4 w-4" />
+				Privacy
+			</button>
+			<button
+				onclick={() => showNewChat = !showNewChat}
+				class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+				style="background: var(--color-primary)"
+			>
+				<Plus class="h-4 w-4" />
+				New
+			</button>
+		</div>
 	</header>
+
+	{#if showPrivacy}
+		<div class="mb-6 rounded-xl border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
+			<div class="flex items-center justify-between mb-3">
+				<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">DM Privacy Settings</h3>
+				<button onclick={() => showPrivacy = false}>
+					<X class="h-4 w-4" style="color: var(--color-muted)" />
+				</button>
+			</div>
+			{#if privacyLoading}
+				<p class="text-sm" style="color: var(--color-muted)">Loading...</p>
+			{:else}
+				<p class="mb-3 text-sm" style="color: var(--color-muted)">Who can send you direct messages?</p>
+				<div class="space-y-2">
+					{#each [{ value: 'everyone', label: 'Everyone' }, { value: 'followers', label: 'People I follow' }, { value: 'nobody', label: 'Nobody' }] as option}
+						<label class="flex items-center gap-2 cursor-pointer">
+							<input type="radio" name="dm-privacy" value={option.value} bind:group={privacy} class="accent-current" />
+							<span class="text-sm" style="color: var(--color-foreground)">{option.label}</span>
+						</label>
+					{/each}
+				</div>
+				<button
+					onclick={savePrivacy}
+					disabled={privacySaving}
+					class="mt-3 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+					style="background: var(--color-primary)"
+				>
+					{privacySaving ? 'Saving...' : 'Save'}
+				</button>
+			{/if}
+		</div>
+	{/if}
+
+	{#if showNewChat}
+		<div class="mb-6 rounded-xl border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
+			<div class="flex items-center justify-between mb-3">
+				<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">New Conversation</h3>
+				<button onclick={() => { showNewChat = false; newChatUsername = ''; newChatMessage = ''; createError = ''; }}>
+					<X class="h-4 w-4" style="color: var(--color-muted)" />
+				</button>
+			</div>
+			{#if createError}
+				<p class="mb-2 text-xs text-red-500">{createError}</p>
+			{/if}
+			<form onsubmit={createConversation} class="space-y-3">
+				<input
+					type="text"
+					bind:value={newChatUsername}
+					placeholder="Username or user ID"
+					required
+					class="w-full rounded-lg border px-3 py-2 text-sm"
+					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+				/>
+				<input
+					type="text"
+					bind:value={newChatMessage}
+					placeholder="Optional first message..."
+					class="w-full rounded-lg border px-3 py-2 text-sm"
+					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+				/>
+				<button
+					type="submit"
+					disabled={!newChatUsername.trim() || creating}
+					class="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+					style="background: var(--color-primary)"
+				>
+					{creating ? 'Creating...' : 'Start Conversation'}
+				</button>
+			</form>
+		</div>
+	{/if}
 
 	{#if loading}
 		<div class="space-y-3">
