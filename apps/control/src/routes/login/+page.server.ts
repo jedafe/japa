@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { PUBLIC_JC_ENV } from '$env/static/public';
 import type { Actions } from './$types';
 import { API_V1_BASE } from '$lib/server/api';
 
@@ -32,7 +33,7 @@ export const actions: Actions = {
 				});
 			}
 
-			token = body.data?.token;
+			token = body.data?.access_token;
 		} catch {
 			return fail(502, { error: 'Could not reach authentication service.' });
 		}
@@ -43,10 +44,12 @@ export const actions: Actions = {
 
 		const cookieDomain = env.JC_COOKIE_DOMAIN || undefined;
 
+		const isSecure = PUBLIC_JC_ENV !== 'development';
+
 		cookies.set('jc_token', token, {
 			path: '/',
 			httpOnly: true,
-			secure: true,
+			secure: isSecure,
 			sameSite: 'lax',
 			...(cookieDomain ? { domain: cookieDomain } : {}),
 			maxAge: 60 * 60 * 24 * 7

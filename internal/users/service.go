@@ -36,27 +36,9 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 		return nil, fmt.Errorf("getting profile: %w", err)
 	}
 
-	return &UserProfileResponse{
-		ID:            p.UserID.String(),
-		Email:         p.Email,
-		Username:      p.Username,
-		DisplayName:   p.DisplayName,
-		AvatarURL:     p.AvatarUrl,
-		Bio:           p.Bio,
-		Timezone:      p.Timezone,
-		ProfileType:   p.ProfileType,
-		Status:        p.Status,
-		FollowerCount: p.FollowerCount,
-		CreatedAt:     p.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:     p.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
-	}, nil
-}
-
-// GetProfileByUsername returns the user profile for the given username within a tenant.
-func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (*UserProfileResponse, error) {
-	p, err := s.store.getUserByUsername(ctx, tenantID, username)
-	if err != nil {
-		return nil, fmt.Errorf("getting profile by username: %w", err)
+	groupName := ""
+	if p.UserGroupName != nil {
+		groupName = *p.UserGroupName
 	}
 
 	return &UserProfileResponse{
@@ -70,6 +52,36 @@ func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID
 		ProfileType:   p.ProfileType,
 		Status:        p.Status,
 		FollowerCount: p.FollowerCount,
+		UserGroupName: groupName,
+		CreatedAt:     p.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:     p.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
+	}, nil
+}
+
+// GetProfileByUsername returns the user profile for the given username within a tenant.
+func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (*UserProfileResponse, error) {
+	p, err := s.store.getUserByUsername(ctx, tenantID, username)
+	if err != nil {
+		return nil, fmt.Errorf("getting profile by username: %w", err)
+	}
+
+	groupName := ""
+	if p.UserGroupName != nil {
+		groupName = *p.UserGroupName
+	}
+
+	return &UserProfileResponse{
+		ID:            p.UserID.String(),
+		Email:         p.Email,
+		Username:      p.Username,
+		DisplayName:   p.DisplayName,
+		AvatarURL:     p.AvatarUrl,
+		Bio:           p.Bio,
+		Timezone:      p.Timezone,
+		ProfileType:   p.ProfileType,
+		Status:        p.Status,
+		FollowerCount: p.FollowerCount,
+		UserGroupName: groupName,
 		CreatedAt:     p.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:     p.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
 	}, nil

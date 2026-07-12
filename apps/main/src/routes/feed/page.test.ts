@@ -5,7 +5,7 @@ import Page from './+page.svelte';
 vi.mock('$lib/api', () => ({
 	getToken: vi.fn().mockReturnValue(null),
 	api: {
-		getFeedPrimary: vi.fn().mockResolvedValue({ items: [], hasMore: false })
+		getFeedPrimary: vi.fn().mockResolvedValue([])
 	}
 }));
 
@@ -55,7 +55,8 @@ const defaultData = {
 	locale: 'en',
 	translations: {},
 	feed: [],
-	hasMore: false
+	hasMore: false,
+	cardStyle: 'reddit'
 };
 
 describe('Feed +page.svelte', () => {

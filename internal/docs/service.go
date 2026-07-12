@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -95,6 +96,145 @@ func (s *Service) ListAllDocPagesByAudience(ctx context.Context, tenantID pgtype
 	}
 
 	return pages, nil
+}
+
+// GetDocNav returns the published-pages navigation tree grouped by audience.
+func (s *Service) GetDocNav(ctx context.Context, tenantID pgtype.UUID) ([]DocNavTree, error) {
+	rows, err := s.store.listPublished(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildDocNavTree(rows), nil
+}
+
+// SearchDocPages returns published pages matching the query, with a plain-text excerpt.
+func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query string, limit int32) ([]DocSearchResult, error) {
+	rows, err := s.store.search(ctx, tenantID, query, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]DocSearchResult, len(rows))
+	for i, r := range rows {
+		results[i] = DocSearchResult{
+			ID:       r.ID.String(),
+			Title:    r.Title,
+			Slug:     r.Slug,
+			Audience: r.Audience,
+			Excerpt:  extractExcerpt(r.Content, excerptMaxLen),
+		}
+	}
+
+	return results, nil
+}
+
+// excerptMaxLen caps search excerpts at a sidebar-friendly length.
+const excerptMaxLen = 140
+
+// buildDocNavTree groups published pages by audience (in canonical order) and
+// nests child pages one level deep under their parents. Children whose parent
+// is not published are promoted to roots so they stay reachable.
+func buildDocNavTree(rows []gen.ListPublishedDocPagesRow) []DocNavTree {
+	byAudience := make(map[string][]gen.ListPublishedDocPagesRow)
+	for _, r := range rows {
+		byAudience[r.Audience] = append(byAudience[r.Audience], r)
+	}
+
+	trees := make([]DocNavTree, 0, len(byAudience))
+	for _, audience := range AudienceOrder {
+		group, ok := byAudience[audience]
+		if !ok {
+			continue
+		}
+
+		trees = append(trees, DocNavTree{Audience: audience, Items: buildAudienceNavItems(group)})
+	}
+
+	return trees
+}
+
+// buildAudienceNavItems nests one audience's pages by parent_id, preserving
+// the position/title ordering of the input rows.
+func buildAudienceNavItems(group []gen.ListPublishedDocPagesRow) []DocNavItem {
+	roots := make([]DocNavItem, 0, len(group))
+	rootIdx := make(map[string]int, len(group))
+
+	for _, r := range group {
+		if r.ParentID.Valid {
+			continue
+		}
+
+		item := navItemFromRow(r)
+		rootIdx[item.ID] = len(roots)
+		roots = append(roots, item)
+	}
+
+	for _, r := range group {
+		if !r.ParentID.Valid {
+			continue
+		}
+
+		if idx, ok := rootIdx[r.ParentID.String()]; ok {
+			roots[idx].Children = append(roots[idx].Children, navItemFromRow(r))
+		} else {
+			roots = append(roots, navItemFromRow(r))
+		}
+	}
+
+	return roots
+}
+
+// navItemFromRow converts a published-page row to a nav item.
+func navItemFromRow(r gen.ListPublishedDocPagesRow) DocNavItem {
+	return DocNavItem{
+		ID:       r.ID.String(),
+		Title:    r.Title,
+		Slug:     r.Slug,
+		Audience: r.Audience,
+		ParentID: uuidPtr(r.ParentID),
+		Position: r.Position,
+	}
+}
+
+// extractExcerpt walks TipTap-style JSON content and joins its text nodes
+// into a single plain-text excerpt, truncated to maxLen runes.
+func extractExcerpt(content []byte, maxLen int) string {
+	var doc any
+	if err := json.Unmarshal(content, &doc); err != nil {
+		return ""
+	}
+
+	var b strings.Builder
+	collectText(doc, &b)
+
+	text := strings.Join(strings.Fields(b.String()), " ")
+
+	runes := []rune(text)
+	if len(runes) > maxLen {
+		text = string(runes[:maxLen]) + "…"
+	}
+
+	return text
+}
+
+// collectText recursively gathers "text" values from TipTap JSON nodes.
+func collectText(node any, b *strings.Builder) {
+	switch v := node.(type) {
+	case map[string]any:
+		if s, ok := v["text"].(string); ok {
+			b.WriteString(s)
+			b.WriteString(" ")
+		}
+
+		if c, ok := v["content"]; ok {
+			collectText(c, b)
+		}
+	case []any:
+		for _, item := range v {
+			collectText(item, b)
+		}
+	}
 }
 
 // CreateDocPage inserts a new documentation page.

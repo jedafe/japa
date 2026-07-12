@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -118,6 +120,53 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+}
+
+// ListDocNav handles GET /api/v1/docs/nav.
+// Returns the published-pages navigation tree grouped by audience.
+func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	nav, err := h.Service.GetDocNav(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": nav})
+}
+
+// SearchDocPages handles GET /api/v1/docs/search?q=&limit=.
+// Searches published pages by title or content.
+func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeError(w, http.StatusBadRequest, "missing_query", "Query parameter q is required")
+		return
+	}
+
+	limit := int32(10)
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 50 {
+			limit = int32(n)
+		}
+	}
+
+	results, err := h.Service.SearchDocPages(r.Context(), tenantID, q, limit)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
 // ---------------------------------------------------------------------------

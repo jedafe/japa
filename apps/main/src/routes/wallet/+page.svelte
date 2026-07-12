@@ -17,6 +17,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 
+	// TODO: Move to system_settings table via GET /api/v1/system-settings/wallet.preset_amounts
+	// Ref: AGENTS.md Rule 3 — configurable values must come from system_settings
 	const presetAmounts = [100000, 500000, 1000000]; // in kobo: ₦1,000, ₦5,000, ₦10,000
 
 	let { data } = $props();

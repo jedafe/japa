@@ -25,6 +25,7 @@ func TestUserProfileResponseJSONTags(t *testing.T) {
 		ProfileType:   "personal",
 		Status:        "active",
 		FollowerCount: 42,
+		UserGroupName: "members",
 		CreatedAt:     "2026-01-01T00:00:00Z",
 		UpdatedAt:     "2026-01-02T00:00:00Z",
 	}
@@ -57,6 +58,10 @@ func TestUserProfileResponseJSONTags(t *testing.T) {
 
 	if got["follower_count"] != float64(42) {
 		t.Errorf("follower_count = %v, want 42", got["follower_count"])
+	}
+
+	if got["user_group_name"] != "members" {
+		t.Errorf("user_group_name = %v, want members", got["user_group_name"])
 	}
 }
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import { Input, Badge } from '$lib/components/ui';
 
 	let { data } = $props();
@@ -180,7 +181,7 @@
 			<section>
 				<h2 class="mb-3 text-lg font-semibold">Base URL</h2>
 				<div class="rounded-lg border p-4 text-sm" style="border-color: var(--color-border)">
-					<code class="text-xs">https://api.japaconnect.com/api/v1</code>
+					<code class="text-xs">{PUBLIC_JC_API_URL}/api/v1</code>
 				</div>
 			</section>
 

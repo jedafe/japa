@@ -26,7 +26,8 @@ const defaultData = {
 	translations: {},
 	profile: { id: '1', username: 'testuser', display_name: 'Test User', bio: 'Hello' },
 	feed: [],
-	hasMore: false
+	hasMore: false,
+	cardStyle: 'reddit'
 };
 
 describe('Feed Profile +page.svelte', () => {

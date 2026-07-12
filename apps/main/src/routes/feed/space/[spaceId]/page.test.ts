@@ -26,7 +26,8 @@ const defaultData = {
 	translations: {},
 	space: { id: '1', name: 'Test Space', slug: 'test-space', description: 'A test space' },
 	feed: [],
-	hasMore: false
+	hasMore: false,
+	cardStyle: 'reddit'
 };
 
 describe('Feed Space +page.svelte', () => {

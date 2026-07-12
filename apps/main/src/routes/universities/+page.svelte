@@ -36,7 +36,7 @@
 	</header>
 
 	<div class="mb-6">
-		<UniversityFilters bind:country={selectedCountry} bind:sort={sortBy} />
+		<UniversityFilters bind:country={selectedCountry} bind:sort={sortBy} countries={data.countries} />
 	</div>
 
 	{#if data.universities.length > 0}

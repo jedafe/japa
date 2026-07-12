@@ -12,7 +12,8 @@ const baseData = {
 	notificationCount: 0,
 	token: null,
 	locale: 'en',
-	translations: {}
+	translations: {},
+	countries: [] as Array<{ value: string; label: string }>
 };
 
 describe('Universities +page.svelte', () => {

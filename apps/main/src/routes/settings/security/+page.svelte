@@ -34,7 +34,7 @@
 		loading = true;
 		try {
 			const result = await api.setupTOTP();
-			qrUri = result.qr_uri;
+			qrUri = result.otpauth_url;
 			secret = result.secret;
 			setupPhase = true;
 		} catch (err) {
@@ -50,10 +50,10 @@
 		loading = true;
 
 		try {
-			const result = await api.verifyTOTP(verificationCode);
+			await api.verifyTOTP(verificationCode);
 			totpEnabled = true;
 			setupPhase = false;
-			backupCodes = result.backup_codes ?? [];
+			backupCodes = [];
 			successMessage = 'Two-factor authentication enabled successfully!';
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Network error. Please try again.';

@@ -7,25 +7,34 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 )
 
 // FeedItem represents a single item in a feed response, normalized across
 // all feed types (explore, primary, space, profile).
 type FeedItem struct { //nolint:revive // stuttering type name preserved for API compatibility
-	ID            string  `json:"id"`
-	Title         string  `json:"title"`
-	Slug          string  `json:"slug"`
-	ContentType   string  `json:"content_type"`
-	AuthorID      string  `json:"author_id"`
-	SpaceID       *string `json:"space_id,omitempty"`
-	CreatedAt     string  `json:"created_at"`
-	ViewCount     int32   `json:"view_count"`
-	CommentCount  int32   `json:"comment_count"`
-	VoteScore     int32   `json:"vote_score"`
-	VelocityScore float64 `json:"velocity_score"`
+	ID                string   `json:"id"`
+	Title             string   `json:"title"`
+	Slug              string   `json:"slug"`
+	ContentType       string   `json:"content_type"`
+	AuthorID          string   `json:"author_id"`
+	SpaceID           *string  `json:"space_id,omitempty"`
+	CreatedAt         string   `json:"created_at"`
+	ViewCount         int32    `json:"view_count"`
+	CommentCount      int32    `json:"comment_count"`
+	VoteScore         int32    `json:"vote_score"`
+	VelocityScore     float64  `json:"velocity_score"`
+	AuthorName        string   `json:"author_name,omitempty"`
+	AuthorAvatarURL   string   `json:"author_avatar_url,omitempty"`
+	Excerpt           string   `json:"excerpt,omitempty"`
+	Tags              []string `json:"tags,omitempty"`
+	ReadingTimeMinutes int     `json:"reading_time_minutes,omitempty"`
+	CoverImageURL     string   `json:"cover_image_url,omitempty"`
+	BookmarkCount     int32    `json:"bookmark_count,omitempty"`
 }
 
 // PrimaryFeedItem represents a feed item from the personalized (push) feed.
@@ -242,21 +251,61 @@ func nullableUUIDToString(u pgtype.UUID) *string {
 	return &s
 }
 
+// splitTags splits a comma-separated tag string into a slice.
+// Handles interface{} from sqlc's string_agg which may be nil or string.
+func splitTags(v interface{}) []string {
+	if v == nil {
+		return nil
+	}
+
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return nil
+	}
+
+	return strings.Split(s, ",")
+}
+
+// derefInt32 safely dereferences a nullable int32 pointer, returning 0 if nil.
+func derefInt32(p *int32) int32 {
+	if p == nil {
+		return 0
+	}
+
+	return *p
+}
+
+// coverImageURL resolves the cover image URL from storage bucket and path.
+func coverImageURL(bucket, path *string) string {
+	if bucket == nil || path == nil || *bucket == "" || *path == "" {
+		return ""
+	}
+
+	return media.MediaURL(*bucket, *path, media.ImageProxyOpts{})
+}
+
 func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:            uuidToString(r.ID),
-			Title:         r.Title,
-			Slug:          r.Slug,
-			ContentType:   r.ContentType,
-			AuthorID:      uuidToString(r.AuthorID),
-			SpaceID:       nullableUUIDToString(r.SpaceID),
-			CreatedAt:     r.CreatedAt.Time.String(),
-			ViewCount:     r.ViewCount,
-			CommentCount:  r.CommentCount,
-			VoteScore:     r.VoteScore,
-			VelocityScore: pgNumericToFloat64(r.VelocityScore),
+			ID:                 uuidToString(r.ID),
+			Title:              r.Title,
+			Slug:               r.Slug,
+			ContentType:        r.ContentType,
+			AuthorID:           uuidToString(r.AuthorID),
+			SpaceID:            nullableUUIDToString(r.SpaceID),
+			CreatedAt:          r.CreatedAt.Time.String(),
+			ViewCount:          r.ViewCount,
+			CommentCount:       r.CommentCount,
+			VoteScore:          r.VoteScore,
+			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			Excerpt:            r.Excerpt,
+			Tags:               splitTags(r.Tags),
+			ReadingTimeMinutes: int(r.ReadTimeMinutes),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			BookmarkCount:      r.BookmarkCount,
 		}
 	}
 
@@ -267,17 +316,24 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:            uuidToString(r.ID),
-			Title:         r.Title,
-			Slug:          r.Slug,
-			ContentType:   r.ContentType,
-			AuthorID:      uuidToString(r.AuthorID),
-			SpaceID:       nullableUUIDToString(r.SpaceID),
-			CreatedAt:     r.CreatedAt.Time.String(),
-			ViewCount:     r.ViewCount,
-			CommentCount:  r.CommentCount,
-			VoteScore:     r.VoteScore,
-			VelocityScore: pgNumericToFloat64(r.VelocityScore),
+			ID:                 uuidToString(r.ID),
+			Title:              r.Title,
+			Slug:               r.Slug,
+			ContentType:        r.ContentType,
+			AuthorID:           uuidToString(r.AuthorID),
+			SpaceID:            nullableUUIDToString(r.SpaceID),
+			CreatedAt:          r.CreatedAt.Time.String(),
+			ViewCount:          r.ViewCount,
+			CommentCount:       r.CommentCount,
+			VoteScore:          r.VoteScore,
+			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			Excerpt:            r.Excerpt,
+			Tags:               splitTags(r.Tags),
+			ReadingTimeMinutes: int(r.ReadTimeMinutes),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			BookmarkCount:      r.BookmarkCount,
 		}
 	}
 
@@ -288,17 +344,24 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:            uuidToString(r.ID),
-			Title:         r.Title,
-			Slug:          r.Slug,
-			ContentType:   r.ContentType,
-			AuthorID:      uuidToString(r.AuthorID),
-			SpaceID:       nullableUUIDToString(r.SpaceID),
-			CreatedAt:     r.CreatedAt.Time.String(),
-			ViewCount:     r.ViewCount,
-			CommentCount:  r.CommentCount,
-			VoteScore:     r.VoteScore,
-			VelocityScore: pgNumericToFloat64(r.VelocityScore),
+			ID:                 uuidToString(r.ID),
+			Title:              r.Title,
+			Slug:               r.Slug,
+			ContentType:        r.ContentType,
+			AuthorID:           uuidToString(r.AuthorID),
+			SpaceID:            nullableUUIDToString(r.SpaceID),
+			CreatedAt:          r.CreatedAt.Time.String(),
+			ViewCount:          r.ViewCount,
+			CommentCount:       r.CommentCount,
+			VoteScore:          r.VoteScore,
+			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			Excerpt:            r.Excerpt,
+			Tags:               splitTags(r.Tags),
+			ReadingTimeMinutes: int(r.ReadTimeMinutes),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			BookmarkCount:      r.BookmarkCount,
 		}
 	}
 
@@ -309,14 +372,23 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:            uuidToString(r.ID),
-			Title:         r.Title,
-			Slug:          r.Slug,
-			ContentType:   r.ContentType,
-			AuthorID:      uuidToString(r.AuthorID),
-			SpaceID:       nullableUUIDToString(r.SpaceID),
-			CreatedAt:     r.CreatedAt.Time.String(),
-			VelocityScore: pgNumericToFloat64(r.Score),
+			ID:                 uuidToString(r.ContentID),
+			Title:              r.Title,
+			Slug:               r.Slug,
+			ContentType:        r.ContentType,
+			AuthorID:           uuidToString(r.AuthorID),
+			SpaceID:            nullableUUIDToString(r.SpaceID),
+			CreatedAt:          r.ContentCreatedAt.Time.String(),
+			ViewCount:          r.ViewCount,
+			CommentCount:       r.CommentCount,
+			VoteScore:          derefInt32(r.VoteScore),
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			Excerpt:            r.Excerpt,
+			Tags:               splitTags(r.Tags),
+			ReadingTimeMinutes: int(r.ReadTimeMinutes),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			BookmarkCount:      derefInt32(r.BookmarkCount),
 		}
 	}
 
@@ -327,16 +399,23 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:            uuidToString(r.ID),
-			Title:         r.Title,
-			Slug:          r.Slug,
-			ContentType:   r.ContentType,
-			AuthorID:      uuidToString(r.AuthorID),
-			CreatedAt:     r.CreatedAt.Time.String(),
-			ViewCount:     r.ViewCount,
-			CommentCount:  r.CommentCount,
-			VoteScore:     r.VoteScore,
-			VelocityScore: pgNumericToFloat64(r.VelocityScore),
+			ID:                 uuidToString(r.ID),
+			Title:              r.Title,
+			Slug:               r.Slug,
+			ContentType:        r.ContentType,
+			AuthorID:           uuidToString(r.AuthorID),
+			CreatedAt:          r.CreatedAt.Time.String(),
+			ViewCount:          r.ViewCount,
+			CommentCount:       r.CommentCount,
+			VoteScore:          r.VoteScore,
+			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			Excerpt:            r.Excerpt,
+			Tags:               splitTags(r.Tags),
+			ReadingTimeMinutes: int(r.ReadTimeMinutes),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			BookmarkCount:      r.BookmarkCount,
 		}
 	}
 
@@ -347,16 +426,24 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:            uuidToString(r.ID),
-			Title:         r.Title,
-			Slug:          r.Slug,
-			ContentType:   r.ContentType,
-			SpaceID:       nullableUUIDToString(r.SpaceID),
-			CreatedAt:     r.CreatedAt.Time.String(),
-			ViewCount:     r.ViewCount,
-			CommentCount:  r.CommentCount,
-			VoteScore:     r.VoteScore,
-			VelocityScore: pgNumericToFloat64(r.VelocityScore),
+			ID:                 uuidToString(r.ID),
+			Title:              r.Title,
+			Slug:               r.Slug,
+			ContentType:        r.ContentType,
+			AuthorID:           uuidToString(r.AuthorID),
+			SpaceID:            nullableUUIDToString(r.SpaceID),
+			CreatedAt:          r.CreatedAt.Time.String(),
+			ViewCount:          r.ViewCount,
+			CommentCount:       r.CommentCount,
+			VoteScore:          r.VoteScore,
+			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			Excerpt:            r.Excerpt,
+			Tags:               splitTags(r.Tags),
+			ReadingTimeMinutes: int(r.ReadTimeMinutes),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			BookmarkCount:      r.BookmarkCount,
 		}
 	}
 

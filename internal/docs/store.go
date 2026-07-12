@@ -72,6 +72,30 @@ func (s *Store) listAllByAudience(ctx context.Context, tenantID pgtype.UUID, aud
 	return rows, nil
 }
 
+// listPublished returns all published doc pages across audiences.
+func (s *Store) listPublished(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListPublishedDocPagesRow, error) {
+	rows, err := s.read.ListPublishedDocPages(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing published doc pages: %w", err)
+	}
+
+	return rows, nil
+}
+
+// search returns published doc pages matching the query by title or content.
+func (s *Store) search(ctx context.Context, tenantID pgtype.UUID, query string, limit int32) ([]gen.SearchDocPagesRow, error) {
+	rows, err := s.read.SearchDocPages(ctx, gen.SearchDocPagesParams{
+		TenantID:    tenantID,
+		Query:       query,
+		ResultLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("searching doc pages: %w", err)
+	}
+
+	return rows, nil
+}
+
 // create inserts a new doc page.
 func (s *Store) create(ctx context.Context, params gen.CreateDocPageParams) error {
 	if err := s.write.CreateDocPage(ctx, params); err != nil {

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { User, Clock, MessageCircle, Heart } from 'lucide-svelte';
+	import { User } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type FeedItem } from '$lib/api';
+	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import { onMount } from 'svelte';
-	import { formatTimestamp, formatRelativeTime } from '$lib/utils/timezone';
 	import autoAnimate from '@formkit/auto-animate';
 
 	let { data } = $props();
@@ -11,20 +11,22 @@
 	const profile = $derived(data.profile);
 	// svelte-ignore state_referenced_locally
 	let feed = $state<FeedItem[]>(data.feed ?? []);
-	// svelte-ignore state_referenced_locally
-	let hasMore = $state(data.hasMore ?? false);
+	let cardStyle = $state(data.cardStyle ?? 'reddit');
+	let offset = $state(20);
+	let hasMore = $state(feed.length >= 20);
 	let loadingMore = $state(false);
 
 	async function loadMore() {
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
 		try {
-			const lastItem = feed[feed.length - 1];
-			const cursor = lastItem ? lastItem.id : undefined;
-			const result = await api.getProfileFeed(profile.id, { limit: 20, cursor });
-			if (result.items) {
-				feed = [...feed, ...result.items];
-				hasMore = result.has_more;
+			const items = await api.getProfileFeed(profile.id, { page_size: 20, page_offset: offset });
+			if (items && items.length > 0) {
+				feed = [...feed, ...items];
+				offset += items.length;
+				hasMore = items.length >= 20;
+			} else {
+				hasMore = false;
 			}
 		} catch {
 			// silent
@@ -95,60 +97,8 @@
 		/>
 	{:else}
 		<div class="space-y-4" use:autoAnimate>
-			{#each feed as item (item.id)}
-				<article
-					class="rounded-xl border p-5 transition-all hover:shadow-md"
-					style="border-color: var(--color-border); background: var(--color-surface)"
-				>
-					<div class="flex items-center gap-3">
-						<div
-							class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
-							style="background-color: var(--color-primary)"
-						>
-							{item.author_name?.charAt(0)?.toUpperCase() ?? '?'}
-						</div>
-						<div>
-							<a
-								href="/profile/{item.author_id}"
-								class="text-sm font-medium hover:underline"
-								style="color: var(--color-foreground)"
-							>
-								{item.author_name}
-							</a>
-							<p class="text-xs" style="color: var(--color-muted)">
-								{formatRelativeTime(item.created_at)}
-							</p>
-						</div>
-					</div>
-
-					<a href="/blog/{item.slug ?? item.id}" class="mt-3 block">
-						<h2
-							class="text-base font-semibold hover:underline sm:text-lg"
-							style="color: var(--color-foreground)"
-						>
-							{item.title}
-						</h2>
-						{#if item.excerpt}
-							<p class="mt-2 text-sm line-clamp-3" style="color: var(--color-muted)">
-								{item.excerpt}
-							</p>
-						{/if}
-					</a>
-
-					<div
-						class="mt-4 flex items-center gap-4 text-xs"
-						style="color: var(--color-muted)"
-					>
-						<span class="flex items-center gap-1">
-							<Heart class="h-3.5 w-3.5" />
-							{item.reaction_count}
-						</span>
-						<span class="flex items-center gap-1">
-							<MessageCircle class="h-3.5 w-3.5" />
-							{item.comment_count}
-						</span>
-					</div>
-				</article>
+			{#each feed as item, i (item.id)}
+				<FeedCard {item} style={cardStyle} index={i} />
 			{/each}
 		</div>
 

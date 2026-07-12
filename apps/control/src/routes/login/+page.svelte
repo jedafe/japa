@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-
 	let { form } = $props();
 
 	let email = $state('');
@@ -23,17 +21,12 @@
 			</div>
 		{/if}
 
-		<form method="POST" use:enhance={() => {
-			loading = true;
-			return async ({ update }) => {
-				await update();
-				loading = false;
-			};
-		}} class="space-y-4">
+		<form method="POST" onsubmit={() => { loading = true; }} class="space-y-4">
 			<div>
 				<label for="email" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
 				<input
 					id="email"
+					name="email"
 					type="email"
 					required
 					class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
@@ -46,6 +39,7 @@
 				<label for="password" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
 				<input
 					id="password"
+					name="password"
 					type="password"
 					required
 					class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"

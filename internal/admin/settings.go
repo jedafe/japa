@@ -116,6 +116,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "logo_url", Label: "Logo URL", Type: "text"},
 			{Key: "favicon_url", Label: "Favicon URL", Type: "text"},
 			{Key: "dark_mode_default", Label: "Dark Mode Default", Type: "toggle"},
+			{Key: "feed_card_style", Label: "Feed Card Style", Type: "select", Options: []string{"reddit", "devto"}, Value: "reddit"},
 		},
 	},
 	"users": {

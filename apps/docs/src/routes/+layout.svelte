@@ -15,8 +15,30 @@
 	});
 
 	type NavItem = { title: string; slug: string; audience: string; children?: NavItem[] };
+
+	const AUDIENCE_LABELS: Record<string, string> = {
+		users: 'Users',
+		premium: 'Premium',
+		organizations: 'Organizations',
+		moderators: 'Moderators',
+		api: 'API',
+		admin: 'Admin',
+		superadmin: 'Super Admin'
+	};
+
+	// The sidebar's top level is audience sections (/{audience}) with the
+	// section's pages as children (/{audience}/{slug}).
 	let flatNav: NavItem[] = $derived(
-		(data.navTree as any[]).flatMap((group: any) => group.items ?? group ?? [])
+		(data.navTree ?? []).map((group: any) => ({
+			title: AUDIENCE_LABELS[group.audience] ?? group.audience,
+			slug: group.audience,
+			audience: group.audience,
+			children: (group.items ?? []).map((item: any) => ({
+				title: item.title,
+				slug: item.slug,
+				audience: item.audience
+			}))
+		}))
 	);
 
 	$effect(() => {

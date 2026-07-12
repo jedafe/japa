@@ -80,9 +80,10 @@
 		acting = true;
 		errorMessage = '';
 		try {
-			const endpoint = `/admin/appeals/${actionAppeal.id}/${actionType}`;
-			const body = actionNote.trim() ? { note: actionNote.trim() } : {};
-			const result = await api(endpoint, { method: 'POST', body });
+			const endpoint = `/admin/appeals/${actionAppeal.id}`;
+			const body: Record<string, unknown> = { status: actionType === 'approve' ? 'approved' : 'denied' };
+			if (actionNote.trim()) body.note = actionNote.trim();
+			const result = await api(endpoint, { method: 'PATCH', body });
 			if (result.ok) {
 				showActionModal = false;
 				load();

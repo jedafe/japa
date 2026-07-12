@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Search, Loader2 } from 'lucide-svelte';
+	import { Search, Loader2, X } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api';
 	import { trackEvent, AnalyticsEvents } from '$lib/analytics';
@@ -10,8 +10,11 @@
 
 	let query = $state(page.url.searchParams.get('q') || '');
 	let results = $state<Array<{ id: string; title: string; type: string; excerpt: string }>>([]);
+	let suggestions = $state<Array<{ id: string; title: string; type: string }>>([]);
 	let loading = $state(false);
 	let searched = $state(false);
+	let showSuggestions = $state(false);
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
 		const q = page.url.searchParams.get('q');
@@ -24,9 +27,48 @@
 	function handleSubmit(e: Event) {
 		e.preventDefault();
 		if (query.trim()) {
+			showSuggestions = false;
 			goto(`/search?q=${encodeURIComponent(query.trim())}`, { replaceState: true });
 			doSearch(query.trim());
 		}
+	}
+
+	function handleInput() {
+		if (debounceTimer) clearTimeout(debounceTimer);
+		if (query.trim().length >= 2) {
+			debounceTimer = setTimeout(fetchSuggestions, 300);
+		} else {
+			suggestions = [];
+			showSuggestions = false;
+		}
+	}
+
+	async function fetchSuggestions() {
+		try {
+			const res = await fetch(`/api/v1/search/autocomplete?q=${encodeURIComponent(query.trim())}&limit=5`, {
+				credentials: 'include'
+			});
+			if (res.ok) {
+				const { data } = await res.json();
+				suggestions = data ?? [];
+				showSuggestions = suggestions.length > 0;
+			}
+		} catch {
+			suggestions = [];
+		}
+	}
+
+	function selectSuggestion(suggestion: { id: string; title: string; type: string }) {
+		showSuggestions = false;
+		query = suggestion.title;
+		goto(`/search?q=${encodeURIComponent(suggestion.title)}`, { replaceState: true });
+		doSearch(suggestion.title);
+	}
+
+	function clearQuery() {
+		query = '';
+		suggestions = [];
+		showSuggestions = false;
 	}
 
 	async function doSearch(q: string) {
@@ -66,9 +108,44 @@
 				type="search"
 				placeholder={t('search.placeholder_short')}
 				bind:value={query}
-				class="w-full rounded-xl border py-3 pl-10 pr-4 text-sm outline-none transition-colors focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+				oninput={handleInput}
+				onfocus={() => { if (suggestions.length > 0) showSuggestions = true; }}
+				onblur={() => { setTimeout(() => { showSuggestions = false; }, 200); }}
+				autocomplete="off"
+				class="w-full rounded-xl border py-3 pl-10 pr-10 text-sm outline-none transition-colors focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 			/>
+			{#if query}
+				<button
+					type="button"
+					onclick={clearQuery}
+					class="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 transition-colors hover:bg-black/10 dark:hover:bg-white/10"
+				>
+					<X class="h-4 w-4" style="color: var(--color-muted)" />
+				</button>
+			{/if}
+
+			<!-- Autocomplete suggestions -->
+			{#if showSuggestions && suggestions.length > 0}
+				<div
+					class="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border shadow-lg"
+					style="border-color: var(--color-border); background-color: var(--color-surface)"
+				>
+					{#each suggestions as suggestion (suggestion.id)}
+						<button
+							type="button"
+							onmousedown={() => selectSuggestion(suggestion)}
+							class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+						>
+							<Search class="h-4 w-4 shrink-0" style="color: var(--color-muted)" />
+							<div class="flex-1 min-w-0">
+								<p class="font-medium truncate" style="color: var(--color-foreground)">{suggestion.title}</p>
+								<p class="text-xs" style="color: var(--color-muted)">{suggestion.type}</p>
+							</div>
+						</button>
+					{/each}
+				</div>
+			{/if}
 		</div>
 	</form>
 

@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -16,12 +17,18 @@ const defaultPageSize int32 = 20
 
 // Handlers holds dependencies for feed HTTP handlers.
 type Handlers struct {
-	service *Service
+	service  *Service
+	settings *config.Settings
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
+}
+
+// SetSettings injects the settings service for reading feed.card_style.
+func (h *Handlers) SetSettings(s *config.Settings) {
+	h.settings = s
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -220,4 +227,33 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// GetCardStyle handles GET /api/v1/feed/card-style — public endpoint.
+// Returns the active feed card style from system_settings.
+// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md
+func (h *Handlers) GetCardStyle(w http.ResponseWriter, r *http.Request) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	cardStyle := "reddit" // default
+
+	if h.settings != nil {
+		if val, err := h.settings.GetSetting(r.Context(), t.ID, "feed.card_style"); err == nil && val != "" {
+			// Strip JSON quotes if present (values stored as JSONB).
+			var s string
+			if json.Unmarshal([]byte(val), &s) == nil {
+				cardStyle = s
+			} else {
+				cardStyle = val
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{"card_style": cardStyle},
+	})
 }

@@ -1,9 +1,12 @@
 -- name: GetUserProfile :one
 SELECT up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
        up.timezone, up.created_at, up.updated_at,
-       u.email, u.username, u.profile_type, u.status, u.follower_count
+       u.email, u.username, u.profile_type, u.status, u.follower_count,
+       ug.slug AS user_group_name
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
+LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
 WHERE up.tenant_id = @tenant_id AND up.user_id = @user_id;
 
 -- name: GetUserByID :one
@@ -14,9 +17,12 @@ WHERE tenant_id = @tenant_id AND id = @user_id;
 -- name: GetUserByUsername :one
 SELECT up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
        up.timezone, up.created_at, up.updated_at,
-       u.email, u.username, u.profile_type, u.status, u.follower_count
+       u.email, u.username, u.profile_type, u.status, u.follower_count,
+       ug.slug AS user_group_name
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
+LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
 WHERE up.tenant_id = @tenant_id AND u.username = @username;
 
 -- name: UpsertUserProfile :exec

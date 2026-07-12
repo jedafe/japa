@@ -5,23 +5,15 @@
 
 	let {
 		country = $bindable(''),
-		sort = $bindable('world_ranking')
+		sort = $bindable('world_ranking'),
+		countries = []
 	}: {
 		country?: string;
 		sort?: string;
+		countries?: Array<{ value: string; label: string }>;
 	} = $props();
 
-	const countries = [
-		{ value: '', label: 'All Countries' },
-		{ value: 'Canada', label: 'Canada' },
-		{ value: 'United Kingdom', label: 'United Kingdom' },
-		{ value: 'United States', label: 'United States' },
-		{ value: 'Germany', label: 'Germany' },
-		{ value: 'Ireland', label: 'Ireland' },
-		{ value: 'Australia', label: 'Australia' },
-		{ value: 'Netherlands', label: 'Netherlands' },
-		{ value: 'New Zealand', label: 'New Zealand' }
-	];
+	const allCountries = [{ value: '', label: 'All Countries' }, ...countries];
 
 	const sortOptions = [
 		{ value: 'world_ranking', label: 'World Ranking' },
@@ -78,7 +70,7 @@
 			class="appearance-none rounded-lg border py-2.5 pl-4 pr-10 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
 			style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
 		>
-			{#each countries as c}
+			{#each allCountries as c}
 				<option value={c.value}>{c.label}</option>
 			{/each}
 		</select>

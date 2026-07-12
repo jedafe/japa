@@ -53,6 +53,36 @@ type UpdateDocPageRequest struct {
 	ReviewStatus string          `json:"review_status"`
 }
 
+// DocNavItem is a single navigation entry (a published page), optionally
+// nesting child pages one level deep.
+type DocNavItem struct {
+	ID       string       `json:"id"`
+	Title    string       `json:"title"`
+	Slug     string       `json:"slug"`
+	Audience string       `json:"audience"`
+	ParentID *string      `json:"parent_id,omitempty"`
+	Position int32        `json:"position"`
+	Children []DocNavItem `json:"children,omitempty"`
+}
+
+// DocNavTree groups navigation items by audience section.
+type DocNavTree struct {
+	Audience string       `json:"audience"`
+	Items    []DocNavItem `json:"items"`
+}
+
+// DocSearchResult is a lightweight search hit for the docs sidebar.
+type DocSearchResult struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Slug     string `json:"slug"`
+	Audience string `json:"audience"`
+	Excerpt  string `json:"excerpt"`
+}
+
+// AudienceOrder is the canonical display order for audience sections.
+var AudienceOrder = []string{"users", "premium", "organizations", "moderators", "api", "admin", "superadmin"}
+
 // ValidAudiences lists accepted audience slugs.
 var ValidAudiences = map[string]bool{
 	"users":         true,

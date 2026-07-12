@@ -1,7 +1,9 @@
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import * as Sentry from '@sentry/sveltekit';
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { env } from '$env/dynamic/private';
+
+const API_BASE = env.PRIVATE_API_BASE_URL || 'http://localhost:8080';
 
 const PUBLIC_ROUTES = ['/login', '/_app'];
 
@@ -25,7 +27,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	try {
-		const meRes = await fetch(`${PUBLIC_JC_API_URL}/api/v1/me`, {
+		const meRes = await fetch(`${API_BASE}/api/v1/me`, {
 			headers: { Authorization: `Bearer ${token}` },
 		});
 
