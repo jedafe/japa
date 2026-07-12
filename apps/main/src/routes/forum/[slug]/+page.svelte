@@ -58,7 +58,7 @@
 	async function loadReplies() {
 		if (!thread) return;
 		try {
-			const result = await api.getForumReplies(thread.id, { limit: 50 });
+			const result = await api.getForumReplies(thread.id, { page_size: 50 });
 			replies = result.replies;
 		} catch {
 			replies = [];
@@ -67,12 +67,12 @@
 
 	async function handleVote(entityType: 'thread' | 'reply', entityId: string, value: 1 | -1) {
 		try {
-			const result = await api.voteForum({ entity_type: entityType, entity_id: entityId, value });
+			await api.voteForum({ entity_type: entityType, entity_id: entityId, value });
 			if (entityType === 'thread' && thread) {
-				thread = { ...thread, score: result.score };
+				thread = { ...thread, score: thread.score + value };
 			} else {
 				replies = replies.map((r) =>
-					r.id === entityId ? { ...r, score: result.score } : r
+					r.id === entityId ? { ...r, score: r.score + value } : r
 				);
 			}
 		} catch {
@@ -83,8 +83,8 @@
 	async function handleSolve() {
 		if (!thread) return;
 		try {
-			const result = await api.solveForumThread(thread.id);
-			thread = { ...thread, solved: result.solved };
+			await api.solveForumThread(thread.id);
+			thread = { ...thread, solved: !thread.solved };
 		} catch {
 			// ignore
 		}

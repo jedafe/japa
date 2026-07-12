@@ -458,5 +458,16 @@
 
 	"nav.developer": "Développeur",
 	"nav.webhooks": "Webhooks",
-	"nav.dashboard": "Tableau de bord"
+	"nav.dashboard": "Tableau de bord",
+
+	"feed.min_read": "{minutes} min de lecture",
+	"feed.space_empty": "Pas encore de publications",
+	"feed.space_empty_hint": "Soyez le premier à publier dans cet espace.",
+	"feed.profile_empty": "Pas encore de publications",
+	"feed.profile_empty_hint": "Cet utilisateur n'a pas encore publié.",
+	"feed.about": "À propos",
+	"feed.new_post": "Nouvelle publication",
+	"feed.profile": "Profil",
+	"feed.loading_more": "Chargement...",
+	"feed.load_more_btn": "Charger plus"
 }

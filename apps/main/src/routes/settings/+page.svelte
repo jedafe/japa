@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { User, Bell, Shield, Loader2, Save, Trash2, KeyRound, Lock } from 'lucide-svelte';
+	import { User, Bell, Shield, Loader2, Save, Trash2, KeyRound, Lock, Monitor, Link2 } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { onMount } from 'svelte';
 	import { Button, Input, Textarea } from '$lib/components/ui';
@@ -109,12 +109,36 @@
 					Security
 				</a>
 				<a
+					href="/settings/change-password"
+					class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+					style="color: var(--color-foreground)"
+				>
+					<KeyRound class="h-4 w-4" />
+					Change Password
+				</a>
+				<a
 					href="/settings/privacy"
 					class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
 					style="color: var(--color-foreground)"
 				>
 					<Lock class="h-4 w-4" />
 					Privacy
+				</a>
+				<a
+					href="/settings/sessions"
+					class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+					style="color: var(--color-foreground)"
+				>
+					<Monitor class="h-4 w-4" />
+					Sessions
+				</a>
+				<a
+					href="/settings/connected-accounts"
+					class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+					style="color: var(--color-foreground)"
+				>
+					<Link2 class="h-4 w-4" />
+					Connected Accounts
 				</a>
 			</nav>
 		</aside>
@@ -140,12 +164,36 @@
 				Security
 			</a>
 			<a
+				href="/settings/change-password"
+				class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+				style="color: var(--color-foreground); background-color: var(--color-surface)"
+			>
+				<KeyRound class="h-3.5 w-3.5" />
+				Password
+			</a>
+			<a
 				href="/settings/privacy"
 				class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
 				style="color: var(--color-foreground); background-color: var(--color-surface)"
 			>
 				<Lock class="h-3.5 w-3.5" />
 				Privacy
+			</a>
+			<a
+				href="/settings/sessions"
+				class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+				style="color: var(--color-foreground); background-color: var(--color-surface)"
+			>
+				<Monitor class="h-3.5 w-3.5" />
+				Sessions
+			</a>
+			<a
+				href="/settings/connected-accounts"
+				class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+				style="color: var(--color-foreground); background-color: var(--color-surface)"
+			>
+				<Link2 class="h-3.5 w-3.5" />
+				Accounts
 			</a>
 		</div>
 
@@ -230,7 +278,7 @@
 							Update your password to keep your account secure.
 						</p>
 						<a
-							href="/forgot-password"
+							href="/settings/change-password"
 							class="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 							style="border-color: var(--color-border); color: var(--color-foreground)"
 						>
@@ -251,6 +299,38 @@
 							style="border-color: var(--color-border); color: var(--color-foreground)"
 						>
 							Manage 2FA
+						</a>
+					</div>
+					<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
+						<h3 class="flex items-center gap-2 text-sm font-medium" style="color: var(--color-foreground)">
+							<Link2 class="h-4 w-4" />
+							Connected Accounts
+						</h3>
+						<p class="mt-1 text-sm" style="color: var(--color-muted)">
+							Manage your connected social accounts.
+						</p>
+						<a
+							href="/settings/connected-accounts"
+							class="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+							style="border-color: var(--color-border); color: var(--color-foreground)"
+						>
+							Manage accounts
+						</a>
+					</div>
+					<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
+						<h3 class="flex items-center gap-2 text-sm font-medium" style="color: var(--color-foreground)">
+							<Monitor class="h-4 w-4" />
+							Active Sessions
+						</h3>
+						<p class="mt-1 text-sm" style="color: var(--color-muted)">
+							View and revoke active sessions on your account.
+						</p>
+						<a
+							href="/settings/sessions"
+							class="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+							style="border-color: var(--color-border); color: var(--color-foreground)"
+						>
+							Manage sessions
 						</a>
 					</div>
 					<div class="rounded-lg border p-4" style="border-color: var(--color-danger)">

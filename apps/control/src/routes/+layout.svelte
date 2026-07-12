@@ -1,27 +1,32 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { setUser, setPermissions, clearUser, hasPermission } from '$lib/stores/auth';
+	import { setUser, setPermissions, clearUser } from '$lib/stores/auth';
 	import { initGlitchTip } from '$lib/glitchtip';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import '../app.css';
 	import {
-		LayoutDashboard,
-		ListTodo,
-		Database,
-		ScrollText,
-		Shield,
-		Trash2,
-		Key,
 		Menu,
 		X,
-		AlertTriangle,
-		Settings,
-		Flag,
-		Building2,
-		DollarSign,
-		Clock,
 	} from 'lucide-svelte';
+	// Dynamic icon imports — avoids lucide-svelte SSR module runner crash.
+	import type { Component } from 'svelte';
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const iconModules: Record<string, () => Promise<{ default: any }>> = {
+		LayoutDashboard: async () => ({ default: (await import('lucide-svelte/icons/layout-dashboard')).default }),
+		ListTodo: async () => ({ default: (await import('lucide-svelte/icons/list-todo')).default }),
+		Database: async () => ({ default: (await import('lucide-svelte/icons/database')).default }),
+		ScrollText: async () => ({ default: (await import('lucide-svelte/icons/scroll-text')).default }),
+		Shield: async () => ({ default: (await import('lucide-svelte/icons/shield')).default }),
+		Trash2: async () => ({ default: (await import('lucide-svelte/icons/trash-2')).default }),
+		Key: async () => ({ default: (await import('lucide-svelte/icons/key')).default }),
+		AlertTriangle: async () => ({ default: (await import('lucide-svelte/icons/alert-triangle')).default }),
+		Settings: async () => ({ default: (await import('lucide-svelte/icons/settings')).default }),
+		Flag: async () => ({ default: (await import('lucide-svelte/icons/flag')).default }),
+		Building2: async () => ({ default: (await import('lucide-svelte/icons/building-2')).default }),
+		DollarSign: async () => ({ default: (await import('lucide-svelte/icons/dollar-sign')).default }),
+		Clock: async () => ({ default: (await import('lucide-svelte/icons/clock')).default }),
+	};
 
 	let { children, data } = $props();
 
@@ -30,33 +35,50 @@
 	});
 
 	let sidebarOpen = $state(false);
+	let userPermissions = $state<string[]>([]);
 
 	const currentPath = $derived(page.url.pathname);
 
 	$effect(() => {
 		if (data.user) {
 			setUser(data.user);
-			setPermissions(data.user.permissions ?? []);
+			const perms = data.user.permissions ?? [];
+			setPermissions(perms);
+			userPermissions = perms;
 		} else {
 			clearUser();
+			userPermissions = [];
 		}
 	});
 
 	const nav = $derived([
-		{ label: 'Dashboard', href: '/', icon: LayoutDashboard, permission: 'control.dashboard' },
-		{ label: 'Queue', href: '/queue', icon: ListTodo, permission: 'control.queue' },
-		{ label: 'Dead Letter Queue', href: '/dlq', icon: AlertTriangle, permission: 'control.queue' },
-		{ label: 'DB Health', href: '/db', icon: Database, permission: 'control.db' },
-		{ label: 'Audit', href: '/audit', icon: ScrollText, permission: 'control.audit' },
-		{ label: 'Security', href: '/security', icon: Shield, permission: 'control.security' },
-		{ label: 'API Keys', href: '/api-keys', icon: Key, permission: 'control.api_keys' },
-		{ label: 'Cache', href: '/cache', icon: Trash2, permission: 'control.cache' },
-		{ label: 'Settings', href: '/settings', icon: Settings, permission: 'control.settings' },
-		{ label: 'Feature Flags', href: '/feature-flags', icon: Flag, permission: 'control.feature_flags' },
-		{ label: 'Tenants', href: '/tenants', icon: Building2, permission: 'control.tenants' },
-		{ label: 'AI Budget', href: '/ai-budget', icon: DollarSign, permission: 'control.ai_budget' },
-		{ label: 'Cron Jobs', href: '/cron', icon: Clock, permission: 'control.cron' },
+		{ label: 'Dashboard', href: '/', iconName: 'LayoutDashboard', permission: 'control.dashboard' },
+		{ label: 'Queue', href: '/queue', iconName: 'ListTodo', permission: 'control.queue' },
+		{ label: 'Dead Letter Queue', href: '/dlq', iconName: 'AlertTriangle', permission: 'control.queue' },
+		{ label: 'DB Health', href: '/db', iconName: 'Database', permission: 'control.db' },
+		{ label: 'Audit', href: '/audit', iconName: 'ScrollText', permission: 'control.audit' },
+		{ label: 'Security', href: '/security', iconName: 'Shield', permission: 'control.security' },
+		{ label: 'API Keys', href: '/api-keys', iconName: 'Key', permission: 'control.api_keys' },
+		{ label: 'Cache', href: '/cache', iconName: 'Trash2', permission: 'control.cache' },
+		{ label: 'Settings', href: '/settings', iconName: 'Settings', permission: 'control.settings' },
+		{ label: 'Feature Flags', href: '/feature-flags', iconName: 'Flag', permission: 'control.feature_flags' },
+		{ label: 'Tenants', href: '/tenants', iconName: 'Building2', permission: 'control.tenants' },
+		{ label: 'AI Budget', href: '/ai-budget', iconName: 'DollarSign', permission: 'control.ai_budget' },
+		{ label: 'Cron Jobs', href: '/cron', iconName: 'Clock', permission: 'control.cron' },
 	]);
+
+	// Resolve icon component from name
+	let resolvedIcons: Record<string, Component> = $state({});
+	$effect(() => {
+		for (const item of nav) {
+			if (!resolvedIcons[item.iconName]) {
+				const loader = iconModules[item.iconName];
+				if (loader) {
+					loader().then((mod) => { resolvedIcons[item.iconName] = mod.default; });
+				}
+			}
+		}
+	});
 
 	const pagePermission = $derived(
 		nav.find((item) =>
@@ -64,7 +86,10 @@
 		)?.permission
 	);
 
-	const canAccess = $derived(!pagePermission || hasPermission(pagePermission) || hasPermission('*'));
+	const userPerms = $derived(data.user?.permissions ?? []);
+	const canAccess = $derived(
+		!pagePermission || userPerms.includes(pagePermission) || userPerms.includes('*')
+	);
 </script>
 
 <svelte:head>
@@ -94,12 +119,17 @@
 		<nav class="flex-1 space-y-1 overflow-y-auto p-3">
 			{#each nav as item}
 				{@const isActive = item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href)}
+				{@const IconComponent = resolvedIcons[item.iconName]}
 				<a
 					href={item.href}
 					class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors {isActive ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'}"
 					onclick={() => (sidebarOpen = false)}
 				>
-					<item.icon class="h-4 w-4" />
+					{#if IconComponent}
+						<IconComponent class="h-4 w-4" />
+					{:else}
+						<span class="h-4 w-4"></span>
+					{/if}
 					{item.label}
 				</a>
 			{/each}

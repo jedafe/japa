@@ -30,8 +30,16 @@ vi.mock('$lib/seo', () => ({
 	createWebsiteSchema: () => ({})
 }));
 
-const healthyData: HealthStatus = { healthy: true, flags: {} };
-const degradedData: HealthStatus = { healthy: false, flags: {} };
+const healthyData: HealthStatus & { translations: Record<string, string> } = {
+	healthy: true,
+	flags: {},
+	translations: {}
+};
+const degradedData: HealthStatus & { translations: Record<string, string> } = {
+	healthy: false,
+	flags: {},
+	translations: {}
+};
 
 describe('JapaConnect landing page', () => {
 	it('renders the JapaConnect heading', () => {

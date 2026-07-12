@@ -44,14 +44,14 @@
 			if (lastSavedId) {
 				await api.updateContent(lastSavedId, {
 					title: data.title,
-					content: data.content,
+					body: data.content,
 					field_values: data.metadata
 				});
 			} else {
 				const result = await api.createContent({
 					content_type: ct,
 					title: data.title,
-					content: data.content,
+					body: data.content,
 					status: 'draft',
 					field_values: data.metadata
 				});
@@ -70,7 +70,7 @@
 			if (lastSavedId) {
 				await api.updateContent(lastSavedId, {
 					title: data.title,
-					content: data.content,
+					body: data.content,
 					field_values: data.metadata,
 					status: 'published'
 				});
@@ -78,7 +78,7 @@
 				await api.createContent({
 					content_type: ct,
 					title: data.title,
-					content: data.content,
+					body: data.content,
 					status: 'published',
 					field_values: data.metadata
 				});

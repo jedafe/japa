@@ -1,10 +1,10 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { PUBLIC_JC_API_URL, PUBLIC_JC_ENV } from '$env/static/public';
 import type { Actions } from './$types';
-import { PUBLIC_JC_API_URL } from '$env/static/public';
 
 export const actions: Actions = {
-	default: async ({ request, cookies, fetch }) => {
+	default: async ({ request, cookies, fetch, url }) => {
 		const formData = await request.formData();
 		const email = formData.get('email') as string;
 		const password = formData.get('password') as string;
@@ -43,15 +43,32 @@ export const actions: Actions = {
 
 		const cookieDomain = env.JC_COOKIE_DOMAIN || undefined;
 
+		const isSecure = PUBLIC_JC_ENV !== 'development';
+
 		cookies.set('jc_token', token, {
 			path: '/',
 			httpOnly: true,
-			secure: true,
+			secure: isSecure,
 			sameSite: 'lax',
 			...(cookieDomain ? { domain: cookieDomain } : {}),
 			maxAge: 60 * 60 * 24 * 7
 		});
 
-		redirect(302, '/');
+		// Honour ?redirectTo= from the auth guard, but only same-origin
+		// paths — following arbitrary values would be an open redirect.
+		const redirectTo = url.searchParams.get('redirectTo');
+		let target = '/';
+		if (redirectTo) {
+			try {
+				const dest = new URL(redirectTo, url.origin);
+				if (dest.origin === url.origin) {
+					target = dest.pathname + dest.search;
+				}
+			} catch {
+				// Malformed value — fall back to home.
+			}
+		}
+
+		redirect(302, target);
 	}
 };

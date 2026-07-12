@@ -2,7 +2,7 @@ import type { LayoutLoad } from './$types';
 import { browser } from '$app/environment';
 import { locale } from '$lib/stores/i18n.svelte';
 
-export const load: LayoutLoad = async () => {
+export const load: LayoutLoad = async ({ data }) => {
 	let localeCode = 'en';
 	if (browser) {
 		const match = document.cookie.match(/jc_locale=([^;]+)/);
@@ -14,5 +14,7 @@ export const load: LayoutLoad = async () => {
 		.catch(() => ({}));
 	locale.init(localeCode, translations);
 
-	return {};
+	// A universal load REPLACES the server load's data rather than merging it,
+	// so the server data (navTree, user, isAuth, token) must be passed through.
+	return { ...data };
 };

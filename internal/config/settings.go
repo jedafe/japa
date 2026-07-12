@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -21,6 +22,7 @@ const settingsCachePrefix = "jc:settings:"
 type Settings struct {
 	db    *db.DB
 	vk    valkeycompat.Cmdable
+	mu    sync.RWMutex
 	cache map[string]cachedSetting
 }
 
@@ -30,26 +32,33 @@ type cachedSetting struct {
 }
 
 func NewSettings(database *db.DB, vkClient valkeycompat.Cmdable) *Settings {
-	return &Settings{
+	s := &Settings{
 		db:    database,
 		vk:    vkClient,
 		cache: make(map[string]cachedSetting),
 	}
+	go s.cleanupLoop(60 * time.Second)
+	return s
 }
 
 func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error) {
 	cacheKey := tenantID.String() + ":" + key
 
+	s.mu.RLock()
 	if cached, ok := s.cache[cacheKey]; ok && time.Since(cached.createdAt) < settingsCacheTTL {
+		s.mu.RUnlock()
 		return cached.value, nil
 	}
+	s.mu.RUnlock()
 
 	if s.vk != nil {
 		data, err := s.vk.Get(ctx, settingsCachePrefix+cacheKey).Bytes()
 		if err == nil {
 			var entry cachedSetting
 			if json.Unmarshal(data, &entry) == nil {
+				s.mu.Lock()
 				s.cache[cacheKey] = entry
+				s.mu.Unlock()
 				return entry.value, nil
 			}
 		}
@@ -66,7 +75,9 @@ func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key str
 	}
 
 	entry := cachedSetting{value: value, createdAt: time.Now()}
+	s.mu.Lock()
 	s.cache[cacheKey] = entry
+	s.mu.Unlock()
 
 	if s.vk != nil {
 		data, _ := json.Marshal(entry)
@@ -121,13 +132,17 @@ func (s *Settings) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key 
 }
 
 func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID) {
-	prefix := settingsCachePrefix + tenantID.String() + ":"
+	tenantPrefix := tenantID.String() + ":"
 
+	s.mu.Lock()
 	for k := range s.cache {
-		if len(k) >= len(tenantID.String()) && k[:len(tenantID.String())] == tenantID.String() {
+		if strings.HasPrefix(k, tenantPrefix) {
 			delete(s.cache, k)
 		}
 	}
+	s.mu.Unlock()
+
+	prefix := settingsCachePrefix + tenantID.String() + ":"
 
 	if s.vk != nil {
 		var cursor uint64
@@ -196,4 +211,21 @@ func (s *Settings) GetPublicSettings(ctx context.Context, tenantID pgtype.UUID) 
 	}
 
 	return settings, rows.Err()
+}
+
+// cleanupLoop periodically evicts expired L1 cache entries to prevent memory leaks.
+func (s *Settings) cleanupLoop(maxAge time.Duration) {
+	ticker := time.NewTicker(maxAge)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		now := time.Now()
+		s.mu.Lock()
+		for key, entry := range s.cache {
+			if now.Sub(entry.createdAt) > settingsCacheTTL {
+				delete(s.cache, key)
+			}
+		}
+		s.mu.Unlock()
+	}
 }

@@ -40,7 +40,9 @@
 	onMount(async () => {
 		try {
 			const progress = await api.getProgress(track.id);
-			progressPercent = progress.percent;
+			const completedCount = progress.completed_lessons?.length ?? 0;
+			const totalLessons = track.lesson_count;
+			progressPercent = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
 		} catch {
 			// No progress yet
 		}

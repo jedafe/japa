@@ -328,6 +328,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Feed System subsystem (Section 32 — Activity Feed / Timeline).
 	feedService := feed.NewService(database)
 	feedHandlers := feed.NewHandlers(feedService)
+	feedHandlers.SetSettings(settingsService)
 
 	// Trending & Discovery subsystem (Phase 28).
 	trendingStore := trending.NewStore(database)
@@ -587,6 +588,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	})
 	controlHandlers.SetClient(controlClient)
 	controlHandlers.SetRBAC(rbacResolver)
+	controlHandlers.SetSettings(settingsService)
 
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
@@ -1008,6 +1010,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/push-tokens", notificationHandlers.HandlePushUnsubscribe)
 
 			// Feed routes (Section 32 — Activity Feed / Timeline)
+			r.Get("/feed/card-style", feedHandlers.GetCardStyle)                                                  // public — no auth required
 			r.Get("/explore", feedHandlers.GetExploreFeed)                                           // public — no auth required (catalog: /explore)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed) // catalog: /feed (primary timeline)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/space/{space_id}", feedHandlers.GetSpaceFeed)
@@ -1525,6 +1528,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Ticket System routes (Section 38 — Ticket System)
 			// User portal (catalog: /tickets, /me/tickets)
+			r.Get("/ticket-types", ticketHandlers.ListTicketTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/tickets", ticketHandlers.CreateTicket)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -1744,7 +1748,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// (queue-backed export via data:export_user_data + Honcho hard erasure),
 			// not the users-package stubs. Consolidated here from /account/* (§6).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me", gdprHandlers.RequestAccountDeletion)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export", gdprHandlers.RequestDataExport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/data-export", gdprHandlers.RequestDataExport)
 			// NOTE: replaces the users-package stub that hardcoded "no_pending_export"
 			// regardless of actual state (same class of bug as the DELETE /me fix).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", gdprHandlers.GetMyDataExportStatus)
@@ -2007,8 +2011,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/docs/{audience}", docsHandlers.ListDocPages)
 			r.Get("/docs/{audience}/{slug}", docsHandlers.GetDocPage)
 			// Public docs nav + search (P5.6 — Task 3)
-			r.Get("/docs/nav", docsHandlers.ListDocPages)
-			r.Get("/docs/search", docsHandlers.ListDocPages)
+			r.Get("/docs/nav", docsHandlers.ListDocNav)
+			r.Get("/docs/search", docsHandlers.SearchDocPages)
 
 			// Admin: manage documentation pages
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
@@ -2210,6 +2214,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/moderation-queue/bulk", adminHandlers.BulkModeration)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Post("/admin/moderation-queue/{id}/appeal", adminHandlers.AppealModeration)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Patch("/admin/moderation-queue/{id}", adminHandlers.ModerateItem)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.alerts.manage")).
 				Get("/admin/moderation/alerts", adminHandlers.ListModerationAlerts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.alerts.manage")).
@@ -2383,6 +2389,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/appeals/{id}", adminHandlers.UpdateAppeal)
 
 			// Task 23: Content admin moderation
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/content", contentHandlers.ListContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
 				Get("/admin/content/{id}/remove", adminHandlers.RemoveContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
@@ -2412,10 +2420,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
 				Post("/admin/pages/{id}/save-as-template", pagebuilderHandlers.SaveAsTemplate)
 			r.Get("/pages", pagebuilderHandlers.ListTemplates)
-			r.Post("/pages", pagebuilderHandlers.CreatePage)
-			r.Patch("/pages/{id}", pagebuilderHandlers.UpdatePage)
-			r.Delete("/pages/{id}", pagebuilderHandlers.DeletePage)
-			r.Patch("/pages/{id}/blocks", pagebuilderHandlers.ReorderBlocks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+				Post("/pages", pagebuilderHandlers.CreatePage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+				Patch("/pages/{id}", pagebuilderHandlers.UpdatePage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+				Delete("/pages/{id}", pagebuilderHandlers.DeletePage)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pages.manage")).
+				Patch("/pages/{id}/blocks", pagebuilderHandlers.ReorderBlocks)
 			r.Get("/widgets/{id}", pagebuilderHandlers.GetBlock)
 
 			// Task 28: Me additions
@@ -2809,6 +2821,24 @@ func bootstrapPermissions(ctx context.Context, database *db.DB, rbacStore *rbac.
 		{Key: "control.api_keys.manage", Description: "Manage API keys"},
 		{Key: "control.ai_budget.manage", Description: "Manage AI budget"},
 		{Key: "control.audit_logs.view", Description: "View audit logs"},
+		// Admin Users & Analytics (previously missing from bootstrap)
+		{Key: "admin.users.list", Description: "List platform users"},
+		{Key: "admin.users.manage", Description: "View user sessions and activity"},
+		{Key: "admin.analytics.search", Description: "Search analytics data"},
+		// User Management
+		{Key: "user.delete", Description: "Delete user accounts"},
+		// Affiliate System
+		{Key: "affiliate.admin.view", Description: "View affiliate admin dashboard"},
+		{Key: "affiliate.admin.manage", Description: "Manage affiliate admin settings"},
+		{Key: "affiliate.providers.manage", Description: "Manage affiliate providers"},
+		// Coupons
+		{Key: "coupons.manage", Description: "Manage discount coupons"},
+		// Moderation Alerts
+		{Key: "moderation.alerts.manage", Description: "View and acknowledge moderation alerts"},
+		// Space Moderators
+		{Key: "spaces.moderator.assign", Description: "Assign moderators to spaces"},
+		// AI Context
+		{Key: "ai.context.admin_delete_entry", Description: "Delete AI context entries"},
 	}
 
 	var defaultTenantID pgtype.UUID

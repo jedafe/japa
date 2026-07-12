@@ -41,3 +41,17 @@ WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: DeleteDocPage :exec
 DELETE FROM doc_pages WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: ListPublishedDocPages :many
+SELECT id, title, slug, audience, parent_id, position, created_at
+FROM doc_pages
+WHERE tenant_id = @tenant_id AND review_status = 'published'
+ORDER BY audience ASC, position ASC, title ASC;
+
+-- name: SearchDocPages :many
+SELECT id, title, slug, audience, content, parent_id, position, created_at
+FROM doc_pages
+WHERE tenant_id = @tenant_id AND review_status = 'published'
+  AND (title ILIKE '%' || @query::text || '%' OR content::text ILIKE '%' || @query::text || '%')
+ORDER BY position ASC, title ASC
+LIMIT @result_limit;

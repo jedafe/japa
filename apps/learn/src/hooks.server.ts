@@ -51,8 +51,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	if (isProtectedRoute(event.url.pathname) && !event.locals.user) {
-		const redirectTo = encodeURIComponent(event.url.href);
-		throw redirect(303, `https://japaconnect.com/login?redirectTo=${redirectTo}`);
+		const redirectTo = encodeURIComponent(event.url.pathname + event.url.search);
+		throw redirect(303, `/login?redirectTo=${redirectTo}`);
 	}
 
 	const response = await resolve(event);

@@ -581,5 +581,16 @@
 
 	"nav.developer": "Developer",
 	"nav.webhooks": "Webhooks",
-	"nav.dashboard": "Dashboard"
+	"nav.dashboard": "Dashboard",
+
+	"feed.min_read": "{minutes} min read",
+	"feed.space_empty": "No posts yet",
+	"feed.space_empty_hint": "Be the first to post in this space.",
+	"feed.profile_empty": "No posts yet",
+	"feed.profile_empty_hint": "This user hasn't posted anything yet.",
+	"feed.about": "About",
+	"feed.new_post": "New post",
+	"feed.profile": "Profile",
+	"feed.loading_more": "Loading more...",
+	"feed.load_more_btn": "Load more"
 }

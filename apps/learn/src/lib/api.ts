@@ -66,7 +66,7 @@ export const api = {
 		});
 	},
 	getProgress(trackId: string) {
-		return request<{ completed: number; total: number; percent: number }>(
+		return request<{ track_id: string; progress: number; completed_lessons: string[] }>(
 			'/learn/progress/' + trackId
 		);
 	},
@@ -74,9 +74,8 @@ export const api = {
 		return request<Certificate[]>('/me/certificates');
 	},
 	enroll(trackId: string) {
-		return request<{ enrollment: Enrollment }>('/me/enrollments', {
-			method: 'POST',
-			body: JSON.stringify({ track_id: trackId })
+		return request<{ enrollment: Enrollment }>('/learn/tracks/' + trackId + '/enroll', {
+			method: 'POST'
 		});
 	},
 	submitQuiz(quizId: string, answers: Record<string, number>) {

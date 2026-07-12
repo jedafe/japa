@@ -16,8 +16,11 @@
 	function handleSubmit() {
 		loading = true;
 		trackEvent(AnalyticsEvents.LOGIN, { email });
-		return async () => {
+		return async ({ update }: { update: () => Promise<void> }) => {
 			loading = false;
+			// Apply the action result: renders field errors on fail() and
+			// follows the 303 redirect on success.
+			await update();
 		};
 	}
 
@@ -73,6 +76,7 @@
 					/>
 					<Input
 						id="email"
+						name="email"
 						type="email"
 						required
 						bind:value={email}
@@ -93,6 +97,7 @@
 					/>
 					<Input
 						id="password"
+						name="password"
 						type="password"
 						required
 						bind:value={password}
