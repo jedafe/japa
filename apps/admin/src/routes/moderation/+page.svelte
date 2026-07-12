@@ -148,10 +148,11 @@
 		if (!actionItem) return;
 		acting = true;
 		errorMessage = '';
-		const endpoint = `/admin/moderation-queue/${actionItem.id}/${actionType}`;
+		const endpoint = `/admin/moderation-queue/${actionItem.id}`;
 		try {
-			const body = actionReason.trim() ? { reason: actionReason.trim() } : {};
-			const result = await api(endpoint, { method: 'POST', body });
+			const body: Record<string, unknown> = { action: actionType };
+			if (actionReason.trim()) body.reason = actionReason.trim();
+			const result = await api(endpoint, { method: 'PATCH', body });
 			if (result.ok) {
 				showActionModal = false;
 				load();

@@ -13,7 +13,7 @@ export default defineConfig({
 	projects: [
 		{
 			name: 'main',
-			testMatch: 'main.spec.ts',
+			testMatch: ['main.spec.ts', 'main-journeys.spec.ts', 'ssr-integrity.spec.ts'],
 			use: { baseURL: 'http://localhost:3000' }
 		},
 		{

@@ -45,7 +45,7 @@
 		if (filterType) params.set('type', filterType);
 		if (filterStatus) params.set('status', filterStatus);
 		try {
-			const result = await api<{ items: ContentItem[]; page: number; total_pages: number }>(`/content?${params}`);
+			const result = await api<{ items: ContentItem[]; page: number; total_pages: number }>(`/admin/content?${params}`);
 			if (result.ok) {
 				items = result.data.items;
 				totalPages = result.data.total_pages;

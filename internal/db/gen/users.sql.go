@@ -121,9 +121,12 @@ func (q *Queries) GetUserByID(ctx context.Context, arg GetUserByIDParams) (GetUs
 const getUserByUsername = `-- name: GetUserByUsername :one
 SELECT up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
        up.timezone, up.created_at, up.updated_at,
-       u.email, u.username, u.profile_type, u.status, u.follower_count
+       u.email, u.username, u.profile_type, u.status, u.follower_count,
+       ug.slug AS user_group_name
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
+LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
 WHERE up.tenant_id = $1 AND u.username = $2
 `
 
@@ -147,6 +150,7 @@ type GetUserByUsernameRow struct {
 	ProfileType   string             `json:"profile_type"`
 	Status        string             `json:"status"`
 	FollowerCount int32              `json:"follower_count"`
+	UserGroupName *string            `json:"user_group_name"`
 }
 
 func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernameParams) (GetUserByUsernameRow, error) {
@@ -167,6 +171,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 		&i.ProfileType,
 		&i.Status,
 		&i.FollowerCount,
+		&i.UserGroupName,
 	)
 	return i, err
 }
@@ -244,9 +249,12 @@ func (q *Queries) GetUserPrivacySettings(ctx context.Context, userID pgtype.UUID
 const getUserProfile = `-- name: GetUserProfile :one
 SELECT up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
        up.timezone, up.created_at, up.updated_at,
-       u.email, u.username, u.profile_type, u.status, u.follower_count
+       u.email, u.username, u.profile_type, u.status, u.follower_count,
+       ug.slug AS user_group_name
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
+LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
 WHERE up.tenant_id = $1 AND up.user_id = $2
 `
 
@@ -270,6 +278,7 @@ type GetUserProfileRow struct {
 	ProfileType   string             `json:"profile_type"`
 	Status        string             `json:"status"`
 	FollowerCount int32              `json:"follower_count"`
+	UserGroupName *string            `json:"user_group_name"`
 }
 
 func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) (GetUserProfileRow, error) {
@@ -290,6 +299,7 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 		&i.ProfileType,
 		&i.Status,
 		&i.FollowerCount,
+		&i.UserGroupName,
 	)
 	return i, err
 }

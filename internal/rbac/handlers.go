@@ -244,7 +244,7 @@ func (h *Handlers) GetUserPermissions(w http.ResponseWriter, r *http.Request) {
 
 	uc, err := h.rbac.GetUserContext(r.Context(), user.UserID, user.TenantID)
 	if err != nil || uc == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"permissions": []string{}})
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"permissions": []string{}}})
 		return
 	}
 
@@ -256,7 +256,7 @@ func (h *Handlers) GetUserPermissions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"permissions": permKeys})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"permissions": permKeys}})
 }
 
 // ListRoles handles GET /api/v1/admin/rbac/roles.

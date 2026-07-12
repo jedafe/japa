@@ -29,6 +29,7 @@ type UserProfileResponse struct {
 	ProfileType   string  `json:"profile_type"`
 	Status        string  `json:"status"`
 	FollowerCount int32   `json:"follower_count"`
+	UserGroupName string  `json:"user_group_name"`
 	CreatedAt     string  `json:"created_at"`
 	UpdatedAt     string  `json:"updated_at"`
 }

@@ -1,4 +1,4 @@
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL, PUBLIC_JC_SITE_URL } from '$env/static/public';
 
 export interface ApiOk<T> {
 	data: T;
@@ -34,7 +34,7 @@ export async function apiFetch<T>(
 
 		if (res.status === 401) {
 			if (typeof window !== 'undefined') {
-				window.location.href = `https://japaconnect.com/login?redirectTo=${encodeURIComponent(window.location.href)}`;
+				window.location.href = `${PUBLIC_JC_SITE_URL}/login?redirectTo=${encodeURIComponent(window.location.href)}`;
 			}
 			return { data: null, error: { code: 'unauthorized', message: 'Session expired', status: 401 }, status: 401 };
 		}

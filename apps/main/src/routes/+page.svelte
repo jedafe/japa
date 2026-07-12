@@ -4,29 +4,37 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { ArrowRight, Globe, Users, BookOpen, Shield } from 'lucide-svelte';
 
-	let { data }: { data: HealthStatus } = $props();
+	let { data }: { data: HealthStatus & { translations: Record<string, string> } } = $props();
 
-	const status = $derived(data.healthy ? t('landing.operational') : t('landing.degraded'));
+	const translations = $derived(data.translations ?? {});
+
+	const tr = (key: string, fallback?: string) => translations[key] ?? fallback ?? key;
+
+	const status = $derived(data.healthy ? tr('landing.operational') : tr('landing.degraded'));
 	const label = $derived(data.healthy ? 'ok' : 'warn');
 
 	const metadata = $derived({
-		title: t('nav.home'),
-		description: t('landing.tagline'),
+		title: tr('nav.home', 'Home'),
+		description: tr('landing.tagline', 'The community hub for the Nigerian diaspora.'),
 		content_type: 'website'
 	});
 
 	const websiteSchema = $derived(createWebsiteSchema());
 
 	const features = $derived([
-		{ icon: Globe, title: t('landing.feature_community'), desc: t('landing.feature_community_desc') },
-		{ icon: Users, title: t('landing.feature_spaces'), desc: t('landing.feature_spaces_desc') },
-		{ icon: BookOpen, title: t('landing.feature_learn'), desc: t('landing.feature_learn_desc') },
-		{ icon: Shield, title: t('landing.feature_trusted'), desc: t('landing.feature_trusted_desc') }
+		{ icon: Globe, title: tr('landing.feature_community'), desc: tr('landing.feature_community_desc') },
+		{ icon: Users, title: tr('landing.feature_spaces'), desc: tr('landing.feature_spaces_desc') },
+		{ icon: BookOpen, title: tr('landing.feature_learn'), desc: tr('landing.feature_learn_desc') },
+		{ icon: Shield, title: tr('landing.feature_trusted'), desc: tr('landing.feature_trusted_desc') }
 	]);
 </script>
 
 <MetadataHead {metadata} />
 <JsonLd schema={websiteSchema} />
+
+<svelte:head>
+	<link rel="alternate" type="application/rss+xml" title="JapaConnect Feed" href="/feed.rss" />
+</svelte:head>
 
 <main class="relative overflow-hidden">
 	<!-- Hero Section -->
@@ -48,37 +56,37 @@
 					class="h-2 w-2 rounded-full"
 					style="background-color: {data.healthy ? 'var(--color-success)' : 'var(--color-warning)'}"
 				></span>
-				{status}
-			</div>
+			{status}
+		</div>
 
-			<h1
-				class="animate-slide-up mt-6 text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl"
-				style="color: var(--color-foreground)"
-			>
-				JapaConnect
-			</h1>
-			<p
-				class="animate-slide-up mx-auto mt-5 max-w-xl text-lg leading-relaxed sm:text-xl"
-				style="color: var(--color-muted); animation-delay: 100ms"
-			>
-				{t('landing.tagline')}
-			</p>
+		<h1
+			class="animate-slide-up mt-6 text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl"
+			style="color: var(--color-foreground)"
+		>
+			JapaConnect
+		</h1>
+		<p
+			class="animate-slide-up mx-auto mt-5 max-w-xl text-lg leading-relaxed sm:text-xl"
+			style="color: var(--color-muted); animation-delay: 100ms"
+		>
+			{tr('landing.tagline')}
+		</p>
 
-			<div class="animate-slide-up mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row" style="animation-delay: 200ms">
-				<a
-					href="/register"
-					class="btn btn-primary px-8 py-3 text-base"
-				>
-					{t('landing.get_started')}
-					<ArrowRight class="h-4 w-4" />
-				</a>
-				<a
-					href="/feed"
-					class="btn btn-secondary px-8 py-3 text-base"
-				>
-					{t('landing.explore_feed')}
-				</a>
-			</div>
+		<div class="animate-slide-up mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row" style="animation-delay: 200ms">
+			<a
+				href="/register"
+				class="btn btn-primary px-8 py-3 text-base"
+			>
+				{tr('landing.get_started', 'Get Started')}
+				<ArrowRight class="h-4 w-4" />
+			</a>
+			<a
+				href="/feed"
+				class="btn btn-secondary px-8 py-3 text-base"
+			>
+				{tr('landing.explore_feed', 'Explore Feed')}
+			</a>
+		</div>
 		</div>
 	</div>
 
@@ -125,9 +133,9 @@
 					></span>
 				</div>
 				<div>
-					<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">
-						{t('landing.health')}
-					</h2>
+				<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">
+					{tr('landing.health', 'System Status')}
+				</h2>
 					<p class="text-sm" style="color: var(--color-muted)">
 						<span class="font-medium" data-testid="health-status">{status}</span>
 						<span data-testid="health-badge" class="sr-only">{label}</span>

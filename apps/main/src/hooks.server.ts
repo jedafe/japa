@@ -109,7 +109,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-export const handleError: HandleServerError = ({ error }) => {
+export const handleError: HandleServerError = ({ error, event }) => {
+	console.error(`[handleError] ${event.request.method} ${event.url.pathname}`, error);
 	Sentry.captureException(error);
 	return {
 		code: 'INTERNAL_ERROR',

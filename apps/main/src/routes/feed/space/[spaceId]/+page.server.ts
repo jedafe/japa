@@ -8,12 +8,17 @@ interface FeedItem {
 	content_type: string;
 	author_id: string;
 	author_name: string;
-	author_avatar?: string;
+	author_avatar_url?: string;
 	excerpt?: string;
-	reaction_count: number;
+	vote_score: number;
 	comment_count: number;
+	bookmark_count?: number;
+	view_count?: number;
 	created_at: string;
 	slug?: string;
+	reading_time_minutes?: number;
+	cover_image_url?: string;
+	tags?: string[];
 }
 
 interface Space {
@@ -27,9 +32,10 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-	const [spaceResult, feedResult] = await Promise.all([
+	const [spaceResult, feedResult, cardStyleResult] = await Promise.all([
 		apiFetch<Space>(`/spaces/${params.spaceId}`, { headers }),
-		apiFetch<{ items: FeedItem[]; has_more: boolean }>(`/feed/space/${params.spaceId}?limit=20`, { headers })
+		apiFetch<{ data: FeedItem[] }>(`/feed/space/${params.spaceId}?limit=20`, { headers }),
+		apiFetch<{ data: { card_style: string } }>('/feed/card-style', { headers })
 	]);
 
 	if (!spaceResult.ok || !spaceResult.data) {
@@ -38,7 +44,7 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 
 	return {
 		space: spaceResult.data,
-		feed: feedResult.ok && feedResult.data ? feedResult.data.items : [],
-		hasMore: feedResult.ok && feedResult.data ? feedResult.data.has_more : false
+		feed: feedResult.ok && feedResult.data ? feedResult.data.data : [],
+		cardStyle: cardStyleResult.ok && cardStyleResult.data ? cardStyleResult.data.data.card_style : 'reddit'
 	};
 };

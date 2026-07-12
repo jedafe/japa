@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { apiFetch } from '$lib/api/client';
 	import { BookOpen, ChevronRight, FileText, Search } from 'lucide-svelte';
 
 	let { audience, navTree = [], currentSlug = '', onNavigate }: { audience: string; navTree?: Array<{ title?: string; slug?: string; audience?: string; children?: Array<{ title?: string; slug?: string }> }>; currentSlug?: string; onNavigate?: () => void } = $props();
@@ -28,13 +29,10 @@
 		searching = true;
 		showResults = true;
 		try {
-			const res = await fetch(`/api/v1/docs/search?q=${encodeURIComponent(q)}&limit=10`);
-			if (res.ok) {
-				const { data } = await res.json();
-				results = data ?? [];
-			} else {
-				results = [];
-			}
+			const res = await apiFetch<Array<{ title: string; slug: string; audience: string; excerpt: string }>>(
+				`/docs/search?q=${encodeURIComponent(q)}&limit=10`
+			);
+			results = res.data ?? [];
 		} catch {
 			results = [];
 		} finally {

@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { PUBLIC_JC_ENV } from '$env/static/public';
 import type { Actions, PageServerLoad } from './$types';
 import { API_BASE_URL } from '$lib/server/api';
 
@@ -40,10 +41,11 @@ export const actions: Actions = {
 			}
 
 			// Set the session cookie server-side with proper security attributes
+			const isSecure = PUBLIC_JC_ENV !== 'development';
 			cookies.set('jc_token', token, {
 				path: '/',
 				httpOnly: true,
-				secure: true,
+				secure: isSecure,
 				sameSite: 'lax',
 				maxAge: 60 * 60 * 24 * 30 // 30 days
 			});

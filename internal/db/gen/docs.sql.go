@@ -289,6 +289,106 @@ func (q *Queries) ListDocPagesTree(ctx context.Context, arg ListDocPagesTreePara
 	return items, nil
 }
 
+const listPublishedDocPages = `-- name: ListPublishedDocPages :many
+SELECT id, title, slug, audience, parent_id, position, created_at
+FROM doc_pages
+WHERE tenant_id = $1 AND review_status = 'published'
+ORDER BY audience ASC, position ASC, title ASC
+`
+
+type ListPublishedDocPagesRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Title     string             `json:"title"`
+	Slug      string             `json:"slug"`
+	Audience  string             `json:"audience"`
+	ParentID  pgtype.UUID        `json:"parent_id"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListPublishedDocPages(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedDocPagesRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedDocPages, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublishedDocPagesRow
+	for rows.Next() {
+		var i ListPublishedDocPagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.Audience,
+			&i.ParentID,
+			&i.Position,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchDocPages = `-- name: SearchDocPages :many
+SELECT id, title, slug, audience, content, parent_id, position, created_at
+FROM doc_pages
+WHERE tenant_id = $1 AND review_status = 'published'
+  AND (title ILIKE '%' || $2::text || '%' OR content::text ILIKE '%' || $2::text || '%')
+ORDER BY position ASC, title ASC
+LIMIT $3
+`
+
+type SearchDocPagesParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Query       string      `json:"query"`
+	ResultLimit int32       `json:"result_limit"`
+}
+
+type SearchDocPagesRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Title     string             `json:"title"`
+	Slug      string             `json:"slug"`
+	Audience  string             `json:"audience"`
+	Content   []byte             `json:"content"`
+	ParentID  pgtype.UUID        `json:"parent_id"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) SearchDocPages(ctx context.Context, arg SearchDocPagesParams) ([]SearchDocPagesRow, error) {
+	rows, err := q.db.Query(ctx, searchDocPages, arg.TenantID, arg.Query, arg.ResultLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchDocPagesRow
+	for rows.Next() {
+		var i SearchDocPagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.Audience,
+			&i.Content,
+			&i.ParentID,
+			&i.Position,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateDocPage = `-- name: UpdateDocPage :exec
 UPDATE doc_pages
 SET title = $1, content = $2, review_status = $3,

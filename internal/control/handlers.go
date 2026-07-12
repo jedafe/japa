@@ -11,6 +11,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/publicapi"
@@ -30,6 +31,7 @@ type Handlers struct {
 	Inspector        *asynq.Inspector
 	Client           *asynq.Client
 	RBAC             *rbac.RBAC
+	Settings         *config.Settings
 	StartTime        time.Time
 }
 
@@ -58,6 +60,11 @@ func (h *Handlers) SetClient(client *asynq.Client) {
 // SetRBAC injects the RBAC resolver for cache operations.
 func (h *Handlers) SetRBAC(r *rbac.RBAC) {
 	h.RBAC = r
+}
+
+// SetSettings injects the settings service for cache invalidation.
+func (h *Handlers) SetSettings(s *config.Settings) {
+	h.Settings = s
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +255,9 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	if h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
@@ -291,6 +301,9 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
 }
 
@@ -316,6 +329,9 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	if tag.RowsAffected() == 0 {
 		writeError(w, http.StatusNotFound, "not_found", "Setting not found")
 		return
+	}
+	if h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "deleted"}})
 }
@@ -585,13 +601,15 @@ func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
-	if h.RBAC == nil {
-		writeError(w, http.StatusServiceUnavailable, "rbac_unavailable", "RBAC not configured")
-		return
+	if h.RBAC != nil {
+		h.RBAC.InvalidateAllCache(r.Context())
 	}
-	h.RBAC.InvalidateAllCache(r.Context())
+	tenantID, ok := requireTenant(w, r)
+	if ok && h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"message": "Permission cache flushed"},
+		"data": map[string]any{"message": "Permission and settings cache flushed"},
 	})
 }
 

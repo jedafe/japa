@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { PUBLIC_JC_SITE_URL } from '$env/static/public';
 	import { GraduationCap, Mail, Lock } from 'lucide-svelte';
 	import { Button, Input, Spinner } from '$lib/components/ui';
 
@@ -56,6 +57,7 @@
 					/>
 					<Input
 						id="email"
+						name="email"
 						type="email"
 						required
 						bind:value={email}
@@ -76,6 +78,7 @@
 					/>
 					<Input
 						id="password"
+						name="password"
 						type="password"
 						required
 						bind:value={password}
@@ -102,7 +105,7 @@
 
 		<p class="mt-6 text-center text-sm" style="color: var(--color-muted)">
 			Don't have an account?
-			<a href="https://japaconnect.com/register" class="font-medium hover:underline" style="color: var(--color-primary)">
+			<a href="{PUBLIC_JC_SITE_URL}/register" class="font-medium hover:underline" style="color: var(--color-primary)">
 				Create one on JapaConnect
 			</a>
 		</p>

@@ -21,9 +21,9 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
 	try {
-		const result = await apiFetch<PricingPlan[]>('/pricing/plans', { headers });
-		if (result.ok && result.data) {
-			return { plans: result.data };
+		const result = await apiFetch<{ data: PricingPlan[] }>('/pricing/plans', { headers });
+		if (result.ok && Array.isArray(result.data?.data)) {
+			return { plans: result.data.data };
 		}
 		return { plans: [] };
 	} catch {

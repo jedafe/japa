@@ -13,8 +13,14 @@
 	import { realtime, initRealtimeListeners } from '$lib/stores/realtime.svelte';
 	import { showToast } from '$lib/stores/toast.svelte';
 	import { initGlitchTip } from '$lib/glitchtip';
-	import { PUBLIC_JC_UMAMI_URL, PUBLIC_JC_UMAMI_SITE_ID } from '$env/static/public';
+	import {
+		PUBLIC_JC_UMAMI_URL,
+		PUBLIC_JC_UMAMI_SITE_ID,
+		PUBLIC_JC_SITE_URL
+	} from '$env/static/public';
 	import Toast from '$lib/components/Toast.svelte';
+
+	const siteUrl = PUBLIC_JC_SITE_URL || 'https://japaconnect.com';
 
 	let { children, data } = $props();
 
@@ -108,9 +114,9 @@
 	<link rel="icon" href={favicon} />
 	<meta name="description" content="JapaConnect — community platform for the Nigerian diaspora" />
 	{#each ['en', 'fr', 'yo', 'ha'] as langCode}
-		<link rel="alternate" hreflang={langCode} href="https://japaconnect.com/{langCode}{page.url.pathname}" />
+		<link rel="alternate" hreflang={langCode} href="{siteUrl}/{langCode}{page.url.pathname}" />
 	{/each}
-	<link rel="alternate" hreflang="x-default" href="https://japaconnect.com{page.url.pathname}" />
+	<link rel="alternate" hreflang="x-default" href="{siteUrl}{page.url.pathname}" />
 	<!-- Umami Analytics (Section 40) — only in production -->
 	{#if import.meta.env.MODE !== 'development'}
 		{#if PUBLIC_JC_UMAMI_URL}

@@ -32,12 +32,28 @@ func (q *Queries) DeleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID)
 const getExploreFeed = `-- name: GetExploreFeed :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score
+       cs.vote_score, cs.velocity_score,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       LEFT(c.body, 200) AS excerpt,
+       cs.bookmark_count,
+       c.read_time_minutes,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path AS cover_storage_path,
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+         u.username, up.display_name, up.avatar_url,
+         m.storage_bucket, m.storage_path
 ORDER BY cs.velocity_score DESC, cs.vote_score DESC
 LIMIT $3 OFFSET $2
 `
@@ -49,17 +65,25 @@ type GetExploreFeedParams struct {
 }
 
 type GetExploreFeedRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Title         string             `json:"title"`
-	Slug          string             `json:"slug"`
-	ContentType   string             `json:"content_type"`
-	AuthorID      pgtype.UUID        `json:"author_id"`
-	SpaceID       pgtype.UUID        `json:"space_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	ViewCount     int32              `json:"view_count"`
-	CommentCount  int32              `json:"comment_count"`
-	VoteScore     int32              `json:"vote_score"`
-	VelocityScore pgtype.Numeric     `json:"velocity_score"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	ContentType        string             `json:"content_type"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ViewCount          int32              `json:"view_count"`
+	CommentCount       int32              `json:"comment_count"`
+	VoteScore          int32              `json:"vote_score"`
+	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
+	AuthorName         string             `json:"author_name"`
+	AuthorAvatarUrl    string             `json:"author_avatar_url"`
+	Excerpt            string             `json:"excerpt"`
+	BookmarkCount      int32              `json:"bookmark_count"`
+	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	CoverStorageBucket *string            `json:"cover_storage_bucket"`
+	CoverStoragePath   *string            `json:"cover_storage_path"`
+	Tags               interface{}        `json:"tags"`
 }
 
 // Trending content for guests (no user_id filter), pull from content_scores
@@ -84,6 +108,14 @@ func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) 
 			&i.CommentCount,
 			&i.VoteScore,
 			&i.VelocityScore,
+			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.Excerpt,
+			&i.BookmarkCount,
+			&i.ReadTimeMinutes,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}
@@ -108,11 +140,31 @@ func (q *Queries) GetFeedItemCount(ctx context.Context, userID pgtype.UUID) (int
 
 const getPrimaryFeed = `-- name: GetPrimaryFeed :many
 SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
-       c.title, c.slug, c.author_id, c.created_at AS content_created_at
+       c.title, c.slug, c.author_id, c.created_at AS content_created_at,
+       c.view_count, c.comment_count,
+       cs.vote_score, cs.bookmark_count,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       LEFT(c.body, 200) AS excerpt,
+       c.read_time_minutes,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path AS cover_storage_path,
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
 FROM feeds f
 JOIN contents c ON c.id = f.content_id
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE f.tenant_id = $1 AND f.user_id = $2
   AND c.status = 'published'
+GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
+         c.title, c.slug, c.author_id, c.created_at,
+         c.view_count, c.comment_count, cs.vote_score, cs.bookmark_count,
+         u.username, up.display_name, up.avatar_url,
+         c.read_time_minutes, m.storage_bucket, m.storage_path
 ORDER BY f.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -125,16 +177,27 @@ type GetPrimaryFeedParams struct {
 }
 
 type GetPrimaryFeedRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	ContentID        pgtype.UUID        `json:"content_id"`
-	SpaceID          pgtype.UUID        `json:"space_id"`
-	ContentType      string             `json:"content_type"`
-	Score            pgtype.Numeric     `json:"score"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	Title            string             `json:"title"`
-	Slug             string             `json:"slug"`
-	AuthorID         pgtype.UUID        `json:"author_id"`
-	ContentCreatedAt pgtype.Timestamptz `json:"content_created_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	ContentType        string             `json:"content_type"`
+	Score              pgtype.Numeric     `json:"score"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	ContentCreatedAt   pgtype.Timestamptz `json:"content_created_at"`
+	ViewCount          int32              `json:"view_count"`
+	CommentCount       int32              `json:"comment_count"`
+	VoteScore          *int32             `json:"vote_score"`
+	BookmarkCount      *int32             `json:"bookmark_count"`
+	AuthorName         string             `json:"author_name"`
+	AuthorAvatarUrl    string             `json:"author_avatar_url"`
+	Excerpt            string             `json:"excerpt"`
+	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	CoverStorageBucket *string            `json:"cover_storage_bucket"`
+	CoverStoragePath   *string            `json:"cover_storage_path"`
+	Tags               interface{}        `json:"tags"`
 }
 
 // User's personalized feed from feeds table (push side)
@@ -163,6 +226,17 @@ func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) 
 			&i.Slug,
 			&i.AuthorID,
 			&i.ContentCreatedAt,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.VoteScore,
+			&i.BookmarkCount,
+			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.Excerpt,
+			&i.ReadTimeMinutes,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}
@@ -175,14 +249,30 @@ func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) 
 }
 
 const getProfileFeed = `-- name: GetProfileFeed :many
-SELECT c.id, c.title, c.slug, c.content_type, c.space_id,
+SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score
+       cs.vote_score, cs.velocity_score,
+       cs.bookmark_count,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       LEFT(c.body, 200) AS excerpt,
+       c.read_time_minutes,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path AS cover_storage_path,
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1 AND c.author_id = $2
   AND c.status = 'published'
   AND c.visibility = 'public'
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+         u.username, up.display_name, up.avatar_url,
+         m.storage_bucket, m.storage_path
 ORDER BY c.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -195,16 +285,25 @@ type GetProfileFeedParams struct {
 }
 
 type GetProfileFeedRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Title         string             `json:"title"`
-	Slug          string             `json:"slug"`
-	ContentType   string             `json:"content_type"`
-	SpaceID       pgtype.UUID        `json:"space_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	ViewCount     int32              `json:"view_count"`
-	CommentCount  int32              `json:"comment_count"`
-	VoteScore     int32              `json:"vote_score"`
-	VelocityScore pgtype.Numeric     `json:"velocity_score"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	ContentType        string             `json:"content_type"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ViewCount          int32              `json:"view_count"`
+	CommentCount       int32              `json:"comment_count"`
+	VoteScore          int32              `json:"vote_score"`
+	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount      int32              `json:"bookmark_count"`
+	AuthorName         string             `json:"author_name"`
+	AuthorAvatarUrl    string             `json:"author_avatar_url"`
+	Excerpt            string             `json:"excerpt"`
+	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	CoverStorageBucket *string            `json:"cover_storage_bucket"`
+	CoverStoragePath   *string            `json:"cover_storage_path"`
+	Tags               interface{}        `json:"tags"`
 }
 
 // All public posts by a specific user
@@ -227,12 +326,21 @@ func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) 
 			&i.Title,
 			&i.Slug,
 			&i.ContentType,
+			&i.AuthorID,
 			&i.SpaceID,
 			&i.CreatedAt,
 			&i.ViewCount,
 			&i.CommentCount,
 			&i.VoteScore,
 			&i.VelocityScore,
+			&i.BookmarkCount,
+			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.Excerpt,
+			&i.ReadTimeMinutes,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}
@@ -247,12 +355,28 @@ func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) 
 const getRisingFeed = `-- name: GetRisingFeed :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score
+       cs.vote_score, cs.velocity_score,
+       cs.bookmark_count,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       LEFT(c.body, 200) AS excerpt,
+       c.read_time_minutes,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path AS cover_storage_path,
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+         u.username, up.display_name, up.avatar_url,
+         m.storage_bucket, m.storage_path
 ORDER BY cs.velocity_score DESC
 LIMIT $3 OFFSET $2
 `
@@ -264,17 +388,25 @@ type GetRisingFeedParams struct {
 }
 
 type GetRisingFeedRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Title         string             `json:"title"`
-	Slug          string             `json:"slug"`
-	ContentType   string             `json:"content_type"`
-	AuthorID      pgtype.UUID        `json:"author_id"`
-	SpaceID       pgtype.UUID        `json:"space_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	ViewCount     int32              `json:"view_count"`
-	CommentCount  int32              `json:"comment_count"`
-	VoteScore     int32              `json:"vote_score"`
-	VelocityScore pgtype.Numeric     `json:"velocity_score"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	ContentType        string             `json:"content_type"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ViewCount          int32              `json:"view_count"`
+	CommentCount       int32              `json:"comment_count"`
+	VoteScore          int32              `json:"vote_score"`
+	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount      int32              `json:"bookmark_count"`
+	AuthorName         string             `json:"author_name"`
+	AuthorAvatarUrl    string             `json:"author_avatar_url"`
+	Excerpt            string             `json:"excerpt"`
+	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	CoverStorageBucket *string            `json:"cover_storage_bucket"`
+	CoverStoragePath   *string            `json:"cover_storage_path"`
+	Tags               interface{}        `json:"tags"`
 }
 
 // Rising content sorted by velocity score
@@ -299,6 +431,14 @@ func (q *Queries) GetRisingFeed(ctx context.Context, arg GetRisingFeedParams) ([
 			&i.CommentCount,
 			&i.VoteScore,
 			&i.VelocityScore,
+			&i.BookmarkCount,
+			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.Excerpt,
+			&i.ReadTimeMinutes,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}
@@ -313,11 +453,27 @@ func (q *Queries) GetRisingFeed(ctx context.Context, arg GetRisingFeedParams) ([
 const getSpaceFeed = `-- name: GetSpaceFeed :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
        c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score
+       cs.vote_score, cs.velocity_score,
+       cs.bookmark_count,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       LEFT(c.body, 200) AS excerpt,
+       c.read_time_minutes,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path AS cover_storage_path,
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1 AND c.space_id = $2
   AND c.status = 'published'
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+         u.username, up.display_name, up.avatar_url,
+         m.storage_bucket, m.storage_path
 ORDER BY c.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -330,16 +486,24 @@ type GetSpaceFeedParams struct {
 }
 
 type GetSpaceFeedRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Title         string             `json:"title"`
-	Slug          string             `json:"slug"`
-	ContentType   string             `json:"content_type"`
-	AuthorID      pgtype.UUID        `json:"author_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	ViewCount     int32              `json:"view_count"`
-	CommentCount  int32              `json:"comment_count"`
-	VoteScore     int32              `json:"vote_score"`
-	VelocityScore pgtype.Numeric     `json:"velocity_score"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	ContentType        string             `json:"content_type"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ViewCount          int32              `json:"view_count"`
+	CommentCount       int32              `json:"comment_count"`
+	VoteScore          int32              `json:"vote_score"`
+	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount      int32              `json:"bookmark_count"`
+	AuthorName         string             `json:"author_name"`
+	AuthorAvatarUrl    string             `json:"author_avatar_url"`
+	Excerpt            string             `json:"excerpt"`
+	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	CoverStorageBucket *string            `json:"cover_storage_bucket"`
+	CoverStoragePath   *string            `json:"cover_storage_path"`
+	Tags               interface{}        `json:"tags"`
 }
 
 // Posts in a specific space
@@ -368,6 +532,14 @@ func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]G
 			&i.CommentCount,
 			&i.VoteScore,
 			&i.VelocityScore,
+			&i.BookmarkCount,
+			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.Excerpt,
+			&i.ReadTimeMinutes,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}
@@ -382,13 +554,29 @@ func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]G
 const getTopFeed = `-- name: GetTopFeed :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score
+       cs.vote_score, cs.velocity_score,
+       cs.bookmark_count,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       LEFT(c.body, 200) AS excerpt,
+       c.read_time_minutes,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path AS cover_storage_path,
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND c.visibility = 'public'
   AND c.created_at > now() - interval '7 days'
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+         u.username, up.display_name, up.avatar_url,
+         m.storage_bucket, m.storage_path
 ORDER BY cs.vote_score DESC
 LIMIT $3 OFFSET $2
 `
@@ -400,17 +588,25 @@ type GetTopFeedParams struct {
 }
 
 type GetTopFeedRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Title         string             `json:"title"`
-	Slug          string             `json:"slug"`
-	ContentType   string             `json:"content_type"`
-	AuthorID      pgtype.UUID        `json:"author_id"`
-	SpaceID       pgtype.UUID        `json:"space_id"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	ViewCount     int32              `json:"view_count"`
-	CommentCount  int32              `json:"comment_count"`
-	VoteScore     int32              `json:"vote_score"`
-	VelocityScore pgtype.Numeric     `json:"velocity_score"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	ContentType        string             `json:"content_type"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ViewCount          int32              `json:"view_count"`
+	CommentCount       int32              `json:"comment_count"`
+	VoteScore          int32              `json:"vote_score"`
+	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount      int32              `json:"bookmark_count"`
+	AuthorName         string             `json:"author_name"`
+	AuthorAvatarUrl    string             `json:"author_avatar_url"`
+	Excerpt            string             `json:"excerpt"`
+	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	CoverStorageBucket *string            `json:"cover_storage_bucket"`
+	CoverStoragePath   *string            `json:"cover_storage_path"`
+	Tags               interface{}        `json:"tags"`
 }
 
 // Top content in 7-day rolling window (for top sort)
@@ -435,6 +631,14 @@ func (q *Queries) GetTopFeed(ctx context.Context, arg GetTopFeedParams) ([]GetTo
 			&i.CommentCount,
 			&i.VoteScore,
 			&i.VelocityScore,
+			&i.BookmarkCount,
+			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.Excerpt,
+			&i.ReadTimeMinutes,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}

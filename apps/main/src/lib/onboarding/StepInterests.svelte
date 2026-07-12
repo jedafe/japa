@@ -10,30 +10,27 @@
 	let selectedInterests = $state<string[]>((stepData.interests as string[]) || []);
 	const minInterests = 3;
 
-	const defaultInterests = [
-		{ id: 'immigration', label: 'Immigration' },
-		{ id: 'career', label: 'Career' },
-		{ id: 'education', label: 'Education' },
-		{ id: 'housing', label: 'Housing' },
-		{ id: 'finance', label: 'Finance' },
-		{ id: 'health', label: 'Health' },
-		{ id: 'community', label: 'Community' },
-		{ id: 'relocation', label: 'Relocation' },
-		{ id: 'culture', label: 'Culture' },
-		{ id: 'legal', label: 'Legal' },
-		{ id: 'travel', label: 'Travel' },
-		{ id: 'entrepreneurship', label: 'Entrepreneurship' }
-	];
-	let interests = $state(defaultInterests);
+	interface Interest {
+		id: string;
+		label: string;
+	}
+
+	let interests = $state<Interest[]>([]);
+	let loading = $state(true);
+	let error = $state('');
 
 	onMount(async () => {
 		try {
 			const tags = await api.getTrendingTags(20);
 			if (tags.items && tags.items.length > 0) {
 				interests = tags.items.map((tag) => ({ id: tag.slug, label: tag.name }));
+			} else {
+				error = t('onboarding.no_recommendations');
 			}
 		} catch {
-			interests = defaultInterests;
+			error = t('common.error');
+		} finally {
+			loading = false;
 		}
 	});
 
@@ -64,19 +61,29 @@
 		</div>
 	</div>
 
-	<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-		{#each interests as interest}
-			<button
-				class="rounded-lg border px-3 py-2.5 text-sm font-medium transition-all"
-				style={selectedInterests.includes(interest.id)
-					? 'background: var(--color-primary); color: white; border-color: var(--color-primary);'
-					: 'border-color: var(--color-border); color: var(--color-foreground); background: var(--color-background);'}
-				onclick={() => toggleInterest(interest.id)}
-			>
-				{interest.label}
-			</button>
-		{/each}
-	</div>
+	{#if loading}
+		<div class="flex items-center justify-center py-8">
+			<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
+		</div>
+	{:else if error}
+		<div class="rounded-lg border p-4 text-center" style="border-color: var(--color-border); background: var(--color-surface)">
+			<p class="text-sm" style="color: var(--color-muted)">{error}</p>
+		</div>
+	{:else}
+		<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+			{#each interests as interest}
+				<button
+					class="rounded-lg border px-3 py-2.5 text-sm font-medium transition-all"
+					style={selectedInterests.includes(interest.id)
+						? 'background: var(--color-primary); color: white; border-color: var(--color-primary);'
+						: 'border-color: var(--color-border); color: var(--color-foreground); background: var(--color-background);'}
+					onclick={() => toggleInterest(interest.id)}
+				>
+					{interest.label}
+				</button>
+			{/each}
+		</div>
+	{/if}
 
 	<p class="text-xs" style="color: var(--color-muted)">
 		{t('onboarding.selected_count').replace('{selected}', String(selectedInterests.length)).replace('{min}', String(minInterests))}

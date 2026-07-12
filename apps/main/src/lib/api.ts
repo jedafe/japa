@@ -166,47 +166,48 @@ export interface SpacePermissionPreset {
 export const api = {
 	// Auth
 	forgotPassword(email: string) {
-		return request<{ sent: boolean }>('/auth/forgot-password', {
+		return request<{ status: string }>('/auth/forgot-password', {
 			method: 'POST',
 			body: JSON.stringify({ email })
 		});
 	},
 	resetPassword(token: string, password: string) {
-		return request<{ success: boolean }>('/auth/reset-password', {
+		return request<{ status: string }>('/auth/reset-password', {
 			method: 'POST',
 			body: JSON.stringify({ token, password })
 		});
 	},
 	verifyEmail(token: string) {
-		return request<{ verified: boolean }>('/auth/verify-email?token=' + encodeURIComponent(token));
+		return request<void>('/auth/verify-email?token=' + encodeURIComponent(token));
 	},
 	resendVerification(email: string) {
-		return request<{ sent: boolean }>('/auth/resend-verification', {
+		return request<{ status: string }>('/auth/resend-verification', {
 			method: 'POST',
 			body: JSON.stringify({ email })
 		});
 	},
 	setupTOTP() {
-		return request<{ secret: string; qr_uri: string }>('/me/totp/enable', { method: 'POST' });
+		return request<{ secret: string; otpauth_url: string }>('/me/totp/enable', { method: 'POST' });
 	},
 	verifyTOTP(code: string) {
-		return request<{ verified: boolean; backup_codes: string[] }>('/me/totp/confirm', {
+		return request<{ status: string }>('/me/totp/confirm', {
 			method: 'POST',
 			body: JSON.stringify({ code })
 		});
 	},
-	disableTOTP(password: string) {
-		return request<{ disabled: boolean }>('/me/totp', {
+	disableTOTP(code: string) {
+		return request<{ status: string }>('/me/totp', {
 			method: 'DELETE',
-			body: JSON.stringify({ password })
+			body: JSON.stringify({ code })
 		});
 	},
 
 	// Content
 	createContent(data: {
+		space_id?: string;
 		content_type: string;
 		title: string;
-		content: string;
+		body: string;
 		status: string;
 		field_values?: Record<string, unknown>;
 	}) {
@@ -220,6 +221,9 @@ export const api = {
 			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
+	},
+	deleteContent(id: string) {
+		return request<{ status: string }>('/content/' + id, { method: 'DELETE' });
 	},
 
 	// Onboarding
@@ -253,20 +257,20 @@ export const api = {
 	},
 
 	// Notifications
-	getNotifications(params?: { limit?: number; offset?: number }) {
+	getNotifications(params?: { page_size?: number; page_offset?: number }) {
 		const query = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
 		return request<
 			Array<{ id: string; title: string; body: string; read: boolean; created_at: string }>
-		>('/notifications' + query);
+		>('/me/notifications' + query);
 	},
 	getUnreadCount() {
-		return request<{ count: number }>('/notifications/unread-count');
+		return request<{ count: number }>('/me/notifications/unread-count');
 	},
 	markNotificationRead(id: string) {
-		return request<{ id: string }>('/notifications/' + id + '/read', { method: 'PATCH' });
+		return request<{ status: string }>('/me/notifications/' + id + '/read', { method: 'POST' });
 	},
 	markAllRead() {
-		return request<{ marked: number }>('/notifications/read-all', { method: 'POST' });
+		return request<{ status: string }>('/me/notifications/read-all', { method: 'POST' });
 	},
 
 	// Universities / Spaces
@@ -291,15 +295,15 @@ export const api = {
 		space_id?: string;
 		tag?: string;
 		solved?: boolean;
-		limit?: number;
-		offset?: number;
+		page_size?: number;
+		page_offset?: number;
 	}) {
 		const p = new URLSearchParams();
 		if (params?.space_id) p.set('space_id', params.space_id);
 		if (params?.tag) p.set('tag', params.tag);
 		if (params?.solved !== undefined) p.set('solved', String(params.solved));
-		if (params?.limit) p.set('limit', String(params.limit));
-		if (params?.offset) p.set('offset', String(params.offset));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
 		return request<{
 			threads: ForumThread[];
@@ -330,15 +334,15 @@ export const api = {
 		});
 	},
 	deleteForumThread(id: string) {
-		return request<{ deleted: boolean }>('/forum/' + id, { method: 'DELETE' });
+		return request<{ status: string }>('/forum/' + id, { method: 'DELETE' });
 	},
 	solveForumThread(id: string) {
-		return request<{ solved: boolean }>('/forum/' + id + '/solve', { method: 'POST' });
+		return request<{ status: string }>('/forum/' + id + '/solve', { method: 'POST' });
 	},
-	getForumReplies(threadId: string, params?: { limit?: number; offset?: number }) {
+	getForumReplies(threadId: string, params?: { page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
-		if (params?.offset) p.set('offset', String(params.offset));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
 		return request<{
 			replies: ForumReply[];
@@ -358,12 +362,12 @@ export const api = {
 		});
 	},
 	deleteForumReply(id: string) {
-		return request<{ deleted: boolean }>('/forum/replies/' + id, { method: 'DELETE' });
+		return request<{ status: string }>('/forum/replies/' + id, { method: 'DELETE' });
 	},
 	voteForum(data: { entity_type: 'thread' | 'reply'; entity_id: string; value: 1 | -1 }) {
-		return request<{ score: number }>('/forum/vote', {
+		return request<{ status: string }>('/forum/vote', {
 			method: 'POST',
-			body: JSON.stringify(data)
+			body: JSON.stringify({ ...data, direction: data.value === 1 ? 'up' : 'down' })
 		});
 	},
 	createForumPoll(data: { thread_id: string; question: string; options: string[] }) {
@@ -399,7 +403,7 @@ export const api = {
 		});
 	},
 	removeForumBookmark(id: string) {
-		return request<{ deleted: boolean }>('/forum/bookmarks/' + id, { method: 'DELETE' });
+		return request<{ status: string }>('/forum/bookmarks/' + id, { method: 'DELETE' });
 	},
 	getForumBookmarks() {
 		return request<Array<{ id: string; thread_id: string; created_at: string }>>('/forum/bookmarks');
@@ -513,7 +517,7 @@ export const api = {
 		});
 	},
 	deleteProfessionalProfile(id: string) {
-		return request<{ deleted: boolean }>('/profiles/' + id, { method: 'DELETE' });
+		return request<{ status: string }>('/profiles/' + id, { method: 'DELETE' });
 	},
 	listRelocations(profileId: string) {
 		return request<Relocation[]>('/profiles/' + profileId + '/relocations');
@@ -541,7 +545,7 @@ export const api = {
 		});
 	},
 	deleteRelocation(relocationId: string) {
-		return request<{ deleted: boolean }>('/profiles/relocations/' + relocationId, {
+		return request<{ status: string }>('/profiles/relocations/' + relocationId, {
 			method: 'DELETE'
 		});
 	},
@@ -571,7 +575,7 @@ export const api = {
 		});
 	},
 	deleteDocument(documentId: string) {
-		return request<{ deleted: boolean }>('/profiles/documents/' + documentId, {
+		return request<{ status: string }>('/profiles/documents/' + documentId, {
 			method: 'DELETE'
 		});
 	},
@@ -596,7 +600,7 @@ export const api = {
 		});
 	},
 	revokeDeveloperKey(id: string) {
-		return request<{ deleted: boolean }>('/me/api-keys/' + id, { method: 'DELETE' });
+		return request<{ status: string }>('/me/api-keys/' + id, { method: 'DELETE' });
 	},
 	updateDeveloperKey(id: string, data: { name?: string; scopes?: string[] }) {
 		return request<DeveloperApiKey>('/me/api-keys/' + id, {
@@ -631,10 +635,10 @@ export const api = {
 		return request<Review>('/reviews/' + id, { method: 'PATCH', body: JSON.stringify(data) });
 	},
 	deleteReview(id: string) {
-		return request<{ deleted: boolean }>('/reviews/' + id, { method: 'DELETE' });
+		return request<{ status: string }>('/reviews/' + id, { method: 'DELETE' });
 	},
 	flagReview(id: string, data: { reason: string }) {
-		return request<{ flagged: boolean }>('/reviews/' + id + '/flag', { method: 'POST', body: JSON.stringify(data) });
+		return request<{ status: string }>('/reviews/' + id + '/flag', { method: 'POST', body: JSON.stringify(data) });
 	},
 
 	// Space membership
@@ -662,19 +666,19 @@ export const api = {
 	},
 
 	// Content Reactions
-	addReaction(contentId: string, reactionTypeId: string) {
+	addReaction(contentId: string, reactionKey: string) {
 		return request<{ id: string }>('/content/' + contentId + '/reactions', {
-			method: 'POST', body: JSON.stringify({ reaction_type_id: reactionTypeId })
+			method: 'POST', body: JSON.stringify({ key: reactionKey })
 		});
 	},
-	removeReaction(contentId: string, reactionId: string) {
-		return request<{ removed: boolean }>('/content/' + contentId + '/reactions/' + reactionId, { method: 'DELETE' });
+	removeReaction(contentId: string, reactionKey: string) {
+		return request<{ status: string }>('/content/' + contentId + '/reactions/' + reactionKey, { method: 'DELETE' });
 	},
 	getReactions(contentId: string) {
-		return request<Array<{ id: string; reaction_type: { id: string; name: string; emoji: string }; user_id: string; created_at: string }>>('/content/' + contentId + '/reactions');
+		return request<Array<{ id: string; reaction_type: { key: string; label: string; emoji: string }; user_id: string; created_at: string }>>('/content/' + contentId + '/reactions');
 	},
 	listReactionTypes() {
-		return request<Array<{ id: string; name: string; emoji: string }>>('/reaction-types');
+		return request<Array<{ key: string; label: string; emoji: string }>>('/reaction-types');
 	},
 
 	// GDPR / Consent
@@ -687,10 +691,10 @@ export const api = {
 		});
 	},
 	revokeConsent(consentType: string) {
-		return request<{ revoked: boolean }>('/consent/' + consentType, { method: 'DELETE' });
+		return request<{ status: string }>('/consent/' + consentType, { method: 'DELETE' });
 	},
 	requestDataExport() {
-		return request<{ request_id: string }>('/me/data-export');
+		return request<{ request_id: string }>('/me/data-export', { method: 'POST' });
 	},
 	requestAccountDeletion() {
 		return request<{ request_id: string }>('/me', { method: 'DELETE' });
@@ -698,10 +702,10 @@ export const api = {
 
 	// Content Pinning
 	pinContent(id: string) {
-		return request<{ pinned: boolean }>('/content/' + id + '/pin', { method: 'POST' });
+		return request<{ status: string }>('/content/' + id + '/pin', { method: 'POST' });
 	},
 	unpinContent(id: string) {
-		return request<{ pinned: boolean }>('/content/' + id + '/unpin', { method: 'POST' });
+		return request<{ status: string }>('/content/' + id + '/pin', { method: 'DELETE' });
 	},
 
 	// Content Revisions
@@ -885,7 +889,7 @@ export const api = {
 		});
 	},
 	deleteMedia(id: string) {
-		return request<{ deleted: boolean }>('/media/' + id, { method: 'DELETE' });
+		return request<{ status: string }>('/media/' + id, { method: 'DELETE' });
 	},
 
 	// Analytics
@@ -901,13 +905,13 @@ export const api = {
 
 	// Auth (login/register)
 	login(email: string, password: string) {
-		return request<{ token: string; user: UserProfile }>('/auth/login', {
+		return request<{ access_token: string; refresh_token: string; user: UserProfile }>('/auth/login', {
 			method: 'POST',
 			body: JSON.stringify({ email, password })
 		});
 	},
 	register(data: { username: string; email: string; password: string }) {
-		return request<{ success: boolean }>('/auth/register', {
+		return request<{ access_token: string; refresh_token: string; user: UserProfile }>('/auth/register', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
@@ -938,35 +942,38 @@ export const api = {
 	},
 
 	// Feed
-	getFeedPrimary(params?: { limit?: number; cursor?: string }) {
+	getFeedPrimary(params?: { page_size?: number; cursor?: string }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
 		if (params?.cursor) p.set('cursor', params.cursor);
 		const q = p.toString();
-		return request<{ items: FeedItem[]; has_more: boolean }>('/feed' + (q ? '?' + q : ''));
+		return request<FeedItem[]>('/feed' + (q ? '?' + q : ''));
 	},
-	getSpaceFeed(spaceId: string, params?: { limit?: number; offset?: number; cursor?: string }) {
+	getSpaceFeed(spaceId: string, params?: { page_size?: number; page_offset?: number; cursor?: string }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
-		if (params?.offset) p.set('offset', String(params.offset));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		if (params?.cursor) p.set('cursor', params.cursor);
 		const q = p.toString();
-		return request<{ items: FeedItem[]; has_more: boolean }>('/feed/space/' + spaceId + (q ? '?' + q : ''));
+		return request<FeedItem[]>('/feed/space/' + spaceId + (q ? '?' + q : ''));
 	},
-	getProfileFeed(userId: string, params?: { limit?: number; offset?: number; cursor?: string }) {
+	getProfileFeed(userId: string, params?: { page_size?: number; page_offset?: number; cursor?: string }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
-		if (params?.offset) p.set('offset', String(params.offset));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		if (params?.cursor) p.set('cursor', params.cursor);
 		const q = p.toString();
-		return request<{ items: FeedItem[]; has_more: boolean }>('/feed/profile/' + userId + (q ? '?' + q : ''));
+		return request<FeedItem[]>('/feed/profile/' + userId + (q ? '?' + q : ''));
 	},
-	getExploreFeed(params?: { limit?: number; offset?: number }) {
+	getExploreFeed(params?: { page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
-		if (params?.offset) p.set('offset', String(params.offset));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
-		return request<{ items: FeedItem[]; has_more: boolean }>('/explore' + (q ? '?' + q : ''));
+		return request<FeedItem[]>('/explore' + (q ? '?' + q : ''));
+	},
+	getCardStyle() {
+		return request<{ card_style: string }>('/feed/card-style');
 	},
 
 	// Onboarding recommendations
@@ -993,32 +1000,32 @@ export const api = {
 
 	// Notification preferences
 	getNotificationPreferences() {
-		return request<Array<{ type: string; email: boolean; push: boolean; in_app: boolean }>>('/notification-preferences');
+		return request<Array<{ type: string; email: boolean; push: boolean; in_app: boolean }>>('/me/notification-preferences');
 	},
 	updateNotificationPreference(type: string, data: { email?: boolean; push?: boolean; in_app?: boolean }) {
-		return request<{ type: string }>('/notification-preferences/' + type, {
-			method: 'PUT', body: JSON.stringify(data)
+		return request<{ type: string }>('/me/notification-preferences/' + type, {
+			method: 'PATCH', body: JSON.stringify(data)
 		});
 	},
 	getNotificationTypes() {
-		return request<Array<{ key: string; label: string; description: string }>>('/notification-types');
+		return request<Array<{ key: string; label: string; description: string }>>('/me/notification-types');
 	},
 
 	// Webhooks
 	listWebhooks() {
-		return request<Webhook[]>('/webhooks');
+		return request<Webhook[]>('/admin/webhooks');
 	},
 	createWebhook(data: { url: string; events: string[]; secret?: string }) {
-		return request<Webhook>('/webhooks', {
+		return request<Webhook>('/admin/webhooks', {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	},
 	deleteWebhook(id: string) {
-		return request<{ deleted: boolean }>('/webhooks/' + id, { method: 'DELETE' });
+		return request<{ status: string }>('/admin/webhooks/' + id, { method: 'DELETE' });
 	},
 	getWebhookDeliveries(id: string) {
-		return request<WebhookDelivery[]>('/webhooks/' + id + '/deliveries');
+		return request<WebhookDelivery[]>('/admin/webhooks/' + id + '/deliveries');
 	},
 
 	// ── Trending (AUDIT-FE wiring) ────────────────────────────────────────────
@@ -1106,7 +1113,7 @@ export const api = {
 	},
 	setCustomFieldValues(entityType: string, entityId: string, values: Record<string, unknown>) {
 		return request<{ saved: boolean }>('/custom-field-values', {
-			method: 'POST',
+			method: 'PUT',
 			body: JSON.stringify({ entity_type: entityType, entity_id: entityId, values })
 		});
 	},
@@ -1119,22 +1126,22 @@ export const api = {
 		});
 	},
 	deleteComment(id: string) {
-		return request<{ deleted: boolean }>(`/comments/${id}`, { method: 'DELETE' });
+		return request<{ status: string }>(`/comments/${id}`, { method: 'DELETE' });
 	},
 	voteComment(id: string, value: 1 | -1) {
-		return request<{ score: number }>(`/comments/${id}/vote`, {
+		return request<{ status: string }>(`/comments/${id}/vote`, {
 			method: 'POST',
-			body: JSON.stringify({ value })
+			body: JSON.stringify({ direction: value === 1 ? 'up' : 'down' })
 		});
 	},
 	removeCommentVote(id: string) {
-		return request<{ score: number }>(`/comments/${id}/vote`, { method: 'DELETE' });
+		return request<{ status: string }>(`/comments/${id}/vote`, { method: 'DELETE' });
 	},
 	pinComment(id: string) {
-		return request<{ pinned: boolean }>(`/comments/${id}/pin`, { method: 'POST' });
+		return request<{ status: string }>(`/comments/${id}/pin`, { method: 'POST' });
 	},
 	unpinComment(id: string) {
-		return request<{ pinned: boolean }>(`/comments/${id}/pin`, { method: 'DELETE' });
+		return request<{ status: string }>(`/comments/${id}/pin`, { method: 'DELETE' });
 	},
 
 	// ── Organizations (AUDIT-FE closing gap) ──────────────────────────────────
@@ -1159,7 +1166,7 @@ export const api = {
 		});
 	},
 	deleteOrganization(id: string) {
-		return request<{ deleted: boolean }>(`/organizations/${id}`, { method: 'DELETE' });
+		return request<{ status: string }>(`/organizations/${id}`, { method: 'DELETE' });
 	},
 	getOrganizationMembers(id: string) {
 		return request<{ members: OrganizationMember[] }>(`/organizations/${id}/members`);
@@ -1177,7 +1184,7 @@ export const api = {
 		});
 	},
 	removeOrganizationMember(id: string, userId: string) {
-		return request<{ removed: boolean }>(`/organizations/${id}/members/${userId}`, {
+		return request<{ status: string }>(`/organizations/${id}/members/${userId}`, {
 			method: 'DELETE'
 		});
 	},
@@ -1236,7 +1243,7 @@ export const api = {
 		});
 	},
 	deleteAffiliateLink(id: string) {
-		return request<{ deleted: boolean }>(`/me/affiliate-links/${id}`, { method: 'DELETE' });
+		return request<{ status: string }>(`/me/affiliate-links/${id}`, { method: 'DELETE' });
 	},
 	getAffiliateEarnings() {
 		return request<{ total_credits: number; conversions: AffiliateConversion[] }>(
@@ -1310,7 +1317,33 @@ export const api = {
 		});
 	},
 	deletePage(id: string) {
-		return request<{ deleted: boolean }>(`/pages/${id}`, { method: 'DELETE' });
+		return request<{ status: string }>(`/pages/${id}`, { method: 'DELETE' });
+	},
+
+	// Bookmarks
+	getBookmarkFolders() {
+		return request<{ id: string; name: string; description?: string; item_count: number; created_at: string }[]>('/me/bookmark-folders');
+	},
+	createBookmarkFolder(data: { name: string; description?: string }) {
+		return request<{ id: string }>('/me/bookmark-folders', { method: 'POST', body: JSON.stringify(data) });
+	},
+	updateBookmarkFolder(id: string, data: { name: string; description?: string }) {
+		return request<{ id: string }>(`/me/bookmark-folders/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+	},
+	deleteBookmarkFolder(id: string) {
+		return request<{ status: string }>(`/me/bookmark-folders/${id}`, { method: 'DELETE' });
+	},
+	getBookmarks(folderId?: string) {
+		const q = folderId ? `?folder_id=${folderId}` : '';
+		return request<{ id: string; content_id: string; title: string; content_type: string; folder_id?: string; created_at: string }[]>(`/me/bookmarks${q}`);
+	},
+
+	// Drafts
+	getDrafts() {
+		return request<{ id: string; title: string; content_type: string; status: string; updated_at: string; created_at: string; scheduled_at?: string }[]>('/me/drafts');
+	},
+ getScheduled() {
+		return request<{ id: string; title: string; content_type: string; status: string; updated_at: string; created_at: string; scheduled_at?: string }[]>('/me/scheduled');
 	},
 };
 
@@ -1493,8 +1526,8 @@ export interface FollowUser {
 
 // Content Reaction types
 export interface ReactionType {
-	id: string;
-	name: string;
+	key: string;
+	label: string;
 	emoji: string;
 }
 
@@ -1647,12 +1680,17 @@ export interface FeedItem {
 	excerpt?: string;
 	author_id: string;
 	author_name: string;
-	author_avatar?: string;
+	author_avatar_url?: string;
 	space_name?: string;
 	content_type: string;
-	reaction_count: number;
+	vote_score: number;
 	comment_count: number;
+	bookmark_count?: number;
+	view_count?: number;
 	created_at: string;
+	reading_time_minutes?: number;
+	cover_image_url?: string;
+	tags?: string[];
 }
 
 // Webhook types

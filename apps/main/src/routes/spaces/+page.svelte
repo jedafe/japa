@@ -19,13 +19,23 @@
 	let loading = $state(true);
 	let filter = $state('all');
 
-	const spaceTypes = [
+	const TYPE_LABELS: Record<string, string> = {
+		country: 'Countries',
+		interest: 'Interests',
+		profession: 'Professions',
+		university: 'Universities'
+	};
+
+	const spaceTypes = $derived([
 		{ value: 'all', label: 'All Spaces' },
-		{ value: 'country', label: 'Countries' },
-		{ value: 'interest', label: 'Interests' },
-		{ value: 'profession', label: 'Professions' },
-		{ value: 'university', label: 'Universities' }
-	];
+		...Array.from(new Set(spaces.map(s => s.space_type)))
+			.filter(Boolean)
+			.sort()
+			.map(type => ({
+				value: type,
+				label: TYPE_LABELS[type] ?? type.charAt(0).toUpperCase() + type.slice(1) + 's'
+			}))
+	]);
 
 	onMount(async () => {
 		try {

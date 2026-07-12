@@ -743,6 +743,95 @@ func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "assignee_id": input.AssigneeID})
 }
 
+// ModerateItem handles PATCH /admin/moderation-queue/:id.
+// Accepts an action (approve/reject/delete) and applies it to the moderation item.
+func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	var input struct {
+		Action string `json:"action"` // "approve", "reject", "delete"
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Action == "" {
+		writeError(w, http.StatusBadRequest, "missing_action", "action is required")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Determine the new status based on action
+	var newStatus string
+	switch input.Action {
+	case "approve":
+		newStatus = "published"
+	case "reject":
+		newStatus = "removed"
+	case "delete":
+		newStatus = "removed"
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_action", "action must be approve, reject, or delete")
+		return
+	}
+
+	// Try updating as a review first
+	result, err := h.DB.Writer.Exec(ctx, `
+		UPDATE reviews
+		SET status = $1, updated_at = now()
+		WHERE id = $2 AND tenant_id = $3 AND status = 'flagged'
+	`, newStatus, id, tenantID)
+	if err != nil {
+		slog.Error("moderation: updating item", "id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to update moderation item")
+		return
+	}
+
+	if result.RowsAffected() == 0 {
+		// Try as a content report
+		result, err = h.DB.Writer.Exec(ctx, `
+			UPDATE content_reports
+			SET status = $1, reviewed_by = $2, reviewed_at = now(), review_notes = $3
+			WHERE id = $4 AND tenant_id = $5
+		`, newStatus, user.UserID.String(), input.Reason, id, tenantID)
+		if err != nil {
+			slog.Error("moderation: updating content report", "id", id, "error", err)
+			writeError(w, http.StatusInternalServerError, "db_error", "Failed to update moderation item")
+			return
+		}
+	}
+
+	if result.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "not_found", "Moderation item not found")
+		return
+	}
+
+	slog.Info("moderation item processed",
+		"user_id", user.UserID.String(),
+		"item_id", id,
+		"action", input.Action)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"id":     id,
+			"action": input.Action,
+			"status": newStatus,
+		},
+	})
+}
+
 // ─── Content Moderation (P5.6 — Task 23) ────────────────────────────────
 
 // RemoveContent handles POST /admin/content/:id/remove.

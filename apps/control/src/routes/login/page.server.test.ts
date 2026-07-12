@@ -14,7 +14,7 @@ import { actions } from './+page.server';
 describe('control login action', () => {
 	it('posts to the configured API_BASE, not a hardcoded localhost fallback', async () => {
 		const fetchMock = vi.fn().mockResolvedValue(
-			new Response(JSON.stringify({ data: { token: 'abc123' } }), { status: 200 })
+			new Response(JSON.stringify({ data: { access_token: 'abc123' } }), { status: 200 })
 		);
 		const cookies = { set: vi.fn() };
 		const formData = new FormData();

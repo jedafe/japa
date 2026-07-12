@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
 
 export interface AdminNotification {
 	id: string;
@@ -26,7 +27,9 @@ export function initNotifications() {
 
 async function fetchNotifications() {
 	try {
-		const res = await fetch('/api/v1/control/notifications?limit=20');
+		const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/me/notifications?limit=20`, {
+			credentials: 'include'
+		});
 		if (res.ok) {
 			const { data } = await res.json();
 			_notifications.set(data ?? []);
@@ -50,7 +53,10 @@ export function addNotification(notification: Omit<AdminNotification, 'id' | 're
 export async function markRead(id: string) {
 	_notifications.update((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
 	try {
-		await fetch(`/api/v1/control/notifications/${id}/read`, { method: 'POST' });
+		await fetch(`${PUBLIC_JC_API_URL}/api/v1/me/notifications/${id}/read`, {
+			method: 'POST',
+			credentials: 'include'
+		});
 	} catch {
 		// best effort
 	}
@@ -59,7 +65,10 @@ export async function markRead(id: string) {
 export async function markAllRead() {
 	_notifications.update((prev) => prev.map((n) => ({ ...n, read: true })));
 	try {
-		await fetch('/api/v1/control/notifications/read-all', { method: 'POST' });
+		await fetch(`${PUBLIC_JC_API_URL}/api/v1/me/notifications/read-all`, {
+			method: 'POST',
+			credentials: 'include'
+		});
 	} catch {
 		// best effort
 	}

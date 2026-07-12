@@ -25,8 +25,8 @@
 		loading = true;
 		try {
 			const params: Record<string, unknown> = {
-				limit: 20,
-				offset: currentPage * 20
+				page_size: 20,
+				page_offset: currentPage * 20
 			};
 			if (filter === 'solved') params.solved = true;
 			else if (filter === 'unsolved') params.solved = false;

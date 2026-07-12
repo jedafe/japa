@@ -8,14 +8,21 @@
 		title,
 		children,
 		onConfirm,
-		confirmLabel = t('common.confirm')
+		confirmLabel = t('common.confirm'),
+		onclose
 	}: {
-		open: boolean;
+		open?: boolean;
 		title: string;
 		children?: Snippet;
 		onConfirm?: () => void;
 		confirmLabel?: string;
+		onclose?: () => void;
 	} = $props();
+
+	function handleClose() {
+		open = false;
+		onclose?.();
+	}
 </script>
 
 <Dialog.Root bind:open={open}>
@@ -35,6 +42,7 @@
 							{...props}
 							class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 							style="border-color: var(--color-border)"
+							onclick={handleClose}
 						>
 							{t('common.cancel')}
 						</button>
