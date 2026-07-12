@@ -22,7 +22,7 @@ export function getToken(): string | null {
 	return jwtToken;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/json',
 		...Object.fromEntries(Object.entries(init?.headers ?? {}))
@@ -64,6 +64,19 @@ export interface CustomFieldGroup {
 	entity_type: string;
 	sort_order: number;
 	fields?: CustomField[];
+}
+
+// Mirrors the backend's custom_field_values row (typed value columns).
+export interface CustomFieldValueRow {
+	id: string;
+	field_id: string;
+	entity_type: string;
+	entity_id: string;
+	value_text?: string | null;
+	value_number?: number | string | null;
+	value_bool?: boolean | null;
+	value_date?: string | null;
+	value_json?: string | null;
 }
 
 // Push subscription (mirrors the Web Push API PushSubscriptionJSON shape)
@@ -135,6 +148,27 @@ export interface AffiliateConversion {
 	product_type: string;
 	credits: number;
 	converted_at: string;
+}
+
+// Mirrors the backend's EarningsSummary (internal/affiliate/service.go).
+export interface AffiliateEarnings {
+	total_clicks: number;
+	total_conversions: number;
+	total_earned: string;
+	by_product: Array<{
+		product_type: string;
+		clicks: number;
+		conversions: number;
+		earned: string;
+	}>;
+	recent_events: Array<{
+		id: string;
+		event_type: string;
+		commission_amount?: string;
+		created_at: string;
+		link_code: string;
+		product_type: string;
+	}>;
 }
 
 // Geo
@@ -226,6 +260,69 @@ export const api = {
 		return request<{ status: string }>('/content/' + id, { method: 'DELETE' });
 	},
 
+	// Blog
+	submitForReview(id: string) {
+		return request<{ status: string }>('/blog/' + id + '/submit-for-review', { method: 'POST' });
+	},
+	createBlogSeries(data: { title: string; description?: string }) {
+		return request<{ id: string; slug: string }>('/blog/series', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	updateBlogSeries(id: string, data: { title?: string; description?: string }) {
+		return request<{ id: string }>('/blog/series/' + id, {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+	deleteBlogSeries(id: string) {
+		return request<{ status: string }>('/blog/series/' + id, { method: 'DELETE' });
+	},
+	addPostToSeries(seriesId: string, data: { content_id: string; position?: number }) {
+		return request<{ status: string }>('/blog/series/' + seriesId + '/posts', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	removePostFromSeries(seriesId: string, postId: string) {
+		return request<{ status: string }>('/blog/series/' + seriesId + '/posts/' + postId, { method: 'DELETE' });
+	},
+	reorderSeriesPosts(seriesId: string, data: { post_ids: string[] }) {
+		return request<{ status: string }>('/blog/series/' + seriesId + '/posts/reorder', {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+	createBlogReview(data: { content_id: string; rating: number; title?: string; body?: string }) {
+		return request<{ id: string }>('/blog/reviews', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	listBlogReviews(params?: { page_size?: number; page_offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
+		const q = p.toString();
+		return request<Array<{ id: string; content_id: string; rating: number; title?: string; body?: string; author_id: string; status: string; created_at: string }>>(
+			'/blog/reviews' + (q ? '?' + q : '')
+		);
+	},
+	updateBlogReview(id: string, data: { status?: string; rating?: number; title?: string; body?: string }) {
+		return request<{ id: string }>('/blog/reviews/' + id, {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+	featurePost(data: { content_id: string; featured_order?: number; featured_until?: string }) {
+		return request<{ id: string }>('/blog/featured', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	unfeaturePost(contentId: string) {
+		return request<{ status: string }>('/blog/featured/' + contentId, { method: 'DELETE' });
+	},
+	reorderFeatured(data: { content_ids: string[] }) {
+		return request<{ status: string }>('/blog/featured/reorder', {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+
 	// Onboarding
 	getOnboardingStatus() {
 		return request<{
@@ -274,10 +371,14 @@ export const api = {
 	},
 
 	// Universities / Spaces
-	listSpaces(params?: { space_type_id?: string; limit?: number }) {
-		const query = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
+	listSpaces(params?: { space_type_id?: string; page_size?: number }) {
+		const p = new URLSearchParams();
+		// Backend filter param is `type` (a space_type UUID).
+		if (params?.space_type_id) p.set('type', params.space_type_id);
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		const q = p.toString();
 		return request<Array<{ id: string; name: string; slug: string; description: string }>>(
-			'/spaces' + query
+			'/spaces' + (q ? '?' + q : '')
 		);
 	},
 	getSpace(slug: string) {
@@ -305,12 +406,8 @@ export const api = {
 		if (params?.page_size) p.set('page_size', String(params.page_size));
 		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
-		return request<{
-			threads: ForumThread[];
-			total: number;
-			page: number;
-			total_pages: number;
-		}>('/forum' + (q ? '?' + q : ''));
+		// Backend returns a bare array of threads (no pagination wrapper).
+		return request<ForumThread[]>('/forum' + (q ? '?' + q : ''));
 	},
 	getForumThread(slug: string) {
 		return request<ForumThread>('/forum/' + slug);
@@ -344,10 +441,7 @@ export const api = {
 		if (params?.page_size) p.set('page_size', String(params.page_size));
 		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
-		return request<{
-			replies: ForumReply[];
-			total: number;
-		}>('/forum/' + threadId + '/replies' + (q ? '?' + q : ''));
+		return request<ForumReply[]>('/forum/' + threadId + '/replies' + (q ? '?' + q : ''));
 	},
 	createForumReply(threadId: string, data: { body: string; anonymous?: boolean }) {
 		return request<ForumReply>('/forum/' + threadId + '/replies', {
@@ -442,6 +536,11 @@ export const api = {
 		const q = p.toString();
 		return request<DMConversation[]>('/dm/conversations' + (q ? '?' + q : ''));
 	},
+	createDMConversation(data: { user_id: string; body?: string }) {
+		return request<{ id: string }>('/dm/conversations', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
 	getDMMessages(conversationId: string, params?: { page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
 		if (params?.page_size) p.set('page_size', String(params.page_size));
@@ -455,10 +554,28 @@ export const api = {
 			body: JSON.stringify(data)
 		});
 	},
+	editDMMessage(conversationId: string, messageId: string, data: { body: string }) {
+		return request<{ success: boolean }>('/dm/conversations/' + conversationId + '/messages/' + messageId, {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+	deleteDMMessage(conversationId: string, messageId: string) {
+		return request<{ success: boolean }>('/dm/conversations/' + conversationId + '/messages/' + messageId, {
+			method: 'DELETE'
+		});
+	},
+	reportDMMessage(conversationId: string, messageId: string, data: { reason: string }) {
+		return request<{ success: boolean }>('/dm/conversations/' + conversationId + '/messages/' + messageId + '/report', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
 	markDMRead(conversationId: string) {
 		return request<{ success: boolean }>('/dm/conversations/' + conversationId + '/read', {
 			method: 'POST'
 		});
+	},
+	listDMRequests() {
+		return request<DMConversation[]>('/dm/requests');
 	},
 	acceptDMRequest(conversationId: string) {
 		return request<{ success: boolean }>('/dm/requests/' + conversationId + '/accept', {
@@ -470,6 +587,11 @@ export const api = {
 			method: 'POST'
 		});
 	},
+	blockDMUser(conversationId: string) {
+		return request<{ success: boolean }>('/dm/requests/' + conversationId + '/block', {
+			method: 'POST'
+		});
+	},
 	updateDMPrivacy(privacy: string) {
 		return request<{ success: boolean }>('/dm/privacy', {
 			method: 'PUT',
@@ -478,18 +600,12 @@ export const api = {
 	},
 
 	// Professional Profiles
-	listProfessionalProfiles(params?: { limit?: number; offset?: number; search?: string }) {
+	listProfessionalProfiles(params?: { page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
-		if (params?.offset) p.set('offset', String(params.offset));
-		if (params?.search) p.set('search', params.search);
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
-		return request<{
-			profiles: ProfessionalProfile[];
-			total: number;
-			page: number;
-			total_pages: number;
-		}>('/profiles' + (q ? '?' + q : ''));
+		return request<ProfessionalProfile[]>('/profiles' + (q ? '?' + q : ''));
 	},
 	getProfessionalProfile(slug: string) {
 		return request<ProfessionalProfileDetail>('/profiles/' + slug);
@@ -588,6 +704,47 @@ export const api = {
 			body: JSON.stringify(data)
 		});
 	},
+	followProfile(profileId: string) {
+		return request<{ following: boolean }>('/profiles/' + profileId + '/follow', { method: 'POST' });
+	},
+	unfollowProfile(profileId: string) {
+		return request<{ following: boolean }>('/profiles/' + profileId + '/follow', { method: 'DELETE' });
+	},
+	listProfileMembers(profileId: string) {
+		return request<ProfileMember[]>('/profiles/' + profileId + '/members');
+	},
+	addProfileMember(profileId: string, data: { user_id: string; role: string }) {
+		return request<ProfileMember>('/profiles/' + profileId + '/members', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	updateProfileMember(profileId: string, userId: string, data: { role: string }) {
+		return request<ProfileMember>('/profiles/' + profileId + '/members/' + userId, {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+	removeProfileMember(profileId: string, userId: string) {
+		return request<{ removed: boolean }>('/profiles/' + profileId + '/members/' + userId, { method: 'DELETE' });
+	},
+	inviteProfileMember(profileId: string, data: { email: string; role: string }) {
+		return request<ProfileInvitation>('/profiles/' + profileId + '/members/invite', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	listProfileInvitations(profileId: string) {
+		return request<ProfileInvitation[]>('/profiles/' + profileId + '/invitations');
+	},
+	sendProfileInvitation(profileId: string, data: { email: string; role: string }) {
+		return request<ProfileInvitation>('/profiles/' + profileId + '/invitations', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	acceptProfileInvitation(token: string) {
+		return request<{ accepted: boolean }>('/profiles/invitations/' + token + '/accept', { method: 'POST' });
+	},
+	getProfileContent(profileId: string) {
+		return request<FeedItem[]>('/profiles/' + profileId + '/content');
+	},
 
 	// Developer API Keys
 	listDeveloperKeys() {
@@ -604,7 +761,7 @@ export const api = {
 	},
 	updateDeveloperKey(id: string, data: { name?: string; scopes?: string[] }) {
 		return request<DeveloperApiKey>('/me/api-keys/' + id, {
-			method: 'PUT',
+			method: 'PATCH',
 			body: JSON.stringify(data)
 		});
 	},
@@ -617,12 +774,12 @@ export const api = {
 			body: JSON.stringify(body)
 		});
 	},
-	listReviews(params: { entity_type: string; entity_id: string; limit?: number; offset?: number }) {
+	listReviews(params: { entity_type: string; entity_id: string; page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
-		if (params.limit) p.set('limit', String(params.limit));
-		if (params.offset) p.set('offset', String(params.offset));
+		if (params.page_size) p.set('page_size', String(params.page_size));
+		if (params.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
-		return request<{ reviews: Review[]; total: number }>(
+		return request<Review[]>(
 			`/reviews/${params.entity_type}/${params.entity_id}` + (q ? '?' + q : '')
 		);
 	},
@@ -647,19 +804,19 @@ export const api = {
 	},
 
 	// Followers / Following
-	getFollowers(userId: string, params?: { limit?: number; offset?: number }) {
+	getFollowers(userId: string, params?: { page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
-		if (params?.offset) p.set('offset', String(params.offset));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
-		return request<{ followers: FollowUser[]; total: number }>('/users/' + userId + '/followers' + (q ? '?' + q : ''));
+		return request<FollowUser[]>('/users/' + userId + '/followers' + (q ? '?' + q : ''));
 	},
-	getFollowing(userId: string, params?: { limit?: number; offset?: number }) {
+	getFollowing(userId: string, params?: { page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
-		if (params?.offset) p.set('offset', String(params.offset));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
-		return request<{ following: FollowUser[]; total: number }>('/users/' + userId + '/following' + (q ? '?' + q : ''));
+		return request<FollowUser[]>('/users/' + userId + '/following' + (q ? '?' + q : ''));
 	},
 	checkMutualFollow(userId: string, otherUserId: string) {
 		return request<{ mutual: boolean }>('/users/' + userId + '/mutual/' + otherUserId);
@@ -713,6 +870,78 @@ export const api = {
 		return request<Array<{ id: string; version: number; created_at: string; author_name: string; summary?: string }>>('/content/' + contentId + '/revisions');
 	},
 
+	// Forms
+	listForms(params?: { space_id?: string }) {
+		const q = params?.space_id ? '?space_id=' + params.space_id : '';
+		return request<Array<{ id: string; title: string; slug: string; space_id?: string; submission_count: number }>>('/forms' + q);
+	},
+	getForm(idOrSlug: string) {
+		return request<{ id: string; title: string; slug: string; fields: Array<{ id: string; key: string; label: string; field_type: string; required: boolean; options?: string[] }> }>('/forms/' + idOrSlug);
+	},
+	createForm(data: { title: string; space_id?: string; fields: Array<{ key: string; label: string; field_type: string; required?: boolean; options?: string[] }> }) {
+		return request<{ id: string; slug: string }>('/forms', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	updateForm(id: string, data: { title?: string; fields?: Array<{ key: string; label: string; field_type: string; required?: boolean; options?: string[] }> }) {
+		return request<{ id: string }>('/forms/' + id, {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+	deleteForm(id: string) {
+		return request<{ status: string }>('/forms/' + id, { method: 'DELETE' });
+	},
+	submitForm(id: string, data: { values: Record<string, unknown> }) {
+		return request<{ id: string }>('/forms/' + id + '/submissions', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	getFormSubmissions(id: string) {
+		return request<Array<{ id: string; values: Record<string, unknown>; created_at: string }>>('/forms/' + id + '/submissions');
+	},
+
+	// Learning
+	listLearnTracks() {
+		return request<Array<{ id: string; title: string; slug: string; description: string; module_count: number; status: string }>>('/learn/tracks');
+	},
+	getLearnTrack(slugOrId: string) {
+		return request<{ id: string; title: string; slug: string; description: string; modules: Array<{ slug: string; title: string; lessons: Array<{ slug: string; title: string }> }> }>('/learn/tracks/' + slugOrId);
+	},
+	enrollInTrack(trackId: string) {
+		return request<{ enrolled: boolean }>('/learn/tracks/' + trackId + '/enroll', { method: 'POST' });
+	},
+	getLearnProgress(trackId: string) {
+		return request<{ completed_lessons: string[]; total_lessons: number; percentage: number }>('/learn/progress/' + trackId);
+	},
+	getLearnLesson(id: string) {
+		return request<{ id: string; title: string; body: string; body_html: string; track_slug: string; module_slug: string; slug: string }>('/learn/lessons/' + id);
+	},
+	completeLesson(lessonId: string) {
+		return request<{ completed: boolean }>('/learn/lessons/' + lessonId + '/complete', { method: 'POST' });
+	},
+	updateLessonProgress(lessonId: string, data: { progress: number }) {
+		return request<{ updated: boolean }>('/learn/lessons/' + lessonId + '/progress', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	getLearnQuiz(id: string) {
+		return request<{ id: string; title: string; questions: Array<{ id: string; question: string; options: string[]; correct_index: number }> }>('/learn/quizzes/' + id);
+	},
+	submitQuiz(quizId: string, data: { answers: number[] }) {
+		return request<{ score: number; total: number; passed: boolean }>('/learn/quizzes/' + quizId + '/submit', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	getCertificates() {
+		return request<Array<{ id: string; track_title: string; issued_at: string; download_url: string }>>('/me/certificates');
+	},
+	getCertificate(id: string) {
+		return request<{ id: string; track_title: string; issued_at: string; download_url: string }>('/certificates/' + id);
+	},
+	downloadCertificate(id: string) {
+		return request<{ download_url: string }>('/certificates/' + id + '/download');
+	},
+
 	// Payments
 	initiatePayment(data: {
 		amount: number;
@@ -727,7 +956,7 @@ export const api = {
 		);
 	},
 	getPayment(id: string) {
-		return request<PaymentDetail>('/payments/' + id);
+		return request<PaymentDetail>('/me/payments/' + id);
 	},
 	requestRefund(id: string, data: { reason: string }) {
 		return request<{ refund_id: string; status: string }>(
@@ -794,13 +1023,13 @@ export const api = {
 		return request<{ ticket: string }>('/auth/ws-ticket', { method: 'POST' });
 	},
 	getOnlineUsers() {
-		return request<{ users: Array<{ user_id: string; username: string; last_seen: string }> }>('/ws/online');
+		return request<Array<{ user_id: string; username: string; last_seen: string }>>('/ws/online');
 	},
 
 	// Wallet
-	getWalletLedger(params?: { limit?: number }) {
+	getWalletLedger(params?: { page_size?: number }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
 		const q = p.toString();
 		return request<WalletLedgerEntry[]>('/me/wallet/ledger' + (q ? '?' + q : ''));
 	},
@@ -812,9 +1041,9 @@ export const api = {
 	},
 
 	// Payments (list)
-	listPayments(params?: { limit?: number }) {
+	listPayments(params?: { page_size?: number }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
 		const q = p.toString();
 		return request<PaymentListItem[]>('/me/payments' + (q ? '?' + q : ''));
 	},
@@ -856,17 +1085,85 @@ export const api = {
 	},
 
 	// Comparisons
-	getComparisonTypes(params?: { limit?: number }) {
+	getComparisonTypes(params?: { page_size?: number }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
 		const q = p.toString();
 		return request<ComparisonType[]>('/comparisons/types' + (q ? '?' + q : ''));
 	},
+	createComparisonType(data: { name: string; slug: string; description: string; is_public: boolean }) {
+		return request<ComparisonType>('/comparisons/types', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	updateComparisonType(id: string, data: { name?: string; description?: string; is_public?: boolean }) {
+		return request<ComparisonType>('/comparisons/types/' + id, {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+	deleteComparisonType(id: string) {
+		return request<{ deleted: boolean }>('/comparisons/types/' + id, { method: 'DELETE' });
+	},
+	getComparisonTypeAccess(id: string) {
+		return request<{ allowed_groups: string[]; allowed_roles: string[] }>('/comparisons/types/' + id + '/access');
+	},
+	setComparisonTypeAccess(id: string, data: { allowed_groups: string[]; allowed_roles: string[] }) {
+		return request<{ updated: boolean }>('/comparisons/types/' + id + '/access', {
+			method: 'PUT', body: JSON.stringify(data)
+		});
+	},
+	getComparison(id: string) {
+		return request<{ id: string; title: string; slug: string; type_id: string; item_count: number; vote_count: number; created_at: string }>('/comparisons/' + id);
+	},
+	updateComparison(id: string, data: { title?: string }) {
+		return request<{ id: string }>('/comparisons/' + id, {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+	deleteComparison(id: string) {
+		return request<{ deleted: boolean }>('/comparisons/' + id, { method: 'DELETE' });
+	},
+	addComparisonItem(comparisonId: string, data: { name: string; values?: Record<string, string> }) {
+		return request<{ id: string }>('/comparisons/' + comparisonId + '/items', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	updateComparisonItem(itemId: string, data: { name?: string; values?: Record<string, string> }) {
+		return request<{ id: string }>('/comparisons/items/' + itemId, {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+	deleteComparisonItem(itemId: string) {
+		return request<{ deleted: boolean }>('/comparisons/items/' + itemId, { method: 'DELETE' });
+	},
+	reorderComparisonItems(comparisonId: string, data: { item_ids: string[] }) {
+		return request<{ status: string }>('/comparisons/' + comparisonId + '/items/reorder', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	addComparisonDimension(comparisonId: string, data: { name: string; description?: string }) {
+		return request<{ id: string }>('/comparisons/' + comparisonId + '/dimensions', {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
+	updateComparisonDimension(dimensionId: string, data: { name?: string; description?: string }) {
+		return request<{ id: string }>('/comparisons/dimensions/' + dimensionId, {
+			method: 'PATCH', body: JSON.stringify(data)
+		});
+	},
+	deleteComparisonDimension(dimensionId: string) {
+		return request<{ deleted: boolean }>('/comparisons/dimensions/' + dimensionId, { method: 'DELETE' });
+	},
+	setDimensionValues(dimensionId: string, data: { values: Record<string, string> }) {
+		return request<{ updated: boolean }>('/comparisons/dimensions/' + dimensionId + '/values', {
+			method: 'PUT', body: JSON.stringify(data)
+		});
+	},
 
 	// Media
-	listMedia(params?: { limit?: number }) {
+	listMedia(params?: { page_size?: number }) {
 		const p = new URLSearchParams();
-		if (params?.limit) p.set('limit', String(params.limit));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
 		const q = p.toString();
 		return request<MediaItem[]>('/media' + (q ? '?' + q : ''));
 	},
@@ -942,26 +1239,24 @@ export const api = {
 	},
 
 	// Feed
-	getFeedPrimary(params?: { page_size?: number; cursor?: string }) {
+	getFeedPrimary(params?: { page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
 		if (params?.page_size) p.set('page_size', String(params.page_size));
-		if (params?.cursor) p.set('cursor', params.cursor);
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
 		const q = p.toString();
 		return request<FeedItem[]>('/feed' + (q ? '?' + q : ''));
 	},
-	getSpaceFeed(spaceId: string, params?: { page_size?: number; page_offset?: number; cursor?: string }) {
+	getSpaceFeed(spaceId: string, params?: { page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
 		if (params?.page_size) p.set('page_size', String(params.page_size));
 		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
-		if (params?.cursor) p.set('cursor', params.cursor);
 		const q = p.toString();
 		return request<FeedItem[]>('/feed/space/' + spaceId + (q ? '?' + q : ''));
 	},
-	getProfileFeed(userId: string, params?: { page_size?: number; page_offset?: number; cursor?: string }) {
+	getProfileFeed(userId: string, params?: { page_size?: number; page_offset?: number }) {
 		const p = new URLSearchParams();
 		if (params?.page_size) p.set('page_size', String(params.page_size));
 		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
-		if (params?.cursor) p.set('cursor', params.cursor);
 		const q = p.toString();
 		return request<FeedItem[]>('/feed/profile/' + userId + (q ? '?' + q : ''));
 	},
@@ -1028,29 +1323,29 @@ export const api = {
 		return request<WebhookDelivery[]>('/admin/webhooks/' + id + '/deliveries');
 	},
 
-	// ── Trending (AUDIT-FE wiring) ────────────────────────────────────────────
+	// ── Trending (bare arrays from the backend) ──────────────────────────────
 	getTrendingContent(limit = 10) {
-		return request<{ items: FeedItem[] }>(`/trending/content?limit=${limit}`);
+		return request<FeedItem[]>(`/trending/content?limit=${limit}`);
 	},
 	getTrendingSpaces(limit = 10) {
-		return request<{ items: unknown[] }>(`/trending/spaces?limit=${limit}`);
+		return request<unknown[]>(`/trending/spaces?limit=${limit}`);
 	},
 	getTrendingTags(limit = 10) {
-		return request<{ items: { id: string; slug: string; name: string; post_count?: number }[] }>(`/trending/tags?limit=${limit}`);
+		return request<{ id: string; slug: string; name: string; post_count?: number }[]>(`/trending/tags?limit=${limit}`);
 	},
 	getTrendingUsers(limit = 10) {
-		return request<{ items: { id: string; username: string; display_name?: string; avatar_url?: string }[] }>(`/trending/users?limit=${limit}`);
+		return request<{ id: string; username: string; display_name?: string; avatar_url?: string }[]>(`/trending/users?limit=${limit}`);
 	},
 
-	// ── Suggestions / Discovery (AUDIT-FE wiring) ─────────────────────────────
+	// ── Suggestions / Discovery (bare arrays from the backend) ────────────────
 	getSuggestedSpaces() {
-		return request<{ items: { id: string; slug: string; name: string; member_count?: number }[] }>('/suggestions/spaces');
+		return request<{ id: string; slug: string; name: string; member_count?: number }[]>('/suggestions/spaces');
 	},
 	getSuggestedUsers() {
-		return request<{ items: { id: string; username: string; display_name?: string; avatar_url?: string }[] }>('/suggestions/users');
+		return request<{ id: string; username: string; display_name?: string; avatar_url?: string }[]>('/suggestions/users');
 	},
 	getSuggestedTags() {
-		return request<{ items: { id: string; slug: string; name: string; post_count?: number }[] }>('/suggestions/tags');
+		return request<{ id: string; slug: string; name: string; post_count?: number }[]>('/suggestions/tags');
 	},
 	followUser(userId: string) {
 		return request<{ followed: boolean }>(`/users/${userId}/follow`, { method: 'POST' });
@@ -1099,17 +1394,15 @@ export const api = {
 		);
 	},
 
-	// ── Custom Fields (AUDIT-FE wiring) ──────────────────────────────────────
+	// ── Custom Fields (bare arrays from the backend) ─────────────────────────
 	getCustomFieldGroups(entityType: string) {
-		return request<{ groups: CustomFieldGroup[] }>(`/custom-field-groups?entity_type=${entityType}`);
+		return request<CustomFieldGroup[]>(`/custom-field-groups?entity_type=${entityType}`);
 	},
 	getCustomFieldGroupFields(groupId: string) {
-		return request<{ fields: CustomField[] }>(`/custom-field-groups/${groupId}/fields`);
+		return request<CustomField[]>(`/custom-field-groups/${groupId}/fields`);
 	},
 	getCustomFieldValues(entityType: string, entityId: string) {
-		return request<{ values: Record<string, unknown> }>(
-			`/custom-field-values/${entityType}/${entityId}`
-		);
+		return request<CustomFieldValueRow[]>(`/custom-field-values/${entityType}/${entityId}`);
 	},
 	setCustomFieldValues(entityType: string, entityId: string, values: Record<string, unknown>) {
 		return request<{ saved: boolean }>('/custom-field-values', {
@@ -1143,11 +1436,16 @@ export const api = {
 	unpinComment(id: string) {
 		return request<{ status: string }>(`/comments/${id}/pin`, { method: 'DELETE' });
 	},
+	reportComment(id: string, data: { reason: string }) {
+		return request<{ reported: boolean }>(`/comments/${id}/report`, {
+			method: 'POST', body: JSON.stringify(data)
+		});
+	},
 
-	// ── Organizations (AUDIT-FE closing gap) ──────────────────────────────────
-	listOrganizations(limit = 50, page = 1) {
-		return request<{ organizations: Organization[]; total: number; total_pages: number }>(
-			`/organizations?limit=${limit}&page=${page}`
+	// ── Organizations ──────────────────────────────────────────────────────────
+	listOrganizations(pageSize = 50, pageOffset = 0) {
+		return request<Organization[]>(
+			`/organizations?page_size=${pageSize}&page_offset=${pageOffset}`
 		);
 	},
 	getOrganization(slug: string) {
@@ -1169,7 +1467,7 @@ export const api = {
 		return request<{ status: string }>(`/organizations/${id}`, { method: 'DELETE' });
 	},
 	getOrganizationMembers(id: string) {
-		return request<{ members: OrganizationMember[] }>(`/organizations/${id}/members`);
+		return request<OrganizationMember[]>(`/organizations/${id}/members`);
 	},
 	addOrganizationMember(id: string, userId: string, role: string) {
 		return request<{ added: boolean }>(`/organizations/${id}/members`, {
@@ -1189,7 +1487,7 @@ export const api = {
 		});
 	},
 	listOrganizationInvitations(id: string) {
-		return request<{ invitations: OrganizationInvitation[] }>(`/organizations/${id}/invitations`);
+		return request<OrganizationInvitation[]>(`/organizations/${id}/invitations`);
 	},
 	inviteToOrganization(id: string, email: string, role: string) {
 		return request<{ invited: boolean }>(`/organizations/${id}/invitations`, {
@@ -1198,7 +1496,7 @@ export const api = {
 		});
 	},
 	acceptOrganizationInvitation(token: string) {
-		return request<{ accepted: boolean; organization_slug: string }>(
+		return request<{ message: string }>(
 			`/organizations/invitations/${token}/accept`,
 			{ method: 'POST' }
 		);
@@ -1231,7 +1529,7 @@ export const api = {
 		return request<{ enrolled: boolean }>('/affiliate-program/enroll', { method: 'POST' });
 	},
 	getAffiliateLinks() {
-		return request<{ links: AffiliateLink[] }>('/me/affiliate-links');
+		return request<AffiliateLink[]>('/me/affiliate-links');
 	},
 	getAffiliateLink(id: string) {
 		return request<AffiliateLink>(`/me/affiliate-links/${id}`);
@@ -1246,9 +1544,7 @@ export const api = {
 		return request<{ status: string }>(`/me/affiliate-links/${id}`, { method: 'DELETE' });
 	},
 	getAffiliateEarnings() {
-		return request<{ total_credits: number; conversions: AffiliateConversion[] }>(
-			'/me/affiliate-earnings'
-		);
+		return request<AffiliateEarnings>('/me/affiliate-earnings');
 	},
 
 	// ── Geo (AUDIT-FE closing gap — location resolution for onboarding/spaces) ─
@@ -1257,25 +1553,30 @@ export const api = {
 			'/geo/me'
 		);
 	},
-	geoLookup(query: string) {
-		return request<{ results: GeoLocation[] }>(`/geo/lookup?q=${encodeURIComponent(query)}`);
+	geoLookup(ip: string) {
+		// Backend looks up a single IP (?ip=) and returns one geo record.
+		return request<{ country: string; country_code: string; region?: string; city?: string }>(
+			`/geo/lookup?ip=${encodeURIComponent(ip)}`
+		);
 	},
 	geoCountries() {
 		return request<Array<{ code: string; name: string }>>('/geo/countries');
 	},
 
-	// ── Space types & permission presets (AUDIT-FE closing gap) ───────────────
+	// ── Space types & permission presets ───────────────────────────────────────
 	listSpaceTypes() {
-		return request<{ space_types: SpaceType[] }>('/space-types');
+		return request<SpaceType[]>('/space-types');
 	},
 	getSpaceType(id: string) {
 		return request<SpaceType>(`/space-types/${id}`);
 	},
 	listSpacePermissionPresets() {
-		return request<{ presets: SpacePermissionPreset[] }>('/space-permission-presets');
+		return request<SpacePermissionPreset[]>('/space-permission-presets');
 	},
-	getSpacePermissionPreset(name: string) {
-		return request<SpacePermissionPreset>(`/space-permission-presets/${name}`);
+	async getSpacePermissionPreset(name: string) {
+		// No GET-by-name endpoint exists; fetch the list and select.
+		const presets = await request<SpacePermissionPreset[]>('/space-permission-presets');
+		return presets.find((p) => p.name === name) ?? null;
 	},
 
 	// ── Webhook events (AUDIT-FE-014) ─────────────────────────────────────
@@ -1342,8 +1643,496 @@ export const api = {
 	getDrafts() {
 		return request<{ id: string; title: string; content_type: string; status: string; updated_at: string; created_at: string; scheduled_at?: string }[]>('/me/drafts');
 	},
- getScheduled() {
+	getScheduled() {
 		return request<{ id: string; title: string; content_type: string; status: string; updated_at: string; created_at: string; scheduled_at?: string }[]>('/me/scheduled');
+	},
+
+	// ── /me endpoints (missing from prior audit) ─────────────────────────────
+	getMePermissions() {
+		return request<{ permissions: string[]; roles: string[] }>('/me/permissions');
+	},
+	updateMeAccount(data: { display_name?: string; bio?: string; location?: string; avatar_url?: string }) {
+		return request<UserProfile>('/me/account', { method: 'PATCH', body: JSON.stringify(data) });
+	},
+	changePassword(data: { current_password: string; new_password: string }) {
+		return request<{ status: string }>('/me/change-password', { method: 'POST', body: JSON.stringify(data) });
+	},
+	getMePrivacy() {
+		return request<{ profile_visibility: string; show_email: boolean; show_location: boolean; allow_dms: string }>('/me/privacy');
+	},
+	updateMePrivacy(data: { profile_visibility?: string; show_email?: boolean; show_location?: boolean; allow_dms?: string }) {
+		return request<{ updated: boolean }>('/me/privacy', { method: 'PATCH', body: JSON.stringify(data) });
+	},
+	getMeSessions() {
+		return request<Array<{ id: string; ip: string; user_agent: string; created_at: string; last_active_at: string; current: boolean }>>('/me/sessions');
+	},
+	deleteMeSession(id: string) {
+		return request<{ status: string }>('/me/sessions/' + id, { method: 'DELETE' });
+	},
+	deleteAllMeSessions() {
+		return request<{ status: string }>('/me/sessions', { method: 'DELETE' });
+	},
+	getMeConnectedAccounts() {
+		return request<Array<{ provider: string; provider_id: string; connected_at: string }>>('/me/connected-accounts');
+	},
+	deleteMeConnectedAccount(provider: string) {
+		return request<{ status: string }>('/me/connected-accounts/' + provider, { method: 'DELETE' });
+	},
+	getMeContent(params?: { page_size?: number; page_offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
+		const q = p.toString();
+		return request<FeedItem[]>('/me/content' + (q ? '?' + q : ''));
+	},
+	getMeSpaces() {
+		return request<Array<{ id: string; name: string; slug: string; role: string }>>('/me/spaces');
+	},
+	getMeSpacesModerated() {
+		return request<Array<{ id: string; name: string; slug: string }>>('/me/spaces/moderated');
+	},
+	getMeSpacesOwned() {
+		return request<Array<{ id: string; name: string; slug: string }>>('/me/spaces/owned');
+	},
+	getMeFollowedTags() {
+		return request<Array<{ id: string; name: string; slug: string; followed_at: string }>>('/me/followed-tags');
+	},
+	getMeFollowing() {
+		return request<Array<{ id: string; username: string; display_name?: string; avatar_url?: string }>>('/me/following');
+	},
+	getMeMutedUsers() {
+		return request<Array<{ id: string; username: string; display_name?: string; muted_at: string }>>('/me/muted-users');
+	},
+	getMeMutedSpaces() {
+		return request<Array<{ id: string; name: string; slug: string; muted_at: string }>>('/me/muted-spaces');
+	},
+	getMeBlockedUsers() {
+		return request<Array<{ id: string; username: string; display_name?: string; blocked_at: string }>>('/me/blocked-users');
+	},
+	getMeAnalytics() {
+		return request<{ views: number; followers: number; content_count: number; engagement_rate: number }>('/me/analytics');
+	},
+	getMeReports() {
+		return request<Array<{ id: string; entity_type: string; entity_id: string; reason: string; status: string; created_at: string }>>('/me/reports');
+	},
+	getDataExportStatus() {
+		return request<{ status: string; requested_at: string; download_url?: string }>('/me/data-export/status');
+	},
+	downloadDataExport() {
+		return request<{ download_url: string }>('/me/data-export/download');
+	},
+	getMePreferences() {
+		return request<Record<string, unknown>>('/me/preferences');
+	},
+	updateMePreferences(data: Record<string, unknown>) {
+		return request<{ updated: boolean }>('/me/preferences', { method: 'PUT', body: JSON.stringify(data) });
+	},
+	updateNotificationPreferencesBulk(data: Array<{ type: string; email?: boolean; push?: boolean; in_app?: boolean }>) {
+		return request<{ updated: boolean }>('/me/notification-preferences', { method: 'PATCH', body: JSON.stringify(data) });
+	},
+	reactivateSubscription() {
+		return request<{ success: boolean }>('/me/subscription/reactivate', { method: 'POST' });
+	},
+	getMeCertificates() {
+		return request<Array<{ id: string; track_title: string; issued_at: string; download_url: string }>>('/me/certificates');
+	},
+
+	// ── API Key management (missing methods) ────────────────────────────────
+	getApiKeyById(id: string) {
+		return request<DeveloperApiKey>('/me/api-keys/' + id);
+	},
+	rotateApiKey(id: string) {
+		return request<{ key: string }>('/me/api-keys/' + id + '/rotate', { method: 'POST' });
+	},
+	getApiKeyIpAllowlist(id: string) {
+		return request<Array<{ id: string; ip: string; label?: string; created_at: string }>>('/me/api-keys/' + id + '/ip-allowlist');
+	},
+	addApiKeyIpAllowlist(id: string, data: { ip: string; label?: string }) {
+		return request<{ id: string }>('/me/api-keys/' + id + '/ip-allowlist', { method: 'POST', body: JSON.stringify(data) });
+	},
+	removeApiKeyIpAllowlist(keyId: string, ipId: string) {
+		return request<{ status: string }>('/me/api-keys/' + keyId + '/ip-allowlist/' + ipId, { method: 'DELETE' });
+	},
+
+	// ── Space management (missing methods) ──────────────────────────────────
+	updateSpace(id: string, data: Record<string, unknown>) {
+		return request<{ id: string }>('/spaces/' + id, { method: 'PATCH', body: JSON.stringify(data) });
+	},
+	deleteSpace(id: string) {
+		return request<{ status: string }>('/spaces/' + id, { method: 'DELETE' });
+	},
+	leaveSpace(slug: string) {
+		return request<{ left: boolean }>('/spaces/' + slug + '/leave', { method: 'DELETE' });
+	},
+	followSpace(slug: string) {
+		return request<{ following: boolean }>('/spaces/' + slug + '/follow', { method: 'POST' });
+	},
+	unfollowSpace(slug: string) {
+		return request<{ following: boolean }>('/spaces/' + slug + '/follow', { method: 'DELETE' });
+	},
+	muteSpace(slug: string) {
+		return request<{ muted: boolean }>('/spaces/' + slug + '/mute', { method: 'POST' });
+	},
+	unmuteSpace(slug: string) {
+		return request<{ muted: boolean }>('/spaces/' + slug + '/mute', { method: 'DELETE' });
+	},
+	getMuteStatus(slug: string) {
+		return request<{ muted: boolean }>('/spaces/' + slug + '/mute-status');
+	},
+	getSpaceContent(slug: string, params?: { page_size?: number; page_offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
+		const q = p.toString();
+		return request<FeedItem[]>('/spaces/' + slug + '/content' + (q ? '?' + q : ''));
+	},
+	getSpacePinned(slug: string) {
+		return request<Array<{ id: string; content_id: string; position: number }>>('/spaces/' + slug + '/pinned');
+	},
+	pinToSpace(slug: string, contentId: string) {
+		return request<{ id: string }>('/spaces/' + slug + '/pinned', { method: 'POST', body: JSON.stringify({ content_id: contentId }) });
+	},
+	unpinFromSpace(slug: string, contentId: string) {
+		return request<{ status: string }>('/spaces/' + slug + '/pinned/' + contentId, { method: 'DELETE' });
+	},
+	reorderPinned(spaceId: string, data: { pinned_ids: string[] }) {
+		return request<{ status: string }>('/spaces/' + spaceId + '/pinned/reorder', { method: 'PATCH', body: JSON.stringify(data) });
+	},
+	reportSpace(id: string, data: { reason: string }) {
+		return request<{ reported: boolean }>('/spaces/' + id + '/report', { method: 'POST', body: JSON.stringify(data) });
+	},
+	getSpaceRules(slug: string) {
+		return request<Array<{ id: string; title: string; description: string; position: number }>>('/spaces/' + slug + '/rules');
+	},
+	createSpaceRule(slug: string, data: { title: string; description: string; position?: number }) {
+		return request<{ id: string }>('/spaces/' + slug + '/rules', { method: 'POST', body: JSON.stringify(data) });
+	},
+	updateSpaceRule(slug: string, ruleId: string, data: { title?: string; description?: string; position?: number }) {
+		return request<{ id: string }>('/spaces/' + slug + '/rules/' + ruleId, { method: 'PATCH', body: JSON.stringify(data) });
+	},
+	deleteSpaceRule(slug: string, ruleId: string) {
+		return request<{ status: string }>('/spaces/' + slug + '/rules/' + ruleId, { method: 'DELETE' });
+	},
+	getSpaceModerators(slug: string) {
+		return request<Array<{ user_id: string; username: string; display_name?: string }>>('/spaces/' + slug + '/moderators');
+	},
+	addSpaceModerator(slug: string, userId: string) {
+		return request<{ added: boolean }>('/spaces/' + slug + '/moderators', { method: 'POST', body: JSON.stringify({ user_id: userId }) });
+	},
+	removeSpaceModerator(slug: string, userId: string) {
+		return request<{ removed: boolean }>('/spaces/' + slug + '/moderators/' + userId, { method: 'DELETE' });
+	},
+	getSpaceParents(slug: string) {
+		return request<Array<{ id: string; name: string; slug: string }>>('/spaces/' + slug + '/parents');
+	},
+	addSpaceParent(slug: string, parentId: string) {
+		return request<{ added: boolean }>('/spaces/' + slug + '/parents', { method: 'POST', body: JSON.stringify({ parent_id: parentId }) });
+	},
+	removeSpaceParent(slug: string, parentId: string) {
+		return request<{ removed: boolean }>('/spaces/' + slug + '/parents/' + parentId, { method: 'DELETE' });
+	},
+	suggestSpaceParents(query: string) {
+		return request<Array<{ id: string; name: string; slug: string }>>('/spaces/suggest-parents?q=' + encodeURIComponent(query));
+	},
+	getSpaceAnalytics(id: string) {
+		return request<{ member_count: number; content_count: number; views: number; growth: number }>('/spaces/' + id + '/analytics');
+	},
+	getSpaceMembers(slug: string, params?: { page_size?: number; page_offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
+		const q = p.toString();
+		return request<Array<{ user_id: string; username: string; display_name?: string; role: string; joined_at: string }>>('/spaces/' + slug + '/members' + (q ? '?' + q : ''));
+	},
+
+	// ── Content mutations (missing methods) ─────────────────────────────────
+	publishContent(id: string) {
+		return request<{ status: string }>('/content/' + id + '/publish', { method: 'POST' });
+	},
+	archiveContent(id: string) {
+		return request<{ status: string }>('/content/' + id + '/archive', { method: 'POST' });
+	},
+	scheduleContent(id: string, data: { scheduled_at: string }) {
+		return request<{ status: string }>('/content/' + id + '/schedule', { method: 'POST', body: JSON.stringify(data) });
+	},
+	viewContent(id: string) {
+		return request<{ viewed: boolean }>('/content/' + id + '/view', { method: 'POST' });
+	},
+	getShareCount(id: string) {
+		return request<{ count: number }>('/content/' + id + '/share-count');
+	},
+	reportContent(id: string, data: { reason: string }) {
+		return request<{ reported: boolean }>('/content/' + id + '/report', { method: 'POST', body: JSON.stringify(data) });
+	},
+	bookmarkContent(id: string) {
+		return request<{ bookmarked: boolean }>('/content/' + id + '/bookmark', { method: 'POST' });
+	},
+	unbookmarkContent(id: string) {
+		return request<{ bookmarked: boolean }>('/content/' + id + '/bookmark', { method: 'DELETE' });
+	},
+	getBookmarkStatus(id: string) {
+		return request<{ bookmarked: boolean }>('/content/' + id + '/bookmark');
+	},
+	getContentTags(id: string) {
+		return request<Array<{ id: string; name: string; slug: string }>>('/content/' + id + '/tags');
+	},
+	addContentTag(id: string, tagId: string) {
+		return request<{ added: boolean }>('/content/' + id + '/tags', { method: 'POST', body: JSON.stringify({ tag_id: tagId }) });
+	},
+	removeContentTag(id: string, tagId: string) {
+		return request<{ removed: boolean }>('/content/' + id + '/tags/' + tagId, { method: 'DELETE' });
+	},
+	shareContent(id: string, data?: { platform?: string }) {
+		return request<{ share_url: string }>('/content/' + id + '/share', { method: 'POST', body: JSON.stringify(data ?? {}) });
+	},
+	getRelatedContent(id: string) {
+		return request<FeedItem[]>('/content/' + id + '/related');
+	},
+	getContentAnalytics(id: string) {
+		return request<{ views: number; shares: number; bookmarks: number; comments: number }>('/content/' + id + '/analytics');
+	},
+	getContentDiscussions(id: string) {
+		return request<Array<{ id: string; title: string; reply_count: number }>>('/content/' + id + '/discussions');
+	},
+	createContentDiscussion(id: string, data: { title: string; body: string }) {
+		return request<{ id: string }>('/content/' + id + '/discussions', { method: 'POST', body: JSON.stringify(data) });
+	},
+	getContentComments(id: string, params?: { page_size?: number; page_offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
+		const q = p.toString();
+		return request<Array<{ id: string; body: string; author_id: string; author_name: string; created_at: string }>>('/content/' + id + '/comments' + (q ? '?' + q : ''));
+	},
+	createContentComment(id: string, data: { body: string }) {
+		return request<{ id: string }>('/content/' + id + '/comments', { method: 'POST', body: JSON.stringify(data) });
+	},
+
+	// ── Tags (missing methods) ──────────────────────────────────────────────
+	getTag(slug: string) {
+		return request<{ id: string; name: string; slug: string; description?: string; post_count: number }>('/tags/' + slug);
+	},
+	getTagContent(slug: string, params?: { page_size?: number; page_offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
+		const q = p.toString();
+		return request<FeedItem[]>('/tags/' + slug + '/content' + (q ? '?' + q : ''));
+	},
+	followTag(slug: string) {
+		return request<{ following: boolean }>('/tags/' + slug + '/follow', { method: 'POST' });
+	},
+	unfollowTag(slug: string) {
+		return request<{ following: boolean }>('/tags/' + slug + '/follow', { method: 'DELETE' });
+	},
+	getTagFollowers(slug: string) {
+		return request<Array<{ id: string; username: string; display_name?: string }>>('/tags/' + slug + '/followers');
+	},
+	searchTags(slug: string, query: string) {
+		return request<Array<{ id: string; name: string; slug: string }>>('/tags/' + slug + '/search?q=' + encodeURIComponent(query));
+	},
+
+	// ── Media (missing methods) ─────────────────────────────────────────────
+	getMedia(id: string) {
+		return request<MediaItem>('/media/' + id);
+	},
+	updateMedia(id: string, data: { alt_text?: string; caption?: string }) {
+		return request<MediaItem>('/media/' + id, { method: 'PATCH', body: JSON.stringify(data) });
+	},
+	confirmMedia(id: string) {
+		return request<{ confirmed: boolean }>('/media/confirm/' + id, { method: 'POST' });
+	},
+	bulkDeleteMedia(ids: string[]) {
+		return request<{ deleted: number }>('/media/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
+	},
+
+	// ── Tickets (missing attachment methods) ────────────────────────────────
+	uploadTicketAttachment(ticketId: string, file: File) {
+		const formData = new FormData();
+		formData.append('file', file);
+		const headers: Record<string, string> = {};
+		if (jwtToken) headers['Authorization'] = `Bearer ${jwtToken}`;
+		return fetch(`${API_BASE}/me/tickets/${ticketId}/attachments`, {
+			method: 'POST',
+			headers,
+			body: formData
+		}).then(async (res) => {
+			const body = (await res.json()) as ApiOk<{ id: string; filename: string; url: string }> | ApiErr;
+			if (!res.ok || 'error' in body) {
+				const err = 'error' in body ? body.error : { code: 'unknown', message: res.statusText };
+				throw new Error(`${err.code}: ${err.message}`);
+			}
+			return (body as ApiOk<{ id: string; filename: string; url: string }>).data;
+		});
+	},
+	listTicketAttachments(ticketId: string) {
+		return request<Array<{ id: string; filename: string; url: string; size: number; created_at: string }>>('/me/tickets/' + ticketId + '/attachments');
+	},
+
+	// ── Forum (missing methods) ─────────────────────────────────────────────
+	deleteForumVote(id: string) {
+		return request<{ status: string }>('/forum/' + id + '/vote', { method: 'DELETE' });
+	},
+	getForumTagBySlug(slug: string) {
+		return request<{ id: string; name: string; slug: string; thread_count: number }>('/forum/tags/' + slug);
+	},
+	addForumTagToThread(threadId: string, tagId: string) {
+		return request<{ added: boolean }>('/forum/' + threadId + '/tags/' + tagId, { method: 'POST' });
+	},
+	removeForumTagFromThread(threadId: string, tagId: string) {
+		return request<{ removed: boolean }>('/forum/' + threadId + '/tags/' + tagId, { method: 'DELETE' });
+	},
+	updateForumTag(id: string, data: { name?: string; slug?: string }) {
+		return request<{ id: string }>('/forum/tags/' + id, { method: 'PATCH', body: JSON.stringify(data) });
+	},
+	deleteForumTag(id: string) {
+		return request<{ status: string }>('/forum/tags/' + id, { method: 'DELETE' });
+	},
+	unsolveForumThread(id: string) {
+		return request<{ status: string }>('/forum/' + id + '/solve', { method: 'DELETE' });
+	},
+
+	// ── Blog (missing methods) ──────────────────────────────────────────────
+	getBlogSeriesList() {
+		return request<Array<{ id: string; title: string; slug: string; description?: string; post_count: number; created_at: string }>>('/blog/series');
+	},
+	getBlogSeries(slug: string) {
+		return request<{ id: string; title: string; slug: string; description?: string; posts: Array<{ id: string; title: string; slug: string; position: number }> }>('/blog/series/' + slug);
+	},
+	getFeaturedPosts() {
+		return request<Array<{ content_id: string; title: string; slug: string; featured_order: number; featured_until?: string }>>('/blog/featured');
+	},
+
+	// ── AI (missing methods) ────────────────────────────────────────────────
+	aiGenerate(data: { prompt: string; type: string }) {
+		return request<{ result: string }>('/ai/generate', { method: 'POST', body: JSON.stringify(data) });
+	},
+	aiHitlSubmit(data: { content: string; type: string; metadata?: Record<string, unknown> }) {
+		return request<{ id: string }>('/ai/hitl', { method: 'POST', body: JSON.stringify(data) });
+	},
+	aiHitlPending() {
+		return request<Array<{ id: string; content: string; type: string; status: string; created_at: string }>>('/ai/hitl/pending');
+	},
+	aiHitlApprove(id: string) {
+		return request<{ approved: boolean }>('/ai/hitl/' + id + '/approve', { method: 'POST' });
+	},
+	aiHitlReject(id: string, data?: { reason?: string }) {
+		return request<{ rejected: boolean }>('/ai/hitl/' + id + '/reject', { method: 'POST', body: JSON.stringify(data ?? {}) });
+	},
+	getAIConversations() {
+		return request<Array<{ id: string; title: string; created_at: string; updated_at: string }>>('/ai/conversations');
+	},
+	getAIConversation(id: string) {
+		return request<{ id: string; title: string; messages: Array<{ role: string; content: string; created_at: string }> }>('/ai/conversations/' + id);
+	},
+
+	// ── Reviews (missing methods) ───────────────────────────────────────────
+	getReviewById(id: string) {
+		return request<Review>('/reviews/' + id);
+	},
+
+	// ── Comparisons (missing methods) ───────────────────────────────────────
+	getComparisonBySlug(slug: string) {
+		return request<{ id: string; title: string; slug: string; type_id: string; item_count: number; vote_count: number; created_at: string }>('/comparisons/' + slug);
+	},
+
+	// ── Subscriptions (missing methods) ─────────────────────────────────────
+	getSubscriptions() {
+		return request<Array<{ id: string; plan_id: string; status: string; current_period_end: string }>>('/subscriptions');
+	},
+	deleteSubscription(id: string) {
+		return request<{ deleted: boolean }>('/subscriptions/' + id, { method: 'DELETE' });
+	},
+
+	// ── Follow (missing methods) ────────────────────────────────────────────
+	getFollowStatus(userId: string) {
+		return request<{ following: boolean }>('/users/' + userId + '/follow-status');
+	},
+	getSpaceFollowers(spaceId: string) {
+		return request<Array<{ user_id: string; username: string; display_name?: string }>>('/spaces/' + spaceId + '/followers');
+	},
+
+	// ── User blocks & mutes (missing methods) ───────────────────────────────
+	blockUser(userId: string) {
+		return request<{ blocked: boolean }>('/users/' + userId + '/block', { method: 'POST' });
+	},
+	unblockUser(userId: string) {
+		return request<{ blocked: boolean }>('/users/' + userId + '/block', { method: 'DELETE' });
+	},
+	muteUser(userId: string) {
+		return request<{ muted: boolean }>('/users/' + userId + '/mute', { method: 'POST' });
+	},
+	unmuteUser(userId: string) {
+		return request<{ muted: boolean }>('/users/' + userId + '/mute', { method: 'DELETE' });
+	},
+	getUserMuteStatus(userId: string) {
+		return request<{ muted: boolean }>('/users/' + userId + '/mute-status');
+	},
+	reportUser(userId: string, data: { reason: string }) {
+		return request<{ reported: boolean }>('/users/' + userId + '/report', { method: 'POST', body: JSON.stringify(data) });
+	},
+
+	// ── Users (missing methods) ─────────────────────────────────────────────
+	getUserContent(userId: string, params?: { page_size?: number; page_offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
+		const q = p.toString();
+		return request<FeedItem[]>('/users/' + userId + '/content' + (q ? '?' + q : ''));
+	},
+	getUserAnalytics(userId: string) {
+		return request<{ views: number; followers: number; content_count: number }>('/users/' + userId + '/analytics');
+	},
+	unfollowUser(userId: string) {
+		return request<{ followed: boolean }>('/users/' + userId + '/follow', { method: 'DELETE' });
+	},
+
+	// ── Search (missing methods) ────────────────────────────────────────────
+	autocompleteSearch(query: string) {
+		return request<Array<{ type: string; id: string; title: string; subtitle?: string }>>('/search/autocomplete?q=' + encodeURIComponent(query));
+	},
+
+	// ── Geo (missing methods) ───────────────────────────────────────────────
+	geoDetect() {
+		return request<{ country: string; country_code: string; region?: string; city?: string }>('/geo/detect');
+	},
+	geoStates(countryCode: string) {
+		return request<Array<{ id: string; name: string; code: string }>>('/geo/countries/' + countryCode + '/states');
+	},
+	geoCities(stateId: string) {
+		return request<Array<{ id: string; name: string }>>('/geo/states/' + stateId + '/cities');
+	},
+
+	// ── I18n (missing methods) ──────────────────────────────────────────────
+	getI18nPacks() {
+		return request<Array<{ lang_code: string; name: string; loaded: boolean }>>('/i18n/packs');
+	},
+	getI18nPack(langCode: string) {
+		return request<Record<string, string>>('/i18n/packs/' + langCode);
+	},
+
+	// ── Push (missing methods) ──────────────────────────────────────────────
+	deletePushToken(id: string) {
+		return request<{ status: string }>('/me/push-tokens/' + id, { method: 'DELETE' });
+	},
+	deleteAllPushTokens() {
+		return request<{ status: string }>('/me/push-tokens', { method: 'DELETE' });
+	},
+
+	// ── Notifications (missing methods) ─────────────────────────────────────
+	deleteNotification(id: string) {
+		return request<{ status: string }>('/me/notifications/' + id, { method: 'DELETE' });
+	},
+
+	// ── Content reactions (missing methods) ─────────────────────────────────
+	reactToContent(id: string, data: { key: string }) {
+		return request<{ id: string }>('/content/' + id + '/react', { method: 'POST', body: JSON.stringify(data) });
+	},
+	unreactToContent(id: string) {
+		return request<{ status: string }>('/content/' + id + '/react', { method: 'DELETE' });
+	},
+	updateContentSpaces(id: string, data: { space_ids: string[] }) {
+		return request<{ updated: boolean }>('/content/' + id + '/spaces', { method: 'PATCH', body: JSON.stringify(data) });
 	},
 };
 
@@ -1482,6 +2271,22 @@ export interface Verifier {
 	profile_id: string;
 	user_id: string;
 	user_name: string;
+	role: string;
+	status: string;
+	created_at: string;
+}
+
+export interface ProfileMember {
+	user_id: string;
+	username: string;
+	display_name: string;
+	role: string;
+	joined_at: string;
+}
+
+export interface ProfileInvitation {
+	id: string;
+	email: string;
 	role: string;
 	status: string;
 	created_at: string;

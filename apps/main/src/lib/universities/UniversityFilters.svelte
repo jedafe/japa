@@ -13,7 +13,7 @@
 		countries?: Array<{ value: string; label: string }>;
 	} = $props();
 
-	const allCountries = [{ value: '', label: 'All Countries' }, ...countries];
+	const allCountries = $derived([{ value: '', label: 'All Countries' }, ...countries]);
 
 	const sortOptions = [
 		{ value: 'world_ranking', label: 'World Ranking' },

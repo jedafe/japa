@@ -11,7 +11,12 @@
 		onApply?: (values: Record<string, string>) => void;
 	} = $props();
 
-	let localValues = $state<Record<string, string>>({ ...initialValues });
+	let localValues = $state<Record<string, string>>({});
+
+	$effect(() => {
+		const snap = { ...initialValues };
+		localValues = snap;
+	});
 
 	function apply() {
 		onApply?.(localValues);

@@ -26,13 +26,25 @@
 		Heart,
 		GraduationCap,
 		Bell,
-		Lock
+		Lock,
+		Mail,
+		BarChart2,
+		Link,
+		UserPlus,
+		BellRing,
+		Sparkles,
+		ListTree,
+		Flag,
+		Scale,
+		Wrench
 	} from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions';
+	import { Search } from 'lucide-svelte';
 
 	let { currentPath = '/' }: { currentPath?: string } = $props();
 
 	let open = $state(false);
+	let searchQuery = $state('');
 
 	const nav = [
 		{ label: 'Dashboard', href: '/', icon: LayoutDashboard, perm: null },
@@ -61,11 +73,44 @@
 		{ label: 'Tickets', href: '/tickets', icon: Ticket, perm: 'admin.tickets.manage' },
 		{ label: 'Broadcast', href: '/broadcast', icon: Radio, perm: 'admin.broadcast' },
 		{ label: 'Translations', href: '/translations', icon: Languages, perm: 'admin.settings' },
-		{ label: 'Settings', href: '/settings', icon: Settings, perm: 'admin.settings' }
+		{ label: 'Settings', href: '/settings', icon: Settings, perm: 'admin.settings' },
+		{ label: 'Custom Fields', href: '/custom-fields', icon: ListTree, perm: 'admin.settings' },
+		{ label: 'Newsletter', href: '/newsletter', icon: Mail, perm: 'admin.settings' },
+		{ label: 'Analytics', href: '/analytics', icon: BarChart2, perm: 'admin.analytics.view' },
+		{ label: 'Affiliate', href: '/affiliate', icon: Link, perm: 'admin.settings' },
+		{ label: 'Referral', href: '/referral', icon: UserPlus, perm: 'admin.settings' },
+		{ label: 'Notification Types', href: '/notification-types', icon: BellRing, perm: 'admin.settings' },
+		{ label: 'AI', href: '/ai', icon: Sparkles, perm: 'admin.ai.view' },
+		{ label: 'AI Tools', href: '/ai/tools', icon: Wrench, perm: 'admin.ai.view' },
+		{ label: 'AI Generate', href: '/ai/generate', icon: Sparkles, perm: 'admin.ai.view' },
+		{ label: 'Learning', href: '/learning', icon: GraduationCap, perm: 'admin.settings' },
+		{ label: 'Mentorship', href: '/mentorship', icon: Users, perm: 'admin.settings' },
+		{ label: 'Moderation Content', href: '/moderation/content', icon: FileText, perm: 'admin.moderation' },
+		{ label: 'Moderation Reports', href: '/moderation/reports', icon: Flag, perm: 'admin.moderation' },
+		{ label: 'Moderation Appeals', href: '/moderation/appeals', icon: Scale, perm: 'admin.moderation' },
+		{ label: 'Users Roles', href: '/users/roles', icon: Shield, perm: 'admin.users.view' },
+		{ label: 'Users Groups', href: '/users/groups', icon: Users, perm: 'admin.users.view' },
+		{ label: 'Page Builder Pages', href: '/page-builder/pages', icon: Layout, perm: 'admin.settings' },
+		{ label: 'Webhooks', href: '/webhooks', icon: Code, perm: 'admin.settings' },
+		{ label: 'Translations', href: '/i18n', icon: Languages, perm: 'admin.settings' },
+		{ label: 'Blog Review Queue', href: '/blog/review-queue', icon: FileText, perm: 'blog.review.manage' },
+		{ label: 'Feature Flags', href: '/feature-flags', icon: Flag, perm: 'admin.feature_flags.view' }
 	];
 
 	function visibleNav() {
-		return nav.filter((item) => !item.perm || hasPermission(item.perm));
+		return nav.filter((item) => {
+			// Check permission
+			if (item.perm && !hasPermission(item.perm)) return false;
+			
+			// Check search query
+			if (searchQuery) {
+				const query = searchQuery.toLowerCase();
+				return item.label.toLowerCase().includes(query) || 
+					   item.href.toLowerCase().includes(query);
+			}
+			
+			return true;
+		});
 	}
 </script>
 
@@ -88,6 +133,21 @@
 	<div class="flex h-14 items-center border-b border-gray-200 px-4 dark:border-gray-700">
 		<span class="text-sm font-bold tracking-wide uppercase text-blue-600">Admin</span>
 	</div>
+	
+	<!-- Search input -->
+	<div class="px-3 pt-3">
+		<div class="relative">
+			<Search class="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
+			<input
+				type="text"
+				placeholder="Search navigation..."
+				class="w-full rounded-md border py-1.5 pl-7 pr-3 text-sm"
+				style="border-color: var(--color-border); background-color: var(--color-surface)"
+				bind:value={searchQuery}
+			/>
+		</div>
+	</div>
+	
 	<nav class="flex-1 space-y-1 p-3">
 		{#each visibleNav() as item}
 			<a

@@ -1,35 +1,44 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
+const mockRequest = vi.fn();
+
 vi.mock('$lib/api', () => ({
-	getToken: vi.fn().mockReturnValue(null)
+	request: (...args: unknown[]) => mockRequest(...args)
 }));
 
-const baseData = {
-	user: null,
-	flags: {},
-	notificationCount: 0,
-	token: null,
-	locale: 'en',
-	translations: {},
-	countries: [] as Array<{ value: string; label: string }>
-};
-
 describe('Universities +page.svelte', () => {
-	it('renders the heading', () => {
-		render(Page, { props: { data: { ...baseData, universities: [], filters: { page: '1', country: '', sort: 'world_ranking' } } } });
-		const headings = screen.getAllByRole('heading', { name: /Universities/i });
-		expect(headings.length).toBeGreaterThanOrEqual(1);
+	beforeEach(() => {
+		mockRequest.mockReset();
 	});
 
-	it('renders the subtitle text', () => {
-		render(Page, { props: { data: { ...baseData, universities: [], filters: { page: '1', country: '', sort: 'world_ranking' } } } });
-		expect(screen.getByText('Find the right university for your study abroad journey.')).toBeTruthy();
+	it('renders the heading', async () => {
+		mockRequest.mockResolvedValue([]);
+		render(Page);
+		await waitFor(() => {
+			const headings = screen.getAllByRole('heading', { name: /Universities/i });
+			expect(headings.length).toBeGreaterThanOrEqual(1);
+		});
 	});
 
-	it('shows empty state when no universities', () => {
-		render(Page, { props: { data: { ...baseData, universities: [], filters: { page: '1', country: '', sort: 'world_ranking' } } } });
-		expect(screen.getByText('No universities found')).toBeTruthy();
+	it('renders university cards', async () => {
+		mockRequest.mockResolvedValue([
+			{ id: '1', name: 'Oxford University', slug: 'oxford', country: 'UK' },
+			{ id: '2', name: 'MIT', slug: 'mit', country: 'USA' }
+		]);
+		render(Page);
+		await waitFor(() => {
+			expect(screen.getByText('Oxford University')).toBeTruthy();
+			expect(screen.getByText('MIT')).toBeTruthy();
+		});
+	});
+
+	it('shows empty state when no universities', async () => {
+		mockRequest.mockResolvedValue([]);
+		render(Page);
+		await waitFor(() => {
+			expect(screen.getByText('No universities found')).toBeTruthy();
+		});
 	});
 });
