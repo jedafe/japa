@@ -59,6 +59,23 @@
 	--spacing-2xl: 3rem;
 }
 
+/*
+ * Tailwind v4 theme extension - maps CSS custom properties to Tailwind utilities
+ * This allows using classes like: text-foreground, bg-background, border-border, etc.
+ */
+@theme {
+	--color-background: var(--color-background);
+	--color-foreground: var(--color-foreground);
+	--color-primary: var(--color-primary);
+	--color-muted: var(--color-muted);
+	--color-border: var(--color-border);
+	--color-surface: var(--color-surface);
+	--color-success: var(--color-success);
+	--color-warning: var(--color-warning);
+	--color-danger: var(--color-danger);
+	--color-info: var(--color-info);
+}
+
 .dark {
 	--color-background: #0f172a;
 	--color-foreground: #f8fafc;

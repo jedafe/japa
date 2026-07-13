@@ -366,7 +366,7 @@ func (q *Queries) DeleteBookmark(ctx context.Context, arg DeleteBookmarkParams) 
 }
 
 const deleteContent = `-- name: DeleteContent :exec
-DELETE FROM contents WHERE id = $1 AND tenant_id = $2
+UPDATE contents SET deleted_at = now(), updated_at = now() WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type DeleteContentParams struct {
@@ -400,7 +400,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type GetContentByIDParams struct {
@@ -482,7 +482,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
-WHERE slug = $1 AND tenant_id = $2
+WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type GetContentBySlugParams struct {
@@ -664,7 +664,7 @@ func (q *Queries) GetSlugRedirect(ctx context.Context, arg GetSlugRedirectParams
 }
 
 const incrementContentView = `-- name: IncrementContentView :exec
-UPDATE contents SET view_count = view_count + 1 WHERE id = $1 AND tenant_id = $2
+UPDATE contents SET view_count = view_count + 1 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type IncrementContentViewParams struct {
@@ -770,6 +770,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
 WHERE ct.tag_id = $1 AND c.tenant_id = $2 AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.auto_hidden = false
   AND (c.created_at < $3 OR ($3 IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
@@ -956,6 +957,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = $1 AND space_id = $2
+  AND deleted_at IS NULL
   AND auto_hidden = false
   AND (created_at < $3 OR ($3 IS NULL))
 ORDER BY created_at DESC, id DESC
@@ -1062,6 +1064,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = $1
+  AND deleted_at IS NULL
   AND auto_hidden = false
   AND (created_at < $2 OR ($2 IS NULL))
 ORDER BY created_at DESC, id DESC
@@ -1162,6 +1165,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = $1 AND content_type = $2
+  AND deleted_at IS NULL
   AND auto_hidden = false
   AND (created_at < $3 OR ($3 IS NULL))
 ORDER BY created_at DESC, id DESC
@@ -1400,7 +1404,7 @@ func (q *Queries) RemoveContentTag(ctx context.Context, arg RemoveContentTagPara
 const scheduleContent = `-- name: ScheduleContent :one
 UPDATE contents
 SET status = 'scheduled', publish_at = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
@@ -1507,7 +1511,7 @@ SET title = $1, slug = $2, body = $3, body_html = $4,
     status = $9, visibility = $10, read_time_minutes = $11,
     publish_at = $12, published_at = $13,
     is_locked = $14, is_pinned = $15, updated_at = now()
-WHERE id = $16 AND tenant_id = $17
+WHERE id = $16 AND tenant_id = $17 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
@@ -1624,7 +1628,7 @@ const updateContentStatus = `-- name: UpdateContentStatus :one
 UPDATE contents
 SET status = $1, updated_at = now(),
     published_at = CASE WHEN $1 = 'published' AND published_at IS NULL THEN now() ELSE published_at END
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,

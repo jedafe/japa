@@ -40,16 +40,16 @@
 		error = '';
 		try {
 			if (activeTab === 'subscribers') {
-				const result = await api<{ data: Subscriber[] }>('/admin/newsletter/subscribers');
+				const result = await api<Subscriber[]>('/admin/newsletter/subscribers');
 				if (result.ok) {
-					subscribers = result.data.data ?? [];
+					subscribers = result.data ?? [];
 				} else {
 					error = result.error;
 				}
 			} else {
-				const result = await api<{ data: Campaign[] }>('/admin/newsletter/campaigns');
+				const result = await api<Campaign[]>('/admin/newsletter/campaigns');
 				if (result.ok) {
-					campaigns = result.data.data ?? [];
+					campaigns = result.data ?? [];
 				} else {
 					error = result.error;
 				}

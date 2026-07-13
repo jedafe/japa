@@ -1,19 +1,22 @@
 import { API_V1_BASE } from '$lib/server/api';
+import { getCached } from '$lib/server/cache';
 
 export async function load({ locals, cookies }: { locals: App.Locals; cookies: { get(name: string): string | undefined } }) {
 	const token = cookies.get('jc_token');
 	const localeCode = cookies.get('jc_locale') ?? 'en';
 
-	let translations: Record<string, string> = {};
-	try {
-		const res = await fetch(`${API_V1_BASE}/i18n/packs/${localeCode}`);
-		if (res.ok) {
-			const body = await res.json();
-			translations = body?.data ?? body ?? {};
+	const translations = await getCached<Record<string, string>>(`translations:${localeCode}`, 5 * 60 * 1000, async () => {
+		try {
+			const res = await fetch(`${API_V1_BASE}/i18n/packs/${localeCode}`);
+			if (res.ok) {
+				const body = await res.json();
+				return body?.data ?? body ?? {};
+			}
+		} catch {
+			// Graceful degradation
 		}
-	} catch {
-		// Graceful degradation
-	}
+		return {};
+	});
 
 	const raw = locals.user as Record<string, unknown> | null;
 

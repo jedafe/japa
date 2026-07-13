@@ -39,7 +39,7 @@
 
 	onMount(async () => {
 		try {
-			spaces = await api.listSpaces({ limit: 50 }) as Space[];
+			spaces = await api.listSpaces({ page_size: 50 }) as Space[];
 		} catch {
 			spaces = [];
 		} finally {

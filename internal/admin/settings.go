@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -44,14 +45,15 @@ type SettingValue struct {
 
 // Handlers holds dependencies for admin HTTP handlers.
 type Handlers struct {
-	DB    *db.DB
-	RBAC  *rbac.RBAC
-	Valkey valkeycompat.Cmdable
+	DB      *db.DB
+	Queries *gen.Queries
+	RBAC    *rbac.RBAC
+	Valkey  valkeycompat.Cmdable
 }
 
 // NewHandlers creates Handlers with the given database pool.
-func NewHandlers(database *db.DB) *Handlers {
-	return &Handlers{DB: database}
+func NewHandlers(database *db.DB, queries *gen.Queries) *Handlers {
+	return &Handlers{DB: database, Queries: queries}
 }
 
 // SetRBAC injects the RBAC resolver for permission cache invalidation.

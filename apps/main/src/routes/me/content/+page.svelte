@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
+	import { invalidateAll } from '$app/navigation';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { RefreshCw, Eye } from 'lucide-svelte';
 
@@ -12,23 +11,8 @@
 		created_at: string;
 	};
 
-	let items = $state<Content[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
-
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		try {
-			items = await api.getMeContent() as unknown as Content[];
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
-
-	onMount(load);
+	let { data } = $props();
+	let items = $derived(data.data ?? []);
 </script>
 
 <svelte:head>
@@ -37,20 +21,14 @@
 
 <h1 class="mb-4 text-2xl font-bold tracking-tight">{t('me.content.title')}</h1>
 
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
-	</div>
-{/if}
-
 <div class="mb-4 flex justify-end">
-	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
+	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={() => invalidateAll()}>
 		<RefreshCw class="h-3 w-3" />
 		{t('common.refresh')}
 	</button>
 </div>
 
-{#if loading}
+{#if !data.data}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">

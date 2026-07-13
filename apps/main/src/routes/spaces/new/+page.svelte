@@ -16,7 +16,7 @@
 	onMount(async () => {
 		try {
 			const result = await api.listSpaceTypes();
-			spaceTypes = (result.space_types ?? []).map((t: SpaceType) => ({
+			spaceTypes = (result ?? []).map((t: SpaceType) => ({
 				value: t.id,
 				label: t.name
 			}));

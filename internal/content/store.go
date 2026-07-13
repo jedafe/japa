@@ -312,7 +312,7 @@ func (s *Service) IncrementContentView(ctx context.Context, id, tenantID pgtype.
 	return nil
 }
 
-// DeleteContent removes a content row, scoped to the tenant.
+// DeleteContent soft-deletes a content row, scoped to the tenant.
 func (s *Service) DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteContent(ctx, gen.DeleteContentParams{
 		ID:       id,

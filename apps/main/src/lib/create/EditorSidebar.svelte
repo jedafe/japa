@@ -73,7 +73,7 @@
 
 	onMount(async () => {
 		try {
-			const result: any = await api.listSpaces({ limit: 100 });
+			const result: any = await api.listSpaces({ page_size: 100 });
 			if (Array.isArray(result)) {
 				spaces = result.map((s: any) => ({ id: s.id || s.slug, name: s.name }));
 			} else if (result?.data) {

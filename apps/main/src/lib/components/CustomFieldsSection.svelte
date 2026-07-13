@@ -18,20 +18,36 @@
 	onMount(async () => {
 		try {
 			const result = await api.getCustomFieldGroups(entityType);
-			groups = result.groups ?? [];
+			groups = result ?? [];
 
 			// Load field definitions for each group
 			await Promise.all(
 				groups.map(async (group, i) => {
 					const fieldsResult = await api.getCustomFieldGroupFields(group.id);
-					groups[i] = { ...group, fields: fieldsResult.fields ?? [] };
+					groups[i] = { ...group, fields: fieldsResult ?? [] };
 				})
 			);
 
-			// If editing an existing entity, preload saved values
+			// If editing an existing entity, preload saved values. The backend
+			// returns rows keyed by field_id with typed value columns.
 			if (entityId) {
 				const saved = await api.getCustomFieldValues(entityType, entityId);
-				values = saved.values ?? {};
+				const idToKey = new Map<string, string>();
+				for (const g of groups) {
+					for (const f of g.fields ?? []) idToKey.set(f.id, f.key);
+				}
+				const loaded: Record<string, unknown> = {};
+				for (const row of saved ?? []) {
+					const key = idToKey.get(row.field_id);
+					if (!key) continue;
+					loaded[key] =
+						row.value_text ??
+						row.value_number ??
+						row.value_bool ??
+						row.value_date ??
+						undefined;
+				}
+				values = loaded;
 			}
 		} catch {
 			error = 'Failed to load custom fields';

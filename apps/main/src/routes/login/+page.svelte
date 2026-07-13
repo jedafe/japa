@@ -13,7 +13,46 @@
 	let oauthLoading = $state('');
 	let oauthError = $state('');
 
+	// Validation state
+	let emailError = $state('');
+	let passwordError = $state('');
+
+	function validateEmail(value: string): boolean {
+		if (!value.trim()) {
+			emailError = 'Email is required';
+			return false;
+		}
+		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+		if (!emailRegex.test(value)) {
+			emailError = 'Please enter a valid email address';
+			return false;
+		}
+		emailError = '';
+		return true;
+	}
+
+	function validatePassword(value: string): boolean {
+		if (!value) {
+			passwordError = 'Password is required';
+			return false;
+		}
+		if (value.length < 6) {
+			passwordError = 'Password must be at least 6 characters';
+			return false;
+		}
+		passwordError = '';
+		return true;
+	}
+
 	function handleSubmit() {
+		// Validate before submitting
+		const isEmailValid = validateEmail(email);
+		const isPasswordValid = validatePassword(password);
+		
+		if (!isEmailValid || !isPasswordValid) {
+			return async () => {}; // Don't submit if validation fails
+		}
+		
 		loading = true;
 		trackEvent(AnalyticsEvents.LOGIN, { email });
 		return async ({ update }: { update: () => Promise<void> }) => {
@@ -82,8 +121,13 @@
 						bind:value={email}
 						placeholder="you@example.com"
 						class="pl-10"
+						aria-invalid={!!emailError}
+						aria-describedby={emailError ? 'email-error' : undefined}
 					/>
 				</div>
+				{#if emailError}
+					<p id="email-error" class="mt-1 text-xs" style="color: var(--color-danger)">{emailError}</p>
+				{/if}
 			</div>
 
 			<div>
@@ -103,8 +147,13 @@
 						bind:value={password}
 						placeholder="••••••••"
 						class="pl-10"
+						aria-invalid={!!passwordError}
+						aria-describedby={passwordError ? 'password-error' : undefined}
 					/>
 				</div>
+				{#if passwordError}
+					<p id="password-error" class="mt-1 text-xs" style="color: var(--color-danger)">{passwordError}</p>
+				{/if}
 				<div class="mt-1.5 text-right">
 					<a
 						href="/forgot-password"

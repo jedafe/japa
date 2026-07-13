@@ -25,12 +25,12 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
 	const [feedResult, cardStyleResult] = await Promise.all([
-		apiFetch<{ data: FeedItem[] }>('/feed?limit=20', { headers }),
-		apiFetch<{ data: { card_style: string } }>('/feed/card-style', { headers })
+		apiFetch<FeedItem[]>('/feed?page_size=20', { headers }),
+		apiFetch<{ card_style: string }>('/feed/card-style', { headers })
 	]);
 
 	return {
-		feed: feedResult.ok && feedResult.data ? feedResult.data.data : [],
-		cardStyle: cardStyleResult.ok && cardStyleResult.data ? cardStyleResult.data.data.card_style : 'reddit'
+		feed: feedResult.ok && feedResult.data ? feedResult.data : [],
+		cardStyle: cardStyleResult.ok && cardStyleResult.data ? cardStyleResult.data.card_style : 'reddit'
 	};
 };

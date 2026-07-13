@@ -438,7 +438,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	docsHandlers := docs.NewHandlers(docsService, cfg.SiteURL, cfg.SiteName)
 
 	// Admin Settings subsystem.
-	adminHandlers := admin.NewHandlers(database)
+	adminHandlers := admin.NewHandlers(database, gen.New(database.Writer))
 	adminHandlers.SetRBAC(rbacResolver)
 	adminHandlers.SetValkey(vkClient.Redis())
 
@@ -1284,7 +1284,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons/{id}/matrix", comparisonHandlers.GetComparisonMatrix)
 
 				// Public comparison list (P5.6 — Task 2)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons", comparisonHandlers.ListComparisonTypes)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons", comparisonHandlers.ListComparisons)
 				// Comparison update/delete at top level (P5.6 — Task 2, catalog paths)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.edit_own")).
 					Patch("/comparisons/{id}", comparisonHandlers.UpdateComparisonItem)
@@ -2284,7 +2284,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderator.assign")).
 				Post("/admin/spaces/{id}/moderators", spaceHandlers.AdminAssignModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderator.assign")).
-				Delete("/admin/spaces/{id}/moderators/{userId}", spaceHandlers.AdminRemoveModerator)
+				Delete("/admin/spaces/{id}/moderators/{moderator_id}", spaceHandlers.AdminRemoveModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/analytics", spaceHandlers.GetSpaceAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)

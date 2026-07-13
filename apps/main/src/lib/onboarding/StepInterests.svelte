@@ -22,8 +22,8 @@
 	onMount(async () => {
 		try {
 			const tags = await api.getTrendingTags(20);
-			if (tags.items && tags.items.length > 0) {
-				interests = tags.items.map((tag) => ({ id: tag.slug, label: tag.name }));
+			if (Array.isArray(tags) && tags.length > 0) {
+				interests = tags.map((tag) => ({ id: tag.slug, label: tag.name }));
 			} else {
 				error = t('onboarding.no_recommendations');
 			}

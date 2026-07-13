@@ -70,7 +70,7 @@
 			const result = await api.convertWallet({ points: balance.points });
 			balance = result;
 			successMessage = 'Points converted to credits successfully!';
-			const ledgerResult = await api.getWalletLedger({ limit: 30 });
+			const ledgerResult = await api.getWalletLedger({ page_size: 30 });
 			ledger = ledgerResult;
 		} catch {
 			errorMessage = 'Failed to convert points. Please try again.';
@@ -129,7 +129,7 @@
 				try {
 					const [balanceRes, ledgerRes] = await Promise.allSettled([
 						api.getWalletBalance(),
-						api.getWalletLedger({ limit: 30 })
+						api.getWalletLedger({ page_size: 30 })
 					]);
 					if (balanceRes.status === 'fulfilled') balance = balanceRes.value;
 					if (ledgerRes.status === 'fulfilled') ledger = ledgerRes.value;

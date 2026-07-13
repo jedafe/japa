@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { BookOpen, Layers } from 'lucide-svelte';
+	import { BookOpen, Layers, Plus } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { formatTimestamp } from '$lib/utils/timezone';
 
@@ -20,20 +20,30 @@
 </svelte:head>
 
 <main class="mx-auto max-w-4xl px-4 py-8">
-	<header class="mb-8">
+	<header class="mb-8 flex items-start justify-between">
+		<div>
+			<a
+				href="/blog"
+				class="mb-4 inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
+				style="color: var(--color-muted)"
+			>
+				&larr; Back to blog
+			</a>
+			<h1 class="text-3xl font-bold tracking-tight sm:text-4xl" style="color: var(--color-foreground)">
+				Blog Series
+			</h1>
+			<p class="mt-2 text-base" style="color: var(--color-muted)">
+				Dive deeper with multi-part guides and stories.
+			</p>
+		</div>
 		<a
-			href="/blog"
-			class="mb-4 inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
-			style="color: var(--color-muted)"
+			href="/blog/series/new"
+			class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+			style="background: var(--color-primary)"
 		>
-			&larr; Back to blog
+			<Plus class="h-4 w-4" />
+			New Series
 		</a>
-		<h1 class="text-3xl font-bold tracking-tight sm:text-4xl" style="color: var(--color-foreground)">
-			Blog Series
-		</h1>
-		<p class="mt-2 text-base" style="color: var(--color-muted)">
-			Dive deeper with multi-part guides and stories.
-		</p>
 	</header>
 
 	{#if series.length === 0}

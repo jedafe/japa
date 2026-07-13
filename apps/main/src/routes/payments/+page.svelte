@@ -42,7 +42,7 @@
 		loading = true;
 		try {
 			const [paymentsResult, subResult] = await Promise.allSettled([
-				api.listPayments({ limit: 50 }),
+				api.listPayments({ page_size: 50 }),
 				api.getActiveSubscription()
 			]);
 

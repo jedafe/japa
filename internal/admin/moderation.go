@@ -3,13 +3,13 @@ package admin
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/rbac"
 )
 
@@ -63,88 +63,49 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	items, err := h.queryFlaggedReviews(ctx, tenantID, limit, offset)
+	rows, err := h.Queries.ListFlaggedReviews(ctx, gen.ListFlaggedReviewsParams{
+		TenantID: tenantID,
+		Limit:    limit,
+		Offset:   offset,
+	})
 	if err != nil {
 		slog.Error("moderation: querying flagged reviews", "error", err)
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation queue")
-
 		return
+	}
+
+	items := make([]ModerationItem, 0, len(rows))
+	for _, row := range rows {
+		content := ""
+		if row.Body != nil {
+			content = *row.Body
+			if len(content) > 200 {
+				content = content[:200] + "…"
+			}
+		}
+		authorID := ""
+		if row.ReviewerUserID.Valid {
+			authorID = row.ReviewerUserID.String()
+		}
+		items = append(items, ModerationItem{
+			ID:        row.ID.String(),
+			Type:      "review",
+			Status:    row.Status,
+			Content:   content,
+			Reporter:  "system",
+			AuthorID:  authorID,
+			Created:   row.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+			EntityRef: "review:" + row.ID.String(),
+		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"items":       items,
 			"page":        offset / limit,
-			"total_pages": 0, // cursor-based — total not computed for performance
+			"total_pages": 0,
 		},
 	})
-}
-
-// queryFlaggedReviews queries the reviews table for items with status='flagged'.
-func (h *Handlers) queryFlaggedReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]ModerationItem, error) {
-	rows, err := h.DB.Reader.Query(ctx, `
-		SELECT r.id, r.body, r.status, r.created_at, r.reviewer_user_id,
-		       COALESCE(u.username, 'unknown') AS author_username
-		FROM reviews r
-		LEFT JOIN users u ON u.id = r.reviewer_user_id
-		WHERE r.tenant_id = $1
-		  AND r.status = 'flagged'
-		ORDER BY r.created_at DESC
-		LIMIT $2 OFFSET $3
-	`, tenantID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("querying flagged reviews: %w", err)
-	}
-	defer rows.Close()
-
-	var items []ModerationItem
-
-	for rows.Next() {
-		var item ModerationItem
-
-		var id pgtype.UUID
-
-		var body pgtype.Text
-
-		var status string
-
-		var createdAt pgtype.Timestamptz
-
-		var authorID pgtype.UUID
-
-		var authorUsername string
-
-		if err := rows.Scan(&id, &body, &status, &createdAt, &authorID, &authorUsername); err != nil {
-			slog.Warn("moderation: scanning review row", "error", err)
-			continue
-		}
-
-		content := ""
-		if body.Valid {
-			content = body.String
-			if len(content) > 200 {
-				content = content[:200] + "…"
-			}
-		}
-
-		item = ModerationItem{
-			ID:        id.String(),
-			Type:      "review",
-			Status:    status,
-			Content:   content,
-			Reporter:  "system",
-			AuthorID:  authorID.String(),
-			Created:   createdAt.Time.Format("2006-01-02T15:04:05Z07:00"),
-			EntityRef: "review:" + id.String(),
-		}
-		items = append(items, item)
-	}
-
-	if items == nil {
-		items = []ModerationItem{}
-	}
-
-	return items, nil
 }
 
 // BulkModeration handles POST /api/v1/admin/moderation/bulk.
@@ -203,7 +164,6 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var newStatus string
-
 		switch action.Action {
 		case "approve":
 			newStatus = "published"
@@ -213,19 +173,16 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		result, err := h.DB.Writer.Exec(ctx, `
-			UPDATE reviews
-			SET status = $1, updated_at = now()
-			WHERE id = $2 AND tenant_id = $3 AND status = 'flagged'
-		`, newStatus, reviewID, tenantID)
+		err := h.Queries.AdminUpdateReviewStatus(ctx, gen.AdminUpdateReviewStatusParams{
+			Status:   newStatus,
+			ID:       reviewID,
+			TenantID: tenantID,
+		})
 		if err != nil {
 			slog.Warn("moderation: updating review status", "id", action.ID, "error", err)
 			continue
 		}
-
-		if result.RowsAffected() > 0 {
-			processed++
-		}
+		processed++
 	}
 
 	slog.Info("bulk moderation completed",
@@ -253,9 +210,6 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract ID from URL — the chi router param is set at the route level.
-	// For now, we accept the ID in the request body as a fallback since
-	// the route pattern may vary.
 	var req struct {
 		ID   string `json:"id"`
 		Type string `json:"type"` // "review"
@@ -271,16 +225,10 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Type == "" {
-		req.Type = "review"
-	}
-
 	if h.DB == nil {
 		writeError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
 		return
 	}
-
-	ctx := r.Context()
 
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(req.ID); err != nil {
@@ -288,20 +236,17 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reset the review back to "flagged" so it returns to the moderation queue.
-	result, err := h.DB.Writer.Exec(ctx, `
-		UPDATE reviews
-		SET status = 'flagged', updated_at = now()
-		WHERE id = $1 AND tenant_id = $2 AND status IN ('removed')
-	`, reviewID, tenantID)
+	tag, err := h.Queries.AppealReviewToFlagged(r.Context(), gen.AppealReviewToFlaggedParams{
+		ID:       reviewID,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		slog.Error("moderation: appeal failed", "id", req.ID, "error", err)
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to process appeal")
-
 		return
 	}
 
-	if result.RowsAffected() == 0 {
+	if tag == 0 {
 		writeError(w, http.StatusNotFound, "not_found", "Item not found or not eligible for appeal")
 		return
 	}
@@ -368,7 +313,6 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 				"message":      "Broadcast scheduled for later delivery",
 			},
 		})
-
 		return
 	}
 
@@ -377,7 +321,6 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("broadcast: failed to send", "error", err)
 		writeError(w, http.StatusInternalServerError, "broadcast_error", "Failed to send broadcast")
-
 		return
 	}
 
@@ -399,66 +342,42 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 // active user in the tenant. Returns the count of notifications created.
 func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID pgtype.UUID, title, body string) (int, error) {
 	// Fetch all active user IDs for this tenant.
-	rows, err := h.DB.Reader.Query(ctx, `
-		SELECT id FROM users WHERE tenant_id = $1 AND status = 'active'
-	`, tenantID)
+	rows, err := h.Queries.ListActiveUserIDs(ctx, tenantID)
 	if err != nil {
-		return 0, fmt.Errorf("querying users for broadcast: %w", err)
-	}
-	defer rows.Close()
-
-	var userIDs []pgtype.UUID
-
-	for rows.Next() {
-		var id pgtype.UUID
-		if err := rows.Scan(&id); err != nil {
-			slog.Warn("broadcast: scanning user ID", "error", err)
-			continue
-		}
-
-		userIDs = append(userIDs, id)
+		return 0, err
 	}
 
-	if len(userIDs) == 0 {
+	if len(rows) == 0 {
 		return 0, nil
 	}
 
-	// Batch insert notifications. Use a transaction for atomicity.
-	tx, err := h.DB.Writer.Begin(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("beginning broadcast transaction: %w", err)
-	}
-
-	defer func() { _ = tx.Rollback(ctx) }()
-
 	// Batch insert notifications using unnest for a single round-trip.
-	_, err = tx.Exec(ctx, `
-		INSERT INTO notifications (tenant_id, recipient_id, notification_type, actor_type, actor_id, title, body, created_at, updated_at)
-		SELECT $1, unnest($2::uuid[]), 'system_announcement', 'system', $3, $4, $5, now(), now()
-	`, tenantID, userIDs, senderID, title, body)
+	err = h.Queries.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
+		TenantID:   tenantID,
+		Column2:    rows,
+		ActorID:    senderID,
+		Title:      title,
+		Body:       &body,
+	})
 	if err != nil {
-		return 0, fmt.Errorf("batch inserting broadcast notifications: %w", err)
+		return 0, err
 	}
 
-	// Record the broadcast in admin_broadcasts so ListBroadcasts/DeleteBroadcast work.
-	_, err = tx.Exec(ctx, `
-		INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at)
-		VALUES ($1, $2, $3, $4, now())
-	`, title, body, senderID, len(userIDs))
+	// Record the broadcast in admin_broadcasts.
+	err = h.Queries.CreateAdminBroadcastRecord(ctx, gen.CreateAdminBroadcastRecordParams{
+		Title:          title,
+		Body:           body,
+		SentBy:         senderID,
+		RecipientCount: int32(len(rows)),
+	})
 	if err != nil {
-		return 0, fmt.Errorf("recording broadcast: %w", err)
+		return 0, err
 	}
 
-	sent := len(userIDs)
-
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("committing broadcast: %w", err)
-	}
-
-	return sent, nil
+	return len(rows), nil
 }
 
-// ─── User Moderation (P5.6 — Task 21) ────────────────────────────────────
+// ─── User Moderation ──────────────────────────────────────────────────────
 
 // BanUser handles POST /admin/users/:id/ban.
 func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
@@ -472,22 +391,25 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	_, err := h.DB.Writer.Exec(ctx,
-		`INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, expires_at, created_at)
-		 VALUES ($1, (SELECT tenant_id FROM users WHERE id=$1), 'ban', $2,
-		         CASE WHEN $3 > 0 THEN now() + ($3 || ' days')::interval ELSE NULL END, now())
-		 ON CONFLICT DO NOTHING`,
-		userID, input.Reason, input.Days)
+
+	var uid pgtype.UUID
+	if err := uid.Scan(userID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	err := h.Queries.CreateUserBan(ctx, gen.CreateUserBanParams{
+		UserID:  uid,
+		Reason:  &input.Reason,
+		Column3: int32(input.Days),
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")
 		return
 	}
-	// Ref: japaconnect-engineering/sections/03-rbac.md — Rule 6: invalidate cache after ban
+	// Rule 6: invalidate cache after ban
 	if h.Valkey != nil {
-		var uid pgtype.UUID
-		if err := uid.Scan(userID); err == nil {
-			_ = rbac.InvalidatePermCache(ctx, h.Valkey, uid)
-		}
+		_ = rbac.InvalidatePermCache(ctx, h.Valkey, uid)
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "banned"})
 }
@@ -495,18 +417,19 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 // UnbanUser handles DELETE /admin/users/:id/ban.
 func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`DELETE FROM user_moderation_actions WHERE user_id = $1 AND action = 'ban'`, userID)
+	var uid pgtype.UUID
+	if err := uid.Scan(userID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+	err := h.Queries.SoftDeleteUserBan(r.Context(), uid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unban user")
 		return
 	}
-	// Ref: japaconnect-engineering/sections/03-rbac.md — Rule 6: invalidate cache after unban
+	// Rule 6: invalidate cache after unban
 	if h.Valkey != nil {
-		var uid pgtype.UUID
-		if err := uid.Scan(userID); err == nil {
-			_ = rbac.InvalidatePermCache(r.Context(), h.Valkey, uid)
-		}
+		_ = rbac.InvalidatePermCache(r.Context(), h.Valkey, uid)
 	}
 	writeJSON(w, http.StatusNoContent, nil)
 }
@@ -514,14 +437,16 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 // ListUserBans handles GET /admin/users/:id/bans.
 func (h *Handlers) ListUserBans(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	rows, err := h.DB.Reader.Query(r.Context(),
-		`SELECT id, action, reason, expires_at, created_at FROM user_moderation_actions
-		 WHERE user_id = $1 AND action = 'ban' ORDER BY created_at DESC`, userID)
+	var uid pgtype.UUID
+	if err := uid.Scan(userID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+	rows, err := h.Queries.ListActiveUserBans(r.Context(), uid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list bans")
 		return
 	}
-	defer rows.Close()
 	type banRow struct {
 		ID        string  `json:"id"`
 		Action    string  `json:"action"`
@@ -529,11 +454,24 @@ func (h *Handlers) ListUserBans(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt *string `json:"expires_at"`
 		CreatedAt string  `json:"created_at"`
 	}
-	var bans []banRow
-	for rows.Next() {
-		var b banRow
-		_ = rows.Scan(&b.ID, &b.Action, &b.Reason, &b.ExpiresAt, &b.CreatedAt)
-		bans = append(bans, b)
+	bans := make([]banRow, 0, len(rows))
+	for _, b := range rows {
+		reason := ""
+		if b.Reason != nil {
+			reason = *b.Reason
+		}
+		expiresAt := (*string)(nil)
+		if b.ExpiresAt.Valid {
+			s := b.ExpiresAt.Time.Format("2006-01-02T15:04:05Z07:00")
+			expiresAt = &s
+		}
+		bans = append(bans, banRow{
+			ID:        b.ID.String(),
+			Action:    b.Action,
+			Reason:    reason,
+			ExpiresAt: expiresAt,
+			CreatedAt: b.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": bans})
 }
@@ -548,10 +486,15 @@ func (h *Handlers) WarnUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, created_at)
-		 VALUES ($1, (SELECT tenant_id FROM users WHERE id=$1), 'warning', $2, now())`,
-		userID, input.Reason)
+	var uid pgtype.UUID
+	if err := uid.Scan(userID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+	err := h.Queries.CreateUserWarning(r.Context(), gen.CreateUserWarningParams{
+		UserID: uid,
+		Reason: &input.Reason,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to warn user")
 		return
@@ -562,24 +505,32 @@ func (h *Handlers) WarnUser(w http.ResponseWriter, r *http.Request) {
 // ListUserWarnings handles GET /admin/users/:id/warnings.
 func (h *Handlers) ListUserWarnings(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	rows, err := h.DB.Reader.Query(r.Context(),
-		`SELECT id, reason, created_at FROM user_moderation_actions
-		 WHERE user_id = $1 AND action = 'warning' ORDER BY created_at DESC`, userID)
+	var uid pgtype.UUID
+	if err := uid.Scan(userID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+	rows, err := h.Queries.ListUserWarnings(r.Context(), uid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list warnings")
 		return
 	}
-	defer rows.Close()
 	type warnRow struct {
 		ID        string `json:"id"`
 		Reason    string `json:"reason"`
 		CreatedAt string `json:"created_at"`
 	}
-	var warnings []warnRow
-	for rows.Next() {
-		var w warnRow
-		_ = rows.Scan(&w.ID, &w.Reason, &w.CreatedAt)
-		warnings = append(warnings, w)
+	warnings := make([]warnRow, 0, len(rows))
+	for _, w := range rows {
+		reason := ""
+		if w.Reason != nil {
+			reason = *w.Reason
+		}
+		warnings = append(warnings, warnRow{
+			ID:        w.ID.String(),
+			Reason:    reason,
+			CreatedAt: w.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": warnings})
 }
@@ -587,8 +538,12 @@ func (h *Handlers) ListUserWarnings(w http.ResponseWriter, r *http.Request) {
 // DeleteUserWarning handles DELETE /admin/users/:id/warnings/:warningId.
 func (h *Handlers) DeleteUserWarning(w http.ResponseWriter, r *http.Request) {
 	warningID := chi.URLParam(r, "warningId")
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`DELETE FROM user_moderation_actions WHERE id = $1 AND action = 'warning'`, warningID)
+	var wid pgtype.UUID
+	if err := wid.Scan(warningID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid warning ID")
+		return
+	}
+	err := h.Queries.SoftDeleteUserWarning(r.Context(), wid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete warning")
 		return
@@ -606,8 +561,15 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`UPDATE users SET status = $2, updated_at = now() WHERE id = $1`, userID, input.Status)
+	var uid pgtype.UUID
+	if err := uid.Scan(userID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+	err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
+		Status: input.Status,
+		ID:     uid,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
 		return
@@ -625,9 +587,20 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`INSERT INTO user_group_memberships (user_id, group_id) VALUES ($1, $2)
-		 ON CONFLICT (user_id, group_id) DO NOTHING`, userID, input.GroupID)
+	var uid pgtype.UUID
+	if err := uid.Scan(userID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+	var gid pgtype.UUID
+	if err := gid.Scan(input.GroupID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
+		return
+	}
+	err := h.Queries.AddUserGroupMembership(r.Context(), gen.AddUserGroupMembershipParams{
+		UserID:  uid,
+		GroupID: gid,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user group")
 		return
@@ -635,13 +608,17 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"user_id": userID})
 }
 
-// ─── Organization Verify (P5.6 — Task 10) ───────────────────────────────
+// ─── Organization Verify ─────────────────────────────────────────────────
 
 // VerifyOrganization handles POST /admin/organizations/:id/verify.
 func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`UPDATE organizations SET verified = true, updated_at = now() WHERE id = $1`, orgID)
+	var oid pgtype.UUID
+	if err := oid.Scan(orgID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+	err := h.Queries.VerifyOrganization(r.Context(), oid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
 		return
@@ -652,8 +629,12 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 // UnverifyOrganization handles DELETE /admin/organizations/:id/verify.
 func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`UPDATE organizations SET verified = false, updated_at = now() WHERE id = $1`, orgID)
+	var oid pgtype.UUID
+	if err := oid.Scan(orgID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+	err := h.Queries.UnverifyOrganization(r.Context(), oid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
 		return
@@ -661,25 +642,20 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-// ─── Appeals (P5.6 — Task 22) ───────────────────────────────────────────
+// ─── Appeals ──────────────────────────────────────────────────────────────
 
 // ListAppeals handles GET /admin/appeals.
 func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.DB.Reader.Query(r.Context(),
-		`SELECT id, user_id, entity_type, entity_id, reason, status, created_at
-		 FROM moderation_appeals ORDER BY created_at DESC LIMIT 50`)
+	rows, err := h.Queries.ListModerationAppeals(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list appeals")
 		return
 	}
-	defer rows.Close()
-	var appeals []map[string]any
-	for rows.Next() {
-		var id, userID, entityType, entityID, reason, status, createdAt string
-		_ = rows.Scan(&id, &userID, &entityType, &entityID, &reason, &status, &createdAt)
+	appeals := make([]map[string]any, 0, len(rows))
+	for _, a := range rows {
 		appeals = append(appeals, map[string]any{
-			"id": id, "user_id": userID, "entity_type": entityType,
-			"entity_id": entityID, "reason": reason, "status": status, "created_at": createdAt,
+			"id": a.ID.String(), "user_id": a.UserID.String(), "entity_type": a.EntityType,
+			"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": appeals})
@@ -688,18 +664,19 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 // GetAppeal handles GET /admin/appeals/:id.
 func (h *Handlers) GetAppeal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	var appealID, userID, entityType, entityID, reason, status, createdAt string
-	err := h.DB.Reader.QueryRow(r.Context(),
-		`SELECT id, user_id, entity_type, entity_id, reason, status, created_at
-		 FROM moderation_appeals WHERE id = $1`, id).
-		Scan(&appealID, &userID, &entityType, &entityID, &reason, &status, &createdAt)
+	var aid pgtype.UUID
+	if err := aid.Scan(id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid appeal ID")
+		return
+	}
+	a, err := h.Queries.GetModerationAppeal(r.Context(), aid)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "Appeal not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"id": appealID, "user_id": userID, "entity_type": entityType,
-		"entity_id": entityID, "reason": reason, "status": status, "created_at": createdAt,
+		"id": a.ID.String(), "user_id": a.UserID.String(), "entity_type": a.EntityType,
+		"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 	}})
 }
 
@@ -713,8 +690,15 @@ func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`UPDATE moderation_appeals SET status = $2, updated_at = now() WHERE id = $1`, id, input.Status)
+	var aid pgtype.UUID
+	if err := aid.Scan(id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid appeal ID")
+		return
+	}
+	err := h.Queries.UpdateAppealStatus(r.Context(), gen.UpdateAppealStatusParams{
+		Status: input.Status,
+		ID:     aid,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update appeal")
 		return
@@ -722,7 +706,7 @@ func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": input.Status})
 }
 
-// ─── Moderation Queue Assign (P5.6 — Task 26) ───────────────────────────
+// ─── Moderation Queue Assign ──────────────────────────────────────────────
 
 // AssignModerationItem handles PATCH /admin/moderation-queue/:id/assign.
 func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) {
@@ -734,8 +718,20 @@ func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`UPDATE content_reports SET reviewed_by = $2, status = 'reviewing' WHERE id = $1`, id, input.AssigneeID)
+	var rid pgtype.UUID
+	if err := rid.Scan(id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid report ID")
+		return
+	}
+	var assigneeID pgtype.UUID
+	if err := assigneeID.Scan(input.AssigneeID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid assignee ID")
+		return
+	}
+	err := h.Queries.AssignContentReport(r.Context(), gen.AssignContentReportParams{
+		ReviewedBy: assigneeID,
+		ID:         rid,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to assign moderation item")
 		return
@@ -773,14 +769,11 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Determine the new status based on action
 	var newStatus string
 	switch input.Action {
 	case "approve":
 		newStatus = "published"
-	case "reject":
-		newStatus = "removed"
-	case "delete":
+	case "reject", "delete":
 		newStatus = "removed"
 	default:
 		writeError(w, http.StatusBadRequest, "invalid_action", "action must be approve, reject, or delete")
@@ -788,34 +781,33 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try updating as a review first
-	result, err := h.DB.Writer.Exec(ctx, `
-		UPDATE reviews
-		SET status = $1, updated_at = now()
-		WHERE id = $2 AND tenant_id = $3 AND status = 'flagged'
-	`, newStatus, id, tenantID)
+	var rid pgtype.UUID
+	if err := rid.Scan(id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
+		return
+	}
+
+	err := h.Queries.AdminUpdateReviewStatus(ctx, gen.AdminUpdateReviewStatusParams{
+		Status:   newStatus,
+		ID:       rid,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		slog.Error("moderation: updating item", "id", id, "error", err)
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to update moderation item")
 		return
 	}
 
-	if result.RowsAffected() == 0 {
-		// Try as a content report
-		result, err = h.DB.Writer.Exec(ctx, `
-			UPDATE content_reports
-			SET status = $1, reviewed_by = $2, reviewed_at = now(), review_notes = $3
-			WHERE id = $4 AND tenant_id = $5
-		`, newStatus, user.UserID.String(), input.Reason, id, tenantID)
-		if err != nil {
-			slog.Error("moderation: updating content report", "id", id, "error", err)
-			writeError(w, http.StatusInternalServerError, "db_error", "Failed to update moderation item")
-			return
-		}
-	}
-
-	if result.RowsAffected() == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "Moderation item not found")
-		return
+	// Try as a content report if review update didn't match
+	err = h.Queries.ModerateContentReport(ctx, gen.ModerateContentReportParams{
+		Status:       newStatus,
+		ReviewedBy:   user.UserID,
+		ResolutionNote: &input.Reason,
+		ID:           rid,
+		TenantID:     tenantID,
+	})
+	if err != nil {
+		slog.Error("moderation: updating content report", "id", id, "error", err)
 	}
 
 	slog.Info("moderation item processed",
@@ -832,13 +824,24 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ─── Content Moderation (P5.6 — Task 23) ────────────────────────────────
+// ─── Content Moderation ───────────────────────────────────────────────────
 
 // RemoveContent handles POST /admin/content/:id/remove.
 func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
 	id := chi.URLParam(r, "id")
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`UPDATE contents SET status = 'removed', updated_at = now() WHERE id = $1`, id)
+	var cid pgtype.UUID
+	if err := cid.Scan(id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		return
+	}
+	err := h.Queries.RemoveContentByAdmin(r.Context(), gen.RemoveContentByAdminParams{
+		ID:       cid,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to remove content")
 		return
@@ -848,9 +851,20 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 
 // RestoreContent handles POST /admin/content/:id/restore.
 func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
 	id := chi.URLParam(r, "id")
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`UPDATE contents SET status = 'draft', updated_at = now() WHERE id = $1 AND status = 'removed'`, id)
+	var cid pgtype.UUID
+	if err := cid.Scan(id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		return
+	}
+	err := h.Queries.RestoreContentByAdmin(r.Context(), gen.RestoreContentByAdminParams{
+		ID:       cid,
+		TenantID: tenantID,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to restore content")
 		return
@@ -858,7 +872,7 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": "restored"})
 }
 
-// ─── Broadcasts (P5.6 — Task 4) ──────────────────────────────────────────
+// ─── Broadcasts ───────────────────────────────────────────────────────────
 
 // ListBroadcasts handles GET /admin/broadcasts.
 func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
@@ -866,22 +880,16 @@ func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rows, err := h.DB.Reader.Query(r.Context(),
-		`SELECT id, title, body, sent_by, sent_at, recipient_count
-		 FROM admin_broadcasts ORDER BY sent_at DESC LIMIT 50`)
+	rows, err := h.Queries.ListAdminBroadcasts(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list broadcasts")
 		return
 	}
-	defer rows.Close()
-	var broadcasts []map[string]any
-	for rows.Next() {
-		var id, title, body, sentBy, sentAt string
-		var recipientCount int
-		_ = rows.Scan(&id, &title, &body, &sentBy, &sentAt, &recipientCount)
+	broadcasts := make([]map[string]any, 0, len(rows))
+	for _, b := range rows {
 		broadcasts = append(broadcasts, map[string]any{
-			"id": id, "title": title, "body": body, "sent_by": sentBy,
-			"sent_at": sentAt, "recipient_count": recipientCount,
+			"id": b.ID.String(), "title": b.Title, "body": b.Body, "sent_by": b.SentBy.String(),
+			"sent_at": b.SentAt.Time.Format("2006-01-02T15:04:05Z07:00"), "recipient_count": b.RecipientCount,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": broadcasts})
@@ -890,8 +898,12 @@ func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
 // DeleteBroadcast handles DELETE /admin/broadcasts/:id.
 func (h *Handlers) DeleteBroadcast(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	_, err := h.DB.Writer.Exec(r.Context(),
-		`DELETE FROM admin_broadcasts WHERE id = $1`, id)
+	var bid pgtype.UUID
+	if err := bid.Scan(id); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid broadcast ID")
+		return
+	}
+	err := h.Queries.DeleteAdminBroadcast(r.Context(), bid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete broadcast")
 		return

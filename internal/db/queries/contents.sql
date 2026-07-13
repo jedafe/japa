@@ -27,7 +27,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: GetContentBySlug :one
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
@@ -36,7 +36,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
-WHERE slug = @slug AND tenant_id = @tenant_id;
+WHERE slug = @slug AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: ListContentsByTenant :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
@@ -46,6 +46,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
   AND auto_hidden = false
   AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY created_at DESC, id DESC
@@ -59,6 +60,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = @tenant_id AND content_type = @content_type
+  AND deleted_at IS NULL
   AND auto_hidden = false
   AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY created_at DESC, id DESC
@@ -72,6 +74,7 @@ SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body
        created_at, updated_at
 FROM contents
 WHERE tenant_id = @tenant_id AND space_id = @space_id
+  AND deleted_at IS NULL
   AND auto_hidden = false
   AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY created_at DESC, id DESC
@@ -85,7 +88,7 @@ SET title = @title, slug = @slug, body = @body, body_html = @body_html,
     status = @status, visibility = @visibility, read_time_minutes = @read_time_minutes,
     publish_at = sqlc.narg(publish_at), published_at = sqlc.narg(published_at),
     is_locked = @is_locked, is_pinned = @is_pinned, updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
@@ -96,7 +99,7 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
 UPDATE contents
 SET status = @status, updated_at = now(),
     published_at = CASE WHEN @status = 'published' AND published_at IS NULL THEN now() ELSE published_at END
-WHERE id = @id AND tenant_id = @tenant_id
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
@@ -110,7 +113,7 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
 -- 'published' when the time arrives.
 UPDATE contents
 SET status = 'scheduled', publish_at = @publish_at, updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
@@ -118,10 +121,10 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           created_at, updated_at;
 
 -- name: IncrementContentView :exec
-UPDATE contents SET view_count = view_count + 1 WHERE id = @id AND tenant_id = @tenant_id;
+UPDATE contents SET view_count = view_count + 1 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: DeleteContent :exec
-DELETE FROM contents WHERE id = @id AND tenant_id = @tenant_id;
+UPDATE contents SET deleted_at = now(), updated_at = now() WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- =====================
 -- Content Revisions
@@ -251,6 +254,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
 WHERE ct.tag_id = @tag_id AND c.tenant_id = @tenant_id AND c.status = 'published'
+  AND c.deleted_at IS NULL
   AND c.auto_hidden = false
   AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY c.created_at DESC, c.id DESC

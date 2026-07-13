@@ -6,12 +6,22 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	const headers: Record<string, string> = {};
 	if (token) headers.Authorization = `Bearer ${token}`;
 
-	try {
-		const res = await fetch(`${API_BASE}/control/security?page=0`, { headers });
-		if (!res.ok) return { initial: null };
-		const body = await res.json();
-		return { initial: body.data ?? body };
-	} catch {
-		return { initial: null };
+	const [securityRes, ipBlocksRes] = await Promise.all([
+		fetch(`${API_BASE}/control/security?page=0`, { headers }).catch(() => null),
+		fetch(`${API_BASE}/control/security/ip-blocks`, { headers }).catch(() => null),
+	]);
+
+	let initial = null;
+	if (securityRes?.ok) {
+		const body = await securityRes.json();
+		initial = body.data ?? body;
 	}
+
+	let ipBlocks: unknown[] = [];
+	if (ipBlocksRes?.ok) {
+		const body = await ipBlocksRes.json();
+		ipBlocks = body.data ?? [];
+	}
+
+	return { initial, ipBlocks };
 };

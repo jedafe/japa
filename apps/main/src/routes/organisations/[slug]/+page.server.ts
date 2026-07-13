@@ -35,13 +35,13 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 
 	const org = orgResult.data;
 
-	const membersResult = await apiFetch<{ members: OrganizationMember[] }>(
+	const membersResult = await apiFetch<OrganizationMember[]>(
 		`/organizations/${org.id}/members`,
 		{ headers: auth }
 	);
 
 	return {
 		org,
-		members: membersResult.ok && membersResult.data ? membersResult.data.members : []
+		members: membersResult.ok && Array.isArray(membersResult.data) ? membersResult.data : []
 	};
 };

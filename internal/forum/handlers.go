@@ -238,9 +238,6 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 	authorIDStr := r.URL.Query().Get("author_id")
 	tagIDStr := r.URL.Query().Get("tag_id")
 
-	// Resolve optional user for "my threads" default.
-	user := auth.FromContext(r.Context())
-
 	switch {
 	case spaceIDStr != "":
 		var spaceID pgtype.UUID
@@ -288,25 +285,16 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	default:
-		// When authenticated, default to the current user's threads.
-		// When unauthenticated, list all public threads for the tenant.
-		if user != nil {
-			threads, err := h.Service.ListThreadsByAuthor(r.Context(), tenantID, user.UserID, cursor, limit)
-			if err != nil {
-				handleServiceError(w, err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, map[string]any{"data": threads})
-		} else {
-			threads, err := h.Service.ListThreadsByTenant(r.Context(), tenantID, cursor, limit)
-			if err != nil {
-				handleServiceError(w, err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		// List all public threads for the tenant regardless of auth — the
+		// forum index shows everyone's threads. Callers wanting their own
+		// threads pass author_id explicitly.
+		threads, err := h.Service.ListThreadsByTenant(r.Context(), tenantID, cursor, limit)
+		if err != nil {
+			handleServiceError(w, err)
+			return
 		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
 	}
 }
 

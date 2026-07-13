@@ -46,47 +46,41 @@
 
 	// Initialize notification count from server data
 	$effect(() => {
-		localNotificationCount = data.notificationCount ?? 0;
-		realtime.setNotificationCount(data.notificationCount ?? 0);
+		const serverCount = data.notificationCount ?? 0;
+		localNotificationCount = serverCount;
+		realtime.setNotificationCount(serverCount);
 	});
 
-	// Connect WebSocket when user is authenticated
+	// Connect WebSocket and handle all realtime events when user is authenticated
 	$effect(() => {
 		if (!data.user) return;
 
 		wsClient.connect();
 		const cleanupRealtime = initRealtimeListeners();
 
-		return () => {
-			wsClient.disconnect();
-			cleanupRealtime();
-		};
-	});
-
-	// Listen for notification events to update count + show toast
-	$effect(() => {
-		if (!data.user) return;
-		const unsub = wsClient.on('notification', (notification: { title?: string }) => {
-			localNotificationCount++;
-			realtime.setNotificationCount(localNotificationCount);
+		// Listen for notification events to update count + show toast
+		const unsubNotification = wsClient.on('notification', (notification: { title?: string }) => {
+			realtime.incrementNotificationCount();
 			if (notification?.title) {
 				showToast(notification.title, 'info');
 			}
 		});
-		return unsub;
-	});
 
-	// Listen for DM messages to show toast
-	$effect(() => {
-		if (!data.user) return;
-		const unsub = wsClient.on('dm_message', (message: { sender_name?: string; conversation_id?: string }) => {
+		// Listen for DM messages to show toast
+		const unsubDM = wsClient.on('dm_message', (message: { sender_name?: string; conversation_id?: string }) => {
 			const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
 			const isInConversation = currentPath === `/messages/${message?.conversation_id}`;
 			if (!isInConversation && message?.sender_name) {
 				showToast(`New message from ${message.sender_name}`, 'info');
 			}
 		});
-		return unsub;
+
+		return () => {
+			wsClient.disconnect();
+			cleanupRealtime();
+			unsubNotification();
+			unsubDM();
+		};
 	});
 
 	// Sync notification count from realtime store (in case other components modify it)

@@ -29,7 +29,6 @@ data/
 postgres-data/
 valkey-data/
 meili-data/
-minio-data/
 
 # Node (SvelteKit apps, not needed for Go API build)
 node_modules/

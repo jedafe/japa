@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import Modal from '$lib/components/Modal.svelte';
 	import { api, userManagementApi, impersonationApi, setToken } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -62,7 +62,7 @@
 	let impersonating = $state(false);
 	let impersonatingUsername = $state('');
 
-	const userId = $derived($page.params.userId ?? '');
+	const userId = $derived(page.params.userId ?? '');
 
 	async function loadUser() {
 		if (!userId) return;

@@ -38,8 +38,13 @@ export async function apiFetch<T>(
 	}
 
 	try {
-		const data = (await res.json()) as T;
-		return { ok: true, data };
+		// The Go backend wraps every success body in {"data": ...} — unwrap it
+		// here so callers receive the payload directly (same as learn's client).
+		const body = await res.json();
+		if (body && typeof body === 'object' && 'error' in body && body.error) {
+			return { ok: false, error: body.error.message || 'API error' };
+		}
+		return { ok: true, data: (body?.data ?? body) as T };
 	} catch {
 		return { ok: false, error: 'Invalid JSON response' };
 	}
