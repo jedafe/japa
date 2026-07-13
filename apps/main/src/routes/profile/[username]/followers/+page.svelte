@@ -28,6 +28,7 @@
 		try {
 			const user = await api.getUser(username ?? '');
 			userId = user.id;
+			total = user.follower_count ?? 0;
 			await loadFollowers();
 		} catch {
 			error = 'Failed to load user.';
@@ -40,9 +41,11 @@
 		if (!userId) return;
 		loading = true;
 		try {
-			const result = await api.getFollowers(userId, { limit: pageSize, offset: currentPage * pageSize });
-			followers = result.followers;
-			total = result.total;
+			const result = await api.getFollowers(userId, {
+				page_size: pageSize,
+				page_offset: currentPage * pageSize
+			});
+			followers = result ?? [];
 		} catch {
 			error = 'Failed to load followers.';
 		} finally {

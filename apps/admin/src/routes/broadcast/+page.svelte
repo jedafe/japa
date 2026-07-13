@@ -51,9 +51,9 @@
 		loading = true;
 		error = '';
 		try {
-			const result = await api<{ data: Broadcast[] }>('/admin/broadcasts');
+			const result = await api<Broadcast[]>('/admin/broadcasts');
 			if (result.ok) {
-				broadcasts = result.data.data ?? [];
+				broadcasts = result.data ?? [];
 			} else {
 				error = result.error;
 			}

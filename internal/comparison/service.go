@@ -491,3 +491,10 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 
 	return matrix, nil
 }
+
+// ListComparisons returns a page of comparison content rows for the tenant.
+// Comparisons are content rows with content_type='comparison'; they carry no
+// comparison-type linkage in the schema, so no type filter is available here.
+func (s *Service) ListComparisons(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.ListContentsByTypeRow, error) {
+	return s.contentSvc.ListContentsByType(ctx, tenantID, content.TypeComparison, pgtype.Timestamptz{}, limit)
+}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowLeft, Clock, Eye, MessageCircle, Share2, ThumbsUp, ThumbsDown } from 'lucide-svelte';
+	import { ArrowLeft, Clock, Edit, Eye, MessageCircle, Send, Share2, ThumbsUp, ThumbsDown, Trash2 } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { isFeatureEnabled } from '$lib/stores/features.svelte';
 	import { formatTimestampLong } from '$lib/utils/timezone';
@@ -13,6 +13,8 @@
 	let upvoting = $state(false);
 	let downvoting = $state(false);
 	let reactionMessage = $state('');
+	let submitting = $state(false);
+	let deleting = $state(false);
 
 	async function handleReaction(type: 'upvote' | 'downvote') {
 		if (type === 'upvote') upvoting = true;
@@ -27,6 +29,31 @@
 		} finally {
 			upvoting = false;
 			downvoting = false;
+		}
+	}
+
+	async function handleSubmitForReview() {
+		if (submitting) return;
+		submitting = true;
+		try {
+			await api.submitForReview(post.id);
+			reactionMessage = 'Submitted for review!';
+		} catch {
+			reactionMessage = 'Failed to submit for review.';
+		} finally {
+			submitting = false;
+		}
+	}
+
+	async function handleDelete() {
+		if (deleting || !confirm('Delete this post? This cannot be undone.')) return;
+		deleting = true;
+		try {
+			await api.deleteContent(post.id);
+			window.location.href = '/blog';
+		} catch {
+			reactionMessage = 'Failed to delete post.';
+			deleting = false;
 		}
 	}
 
@@ -67,7 +94,36 @@
 				<h1 class="text-3xl font-bold tracking-tight sm:text-4xl" style="color: var(--color-foreground)">
 					{post.title}
 				</h1>
-				<PinButton contentId={post.id} />
+				<div class="flex items-center gap-2">
+					<a
+						href="/blog/{post.slug}/edit"
+						class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:opacity-80"
+						style="border-color: var(--color-border); color: var(--color-foreground)"
+					>
+						<Edit class="h-3.5 w-3.5" />
+						Edit
+					</a>
+					{#if post.status === 'draft'}
+						<button
+							onclick={handleSubmitForReview}
+							disabled={submitting}
+							class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:opacity-80 disabled:opacity-50"
+							style="border-color: var(--color-border); color: var(--color-primary)"
+						>
+							<Send class="h-3.5 w-3.5" />
+							{submitting ? 'Submitting...' : 'Submit for Review'}
+						</button>
+					{/if}
+					<button
+						onclick={handleDelete}
+						disabled={deleting}
+						class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+						style="border-color: var(--color-border); color: #ef4444"
+					>
+						<Trash2 class="h-3.5 w-3.5" />
+					</button>
+					<PinButton contentId={post.id} />
+				</div>
 			</div>
 			<div class="mt-4 flex flex-wrap items-center gap-4 text-sm" style="color: var(--color-muted)">
 				{#if post.published_at}

@@ -87,6 +87,7 @@ export interface Tenant {
 	content_count: number;
 	storage_used: number;
 	created_at: string;
+	updated_at: string;
 }
 
 export interface SecurityScan {
@@ -105,10 +106,14 @@ export interface SecurityFinding {
 }
 
 export interface IpBlock {
-	ip: string;
-	reason: string;
-	blocked_at: string;
+	id: string;
+	tenant_id: string;
+	cidr: string;
+	block_type: string;
+	reason: string | null;
+	blocked_by: string;
 	expires_at: string | null;
+	created_at: string;
 }
 
 export interface ApiKey {

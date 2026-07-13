@@ -35,8 +35,8 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 
 	const [profileResult, feedResult, cardStyleResult] = await Promise.all([
 		apiFetch<UserProfile>(`/users/${params.userId}`, { headers }),
-		apiFetch<{ data: FeedItem[] }>(`/feed/profile/${params.userId}?limit=20`, { headers }),
-		apiFetch<{ data: { card_style: string } }>('/feed/card-style', { headers })
+		apiFetch<FeedItem[]>(`/feed/profile/${params.userId}?page_size=20`, { headers }),
+		apiFetch<{ card_style: string }>('/feed/card-style', { headers })
 	]);
 
 	if (!profileResult.ok || !profileResult.data) {
@@ -45,7 +45,7 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 
 	return {
 		profile: profileResult.data,
-		feed: feedResult.ok && feedResult.data ? feedResult.data.data : [],
-		cardStyle: cardStyleResult.ok && cardStyleResult.data ? cardStyleResult.data.data.card_style : 'reddit'
+		feed: feedResult.ok && feedResult.data ? feedResult.data : [],
+		cardStyle: cardStyleResult.ok && cardStyleResult.data ? cardStyleResult.data.card_style : 'reddit'
 	};
 };

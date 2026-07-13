@@ -36,9 +36,9 @@
 		error = '';
 		try {
 			if (activeTab === 'tools') {
-				const result = await api<{ data: AITool[] }>('/admin/ai/tools');
+				const result = await api<AITool[]>('/admin/ai/tools');
 				if (result.ok) {
-					tools = result.data.data ?? [];
+					tools = result.data ?? [];
 				} else {
 					error = result.error;
 				}

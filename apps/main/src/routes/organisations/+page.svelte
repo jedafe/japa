@@ -13,8 +13,8 @@
 	async function fetchOrganisations(_query?: string) {
 		loading = true;
 		try {
-			const result = await api.listOrganizations(50, 1);
-			organisations = result.organizations;
+			const result = await api.listOrganizations(50, 0);
+			organisations = result ?? [];
 		} catch {
 			organisations = data.organisations;
 		} finally {

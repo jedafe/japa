@@ -13,33 +13,39 @@ interface ProfessionalProfile {
 	created_at: string;
 }
 
-interface ProfileListResponse {
-	profiles: ProfessionalProfile[];
-	total: number;
-	page: number;
-	total_pages: number;
-}
-
 export const load: PageServerLoad = async ({ url, cookies, locals }) => {
 	if (!locals.user) throw redirect(303, '/login');
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-	const params = new URLSearchParams();
 	const search = url.searchParams.get('search');
-	if (search) params.set('search', search);
 
-	const limit = url.searchParams.get('limit') || '20';
+	const params = new URLSearchParams();
+	const pageSize = url.searchParams.get('limit') || '20';
 	const offset = url.searchParams.get('offset') || '0';
-	params.set('limit', limit);
-	params.set('offset', offset);
+	params.set('page_size', pageSize);
+	params.set('page_offset', offset);
 
-	const result = await apiFetch<ProfileListResponse>(`/profiles?${params.toString()}`, { headers });
+	const result = await apiFetch<ProfessionalProfile[]>(`/profiles?${params.toString()}`, {
+		headers
+	});
+
+	let profiles = result.ok && Array.isArray(result.data) ? result.data : [];
+	// The backend has no search param on /profiles; filter here.
+	if (search) {
+		const q = search.toLowerCase();
+		profiles = profiles.filter(
+			(p) =>
+				p.name.toLowerCase().includes(q) ||
+				p.headline?.toLowerCase().includes(q) ||
+				p.skills?.some((s) => s.toLowerCase().includes(q))
+		);
+	}
 
 	return {
-		profiles: result.ok && result.data ? result.data.profiles : [],
-		total: result.ok && result.data ? result.data.total : 0,
-		totalPages: result.ok && result.data ? result.data.total_pages : 0,
+		profiles,
+		total: profiles.length,
+		totalPages: 1,
 		filters: { search }
 	};
 };

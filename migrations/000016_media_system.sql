@@ -11,7 +11,7 @@ CREATE TABLE media (
     width_px          int,
     height_px         int,
     duration_secs     numeric,             -- for video/audio
-    storage_path      text NOT NULL,       -- MinIO object key
+    storage_path      text NOT NULL,       -- SeaweedFS object key
     storage_bucket    text NOT NULL DEFAULT 'media',
     alt_text          text,
     caption           text,

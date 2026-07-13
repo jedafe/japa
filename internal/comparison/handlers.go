@@ -228,6 +228,30 @@ func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
+// ListComparisons handles GET /api/v1/comparisons — a page of comparison
+// content rows for the tenant. A type_slug query parameter is accepted for
+// forward compatibility but not applied: comparison content carries no
+// comparison-type linkage in the schema.
+func (h *Handlers) ListComparisons(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	comparisons, err := h.Service.ListComparisons(r.Context(), tenantID, parsePageSize(r))
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": comparisons})
+}
+
 // GetComparisonType handles GET /api/v1/comparison/types/{slug}.
 func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)

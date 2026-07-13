@@ -83,32 +83,11 @@
 					description: t.description,
 					icon: iconMap[t.key] || Bell
 				}));
-			} else {
-				notificationTypes = [
-					{ key: 'email', label: 'Email notifications', description: 'Receive email updates for important activity', icon: Mail },
-					{ key: 'push', label: 'Push notifications', description: 'Get browser push notifications', icon: Smartphone },
-					{ key: 'follow', label: 'Follow notifications', description: 'When someone follows you', icon: Users },
-					{ key: 'comment', label: 'Comment notifications', description: 'When someone comments on your posts', icon: MessageCircle },
-					{ key: 'mention', label: 'Mention notifications', description: 'When someone mentions you', icon: AtSign },
-					{ key: 'dm', label: 'Direct message notifications', description: 'When you receive a new message', icon: Send },
-					{ key: 'group', label: 'Group notifications', description: 'Updates from your spaces and groups', icon: Users },
-					{ key: 'marketing', label: 'Marketing emails', description: 'Product updates and community highlights', icon: Mail }
-				];
 			}
 		} catch {
-			notificationTypes = [
-				{ key: 'email', label: 'Email notifications', description: 'Receive email updates for important activity', icon: Mail },
-				{ key: 'push', label: 'Push notifications', description: 'Get browser push notifications', icon: Smartphone },
-				{ key: 'follow', label: 'Follow notifications', description: 'When someone follows you', icon: Users },
-				{ key: 'comment', label: 'Comment notifications', description: 'When someone comments on your posts', icon: MessageCircle },
-				{ key: 'mention', label: 'Mention notifications', description: 'When someone mentions you', icon: AtSign },
-				{ key: 'dm', label: 'Direct message notifications', description: 'When you receive a new message', icon: Send },
-				{ key: 'group', label: 'Group notifications', description: 'Updates from your spaces and groups', icon: Users },
-				{ key: 'marketing', label: 'Marketing emails', description: 'Product updates and community highlights', icon: Mail }
-			];
-		} finally {
-			typesLoading = false;
+			notificationTypes = [];
 		}
+		typesLoading = false;
 	});
 
 	function toggleChannel(typeKey: string, channel: 'in_app' | 'email' | 'push') {

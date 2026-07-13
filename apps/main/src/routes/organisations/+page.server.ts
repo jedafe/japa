@@ -14,14 +14,13 @@ interface Organization {
 export const load: PageServerLoad = async ({ parent }) => {
 	const { token } = await parent();
 
-	const result = await apiFetch<{
-		organizations: Organization[];
-		total: number;
-		page: number;
-		total_pages: number;
-	}>('/organizations?limit=50', {}, token ?? undefined);
+	const result = await apiFetch<Organization[]>(
+		'/organizations?page_size=50',
+		{},
+		token ?? undefined
+	);
 
 	return {
-		organisations: result.ok && result.data ? result.data.organizations : []
+		organisations: result.ok && Array.isArray(result.data) ? result.data : []
 	};
 };

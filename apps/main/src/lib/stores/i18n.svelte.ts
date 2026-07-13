@@ -3,6 +3,7 @@ import { getToken, API_BASE } from '$lib/api';
 
 type Locale = string;
 
+// Client-only state - safe for SSR because browser check guards all mutations
 let currentLocale: Locale = $state('en');
 let translations: Record<string, string> = $state({});
 let loaded: Record<string, Record<string, string>> = {};
@@ -10,7 +11,8 @@ let loaded: Record<string, Record<string, string>> = {};
 export function getLocale() {
 	return {
 		get current() {
-			return currentLocale;
+			// During SSR, return 'en' as default to avoid hydration mismatch
+			return browser ? currentLocale : 'en';
 		},
 		set: (locale: Locale) => {
 			currentLocale = locale;
@@ -42,6 +44,8 @@ export function getLocale() {
 export const locale = getLocale();
 
 export function t(key: string, fallback?: string): string {
+	// During SSR, translations are populated from server load function
+	// On client, they're available immediately after init()
 	return translations[key] ?? fallback ?? key;
 }
 

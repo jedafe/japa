@@ -19,9 +19,9 @@
 				api.getSuggestedSpaces(),
 				api.getSuggestedTags()
 			]);
-			if (u.status === 'fulfilled') users  = (u.value.items ?? []) as SuggestedUser[];
-			if (s.status === 'fulfilled') spaces = (s.value.items ?? []) as SuggestedSpace[];
-			if (t.status === 'fulfilled') tags   = (t.value.items ?? []) as SuggestedTag[];
+			if (u.status === 'fulfilled') users  = (u.value ?? []) as SuggestedUser[];
+			if (s.status === 'fulfilled') spaces = (s.value ?? []) as SuggestedSpace[];
+			if (t.status === 'fulfilled') tags   = (t.value ?? []) as SuggestedTag[];
 		} catch {
 			// degrade gracefully
 		} finally {

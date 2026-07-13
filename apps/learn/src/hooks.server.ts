@@ -56,6 +56,25 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	const response = await resolve(event);
+
+	// Set cache headers based on path
+	const path = event.url.pathname;
+
+	if (path.startsWith('/_app/')) {
+		// Static assets - cache aggressively (1 year, immutable)
+		response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+	} else if (path.startsWith('/api/') || path.startsWith('/imgproxy/')) {
+		// API and proxied responses - short cache with revalidation
+		response.headers.set('Cache-Control', 'private, max-age=0, must-revalidate');
+	} else if (path.match(/\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$/)) {
+		// Static files - cache for 1 week
+		response.headers.set('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+	} else {
+		// HTML pages - no cache, must revalidate
+		response.headers.set('Cache-Control', 'no-cache, must-revalidate');
+		response.headers.set('Pragma', 'no-cache');
+	}
+
 	return response;
 };
 

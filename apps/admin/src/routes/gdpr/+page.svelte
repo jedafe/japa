@@ -1,47 +1,29 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import Badge from '$lib/components/ui/Badge.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { api } from '$lib/api';
+	import { api, gdprAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { RefreshCw, Trash2 } from 'lucide-svelte';
 
-	type GdprRequest = {
+	type DeletionRequest = {
 		id: string;
 		user_id: string;
-		username?: string;
-		email?: string;
-		request_type: 'erasure' | 'export';
-		status: 'pending' | 'processing' | 'completed' | 'failed';
+		status: string;
+		reason: string;
 		requested_at: string;
-		completed_at?: string;
-		export_url?: string;
+		executed_at?: string;
 	};
 
-	let requests = $state<GdprRequest[]>([]);
+	let requests = $state<DeletionRequest[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
-	let selectedRequest = $state<GdprRequest | null>(null);
-	let showDetailModal = $state(false);
-	let processing = $state(false);
-
-	function statusVariant(status: string): 'warning' | 'info' | 'success' | 'danger' {
-		switch (status) {
-			case 'pending': return 'warning';
-			case 'processing': return 'info';
-			case 'completed': return 'success';
-			case 'failed': return 'danger';
-			default: return 'default' as any;
-		}
-	}
 
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<{ requests: GdprRequest[] }>('/admin/gdpr/deletion-requests');
+			const result = await api<DeletionRequest[]>('/admin/gdpr/deletion-requests');
 			if (result.ok) {
-				requests = result.data.requests;
+				requests = result.data ?? [];
 			} else {
 				errorMessage = result.error;
 			}
@@ -52,25 +34,13 @@
 		}
 	}
 
-	function viewDetail(request: GdprRequest) {
-		selectedRequest = request;
-		showDetailModal = true;
-	}
-
-	async function processRequest(request: GdprRequest) {
-		processing = true;
+	async function executeDeletion(id: string) {
+		errorMessage = '';
 		try {
-			const result = await api(`/admin/gdpr/deletion-requests/${request.id}/execute`, { method: 'POST' });
-			if (result.ok) {
-				showDetailModal = false;
-				load();
-			} else {
-				errorMessage = result.error;
-			}
+			await api(`/admin/gdpr/deletion-requests/${id}/execute`, { method: 'POST', body: {} });
+			load();
 		} catch {
 			errorMessage = t('common.error');
-		} finally {
-			processing = false;
 		}
 	}
 
@@ -90,101 +60,54 @@
 	</div>
 {/if}
 
+<div class="mb-4 flex justify-end">
+	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
+		<RefreshCw class="h-3 w-3" />
+		{t('common.refresh')}
+	</button>
+</div>
+
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else if requests.length === 0}
-	<EmptyState title={t('gdpr.empty')} description="No GDPR requests have been submitted yet." />
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 		<table class="w-full text-sm">
 			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">User</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Type</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Status</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Requested</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Completed</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
+				<tr style="border-bottom: 1px solid var(--color-border)">
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('gdpr.user')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('gdpr.reason')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('gdpr.status')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('gdpr.requested')}</th>
+					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
 				</tr>
 			</thead>
 			<tbody>
-				{#each requests as request}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
+				{#each requests as req (req.id)}
+					<tr class="border-t" style="border-color: var(--color-border)">
+						<td class="px-4 py-3 font-mono text-xs">{req.user_id}</td>
+						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{req.reason || '—'}</td>
 						<td class="px-4 py-3">
-							<div class="text-sm font-medium">{request.username ?? request.user_id}</div>
-							{#if request.email}
-								<div class="text-xs" style="color: var(--color-muted)">{request.email}</div>
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {req.status === 'executed' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : req.status === 'pending' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+								{req.status}
+							</span>
+						</td>
+						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(req.requested_at).toLocaleString()}</td>
+						<td class="px-4 py-3 text-right">
+							{#if req.status === 'pending'}
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => executeDeletion(req.id)}>
+									{t('gdpr.execute')}
+								</button>
 							{/if}
 						</td>
-						<td class="px-4 py-3">
-							<Badge variant={request.request_type === 'erasure' ? 'danger' : 'info'}>
-								{request.request_type}
-							</Badge>
-						</td>
-						<td class="px-4 py-3">
-							<Badge variant={statusVariant(request.status)}>
-								{request.status}
-							</Badge>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{request.requested_at}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{request.completed_at ?? '—'}</td>
-						<td class="px-4 py-3">
-							<button
-								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-								style="color: var(--color-primary)"
-								onclick={() => viewDetail(request)}
-							>
-								{t('common.view')}
-							</button>
+					</tr>
+				{:else}
+					<tr>
+						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
+							{t('gdpr.empty')}
 						</td>
 					</tr>
 				{/each}
 			</tbody>
 		</table>
 	</div>
-{/if}
-
-{#if selectedRequest}
-	<Modal
-		bind:open={showDetailModal}
-		title={selectedRequest.request_type === 'erasure' ? 'GDPR Erasure Request' : 'GDPR Data Export'}
-		onConfirm={() => selectedRequest && processRequest(selectedRequest)}
-		confirmLabel={processing ? t('common.processing') : selectedRequest.status === 'pending' ? 'Process Request' : t('common.close')}
-	>
-		<div class="space-y-3 text-sm">
-			<div class="grid grid-cols-2 gap-3">
-				<div>
-					<p class="text-xs font-medium" style="color: var(--color-muted)">User</p>
-					<p>{selectedRequest.username ?? selectedRequest.user_id}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium" style="color: var(--color-muted)">Type</p>
-					<p>{selectedRequest.request_type}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium" style="color: var(--color-muted)">Status</p>
-					<Badge variant={statusVariant(selectedRequest.status)}>
-						{selectedRequest.status}
-					</Badge>
-				</div>
-				<div>
-					<p class="text-xs font-medium" style="color: var(--color-muted)">Requested</p>
-					<p>{selectedRequest.requested_at}</p>
-				</div>
-			</div>
-			{#if selectedRequest.export_url}
-				<div>
-					<p class="text-xs font-medium" style="color: var(--color-muted)">Export URL</p>
-					<a href={selectedRequest.export_url} target="_blank" rel="noopener" class="text-xs underline" style="color: var(--color-primary)">
-						Download Export
-					</a>
-				</div>
-			{/if}
-			{#if selectedRequest.request_type === 'erasure' && selectedRequest.status === 'pending'}
-				<div class="rounded-md border p-3 text-xs" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">
-					Warning: Erasure requests permanently delete user data after the grace period. This action cannot be undone.
-				</div>
-			{/if}
-		</div>
-	</Modal>
 {/if}

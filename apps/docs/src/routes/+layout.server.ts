@@ -1,6 +1,7 @@
 import type { LayoutServerLoad } from './$types';
 import { apiFetch } from '$lib/api/client';
 import type { User, DocNavTree } from '$lib/api/types';
+import { getCached } from '$lib/server/cache';
 
 const AUDIENCE_PERMISSIONS: Record<string, string> = {
 	premium: 'feature.premium',
@@ -13,15 +14,19 @@ const AUDIENCE_PERMISSIONS: Record<string, string> = {
 export const load: LayoutServerLoad = async ({ locals }) => {
 	const user = locals.user as User | null;
 
-	let navTree: DocNavTree[] = [];
-	try {
-		const navResult = await apiFetch<DocNavTree[]>('/docs/nav', {}, fetch);
-		if (navResult.data) {
-			navTree = navResult.data;
+	const rawNavTree = await getCached<DocNavTree[]>('nav-tree', 10 * 60 * 1000, async () => {
+		try {
+			const navResult = await apiFetch<DocNavTree[]>('/docs/nav', {}, fetch);
+			if (navResult.data) {
+				return navResult.data;
+			}
+		} catch {
+			// Nav tree is non-critical; degrade gracefully
 		}
-	} catch {
-		// Nav tree is non-critical; degrade gracefully
-	}
+		return [];
+	});
+
+	let navTree = [...rawNavTree];
 
 	if (user) {
 		const groupId = user.user_group_id ?? '';

@@ -20,13 +20,13 @@
 				api.getTrendingTags(5),
 				api.getTrendingUsers(5)
 			]);
-			if (c.status === 'fulfilled' && c.value.items) trendingContent = c.value.items;
-			if (s.status === 'fulfilled' && (s.value as { items: TrendingItem[] }).items)
-				trendingSpaces = (s.value as { items: TrendingItem[] }).items;
-			if (t.status === 'fulfilled' && (t.value as { items: TrendingItem[] }).items)
-				trendingTags = (t.value as { items: TrendingItem[] }).items;
-			if (u.status === 'fulfilled' && (u.value as { items: TrendingItem[] }).items)
-				trendingUsers = (u.value as { items: TrendingItem[] }).items;
+			if (c.status === 'fulfilled' && Array.isArray(c.value)) trendingContent = c.value;
+			if (s.status === 'fulfilled' && Array.isArray(s.value))
+				trendingSpaces = s.value as TrendingItem[];
+			if (t.status === 'fulfilled' && Array.isArray(t.value))
+				trendingTags = t.value as TrendingItem[];
+			if (u.status === 'fulfilled' && Array.isArray(u.value))
+				trendingUsers = u.value as TrendingItem[];
 		} catch {
 			// degrade gracefully
 		} finally {
