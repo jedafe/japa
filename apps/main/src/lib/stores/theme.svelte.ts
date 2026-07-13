@@ -3,9 +3,11 @@ import { getToken, API_BASE } from '$lib/api';
 
 type Theme = 'light' | 'dark' | 'system';
 
+// Client-only state - safe for SSR because browser check guards all mutations
 let currentTheme: Theme = $state('system');
 
 function applyTheme(theme: Theme) {
+	if (!browser) return;
 	const html = document.documentElement;
 	if (theme === 'system') {
 		const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -18,7 +20,8 @@ function applyTheme(theme: Theme) {
 export function getTheme() {
 	return {
 		get current() {
-			return currentTheme;
+			// During SSR, always return 'system' to avoid hydration mismatch
+			return browser ? currentTheme : 'system';
 		},
 		set: (theme: Theme) => {
 			currentTheme = theme;
@@ -37,7 +40,7 @@ export function getTheme() {
 		},
 		init: (serverTheme: Theme) => {
 			currentTheme = serverTheme;
-			if (browser) applyTheme(serverTheme);
+			applyTheme(serverTheme);
 		}
 	};
 }

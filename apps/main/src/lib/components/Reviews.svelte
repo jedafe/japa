@@ -47,11 +47,12 @@
 			const result = await api.listReviews({
 				entity_type: entityType,
 				entity_id: entityId,
-				limit: pageSize,
-				offset: currentPage * pageSize
+				page_size: pageSize,
+				page_offset: currentPage * pageSize
 			});
-			reviews = result.reviews;
-			total = result.total;
+			reviews = result ?? [];
+			// The list endpoint has no total; the aggregate's count is accurate.
+			total = aggregate?.count ?? reviews.length;
 		} catch {
 			error = 'Failed to load reviews.';
 		} finally {

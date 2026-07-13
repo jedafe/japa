@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { GitCompare, ArrowRight } from 'lucide-svelte';
+	import { GitCompare, ArrowRight, Plus } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { isFeatureEnabled } from '$lib/stores/features.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -22,13 +22,23 @@
 	</main>
 {:else}
 	<main class="mx-auto max-w-6xl px-4 py-8">
-	<header class="mb-8">
-		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">
-			{t('comparisons.title')}
-		</h1>
-		<p class="mt-2 text-sm" style="color: var(--color-muted)">
-			{t('comparisons.subtitle')}
-		</p>
+	<header class="mb-8 flex items-start justify-between">
+		<div>
+			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">
+				{t('comparisons.title')}
+			</h1>
+			<p class="mt-2 text-sm" style="color: var(--color-muted)">
+				{t('comparisons.subtitle')}
+			</p>
+		</div>
+		<a
+			href="/comparisons/new"
+			class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+			style="background: var(--color-primary)"
+		>
+			<Plus class="h-4 w-4" />
+			New Type
+		</a>
 	</header>
 
 	{#if data.types.length === 0}

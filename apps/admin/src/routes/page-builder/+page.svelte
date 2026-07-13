@@ -1,143 +1,213 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Layout, AlertTriangle, CheckCircle2, XCircle } from 'lucide-svelte';
-	import { pageBuilderApi, type BlockType } from '$lib/api';
+	import { api, pageBuilderAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { Plus, Pencil, Trash2 } from 'lucide-svelte';
+	import Modal from '$lib/components/Modal.svelte';
 
-	let blockTypes = $state<BlockType[]>([]);
+	type Block = {
+		id: string;
+		name: string;
+		block_type: string;
+		category: string;
+		is_enabled: boolean;
+		created_at: string;
+	};
+
+	let blocks = $state<Block[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
 
-	onMount(async () => {
-		await loadBlockTypes();
-	});
+	let showCreateModal = $state(false);
+	let showEditModal = $state(false);
+	let editingBlock = $state<Block | null>(null);
+	let saving = $state(false);
 
-	async function loadBlockTypes() {
+	let modalOpen = $state(false);
+
+	let name = $state('');
+	let blockType = $state('');
+	let category = $state('');
+	let isEnabled = $state(true);
+
+	async function load() {
 		loading = true;
 		errorMessage = '';
-		const result = await pageBuilderApi.getBlockTypes();
-		if (result.ok) {
-			blockTypes = Array.isArray(result.data) ? result.data : [];
-		} else {
-			errorMessage = result.error;
+		try {
+			const result = await api<Block[]>('/admin/pagebuilder/blocks');
+			if (result.ok) {
+				blocks = result.data ?? [];
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			loading = false;
 		}
-		loading = false;
 	}
 
-	const groupedBlocks = $derived(
-		blockTypes.reduce<Record<string, BlockType[]>>((acc, block) => {
-			const cat = block.category || 'uncategorized';
-			if (!acc[cat]) acc[cat] = [];
-			acc[cat].push(block);
-			return acc;
-		}, {})
-	);
+	function openCreate() {
+		name = '';
+		blockType = '';
+		category = '';
+		isEnabled = true;
+		modalOpen = true;
+	}
+
+	function openEdit(block: Block) {
+		editingBlock = block;
+		name = block.name;
+		blockType = block.block_type;
+		category = block.category;
+		isEnabled = block.is_enabled;
+		modalOpen = true;
+	}
+
+	async function createBlock() {
+		if (!name.trim() || !blockType.trim()) return;
+		saving = true;
+		errorMessage = '';
+		try {
+			const result = await api('/admin/pagebuilder/blocks', {
+				method: 'POST',
+				body: { name: name.trim(), block_type: blockType.trim(), category: category.trim() || undefined, is_enabled: isEnabled }
+			});
+			if (result.ok) {
+				modalOpen = false;
+				load();
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function updateBlock() {
+		if (!editingBlock || !name.trim() || !blockType.trim()) return;
+		saving = true;
+		errorMessage = '';
+		try {
+			const result = await api(`/admin/pagebuilder/blocks/${editingBlock.id}`, {
+				method: 'PATCH',
+				body: { name: name.trim(), block_type: blockType.trim(), category: category.trim() || undefined, is_enabled: isEnabled }
+			});
+			if (result.ok) {
+				modalOpen = false;
+				editingBlock = null;
+				load();
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function deleteBlock(id: string) {
+		errorMessage = '';
+		try {
+			await api(`/admin/pagebuilder/blocks/${id}`, { method: 'DELETE' });
+			blocks = blocks.filter((b) => b.id !== id);
+		} catch {
+			errorMessage = t('common.error');
+		}
+	}
+
+	onMount(load);
 </script>
 
 <svelte:head>
-	<title>Page Builder | JapaAdmin</title>
+	<title>{t('pageBuilder.blocks_title')} — JapaConnect Admin</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<header>
-		<div class="flex items-center gap-3">
-			<div
-				class="flex h-10 w-10 items-center justify-center rounded-xl"
-				style="background: color-mix(in srgb, var(--color-primary) 12%, transparent)"
-			>
-				<Layout class="h-5 w-5" style="color: var(--color-primary)" />
-			</div>
-			<div>
-				<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">
-					{t('page_builder.title') || 'Page Builder Block Types'}
-				</h1>
-				<p class="text-sm" style="color: var(--color-muted)">
-					{t('page_builder.description') || 'Registered block types available in the page builder.'}
-				</p>
-			</div>
-		</div>
-	</header>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('pageBuilder.blocks_title')}</h1>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('pageBuilder.blocks_description')}</p>
 
-	{#if errorMessage}
-		<div
-			class="flex items-center gap-2 rounded-lg border p-3 text-sm"
-			style="border-color: color-mix(in srgb, var(--color-danger) 30%, transparent); background: color-mix(in srgb, var(--color-danger) 6%, transparent); color: var(--color-danger)"
-		>
-			<AlertTriangle class="h-4 w-4 flex-shrink-0" />
-			{errorMessage}
-		</div>
-	{/if}
+{#if errorMessage}
+	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+		{errorMessage}
+	</div>
+{/if}
 
-	{#if loading}
-		<div class="space-y-3">
-			{#each Array(5) as _}
-				<div
-					class="h-16 animate-pulse rounded-xl"
-					style="background-color: var(--color-surface)"
-				></div>
-			{/each}
-		</div>
-	{:else if blockTypes.length === 0}
-		<div
-			class="rounded-xl border p-8 text-center"
-			style="border-color: var(--color-border); background: var(--color-surface)"
-		>
-			<Layout class="mx-auto h-8 w-8" style="color: var(--color-muted)" />
-			<p class="mt-3 text-sm" style="color: var(--color-muted)">
-				{t('page_builder.empty') || 'No block types registered.'}
-			</p>
-		</div>
-	{:else}
-		{#each Object.entries(groupedBlocks) as [category, blocks]}
-			<section>
-				<h2
-					class="mb-3 text-sm font-semibold uppercase tracking-wide"
-					style="color: var(--color-muted)"
-				>
-					{category}
-				</h2>
-				<div
-					class="overflow-hidden rounded-xl border"
-					style="border-color: var(--color-border); background: var(--color-surface)"
-				>
-					<table class="w-full text-left text-sm">
-						<thead>
-							<tr style="border-bottom: 1px solid var(--color-border)">
-								<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">
-									{t('page_builder.name') || 'Name'}
-								</th>
-								<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">
-									{t('page_builder.description_col') || 'Description'}
-								</th>
-								<th class="px-4 py-3 font-medium text-center" style="color: var(--color-muted)">
-									{t('page_builder.enabled') || 'Enabled'}
-								</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each blocks as block (block.name)}
-								<tr style="border-bottom: 1px solid var(--color-border)">
-									<td class="px-4 py-3">
-										<span class="font-medium" style="color: var(--color-foreground)">
-											{block.name}
-										</span>
-									</td>
-									<td class="px-4 py-3" style="color: var(--color-muted)">
-										{block.description || '—'}
-									</td>
-									<td class="px-4 py-3 text-center">
-										{#if block.is_enabled}
-											<CheckCircle2 class="inline h-4 w-4" style="color: #16a34a" />
-										{:else}
-											<XCircle class="inline h-4 w-4" style="color: var(--color-muted)" />
-										{/if}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			</section>
-		{/each}
-	{/if}
+<div class="mb-4 flex justify-end">
+	<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
+		<Plus class="h-3 w-3" />
+		{t('pageBuilder.create_block')}
+	</button>
 </div>
+
+{#if loading}
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
+{:else}
+	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
+		<table class="w-full text-sm">
+			<thead>
+				<tr style="border-bottom: 1px solid var(--color-border)">
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageBuilder.name')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageBuilder.type')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageBuilder.category')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageBuilder.status')}</th>
+					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each blocks as block (block.id)}
+					<tr class="border-t" style="border-color: var(--color-border)">
+						<td class="px-4 py-3 font-medium">{block.name}</td>
+						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{block.block_type}</td>
+						<td class="px-4 py-3 text-xs">{block.category || '—'}</td>
+						<td class="px-4 py-3">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {block.is_enabled ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+								{block.is_enabled ? t('pageBuilder.enabled') : t('pageBuilder.disabled')}
+							</span>
+						</td>
+						<td class="px-4 py-3 text-right">
+							<div class="flex items-center justify-end gap-1">
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => openEdit(block)}>
+									<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
+								</button>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => deleteBlock(block.id)}>
+									<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
+								</button>
+							</div>
+						</td>
+					</tr>
+				{:else}
+					<tr>
+						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
+							{t('pageBuilder.empty')}
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+{/if}
+
+<!-- Create/Edit Modal -->
+<Modal bind:open={modalOpen} title={editingBlock ? t('pageBuilder.edit_block') : t('pageBuilder.create_block')} onConfirm={editingBlock ? updateBlock : createBlock} confirmLabel={saving ? t('common.saving') : editingBlock ? t('common.save') : t('common.create')}>
+	<div class="space-y-4">
+		<div>
+			<label for="pb-name" class="mb-1 block text-sm font-medium">{t('pageBuilder.name')}</label>
+			<input id="pb-name" type="text" bind:value={name} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+		</div>
+		<div>
+			<label for="pb-type" class="mb-1 block text-sm font-medium">{t('pageBuilder.type')}</label>
+			<input id="pb-type" type="text" bind:value={blockType} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+		</div>
+		<div>
+			<label for="pb-cat" class="mb-1 block text-sm font-medium">{t('pageBuilder.category')}</label>
+			<input id="pb-cat" type="text" bind:value={category} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+		</div>
+		<div class="flex items-center gap-2">
+			<input id="pb-enabled" type="checkbox" bind:checked={isEnabled} class="rounded" />
+			<label for="pb-enabled" class="text-sm">{t('pageBuilder.enabled')}</label>
+		</div>
+	</div>
+</Modal>

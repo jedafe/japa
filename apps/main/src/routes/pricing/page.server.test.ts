@@ -1,24 +1,22 @@
 import { describe, it, expect, vi } from 'vitest';
 import { load } from './+page.server';
 
-// The Go backend wraps every payload in a {"data": ...} envelope, and
-// $lib/server/api's apiFetch returns the whole parsed body as `data`.
+// $lib/server/api's apiFetch unwraps the Go backend's {"data": ...} envelope,
+// so mocks resolve with the payload directly in `data`.
 vi.mock('$lib/server/api', () => ({
 	apiFetch: vi.fn().mockResolvedValue({
 		ok: true,
-		data: {
-			data: [
-				{
-					id: 'free',
-					name: 'Free',
-					description: 'Get started',
-					features: [{ text: 'Community forum access', included: true }],
-					monthly: { amount: 0, currency: 'NGN' },
-					yearly: { amount: 0, currency: 'NGN' },
-					highlighted: false
-				}
-			]
-		}
+		data: [
+			{
+				id: 'free',
+				name: 'Free',
+				description: 'Get started',
+				features: [{ text: 'Community forum access', included: true }],
+				monthly: { amount: 0, currency: 'NGN' },
+				yearly: { amount: 0, currency: 'NGN' },
+				highlighted: false
+			}
+		]
 	})
 }));
 

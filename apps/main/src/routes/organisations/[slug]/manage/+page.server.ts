@@ -47,13 +47,14 @@ export const load: PageServerLoad = async ({ params, cookies }) => {
 	const org = orgResult.data;
 
 	const [membersResult, invitationsResult] = await Promise.all([
-		apiFetch<{ members: OrganizationMember[] }>(`/organizations/${org.id}/members`, { headers: auth }),
-		apiFetch<{ invitations: Invitation[] }>(`/organizations/${org.id}/invitations`, { headers: auth })
+		apiFetch<OrganizationMember[]>(`/organizations/${org.id}/members`, { headers: auth }),
+		apiFetch<Invitation[]>(`/organizations/${org.id}/invitations`, { headers: auth })
 	]);
 
 	return {
 		org,
-		members: membersResult.ok && membersResult.data ? membersResult.data.members : [],
-		invitations: invitationsResult.ok && invitationsResult.data ? invitationsResult.data.invitations : []
+		members: membersResult.ok && Array.isArray(membersResult.data) ? membersResult.data : [],
+		invitations:
+			invitationsResult.ok && Array.isArray(invitationsResult.data) ? invitationsResult.data : []
 	};
 };

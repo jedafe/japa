@@ -59,7 +59,7 @@
 		if (!thread) return;
 		try {
 			const result = await api.getForumReplies(thread.id, { page_size: 50 });
-			replies = result.replies;
+			replies = result ?? [];
 		} catch {
 			replies = [];
 		}

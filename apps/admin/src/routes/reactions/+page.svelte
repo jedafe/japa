@@ -34,9 +34,9 @@
 		errorMessage = '';
 		const params = new URLSearchParams({ page: String(page) });
 		try {
-			const result = await api<{ data: ReactionType[] }>(`/reaction-types?${params}`);
+			const result = await api<ReactionType[]>(`/reaction-types?${params}`);
 			if (result.ok) {
-				const list = Array.isArray(result.data) ? result.data : (result.data.data ?? []);
+				const list = result.data ?? [];
 				reactions = list;
 				totalPages = 1;
 			} else {

@@ -26,9 +26,6 @@ export default defineConfig({
 	resolve: {
 		conditions: ['browser']
 	},
-	ssr: {
-		noExternal: ['lucide-svelte']
-	},
 	server: {
 		proxy: {
 			'/api': {

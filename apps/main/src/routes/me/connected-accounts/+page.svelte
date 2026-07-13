@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { RefreshCw, Lock, Unlock } from 'lucide-svelte';
@@ -10,33 +10,19 @@
 		connected_at: string;
 	};
 
-	let accounts = $state<ConnectedAccount[]>([]);
-	let loading = $state(true);
+	let { data } = $props();
+	let accounts = $derived(data.data ?? []);
 	let errorMessage = $state('');
-
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		try {
-			accounts = await api.getMeConnectedAccounts() as unknown as ConnectedAccount[];
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
 
 	async function disconnect(provider: string) {
 		errorMessage = '';
 		try {
 			await api.deleteMeConnectedAccount(provider);
-			accounts = accounts.filter((a) => a.provider !== provider);
+			await invalidateAll();
 		} catch {
 			errorMessage = t('common.error');
 		}
 	}
-
-	onMount(load);
 </script>
 
 <svelte:head>
@@ -52,13 +38,13 @@
 {/if}
 
 <div class="mb-4 flex justify-end">
-	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
+	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={() => invalidateAll()}>
 		<RefreshCw class="h-3 w-3" />
 		{t('common.refresh')}
 	</button>
 </div>
 
-{#if loading}
+{#if !data.data}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
 	<div class="max-w-xl space-y-2">

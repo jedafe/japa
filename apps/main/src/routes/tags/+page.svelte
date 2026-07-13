@@ -1,58 +1,66 @@
 <script lang="ts">
-	import { Tag, Hash, MessageSquare } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
-	import autoAnimate from '@formkit/auto-animate';
+	import { onMount } from 'svelte';
+	import { request } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
+	import { RefreshCw, Tag } from 'lucide-svelte';
 
-	let { data } = $props();
+	type Tag = {
+		slug: string;
+		name: string;
+		content_count: number;
+		follower_count: number;
+	};
+
+	let tags = $state<Tag[]>([]);
+	let loading = $state(true);
+	let errorMessage = $state('');
+
+	async function load() {
+		loading = true;
+		errorMessage = '';
+		try {
+			tags = await request<Tag[]>('/tags');
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			loading = false;
+		}
+	}
+
+	onMount(load);
 </script>
 
 <svelte:head>
-	<title>Tags | JapaConnect</title>
-	<meta name="description" content="Browse topics and find discussions by tag on JapaConnect." />
+	<title>{t('tags.title')} — JapaConnect</title>
 </svelte:head>
 
-<main class="mx-auto max-w-6xl px-4 py-8">
-	<header class="mb-8">
-		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Tags</h1>
-		<p class="mt-2 text-sm" style="color: var(--color-muted)">
-			Browse topics and discover discussions by tag.
-		</p>
-	</header>
+<h1 class="mb-4 text-2xl font-bold tracking-tight">{t('tags.title')}</h1>
 
-	{#if data.tags.length === 0}
-		<EmptyState
-			icon={Tag}
-			title="No tags yet"
-			message="Tags will appear as forum threads are created."
-		/>
-	{:else}
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" use:autoAnimate>
-			{#each data.tags as tag (tag.id)}
-				<a
-					href="/forum/tags"
-					class="group flex items-center gap-3 rounded-xl border p-4 transition-all hover:shadow-md"
-					style="border-color: var(--color-border); background-color: var(--color-surface)"
-				>
-					<div
-						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
-						style="background-color: color-mix(in srgb, var(--color-primary) 10%, transparent)"
-					>
-						<Hash class="h-5 w-5" style="color: var(--color-primary)" />
-					</div>
-					<div class="flex-1 min-w-0">
-						<h3
-							class="text-sm font-semibold group-hover:underline"
-							style="color: var(--color-foreground)"
-						>
-							{tag.name}
-						</h3>
-						<p class="mt-0.5 flex items-center gap-1 text-xs" style="color: var(--color-muted)">
-							<MessageSquare class="h-3 w-3" />
-							{tag.thread_count} {tag.thread_count === 1 ? 'thread' : 'threads'}
-						</p>
-					</div>
-				</a>
-			{/each}
-		</div>
-	{/if}
-</main>
+{#if errorMessage}
+	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+		{errorMessage}
+	</div>
+{/if}
+
+<div class="mb-4 flex justify-end">
+	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
+		<RefreshCw class="h-3 w-3" />
+		{t('common.refresh')}
+	</button>
+</div>
+
+{#if loading}
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
+{:else}
+	<div class="flex flex-wrap gap-2">
+		{#each tags as tag (tag.slug)}
+			<a href="/tags/{tag.slug}" class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors hover:bg-black/5" style="border-color: var(--color-border)">
+				<Tag class="h-3 w-3" style="color: var(--color-primary)" />
+				{tag.name}
+				<span class="text-xs" style="color: var(--color-muted)">({tag.content_count})</span>
+			</a>
+		{:else}
+			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('tags.empty')}</p>
+		{/each}
+	</div>
+{/if}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 
 	interface Props {
 		position: { top: number; left: number };
@@ -14,13 +14,8 @@
 
 	/** Check if the current user has the AI content assist permission via feature flags. */
 	function aiAssistEnabled(): boolean {
-		let enabled = false;
-		const unsub = page.subscribe(($page) => {
-			const flags = $page.data?.featureFlags ?? {};
-			enabled = flags['ai.content_assist_enabled'] === true;
-		});
-		unsub();
-		return enabled;
+		const flags = page.data?.featureFlags ?? {};
+		return flags['ai.content_assist_enabled'] === true;
 	}
 
 	const baseCommands = [

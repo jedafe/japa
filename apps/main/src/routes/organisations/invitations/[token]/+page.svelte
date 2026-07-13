@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { Mail, Check, Loader2, X } from 'lucide-svelte';
 	import { api } from '$lib/api';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
-	let token = $derived($page.params.token ?? '');
+	let token = $derived(page.params.token ?? '');
 	let accepting = $state(false);
 	let result = $state<'idle' | 'accepted' | 'failed'>('idle');
-	let orgSlug = $state('');
 
 	async function accept() {
 		accepting = true;
 		try {
-			const res = await api.acceptOrganizationInvitation(token);
-			orgSlug = res.organization_slug;
+			// The backend confirms with a message only (no organisation slug),
+			// so land on the organisations list after accepting.
+			await api.acceptOrganizationInvitation(token);
 			result = 'accepted';
-			setTimeout(() => goto(`/organisations/${orgSlug}`), 1500);
+			setTimeout(() => goto('/organisations'), 1500);
 		} catch {
 			result = 'failed';
 		} finally {

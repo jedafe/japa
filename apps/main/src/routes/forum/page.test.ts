@@ -5,7 +5,7 @@ import Page from './+page.svelte';
 vi.mock('$lib/api', () => ({
 	getToken: vi.fn().mockReturnValue(null),
 	api: {
-		getForumThreads: vi.fn().mockResolvedValue({ threads: [], total_pages: 0 }),
+		getForumThreads: vi.fn().mockResolvedValue([]),
 		getForumTags: vi.fn().mockResolvedValue([])
 	}
 }));

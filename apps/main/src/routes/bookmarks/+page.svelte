@@ -1,8 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Folder, Plus, Trash2, Edit2, Loader2, Bookmark } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { invalidateAll } from '$app/navigation';
+
+	let { data } = $props();
 
 	type BookmarkFolder = {
 		id: string;
@@ -21,9 +23,8 @@
 		created_at: string;
 	};
 
-	let folders = $state<BookmarkFolder[]>([]);
+	let folders = $derived(data.folders);
 	let bookmarks = $state<BookmarkedItem[]>([]);
-	let loading = $state(true);
 	let error = $state('');
 	let activeTab = $state<'folders' | 'all'>('folders');
 	let selectedFolder = $state<string | null>(null);
@@ -35,21 +36,6 @@
 
 	// Edit folder
 	let editingFolder = $state<BookmarkFolder | null>(null);
-
-	onMount(load);
-
-	async function load() {
-		loading = true;
-		error = '';
-		try {
-			const result = await api.getBookmarkFolders();
-			folders = result;
-		} catch {
-			error = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
 
 	async function loadBookmarks(folderId?: string) {
 		try {
@@ -72,7 +58,7 @@
 			await api.createBookmarkFolder(newFolder);
 			showCreateModal = false;
 			newFolder = { name: '', description: '' };
-			load();
+			invalidateAll();
 		} catch {
 			error = t('common.error');
 		} finally {
@@ -94,7 +80,7 @@
 			showCreateModal = false;
 			editingFolder = null;
 			newFolder = { name: '', description: '' };
-			load();
+			invalidateAll();
 		} catch {
 			error = t('common.error');
 		} finally {
@@ -170,13 +156,7 @@
 		</button>
 	</div>
 
-	{#if loading}
-		<div class="space-y-3">
-			{#each [1, 2, 3] as _}
-				<div class="h-20 animate-pulse rounded-xl" style="background-color: var(--color-background)"></div>
-			{/each}
-		</div>
-	{:else if activeTab === 'folders'}
+	{#if activeTab === 'folders'}
 		{#if folders.length > 0}
 			<div class="space-y-3">
 				{#each folders as folder (folder.id)}

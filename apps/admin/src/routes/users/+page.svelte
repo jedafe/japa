@@ -4,6 +4,8 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { api, setToken, impersonationApi, userManagementApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { Users, Shield, UsersRound } from 'lucide-svelte';
+	import { page as pageState } from '$app/state';
 
 	type User = {
 		id: string;
@@ -28,6 +30,15 @@
 	let impersonateTarget = $state<User | null>(null);
 	let showImpersonateConfirm = $state(false);
 	let impersonateError = $state('');
+	
+	// Tab navigation - derived from current URL
+	let activeTab = $derived.by(() => {
+		const path = pageState.url.pathname;
+		if (path === '/users') return 'users';
+		if (path.startsWith('/users/roles')) return 'roles';
+		if (path.startsWith('/users/groups')) return 'groups';
+		return 'users';
+	});
 
 	const columns = [
 		{ key: 'username', label: 'users.username' },
@@ -143,6 +154,34 @@
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('users.title')}</h1>
 <p class="mb-4 text-sm" style="color: var(--color-muted)">{t('users.description')}</p>
+
+<!-- Sub-navigation tabs -->
+<div class="mb-6 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border)">
+	<a
+		href="/users"
+		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'users' ? 'background-color: var(--color-primary); color: white' : ''}
+	>
+		<Users class="h-4 w-4" />
+		{t('users.list')}
+	</a>
+	<a
+		href="/users/roles"
+		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'roles' ? 'background-color: var(--color-primary); color: white' : ''}
+	>
+		<Shield class="h-4 w-4" />
+		{t('users.roles.title')}
+	</a>
+	<a
+		href="/users/groups"
+		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'groups' ? 'background-color: var(--color-primary); color: white' : ''}
+	>
+		<UsersRound class="h-4 w-4" />
+		{t('users.groups.title')}
+	</a>
+</div>
 
 {#if impersonateError}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">

@@ -33,8 +33,10 @@
 			if (selectedTag) params.tag = selectedTag;
 
 			const result = await api.getForumThreads(params as Parameters<typeof api.getForumThreads>[0]);
-			threads = result.threads;
-			totalPages = result.total_pages;
+			threads = result ?? [];
+			// The backend returns a bare page of threads with no total; a full
+			// page means there may be another one.
+			totalPages = currentPage + 1 + (threads.length === 20 ? 1 : 0);
 		} catch {
 			threads = [];
 		} finally {

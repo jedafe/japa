@@ -66,7 +66,7 @@
 
 	onMount(async () => {
 		try {
-			const result = await api.listSpaces({ limit: 50 });
+			const result = await api.listSpaces({ page_size: 50 });
 			spaces = result;
 		} catch {
 			spaces = [];

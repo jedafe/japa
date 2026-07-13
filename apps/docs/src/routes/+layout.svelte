@@ -1,7 +1,6 @@
 <script lang="ts">
 	import '../app.css';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { initGlitchTip } from '$lib/glitchtip';
 	import DocSidebar from '$lib/components/DocSidebar.svelte';
 	import { page } from '$app/state';
 	import { Menu, X, Key, Code } from 'lucide-svelte';
@@ -41,9 +40,6 @@
 		}))
 	);
 
-	$effect(() => {
-		initGlitchTip();
-	});
 </script>
 
 <div class="flex min-h-screen">

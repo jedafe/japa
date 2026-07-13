@@ -1,5 +1,7 @@
+import { browser } from '$app/environment';
 import { wsClient } from '$lib/websocket';
 
+// Client-only state - safe for SSR because browser check guards all mutations
 let notificationCountOverride = $state(0);
 let onlineUserIds = $state<Set<string>>(new Set());
 let initialized = $state(false);
@@ -7,13 +9,16 @@ let initialized = $state(false);
 export function getRealtime() {
 	return {
 		get notificationCount() {
-			return notificationCountOverride;
+			// During SSR, return 0 to avoid hydration mismatch
+			return browser ? notificationCountOverride : 0;
 		},
 		get onlineUserIds() {
-			return onlineUserIds;
+			// During SSR, return empty set to avoid hydration mismatch
+			return browser ? onlineUserIds : new Set<string>();
 		},
 		get isInitialized() {
-			return initialized;
+			// During SSR, return false to avoid hydration mismatch
+			return browser ? initialized : false;
 		},
 		setNotificationCount(count: number) {
 			notificationCountOverride = count;
@@ -33,6 +38,9 @@ export function getRealtime() {
 export const realtime = getRealtime();
 
 export function initRealtimeListeners() {
+	// Only initialize on client side
+	if (!browser) return () => {};
+	
 	const unsubs: (() => void)[] = [];
 
 	unsubs.push(
@@ -43,7 +51,7 @@ export function initRealtimeListeners() {
 
 	unsubs.push(
 		wsClient.on('online_status', (data: { user_id: string; online: boolean }) => {
-			const current = new Set(realtime.onlineUserIds);
+			const current = new Set<string>(realtime.onlineUserIds);
 			if (data.online) {
 				current.add(data.user_id);
 			} else {

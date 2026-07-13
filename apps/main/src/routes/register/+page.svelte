@@ -14,9 +14,81 @@
 	let oauthLoading = $state('');
 	let oauthError = $state('');
 
+	// Validation state
+	let usernameError = $state('');
+	let emailError = $state('');
+	let passwordError = $state('');
+
+	function validateUsername(value: string): boolean {
+		if (!value.trim()) {
+			usernameError = 'Username is required';
+			return false;
+		}
+		if (value.length < 3) {
+			usernameError = 'Username must be at least 3 characters';
+			return false;
+		}
+		if (value.length > 30) {
+			usernameError = 'Username must be 30 characters or less';
+			return false;
+		}
+		const usernameRegex = /^[a-zA-Z0-9_]+$/;
+		if (!usernameRegex.test(value)) {
+			usernameError = 'Username can only contain letters, numbers, and underscores';
+			return false;
+		}
+		usernameError = '';
+		return true;
+	}
+
+	function validateEmail(value: string): boolean {
+		if (!value.trim()) {
+			emailError = 'Email is required';
+			return false;
+		}
+		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+		if (!emailRegex.test(value)) {
+			emailError = 'Please enter a valid email address';
+			return false;
+		}
+		emailError = '';
+		return true;
+	}
+
+	function validatePassword(value: string): boolean {
+		if (!value) {
+			passwordError = 'Password is required';
+			return false;
+		}
+		if (value.length < 8) {
+			passwordError = 'Password must be at least 8 characters';
+			return false;
+		}
+		// Check for at least one uppercase, one lowercase, and one number
+		const hasUppercase = /[A-Z]/.test(value);
+		const hasLowercase = /[a-z]/.test(value);
+		const hasNumber = /[0-9]/.test(value);
+		if (!hasUppercase || !hasLowercase || !hasNumber) {
+			passwordError = 'Password must contain at least one uppercase letter, one lowercase letter, and one number';
+			return false;
+		}
+		passwordError = '';
+		return true;
+	}
+
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		error = '';
+
+		// Validate before submitting
+		const isUsernameValid = validateUsername(username);
+		const isEmailValid = validateEmail(email);
+		const isPasswordValid = validatePassword(password);
+
+		if (!isUsernameValid || !isEmailValid || !isPasswordValid) {
+			return;
+		}
+
 		loading = true;
 
 		try {
@@ -147,8 +219,13 @@
 						bind:value={username}
 						placeholder="johndoe"
 						class="pl-10"
+						aria-invalid={!!usernameError}
+						aria-describedby={usernameError ? 'username-error' : undefined}
 					/>
 				</div>
+				{#if usernameError}
+					<p id="username-error" class="mt-1 text-xs" style="color: var(--color-danger)">{usernameError}</p>
+				{/if}
 			</div>
 
 			<div>
@@ -167,8 +244,13 @@
 						bind:value={email}
 						placeholder="you@example.com"
 						class="pl-10"
+						aria-invalid={!!emailError}
+						aria-describedby={emailError ? 'email-error' : undefined}
 					/>
 				</div>
+				{#if emailError}
+					<p id="email-error" class="mt-1 text-xs" style="color: var(--color-danger)">{emailError}</p>
+				{/if}
 			</div>
 
 			<div>
@@ -188,8 +270,16 @@
 						bind:value={password}
 						placeholder="••••••••"
 						class="pl-10"
+						aria-invalid={!!passwordError}
+						aria-describedby={passwordError ? 'password-error' : undefined}
 					/>
 				</div>
+				{#if passwordError}
+					<p id="password-error" class="mt-1 text-xs" style="color: var(--color-danger)">{passwordError}</p>
+				{/if}
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">
+					Must be at least 8 characters with uppercase, lowercase, and number
+				</p>
 			</div>
 
 			<Button

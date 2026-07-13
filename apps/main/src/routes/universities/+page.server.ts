@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiFetch } from '$lib/server/api';
-import type { Space, PaginatedResponse } from '$lib/types';
+import type { Space } from '$lib/types';
 
 interface GeoSpace {
 	id: string;
@@ -10,42 +10,63 @@ interface GeoSpace {
 	level: string;
 }
 
-interface GeoResponse {
-	data: GeoSpace[];
+interface SpaceType {
+	id: string;
+	name: string;
+	slug: string;
 }
+
+const PAGE_SIZE = 20;
 
 export const load: PageServerLoad = async ({ url, cookies }) => {
 	const token = cookies.get('jc_token');
 	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-	const params = new URLSearchParams();
-	params.set('space_type', 'university');
-
 	const country = url.searchParams.get('country');
-	if (country) params.set('country', country);
-
 	const sort = url.searchParams.get('sort') || 'world_ranking';
-	params.set('sort', sort);
+	const page = Math.max(1, Number(url.searchParams.get('page') || '1') || 1);
 
-	const page = url.searchParams.get('page') || '1';
-	params.set('page', page);
-
-	const [universitiesResult, countriesResult] = await Promise.allSettled([
-		apiFetch<PaginatedResponse<Space>>(`/spaces?${params.toString()}`, { headers }),
-		apiFetch<GeoResponse>('/geo/countries')
+	// The backend's /spaces filter is `type=<space_type UUID>`, so resolve the
+	// "university" space type first. Country/sort/page are not supported
+	// server-side; they are applied below.
+	const [typesResult, countriesResult] = await Promise.allSettled([
+		apiFetch<SpaceType[]>('/space-types', { headers }),
+		apiFetch<GeoSpace[]>('/geo/countries')
 	]);
 
-	const universities = universitiesResult.status === 'fulfilled' && universitiesResult.value.ok && universitiesResult.value.data
-		? universitiesResult.value.data.data
-		: [];
+	const universityType =
+		typesResult.status === 'fulfilled' && typesResult.value.ok && typesResult.value.data
+			? typesResult.value.data.find((t) => t.slug === 'university')
+			: undefined;
 
-	const countries = countriesResult.status === 'fulfilled' && countriesResult.value.ok && countriesResult.value.data
-		? countriesResult.value.data.data.map(c => ({ value: c.name, label: c.name }))
-		: [];
+	let universities: Space[] = [];
+	if (universityType) {
+		const spacesResult = await apiFetch<Space[]>(`/spaces?type=${universityType.id}`, { headers });
+		if (spacesResult.ok && spacesResult.data) {
+			universities = spacesResult.data;
+		}
+	}
+
+	if (country) {
+		universities = universities.filter((u) => u.country === country);
+	}
+	universities = [...universities].sort((a, b) => {
+		if (sort === 'name') return a.name.localeCompare(b.name);
+		// world_ranking: unranked entries sink to the bottom
+		return (a.world_ranking ?? Number.MAX_SAFE_INTEGER) - (b.world_ranking ?? Number.MAX_SAFE_INTEGER);
+	});
+	const total = universities.length;
+	universities = universities.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+	const countries =
+		countriesResult.status === 'fulfilled' && countriesResult.value.ok && countriesResult.value.data
+			? countriesResult.value.data.map((c) => ({ value: c.name, label: c.name }))
+			: [];
 
 	return {
 		universities,
 		countries,
-		filters: { country, sort, page }
+		total,
+		filters: { country, sort, page: String(page) }
 	};
 };

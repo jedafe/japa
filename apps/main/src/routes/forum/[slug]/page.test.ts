@@ -16,7 +16,7 @@ vi.mock('$lib/api', () => ({
 	getToken: vi.fn().mockReturnValue(null),
 	api: {
 		getForumThread: vi.fn().mockResolvedValue(null),
-		getForumReplies: vi.fn().mockResolvedValue({ replies: [] }),
+		getForumReplies: vi.fn().mockResolvedValue([]),
 		getForumPoll: vi.fn().mockResolvedValue(null),
 		voteForum: vi.fn().mockResolvedValue({ score: 0 }),
 		solveForumThread: vi.fn().mockResolvedValue({ solved: true }),

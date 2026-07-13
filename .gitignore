@@ -23,7 +23,6 @@ data/
 postgres-data/
 valkey-data/
 meili-data/
-minio-data/
 
 # Node / SvelteKit (frontend apps)
 node_modules/

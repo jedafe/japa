@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backend Auditor"
+  short_description: "Full systematic audit of JapaConnect Go backend against JEOS catalogs — routes, tasks, Valkey keys, RBAC, security, financial integrity, and more."
+  default_prompt: "Run a full backend audit of the JapaConnect Go API against the JEOS specification. Cross-reference routes, Asynq tasks, Valkey keys, system settings, RBAC, migrations, environment variables, and security. Report findings by severity with AUDIT-BE-### IDs."

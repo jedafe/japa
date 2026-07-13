@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { RefreshCw } from 'lucide-svelte';
+	import { RefreshCw, List, FileText, Flag, Scale, Bell } from 'lucide-svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { page as pageState } from '$app/state';
 
 	type ModItem = {
 		id: string;
@@ -44,6 +45,17 @@
 	let actionType = $state<'approve' | 'reject' | 'delete'>('approve');
 	let actionReason = $state('');
 	let acting = $state(false);
+	
+	// Tab navigation - derived from current URL
+	let activeTab = $derived.by(() => {
+		const path = pageState.url.pathname;
+		if (path === '/moderation') return 'queue';
+		if (path.startsWith('/moderation/content')) return 'content';
+		if (path.startsWith('/moderation/reports')) return 'reports';
+		if (path.startsWith('/moderation/appeals')) return 'appeals';
+		if (path.startsWith('/moderation/alerts')) return 'alerts';
+		return 'queue';
+	});
 
 	const filterDefs = [
 		{ key: 'type', label: t('moderation.source'), type: 'select' as const, options: ['user_report', 'ai_flag'] },
@@ -234,6 +246,50 @@
 			<span class="relative inline-flex h-2.5 w-2.5 rounded-full" style="background-color: var(--color-success)"></span>
 		</span>
 	{/if}
+</div>
+
+<!-- Sub-navigation tabs -->
+<div class="mb-6 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border)">
+	<a
+		href="/moderation"
+		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'queue' ? 'background-color: var(--color-primary); color: white' : ''}
+	>
+		<List class="h-4 w-4" />
+		{t('moderation.queue')}
+	</a>
+	<a
+		href="/moderation/content"
+		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'content' ? 'background-color: var(--color-primary); color: white' : ''}
+	>
+		<FileText class="h-4 w-4" />
+		{t('moderation.content')}
+	</a>
+	<a
+		href="/moderation/reports"
+		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'reports' ? 'background-color: var(--color-primary); color: white' : ''}
+	>
+		<Flag class="h-4 w-4" />
+		{t('moderation.reports')}
+	</a>
+	<a
+		href="/moderation/appeals"
+		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'appeals' ? 'background-color: var(--color-primary); color: white' : ''}
+	>
+		<Scale class="h-4 w-4" />
+		{t('moderation.appeals')}
+	</a>
+	<a
+		href="/moderation/alerts"
+		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'alerts' ? 'background-color: var(--color-primary); color: white' : ''}
+	>
+		<Bell class="h-4 w-4" />
+		{t('moderation.alerts')}
+	</a>
 </div>
 
 {#if errorMessage}

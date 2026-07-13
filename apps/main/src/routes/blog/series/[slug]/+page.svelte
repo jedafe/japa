@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowLeft, BookOpen, Clock, Layers } from 'lucide-svelte';
+	import { ArrowLeft, BookOpen, Clock, Edit, Layers } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { formatTimestamp } from '$lib/utils/timezone';
 
@@ -32,9 +32,19 @@
 
 	<!-- Series Header -->
 	<header class="mb-8 rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-surface)">
-		<div class="flex items-center gap-2 text-xs font-medium" style="color: var(--color-primary)">
-			<Layers class="h-3.5 w-3.5" />
-			Series
+		<div class="flex items-center justify-between">
+			<div class="flex items-center gap-2 text-xs font-medium" style="color: var(--color-primary)">
+				<Layers class="h-3.5 w-3.5" />
+				Series
+			</div>
+			<a
+				href="/blog/series/{series.slug}/edit"
+				class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:opacity-80"
+				style="border-color: var(--color-border); color: var(--color-foreground)"
+			>
+				<Edit class="h-3.5 w-3.5" />
+				Edit
+			</a>
 		</div>
 		<h1 class="mt-3 text-2xl font-bold tracking-tight sm:text-3xl" style="color: var(--color-foreground)">
 			{series.title}

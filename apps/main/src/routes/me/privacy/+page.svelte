@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { RefreshCw, Shield, Cookie } from 'lucide-svelte';
 	import { page as pageState } from '$app/state';
+	import { invalidateAll } from '$app/navigation';
 
 	type PrivacySettings = {
 		profile_visibility: string;
@@ -18,56 +18,27 @@
 		granted_at?: string;
 	};
 
+	let { data } = $props();
+	let settings = $derived(data.data?.privacy ?? null);
+	let consents = $derived<ConsentItem[]>(data.data?.consent ?? []);
+
 	let activeTab = $derived.by(() => {
 		const path = pageState.url.pathname;
 		if (path.includes('#consent')) return 'consent';
 		return 'privacy';
 	});
 
-	// Privacy state
-	let settings = $state<PrivacySettings | null>(null);
-	let loading = $state(true);
-	let errorMessage = $state('');
 	let saving = $state(false);
-
-	// Consent state
-	let consents = $state<ConsentItem[]>([]);
-	let consentLoading = $state(true);
 	let consentSaving = $state<string | null>(null);
-
-	async function loadPrivacy() {
-		loading = true;
-		errorMessage = '';
-		try {
-			settings = await api.getMePrivacy() as unknown as PrivacySettings;
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
 
 	async function savePrivacy() {
 		if (!settings) return;
 		saving = true;
-		errorMessage = '';
 		try {
 			await api.updateMePrivacy(settings);
 		} catch {
-			errorMessage = t('common.error');
 		} finally {
 			saving = false;
-		}
-	}
-
-	async function loadConsents() {
-		consentLoading = true;
-		try {
-			consents = await api.getConsents();
-		} catch {
-			consents = [];
-		} finally {
-			consentLoading = false;
 		}
 	}
 
@@ -75,19 +46,12 @@
 		consentSaving = item.category;
 		try {
 			await api.updateConsent({ category: item.category, granted: !item.granted });
-			item.granted = !item.granted;
-			consents = [...consents];
+			await invalidateAll();
 		} catch {
-			errorMessage = t('common.error');
 		} finally {
 			consentSaving = null;
 		}
 	}
-
-	onMount(() => {
-		loadPrivacy();
-		loadConsents();
-	});
 </script>
 
 <svelte:head>
@@ -116,16 +80,10 @@
 	</a>
 </div>
 
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
-	</div>
-{/if}
-
 {#if activeTab === 'privacy'}
-	{#if loading}
+	{#if !settings}
 		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-	{:else if settings}
+	{:else}
 		<div class="max-w-xl space-y-4 rounded-lg border p-6" style="border-color: var(--color-border); background: var(--color-surface)">
 			<div class="flex items-center justify-between">
 				<div>
@@ -154,9 +112,7 @@
 		</div>
 	{/if}
 {:else if activeTab === 'consent'}
-	{#if consentLoading}
-		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading consent preferences...</p>
-	{:else if consents.length === 0}
+	{#if consents.length === 0}
 		<div class="rounded-lg border p-6 text-center text-sm" style="border-color: var(--color-border); color: var(--color-muted)">
 			No consent preferences found.
 		</div>
