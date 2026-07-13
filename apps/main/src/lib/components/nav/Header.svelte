@@ -17,12 +17,22 @@
 	import { page } from '$app/state';
 	import LanguageToggle from '$lib/components/LanguageToggle.svelte';
 
+	type HeaderUser = {
+		id: string;
+		email: string;
+		username: string;
+		displayName: string | null;
+		avatarUrl: string | null;
+		profileType: string;
+		status: string;
+	};
+
 	let {
 		user = null,
 		notificationCount = 0,
 		onsidenavToggle = () => {}
 	}: {
-		user: any;
+		user: HeaderUser | null;
 		notificationCount: number;
 		onsidenavToggle: () => void;
 	} = $props();

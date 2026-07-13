@@ -1,17 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { get } from 'svelte/store';
 
 vi.mock('$lib/api/client', () => ({
 	apiFetch: vi.fn()
 }));
 
 import { apiFetch } from '$lib/api/client';
-import { fetchPermissions, permissions, permissionsLoaded, hasPermission } from './permissions';
+import { fetchPermissions, permissions, permissionsLoaded, hasPermission } from './permissions.svelte';
 
 describe('fetchPermissions', () => {
-	beforeEach(() => {
-		permissions.set([]);
-		permissionsLoaded.set(false);
+	beforeEach(async () => {
+		vi.mocked(apiFetch).mockResolvedValue({
+			data: { permissions: [] },
+			error: null,
+			status: 200
+		});
+		await fetchPermissions();
 		vi.mocked(apiFetch).mockReset();
 	});
 
@@ -25,8 +28,8 @@ describe('fetchPermissions', () => {
 		await fetchPermissions();
 
 		expect(apiFetch).toHaveBeenCalledWith('/me/permissions');
-		expect(get(permissions)).toEqual(['admin.users.view', 'admin.settings']);
-		expect(get(permissionsLoaded)).toBe(true);
+		expect(permissions).toEqual(['admin.users.view', 'admin.settings']);
+		expect(permissionsLoaded).toBe(true);
 		expect(hasPermission('admin.users.view')).toBe(true);
 		expect(hasPermission('admin.broadcast')).toBe(false);
 	});
@@ -40,7 +43,7 @@ describe('fetchPermissions', () => {
 
 		await fetchPermissions();
 
-		expect(get(permissions)).toEqual([]);
-		expect(get(permissionsLoaded)).toBe(true);
+		expect(permissions).toEqual([]);
+		expect(permissionsLoaded).toBe(true);
 	});
 });

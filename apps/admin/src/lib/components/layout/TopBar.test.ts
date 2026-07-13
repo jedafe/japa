@@ -4,9 +4,8 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 // vi.mock factories are hoisted above module init, so any mock that needs a
 // shared spy reference must create it via vi.hoisted (which also hoists) —
 // otherwise the factory runs before the plain `const` is initialized.
-const { clearUserMock, permissionsSetMock } = vi.hoisted(() => ({
-	clearUserMock: vi.fn(),
-	permissionsSetMock: vi.fn()
+const { clearUserMock } = vi.hoisted(() => ({
+	clearUserMock: vi.fn()
 }));
 
 vi.mock('$env/static/public', () => ({ PUBLIC_JC_ENV: 'development' }));
@@ -15,17 +14,18 @@ vi.mock('$lib/api/client', () => ({
 	apiFetch: vi.fn().mockResolvedValue({ data: null, error: null, status: 200 })
 }));
 
-vi.mock('$lib/stores/auth', () => ({
-	user: { subscribe: (fn: (v: unknown) => void) => (fn({ display_name: 'Ada', avatar_url: '' }), () => {}) },
+vi.mock('$lib/stores/auth.svelte', () => ({
+	user: { display_name: 'Ada', avatar_url: '' },
 	clearUser: clearUserMock
 }));
 
-vi.mock('$lib/stores/permissions', () => ({
-	permissions: { set: permissionsSetMock }
+vi.mock('$lib/stores/permissions.svelte', () => ({
+	permissions: [],
+	hasPermission: vi.fn().mockReturnValue(false)
 }));
 
-vi.mock('$lib/stores/theme', () => ({
-	theme: { subscribe: (fn: (v: unknown) => void) => (fn('light'), () => {}), update: vi.fn() }
+vi.mock('$lib/stores/theme.svelte', () => ({
+	theme: 'light'
 }));
 
 import { apiFetch } from '$lib/api/client';
@@ -35,7 +35,6 @@ describe('admin TopBar logout', () => {
 	beforeEach(() => {
 		vi.mocked(apiFetch).mockClear();
 		clearUserMock.mockClear();
-		permissionsSetMock.mockClear();
 		// @ts-expect-error jsdom navigation stub
 		delete window.location;
 		// @ts-expect-error jsdom navigation stub
@@ -50,7 +49,6 @@ describe('admin TopBar logout', () => {
 
 		expect(apiFetch).toHaveBeenCalledWith('/auth/logout', { method: 'POST' });
 		expect(clearUserMock).toHaveBeenCalled();
-		expect(permissionsSetMock).toHaveBeenCalledWith([]);
 		expect(window.location.href).toBe('/login');
 	});
 });

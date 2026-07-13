@@ -7,11 +7,14 @@
 	import type { QueueInfo, QueueStats } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { ListTodo, Clock, Play, CheckCircle, XCircle, RefreshCw, X, Loader2 } from 'lucide-svelte';
+	import type { PageData } from './$types';
 
-	let { data = {} as any } = $props();
+	let { data = {} as PageData } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let queueStats = $state<QueueStats | null>(data.queueStats ?? null);
 	let loading = $state(false);
+	// svelte-ignore state_referenced_locally
 	let apiAvailable = $state(data.queueStats !== null || data.error === null);
 	let lastRefresh = $state(new Date());
 	let selectedQueue = $state<QueueInfo | null>(null);
@@ -98,12 +101,6 @@
 		};
 	});
 </script>
-
-<svelte:window onvisibilitychange={() => {
-	if (document.visibilityState === 'visible') {
-		refresh();
-	}
-}} />
 
 <PageHeader title={t('queue.title')} description={t('queue.description')} />
 

@@ -1,16 +1,17 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import { api } from '$lib/api';
 	import type { AiBudget } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { DollarSign, RefreshCw, AlertTriangle } from 'lucide-svelte';
+	import type { PageData } from './$types';
 
-	let budget = $state<AiBudget | null>(null);
-	let loading = $state(true);
+	let { data = {} as PageData } = $props();
 
-	onMount(load);
+	// svelte-ignore state_referenced_locally
+	let budget = $state<AiBudget | null>(data.budget ?? null);
+	let loading = $state(false);
 
 	async function load() {
 		loading = true;

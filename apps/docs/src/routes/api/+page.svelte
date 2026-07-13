@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import { Input, Badge } from '$lib/components/ui';
 

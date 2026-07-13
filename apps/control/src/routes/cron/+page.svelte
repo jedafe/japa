@@ -1,9 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Clock, RefreshCw, Play, Pause } from 'lucide-svelte';
+	import type { PageData } from './$types';
+
+	let { data = {} as PageData } = $props();
 
 	interface CronJob {
 		name: string;
@@ -14,10 +16,6 @@
 		next_run: string | null;
 		enabled: boolean;
 	}
-
-	let jobs = $state<CronJob[]>([]);
-	let loading = $state(true);
-	let message = $state('');
 
 	const descriptions: Record<string, string> = {
 		'cleanup-expired-sessions': 'Remove expired user sessions from the database',
@@ -32,7 +30,15 @@
 		'backup-database': 'Create incremental database backup'
 	};
 
-	onMount(load);
+	// svelte-ignore state_referenced_locally
+	let jobs = $state<CronJob[]>(
+		(data.jobs ?? []).map((j: CronJob) => ({
+			...j,
+			description: descriptions[j.name] ?? j.description
+		}))
+	);
+	let loading = $state(false);
+	let message = $state('');
 
 	async function load() {
 		loading = true;

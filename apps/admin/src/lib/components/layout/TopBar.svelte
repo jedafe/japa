@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { PUBLIC_JC_ENV } from '$env/static/public';
-	import { user, clearUser } from '$lib/stores/auth';
-	import { permissions } from '$lib/stores/permissions';
+	import { user, clearUser } from '$lib/stores/auth.svelte';
 	import { apiFetch } from '$lib/api/client';
-	import { theme } from '$lib/stores/theme';
-	import { notifications, unreadCount, markRead, markAllRead } from '$lib/stores/notifications';
+	import { theme } from '$lib/stores/theme.svelte';
+	import { notifications, unreadCount, markRead, markAllRead } from '$lib/stores/notifications.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import { Bell, Sun, Moon, Check } from 'lucide-svelte';
 
@@ -12,7 +11,7 @@
 	let showNotifications = $state(false);
 
 	function toggleTheme() {
-		theme.update((v) => (v === 'dark' ? 'light' : 'dark'));
+		theme.set(theme.current === 'dark' ? 'light' : 'dark');
 	}
 
 	function closeDropdowns(e: MouseEvent) {
@@ -37,7 +36,6 @@
 		// real server endpoint capable of clearing the cookie).
 		await apiFetch('/auth/logout', { method: 'POST' }).catch(() => {});
 		clearUser();
-		permissions.set([]);
 		window.location.href = '/login';
 	}
 </script>
@@ -62,9 +60,9 @@
 				onclick={() => { showNotifications = !showNotifications; showDropdown = false; }}
 			>
 				<Bell class="h-4 w-4" />
-				{#if $unreadCount > 0}
+				{#if unreadCount > 0}
 					<span class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-						{$unreadCount}
+						{unreadCount}
 					</span>
 				{/if}
 			</button>
@@ -82,10 +80,10 @@
 						</button>
 					</div>
 					<div class="max-h-64 overflow-y-auto">
-						{#if $notifications.length === 0}
+						{#if notifications.length === 0}
 							<p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">No notifications</p>
 						{:else}
-							{#each $notifications as notif}
+							{#each notifications as notif}
 								<button
 									type="button"
 									class="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 {notif.read ? 'opacity-60' : ''}"
@@ -109,22 +107,22 @@
 			class="rounded p-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
 			onclick={toggleTheme}
 		>
-			{#if $theme === 'dark'}
+			{#if theme.current === 'dark'}
 				<Sun class="h-4 w-4" />
 			{:else}
 				<Moon class="h-4 w-4" />
 			{/if}
 		</button>
 
-		{#if $user}
+		{#if user.current}
 			<div class="relative" data-user-menu>
 				<button
 					type="button"
 					class="flex items-center gap-2 rounded p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
 					onclick={() => (showDropdown = !showDropdown)}
 				>
-					<Avatar src={$user.avatar_url} alt={$user.display_name} size="sm" />
-					<span class="text-sm text-gray-700 dark:text-gray-300">{$user.display_name}</span>
+					<Avatar src={user.current.avatar_url} alt={user.current.display_name} size="sm" />
+					<span class="text-sm text-gray-700 dark:text-gray-300">{user.current.display_name}</span>
 				</button>
 
 				{#if showDropdown}
