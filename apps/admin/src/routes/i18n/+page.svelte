@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+
+	let { data } = $props();
 
 	type Language = {
 		code: string;
@@ -17,10 +18,13 @@
 		language_code: string;
 	};
 
-	let languages = $state<Language[]>([]);
-	let strings = $state<TranslationString[]>([]);
-	let loading = $state(true);
-	let error = $state('');
+	// svelte-ignore state_referenced_locally
+	let languages = $state<Language[]>(data.languages ?? []);
+	// svelte-ignore state_referenced_locally
+	let strings = $state<TranslationString[]>(data.strings ?? []);
+	let loading = $state(false);
+	// svelte-ignore state_referenced_locally
+	let error = $state(data.error ?? '');
 	let selectedLang = $state('en');
 	let searchQuery = $state('');
 
@@ -33,9 +37,7 @@
 	let translateTarget = $state('');
 	let translateResult = $state('');
 
-	onMount(load);
-
-	async function load() {
+	async function refresh() {
 		loading = true;
 		error = '';
 		try {
@@ -62,7 +64,7 @@
 			});
 			showCreateModal = false;
 			newString = { key: '', value: '', language_code: 'en' };
-			await load();
+			await refresh();
 		} catch {
 			error = t('common.error');
 		} finally {
@@ -74,7 +76,7 @@
 		if (!confirm('Delete this translation string?')) return;
 		try {
 			await api(`/admin/i18n/strings/${id}`, { method: 'DELETE' });
-			await load();
+			await refresh();
 		} catch {
 			error = t('common.error');
 		}
@@ -90,7 +92,7 @@
 				body: { target_language: translateTarget }
 			});
 			translateResult = result.ok ? 'Translation completed' : 'Translation failed';
-			await load();
+			await refresh();
 		} catch {
 			translateResult = 'Translation failed';
 		} finally {
@@ -128,7 +130,7 @@
 	<div class="mb-4 flex items-center gap-3">
 		<select
 			bind:value={selectedLang}
-			onchange={() => load()}
+			onchange={() => refresh()}
 			class="rounded-lg border px-3 py-2 text-sm"
 			style="border-color: var(--color-border); background: var(--color-surface)"
 		>

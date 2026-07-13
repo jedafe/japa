@@ -28,9 +28,20 @@
 		joined_at: string;
 	};
 
-	let activeTab = $state<'providers' | 'members' | 'rates'>('providers');
+	type AffiliateLink = {
+		id: string;
+		user_id: string;
+		code: string;
+		url: string;
+		clicks: number;
+		conversions: number;
+		created_at: string;
+	};
+
+	let activeTab = $state<'providers' | 'members' | 'rates' | 'links'>('providers');
 	let providers = $state<AffiliateProvider[]>([]);
 	let members = $state<AffiliateMember[]>([]);
+	let links = $state<AffiliateLink[]>([]);
 	let rates = $state<CommissionRates>({ content_creation: 0, referral_signup: 0, referral_purchase: 0 });
 	let loading = $state(true);
 	let error = $state('');
@@ -55,6 +66,13 @@
 				const result = await api<AffiliateMember[]>('/admin/affiliate-program/members');
 				if (result.ok) {
 					members = result.data ?? [];
+				} else {
+					error = result.error;
+				}
+			} else if (activeTab === 'links') {
+				const result = await api<AffiliateLink[]>('/admin/affiliate-links');
+				if (result.ok) {
+					links = result.data ?? [];
 				} else {
 					error = result.error;
 				}
@@ -156,6 +174,13 @@
 		onclick={() => { activeTab = 'members'; load(); }}
 	>
 		{t('affiliate.members')}
+	</button>
+	<button
+		class="rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'links' ? 'background-color: var(--color-primary); color: white' : ''}
+		onclick={() => { activeTab = 'links'; load(); }}
+	>
+		{t('affiliate.links')}
 	</button>
 	<button
 		class="rounded-md px-4 py-2 text-sm font-medium transition-colors"
@@ -272,6 +297,40 @@
 					<tr>
 						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
 							{t('affiliate.no_members')}
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+
+{:else if activeTab === 'links'}
+	<div class="rounded-lg border" style="border-color: var(--color-border)">
+		<table class="w-full text-sm">
+			<thead>
+				<tr style="border-bottom: 1px solid var(--color-border)">
+					<th class="px-4 py-3 text-left font-medium">User</th>
+					<th class="px-4 py-3 text-left font-medium">Code</th>
+					<th class="px-4 py-3 text-left font-medium">URL</th>
+					<th class="px-4 py-3 text-right font-medium">Clicks</th>
+					<th class="px-4 py-3 text-right font-medium">Conversions</th>
+					<th class="px-4 py-3 text-left font-medium">Created</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each links as link (link.id)}
+					<tr style="border-bottom: 1px solid var(--color-border)">
+						<td class="px-4 py-3 font-medium">{link.user_id}</td>
+						<td class="px-4 py-3 text-xs font-mono" style="color: var(--color-muted)">{link.code}</td>
+						<td class="px-4 py-3 text-xs" style="color: var(--color-muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{link.url}</td>
+						<td class="px-4 py-3 text-right">{link.clicks}</td>
+						<td class="px-4 py-3 text-right">{link.conversions}</td>
+						<td class="px-4 py-3">{new Date(link.created_at).toLocaleDateString()}</td>
+					</tr>
+				{:else}
+					<tr>
+						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">
+							No affiliate links found.
 						</td>
 					</tr>
 				{/each}

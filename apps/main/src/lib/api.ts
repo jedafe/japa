@@ -1517,6 +1517,16 @@ export const api = {
 	},
 
 	// ── Coupons (AUDIT-FE closing gap — powers the TipTap coupon_embed render) ─
+	listPublicCoupons(params?: { provider_id?: string; coupon_type?: string; search?: string; page?: number; page_size?: number }) {
+		const p = new URLSearchParams();
+		if (params?.provider_id) p.set('provider_id', params.provider_id);
+		if (params?.coupon_type) p.set('coupon_type', params.coupon_type);
+		if (params?.search) p.set('search', params.search);
+		if (params?.page) p.set('page', String(params.page));
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		const q = p.toString();
+		return request<{ coupons: Coupon[]; total: number }>(`/coupons${q ? '?' + q : ''}`);
+	},
 	getCoupon(id: string) {
 		return request<Coupon>(`/coupons/${id}`);
 	},
@@ -1525,6 +1535,9 @@ export const api = {
 	},
 
 	// ── Affiliate program (AUDIT-FE closing gap) ──────────────────────────────
+	getProgramInfo() {
+		return request<{ name: string; description: string; commission_rates: Record<string, number>; requirements: string[] }>('/affiliate-program');
+	},
 	enrollAffiliate() {
 		return request<{ enrolled: boolean }>('/affiliate-program/enroll', { method: 'POST' });
 	},
@@ -2133,6 +2146,91 @@ export const api = {
 	},
 	updateContentSpaces(id: string, data: { space_ids: string[] }) {
 		return request<{ updated: boolean }>('/content/' + id + '/spaces', { method: 'PATCH', body: JSON.stringify(data) });
+	},
+
+	// ── Content by slug ───────────────────────────────────────────────────
+	getContentBySlug(slug: string) {
+		return request<FeedItem>('/content/' + slug);
+	},
+
+	// ── Tag content search ────────────────────────────────────────────────
+	searchTagContent(slug: string, params?: { q?: string; page_size?: number; page_offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.q) p.set('q', params.q);
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
+		const q = p.toString();
+		return request<FeedItem[]>('/tags/' + slug + '/search' + (q ? '?' + q : ''));
+	},
+
+	// ── Spaces search ─────────────────────────────────────────────────────
+	searchSpaces(params?: { q?: string; page_size?: number; page_offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.q) p.set('q', params.q);
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
+		const q = p.toString();
+		return request<Array<{ id: string; name: string; slug: string; description: string }>>(
+			'/spaces/search' + (q ? '?' + q : '')
+		);
+	},
+
+	// ── Space content search ──────────────────────────────────────────────
+	searchSpaceContent(spaceId: string, params?: { q?: string; page_size?: number; page_offset?: number }) {
+		const p = new URLSearchParams();
+		if (params?.q) p.set('q', params.q);
+		if (params?.page_size) p.set('page_size', String(params.page_size));
+		if (params?.page_offset) p.set('page_offset', String(params.page_offset));
+		const q = p.toString();
+		return request<FeedItem[]>('/spaces/' + spaceId + '/search' + (q ? '?' + q : ''));
+	},
+
+	// ── University ────────────────────────────────────────────────────────
+	getUniversity(slug: string) {
+		return request<{
+			id: string;
+			name: string;
+			slug: string;
+			description?: string;
+			country?: string;
+			logo_url?: string;
+		}>('/universities/' + slug);
+	},
+
+	// ── Suggested content ─────────────────────────────────────────────────
+	getSuggestedContent() {
+		return request<FeedItem[]>('/suggestions/content');
+	},
+
+	// ── My media ──────────────────────────────────────────────────────────
+	getMyMedia() {
+		return request<MediaItem[]>('/me/media');
+	},
+
+	// ── My enrollments ────────────────────────────────────────────────────
+	getMyEnrollments() {
+		return request<Array<{
+			id: string;
+			track_id: string;
+			track_title: string;
+			progress_percent: number;
+			enrolled_at: string;
+		}>>('/me/enrollments');
+	},
+
+	// ── Tag feed (RSS/Atom) ───────────────────────────────────────────────
+	getTagFeed(slug: string) {
+		return request<string>('/tags/' + slug + '/feed.xml');
+	},
+
+	// ── User feed (RSS/Atom) ──────────────────────────────────────────────
+	getUserFeed(username: string) {
+		return request<string>('/users/' + username + '/feed.xml');
+	},
+
+	// ── Content share count ───────────────────────────────────────────────
+	getContentShareCount(id: string) {
+		return request<{ count: number }>('/content/' + id + '/share-count');
 	},
 };
 

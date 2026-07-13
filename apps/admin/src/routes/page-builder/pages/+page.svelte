@@ -20,15 +20,24 @@
 	let newPage = $state({ title: '', slug: '' });
 	let creating = $state(false);
 
+	let showTemplateModal = $state(false);
+	let templatePageId = $state('');
+	let templateName = $state('');
+	let savingTemplate = $state(false);
+
+	let showSeoModal = $state(false);
+	let seoIssues = $state<string[]>([]);
+	let seoLoading = $state(false);
+
 	onMount(load);
 
 	async function load() {
 		loading = true;
 		error = '';
 		try {
-			const result = await api<{ data: Page[] }>('/admin/pages');
+			const result = await api<Page[]>('/admin/pages');
 			if (result.ok) {
-				pages = result.data.data ?? [];
+				pages = result.data ?? [];
 			} else {
 				error = result.error;
 			}
@@ -84,6 +93,50 @@
 			load();
 		} catch {
 			error = t('common.error');
+		}
+	}
+
+	function openSaveAsTemplate(pageId: string, pageTitle: string) {
+		templatePageId = pageId;
+		templateName = `${pageTitle} Template`;
+		showTemplateModal = true;
+	}
+
+	async function saveAsTemplate() {
+		if (!templatePageId || !templateName.trim()) return;
+		savingTemplate = true;
+		try {
+			const result = await api(`/admin/pages/${templatePageId}/save-as-template`, {
+				method: 'POST',
+				body: { name: templateName.trim() }
+			});
+			if (result.ok) {
+				showTemplateModal = false;
+			} else {
+				error = result.error;
+			}
+		} catch {
+			error = t('common.error');
+		} finally {
+			savingTemplate = false;
+		}
+	}
+
+	async function validateSeo(id: string) {
+		showSeoModal = true;
+		seoLoading = true;
+		seoIssues = [];
+		try {
+			const result = await api<{ issues: string[] }>(`/admin/seo/validate/${id}`);
+			if (result.ok) {
+				seoIssues = result.data?.issues ?? [];
+			} else {
+				seoIssues = [result.error];
+			}
+		} catch {
+			seoIssues = [t('common.error')];
+		} finally {
+			seoLoading = false;
 		}
 	}
 
@@ -148,6 +201,18 @@
 						<td class="px-4 py-3">{new Date(page.updated_at).toLocaleDateString()}</td>
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-2">
+								<button
+									class="text-xs text-blue-500 hover:text-blue-700"
+									onclick={() => validateSeo(page.id)}
+								>
+									SEO
+								</button>
+								<button
+									class="text-xs text-violet-500 hover:text-violet-700"
+									onclick={() => openSaveAsTemplate(page.id, page.title)}
+								>
+									{t('page_builder.save_as_template')}
+								</button>
 								{#if page.status !== 'published'}
 									<button
 										class="text-xs text-emerald-500 hover:text-emerald-700"
@@ -227,5 +292,59 @@
 				</button>
 			</div>
 		</div>
+	</Modal>
+{/if}
+
+{#if showTemplateModal}
+	<Modal title={t('page_builder.save_as_template')} onclose={() => { showTemplateModal = false; }}>
+		<div class="space-y-4">
+			<div>
+				<label for="template-name" class="mb-1 block text-sm font-medium">{t('page_builder.template_name')}</label>
+				<input
+					id="template-name"
+					type="text"
+					class="w-full rounded-md border px-3 py-2 text-sm"
+					style="border-color: var(--color-border); background-color: var(--color-background)"
+					bind:value={templateName}
+				/>
+			</div>
+			<div class="flex justify-end gap-2">
+				<button
+					class="rounded-md px-4 py-2 text-sm font-medium"
+					style="border: 1px solid var(--color-border)"
+					onclick={() => { showTemplateModal = false; }}
+				>
+					{t('common.cancel')}
+				</button>
+				<button
+					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
+					style="background-color: var(--color-primary)"
+					disabled={savingTemplate || !templateName.trim()}
+					onclick={saveAsTemplate}
+				>
+					{savingTemplate ? t('common.saving') : t('common.save')}
+				</button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+{#if showSeoModal}
+	<Modal title="SEO Validation" onclose={() => { showSeoModal = false; }}>
+		{#if seoLoading}
+			<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
+		{:else if seoIssues.length === 0}
+			<div class="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+				No SEO issues found.
+			</div>
+		{:else}
+			<ul class="space-y-2">
+				{#each seoIssues as issue}
+					<li class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+						{issue}
+					</li>
+				{/each}
+			</ul>
+		{/if}
 	</Modal>
 {/if}

@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+
+	let { data } = $props();
 
 	type Track = {
 		id: string;
@@ -34,11 +35,13 @@
 	};
 
 	let activeTab = $state<'tracks' | 'modules' | 'lessons'>('tracks');
-	let tracks = $state<Track[]>([]);
+	// svelte-ignore state_referenced_locally
+	let tracks = $state<Track[]>(data.initial ?? []);
 	let modules = $state<Module[]>([]);
 	let lessons = $state<Lesson[]>([]);
-	let loading = $state(true);
-	let error = $state('');
+	let loading = $state(false);
+	// svelte-ignore state_referenced_locally
+	let error = $state(data.error ?? '');
 
 	// Create forms
 	let showCreateModal = $state(false);
@@ -51,9 +54,7 @@
 	let editingItem = $state<Track | Module | Lesson | null>(null);
 	let editModalOpen = $state(false);
 
-	onMount(load);
-
-	async function load() {
+	async function refresh() {
 		loading = true;
 		error = '';
 		try {
@@ -85,67 +86,67 @@
 			if (result.ok) {
 				showCreateModal = false;
 				newTrack = { title: '', description: '' };
-				await load();
-			}
-		} catch {
-			error = t('common.error');
-		} finally {
-			creating = false;
+			await refresh();
 		}
+	} catch {
+		error = t('common.error');
+	} finally {
+		creating = false;
 	}
+}
 
-	async function createModule() {
-		if (!newModule.title.trim() || !newModule.track_id || creating) return;
-		creating = true;
-		try {
-			await api(`/admin/learn/tracks/${newModule.track_id}/modules`, {
-				method: 'POST',
-				body: { title: newModule.title }
-			});
-			showCreateModal = false;
-			newModule = { track_id: '', title: '' };
-			await load();
-		} catch {
-			error = t('common.error');
-		} finally {
-			creating = false;
-		}
+async function createModule() {
+	if (!newModule.title.trim() || !newModule.track_id || creating) return;
+	creating = true;
+	try {
+		await api(`/admin/learn/tracks/${newModule.track_id}/modules`, {
+			method: 'POST',
+			body: { title: newModule.title }
+		});
+		showCreateModal = false;
+		newModule = { track_id: '', title: '' };
+		await refresh();
+	} catch {
+		error = t('common.error');
+	} finally {
+		creating = false;
 	}
+}
 
-	async function createLesson() {
-		if (!newLesson.title.trim() || !newLesson.module_id || creating) return;
-		creating = true;
-		try {
-			await api(`/admin/learn/modules/${newLesson.module_id}/lessons`, {
-				method: 'POST',
-				body: { title: newLesson.title, body: newLesson.body }
-			});
-			showCreateModal = false;
-			newLesson = { module_id: '', title: '', body: '' };
-			await load();
-		} catch {
-			error = t('common.error');
-		} finally {
-			creating = false;
-		}
+async function createLesson() {
+	if (!newLesson.title.trim() || !newLesson.module_id || creating) return;
+	creating = true;
+	try {
+		await api(`/admin/learn/modules/${newLesson.module_id}/lessons`, {
+			method: 'POST',
+			body: { title: newLesson.title, body: newLesson.body }
+		});
+		showCreateModal = false;
+		newLesson = { module_id: '', title: '', body: '' };
+		await refresh();
+	} catch {
+		error = t('common.error');
+	} finally {
+		creating = false;
 	}
+}
 
-	async function publishTrack(id: string) {
-		try {
-			await api(`/admin/learn/tracks/${id}/publish`, { method: 'POST' });
-			await load();
-		} catch {
-			error = t('common.error');
-		}
+async function publishTrack(id: string) {
+	try {
+		await api(`/admin/learn/tracks/${id}/publish`, { method: 'POST' });
+		await refresh();
+	} catch {
+		error = t('common.error');
 	}
+}
 
-	async function deleteItem(type: string, id: string) {
-		if (!confirm('Delete this item?')) return;
-		try {
-			if (type === 'track') await api(`/admin/learn/tracks/${id}`, { method: 'DELETE' });
-			else if (type === 'module') await api(`/admin/learn/modules/${id}`, { method: 'DELETE' });
-			else await api(`/admin/learn/lessons/${id}`, { method: 'DELETE' });
-			await load();
+async function deleteItem(type: string, id: string) {
+	if (!confirm('Delete this item?')) return;
+	try {
+		if (type === 'track') await api(`/admin/learn/tracks/${id}`, { method: 'DELETE' });
+		else if (type === 'module') await api(`/admin/learn/modules/${id}`, { method: 'DELETE' });
+		else await api(`/admin/learn/lessons/${id}`, { method: 'DELETE' });
+		await refresh();
 		} catch {
 			error = t('common.error');
 		}
@@ -168,7 +169,7 @@
 	<div class="mb-6 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border)">
 		{#each ['tracks', 'modules', 'lessons'] as tab}
 			<button
-				onclick={() => { activeTab = tab as typeof activeTab; load(); }}
+				onclick={() => { activeTab = tab as typeof activeTab; refresh(); }}
 				class="rounded-md px-4 py-2 text-sm font-medium transition-colors"
 				style="background: {activeTab === tab ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === tab ? 'white' : 'var(--color-muted)'}"
 			>
