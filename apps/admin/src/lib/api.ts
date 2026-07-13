@@ -427,3 +427,363 @@ export const universitiesAdminApi = {
 	delete: (id: string) =>
 		api(`/admin/universities/${id}`, { method: 'DELETE' }),
 };
+
+// --- Unconsumed route methods (490 route initiative) ---
+
+export const adsAdminApi = {
+	listCampaigns: (params?: string) => api<unknown>(`/admin/ads/campaigns${params ? `?${params}` : ''}`),
+	getCampaign: (id: string) => api<unknown>(`/admin/ads/campaigns/${id}`),
+	getCampaignStats: (id: string) => api<unknown>(`/admin/ads/campaigns/${id}/stats`),
+	listActiveBoosts: (params?: string) => api<unknown>(`/admin/ads/boosts/active${params ? `?${params}` : ''}`),
+	createCampaign: (body: Record<string, unknown>) => api<unknown>('/admin/ads/campaigns', { method: 'POST', body }),
+	updateCampaign: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/ads/campaigns/${id}`, { method: 'PATCH', body }),
+	activateCampaign: (id: string) => api<unknown>(`/admin/ads/campaigns/${id}/activate`, { method: 'POST', body: {} }),
+	endCampaign: (id: string) => api<unknown>(`/admin/ads/campaigns/${id}/end`, { method: 'POST', body: {} }),
+	pauseCampaign: (id: string) => api<unknown>(`/admin/ads/campaigns/${id}/pause`, { method: 'POST', body: {} }),
+	endBoost: (id: string) => api<unknown>(`/admin/ads/boosts/${id}/end`, { method: 'POST', body: {} }),
+};
+
+export const aiAdminApi = {
+	listTools: (params?: string) => api<unknown>(`/admin/ai/tools${params ? `?${params}` : ''}`),
+	getTool: (id: string) => api<unknown>(`/admin/ai/tools/${id}`),
+	getToolsUsage: () => api<unknown>('/admin/ai/tools/usage'),
+	getAiUsage: () => api<unknown>('/admin/ai/usage'),
+	updateTool: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/ai/tools/${id}`, { method: 'PUT', body }),
+	getUserAiContext: (userId: string) => api<unknown>(`/admin/ai/context/${userId}`),
+	deleteAiContextEntry: (userId: string, entryId: string) =>
+		api<{ deleted: boolean }>(`/admin/ai/context/${userId}/${entryId}`, { method: 'DELETE' }),
+};
+
+export const analyticsAdminApi = {
+	getOverview: (params?: string) => api<unknown>(`/admin/analytics/overview${params ? `?${params}` : ''}`),
+	getUsers: (params?: string) => api<unknown>(`/admin/analytics/users${params ? `?${params}` : ''}`),
+	getSpaces: (params?: string) => api<unknown>(`/admin/analytics/spaces${params ? `?${params}` : ''}`),
+	getContent: (params?: string) => api<unknown>(`/admin/analytics/content${params ? `?${params}` : ''}`),
+	getEvents: (params?: string) => api<unknown>(`/admin/analytics/events${params ? `?${params}` : ''}`),
+	getRevenue: (params?: string) => api<unknown>(`/admin/analytics/revenue${params ? `?${params}` : ''}`),
+	getSearch: (params?: string) => api<unknown>(`/admin/analytics/search${params ? `?${params}` : ''}`),
+	getSecurity: (params?: string) => api<unknown>(`/admin/analytics/security${params ? `?${params}` : ''}`),
+	flushCache: (body: Record<string, unknown>) => api<unknown>('/admin/analytics/cache/flush', { method: 'POST', body }),
+	refresh: (body: Record<string, unknown>) => api<unknown>('/admin/analytics/refresh', { method: 'POST', body }),
+	runSecurityScan: (body: Record<string, unknown>) => api<unknown>('/admin/analytics/security/scan', { method: 'POST', body }),
+	resolveSecurityItem: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/analytics/security/${id}/resolve`, { method: 'POST', body }),
+};
+
+export const blogAdminApi = {
+	getReviewQueue: (params?: string) => api<unknown>(`/admin/blog/review-queue${params ? `?${params}` : ''}`),
+	approvePost: (id: string) => api<unknown>(`/admin/blog/review-queue/${id}/approve`, { method: 'POST', body: {} }),
+	rejectPost: (id: string, body: { reason?: string }) =>
+		api<unknown>(`/admin/blog/review-queue/${id}/reject`, { method: 'POST', body }),
+};
+
+export const contentAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/content${params ? `?${params}` : ''}`),
+	getRemove: (id: string) => api<unknown>(`/admin/content/${id}/remove`),
+	remove: (id: string) => api<unknown>(`/admin/content/${id}/remove`, { method: 'POST', body: {} }),
+	restore: (id: string) => api<unknown>(`/admin/content/${id}/restore`, { method: 'POST', body: {} }),
+};
+
+export const mediaAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/media${params ? `?${params}` : ''}`),
+	listQuarantined: (params?: string) => api<unknown>(`/admin/media/quarantined${params ? `?${params}` : ''}`),
+	approve: (id: string) => api<unknown>(`/admin/media/${id}/approve`, { method: 'POST', body: {} }),
+	reject: (id: string) => api<unknown>(`/admin/media/${id}/reject`, { method: 'POST', body: {} }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/media/${id}`, { method: 'DELETE' }),
+};
+
+export const moderationAdminApi = {
+	getQueue: (params?: string) => api<unknown>(`/admin/moderation-queue${params ? `?${params}` : ''}`),
+	getAlerts: (params?: string) => api<unknown>(`/admin/moderation/alerts${params ? `?${params}` : ''}`),
+	updateItem: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/moderation-queue/${id}`, { method: 'PATCH', body }),
+	assignItem: (id: string, body: { assignee_id: string }) =>
+		api<unknown>(`/admin/moderation-queue/${id}/assign`, { method: 'PATCH', body }),
+	bulkAction: (body: Record<string, unknown>) => api<unknown>('/admin/moderation-queue/bulk', { method: 'POST', body }),
+	appealItem: (id: string, body: { reason: string }) =>
+		api<unknown>(`/admin/moderation-queue/${id}/appeal`, { method: 'POST', body }),
+	acknowledgeAlert: (id: string) => api<unknown>(`/admin/moderation/alerts/${id}/acknowledge`, { method: 'POST', body: {} }),
+	resolveAlert: (id: string, body: { resolution: string }) =>
+		api<unknown>(`/admin/moderation/alerts/${id}/resolve`, { method: 'POST', body }),
+};
+
+export const newsletterAdminApi = {
+	listCampaigns: (params?: string) => api<unknown>(`/admin/newsletter/campaigns${params ? `?${params}` : ''}`),
+	getCampaign: (id: string) => api<unknown>(`/admin/newsletter/campaigns/${id}`),
+	listSubscribers: (params?: string) => api<unknown>(`/admin/newsletter/subscribers${params ? `?${params}` : ''}`),
+	getSubscriber: (id: string) => api<unknown>(`/admin/newsletter/subscribers/${id}`),
+	createCampaign: (body: Record<string, unknown>) => api<unknown>('/admin/newsletter/campaigns', { method: 'POST', body }),
+	updateCampaign: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/newsletter/campaigns/${id}`, { method: 'PATCH', body }),
+	sendCampaign: (id: string) => api<unknown>(`/admin/newsletter/campaigns/${id}/send`, { method: 'POST', body: {} }),
+	deleteSubscriber: (id: string) => api<{ deleted: boolean }>(`/admin/newsletter/subscribers/${id}`, { method: 'DELETE' }),
+};
+
+export const ticketsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/tickets${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/tickets/${id}`),
+	getEvents: (id: string) => api<unknown>(`/admin/tickets/${id}/events`),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/tickets/${id}`, { method: 'PATCH', body }),
+	addComment: (id: string, body: { body: string }) =>
+		api<unknown>(`/admin/tickets/${id}/comments`, { method: 'POST', body }),
+	addNote: (id: string, body: { body: string }) =>
+		api<unknown>(`/admin/tickets/${id}/notes`, { method: 'POST', body }),
+	resolve: (id: string, body: { resolution: string }) =>
+		api<unknown>(`/admin/tickets/${id}/resolve`, { method: 'POST', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/tickets/${id}`, { method: 'DELETE' }),
+};
+
+export const usersAdminApiExtended = {
+	getBans: (id: string) => api<unknown>(`/admin/users/${id}/bans`),
+	getWarnings: (id: string) => api<unknown>(`/admin/users/${id}/warnings`),
+	warn: (id: string, body: { reason: string }) =>
+		api<unknown>(`/admin/users/${id}/warn`, { method: 'POST', body }),
+	ban: (id: string, body: { reason?: string; duration_days?: number }) =>
+		api<unknown>(`/admin/users/${id}/ban`, { method: 'POST', body }),
+	updateGroup: (id: string, body: { group_id: string }) =>
+		api<unknown>(`/admin/users/${id}/group`, { method: 'PATCH', body }),
+};
+
+export const settingsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/settings${params ? `?${params}` : ''}`),
+	updateCategory: (category: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/settings/${category}`, { method: 'PUT', body }),
+};
+
+export const spacesAdminApiExtended = {
+	getJoinRequests: (id: string) => api<unknown>(`/admin/spaces/${id}/join-requests`),
+	updateJoinRequest: (id: string, requestId: string, body: { status: string }) =>
+		api<unknown>(`/admin/spaces/${id}/join-requests/${requestId}`, { method: 'PATCH', body }),
+};
+
+export const fieldGroupsAdminApiExtended = {
+	list: (params?: string) => api<unknown>(`/admin/field-groups${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/field-groups', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/field-groups/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/field-groups/${id}`, { method: 'DELETE' }),
+	addField: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/field-groups/${id}/fields`, { method: 'POST', body }),
+	updateField: (id: string, fid: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/field-groups/${id}/fields/${fid}`, { method: 'PATCH', body }),
+	deleteField: (id: string, fid: string) =>
+		api<{ deleted: boolean }>(`/admin/field-groups/${id}/fields/${fid}`, { method: 'DELETE' }),
+	reorderFields: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/field-groups/${id}/fields/reorder`, { method: 'POST', body }),
+};
+
+export const webhooksAdminApiExtended = {
+	getDeliveries: (id: string) => api<unknown>(`/admin/webhooks/${id}`),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/webhooks/${id}`, { method: 'PATCH', body }),
+	replace: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/webhooks/${id}`, { method: 'PUT', body }),
+	test: (id: string) => api<unknown>(`/admin/webhooks/${id}/test`, { method: 'POST', body: {} }),
+	verify: (id: string) => api<unknown>(`/admin/webhooks/${id}/verify`, { method: 'POST', body: {} }),
+	retryDelivery: (id: string, deliveryId: string) =>
+		api<unknown>(`/admin/webhooks/${id}/deliveries/${deliveryId}/retry`, { method: 'POST', body: {} }),
+};
+
+export const botsAdminApiExtended = {
+	list: (params?: string) => api<unknown>(`/admin/bots${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/bots/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/bots', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/bots/${id}`, { method: 'PUT', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/bots/${id}`, { method: 'DELETE' }),
+};
+
+export const broadcastsAdminApiExtended = {
+	list: (params?: string) => api<unknown>(`/admin/broadcasts${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/broadcasts/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/broadcasts', { method: 'POST', body }),
+	send: (id: string) => api<unknown>(`/admin/broadcasts/${id}/send`, { method: 'POST', body: {} }),
+};
+
+export const comparisonsAdminApiExtended = {
+	list: (params?: string) => api<unknown>(`/admin/comparison-types${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/comparison-types', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/comparison-types/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/comparison-types/${id}`, { method: 'DELETE' }),
+};
+
+export const couponsAdminApiExtended = {
+	list: (params?: string) => api<unknown>(`/admin/coupons${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/coupons/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/coupons', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/coupons/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/coupons/${id}`, { method: 'DELETE' }),
+};
+
+export const discountCodesAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/discount-codes${params ? `?${params}` : ''}`),
+	getUsage: (id: string) => api<unknown>(`/admin/discount-codes/${id}/usage`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/discount-codes', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/discount-codes/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/discount-codes/${id}`, { method: 'DELETE' }),
+};
+
+export const docsAdminApiExtended = {
+	getByAudience: (audience: string) => api<unknown>(`/admin/docs/${audience}`),
+	getPage: (id: string) => api<unknown>(`/admin/docs/pages/${id}`),
+	updatePage: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/docs/pages/${id}`, { method: 'PATCH', body }),
+	deletePage: (id: string) => api<{ deleted: boolean }>(`/admin/docs/pages/${id}`, { method: 'DELETE' }),
+	aiGenerate: (body: Record<string, unknown>) => api<unknown>('/admin/docs/ai-generate', { method: 'POST', body }),
+	approvePage: (id: string) => api<unknown>(`/admin/docs/pages/${id}/approve`, { method: 'POST', body: {} }),
+	publishPage: (id: string) => api<unknown>(`/admin/docs/pages/${id}/publish`, { method: 'POST', body: {} }),
+};
+
+export const gdprAdminApiExtended = {
+	listDeletionRequests: (params?: string) =>
+		api<unknown>(`/admin/gdpr/deletion-requests${params ? `?${params}` : ''}`),
+	listExports: (params?: string) => api<unknown>(`/admin/gdpr/exports${params ? `?${params}` : ''}`),
+	executeDeletion: (id: string) =>
+		api<unknown>(`/admin/gdpr/deletion-requests/${id}/execute`, { method: 'POST', body: {} }),
+};
+
+export const i18nAdminApiExtended = {
+	listLanguages: () => api<unknown>('/admin/i18n/languages'),
+	listStrings: (params?: string) => api<unknown>(`/admin/i18n/strings${params ? `?${params}` : ''}`),
+	createString: (body: Record<string, unknown>) => api<unknown>('/admin/i18n/strings', { method: 'POST', body }),
+	batchCreate: (body: Record<string, unknown>) => api<unknown>('/admin/i18n/strings/batch', { method: 'POST', body }),
+	aiTranslateBatch: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/i18n/strings/ai-translate-batch', { method: 'POST', body }),
+	translateString: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/i18n/strings/${id}/translate`, { method: 'POST', body }),
+};
+
+export const learnAdminApiExtended = {
+	listTracks: (params?: string) => api<unknown>(`/admin/learn/tracks${params ? `?${params}` : ''}`),
+	getTrackEnrollments: (id: string) => api<unknown>(`/admin/learn/tracks/${id}/enrollments`),
+	createTrack: (body: Record<string, unknown>) => api<unknown>('/admin/learn/tracks', { method: 'POST', body }),
+	updateTrack: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/learn/tracks/${id}`, { method: 'PATCH', body }),
+	publishTrack: (id: string) =>
+		api<unknown>(`/admin/learn/tracks/${id}/publish`, { method: 'POST', body: {} }),
+	deleteTrack: (id: string) => api<{ deleted: boolean }>(`/admin/learn/tracks/${id}`, { method: 'DELETE' }),
+	addModule: (trackId: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/learn/tracks/${trackId}/modules`, { method: 'POST', body }),
+	updateModule: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/learn/modules/${id}`, { method: 'PATCH', body }),
+	deleteModule: (id: string) => api<{ deleted: boolean }>(`/admin/learn/modules/${id}`, { method: 'DELETE' }),
+	addLesson: (moduleId: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/learn/modules/${moduleId}/lessons`, { method: 'POST', body }),
+	updateLesson: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/learn/lessons/${id}`, { method: 'PATCH', body }),
+	deleteLesson: (id: string) => api<{ deleted: boolean }>(`/admin/learn/lessons/${id}`, { method: 'DELETE' }),
+};
+
+export const mentorshipAdminApiExtended = {
+	listPrograms: (params?: string) =>
+		api<unknown>(`/admin/mentorship/programs${params ? `?${params}` : ''}`),
+	getProgram: (id: string) => api<unknown>(`/admin/mentorship/programs/${id}`),
+	listMatches: (params?: string) =>
+		api<unknown>(`/admin/mentorship/matches${params ? `?${params}` : ''}`),
+	createProgram: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/mentorship/programs', { method: 'POST', body }),
+	updateProgram: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/mentorship/programs/${id}`, { method: 'PATCH', body }),
+	updateMatch: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/mentorship/matches/${id}`, { method: 'PATCH', body }),
+};
+
+export const pageBuilderAdminApiExtended = {
+	listBlocks: (params?: string) => api<unknown>(`/admin/pagebuilder/blocks${params ? `?${params}` : ''}`),
+	getBlock: (id: string) => api<unknown>(`/admin/pagebuilder/blocks/${id}`),
+	listThemes: (params?: string) => api<unknown>(`/admin/pagebuilder/themes${params ? `?${params}` : ''}`),
+	getTheme: (id: string) => api<unknown>(`/admin/pagebuilder/themes/${id}`),
+	createBlock: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/pagebuilder/blocks', { method: 'POST', body }),
+	updateBlock: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/pagebuilder/blocks/${id}`, { method: 'PATCH', body }),
+	deleteBlock: (id: string) => api<{ deleted: boolean }>(`/admin/pagebuilder/blocks/${id}`, { method: 'DELETE' }),
+	createTheme: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/pagebuilder/themes', { method: 'POST', body }),
+	updateTheme: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/pagebuilder/themes/${id}`, { method: 'PATCH', body }),
+	setDefaultTheme: (id: string) =>
+		api<unknown>(`/admin/pagebuilder/themes/${id}/default`, { method: 'POST', body: {} }),
+	deleteTheme: (id: string) => api<{ deleted: boolean }>(`/admin/pagebuilder/themes/${id}`, { method: 'DELETE' }),
+};
+
+export const pageTemplatesAdminApiExtended = {
+	list: (params?: string) => api<unknown>(`/admin/page-templates${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/page-templates/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/page-templates', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/page-templates/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/page-templates/${id}`, { method: 'DELETE' }),
+};
+
+export const referralAdminApiExtended = {
+	getProgram: (params?: string) =>
+		api<unknown>(`/admin/referral/program${params ? `?${params}` : ''}`),
+	listReferrals: (params?: string) =>
+		api<unknown>(`/admin/referral/referrals${params ? `?${params}` : ''}`),
+	getReferral: (id: string) => api<unknown>(`/admin/referral/referrals/${id}`),
+	updateProgram: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/referral/program', { method: 'PUT', body }),
+};
+
+export const reportsAdminApiExtended = {
+	list: (params?: string) => api<unknown>(`/admin/reports${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/reports/${id}`),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/reports/${id}`, { method: 'PATCH', body }),
+};
+
+export const reviewsAdminApiExtended = {
+	list: (params?: string) => api<unknown>(`/admin/reviews${params ? `?${params}` : ''}`),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/reviews/${id}`, { method: 'PATCH', body }),
+};
+
+export const rolesAdminApiExtended = {
+	permissions: (id: string) => api<unknown>(`/admin/roles/${id}/permissions`),
+	updatePermissions: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/roles/${id}/permissions`, { method: 'PATCH', body }),
+	addPermission: (id: string, body: { permission: string }) =>
+		api<unknown>(`/admin/roles/${id}/permissions`, { method: 'POST', body }),
+};
+
+export const searchAdminApiExtended = {
+	getAnalytics: (params?: string) =>
+		api<unknown>(`/admin/search/analytics${params ? `?${params}` : ''}`),
+};
+
+export const widgetsAdminApiExtended = {
+	list: (params?: string) => api<unknown>(`/admin/widgets${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/widgets', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/widgets/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/widgets/${id}`, { method: 'DELETE' }),
+};
+
+export const walletAdminApiExtended = {
+	award: (body: { user_id: string; amount: number; reason: string; type: string }) =>
+		api<unknown>('/admin/wallet/award', { method: 'POST', body }),
+};
+
+export const pageBuilderSaveAsTemplateApi = {
+	saveAsTemplate: (pageId: string, body: { name: string }) =>
+		api<unknown>(`/admin/pages/${pageId}/save-as-template`, { method: 'POST', body }),
+};
+
+export const seoAdminApi = {
+	validate: (id: string) =>
+		api<{ issues: string[] }>(`/admin/seo/validate/${id}`),
+};
+
+export const fieldPermissionsApi = {
+	set: (fieldId: string, body: { user_group_id: string; can_view: boolean; can_edit: boolean }) =>
+		api<unknown>(`/custom-fields/${fieldId}/permissions`, { method: 'PUT', body }),
+};
+
+export const affiliateLinksAdminApi = {
+	list: (params?: string) =>
+		api<unknown>(`/admin/affiliate-links${params ? `?${params}` : ''}`),
+};

@@ -284,11 +284,13 @@
 <!-- Create Key Modal -->
 {#if showCreateModal}
 	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onclick={closeCreateModal}>
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onclick={closeCreateModal} onkeydown={(e) => { if (e.key === 'Escape') closeCreateModal(); }}>
+		<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 		<div
 			class="w-full max-w-md rounded-lg border p-6 shadow-xl"
 			style="border-color: var(--color-border); background-color: var(--color-background)"
 			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
 		>
 			<div class="mb-4 flex items-center justify-between">
 				<h2 class="text-lg font-semibold">Create New API Key</h2>
@@ -372,11 +374,13 @@
 <!-- Key Created Modal -->
 {#if showKeyModal && createdKey}
 	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onclick={closeKeyModal}>
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onclick={closeKeyModal} onkeydown={(e) => { if (e.key === 'Escape') closeKeyModal(); }}>
+		<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 		<div
 			class="w-full max-w-lg rounded-lg border p-6 shadow-xl"
 			style="border-color: var(--color-border); background-color: var(--color-background)"
 			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
 		>
 			<div class="mb-4 flex items-center gap-3">
 				<div

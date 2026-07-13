@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { RefreshCw } from 'lucide-svelte';
+
+	let { data } = $props();
 
 	type FeatureFlag = {
 		name: string;
@@ -11,12 +12,14 @@
 		updated_at?: string;
 	};
 
-	let flags = $state<FeatureFlag[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
+	// svelte-ignore state_referenced_locally
+	let flags = $state<FeatureFlag[]>(data.initial ?? []);
+	let loading = $state(false);
+	// svelte-ignore state_referenced_locally
+	let errorMessage = $state(data.error ?? '');
 	let saving = $state<string | null>(null);
 
-	async function load() {
+	async function refresh() {
 		loading = true;
 		errorMessage = '';
 		try {
@@ -52,8 +55,6 @@
 			saving = null;
 		}
 	}
-
-	onMount(load);
 </script>
 
 <svelte:head>
@@ -63,7 +64,7 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold">Feature Flags</h1>
-		<button class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700" onclick={load}>
+		<button class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700" onclick={refresh}>
 			<RefreshCw class="h-4 w-4" />
 			Refresh
 		</button>
