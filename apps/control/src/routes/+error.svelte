@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
 </script>
 
 <svelte:head>

@@ -1,18 +1,19 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { api } from '$lib/api';
 	import type { FeatureFlag } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Flag, RefreshCw, Search } from 'lucide-svelte';
+	import type { PageData } from './$types';
 
-	let flags = $state<FeatureFlag[]>([]);
-	let loading = $state(true);
+	let { data = {} as PageData } = $props();
+
+	// svelte-ignore state_referenced_locally
+	let flags = $state<FeatureFlag[]>(data.flags ?? []);
+	let loading = $state(false);
 	let filter = $state('');
 	let toggling = $state<string | null>(null);
 	let message = $state('');
-
-	onMount(load);
 
 	async function load() {
 		loading = true;

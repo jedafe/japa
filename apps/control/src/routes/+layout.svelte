@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { setUser, setPermissions, clearUser } from '$lib/stores/auth';
-	import { initGlitchTip } from '$lib/glitchtip';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import '../app.css';
@@ -29,10 +28,6 @@
 	};
 
 	let { children, data } = $props();
-
-	$effect(() => {
-		initGlitchTip();
-	});
 
 	let sidebarOpen = $state(false);
 	let userPermissions = $state<string[]>([]);

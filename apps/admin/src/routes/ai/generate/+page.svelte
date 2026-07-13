@@ -3,7 +3,7 @@
 	import { aiApi, type GenerateResult } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2, Copy, Check, Sparkles, RotateCcw, Send, ChevronDown, ChevronUp, Clock, Zap, Trash2, AlertTriangle } from 'lucide-svelte';
-	import { hasPermission } from '$lib/stores/permissions';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	const canGenerate = $derived(hasPermission('ai.context.generate'));
 

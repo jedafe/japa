@@ -6,6 +6,8 @@
 	import { api } from '$lib/api';
 	import type { DbHealth } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
+	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import type { PageData } from './$types';
 	import {
 		Database,
 		RefreshCw,
@@ -15,17 +17,23 @@
 		AlertTriangle,
 		Server,
 		Zap,
-		Activity
+		Activity,
+		Scissors
 	} from 'lucide-svelte';
 
-	let { data = {} as any } = $props();
+	let { data = {} as PageData } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let dbHealth = $state<DbHealth | null>(data.dbHealth ?? null);
 	let loading = $state(false);
+	// svelte-ignore state_referenced_locally
 	let apiAvailable = $state(data.dbHealth !== null || data.error === null);
 	let lastRefresh = $state(new Date());
 	let secondsAgo = $state(0);
 	let refreshing = $state(false);
+	let vacuuming = $state(false);
+	let showVacuumConfirm = $state(false);
+	let vacuumMessage = $state<string | null>(null);
 
 	async function refresh() {
 		refreshing = true;
@@ -44,6 +52,24 @@
 		} finally {
 			loading = false;
 			refreshing = false;
+		}
+	}
+
+	async function vacuum() {
+		vacuuming = true;
+		vacuumMessage = null;
+		try {
+			const result = await api<{ status: string; message: string }>('/control/health/db/vacuum', { method: 'POST' });
+			if (result.ok && result.data.status === 'ok') {
+				vacuumMessage = result.data.message;
+				await refresh();
+			} else {
+				vacuumMessage = 'Vacuum failed';
+			}
+		} catch {
+			vacuumMessage = 'Vacuum request failed';
+		} finally {
+			vacuuming = false;
 		}
 	}
 
@@ -111,12 +137,6 @@
 	});
 </script>
 
-<svelte:window onvisibilitychange={() => {
-	if (document.visibilityState === 'visible') {
-		refresh();
-	}
-}} />
-
 <PageHeader title={t('db.title')} description={t('db.description')} />
 
 {#if !apiAvailable}
@@ -164,6 +184,15 @@
 	>
 		<RefreshCw class="h-3 w-3 {refreshing ? 'animate-spin' : ''}" />
 		{t('common.refresh')}
+	</button>
+	<button
+		class="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
+		style="border-color: var(--color-border); color: var(--color-warning)"
+		disabled={vacuuming}
+		onclick={() => { showVacuumConfirm = true; }}
+	>
+		<Scissors class="h-3 w-3 {vacuuming ? 'animate-pulse' : ''}" />
+		Vacuum DB
 	</button>
 </div>
 
@@ -391,3 +420,18 @@
 		<p class="mt-1 text-xs" style="color: var(--color-muted)">The backend may not yet expose database metrics.</p>
 	</div>
 {/if}
+
+{#if vacuumMessage}
+	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-success); background-color: color-mix(in srgb, var(--color-success) 8%, transparent); color: var(--color-success)">
+		{vacuumMessage}
+	</div>
+{/if}
+
+<ConfirmModal
+	bind:open={showVacuumConfirm}
+	title="Vacuum Database"
+	consequence="Run VACUUM on the database. This reclaims storage and updates statistics. The operation may take a while on large databases."
+	confirmText="VACUUM"
+	onConfirm={vacuum}
+	onCancel={() => {}}
+/>

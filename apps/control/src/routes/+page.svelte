@@ -4,6 +4,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import type { PageData } from './$types';
 
 	type ServiceStatus = {
 		name: string;
@@ -19,7 +20,7 @@
 		realtime: ServiceStatus[];
 	};
 
-	let { data = {} as any } = $props();
+	let { data = {} as PageData } = $props();
 
 	function statusToHealth(s: ServiceStatus['status']): 'healthy' | 'warning' | 'critical' | 'unknown' {
 		if (s === 'degraded') return 'warning';
@@ -79,6 +80,7 @@
 	let lastRefresh = $state(new Date().toLocaleTimeString());
 	let apiAvailable = $state(true);
 
+	// svelte-ignore state_referenced_locally
 	if (data.initial) {
 		if (data.initial.infrastructure) {
 			applyOverview(data.initial);

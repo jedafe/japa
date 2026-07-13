@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import { api, type TrackDetail, type Lesson, type QuizQuestion, type QuizResult } from '$lib/api';
+	import DOMPurify from 'dompurify';
 	import {
 		CheckCircle2,
 		Circle,
@@ -30,6 +32,14 @@
 	const currentModule = $derived(data.currentModule);
 	const allLessons = $derived(data.allLessons);
 
+	const sanitizedBody = $derived(
+		browser
+			? DOMPurify.sanitize(typeof lesson.body === 'string' ? lesson.body : JSON.stringify(lesson.body))
+			: typeof lesson.body === 'string'
+				? lesson.body
+				: JSON.stringify(lesson.body)
+	);
+
 	// Quiz state
 	let quizAnswers = $state<Record<string, number>>({});
 	let quizSubmitted = $state(false);
@@ -40,6 +50,7 @@
 	onMount(async () => {
 		try {
 			const progress = await api.getProgress(track.id);
+			completedLessons = new Set(progress.completed_lessons ?? []);
 			const completedCount = progress.completed_lessons?.length ?? 0;
 			const totalLessons = track.lesson_count;
 			progressPercent = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
@@ -155,7 +166,7 @@
 				class="prose max-w-none"
 				style="color: var(--color-foreground)"
 			>
-				{@html lesson.body}
+				{@html sanitizedBody}
 			</div>
 
 			<!-- Quiz section -->

@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { setUser, setPermissions, clearUser, permissions } from '$lib/stores/auth';
-	import { initNotifications, addNotification } from '$lib/stores/notifications';
+	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
+	import { permissions } from '$lib/stores/permissions.svelte';
+
+	import { initNotifications, addNotification } from '$lib/stores/notifications.svelte';
 	import { wsClient } from '$lib/websocket';
-	import { initGlitchTip } from '$lib/glitchtip';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import Breadcrumb from '$lib/components/layout/Breadcrumb.svelte';
@@ -49,17 +50,16 @@
 		return '';
 	});
 
-	// Subscribe to the store directly ($permissions) so the gate re-evaluates
-	// when permissions load — a plain hasPermission() call inside $derived is
-	// not tracked and would only recompute on navigation.
+	// Read permissions directly so the gate re-evaluates when permissions load —
+	// a plain hasPermission() call inside $derived is not tracked and would only
+	// recompute on navigation.
 	let hasAccess = $derived(
 		!requiredPermission ||
-			$permissions.includes(requiredPermission) ||
-			$permissions.includes('*')
+			permissions.includes(requiredPermission) ||
+			permissions.includes('*')
 	);
 
 	onMount(() => {
-		initGlitchTip();
 		initNotifications();
 		wsClient.connect(data.token ?? undefined);
 

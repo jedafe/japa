@@ -1,19 +1,24 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { api } from '$lib/api';
 	import type { SystemSetting } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { Settings, Save, RefreshCw, Search } from 'lucide-svelte';
+	import { Settings, Save, RefreshCw, Search, RotateCcw } from 'lucide-svelte';
+	import type { PageData } from './$types';
 
-	let settings = $state<SystemSetting[]>([]);
-	let loading = $state(true);
+	let { data = {} as PageData } = $props();
+
+	// svelte-ignore state_referenced_locally
+	let settings = $state<SystemSetting[]>(data.settings ?? []);
+	let loading = $state(false);
 	let saving = $state<string | null>(null);
+	let resetting = $state<string | null>(null);
 	let filter = $state('');
 	let message = $state('');
 	let messageType = $state<'success' | 'error' | ''>('');
-
-	onMount(load);
+	let confirmResetSetting = $state<SystemSetting | null>(null);
+	let resetModalOpen = $state(false);
 
 	async function load() {
 		loading = true;
@@ -40,6 +45,26 @@
 			messageType = 'error';
 		}
 		saving = null;
+	}
+
+	async function resetSetting(key: string) {
+		resetting = key;
+		message = '';
+		const result = await api<{ key: string; value: string; default_value: string }>(
+			`/control/system-settings/${key}/reset`,
+			{ method: 'POST' }
+		);
+		if (result.ok) {
+			settings = settings.map((s) =>
+				s.key === key ? { ...s, value: result.data.value } : s
+			);
+			message = `Setting "${key}" reset to default value.`;
+			messageType = 'success';
+		} else {
+			message = result.error || 'Failed to reset setting.';
+			messageType = 'error';
+		}
+		resetting = null;
 	}
 
 	let filtered = $derived(
@@ -129,6 +154,19 @@
 								<span class="rounded px-1 py-0.5 text-[10px]" style="background: color-mix(in srgb, var(--color-muted) 10%, transparent); color: var(--color-muted)">
 									{setting.type}
 								</span>
+								<button
+									class="rounded p-1 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20"
+									style="color: var(--color-warning)"
+									title="Reset to default"
+									disabled={resetting === setting.key}
+									onclick={() => { confirmResetSetting = setting; resetModalOpen = true; }}
+								>
+									{#if resetting === setting.key}
+										<RefreshCw class="h-3 w-3 animate-spin" />
+									{:else}
+										<RotateCcw class="h-3 w-3" />
+									{/if}
+								</button>
 							</div>
 						</div>
 					{/each}
@@ -137,3 +175,17 @@
 		{/each}
 	</div>
 {/if}
+
+<ConfirmModal
+	bind:open={resetModalOpen}
+	title="Reset Setting"
+	consequence={confirmResetSetting ? `Reset '${confirmResetSetting.key}' to its default value. Current value: ${confirmResetSetting.value}` : ''}
+	confirmText="RESET"
+	onConfirm={() => {
+		if (confirmResetSetting) {
+			resetSetting(confirmResetSetting.key);
+		}
+		confirmResetSetting = null;
+	}}
+	onCancel={() => { confirmResetSetting = null; }}
+/>
