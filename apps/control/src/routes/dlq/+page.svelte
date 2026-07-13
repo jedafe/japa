@@ -1,20 +1,24 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { api } from '$lib/api';
 	import type { DlqEntry } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { AlertTriangle, RefreshCw, RotateCcw, RotateCw } from 'lucide-svelte';
+	import { AlertTriangle, RefreshCw, RotateCcw, RotateCw, Trash2 } from 'lucide-svelte';
+	import type { PageData } from './$types';
 
-	let entries = $state<DlqEntry[]>([]);
-	let loading = $state(true);
+	let { data = {} as PageData } = $props();
+
+	// svelte-ignore state_referenced_locally
+	let entries = $state<DlqEntry[]>(data.entries ?? []);
+	let loading = $state(false);
 	let filter = $state('');
 	let retrying = $state<string | null>(null);
+	let deleting = $state<string | null>(null);
 	let confirmOpen = $state(false);
 	let confirmRetry = $state<DlqEntry | null>(null);
-
-	onMount(load);
+	let confirmDiscard = $state<DlqEntry | null>(null);
+	let confirmDiscardAll = $state(false);
 
 	async function load() {
 		loading = true;
@@ -31,6 +35,22 @@
 		retrying = null;
 		confirmRetry = null;
 		await load();
+	}
+
+	async function discardTask(taskId: string) {
+		deleting = taskId;
+		await api(`/control/queue/dlq/${taskId}`, { method: 'DELETE' });
+		deleting = null;
+		confirmDiscard = null;
+		entries = entries.filter((e) => e.task_id !== taskId);
+	}
+
+	async function discardAll() {
+		deleting = '__all__';
+		await api('/control/queue/dlq/discard-all', { method: 'POST' });
+		deleting = null;
+		confirmDiscardAll = false;
+		entries = [];
 	}
 
 	let filtered = $derived(
@@ -57,6 +77,16 @@
 		<RefreshCw class="h-3 w-3" />
 		{t('common.refresh')}
 	</button>
+	{#if entries.length > 0}
+		<button
+			class="btn text-xs"
+			style="color: var(--color-danger); border: 1px solid var(--color-danger)"
+			onclick={() => (confirmDiscardAll = true)}
+		>
+			<Trash2 class="h-3 w-3" />
+			Discard All
+		</button>
+	{/if}
 </div>
 
 {#if loading}
@@ -93,15 +123,26 @@
 							{new Date(entry.failed_at).toLocaleString()}
 						</td>
 						<td class="px-4 py-3">
-							<button
-								class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors"
-								style="color: var(--color-primary)"
-								disabled={retrying === entry.task_id}
-								onclick={() => (confirmRetry = entry)}
-							>
-								<RotateCw class="h-3 w-3 {retrying === entry.task_id ? 'animate-spin' : ''}" />
-								Retry
-							</button>
+							<div class="flex items-center gap-2">
+								<button
+									class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors"
+									style="color: var(--color-primary)"
+									disabled={retrying === entry.task_id || deleting === entry.task_id}
+									onclick={() => (confirmRetry = entry)}
+								>
+									<RotateCw class="h-3 w-3 {retrying === entry.task_id ? 'animate-spin' : ''}" />
+									Retry
+								</button>
+								<button
+									class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors"
+									style="color: var(--color-danger)"
+									disabled={retrying === entry.task_id || deleting === entry.task_id}
+									onclick={() => (confirmDiscard = entry)}
+								>
+									<Trash2 class="h-3 w-3 {deleting === entry.task_id ? 'animate-pulse' : ''}" />
+									Discard
+								</button>
+							</div>
 						</td>
 					</tr>
 				{/each}
@@ -118,5 +159,27 @@
 		confirmText="RETRY"
 		onConfirm={() => { if (confirmRetry) retryTask(confirmRetry.task_id); }}
 		onCancel={() => { confirmRetry = null; }}
+	/>
+{/if}
+
+{#if confirmDiscard}
+	<ConfirmModal
+		bind:open={confirmOpen}
+		title="Discard DLQ Task"
+		consequence="Permanently discard task {confirmDiscard.task_type} ({confirmDiscard.task_id}). This cannot be undone."
+		confirmText="DISCARD"
+		onConfirm={() => { if (confirmDiscard) discardTask(confirmDiscard.task_id); }}
+		onCancel={() => { confirmDiscard = null; }}
+	/>
+{/if}
+
+{#if confirmDiscardAll}
+	<ConfirmModal
+		bind:open={confirmOpen}
+		title="Discard All DLQ Tasks"
+		consequence="Permanently discard ALL {entries.length} dead letter queue entries. This cannot be undone."
+		confirmText="DISCARD ALL"
+		onConfirm={discardAll}
+		onCancel={() => { confirmDiscardAll = false; }}
 	/>
 {/if}

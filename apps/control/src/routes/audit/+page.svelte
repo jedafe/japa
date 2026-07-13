@@ -3,6 +3,7 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import type { PageData } from './$types';
 
 	type AuditEntry = {
 		id: string;
@@ -13,12 +14,15 @@
 		created_at: string;
 	};
 
-	let { data = {} as any } = $props();
+	let { data = {} as PageData } = $props();
 
+	// svelte-ignore state_referenced_locally
 	let entries = $state<AuditEntry[]>(data.initial?.entries ?? []);
 	let page = $state(0);
+	// svelte-ignore state_referenced_locally
 	let totalPages = $state(data.initial?.total_pages ?? 1);
 	let loading = $state(false);
+	// svelte-ignore state_referenced_locally
 	let apiAvailable = $state(data.initial !== null);
 
 	// Filters

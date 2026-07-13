@@ -27,8 +27,9 @@
 	},
 	"dependencies": {
 		"bits-ui": "^2.18.1",
+		"clsx": "^2.1.1",
+		"dompurify": "^3.4.12",
 		"lucide-svelte": "^1.0.1",
-		"mode-watcher": "^1.0.2",
-		"clsx": "^2.1.1"
+		"mode-watcher": "^1.0.2"
 	}
 }

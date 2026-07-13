@@ -38,7 +38,7 @@
 		Scale,
 		Wrench
 	} from 'lucide-svelte';
-	import { hasPermission } from '$lib/stores/permissions';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Search } from 'lucide-svelte';
 
 	let { currentPath = '/' }: { currentPath?: string } = $props();
@@ -92,7 +92,7 @@
 		{ label: 'Users Groups', href: '/users/groups', icon: Users, perm: 'admin.users.view' },
 		{ label: 'Page Builder Pages', href: '/page-builder/pages', icon: Layout, perm: 'admin.settings' },
 		{ label: 'Webhooks', href: '/webhooks', icon: Code, perm: 'admin.settings' },
-		{ label: 'Translations', href: '/i18n', icon: Languages, perm: 'admin.settings' },
+
 		{ label: 'Blog Review Queue', href: '/blog/review-queue', icon: FileText, perm: 'blog.review.manage' },
 		{ label: 'Feature Flags', href: '/feature-flags', icon: Flag, perm: 'admin.feature_flags.view' }
 	];

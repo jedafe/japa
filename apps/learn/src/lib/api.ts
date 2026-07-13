@@ -89,10 +89,33 @@ export const api = {
 	},
 	downloadCertificate(certId: string) {
 		return request<{ download_url?: string; certificate_number?: string; message?: string }>('/certificates/' + certId + '/download');
+	},
+	getMyEnrollments() {
+		return request<Enrollment[]>('/me/enrollments');
+	},
+	getLessonById(lessonId: string) {
+		return request<Lesson>('/learn/lessons/' + lessonId);
+	},
+	getQuiz(quizId: string) {
+		return request<QuizQuestion[]>('/learn/quizzes/' + quizId);
 	}
 };
 
 // Types
+export interface User {
+	id: string;
+	username: string;
+	display_name: string;
+	email: string;
+	avatar_url: string | null;
+	user_group_id: string;
+	theme_preference: 'light' | 'dark' | 'system';
+	timezone: string;
+	onboarding_completed: boolean;
+	is_verified: boolean;
+	created_at: string;
+}
+
 export interface Track {
 	id: string;
 	slug: string;

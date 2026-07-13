@@ -1,4 +1,3 @@
-import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 
@@ -12,8 +11,8 @@ export interface AdminNotification {
 	link?: string;
 }
 
-const _notifications = writable<AdminNotification[]>([]);
-export const unreadCount = derived(_notifications, ($n) => $n.filter((n) => !n.read).length);
+let _notifications = $state<AdminNotification[]>([]);
+export const unreadCount = $derived(_notifications.filter((n) => !n.read).length);
 
 let initialized = false;
 
@@ -32,7 +31,7 @@ async function fetchNotifications() {
 		});
 		if (res.ok) {
 			const { data } = await res.json();
-			_notifications.set(data ?? []);
+			_notifications = data ?? [];
 		}
 	} catch {
 		// degrade gracefully
@@ -47,11 +46,11 @@ export function addNotification(notification: Omit<AdminNotification, 'id' | 're
 		read: false,
 		created_at: new Date().toISOString()
 	};
-	_notifications.update((prev) => [newNotif, ...prev].slice(0, 50));
+	_notifications = [newNotif, ..._notifications].slice(0, 50);
 }
 
 export async function markRead(id: string) {
-	_notifications.update((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+	_notifications = _notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
 	try {
 		await fetch(`${PUBLIC_JC_API_URL}/api/v1/me/notifications/${id}/read`, {
 			method: 'POST',
@@ -63,7 +62,7 @@ export async function markRead(id: string) {
 }
 
 export async function markAllRead() {
-	_notifications.update((prev) => prev.map((n) => ({ ...n, read: true })));
+	_notifications = _notifications.map((n) => ({ ...n, read: true }));
 	try {
 		await fetch(`${PUBLIC_JC_API_URL}/api/v1/me/notifications/read-all`, {
 			method: 'POST',
@@ -74,4 +73,4 @@ export async function markAllRead() {
 	}
 }
 
-export const notifications = { subscribe: _notifications.subscribe };
+export { _notifications as notifications };

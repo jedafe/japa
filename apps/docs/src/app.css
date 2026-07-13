@@ -125,65 +125,6 @@ body {
 	box-shadow: var(--shadow-lg);
 }
 
-/* Button Base */
-.btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.5rem;
-	border-radius: var(--radius-lg);
-	padding: 0.625rem 1.25rem;
-	font-size: 0.875rem;
-	font-weight: 500;
-	transition: all var(--transition-base);
-	cursor: pointer;
-	border: none;
-	outline: none;
-}
-
-.btn:hover {
-	transform: translateY(-1px);
-}
-
-.btn:active {
-	transform: translateY(0);
-}
-
-.btn:focus-visible {
-	box-shadow: 0 0 0 3px rgb(29 78 216 / 0.3);
-}
-
-.btn-primary {
-	background: var(--gradient-primary);
-	color: white;
-	box-shadow: var(--shadow-sm);
-}
-
-.btn-primary:hover {
-	background: var(--gradient-primary-hover);
-	box-shadow: var(--shadow-md);
-}
-
-.btn-secondary {
-	border: 1px solid var(--color-border);
-	background: var(--color-surface);
-	color: var(--color-foreground);
-}
-
-.btn-secondary:hover {
-	background: var(--color-border);
-	box-shadow: var(--shadow-sm);
-}
-
-.btn-ghost {
-	background: transparent;
-	color: var(--color-foreground);
-}
-
-.btn-ghost:hover {
-	background: var(--color-surface);
-}
-
 /* Focus Ring */
 .focus-ring:focus-visible {
 	outline: 2px solid var(--color-primary);

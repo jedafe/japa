@@ -1,7 +1,16 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
 
-	let { open = $bindable(false), title, consequence, confirmText = '', onConfirm, onCancel } = $props();
+	interface Props {
+		open: boolean;
+		title: string;
+		consequence?: string;
+		confirmText?: string;
+		onConfirm?: () => void;
+		onCancel?: () => void;
+	}
+
+	let { open = $bindable(false), title, consequence, confirmText = '', onConfirm, onCancel }: Props = $props();
 
 	let typedText = $state('');
 
