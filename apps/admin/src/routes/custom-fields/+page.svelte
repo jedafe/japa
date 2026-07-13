@@ -1,183 +1,341 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, userManagementApi } from '$lib/api';
-	import { goto } from '$app/navigation';
+	import { api, fieldGroupsAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { Plus, Pencil, Trash2, Shield } from 'lucide-svelte';
+	import Modal from '$lib/components/Modal.svelte';
 
-	type FieldDefinition = {
+	type FieldGroup = {
 		id: string;
 		name: string;
-		slug: string;
-		field_type: string;
 		entity_type: string;
-		required: boolean;
-		searchable: boolean;
-		sortable: boolean;
+		field_count: number;
 		created_at: string;
 	};
 
-	let fields = $state<FieldDefinition[]>([]);
-	let loading = $state(true);
-	let searchQuery = $state('');
-	let filterEntityType = $state('');
+	type FieldItem = {
+		id: string;
+		key: string;
+		label: string;
+		field_type: string;
+	};
 
-	let entityTypes = $state<{ value: string; label: string }[]>([
-		{ value: 'content', label: 'Content' },
-		{ value: 'user', label: 'User' },
-		{ value: 'space', label: 'Space' },
-		{ value: 'tag', label: 'Tag' }
-	]);
+	type FieldPermission = {
+		field_id: string;
+		user_group_id: string;
+		can_view: boolean;
+		can_edit: boolean;
+	};
+
+	let groups = $state<FieldGroup[]>([]);
+	let loading = $state(true);
+	let errorMessage = $state('');
+
+	let showCreateModal = $state(false);
+	let showEditModal = $state(false);
+	let editingGroup = $state<FieldGroup | null>(null);
+	let saving = $state(false);
+
+	let modalOpen = $state(false);
+
+	let name = $state('');
+	let entityType = $state('');
+
+	let activeTab = $state<'groups' | 'permissions'>('groups');
+	let selectedGroup = $state<FieldGroup | null>(null);
+	let groupFields = $state<FieldItem[]>([]);
+	let userGroups = $state<Array<{ id: string; name: string }>>([]);
+	let permissions = $state<FieldPermission[]>([]);
+	let permissionsLoading = $state(false);
+	let savingPermission = $state(false);
 
 	async function load() {
 		loading = true;
-		const params = new URLSearchParams();
-		if (searchQuery) params.set('search', searchQuery);
-		if (filterEntityType) params.set('entity_type', filterEntityType);
+		errorMessage = '';
 		try {
-			const result = await api<{ data: FieldDefinition[] }>(`/custom-field-groups?${params}`);
-			if (result.ok && result.data) {
-				fields = result.data.data ?? [];
+			const result = await api<FieldGroup[]>('/admin/field-groups');
+			if (result.ok) {
+				groups = result.data ?? [];
+			} else {
+				errorMessage = result.error;
 			}
 		} catch {
-			// API not available
-	} finally {
-		loading = false;
-	}
-}
-
-	function handleFilter() {
-		load();
-	}
-
-	onMount(async () => {
-		try {
-			const result = await userManagementApi.listCustomFieldEntityTypes();
-			if (result.ok && Array.isArray(result.data) && result.data.length > 0) {
-				entityTypes = result.data;
-			}
-		} catch {
-			// Keep default entity types
+			errorMessage = t('common.error');
+		} finally {
+			loading = false;
 		}
-		await load();
-	});
+	}
+
+	function openCreate() {
+		name = '';
+		entityType = '';
+		modalOpen = true;
+	}
+
+	function openEdit(group: FieldGroup) {
+		editingGroup = group;
+		name = group.name;
+		entityType = group.entity_type;
+		modalOpen = true;
+	}
+
+	async function createGroup() {
+		if (!name.trim() || !entityType.trim()) return;
+		saving = true;
+		errorMessage = '';
+		try {
+			const result = await api('/admin/field-groups', {
+				method: 'POST',
+				body: { name: name.trim(), entity_type: entityType.trim() }
+			});
+			if (result.ok) {
+				modalOpen = false;
+				load();
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function updateGroup() {
+		if (!editingGroup || !name.trim() || !entityType.trim()) return;
+		saving = true;
+		errorMessage = '';
+		try {
+			const result = await api(`/admin/field-groups/${editingGroup.id}`, {
+				method: 'PATCH',
+				body: { name: name.trim(), entity_type: entityType.trim() }
+			});
+			if (result.ok) {
+				modalOpen = false;
+				editingGroup = null;
+				load();
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function deleteGroup(id: string) {
+		errorMessage = '';
+		try {
+			await api(`/admin/field-groups/${id}`, { method: 'DELETE' });
+			groups = groups.filter((g) => g.id !== id);
+		} catch {
+			errorMessage = t('common.error');
+		}
+	}
+
+	async function openPermissions(group: FieldGroup) {
+		selectedGroup = group;
+		activeTab = 'permissions';
+		permissionsLoading = true;
+		try {
+			const fieldsResult = await api<FieldItem[]>(`/admin/field-groups/${group.id}/fields`);
+			groupFields = fieldsResult.ok ? (fieldsResult.data ?? []) : [];
+
+			const ugResult = await api<Array<{ id: string; name: string }>>('/admin/user-groups');
+			userGroups = ugResult.ok ? (ugResult.data ?? []) : [];
+
+			permissions = [];
+			for (const field of groupFields) {
+				const permResult = await api<FieldPermission[]>(`/custom-fields/${field.id}/permissions`);
+				if (permResult.ok && permResult.data) {
+					permissions.push(...permResult.data);
+				}
+			}
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			permissionsLoading = false;
+		}
+	}
+
+	async function setFieldPermission(fieldId: string, userGroupId: string, canView: boolean, canEdit: boolean) {
+		savingPermission = true;
+		try {
+			await api(`/custom-fields/${fieldId}/permissions`, {
+				method: 'PUT',
+				body: { user_group_id: userGroupId, can_view: canView, can_edit: canEdit }
+			});
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			savingPermission = false;
+		}
+	}
+
+	function getPermission(fieldId: string, groupId: string): FieldPermission | undefined {
+		return permissions.find((p) => p.field_id === fieldId && p.user_group_id === groupId);
+	}
+
+	onMount(load);
 </script>
 
 <svelte:head>
-	<title>Custom Fields — JapaConnect Admin</title>
+	<title>{t('fieldGroups.title')} — JapaConnect Admin</title>
 </svelte:head>
 
-<div class="mb-6 flex items-center justify-between">
-	<div>
-		<h1 class="text-2xl font-bold tracking-tight">{t('custom_fields.title')}</h1>
-		<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('custom_fields.description')}</p>
-	</div>
-	<a
-		href="/custom-fields/new"
-		class="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-		style="background-color: var(--color-primary)"
-	>
-		{t('custom_fields.create')}
-	</a>
-</div>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('fieldGroups.title')}</h1>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('fieldGroups.description')}</p>
 
-<div class="mb-4 flex flex-wrap items-end gap-3">
-	<div>
-		<label for="search" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.search')}</label>
-		<input
-			id="search"
-			type="text"
-			class="rounded-md border px-3 py-1.5 text-sm"
-			style="border-color: var(--color-border); background-color: var(--color-surface)"
-			placeholder={t('custom_fields.search')}
-			bind:value={searchQuery}
-			onkeydown={(e) => e.key === 'Enter' && handleFilter()}
-		/>
+{#if errorMessage}
+	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+		{errorMessage}
 	</div>
-	<div>
-		<label for="entity-type" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('custom_fields.entity_type')}</label>
-		<select
-			id="entity-type"
-			class="rounded-md border px-3 py-1.5 text-sm"
-			style="border-color: var(--color-border); background-color: var(--color-surface)"
-			bind:value={filterEntityType}
-			onchange={handleFilter}
-		>
-			<option value="">{t('common.all')}</option>
-			{#each entityTypes as et}
-				<option value={et.value}>{et.label}</option>
-			{/each}
-		</select>
-	</div>
+{/if}
+
+<!-- Tabs -->
+<div class="mb-6 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border)">
 	<button
-		class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-		style="border-color: var(--color-border)"
-		onclick={handleFilter}
+		class="rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'groups' ? 'background-color: var(--color-primary); color: white' : ''}
+		onclick={() => { activeTab = 'groups'; }}
 	>
-		{t('common.apply')}
+		{t('fieldGroups.title')}
+	</button>
+	<button
+		class="flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		style={activeTab === 'permissions' ? 'background-color: var(--color-primary); color: white' : ''}
+		onclick={() => { if (selectedGroup) openPermissions(selectedGroup); }}
+	>
+		<Shield class="h-3 w-3" />
+		{t('fieldGroups.permissions')}
 	</button>
 </div>
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.slug')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.type')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.entity')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.required')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.searchable')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom_fields.sortable')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each fields as field}
-					<tr
-						class="cursor-pointer border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
-						style="border-color: var(--color-border)"
-						onclick={() => goto(`/custom-fields/${field.id}`)}
-					>
-						<td class="px-4 py-3 font-medium">{field.name}</td>
-						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{field.slug}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-white/10">{field.field_type}</span>
-						</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-white/10">{field.entity_type}</span>
-						</td>
-						<td class="px-4 py-3">
-							{#if field.required}
-								<span class="text-emerald-600 dark:text-emerald-400">&#10003;</span>
-							{:else}
-								<span style="color: var(--color-muted)">&mdash;</span>
-							{/if}
-						</td>
-						<td class="px-4 py-3">
-							{#if field.searchable}
-								<span class="text-emerald-600 dark:text-emerald-400">&#10003;</span>
-							{:else}
-								<span style="color: var(--color-muted)">&mdash;</span>
-							{/if}
-						</td>
-						<td class="px-4 py-3">
-							{#if field.sortable}
-								<span class="text-emerald-600 dark:text-emerald-400">&#10003;</span>
-							{:else}
-								<span style="color: var(--color-muted)">&mdash;</span>
-							{/if}
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="7" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('custom_fields.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+{#if activeTab === 'groups'}
+	<div class="mb-4 flex justify-end">
+		<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
+			<Plus class="h-3 w-3" />
+			{t('fieldGroups.create')}
+		</button>
 	</div>
+
+	{#if loading}
+		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
+	{:else}
+		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
+			<table class="w-full text-sm">
+				<thead>
+					<tr style="border-bottom: 1px solid var(--color-border)">
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('fieldGroups.name')}</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('fieldGroups.entity_type')}</th>
+						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('fieldGroups.fields')}</th>
+						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each groups as group (group.id)}
+						<tr class="border-t" style="border-color: var(--color-border)">
+							<td class="px-4 py-3 font-medium">{group.name}</td>
+							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{group.entity_type}</td>
+							<td class="px-4 py-3 text-xs">{group.field_count}</td>
+							<td class="px-4 py-3 text-right">
+								<div class="flex items-center justify-end gap-1">
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => openPermissions(group)} title={t('fieldGroups.permissions')}>
+										<Shield class="h-3 w-3" style="color: var(--color-primary)" />
+									</button>
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => openEdit(group)}>
+										<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
+									</button>
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => deleteGroup(group.id)}>
+										<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
+									</button>
+								</div>
+							</td>
+						</tr>
+					{:else}
+						<tr>
+							<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">
+								{t('fieldGroups.empty')}
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
+
+{:else if activeTab === 'permissions'}
+	{#if !selectedGroup}
+		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Select a field group to manage permissions.</p>
+	{:else if permissionsLoading}
+		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
+	{:else}
+		<p class="mb-4 text-sm" style="color: var(--color-muted)">
+			Permissions for: <strong>{selectedGroup.name}</strong>
+		</p>
+
+		{#if groupFields.length === 0}
+			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No fields in this group.</p>
+		{:else}
+			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
+				<table class="w-full text-sm">
+					<thead>
+						<tr style="border-bottom: 1px solid var(--color-border)">
+							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Field</th>
+							{#each userGroups as ug}
+								<th class="px-4 py-3 text-center font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">
+									{ug.name}
+									<div class="mt-1 flex justify-center gap-4 text-[10px] font-normal">
+										<span>View</span>
+										<span>Edit</span>
+									</div>
+								</th>
+							{/each}
+						</tr>
+					</thead>
+					<tbody>
+						{#each groupFields as field (field.id)}
+							<tr class="border-t" style="border-color: var(--color-border)">
+								<td class="px-4 py-3 font-medium">{field.label}</td>
+								{#each userGroups as ug}
+									{@const perm = getPermission(field.id, ug.id)}
+									<td class="px-4 py-3 text-center">
+										<div class="flex justify-center gap-3">
+											<input
+												type="checkbox"
+												class="h-4 w-4 rounded"
+												checked={perm?.can_view ?? false}
+												onchange={(e) => setFieldPermission(field.id, ug.id, (e.target as HTMLInputElement).checked, perm?.can_edit ?? false)}
+											/>
+											<input
+												type="checkbox"
+												class="h-4 w-4 rounded"
+												checked={perm?.can_edit ?? false}
+												onchange={(e) => setFieldPermission(field.id, ug.id, perm?.can_view ?? false, (e.target as HTMLInputElement).checked)}
+											/>
+										</div>
+									</td>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	{/if}
 {/if}
+
+<!-- Create/Edit Modal -->
+<Modal bind:open={modalOpen} title={editingGroup ? t('fieldGroups.edit') : t('fieldGroups.create')} onConfirm={editingGroup ? updateGroup : createGroup} confirmLabel={saving ? t('common.saving') : editingGroup ? t('common.save') : t('common.create')}>
+	<div class="space-y-4">
+		<div>
+			<label for="fg-name" class="mb-1 block text-sm font-medium">{t('fieldGroups.name')}</label>
+			<input id="fg-name" type="text" bind:value={name} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+		</div>
+		<div>
+			<label for="fg-entity" class="mb-1 block text-sm font-medium">{t('fieldGroups.entity_type')}</label>
+			<input id="fg-entity" type="text" bind:value={entityType} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+		</div>
+	</div>
+</Modal>

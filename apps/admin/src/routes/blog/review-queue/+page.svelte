@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { blogAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { CheckCircle, XCircle, RefreshCw, ExternalLink } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
+
+	let { data } = $props();
 
 	type ReviewItem = {
 		id: string;
@@ -16,9 +17,11 @@
 		excerpt?: string;
 	};
 
-	let items = $state<ReviewItem[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
+	// svelte-ignore state_referenced_locally
+	let items = $state<ReviewItem[]>(data.initial ?? []);
+	let loading = $state(false);
+	// svelte-ignore state_referenced_locally
+	let errorMessage = $state(data.error ?? '');
 
 	// Reject modal
 	let showRejectModal = $state(false);
@@ -26,7 +29,7 @@
 	let rejectReason = $state('');
 	let acting = $state(false);
 
-	async function load() {
+	async function refresh() {
 		loading = true;
 		errorMessage = '';
 		try {
@@ -82,8 +85,6 @@
 			acting = false;
 		}
 	}
-
-	onMount(load);
 </script>
 
 <svelte:head>
@@ -93,7 +94,7 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold">Blog Review Queue</h1>
-		<button class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700" onclick={load}>
+		<button class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700" onclick={refresh}>
 			<RefreshCw class="h-4 w-4" />
 			Refresh
 		</button>
