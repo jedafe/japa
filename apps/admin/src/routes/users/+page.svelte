@@ -1,272 +1,299 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import FilterBar from '$lib/components/FilterBar.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import { api, setToken, impersonationApi, userManagementApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { Users, Shield, UsersRound } from 'lucide-svelte';
-	import { page as pageState } from '$app/state';
+  import { page } from "$app/state";
+  import { goto } from "$app/navigation";
+  import PageHeader from "$lib/components/layout/page-header.svelte";
+  import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+  import { Tabs } from "$lib/components/ui/tabs";
+  import { DataTable } from "$lib/components/ui/data-table";
+  import { FilterBar } from "$lib/components/ui/filter-bar";
+  import { Badge } from "$lib/components/ui/badge";
+  import { Button } from "$lib/components/ui/button";
+  import { Modal } from "$lib/components/ui/modal";
+  import { Select } from "$lib/components/ui/select";
+  import { Users, UserPlus, Download, RefreshCw } from "lucide-svelte";
+  import { api, impersonationApi, userManagementApi } from "$lib/api";
 
-	type User = {
-		id: string;
-		username: string;
-		email: string;
-		groups: string[];
-		status: string;
-		created_at: string;
-	};
+  type User = {
+    id: string;
+    username: string;
+    email: string;
+    groups: string[];
+    status: string;
+    created_at: string;
+    avatar_url?: string;
+  };
 
-	let users = $state<User[]>([]);
-	let page = $state(0);
-	let totalPages = $state(1);
-	let loading = $state(true);
-	let searchQuery = $state('');
-	let filterGroup = $state('');
-	let groupOptions = $state<string[]>(['user', 'moderator', 'admin', 'super_admin']);
+  type UserStats = {
+    total: number;
+    active: number;
+    pending: number;
+    suspended: number;
+  };
 
-	// Impersonation state
-	let impersonating = $state(false);
-	let impersonatingUsername = $state('');
-	let impersonateTarget = $state<User | null>(null);
-	let showImpersonateConfirm = $state(false);
-	let impersonateError = $state('');
-	
-	// Tab navigation - derived from current URL
-	let activeTab = $derived.by(() => {
-		const path = pageState.url.pathname;
-		if (path === '/users') return 'users';
-		if (path.startsWith('/users/roles')) return 'roles';
-		if (path.startsWith('/users/groups')) return 'groups';
-		return 'users';
-	});
+  let { data } = $props();
 
-	const columns = [
-		{ key: 'username', label: 'users.username' },
-		{ key: 'email', label: 'users.email' },
-		{ key: 'groups', label: 'users.groups' },
-		{ key: 'status', label: 'users.status' },
-		{ key: 'created_at', label: 'users.joined' }
-	];
+  let users = $state<User[]>([]);
+  let currentPage = $state(0);
+  let totalPages = $state(1);
+  let loading = $state(true);
+  let searchQuery = $state("");
+  let filterValues = $state<Record<string, string>>({});
+  let filterGroup = $derived(filterValues.group || "");
+  let groupOptions = $state<string[]>(["user", "moderator", "admin", "super_admin"]);
+  let stats = $state<UserStats>({ total: 0, active: 0, pending: 0, suspended: 0 });
 
-	let filterDefs = $derived([
-		{ key: 'search', label: 'users.search', type: 'text' as const },
-		{ key: 'group', label: 'users.group_filter', type: 'select' as const, options: groupOptions }
-	]);
+  // Impersonation state
+  let impersonating = $state(false);
+  let impersonatingUsername = $state("");
+  let impersonateTarget = $state<User | null>(null);
+  let showImpersonateConfirm = $state(false);
+  let impersonateError = $state("");
 
-	async function load() {
-		loading = true;
-		const params = new URLSearchParams({ page: String(page) });
-		if (searchQuery) params.set('search', searchQuery);
-		if (filterGroup) params.set('group', filterGroup);
-		try {
-			const result = await api<{ users: User[]; page: number; total_pages: number }>(`/users?${params}`);
-			if (result.ok) {
-				users = result.data.users;
-				totalPages = result.data.total_pages;
-			}
-		} catch {
-			// API not available
-		} finally {
-			loading = false;
-		}
-	}
+  // Tab navigation - derived from current URL
+  let activeTab = $derived.by(() => {
+    const path = page.url.pathname;
+    if (path === "/users") return "users";
+    if (path.startsWith("/users/roles")) return "roles";
+    if (path.startsWith("/users/groups")) return "groups";
+    return "users";
+  });
 
-	function handleFilter(values: Record<string, string>) {
-		searchQuery = values.search ?? '';
-		filterGroup = values.group ?? '';
-		page = 0;
-		load();
-	}
+  const tabs = [
+    { value: "users", label: "Users", icon: Users },
+    { value: "roles", label: "Roles", icon: Users },
+    { value: "groups", label: "Groups", icon: Users }
+  ];
 
-	function handlePageChange(p: number) {
-		page = p;
-		load();
-	}
+  const columns = [
+    {
+      key: "username",
+      label: "Username",
+      sortable: true,
+      render: (_: any, row: any) => `
+        <div class="flex items-center gap-3">
+          <img src="${row.avatar_url || '/default-avatar.png'}" alt="" class="h-8 w-8 rounded-full" />
+          <div>
+            <p class="font-medium text-gray-900">${row.username || 'Unknown'}</p>
+            <p class="text-sm text-gray-500">${row.email || ''}</p>
+          </div>
+        </div>
+      `
+    },
+    {
+      key: "groups",
+      label: "Groups",
+      sortable: true,
+      render: (value: string[]) => {
+        return value.map(g => `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-800">${g}</span>`).join(" ");
+      }
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      render: (value: string) => {
+        const variants: Record<string, string> = { active: "success", pending: "warning", suspended: "danger", banned: "destructive" };
+        const classes: Record<string, string> = {
+          active: "bg-success-100 text-success-800",
+          pending: "bg-warning-100 text-warning-800",
+          suspended: "bg-danger-100 text-danger-800",
+          banned: "bg-danger-100 text-danger-800"
+        };
+        return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${classes[value] || 'bg-gray-100 text-gray-800'}">${value || 'active'}</span>`;
+      }
+    },
+    {
+      key: "created_at",
+      label: "Joined",
+      sortable: true,
+      render: (value: string) => new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    },
+    {
+      key: "actions",
+      label: "",
+      class: "w-24",
+      render: (_: any, row: any) => `
+        <div class="flex items-center gap-1">
+          <button onclick="window.location.href='/users/${row.id}'" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">View</button>
+          <button onclick="window.location.href='/users/${row.id}?edit=true'" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Edit</button>
+        </div>
+      `
+    }
+  ];
 
-	async function checkImpersonationStatus() {
-		const result = await impersonationApi.status();
-		if (result.ok) {
-			const data = result.data as { impersonating: boolean; username?: string };
-			impersonating = data.impersonating;
-			impersonatingUsername = data.username ?? '';
-		}
-	}
+  let filterDefs = $derived([
+    { key: "group", label: "Group", options: groupOptions.map(g => ({ value: g, label: g })) }
+  ]);
 
-	function startImpersonate(user: User) {
-		impersonateTarget = user;
-		impersonateError = '';
-		showImpersonateConfirm = true;
-	}
+  async function loadUsers() {
+    loading = true;
+    const params = new URLSearchParams({ page: String(currentPage) });
+    if (searchQuery) params.set("search", searchQuery);
+    if (filterGroup) params.set("group", filterGroup);
+    try {
+      const result = await api<{ users: User[]; page: number; total_pages: number; stats?: UserStats }>(`/users?${params}`);
+      if (result.ok) {
+        users = result.data.users;
+        totalPages = result.data.total_pages;
+        stats = result.data.stats || { total: 0, active: 0, pending: 0, suspended: 0 };
+      }
+    } catch {
+      // API not available
+    } finally {
+      loading = false;
+    }
+  }
 
-	async function confirmImpersonate() {
-		if (!impersonateTarget) return;
-		impersonateError = '';
-		const result = await impersonationApi.start(impersonateTarget.id);
-		if (result.ok) {
-			const data = result.data as { token: string };
-			setToken(data.token);
-			showImpersonateConfirm = false;
-			// Redirect to main app
-			window.location.href = '/';
-		} else {
-			impersonateError = result.error;
-		}
-	}
+  function handleFilter(values: Record<string, string>) {
+    searchQuery = values.search ?? "";
+    filterValues = values;
+    currentPage = 0;
+    loadUsers();
+  }
 
-	async function endImpersonation() {
-		const result = await impersonationApi.end();
-		if (result.ok) {
-			window.location.reload();
-		}
-	}
+  function handlePageChange(p: number) {
+    currentPage = p;
+    loadUsers();
+  }
 
-	onMount(async () => {
-		try {
-			const groupsResult = await userManagementApi.listGroups();
-			if (groupsResult.ok) {
-				groupOptions = groupsResult.data.groups.map((g) => g.name);
-			}
-		} catch {
-			/* group filter options are optional — the list still loads */
-		}
-		load();
-		checkImpersonationStatus();
-	});
+  async function checkImpersonationStatus() {
+    const result = await impersonationApi.status();
+    if (result.ok) {
+      const data = result.data as { impersonating: boolean; username?: string };
+      impersonating = data.impersonating;
+      impersonatingUsername = data.username ?? "";
+    }
+  }
+
+  function startImpersonate(user: User) {
+    impersonateTarget = user;
+    impersonateError = "";
+    showImpersonateConfirm = true;
+  }
+
+  async function confirmImpersonate() {
+    if (!impersonateTarget) return;
+    impersonateError = "";
+    const result = await impersonationApi.start(impersonateTarget.id);
+    if (result.ok) {
+      const data = result.data as { token: string };
+      showImpersonateConfirm = false;
+      // Redirect to main app
+      window.location.href = "/";
+    } else {
+      impersonateError = result.error;
+    }
+  }
+
+  async function endImpersonation() {
+    const result = await impersonationApi.end();
+    if (result.ok) {
+      window.location.reload();
+    }
+  }
+
+  function handleExport() {
+    // TODO: Implement user export
+    console.log("Export users");
+  }
+
+  // Load data on mount
+  let initialized = false;
+  $effect(() => {
+    if (!initialized) {
+      initialized = true;
+      loadUsers();
+      checkImpersonationStatus();
+    }
+  });
 </script>
+
+<svelte:head>
+  <title>Users — JapaConnect Admin</title>
+</svelte:head>
 
 <!-- Impersonation Banner -->
 {#if impersonating}
-	<div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 10%, transparent)">
-		<span style="color: var(--color-warning)">You are impersonating <strong>{impersonatingUsername}</strong></span>
-		<button
-			class="rounded-md border px-3 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-			style="border-color: var(--color-warning); color: var(--color-warning)"
-			onclick={endImpersonation}
-		>
-			End Impersonation
-		</button>
-	</div>
+  <div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 10%, transparent)">
+    <span style="color: var(--color-warning)">You are impersonating <strong>{impersonatingUsername}</strong></span>
+    <button
+      class="rounded-md border px-3 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+      style="border-color: var(--color-warning); color: var(--color-warning)"
+      onclick={endImpersonation}
+    >
+      End Impersonation
+    </button>
+  </div>
 {/if}
 
-<svelte:head>
-	<title>Users — JapaConnect Admin</title>
-</svelte:head>
+<PageHeader
+  title="Users"
+  description="Manage user accounts, roles, and permissions"
+  actions={[
+    { label: "Add User", icon: UserPlus, href: "/users/new" },
+    { label: "Export", icon: Download, onclick: handleExport, variant: "outline" }
+  ]}
+/>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('users.title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('users.description')}</p>
+<div class="space-y-6">
+  <Tabs {tabs} bind:value={activeTab} />
+  
+  <FilterBar
+    bind:value={filterValues}
+    filters={filterDefs}
+    onsearch={handleFilter}
+    onclear={() => {
+      searchQuery = "";
+      filterValues = {};
+      currentPage = 0;
+      loadUsers();
+    }}
+  />
+  
+  {#if impersonateError}
+    <div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+      {impersonateError}
+    </div>
+  {/if}
 
-<!-- Sub-navigation tabs -->
-<div class="mb-6 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border)">
-	<a
-		href="/users"
-		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		style={activeTab === 'users' ? 'background-color: var(--color-primary); color: white' : ''}
-	>
-		<Users class="h-4 w-4" />
-		{t('users.list')}
-	</a>
-	<a
-		href="/users/roles"
-		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		style={activeTab === 'roles' ? 'background-color: var(--color-primary); color: white' : ''}
-	>
-		<Shield class="h-4 w-4" />
-		{t('users.roles.title')}
-	</a>
-	<a
-		href="/users/groups"
-		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		style={activeTab === 'groups' ? 'background-color: var(--color-primary); color: white' : ''}
-	>
-		<UsersRound class="h-4 w-4" />
-		{t('users.groups.title')}
-	</a>
+  <Card>
+    <CardContent class="p-0">
+      {#if loading}
+        <p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+      {:else}
+        <DataTable
+          {columns}
+          data={users}
+          pageSize={20}
+          selectable={true}
+          emptyMessage="No users found"
+        />
+      {/if}
+    </CardContent>
+  </Card>
 </div>
 
-{#if impersonateError}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{impersonateError}
-	</div>
-{/if}
-
-<FilterBar filters={filterDefs} onApply={handleFilter} />
-
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					{#each columns as col}
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">
-							{col.label}
-						</th>
-					{/each}
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Actions</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each users as user}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{user.username}</td>
-						<td class="px-4 py-3" style="color: var(--color-muted)">{user.email}</td>
-						<td class="px-4 py-3">
-							{#each user.groups as g}
-								<span class="mr-1 inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-white/10">{g}</span>
-							{/each}
-						</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {user.status === 'active' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-red-500/15 text-red-700 dark:text-red-400'}">
-								{user.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{user.created_at}</td>
-						<td class="px-4 py-3">
-							<button
-								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-								style="color: var(--color-warning)"
-								onclick={() => startImpersonate(user)}
-							>
-								Impersonate
-							</button>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan={columns.length + 1} class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('users.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button
-				class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40"
-				disabled={page === 0}
-				onclick={() => handlePageChange(page - 1)}
-			>&larr;</button>
-			<button
-				class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40"
-				disabled={page >= totalPages - 1}
-				onclick={() => handlePageChange(page + 1)}
-			>&rarr;</button>
-		</div>
-	</div>
-{/if}
-
 <!-- Impersonation Confirmation Modal -->
-<Modal bind:open={showImpersonateConfirm} title="Confirm Impersonation" onConfirm={confirmImpersonate} confirmLabel="Impersonate">
-	{#if impersonateTarget}
-		<p class="text-sm" style="color: var(--color-muted)">
-			You are about to impersonate <strong>{impersonateTarget.username}</strong>. You will be redirected to the main app as this user. Your admin session will be preserved.
-		</p>
-	{/if}
+<Modal bind:open={showImpersonateConfirm} title="Confirm Impersonation" size="sm">
+  {#if impersonateTarget}
+    <div class="flex items-center gap-4 rounded-lg bg-gray-50 p-4">
+      <img src={impersonateTarget.avatar_url || '/default-avatar.png'} alt="" class="h-12 w-12 rounded-full" />
+      <div>
+        <p class="font-medium text-gray-900">{impersonateTarget.username}</p>
+        <p class="text-sm text-gray-500">{impersonateTarget.email}</p>
+      </div>
+    </div>
+  {/if}
+  
+  <div class="mt-6 flex justify-end gap-3">
+    <Button variant="outline" onclick={() => showImpersonateConfirm = false}>Cancel</Button>
+    <Button variant="destructive" onclick={confirmImpersonate} disabled={loading}>
+      {#if loading}
+        <RefreshCw class="h-4 w-4 mr-2 animate-spin" />
+        Impersonating...
+      {:else}
+        Impersonate
+      {/if}
+    </Button>
+  </div>
 </Modal>
-
-

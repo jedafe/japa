@@ -97,25 +97,31 @@
 		{ label: 'Feature Flags', href: '/feature-flags', icon: Flag, perm: 'admin.feature_flags.view' }
 	];
 
+	function isActive(href: string): boolean {
+		if (href === '/') return currentPath === '/';
+		return currentPath === href || currentPath.startsWith(href + '/');
+	}
+
 	function visibleNav() {
 		return nav.filter((item) => {
 			// Check permission
 			if (item.perm && !hasPermission(item.perm)) return false;
-			
+
 			// Check search query
 			if (searchQuery) {
 				const query = searchQuery.toLowerCase();
-				return item.label.toLowerCase().includes(query) || 
+				return item.label.toLowerCase().includes(query) ||
 					   item.href.toLowerCase().includes(query);
 			}
-			
+
 			return true;
 		});
 	}
 </script>
 
 <button
-	class="fixed left-4 top-4 z-50 rounded-md bg-white p-2 shadow-md md:hidden dark:bg-gray-800"
+	class="fixed left-4 top-4 z-50 rounded-md p-2 shadow-md md:hidden"
+	style="background-color: var(--color-surface); color: var(--color-foreground)"
 	onclick={() => (open = !open)}
 >
 	{#if open}
@@ -126,12 +132,13 @@
 </button>
 
 <aside
-	class="fixed inset-y-0 left-0 z-40 w-60 flex-shrink-0 flex-col border-r border-gray-200 bg-white transition-transform md:static md:translate-x-0 dark:border-gray-700 dark:bg-gray-800"
+	class="fixed inset-y-0 left-0 z-40 flex h-full w-60 flex-shrink-0 flex-col overflow-hidden transition-transform md:static md:translate-x-0"
+	style="border-color: var(--color-border); background-color: var(--color-surface)"
 	class:translate-x-0={open}
 	class:-translate-x-full={!open}
 >
-	<div class="flex h-14 items-center border-b border-gray-200 px-4 dark:border-gray-700">
-		<span class="text-sm font-bold tracking-wide uppercase text-blue-600">Admin</span>
+	<div class="flex h-14 items-center border-b px-4" style="border-color: var(--color-border)">
+		<span class="text-sm font-bold tracking-wide uppercase" style="color: var(--color-primary)">Admin</span>
 	</div>
 	
 	<!-- Search input -->
@@ -148,11 +155,13 @@
 		</div>
 	</div>
 	
-	<nav class="flex-1 space-y-1 p-3">
+	<nav class="flex-1 space-y-1 overflow-y-auto p-3">
 		{#each visibleNav() as item}
+			{@const active = isActive(item.href)}
 			<a
 				href={item.href}
-				class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+				class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors {active ? 'text-primary-700 dark:text-primary-300' : 'hover:bg-black/5 dark:hover:bg-white/5'}"
+				style={active ? 'background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)' : `color: var(--color-foreground)`}
 				onclick={() => (open = false)}
 			>
 				<item.icon class="h-4 w-4" />
@@ -160,8 +169,8 @@
 			</a>
 		{/each}
 	</nav>
-	<div class="border-t border-gray-200 p-3 dark:border-gray-700">
-		<p class="text-xs text-gray-500 dark:text-gray-400">JapaConnect Admin</p>
+	<div class="border-t p-3" style="border-color: var(--color-border)">
+		<p class="text-xs" style="color: var(--color-muted)">JapaConnect Admin</p>
 	</div>
 </aside>
 

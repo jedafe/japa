@@ -30,4 +30,10 @@ export function setPermissions(perms: string[]) {
 	_permissions = perms;
 }
 
-export { _permissions as permissions, _permissionsLoaded as permissionsLoaded };
+export function getPermissions(): string[] {
+	return _permissions;
+}
+
+export function isPermissionsLoaded(): boolean {
+	return _permissionsLoaded;
+}

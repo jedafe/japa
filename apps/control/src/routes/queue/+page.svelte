@@ -3,10 +3,12 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import { Tabs, Tooltip } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { QueueInfo, QueueStats } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { ListTodo, Clock, Play, CheckCircle, XCircle, RefreshCw, X, Loader2 } from 'lucide-svelte';
+	import { ListTodo, Clock, RefreshCw, X } from 'lucide-svelte';
+	import { Dialog } from 'bits-ui';
 	import type { PageData } from './$types';
 
 	let { data = {} as PageData } = $props();
@@ -20,6 +22,7 @@
 	let selectedQueue = $state<QueueInfo | null>(null);
 	let refreshing = $state(false);
 	let secondsAgo = $state(0);
+	let activeTab = $state('overview');
 
 	interface QueueResponse {
 		queues?: QueueInfo[];
@@ -58,13 +61,6 @@
 		return 'healthy';
 	}
 
-	function formatBytes(bytes: number): string {
-		if (bytes >= 1_073_741_824) return (bytes / 1_073_741_824).toFixed(1) + ' GB';
-		if (bytes >= 1_048_576) return (bytes / 1_048_576).toFixed(1) + ' MB';
-		if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
-		return bytes + ' B';
-	}
-
 	function formatNumber(n: number): string {
 		if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
 		if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
@@ -78,10 +74,6 @@
 
 	function openQueueDetail(q: QueueInfo) {
 		selectedQueue = q;
-	}
-
-	function closeQueueDetail() {
-		selectedQueue = null;
 	}
 
 	onMount(() => {
@@ -105,200 +97,201 @@
 <PageHeader title={t('queue.title')} description={t('queue.description')} />
 
 {#if !apiAvailable}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">
+	<div class="border-tertiary bg-tertiary/10 text-tertiary mb-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm">
 		{t('queue.unavailable')}
 	</div>
 {/if}
 
-<!-- Refresh indicator -->
 <div class="mb-4 flex items-center justify-between">
 	<div class="flex items-center gap-3">
-		<p class="text-xs" style="color: var(--color-muted)">
+		<p class="text-muted-foreground text-xs">
 			{t('queue.last_updated').replace('{time}', lastRefresh.toLocaleTimeString())}
 			<span class="ml-2">({secondsAgo}s ago)</span>
 		</p>
-		<span class="rounded-full px-2 py-0.5 text-[10px] font-medium" style="background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)">
+		<span class="bg-accent text-accent-foreground rounded-full px-2 py-0.5 text-[10px] font-medium">
 			{t('queue.auto_refresh')}
 		</span>
 	</div>
 	<button
-		class="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
-		style="border-color: var(--color-border)"
+		class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
 		disabled={refreshing}
 		onclick={refresh}
 	>
-		<RefreshCw class="h-3 w-3 {refreshing ? 'animate-spin' : ''}" />
+		<RefreshCw class="size-3 {refreshing ? 'animate-spin' : ''}" />
 		{t('common.refresh')}
 	</button>
 </div>
 
-{#if loading}
-	<!-- Loading skeletons -->
-	<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-		{#each Array(5) as _}
-			<div class="h-24 animate-pulse rounded-lg border" style="border-color: var(--color-border); background-color: var(--color-surface)"></div>
-		{/each}
-	</div>
-{:else}
-	<!-- Overview cards -->
-	<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-		<MetricCard
-			label={t('queue.total_queues')}
-			value={queueStats?.queues?.length ?? 0}
-			subtitle="queues"
-		/>
-		<MetricCard
-			label={t('queue.pending')}
-			value={formatNumber(queueStats?.total_pending ?? 0)}
-			subtitle="waiting"
-		/>
-		<MetricCard
-			label={t('queue.active')}
-			value={formatNumber(queueStats?.total_active ?? 0)}
-			subtitle="processing"
-		/>
-		<MetricCard
-			label={t('queue.completed_24h')}
-			value={formatNumber(queueStats?.total_completed_24h ?? 0)}
-			subtitle="last 24h"
-			trend="up"
-		/>
-		<MetricCard
-			label={t('queue.failed_24h')}
-			value={formatNumber(queueStats?.total_failed_24h ?? 0)}
-			subtitle="last 24h"
-			trend={(queueStats?.total_failed_24h ?? 0) > 0 ? 'down' : 'neutral'}
-		/>
-	</div>
+<Tabs.Root bind:value={activeTab}>
+	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
+		<Tabs.Trigger
+			value="overview"
+			class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
+		>
+			Overview
+		</Tabs.Trigger>
+		<Tabs.Trigger
+			value="queues"
+			class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
+		>
+			Queues ({queueStats?.queues?.length ?? 0})
+		</Tabs.Trigger>
+	</Tabs.List>
 
-	<!-- Queue list table -->
-	<div class="overflow-hidden rounded-xl border" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<div class="overflow-x-auto">
-			<table class="w-full text-sm">
-				<thead>
-					<tr style="border-bottom: 1px solid var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('queue.name')}</th>
-						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('queue.pending_count')}</th>
-						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('queue.active_count')}</th>
-						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('queue.completed_count')}</th>
-						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('queue.failed_count')}</th>
-						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('queue.latency')}</th>
-						<th class="px-4 py-3 text-center font-medium" style="color: var(--color-muted)">Status</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#if queueStats?.queues && queueStats.queues.length > 0}
-						{#each queueStats.queues as q (q.name)}
-							<tr
-								class="cursor-pointer border-t transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-								style="border-color: var(--color-border)"
-								onclick={() => openQueueDetail(q)}
-								onkeydown={(e) => e.key === 'Enter' && openQueueDetail(q)}
-								role="button"
-								tabindex="0"
-							>
-								<td class="px-4 py-3 font-medium">
-									<div class="flex items-center gap-2">
-										<ListTodo class="h-3.5 w-3.5" style="color: var(--color-muted)" />
-										{q.name}
-									</div>
-								</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">
-									<span style:color={q.pending > 200 ? 'var(--color-warning)' : q.pending > 1000 ? 'var(--color-danger)' : undefined}>
-										{formatNumber(q.pending)}
-									</span>
-								</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">{formatNumber(q.active)}</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">{formatNumber(q.completed_24h)}</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">
-									<span style:color={q.failed_24h > 0 ? 'var(--color-danger)' : undefined}>
-										{formatNumber(q.failed_24h)}
-									</span>
-								</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">
-									<span style:color={q.latency_ms > 5000 ? 'var(--color-warning)' : undefined}>
-										{formatLatency(q.latency_ms)}
-									</span>
-								</td>
-								<td class="px-4 py-3 text-center">
-									<StatusBadge status={queueStatus(q)} />
+	<Tabs.Content value="overview" class="mt-4">
+		{#if loading}
+			<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+				{#each Array(5) as _}
+					<div class="bg-muted h-24 animate-pulse rounded-lg"></div>
+				{/each}
+			</div>
+		{:else}
+			<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+				<MetricCard
+					label={t('queue.total_queues')}
+					value={queueStats?.queues?.length ?? 0}
+					subtitle="queues"
+				/>
+				<MetricCard
+					label={t('queue.pending')}
+					value={formatNumber(queueStats?.total_pending ?? 0)}
+					subtitle="waiting"
+				/>
+				<MetricCard
+					label={t('queue.active')}
+					value={formatNumber(queueStats?.total_active ?? 0)}
+					subtitle="processing"
+				/>
+				<MetricCard
+					label={t('queue.completed_24h')}
+					value={formatNumber(queueStats?.total_completed_24h ?? 0)}
+					subtitle="last 24h"
+					trend="up"
+				/>
+				<MetricCard
+					label={t('queue.failed_24h')}
+					value={formatNumber(queueStats?.total_failed_24h ?? 0)}
+					subtitle="last 24h"
+					trend={(queueStats?.total_failed_24h ?? 0) > 0 ? 'down' : 'neutral'}
+				/>
+			</div>
+		{/if}
+	</Tabs.Content>
+
+	<Tabs.Content value="queues" class="mt-4">
+		<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm">
+					<thead>
+						<tr class="border-border-card border-b">
+							<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('queue.name')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.pending_count')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.active_count')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.completed_count')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.failed_count')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.latency')}</th>
+							<th class="text-muted-foreground px-4 py-3 text-center font-medium">Status</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#if queueStats?.queues && queueStats.queues.length > 0}
+							{#each queueStats.queues as q (q.name)}
+								<tr
+									class="border-border-card hover:bg-dark-04 cursor-pointer border-t transition-colors"
+									onclick={() => openQueueDetail(q)}
+									onkeydown={(e) => e.key === 'Enter' && openQueueDetail(q)}
+									role="button"
+									tabindex="0"
+								>
+									<td class="px-4 py-3 font-medium">
+										<div class="flex items-center gap-2">
+											<ListTodo class="text-muted-foreground size-3.5" />
+											{q.name}
+										</div>
+									</td>
+									<td class="px-4 py-3 text-right font-mono text-xs">
+										<span class:text-tertiary={q.pending > 200} class:text-destructive={q.pending > 1000}>
+											{formatNumber(q.pending)}
+										</span>
+									</td>
+									<td class="px-4 py-3 text-right font-mono text-xs">{formatNumber(q.active)}</td>
+									<td class="px-4 py-3 text-right font-mono text-xs">{formatNumber(q.completed_24h)}</td>
+									<td class="px-4 py-3 text-right font-mono text-xs">
+										<span class:text-destructive={q.failed_24h > 0}>
+											{formatNumber(q.failed_24h)}
+										</span>
+									</td>
+									<td class="px-4 py-3 text-right font-mono text-xs">
+										<span class:text-tertiary={q.latency_ms > 5000}>
+											{formatLatency(q.latency_ms)}
+										</span>
+									</td>
+									<td class="px-4 py-3 text-center">
+										<StatusBadge status={queueStatus(q)} />
+									</td>
+								</tr>
+							{/each}
+						{:else}
+							<tr>
+								<td colspan="7" class="text-muted-foreground px-4 py-12 text-center">
+									<ListTodo class="mx-auto size-8 opacity-40" />
+									<p class="mt-3 text-sm">No queue data available</p>
 								</td>
 							</tr>
-						{/each}
-					{:else}
-						<tr>
-							<td colspan="7" class="px-4 py-12 text-center" style="color: var(--color-muted)">
-								<ListTodo class="mx-auto h-8 w-8 opacity-40" />
-								<p class="mt-3 text-sm">No queue data available</p>
-							</td>
-						</tr>
-					{/if}
-				</tbody>
-			</table>
+						{/if}
+					</tbody>
+				</table>
+			</div>
 		</div>
-	</div>
-{/if}
+	</Tabs.Content>
+</Tabs.Root>
 
-<!-- Queue detail modal -->
-{#if selectedQueue}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background-color: rgba(0,0,0,0.5)">
-		<div class="w-full max-w-2xl rounded-xl border shadow-xl" style="border-color: var(--color-border); background-color: var(--color-background)">
-			<!-- Modal header -->
-			<div class="flex items-center justify-between border-b px-6 py-4" style="border-color: var(--color-border)">
+<Dialog.Root bind:open={() => selectedQueue !== null, (v) => { if (!v) selectedQueue = null; }}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
+		<Dialog.Content
+			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-xl border p-0"
+			onOpenAutoFocus={(e) => e.preventDefault()}
+		>
+			<div class="border-border-card flex items-center justify-between border-b px-6 py-4">
 				<div>
-					<h2 class="text-lg font-semibold">{selectedQueue.name}</h2>
-					<p class="text-xs" style="color: var(--color-muted)">{t('queue.recent_jobs')}</p>
+					<Dialog.Title class="text-foreground text-lg font-semibold">{selectedQueue?.name}</Dialog.Title>
+					<p class="text-muted-foreground text-xs">{t('queue.recent_jobs')}</p>
 				</div>
-				<button
-					class="rounded-md p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-					onclick={closeQueueDetail}
-				>
-					<X class="h-4 w-4" />
-				</button>
+				<Dialog.Close class="hover:bg-dark-04 rounded-9px p-1.5 transition-colors">
+					<X class="size-4" />
+				</Dialog.Close>
 			</div>
-
-			<!-- Modal body -->
 			<div class="px-6 py-4">
-				<!-- Queue stats summary -->
 				<div class="mb-4 grid grid-cols-4 gap-3">
-					<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
-						<p class="text-[10px] font-medium uppercase" style="color: var(--color-muted)">{t('queue.pending')}</p>
-						<p class="text-lg font-bold">{formatNumber(selectedQueue.pending)}</p>
+					<div class="border-border-card rounded-9px border p-3">
+						<p class="text-muted-foreground text-[10px] font-medium uppercase">{t('queue.pending')}</p>
+						<p class="text-foreground text-lg font-bold">{formatNumber(selectedQueue?.pending ?? 0)}</p>
 					</div>
-					<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
-						<p class="text-[10px] font-medium uppercase" style="color: var(--color-muted)">{t('queue.active')}</p>
-						<p class="text-lg font-bold">{formatNumber(selectedQueue.active)}</p>
+					<div class="border-border-card rounded-9px border p-3">
+						<p class="text-muted-foreground text-[10px] font-medium uppercase">{t('queue.active')}</p>
+						<p class="text-foreground text-lg font-bold">{formatNumber(selectedQueue?.active ?? 0)}</p>
 					</div>
-					<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
-						<p class="text-[10px] font-medium uppercase" style="color: var(--color-muted)">{t('queue.completed')}</p>
-						<p class="text-lg font-bold">{formatNumber(selectedQueue.completed_24h)}</p>
+					<div class="border-border-card rounded-9px border p-3">
+						<p class="text-muted-foreground text-[10px] font-medium uppercase">{t('queue.completed')}</p>
+						<p class="text-foreground text-lg font-bold">{formatNumber(selectedQueue?.completed_24h ?? 0)}</p>
 					</div>
-					<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
-						<p class="text-[10px] font-medium uppercase" style="color: var(--color-muted)">{t('queue.failed_24h')}</p>
-						<p class="text-lg font-bold" style:color={selectedQueue.failed_24h > 0 ? 'var(--color-danger)' : undefined}>{formatNumber(selectedQueue.failed_24h)}</p>
+					<div class="border-border-card rounded-9px border p-3">
+						<p class="text-muted-foreground text-[10px] font-medium uppercase">{t('queue.failed_24h')}</p>
+						<p class="text-destructive text-lg font-bold">{formatNumber(selectedQueue?.failed_24h ?? 0)}</p>
 					</div>
 				</div>
-
-				<!-- Placeholder for recent jobs list -->
-				<div class="rounded-lg border p-6 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
-					<Clock class="mx-auto h-6 w-6 opacity-40" style="color: var(--color-muted)" />
-					<p class="mt-2 text-sm" style="color: var(--color-muted)">{t('queue.no_jobs')}</p>
-					<p class="mt-1 text-xs" style="color: var(--color-muted)">Job-level detail requires the backend queue inspection endpoint.</p>
+				<div class="bg-muted/50 border-border-card rounded-9px border p-6 text-center">
+					<Clock class="text-muted-foreground mx-auto size-6 opacity-40" />
+					<p class="text-muted-foreground mt-2 text-sm">{t('queue.no_jobs')}</p>
+					<p class="text-muted-foreground mt-1 text-xs">Job-level detail requires the backend queue inspection endpoint.</p>
 				</div>
 			</div>
-
-			<!-- Modal footer -->
-			<div class="flex justify-end border-t px-6 py-3" style="border-color: var(--color-border)">
-				<button
-					class="rounded-md border px-4 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-					style="border-color: var(--color-border)"
-					onclick={closeQueueDetail}
-				>
+			<div class="border-border-card flex justify-end border-t px-6 py-3">
+				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-1.5 text-sm font-medium transition-colors">
 					Close
-				</button>
+				</Dialog.Close>
 			</div>
-		</div>
-	</div>
-{/if}
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>

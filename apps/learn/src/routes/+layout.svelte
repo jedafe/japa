@@ -47,7 +47,6 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 	<meta name="description" content="JapaConnect Learn — structured learning tracks for your journey abroad" />
 	<!-- Umami Analytics (Section 40) — only in production -->
 	{#if import.meta.env.MODE !== 'development'}

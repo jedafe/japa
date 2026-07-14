@@ -2,8 +2,9 @@
 	import { api } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { Key, Search, Ban, Trash2, Plus, Pencil, Copy, Check } from 'lucide-svelte';
-	import { Dialog } from 'bits-ui';
+	import { Dialog, Tabs, Tooltip, Select } from 'bits-ui';
 	import type { PageData } from './$types';
 
 	let { data = {} as PageData } = $props();
@@ -27,10 +28,16 @@
 	let keys = $state<AdminApiKey[]>(data.keys ?? []);
 	let loading = $state(false);
 	let filter = $state('');
+	let filterTier = $state('all');
+	let activeTab = $state('active');
 	// svelte-ignore state_referenced_locally
 	let errorMessage = $state(data.error ?? '');
 	let confirmOpen = $state(false);
 	let confirmAction = $state<{ type: 'revoke' | 'suspend'; key: AdminApiKey } | null>(null);
+
+	// Pagination
+	let page = $state(0);
+	let pageSize = $state(10);
 
 	// Create modal state
 	let createModalOpen = $state(false);
@@ -46,6 +53,13 @@
 	let editModalOpen = $state(false);
 	let editForm = $state({ id: '', name: '', scopes: '' });
 	let editLoading = $state(false);
+
+	const tierItems = [
+		{ value: 'all', label: 'All Tiers' },
+		{ value: 'standard', label: 'Standard' },
+		{ value: 'premium', label: 'Premium' },
+		{ value: 'unlimited', label: 'Unlimited' }
+	];
 
 	async function suspendKey(id: string) {
 		const result = await api(`/control/api-keys/${id}/suspend`, { method: 'POST' });
@@ -154,26 +168,54 @@
 	}
 
 	let filtered = $derived(
-		filter
-			? keys.filter(
-					(k) =>
-						k.name?.toLowerCase().includes(filter.toLowerCase()) ||
-						k.key_prefix?.toLowerCase().includes(filter.toLowerCase()) ||
-						k.user_id?.toLowerCase().includes(filter.toLowerCase())
-				)
-			: keys
+		keys
+			.filter((k) => {
+				if (activeTab === 'active' && k.status !== 'active') return false;
+				if (filterTier !== 'all' && k.rate_limit_tier !== filterTier) return false;
+				if (filter) {
+					const q = filter.toLowerCase();
+					if (
+						!k.name?.toLowerCase().includes(q) &&
+						!k.key_prefix?.toLowerCase().includes(q) &&
+						!k.user_id?.toLowerCase().includes(q)
+					)
+						return false;
+				}
+				return true;
+			})
 	);
+
+	let totalPages = $derived(Math.max(1, Math.ceil(filtered.length / pageSize)));
+	let paginatedKeys = $derived.by(() => {
+		const start = page * pageSize;
+		return filtered.slice(start, start + pageSize);
+	});
+
+	let activeCount = $derived(keys.filter((k) => k.status === 'active').length);
 
 	function statusColor(status: string): string {
 		switch (status) {
 			case 'active':
-				return '#22c55e';
+				return 'text-emerald-500';
 			case 'suspended':
-				return '#f59e0b';
+				return 'text-amber-500';
 			case 'revoked':
-				return '#ef4444';
+				return 'text-destructive';
 			default:
-				return 'var(--color-muted)';
+				return 'text-muted-foreground';
+		}
+	}
+
+	function statusBg(status: string): string {
+		switch (status) {
+			case 'active':
+				return 'bg-emerald-500/10';
+			case 'suspended':
+				return 'bg-amber-500/10';
+			case 'revoked':
+				return 'bg-destructive/10';
+			default:
+				return 'bg-muted';
 		}
 	}
 
@@ -190,34 +232,47 @@
 />
 
 {#if errorMessage}
-	<div
-		class="mb-4 rounded-lg border p-3 text-sm"
-		style="border-color: color-mix(in srgb, var(--color-danger) 30%, transparent); background: color-mix(in srgb, var(--color-danger) 6%, transparent); color: var(--color-danger)"
-	>
+	<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-xl border px-4 py-3 text-sm">
 		{errorMessage}
 	</div>
 {/if}
 
 <div class="mb-4 flex items-center gap-3">
 	<div class="relative">
-		<Search
-			class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
-			style="color: var(--color-muted)"
-		/>
+		<Search class="text-muted-foreground absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
 		<input
 			bind:value={filter}
 			placeholder="Filter by name, prefix, or user..."
-			class="w-72 rounded-lg border py-2 pl-9 pr-3 text-sm outline-none transition-colors focus:ring-2"
-			style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+			class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 h-input rounded-9px w-72 border px-3 py-2.5 pl-9 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		/>
 	</div>
-	<span class="text-xs" style="color: var(--color-muted)">
+
+	<Select.Root type="single" bind:value={filterTier} items={tierItems}>
+		<Select.Trigger class="border-border-input bg-background rounded-9px border px-3 py-2 text-sm" aria-label="Filter tier">
+			<Select.Value placeholder="All Tiers" />
+		</Select.Trigger>
+		<Select.Portal>
+			<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1">
+				<Select.Viewport class="p-1">
+					{#each tierItems as item}
+						<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={item.value} label={item.label}>
+							{#snippet children({ selected })}
+								{item.label}
+								{#if selected}<span class="ml-auto">✓</span>{/if}
+							{/snippet}
+						</Select.Item>
+					{/each}
+				</Select.Viewport>
+			</Select.Content>
+		</Select.Portal>
+	</Select.Root>
+
+	<span class="text-muted-foreground text-xs">
 		{filtered.length} key{filtered.length !== 1 ? 's' : ''}
 	</span>
 	<div class="flex-1"></div>
 	<button
-		class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-colors"
-		style="background: var(--color-primary)"
+		class="bg-foreground text-background flex items-center gap-1.5 rounded-9px px-3 py-2 text-sm font-medium transition-colors hover:opacity-90"
 		onclick={() => (createModalOpen = true)}
 	>
 		<Plus class="h-4 w-4" />
@@ -225,108 +280,247 @@
 	</button>
 </div>
 
-{#if loading}
-	<div class="space-y-3">
-		{#each Array(5) as _}
-			<div class="h-16 animate-pulse rounded-lg" style="background-color: var(--color-surface)"></div>
-		{/each}
-	</div>
-{:else if filtered.length === 0}
-	<div
-		class="rounded-lg border p-8 text-center"
-		style="border-color: var(--color-border); background-color: var(--color-surface)"
-	>
-		<Key class="mx-auto h-8 w-8" style="color: var(--color-muted)" />
-		<p class="mt-3 text-sm" style="color: var(--color-muted)">
-			{filter ? 'No keys match your filter.' : 'No API keys exist yet.'}
-		</p>
-	</div>
-{:else}
-	<div
-		class="overflow-hidden rounded-lg border"
-		style="border-color: var(--color-border); background-color: var(--color-surface)"
-	>
-		<table class="w-full text-left text-sm" style="color: var(--color-foreground)">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Name</th>
-					<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Key Prefix</th>
-					<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">User</th>
-					<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Tier</th>
-					<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Status</th>
-					<th class="px-4 py-3 font-medium text-right" style="color: var(--color-muted)">Requests</th>
-					<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Actions</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each filtered as key (key.id)}
-					<tr style="border-bottom: 1px solid var(--color-border)">
-						<td class="px-4 py-3 font-medium">{key.name}</td>
-						<td class="px-4 py-3 font-mono text-xs">{key.key_prefix}...</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">
-							{key.user_id ? key.user_id.slice(0, 8) + '...' : 'System'}
-						</td>
-						<td class="px-4 py-3">
-							<span
-								class="rounded px-1.5 py-0.5 text-xs"
-								style="background: color-mix(in srgb, var(--color-primary) 8%, transparent); color: var(--color-primary)"
-							>
-								{key.rate_limit_tier}
-							</span>
-						</td>
-						<td class="px-4 py-3">
-							<span
-								class="rounded-full px-2 py-0.5 text-xs font-medium"
-								style="background: color-mix(in srgb, {statusColor(key.status)} 12%, transparent); color: {statusColor(
-									key.status
-								)}"
-							>
-								{key.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-right font-mono text-xs">
-							{formatNumber(key.request_count)}
-						</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-2">
-								{#if key.status !== 'revoked'}
-									<button
-										class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors"
-										style="color: var(--color-primary)"
-										onclick={() => openEditModal(key)}
-									>
-										<Pencil class="h-3 w-3" />
-										Edit
-									</button>
-								{/if}
-								{#if key.status === 'active'}
-									<button
-										class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors"
-										style="color: #f59e0b"
-										onclick={() => (confirmAction = { type: 'suspend', key })}
-									>
-										<Ban class="h-3 w-3" />
-										Suspend
-									</button>
-								{/if}
-								{#if key.status !== 'revoked'}
-									<button
-										class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors"
-										style="color: var(--color-danger)"
-										onclick={() => (confirmAction = { type: 'revoke', key })}
-									>
-										<Trash2 class="h-3 w-3" />
-										Revoke
-									</button>
-								{/if}
-							</div>
-						</td>
-					</tr>
+<Tabs.Root bind:value={activeTab}>
+	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
+		<Tabs.Trigger value="active" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
+			Active Keys ({activeCount})
+		</Tabs.Trigger>
+		<Tabs.Trigger value="all" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
+			All Keys ({keys.length})
+		</Tabs.Trigger>
+	</Tabs.List>
+
+	<Tabs.Content value="active" class="mt-4">
+		{#if loading}
+			<div class="space-y-3">
+				{#each Array(5) as _}
+					<div class="bg-muted h-16 animate-pulse rounded-lg"></div>
 				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
+			</div>
+		{:else if filtered.length === 0}
+			<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
+				<Key class="text-muted-foreground mx-auto h-8 w-8" />
+				<p class="text-muted-foreground mt-3 text-sm">
+					{filter || filterTier !== 'all' ? 'No keys match your filter.' : 'No active API keys.'}
+				</p>
+			</div>
+		{:else}
+			<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
+				<table class="text-foreground w-full text-left text-sm">
+					<thead>
+						<tr class="border-border-card border-b">
+							<th class="text-muted-foreground px-4 py-3 font-medium">Name</th>
+							<th class="text-muted-foreground px-4 py-3 font-medium">Key Prefix</th>
+							<th class="text-muted-foreground px-4 py-3 font-medium">User</th>
+							<th class="text-muted-foreground px-4 py-3 font-medium">Tier</th>
+							<th class="text-muted-foreground px-4 py-3 font-medium">Status</th>
+							<th class="text-muted-foreground px-4 py-3 text-right font-medium">Requests</th>
+							<th class="text-muted-foreground px-4 py-3 font-medium">Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each paginatedKeys as key (key.id)}
+							<tr class="border-border-card border-t">
+								<td class="px-4 py-3 font-medium">{key.name}</td>
+								<td class="font-muted-foreground px-4 py-3 font-mono text-xs">{key.key_prefix}...</td>
+								<td class="text-muted-foreground px-4 py-3 text-xs">
+									{key.user_id ? key.user_id.slice(0, 8) + '...' : 'System'}
+								</td>
+								<td class="px-4 py-3">
+									<span class="bg-accent text-accent-foreground rounded-5px px-1.5 py-0.5 text-xs">
+										{key.rate_limit_tier}
+									</span>
+								</td>
+								<td class="px-4 py-3">
+									<span class="{statusBg(key.status)} {statusColor(key.status)} rounded-full px-2 py-0.5 text-xs font-medium">
+										{key.status}
+									</span>
+								</td>
+								<td class="px-4 py-3 text-right font-mono text-xs">
+									{formatNumber(key.request_count)}
+								</td>
+								<td class="px-4 py-3">
+									<div class="flex items-center gap-1">
+										{#if key.status !== 'revoked'}
+											<Tooltip.Root>
+												<Tooltip.Trigger>
+													<button
+														class="text-accent-foreground hover:bg-accent flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
+														onclick={() => openEditModal(key)}
+													>
+														<Pencil class="h-3 w-3" />
+													</button>
+												</Tooltip.Trigger>
+												<Tooltip.Portal>
+													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
+														Edit key
+													</Tooltip.Content>
+												</Tooltip.Portal>
+											</Tooltip.Root>
+										{/if}
+										{#if key.status === 'active'}
+											<Tooltip.Root>
+												<Tooltip.Trigger>
+													<button
+														class="text-amber-500 hover:bg-amber-500/10 flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
+														onclick={() => (confirmAction = { type: 'suspend', key })}
+													>
+														<Ban class="h-3 w-3" />
+													</button>
+												</Tooltip.Trigger>
+												<Tooltip.Portal>
+													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
+														Suspend key
+													</Tooltip.Content>
+												</Tooltip.Portal>
+											</Tooltip.Root>
+										{/if}
+										{#if key.status !== 'revoked'}
+											<Tooltip.Root>
+												<Tooltip.Trigger>
+													<button
+														class="text-destructive hover:bg-destructive/10 flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
+														onclick={() => (confirmAction = { type: 'revoke', key })}
+													>
+														<Trash2 class="h-3 w-3" />
+													</button>
+												</Tooltip.Trigger>
+												<Tooltip.Portal>
+													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
+														Revoke key
+													</Tooltip.Content>
+												</Tooltip.Portal>
+											</Tooltip.Root>
+										{/if}
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+
+			<Pagination
+				bind:page
+				{totalPages}
+				totalItems={filtered.length}
+				bind:pageSize
+			/>
+		{/if}
+	</Tabs.Content>
+
+	<Tabs.Content value="all" class="mt-4">
+		{#if loading}
+			<div class="space-y-3">
+				{#each Array(5) as _}
+					<div class="bg-muted h-16 animate-pulse rounded-lg"></div>
+				{/each}
+			</div>
+		{:else if filtered.length === 0}
+			<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
+				<Key class="text-muted-foreground mx-auto h-8 w-8" />
+				<p class="text-muted-foreground mt-3 text-sm">
+					{filter || filterTier !== 'all' ? 'No keys match your filter.' : 'No API keys exist yet.'}
+				</p>
+			</div>
+		{:else}
+			<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
+				<table class="text-foreground w-full text-left text-sm">
+					<thead>
+						<tr class="border-border-card border-b">
+							<th class="text-muted-foreground px-4 py-3 font-medium">Name</th>
+							<th class="text-muted-foreground px-4 py-3 font-medium">Key Prefix</th>
+							<th class="text-muted-foreground px-4 py-3 font-medium">User</th>
+							<th class="text-muted-foreground px-4 py-3 font-medium">Tier</th>
+							<th class="text-muted-foreground px-4 py-3 font-medium">Status</th>
+							<th class="text-muted-foreground px-4 py-3 text-right font-medium">Requests</th>
+							<th class="text-muted-foreground px-4 py-3 font-medium">Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each paginatedKeys as key (key.id)}
+							<tr class="border-border-card border-t">
+								<td class="px-4 py-3 font-medium">{key.name}</td>
+								<td class="text-muted-foreground px-4 py-3 font-mono text-xs">{key.key_prefix}...</td>
+								<td class="text-muted-foreground px-4 py-3 text-xs">
+									{key.user_id ? key.user_id.slice(0, 8) + '...' : 'System'}
+								</td>
+								<td class="px-4 py-3">
+									<span class="bg-accent text-accent-foreground rounded-5px px-1.5 py-0.5 text-xs">
+										{key.rate_limit_tier}
+									</span>
+								</td>
+								<td class="px-4 py-3">
+									<span class="{statusBg(key.status)} {statusColor(key.status)} rounded-full px-2 py-0.5 text-xs font-medium">
+										{key.status}
+									</span>
+								</td>
+								<td class="px-4 py-3 text-right font-mono text-xs">
+									{formatNumber(key.request_count)}
+								</td>
+								<td class="px-4 py-3">
+									<div class="flex items-center gap-1">
+										{#if key.status !== 'revoked'}
+											<Tooltip.Root>
+												<Tooltip.Trigger>
+													<button
+														class="text-accent-foreground hover:bg-accent flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
+														onclick={() => openEditModal(key)}
+													>
+														<Pencil class="h-3 w-3" />
+													</button>
+												</Tooltip.Trigger>
+												<Tooltip.Portal>
+													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
+														Edit key
+													</Tooltip.Content>
+												</Tooltip.Portal>
+											</Tooltip.Root>
+										{/if}
+										{#if key.status === 'active'}
+											<Tooltip.Root>
+												<Tooltip.Trigger>
+													<button
+														class="text-amber-500 hover:bg-amber-500/10 flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
+														onclick={() => (confirmAction = { type: 'suspend', key })}
+													>
+														<Ban class="h-3 w-3" />
+													</button>
+												</Tooltip.Trigger>
+												<Tooltip.Portal>
+													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
+														Suspend key
+													</Tooltip.Content>
+												</Tooltip.Portal>
+											</Tooltip.Root>
+										{/if}
+										{#if key.status !== 'revoked'}
+											<Tooltip.Root>
+												<Tooltip.Trigger>
+													<button
+														class="text-destructive hover:bg-destructive/10 flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
+														onclick={() => (confirmAction = { type: 'revoke', key })}
+													>
+														<Trash2 class="h-3 w-3" />
+													</button>
+												</Tooltip.Trigger>
+												<Tooltip.Portal>
+													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
+														Revoke key
+													</Tooltip.Content>
+												</Tooltip.Portal>
+											</Tooltip.Root>
+										{/if}
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</Tabs.Content>
+</Tabs.Root>
 
 {#if confirmAction}
 	{#if confirmAction.type === 'revoke'}
@@ -353,47 +547,42 @@
 <!-- Create API Key Modal -->
 <Dialog.Root bind:open={createModalOpen} onOpenChange={(isOpen) => { if (!isOpen) createForm = { name: '', scopes: '', rate_limit_tier: 'standard', expires_at: '' }; }}>
 	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
+		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
 		<Dialog.Content
-			class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-xl focus:outline-none"
-			style="border-color: var(--color-border); background: var(--color-surface)"
+			class="border-border-card bg-background shadow-popover focus:outline-none fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6"
 			role="dialog"
 			aria-modal="true"
 			onOpenAutoFocus={(e) => e.preventDefault()}
 		>
-			<Dialog.Title class="text-lg font-semibold" style="color: var(--color-foreground)">
+			<Dialog.Title class="text-foreground text-lg font-semibold">
 				Create API Key
 			</Dialog.Title>
-			<p class="mt-1 text-sm" style="color: var(--color-muted)">
+			<p class="text-muted-foreground mt-1 text-sm">
 				Generate a new API key for a developer.
 			</p>
 
 			{#if errorMessage}
-				<div
-					class="mt-3 rounded-md p-3 text-sm"
-					style="background: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)"
-				>
+				<div class="bg-destructive/10 text-destructive mt-3 rounded-md p-3 text-sm">
 					{errorMessage}
 				</div>
 			{/if}
 
 			<div class="mt-4 space-y-4">
 				<div>
-					<label for="create-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
-						Name <span style="color: var(--color-danger)">*</span>
+					<label for="create-name" class="text-foreground block text-sm font-medium">
+						Name <span class="text-destructive">*</span>
 					</label>
 					<input
 						id="create-name"
 						type="text"
 						bind:value={createForm.name}
 						placeholder="e.g., Production Backend"
-						class="mt-1 block w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
-						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
 				</div>
 
 				<div>
-					<label for="create-scopes" class="block text-sm font-medium" style="color: var(--color-foreground)">
+					<label for="create-scopes" class="text-foreground block text-sm font-medium">
 						Scopes
 					</label>
 					<input
@@ -401,21 +590,19 @@
 						type="text"
 						bind:value={createForm.scopes}
 						placeholder="read,write,admin"
-						class="mt-1 block w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
-						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
-					<p class="mt-1 text-xs" style="color: var(--color-muted)">Comma-separated list of scopes</p>
+					<p class="text-muted-foreground mt-1 text-xs">Comma-separated list of scopes</p>
 				</div>
 
 				<div>
-					<label for="create-tier" class="block text-sm font-medium" style="color: var(--color-foreground)">
+					<label for="create-tier" class="text-foreground block text-sm font-medium">
 						Rate Limit Tier
 					</label>
 					<select
 						id="create-tier"
 						bind:value={createForm.rate_limit_tier}
-						class="mt-1 block w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
-						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+						class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					>
 						<option value="standard">Standard</option>
 						<option value="premium">Premium</option>
@@ -424,31 +611,26 @@
 				</div>
 
 				<div>
-					<label for="create-expires" class="block text-sm font-medium" style="color: var(--color-foreground)">
+					<label for="create-expires" class="text-foreground block text-sm font-medium">
 						Expires At
 					</label>
 					<input
 						id="create-expires"
 						type="datetime-local"
 						bind:value={createForm.expires_at}
-						class="mt-1 block w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
-						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+						class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
-					<p class="mt-1 text-xs" style="color: var(--color-muted)">Leave empty for no expiration</p>
+					<p class="text-muted-foreground mt-1 text-xs">Leave empty for no expiration</p>
 				</div>
 			</div>
 
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close
-					class="rounded-md border px-4 py-2 text-sm font-medium transition-colors"
-					style="border-color: var(--color-border); color: var(--color-foreground)"
-				>
+				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
 					Cancel
 				</Dialog.Close>
 				<button
 					type="button"
-					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background: var(--color-primary)"
+					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
 					disabled={createLoading || !createForm.name.trim()}
 					onclick={createKey}
 				>
@@ -462,26 +644,25 @@
 <!-- One-Time Key Display Modal -->
 <Dialog.Root bind:open={oneTimeKeyModalOpen}>
 	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
+		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
 		<Dialog.Content
-			class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-xl focus:outline-none"
-			style="border-color: var(--color-border); background: var(--color-surface)"
+			class="border-border-card bg-background shadow-popover focus:outline-none fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6"
 			role="dialog"
 			aria-modal="true"
 			onOpenAutoFocus={(e) => e.preventDefault()}
 		>
-			<Dialog.Title class="text-lg font-semibold" style="color: var(--color-foreground)">
+			<Dialog.Title class="text-foreground text-lg font-semibold">
 				API Key Created
 			</Dialog.Title>
 
-			<div class="mt-3 rounded-md p-3" style="background: color-mix(in srgb, #f59e0b 8%, transparent)">
-				<p class="text-sm font-medium" style="color: #f59e0b">
+			<div class="bg-amber-500/10 mt-3 rounded-md p-3">
+				<p class="text-amber-500 text-sm font-medium">
 					Save this key now. It will not be shown again.
 				</p>
 			</div>
 
 			<div class="mt-4">
-				<label for="one-time-key" class="block text-sm font-medium" style="color: var(--color-foreground)">
+				<label for="one-time-key" class="text-foreground block text-sm font-medium">
 					Your API Key
 				</label>
 				<div class="mt-1 flex items-center gap-2">
@@ -490,17 +671,15 @@
 						type="text"
 						readonly
 						value={oneTimeKeyValue}
-						class="flex-1 rounded-md border px-3 py-2 font-mono text-sm focus:ring-2"
-						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+						class="border-border-input bg-background text-foreground flex-1 rounded-9px border px-3 py-2 font-mono text-sm focus:shadow-date-field-focus focus:outline-none"
 					/>
 					<button
 						type="button"
-						class="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors"
-						style="border-color: var(--color-border); color: var(--color-foreground)"
+						class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-2 text-sm font-medium transition-colors"
 						onclick={copyToClipboard}
 					>
 						{#if copiedToClipboard}
-							<Check class="h-4 w-4" style="color: #22c55e" />
+							<Check class="h-4 w-4 text-emerald-500" />
 							Copied
 						{:else}
 							<Copy class="h-4 w-4" />
@@ -511,10 +690,7 @@
 			</div>
 
 			<div class="mt-6 flex justify-end">
-				<Dialog.Close
-					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-					style="background: var(--color-primary)"
-				>
+				<Dialog.Close class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90">
 					Done
 				</Dialog.Close>
 			</div>
@@ -525,44 +701,39 @@
 <!-- Edit API Key Modal -->
 <Dialog.Root bind:open={editModalOpen} onOpenChange={(isOpen) => { if (!isOpen) editForm = { id: '', name: '', scopes: '' }; }}>
 	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
+		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
 		<Dialog.Content
-			class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-xl focus:outline-none"
-			style="border-color: var(--color-border); background: var(--color-surface)"
+			class="border-border-card bg-background shadow-popover focus:outline-none fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6"
 			role="dialog"
 			aria-modal="true"
 			onOpenAutoFocus={(e) => e.preventDefault()}
 		>
-			<Dialog.Title class="text-lg font-semibold" style="color: var(--color-foreground)">
+			<Dialog.Title class="text-foreground text-lg font-semibold">
 				Edit API Key
 			</Dialog.Title>
 
 			{#if errorMessage}
-				<div
-					class="mt-3 rounded-md p-3 text-sm"
-					style="background: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)"
-				>
+				<div class="bg-destructive/10 text-destructive mt-3 rounded-md p-3 text-sm">
 					{errorMessage}
 				</div>
 			{/if}
 
 			<div class="mt-4 space-y-4">
 				<div>
-					<label for="edit-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
-						Name <span style="color: var(--color-danger)">*</span>
+					<label for="edit-name" class="text-foreground block text-sm font-medium">
+						Name <span class="text-destructive">*</span>
 					</label>
 					<input
 						id="edit-name"
 						type="text"
 						bind:value={editForm.name}
 						placeholder="e.g., Production Backend"
-						class="mt-1 block w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
-						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
 				</div>
 
 				<div>
-					<label for="edit-scopes" class="block text-sm font-medium" style="color: var(--color-foreground)">
+					<label for="edit-scopes" class="text-foreground block text-sm font-medium">
 						Scopes
 					</label>
 					<input
@@ -570,24 +741,19 @@
 						type="text"
 						bind:value={editForm.scopes}
 						placeholder="read,write,admin"
-						class="mt-1 block w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
-						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
-					<p class="mt-1 text-xs" style="color: var(--color-muted)">Comma-separated list of scopes</p>
+					<p class="text-muted-foreground mt-1 text-xs">Comma-separated list of scopes</p>
 				</div>
 			</div>
 
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close
-					class="rounded-md border px-4 py-2 text-sm font-medium transition-colors"
-					style="border-color: var(--color-border); color: var(--color-foreground)"
-				>
+				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
 					Cancel
 				</Dialog.Close>
 				<button
 					type="button"
-					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background: var(--color-primary)"
+					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
 					disabled={editLoading || !editForm.name.trim()}
 					onclick={updateKey}
 				>

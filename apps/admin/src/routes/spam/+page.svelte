@@ -1,78 +1,204 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Modal from '$lib/components/Modal.svelte';
+	import { RefreshCw, Plus, Trash2, Ban, MessageSquareOff, Users } from 'lucide-svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { Tabs } from '$lib/components/ui/tabs';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import { Modal } from '$lib/components/ui/modal';
 	import { spamApi } from '$lib/api';
 
-	// Row shapes mirror the backend JSON (internal/db/gen models); these
-	// endpoints return `{"data": [...]}` arrays without pagination.
-	type IpBlock = { id: string; cidr: string; block_type: string; reason: string | null; blocked_by?: string; expires_at?: string | null; created_at?: string };
-	type CensoredWord = { id: string; pattern: string; action: string; replacement: string | null; created_at?: string };
-	type UserBlock = { blocker_id: string; blocked_id: string; created_at?: string };
+	type IpBlock = {
+		id: string;
+		cidr: string;
+		block_type: string;
+		reason: string | null;
+		blocked_by?: string;
+		expires_at?: string | null;
+		created_at?: string;
+	};
+	type CensoredWord = {
+		id: string;
+		pattern: string;
+		action: string;
+		replacement: string | null;
+		created_at?: string;
+	};
+	type UserBlock = {
+		blocker_id: string;
+		blocked_id: string;
+		created_at?: string;
+	};
 
 	type Tab = 'ip-blocks' | 'censored-words' | 'user-blocks';
 
 	let activeTab = $state<Tab>('ip-blocks');
+	let loading = $state(false);
+	let errorMessage = $state('');
 
 	// IP Blocks
 	let ipBlocks = $state<IpBlock[]>([]);
-	let ipLoading = $state(false);
-
-	// Censored Words
-	let censoredWords = $state<CensoredWord[]>([]);
-	let cwLoading = $state(false);
-
-	// User Blocks
-	let userBlocks = $state<UserBlock[]>([]);
-	let ubLoading = $state(false);
-
-	// Modals
 	let showIpModal = $state(false);
-	let showCwModal = $state(false);
-	let showDeleteConfirm = $state(false);
-	// User blocks are keyed by (blocker_id, blocked_id), not a single id.
-	let deleteTarget = $state<{ type: string; id: string; secondaryId?: string } | null>(null);
-
-	// IP Block form
 	let ipForm = $state({ cidr: '', block_type: 'full', reason: '', expires_at: '' });
 	let ipSaving = $state(false);
 
-	// Censored Word form
+	// Censored Words
+	let censoredWords = $state<CensoredWord[]>([]);
+	let showCwModal = $state(false);
 	let cwForm = $state({ pattern: '', replacement: '' });
 	let cwSaving = $state(false);
 
-	let errorMessage = $state('');
+	// User Blocks
+	let userBlocks = $state<UserBlock[]>([]);
 
-	const tabs: { key: Tab; label: string }[] = [
-		{ key: 'ip-blocks', label: 'IP Blocks' },
-		{ key: 'censored-words', label: 'Censored Words' },
-		{ key: 'user-blocks', label: 'User Blocks' }
+	// Delete confirmation
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<{ type: string; id: string; secondaryId?: string } | null>(null);
+
+	const tabs: { value: Tab; label: string; icon: any }[] = [
+		{ value: 'ip-blocks', label: 'IP Blocks', icon: Ban },
+		{ value: 'censored-words', label: 'Censored Words', icon: MessageSquareOff },
+		{ value: 'user-blocks', label: 'User Blocks', icon: Users }
+	];
+
+	const ipColumns = [
+		{
+			key: 'cidr',
+			label: 'IP / CIDR',
+			sortable: true,
+			render: (value: string) => `<span class="font-mono text-sm text-gray-900">${value}</span>`
+		},
+		{
+			key: 'block_type',
+			label: 'Type',
+			sortable: true,
+			render: (value: string) => {
+				const cls =
+					value === 'full'
+						? 'bg-danger-100 text-danger-800'
+						: 'bg-warning-100 text-warning-800';
+				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}">${value}</span>`;
+			}
+		},
+		{
+			key: 'reason',
+			label: 'Reason',
+			render: (value: string) => `<span class="text-sm text-gray-600">${value ?? '—'}</span>`
+		},
+		{
+			key: 'expires_at',
+			label: 'Expires',
+			render: (value: string) =>
+				`<span class="text-sm text-gray-500">${value || 'Never'}</span>`
+		},
+		{
+			key: 'actions',
+			label: '',
+			class: 'w-24',
+			render: (_: any, row: IpBlock) => `
+				<button onclick="window.spamDeleteIp('${row.id}')" class="inline-flex items-center justify-center rounded-md p-1.5 text-danger-700 hover:bg-danger-50 transition-colors" title="Delete">
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+				</button>`
+		}
+	];
+
+	const cwColumns = [
+		{
+			key: 'pattern',
+			label: 'Pattern',
+			sortable: true,
+			render: (value: string) =>
+				`<span class="font-mono text-sm text-gray-900">${value}</span>`
+		},
+		{
+			key: 'replacement',
+			label: 'Replacement',
+			render: (value: string) =>
+				`<span class="text-sm text-gray-600">${value || '—'}</span>`
+		},
+		{
+			key: 'created_at',
+			label: 'Created',
+			render: (value: string) =>
+				`<span class="text-sm text-gray-500">${value ?? '—'}</span>`
+		},
+		{
+			key: 'actions',
+			label: '',
+			class: 'w-24',
+			render: (_: any, row: CensoredWord) => `
+				<button onclick="window.spamDeleteCw('${row.id}')" class="inline-flex items-center justify-center rounded-md p-1.5 text-danger-700 hover:bg-danger-50 transition-colors" title="Delete">
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+				</button>`
+		}
+	];
+
+	const ubColumns = [
+		{
+			key: 'blocker_id',
+			label: 'Blocker',
+			render: (value: string) =>
+				`<span class="font-mono text-xs text-gray-700">${value}</span>`
+		},
+		{
+			key: 'blocked_id',
+			label: 'Blocked',
+			render: (value: string) =>
+				`<span class="font-mono text-xs text-gray-700">${value}</span>`
+		},
+		{
+			key: 'created_at',
+			label: 'Blocked At',
+			render: (value: string) =>
+				`<span class="text-sm text-gray-500">${value ?? '—'}</span>`
+		},
+		{
+			key: 'actions',
+			label: '',
+			class: 'w-24',
+			render: (_: any, row: UserBlock) => `
+				<button onclick="window.spamDeleteUb('${row.blocker_id}','${row.blocked_id}')" class="inline-flex items-center justify-center rounded-md p-1.5 text-danger-700 hover:bg-danger-50 transition-colors" title="Unblock">
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+				</button>`
+		}
 	];
 
 	async function loadIpBlocks() {
-		ipLoading = true;
+		loading = true;
+		errorMessage = '';
 		const result = await spamApi.getIpBlocks();
 		if (result.ok) {
 			ipBlocks = (result.data as IpBlock[]) ?? [];
+		} else {
+			errorMessage = result.error;
 		}
-		ipLoading = false;
+		loading = false;
 	}
 
 	async function loadCensoredWords() {
-		cwLoading = true;
+		loading = true;
+		errorMessage = '';
 		const result = await spamApi.getCensoredWords();
 		if (result.ok) {
 			censoredWords = (result.data as CensoredWord[]) ?? [];
+		} else {
+			errorMessage = result.error;
 		}
-		cwLoading = false;
+		loading = false;
 	}
 
 	async function loadUserBlocks() {
-		ubLoading = true;
+		loading = true;
+		errorMessage = '';
 		const result = await spamApi.getUserBlocks();
 		if (result.ok) {
 			userBlocks = (result.data as UserBlock[]) ?? [];
+		} else {
+			errorMessage = result.error;
 		}
-		ubLoading = false;
+		loading = false;
 	}
 
 	function switchTab(tab: Tab) {
@@ -149,6 +275,13 @@
 		}
 	}
 
+	$effect(() => {
+		(window as any).spamDeleteIp = (id: string) => confirmDelete('ip-block', id);
+		(window as any).spamDeleteCw = (id: string) => confirmDelete('censored-word', id);
+		(window as any).spamDeleteUb = (blockerId: string, blockedId: string) =>
+			confirmDelete('user-block', blockerId, blockedId);
+	});
+
 	onMount(() => loadIpBlocks());
 </script>
 
@@ -156,188 +289,164 @@
 	<title>Spam Management — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Spam Management</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage IP blocks, censored words, and user blocks</p>
+<PageHeader title="Spam Management" description="Manage IP blocks, censored words, and user blocks" />
 
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+<div class="space-y-6">
+	{#if errorMessage}
+		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-800">
+			{errorMessage}
+		</div>
+	{/if}
+
+	<Tabs tabs={[]} bind:value={activeTab}>
+		{#snippet children()}
+			<!-- Custom tab bar since Tabs component expects tabs prop -->
+		{/snippet}
+	</Tabs>
+
+	<!-- Tab navigation using the same visual pattern as Tabs component -->
+	<div class="flex gap-1 rounded-lg bg-gray-100 p-1">
+		{#each tabs as tab}
+			{@const Icon = tab.icon}
+			<button
+				class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 {activeTab === tab.value
+					? 'bg-white text-gray-950 shadow-sm'
+					: 'text-gray-500 hover:text-gray-900'}"
+				onclick={() => switchTab(tab.value)}
+			>
+				<Icon class="mr-2 h-4 w-4" />
+				{tab.label}
+			</button>
+		{/each}
 	</div>
-{/if}
 
-<!-- Tabs -->
-<div class="mb-4 flex gap-1 border-b" style="border-color: var(--color-border)">
-	{#each tabs as tab}
-		<button
-			class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px"
-			style="border-color: {activeTab === tab.key ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === tab.key ? 'var(--color-primary)' : 'var(--color-muted)'}"
-			onclick={() => switchTab(tab.key)}
-		>
-			{tab.label}
-		</button>
-	{/each}
+	<!-- IP Blocks Tab -->
+	{#if activeTab === 'ip-blocks'}
+		<div class="flex items-center justify-between">
+			<p class="text-sm text-gray-500">{ipBlocks.length} IP blocks configured</p>
+			<Button
+				onclick={() => {
+					ipForm = { cidr: '', block_type: 'full', reason: '', expires_at: '' };
+					showIpModal = true;
+				}}
+			>
+				<Plus class="h-4 w-4 mr-2" />
+				Add IP Block
+			</Button>
+		</div>
+
+		{#if loading}
+			<Card>
+				<CardContent class="py-12">
+					<div class="flex items-center justify-center text-gray-500">
+						<RefreshCw class="h-5 w-5 mr-2 animate-spin" />
+						Loading...
+					</div>
+				</CardContent>
+			</Card>
+		{:else}
+			<Card>
+				<CardContent class="p-0">
+					<DataTable
+						columns={ipColumns}
+						data={ipBlocks}
+						pageSize={20}
+						emptyMessage="No IP blocks configured"
+					/>
+				</CardContent>
+			</Card>
+		{/if}
+	{/if}
+
+	<!-- Censored Words Tab -->
+	{#if activeTab === 'censored-words'}
+		<div class="flex items-center justify-between">
+			<p class="text-sm text-gray-500">{censoredWords.length} patterns configured</p>
+			<Button
+				onclick={() => {
+					cwForm = { pattern: '', replacement: '' };
+					showCwModal = true;
+				}}
+			>
+				<Plus class="h-4 w-4 mr-2" />
+				Add Pattern
+			</Button>
+		</div>
+
+		{#if loading}
+			<Card>
+				<CardContent class="py-12">
+					<div class="flex items-center justify-center text-gray-500">
+						<RefreshCw class="h-5 w-5 mr-2 animate-spin" />
+						Loading...
+					</div>
+				</CardContent>
+			</Card>
+		{:else}
+			<Card>
+				<CardContent class="p-0">
+					<DataTable
+						columns={cwColumns}
+						data={censoredWords}
+						pageSize={20}
+						emptyMessage="No censored words configured"
+					/>
+				</CardContent>
+			</Card>
+		{/if}
+	{/if}
+
+	<!-- User Blocks Tab -->
+	{#if activeTab === 'user-blocks'}
+		{#if loading}
+			<Card>
+				<CardContent class="py-12">
+					<div class="flex items-center justify-center text-gray-500">
+						<RefreshCw class="h-5 w-5 mr-2 animate-spin" />
+						Loading...
+					</div>
+				</CardContent>
+			</Card>
+		{:else}
+			<Card>
+				<CardContent class="p-0">
+					<DataTable
+						columns={ubColumns}
+						data={userBlocks}
+						pageSize={20}
+						emptyMessage="No user blocks"
+					/>
+				</CardContent>
+			</Card>
+		{/if}
+	{/if}
 </div>
 
-<!-- IP Blocks Tab -->
-{#if activeTab === 'ip-blocks'}
-	<div class="mb-4 flex justify-end">
-		<button
-			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-			style="background-color: var(--color-primary)"
-			onclick={() => { ipForm = { cidr: '', block_type: 'full', reason: '', expires_at: '' }; showIpModal = true; }}
-		>
-			Add IP Block
-		</button>
-	</div>
-
-	{#if ipLoading}
-		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
-	{:else}
-		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-			<table class="w-full text-sm">
-				<thead>
-					<tr style="border-color: var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">IP / CIDR</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Type</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Reason</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Expires</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each ipBlocks as block}
-						<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
-							<td class="px-4 py-3 font-medium font-mono text-xs">{block.cidr}</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{block.block_type}</td>
-							<td class="px-4 py-3" style="color: var(--color-muted)">{block.reason ?? '—'}</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{block.expires_at || 'Never'}</td>
-							<td class="px-4 py-3">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete('ip-block', block.id)}
-								>
-									Delete
-								</button>
-							</td>
-						</tr>
-					{:else}
-						<tr>
-							<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">No IP blocks configured</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-
-	{/if}
-{/if}
-
-<!-- Censored Words Tab -->
-{#if activeTab === 'censored-words'}
-	<div class="mb-4 flex justify-end">
-		<button
-			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-			style="background-color: var(--color-primary)"
-			onclick={() => { cwForm = { pattern: '', replacement: '' }; showCwModal = true; }}
-		>
-			Add Pattern
-		</button>
-	</div>
-
-	{#if cwLoading}
-		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
-	{:else}
-		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-			<table class="w-full text-sm">
-				<thead>
-					<tr style="border-color: var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Pattern</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Replacement</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Created</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each censoredWords as cw}
-						<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
-							<td class="px-4 py-3 font-medium font-mono text-xs">{cw.pattern}</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{cw.replacement || '—'}</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{cw.created_at}</td>
-							<td class="px-4 py-3">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete('censored-word', cw.id)}
-								>
-									Delete
-								</button>
-							</td>
-						</tr>
-					{:else}
-						<tr>
-							<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">No censored words configured</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-
-	{/if}
-{/if}
-
-<!-- User Blocks Tab -->
-{#if activeTab === 'user-blocks'}
-	{#if ubLoading}
-		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
-	{:else}
-		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-			<table class="w-full text-sm">
-				<thead>
-					<tr style="border-color: var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Blocker</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Blocked</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Blocked At</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each userBlocks as ub}
-						<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
-							<td class="px-4 py-3 font-mono text-xs">{ub.blocker_id}</td>
-							<td class="px-4 py-3 font-mono text-xs">{ub.blocked_id}</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{ub.created_at ?? '—'}</td>
-							<td class="px-4 py-3">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete('user-block', ub.blocker_id, ub.blocked_id)}
-								>
-									Unblock
-								</button>
-							</td>
-						</tr>
-					{:else}
-						<tr>
-							<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">No user blocks</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	{/if}
-{/if}
-
 <!-- Add IP Block Modal -->
-<Modal bind:open={showIpModal} title="Add IP Block" onConfirm={submitIpBlock} confirmLabel={ipSaving ? 'Saving...' : 'Add Block'}>
-	<div class="space-y-3">
+<Modal
+	bind:open={showIpModal}
+	title="Add IP Block"
+	description="Block an IP address or CIDR range from accessing the platform."
+	size="default"
+>
+	<div class="space-y-4">
 		<div>
-			<label for="ip-cidr" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">IP / CIDR</label>
-			<input id="ip-cidr" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="192.168.1.0/24" bind:value={ipForm.cidr} />
+			<label for="ip-cidr" class="block text-sm font-medium text-gray-700">IP / CIDR</label>
+			<input
+				id="ip-cidr"
+				type="text"
+				class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+				placeholder="192.168.1.0/24"
+				bind:value={ipForm.cidr}
+			/>
 		</div>
 		<div>
-			<label for="ip-block-type" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Block Type</label>
-			<select id="ip-block-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={ipForm.block_type}>
+			<label for="ip-block-type" class="block text-sm font-medium text-gray-700">Block Type</label>
+			<select
+				id="ip-block-type"
+				class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+				bind:value={ipForm.block_type}
+			>
 				<option value="full">Full</option>
 				<option value="registration">Registration</option>
 				<option value="posting">Posting</option>
@@ -345,31 +454,102 @@
 			</select>
 		</div>
 		<div>
-			<label for="ip-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Reason</label>
-			<input id="ip-reason" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="Spam source" bind:value={ipForm.reason} />
+			<label for="ip-reason" class="block text-sm font-medium text-gray-700">Reason</label>
+			<input
+				id="ip-reason"
+				type="text"
+				class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+				placeholder="Spam source"
+				bind:value={ipForm.reason}
+			/>
 		</div>
 		<div>
-			<label for="ip-expires" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Expires At (optional)</label>
-			<input id="ip-expires" type="datetime-local" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={ipForm.expires_at} />
+			<label for="ip-expires" class="block text-sm font-medium text-gray-700"
+				>Expires At (optional)</label
+			>
+			<input
+				id="ip-expires"
+				type="datetime-local"
+				class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+				bind:value={ipForm.expires_at}
+			/>
 		</div>
+	</div>
+
+	<div class="mt-6 flex justify-end gap-3">
+		<Button variant="outline" onclick={() => (showIpModal = false)}>Cancel</Button>
+		<Button onclick={submitIpBlock} disabled={ipSaving}>
+			{#if ipSaving}
+				<RefreshCw class="h-4 w-4 mr-2 animate-spin" />
+				Saving...
+			{:else}
+				Add Block
+			{/if}
+		</Button>
 	</div>
 </Modal>
 
 <!-- Add Censored Word Modal -->
-<Modal bind:open={showCwModal} title="Add Censored Pattern" onConfirm={submitCensoredWord} confirmLabel={cwSaving ? 'Saving...' : 'Add Pattern'}>
-	<div class="space-y-3">
+<Modal
+	bind:open={showCwModal}
+	title="Add Censored Pattern"
+	description="Add a word or phrase to be automatically blocked or censored."
+	size="default"
+>
+	<div class="space-y-4">
 		<div>
-			<label for="cw-word" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Pattern</label>
-			<input id="cw-word" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="badword" bind:value={cwForm.pattern} />
+			<label for="cw-word" class="block text-sm font-medium text-gray-700">Pattern</label>
+			<input
+				id="cw-word"
+				type="text"
+				class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+				placeholder="badword"
+				bind:value={cwForm.pattern}
+			/>
 		</div>
 		<div>
-			<label for="cw-replacement" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Replacement (optional)</label>
-			<input id="cw-replacement" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="***" bind:value={cwForm.replacement} />
+			<label for="cw-replacement" class="block text-sm font-medium text-gray-700"
+				>Replacement (optional)</label
+			>
+			<input
+				id="cw-replacement"
+				type="text"
+				class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+				placeholder="***"
+				bind:value={cwForm.replacement}
+			/>
 		</div>
+	</div>
+
+	<div class="mt-6 flex justify-end gap-3">
+		<Button variant="outline" onclick={() => (showCwModal = false)}>Cancel</Button>
+		<Button onclick={submitCensoredWord} disabled={cwSaving}>
+			{#if cwSaving}
+				<RefreshCw class="h-4 w-4 mr-2 animate-spin" />
+				Saving...
+			{:else}
+				Add Pattern
+			{/if}
+		</Button>
 	</div>
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal bind:open={showDeleteConfirm} title="Confirm Delete" onConfirm={executeDelete} confirmLabel="Delete">
-	<p class="text-sm" style="color: var(--color-muted)">Are you sure you want to delete this item? This action cannot be undone.</p>
+<Modal
+	bind:open={showDeleteConfirm}
+	title="Confirm Delete"
+	description="This action cannot be undone."
+	size="sm"
+>
+	<p class="text-sm text-gray-500">
+		Are you sure you want to delete this item?
+	</p>
+
+	<div class="mt-6 flex justify-end gap-3">
+		<Button variant="outline" onclick={() => (showDeleteConfirm = false)}>Cancel</Button>
+		<Button variant="destructive" onclick={executeDelete}>
+			<Trash2 class="h-4 w-4 mr-2" />
+			Delete
+		</Button>
+	</div>
 </Modal>

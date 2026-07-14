@@ -1,9 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api, broadcastsAdminApiExtended } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { Plus, Send, Trash2 } from 'lucide-svelte';
-	import Modal from '$lib/components/Modal.svelte';
+	import { page } from "$app/state";
+	import { goto } from "$app/navigation";
+	import PageHeader from "$lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+	import { Tabs } from "$lib/components/ui/tabs";
+	import { DataTable } from "$lib/components/ui/data-table";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import { Badge } from "$lib/components/ui/badge";
+	import { Button } from "$lib/components/ui/button";
+	import { Modal } from "$lib/components/ui/modal";
+	import { Send, Plus, Radio, Clock, CheckCircle } from "lucide-svelte";
+	import { api } from "$lib/api";
 
 	type Broadcast = {
 		id: string;
@@ -12,167 +19,300 @@
 		status: string;
 		target_audience: string;
 		sent_at?: string;
+		scheduled_at?: string;
+		recipient_count?: number;
+		delivered_count?: number;
 		created_at: string;
 	};
 
+	let { data } = $props();
+
+	let activeTab = $state("all");
 	let broadcasts = $state<Broadcast[]>([]);
 	let loading = $state(true);
-	let errorMessage = $state('');
+	let filters = $state<Record<string, string>>({});
 
+	// Create modal
 	let showCreateModal = $state(false);
-	let title = $state('');
-	let body = $state('');
-	let targetAudience = $state('all');
+	let newBroadcast = $state({ title: "", body: "", target_audience: "all" });
+	let creating = $state(false);
+
+	// Send confirmation
+	let showSendModal = $state(false);
+	let sendTarget = $state<Broadcast | null>(null);
 	let sending = $state(false);
 
-	async function load() {
+	const tabs = [
+		{ value: "all", label: "All", icon: Radio },
+		{ value: "draft", label: "Drafts", icon: Clock },
+		{ value: "sent", label: "Sent", icon: CheckCircle }
+	];
+
+	const columns = [
+		{
+			key: "title",
+			label: "Title",
+			sortable: true,
+			render: (_: any, row: any) => `
+				<div>
+					<p class="font-medium text-gray-900">${row.title}</p>
+					<p class="text-sm text-gray-500 line-clamp-1">${row.body || ""}</p>
+				</div>
+			`
+		},
+		{
+			key: "target_audience",
+			label: "Audience",
+			sortable: true,
+			render: (value: string) => {
+				const labels: Record<string, string> = { all: "All Users", active: "Active Users", premium: "Premium Users" };
+				return `<span class="text-sm text-gray-700">${labels[value] || value}</span>`;
+			}
+		},
+		{
+			key: "status",
+			label: "Status",
+			sortable: true,
+			render: (value: string) => {
+				const variant = value === "sent" ? "success" : value === "scheduled" ? "info" : value === "failed" ? "destructive" : "secondary";
+				const classes: Record<string, string> = {
+					success: "bg-success-100 text-success-800 border-success-200",
+					info: "bg-info-100 text-info-800 border-info-200",
+					destructive: "bg-danger-100 text-danger-800 border-danger-200",
+					secondary: "bg-gray-100 text-gray-800 border-gray-200"
+				};
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[variant]}">${value}</span>`;
+			}
+		},
+		{
+			key: "recipient_count",
+			label: "Recipients",
+			sortable: true,
+			render: (value: number) => `<span class="text-sm font-medium">${(value ?? 0).toLocaleString()}</span>`
+		},
+		{
+			key: "sent_at",
+			label: "Sent",
+			sortable: true,
+			render: (value: string) => value ? new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : '<span class="text-gray-400">—</span>'
+		},
+		{
+			key: "actions",
+			label: "",
+			class: "w-24",
+			render: (_: any, row: any) => `
+				<div class="flex items-center gap-1">
+					<button onclick="window.__broadcastView('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">View</button>
+					${row.status === "draft" ? `<button onclick="window.__broadcastSend('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50">Send</button>` : ""}
+				</div>
+			`
+		}
+	];
+
+	let filteredBroadcasts = $derived.by(() => {
+		let result = [...broadcasts];
+		if (activeTab !== "all") {
+			result = result.filter((b) => b.status === activeTab);
+		}
+		return result;
+	});
+
+	async function loadBroadcasts() {
 		loading = true;
-		errorMessage = '';
 		try {
-			const result = await api<Broadcast[]>('/admin/broadcasts');
+			const result = await api<Broadcast[]>("/admin/broadcasts");
 			if (result.ok) {
 				broadcasts = result.data ?? [];
-			} else {
-				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
+			// API not available
 		} finally {
 			loading = false;
 		}
 	}
 
+	function handleFilter(values: Record<string, string>) {
+		filters = values;
+	}
+
 	async function createBroadcast() {
-		if (!title.trim() || !body.trim()) return;
-		sending = true;
-		errorMessage = '';
+		if (!newBroadcast.title.trim() || !newBroadcast.body.trim()) return;
+		creating = true;
 		try {
-			const result = await api('/admin/broadcasts', {
-				method: 'POST',
-				body: { title: title.trim(), body: body.trim(), target_audience: targetAudience }
+			const result = await api("/admin/broadcasts", {
+				method: "POST",
+				body: {
+					title: newBroadcast.title.trim(),
+					body: newBroadcast.body.trim(),
+					target_audience: newBroadcast.target_audience
+				}
 			});
 			if (result.ok) {
 				showCreateModal = false;
-				title = '';
-				body = '';
-				targetAudience = 'all';
-				load();
-			} else {
-				errorMessage = result.error;
+				newBroadcast = { title: "", body: "", target_audience: "all" };
+				loadBroadcasts();
 			}
 		} catch {
-			errorMessage = t('common.error');
+			// API not available
+		} finally {
+			creating = false;
+		}
+	}
+
+	function confirmSend(broadcast: Broadcast) {
+		sendTarget = broadcast;
+		showSendModal = true;
+	}
+
+	async function sendBroadcast() {
+		if (!sendTarget) return;
+		sending = true;
+		try {
+			await api(`/admin/broadcasts/${sendTarget.id}/send`, { method: "POST", body: {} });
+			showSendModal = false;
+			sendTarget = null;
+			loadBroadcasts();
+		} catch {
+			// API not available
 		} finally {
 			sending = false;
 		}
 	}
 
-	async function sendBroadcast(id: string) {
-		errorMessage = '';
-		try {
-			await api(`/admin/broadcasts/${id}/send`, { method: 'POST', body: {} });
-			load();
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
+	// Expose window functions for DataTable inline actions
+	$effect(() => {
+		(window as any).__broadcastView = (id: string) => {
+			goto(`/broadcasts/${id}`);
+		};
+		(window as any).__broadcastSend = (id: string) => {
+			const bc = broadcasts.find((b) => b.id === id);
+			if (bc) confirmSend(bc);
+		};
+	});
 
-	function statusColor(status: string) {
-		switch (status) {
-			case 'sent': return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
-			case 'draft': return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
-			case 'scheduled': return 'bg-blue-500/15 text-blue-700 dark:text-blue-400';
-			default: return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
+	let initialized = false;
+	$effect(() => {
+		if (!initialized) {
+			initialized = true;
+			loadBroadcasts();
 		}
-	}
-
-	onMount(load);
+	});
 </script>
 
 <svelte:head>
-	<title>{t('broadcasts.title')} — JapaConnect Admin</title>
+	<title>Broadcasts — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('broadcasts.title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('broadcasts.description')}</p>
+<PageHeader
+	title="Broadcasts"
+	description="Send targeted messages to platform users"
+	actions={[
+		{ label: "New Broadcast", icon: Plus, onclick: () => (showCreateModal = true) }
+	]}
+/>
 
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
-	</div>
-{/if}
+<div class="space-y-6">
+	<Tabs {tabs} bind:value={activeTab} />
 
-<div class="mb-4 flex justify-end">
-	<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={() => { showCreateModal = true; }}>
-		<Plus class="h-3 w-3" />
-		{t('broadcasts.create')}
-	</button>
+	<FilterBar
+		bind:value={filters}
+		filters={[
+			{
+				key: "audience",
+				label: "Audience",
+				options: [
+					{ value: "all", label: "All Users" },
+					{ value: "active", label: "Active Users" },
+					{ value: "premium", label: "Premium Users" }
+				]
+			}
+		]}
+		onsearch={handleFilter}
+		onclear={() => { filters = {}; }}
+	/>
+
+	<Card>
+		<CardContent class="p-0">
+			{#if loading}
+				<p class="py-8 text-center text-sm text-gray-500">Loading broadcasts...</p>
+			{:else}
+				<DataTable
+					columns={columns}
+					data={filteredBroadcasts}
+					pageSize={15}
+					emptyMessage="No broadcasts found"
+				/>
+			{/if}
+		</CardContent>
+	</Card>
 </div>
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('broadcasts.title')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('broadcasts.audience')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('broadcasts.status')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('broadcasts.created')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each broadcasts as bc (bc.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{bc.title}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{bc.target_audience}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {statusColor(bc.status)}">
-								{bc.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(bc.created_at).toLocaleDateString()}</td>
-						<td class="px-4 py-3 text-right">
-							{#if bc.status === 'draft'}
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10 flex items-center gap-1 inline-flex" onclick={() => sendBroadcast(bc.id)}>
-									<Send class="h-3 w-3" style="color: var(--color-success)" />
-									{t('broadcasts.send')}
-								</button>
-							{/if}
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('broadcasts.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
-
-<!-- Create Modal -->
-<Modal bind:open={showCreateModal} title={t('broadcasts.create')} onConfirm={createBroadcast} confirmLabel={sending ? t('common.saving') : t('broadcasts.create')}>
+<!-- Create Broadcast Modal -->
+<Modal bind:open={showCreateModal} title="New Broadcast" description="Create and send a broadcast message" size="lg">
 	<div class="space-y-4">
 		<div>
-			<label for="bc-title" class="mb-1 block text-sm font-medium">{t('broadcasts.title')}</label>
-			<input id="bc-title" type="text" bind:value={title} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+			<label for="bc-title" class="mb-1 block text-sm font-medium text-gray-900">Title</label>
+			<input
+				id="bc-title"
+				type="text"
+				class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				placeholder="e.g. Platform Maintenance Notice"
+				bind:value={newBroadcast.title}
+			/>
 		</div>
 		<div>
-			<label for="bc-body" class="mb-1 block text-sm font-medium">{t('broadcasts.body')}</label>
-			<textarea id="bc-body" bind:value={body} rows="4" required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"></textarea>
+			<label for="bc-body" class="mb-1 block text-sm font-medium text-gray-900">Message</label>
+			<textarea
+				id="bc-body"
+				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				rows="5"
+				placeholder="Write your broadcast message..."
+				bind:value={newBroadcast.body}
+			></textarea>
 		</div>
 		<div>
-			<label for="bc-audience" class="mb-1 block text-sm font-medium">{t('broadcasts.audience')}</label>
-			<select id="bc-audience" bind:value={targetAudience} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
-				<option value="all">{t('broadcasts.audience_all')}</option>
-				<option value="active">{t('broadcasts.audience_active')}</option>
-				<option value="premium">{t('broadcasts.audience_premium')}</option>
+			<label for="bc-audience" class="mb-1 block text-sm font-medium text-gray-900">Target Audience</label>
+			<select
+				id="bc-audience"
+				class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				bind:value={newBroadcast.target_audience}
+			>
+				<option value="all">All Users</option>
+				<option value="active">Active Users</option>
+				<option value="premium">Premium Users</option>
 			</select>
 		</div>
+		<div class="flex justify-end gap-3 pt-2">
+			<Button variant="outline" onclick={() => (showCreateModal = false)}>Cancel</Button>
+			<Button onclick={createBroadcast} disabled={creating || !newBroadcast.title.trim() || !newBroadcast.body.trim()}>
+				{#if creating}
+					Creating...
+				{:else}
+					Create Broadcast
+				{/if}
+			</Button>
+		</div>
+	</div>
+</Modal>
+
+<!-- Send Confirmation Modal -->
+<Modal bind:open={showSendModal} title="Send Broadcast" description="This message will be sent immediately to the target audience." size="sm">
+	{#if sendTarget}
+		<div class="rounded-lg bg-gray-50 p-4">
+			<p class="text-sm font-medium text-gray-900">{sendTarget.title}</p>
+			<p class="mt-1 text-sm text-gray-500">Audience: {sendTarget.target_audience === "all" ? "All Users" : sendTarget.target_audience === "active" ? "Active Users" : "Premium Users"}</p>
+		</div>
+	{/if}
+	<div class="flex justify-end gap-3 pt-4">
+		<Button variant="outline" onclick={() => (showSendModal = false)}>Cancel</Button>
+		<Button onclick={sendBroadcast} disabled={sending}>
+		{#if sending}
+			<Send class="h-4 w-4 mr-2 animate-spin" />
+			Sending...
+		{:else}
+				<Send class="h-4 w-4 mr-2" />
+				Send Now
+			{/if}
+		</Button>
 	</div>
 </Modal>

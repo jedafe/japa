@@ -155,5 +155,15 @@
 	"security.title": "Sécurité",
 	"security.unavailable": "L'API d'analyse de sécurité n'est pas disponible.",
 	"settings.description": "Configuration de la plateforme",
-	"settings.title": "Paramètres"
+	"settings.title": "Paramètres",
+	"ai_budget.title": "Budget IA",
+	"ai_budget.description": "Surveillance et limites des coûts IA",
+	"feature_flags.title": "Flags de fonctionnalités",
+	"feature_flags.description": "Activer/désactiver les flags de fonctionnalités sur la plateforme",
+	"nav.dlq": "File des lettres mortes",
+	"nav.tenants": "Locataires",
+	"nav.ai_budget": "Budget IA",
+	"nav.cron": "Tâches cron",
+	"nav.feature_flags": "Flags de fonctionnalités",
+	"nav.settings": "Paramètres"
 }

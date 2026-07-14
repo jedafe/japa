@@ -1,0 +1,132 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - generic: Control Panel
+        - navigation:
+          - button "Dashboard":
+            - link "Dashboard":
+              - /url: /
+              - img
+              - text: Dashboard
+          - button "Queue":
+            - link "Queue":
+              - /url: /queue
+              - img
+              - text: Queue
+          - button "Dead Letter Queue":
+            - link "Dead Letter Queue":
+              - /url: /dlq
+              - img
+              - text: Dead Letter Queue
+          - button "DB Health":
+            - link "DB Health":
+              - /url: /db
+              - img
+              - text: DB Health
+          - button "Audit Log":
+            - link "Audit Log":
+              - /url: /audit
+              - img
+              - text: Audit Log
+          - button "Security":
+            - link "Security":
+              - /url: /security
+              - img
+              - text: Security
+          - button "API Keys":
+            - link "API Keys":
+              - /url: /api-keys
+              - img
+              - text: API Keys
+          - button "Cache":
+            - link "Cache":
+              - /url: /cache
+              - img
+              - text: Cache
+          - button "Settings":
+            - link "Settings":
+              - /url: /settings
+              - img
+              - text: Settings
+          - button "Feature Flags":
+            - link "Feature Flags":
+              - /url: /feature-flags
+              - img
+              - text: Feature Flags
+          - button "Tenants":
+            - link "Tenants":
+              - /url: /tenants
+              - img
+              - text: Tenants
+          - button "AI Budget":
+            - link "AI Budget":
+              - /url: /ai-budget
+              - img
+              - text: AI Budget
+          - button "Cron Jobs":
+            - link "Cron Jobs":
+              - /url: /cron
+              - img
+              - text: Cron Jobs
+      - generic:
+        - banner:
+          - generic:
+            - link "JapaControl":
+              - /url: /
+          - generic:
+            - button "🌙"
+            - button "P Platform Admin":
+              - generic:
+                - generic: P
+              - generic: Platform Admin
+        - main:
+          - generic:
+            - generic:
+              - heading "API Key Management" [level=1]
+              - paragraph: Monitor and control developer API keys across the platform
+            - generic:
+              - generic:
+                - img
+                - textbox "Filter by name, prefix, or user...": test-key
+              - button "Filter tier":
+                - generic: All Tiers
+              - generic: 0 keys
+              - button "Create API Key" [active]:
+                - img
+                - text: Create API Key
+            - generic:
+              - tablist:
+                - tab "Active Keys (0)" [selected]
+                - tab "All Keys (0)"
+              - tabpanel "Active Keys (0)":
+                - generic:
+                  - img
+                  - paragraph: No keys match your filter.
+  - dialog "Create API Key" [ref=e81]:
+    - heading "Create API Key" [level=2] [ref=e82]
+    - paragraph [ref=e83]: Generate a new API key for a developer.
+    - generic [ref=e84]:
+      - generic [ref=e85]:
+        - generic [ref=e86]: Name *
+        - textbox "Name *" [ref=e87]:
+          - /placeholder: e.g., Production Backend
+      - generic [ref=e88]:
+        - generic [ref=e89]: Scopes
+        - textbox "Scopes" [ref=e90]:
+          - /placeholder: read,write,admin
+        - paragraph [ref=e91]: Comma-separated list of scopes
+      - generic [ref=e92]:
+        - generic [ref=e93]: Rate Limit Tier
+        - combobox "Rate Limit Tier" [ref=e94]:
+          - option "Standard" [selected]
+          - option "Premium"
+          - option "Unlimited"
+      - generic [ref=e95]:
+        - generic [ref=e96]: Expires At
+        - textbox "Expires At" [ref=e97]
+        - paragraph [ref=e98]: Leave empty for no expiration
+    - generic [ref=e99]:
+      - button "Cancel" [ref=e100]
+      - button "Create Key" [disabled] [ref=e101]

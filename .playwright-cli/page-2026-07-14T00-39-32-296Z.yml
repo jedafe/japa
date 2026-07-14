@@ -1,0 +1,216 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]: Control Panel
+    - navigation [ref=e7]:
+      - button "Dashboard" [ref=e8]:
+        - link "Dashboard" [ref=e9] [cursor=pointer]:
+          - /url: /
+          - img [ref=e10]
+          - text: Dashboard
+      - button "Queue" [ref=e11]:
+        - link "Queue" [ref=e12] [cursor=pointer]:
+          - /url: /queue
+          - img [ref=e13]
+          - text: Queue
+      - button "Dead Letter Queue" [ref=e14]:
+        - link "Dead Letter Queue" [ref=e15] [cursor=pointer]:
+          - /url: /dlq
+          - img [ref=e16]
+          - text: Dead Letter Queue
+      - button "DB Health" [ref=e17]:
+        - link "DB Health" [ref=e18] [cursor=pointer]:
+          - /url: /db
+          - img [ref=e19]
+          - text: DB Health
+      - button "Audit Log" [ref=e20]:
+        - link "Audit Log" [ref=e21] [cursor=pointer]:
+          - /url: /audit
+          - img [ref=e22]
+          - text: Audit Log
+      - button "Security" [ref=e23]:
+        - link "Security" [ref=e24] [cursor=pointer]:
+          - /url: /security
+          - img [ref=e25]
+          - text: Security
+      - button "API Keys" [ref=e26]:
+        - link "API Keys" [ref=e27] [cursor=pointer]:
+          - /url: /api-keys
+          - img [ref=e28]
+          - text: API Keys
+      - button "Cache" [ref=e29]:
+        - link "Cache" [ref=e30] [cursor=pointer]:
+          - /url: /cache
+          - img [ref=e31]
+          - text: Cache
+      - button "Settings" [ref=e32]:
+        - link "Settings" [ref=e33] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e34]
+          - text: Settings
+      - button "Feature Flags" [ref=e35]:
+        - link "Feature Flags" [ref=e36] [cursor=pointer]:
+          - /url: /feature-flags
+          - img [ref=e37]
+          - text: Feature Flags
+      - button "Tenants" [ref=e38]:
+        - link "Tenants" [ref=e39] [cursor=pointer]:
+          - /url: /tenants
+          - img [ref=e40]
+          - text: Tenants
+      - button "AI Budget" [ref=e41]:
+        - link "AI Budget" [ref=e42] [cursor=pointer]:
+          - /url: /ai-budget
+          - img [ref=e43]
+          - text: AI Budget
+      - button "Cron Jobs" [ref=e44]:
+        - link "Cron Jobs" [ref=e45] [cursor=pointer]:
+          - /url: /cron
+          - img [ref=e46]
+          - text: Cron Jobs
+  - generic [ref=e47]:
+    - banner [ref=e48]:
+      - link "JapaControl" [ref=e50] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e51]:
+        - button "☀️" [ref=e52]
+        - button "P Platform Admin" [ref=e53]:
+          - generic [ref=e55]: P
+          - generic [ref=e56]: Platform Admin
+    - main [ref=e57]:
+      - generic [ref=e58]:
+        - generic [ref=e59]:
+          - heading "Settings" [level=1] [ref=e60]
+          - paragraph [ref=e61]: Platform configuration by category
+        - generic [ref=e62]:
+          - generic [ref=e63]:
+            - img [ref=e64]
+            - textbox "Filter settings..." [ref=e65]
+          - button "Refresh" [ref=e66]:
+            - img [ref=e67]
+            - text: Refresh
+          - generic [ref=e68]: 6 of 79 settings
+        - generic [ref=e69]:
+          - tablist [ref=e70]:
+            - tab "All (79)" [ref=e71]
+            - tab "ads (2)" [ref=e72]
+            - tab "advanced (2)" [ref=e73]
+            - tab "affiliate (6)" [ref=e74]
+            - tab "ai (3)" [ref=e75]
+            - tab "api (5)" [ref=e76]
+            - tab "audit (1)" [ref=e77]
+            - tab "auth (6)" [active] [selected] [ref=e78]
+            - tab "comments (1)" [ref=e79]
+            - tab "content (7)" [ref=e80]
+            - tab "cors (1)" [ref=e81]
+            - tab "features (5)" [ref=e82]
+            - tab "feed (4)" [ref=e83]
+            - tab "forum (1)" [ref=e84]
+            - tab "gdpr (2)" [ref=e85]
+            - tab "general (3)" [ref=e86]
+            - tab "i18n (2)" [ref=e87]
+            - tab "media (9)" [ref=e88]
+            - tab "moderation (4)" [ref=e89]
+            - tab "notifications (2)" [ref=e90]
+            - tab "payment (1)" [ref=e91]
+            - tab "search (1)" [ref=e92]
+            - tab "security (2)" [ref=e93]
+            - tab "spaces (2)" [ref=e94]
+            - tab "tickets (2)" [ref=e95]
+            - tab "users (2)" [ref=e96]
+            - tab "wallet (3)" [ref=e97]
+          - tabpanel "auth (6)" [ref=e1457]:
+            - generic [ref=e99]:
+              - generic [ref=e100]:
+                - heading "auth.email (1)" [level=3] [ref=e1458]:
+                  - img [ref=e103]
+                  - text: auth.email
+                  - generic [ref=e104]: (1)
+                - generic [ref=e1459]:
+                  - generic [ref=e1460]:
+                    - generic [ref=e1461]:
+                      - paragraph [ref=e1462]: Auth - Email - Verify Required
+                      - button "ℹ" [ref=e1463]
+                    - paragraph [ref=e1464]: verify_required
+                  - generic [ref=e1465]:
+                    - textbox [ref=e1466]: "true"
+                    - generic [ref=e1467]: string
+                    - button [ref=e1468]:
+                      - button [ref=e1469]:
+                        - img [ref=e1470]
+              - generic [ref=e118]:
+                - heading "auth.password (2)" [level=3] [ref=e1471]:
+                  - img [ref=e121]
+                  - text: auth.password
+                  - generic [ref=e122]: (2)
+                - generic [ref=e123]:
+                  - generic [ref=e1472]:
+                    - generic [ref=e1473]:
+                      - generic [ref=e1474]:
+                        - paragraph [ref=e1475]: Auth - Password - Min Length
+                        - button "ℹ" [ref=e1476]
+                      - paragraph [ref=e1477]: min_length
+                    - generic [ref=e1478]:
+                      - textbox [ref=e1479]: "8"
+                      - generic [ref=e1480]: string
+                      - button [ref=e1481]:
+                        - button [ref=e1482]:
+                          - img [ref=e1483]
+                  - generic [ref=e1484]:
+                    - generic [ref=e1485]:
+                      - generic [ref=e1486]:
+                        - paragraph [ref=e1487]: Auth - Password - Require Uppercase
+                        - button "ℹ" [ref=e1488]
+                      - paragraph [ref=e1489]: require_uppercase
+                    - generic [ref=e1490]:
+                      - textbox [ref=e1491]: "false"
+                      - generic [ref=e1492]: string
+                      - button [ref=e1493]:
+                        - button [ref=e1494]:
+                          - img [ref=e1495]
+              - generic [ref=e136]:
+                - heading "auth.session (2)" [level=3] [ref=e1496]:
+                  - img [ref=e139]
+                  - text: auth.session
+                  - generic [ref=e140]: (2)
+                - generic [ref=e141]:
+                  - generic [ref=e1497]:
+                    - generic [ref=e1498]:
+                      - generic [ref=e1499]:
+                        - paragraph [ref=e1500]: Auth - Session - Access Token Ttl Minutes
+                        - button "ℹ" [ref=e1501]
+                      - paragraph [ref=e1502]: access_token_ttl_minutes
+                    - generic [ref=e1503]:
+                      - textbox [ref=e1504]: "15"
+                      - generic [ref=e1505]: string
+                      - button [ref=e1506]:
+                        - button [ref=e1507]:
+                          - img [ref=e1508]
+                  - generic [ref=e1509]:
+                    - generic [ref=e1510]:
+                      - generic [ref=e1511]:
+                        - paragraph [ref=e1512]: Auth - Session - Refresh Days
+                        - button "ℹ" [ref=e1513]
+                      - paragraph [ref=e1514]: refresh_days
+                    - generic [ref=e1515]:
+                      - textbox [ref=e1516]: "30"
+                      - generic [ref=e1517]: string
+                      - button [ref=e1518]:
+                        - button [ref=e1519]:
+                          - img [ref=e1520]
+              - generic [ref=e154]:
+                - heading "auth.totp (1)" [level=3] [ref=e1521]:
+                  - img [ref=e157]
+                  - text: auth.totp
+                  - generic [ref=e158]: (1)
+                - generic [ref=e1522]:
+                  - generic [ref=e1523]:
+                    - generic [ref=e1524]:
+                      - paragraph [ref=e1525]: Auth - Totp - Required For Admin
+                      - button "ℹ" [ref=e1526]
+                    - paragraph [ref=e1527]: required_for_admin
+                  - generic [ref=e1528]:
+                    - textbox [ref=e1529]: "false"
+                    - generic [ref=e1530]: string
+                    - button [ref=e1531]:
+                      - button [ref=e1532]:
+                        - img [ref=e1533]

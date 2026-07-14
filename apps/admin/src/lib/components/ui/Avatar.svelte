@@ -14,7 +14,7 @@
 {#if src}
 	<img {src} {alt} class={clsx('rounded-full object-cover', sizes[size], className)} />
 {:else}
-	<div class={clsx('flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700', sizes[size], className)}>
-		<span class="text-sm font-medium text-gray-600 dark:text-gray-300">{alt.charAt(0).toUpperCase()}</span>
+	<div class={clsx('flex items-center justify-center rounded-full', sizes[size], className)} style="background-color: var(--color-border)">
+		<span class="text-sm font-medium" style="color: var(--color-muted)">{alt.charAt(0).toUpperCase()}</span>
 	</div>
 {/if}

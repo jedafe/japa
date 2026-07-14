@@ -8,7 +8,7 @@
 
 	type ServiceStatus = {
 		name: string;
-		status: 'healthy' | 'degraded' | 'down';
+		status: 'healthy' | 'degraded' | 'down' | 'unknown';
 		latency_ms: number;
 		message?: string;
 	};
@@ -31,21 +31,28 @@
 	function applyOverview(health: HealthResponse) {
 		const mapGroup = (label: string, items: ServiceStatus[]) => ({
 			name: label,
-			items: items.map((s) => ({ name: s.name, status: statusToHealth(s.status) }))
+			items: items.map((s) => ({ name: s.name, status: statusToHealth(s.status), latency: s.latency_ms, message: s.message }))
 		});
 		groups = [
-			mapGroup(t('dashboard.groups.infra'), health.infrastructure),
-			mapGroup(t('dashboard.groups.app'), health.application),
-			mapGroup(t('dashboard.groups.background'), health.background),
-			mapGroup(t('dashboard.groups.realtime'), health.realtime)
+			mapGroup('dashboard.groups.infra', health.infrastructure),
+			mapGroup('dashboard.groups.app', health.application),
+			mapGroup('dashboard.groups.background', health.background),
+			mapGroup('dashboard.groups.realtime', health.realtime)
 		];
 		lastRefresh = new Date().toLocaleTimeString();
 		apiAvailable = true;
 	}
 
-	let groups = $state<{ name: string; items: { name: string; status: 'healthy' | 'warning' | 'critical' | 'unknown' }[] }[]>([
+	const groupFallbacks: Record<string, string> = {
+		'dashboard.groups.infra': 'Infrastructure',
+		'dashboard.groups.app': 'Application',
+		'dashboard.groups.background': 'Background',
+		'dashboard.groups.realtime': 'Realtime'
+	};
+
+	let groups = $state<{ name: string; items: { name: string; status: 'healthy' | 'warning' | 'critical' | 'unknown'; latency?: number; message?: string }[] }[]>([
 		{
-			name: t('dashboard.groups.infra'),
+			name: 'dashboard.groups.infra',
 			items: [
 				{ name: 'PostgreSQL', status: 'unknown' },
 				{ name: 'Valkey', status: 'unknown' },
@@ -54,7 +61,7 @@
 			]
 		},
 		{
-			name: t('dashboard.groups.app'),
+			name: 'dashboard.groups.app',
 			items: [
 				{ name: 'API Server', status: 'unknown' },
 				{ name: 'imgproxy', status: 'unknown' },
@@ -62,20 +69,27 @@
 			]
 		},
 		{
-			name: t('dashboard.groups.background'),
+			name: 'dashboard.groups.background',
 			items: [
 				{ name: 'Asynq Workers', status: 'unknown' },
 				{ name: 'Queue Depth', status: 'unknown' }
 			]
 		},
 		{
-			name: t('dashboard.groups.realtime'),
+			name: 'dashboard.groups.realtime',
 			items: [
 				{ name: 'WebSocket Hub', status: 'unknown' },
 				{ name: 'SSE Connections', status: 'unknown' }
 			]
 		}
 	]);
+
+	let displayGroups = $derived(
+		groups.map((group) => ({
+			...group,
+			name: t(group.name, groupFallbacks[group.name] ?? group.name)
+		}))
+	);
 
 	let lastRefresh = $state(new Date().toLocaleTimeString());
 	let apiAvailable = $state(true);
@@ -110,33 +124,34 @@
 <PageHeader title={t('dashboard.title')} description={t('dashboard.description')} />
 
 {#if !apiAvailable}
-	<div class="animate-fade-in mb-4 rounded-xl border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">
+	<div class="border-destructive bg-destructive/10 text-destructive mb-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm">
 		{t('dashboard.analytics_warning')}
 	</div>
 {/if}
 
 <div class="mb-4 flex items-center justify-between">
-	<p class="text-xs font-medium" style="color: var(--color-muted)">{t('dashboard.last_refresh').replace('{time}', lastRefresh)}</p>
+	<p class="text-muted-foreground text-xs font-medium">{t('dashboard.last_refresh').replace('{time}', lastRefresh)}</p>
 	<button
-		class="btn btn-secondary text-xs"
+		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors"
 		onclick={refresh}
 	>
 		{t('common.refresh')}
 	</button>
 </div>
 
-<!-- Health groups -->
 <div class="grid gap-4 sm:grid-cols-2">
-	{#each groups as group, i}
+	{#each displayGroups as group, i}
 		<div
-			class="rounded-2xl border p-5"
-			style="border-color: var(--color-border); background: var(--gradient-surface); animation: slide-up 0.3s ease-out {i * 50}ms both"
+			class="border-border-card bg-background-alt shadow-card rounded-card-lg p-5"
+			style="animation: fade-in 0.3s ease-out {i * 50}ms both"
 		>
-			<h3 class="mb-4 text-xs font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{group.name}</h3>
-			<div class="space-y-2.5">
+			<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{group.name}</h3>
+			<div class="space-y-3">
 				{#each group.items as item}
 					<div class="flex items-center justify-between">
-						<span class="text-sm font-medium" style="color: var(--color-foreground)">{item.name}</span>
+						<div class="flex items-center gap-2">
+							<span class="text-foreground text-sm font-medium" title="{item.latency !== undefined ? `Latency: ${item.latency}ms` : ''}{item.message ? ` - ${item.message}` : ''}">{item.name}</span>
+						</div>
 						<StatusBadge status={item.status} />
 					</div>
 				{/each}
