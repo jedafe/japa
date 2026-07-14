@@ -67,7 +67,8 @@
 				{#snippet child({ props })}
 					<button
 						{...props}
-						class="absolute right-4 top-4 rounded-md p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+						class="absolute right-4 top-4 rounded-md p-1 hover:bg-black/5 dark:hover:bg-white/10"
+						style="color: var(--color-muted)"
 						aria-label={t('common.close')}
 					>
 						×

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
+
 	let { form } = $props();
 
 	let email = $state('');
@@ -7,42 +9,42 @@
 </script>
 
 <svelte:head>
-	<title>Login — JapaConnect Control</title>
+	<title>{t('login.title')} — JapaConnect Control</title>
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">
-	<div class="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-		<h1 class="mb-1 text-center text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">JapaConnect Control</h1>
-		<p class="mb-6 text-center text-sm text-gray-500 dark:text-gray-400">Super Admin Console</p>
+	<div class="border-border-card bg-background-alt w-full max-w-sm rounded-lg border p-6">
+		<h1 class="text-foreground mb-1 text-center text-xl font-bold tracking-tight">{t('control.brand')}</h1>
+		<p class="text-muted-foreground mb-6 text-center text-sm">{t('login.title')}</p>
 
 		{#if form?.error}
-			<div class="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300">
+			<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-md border px-3 py-2 text-sm">
 				{form.error}
 			</div>
 		{/if}
 
 		<form method="POST" onsubmit={() => { loading = true; }} class="space-y-4">
 			<div>
-				<label for="email" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+				<label for="email" class="text-foreground mb-1 block text-sm font-medium">{t('login.email')}</label>
 				<input
 					id="email"
 					name="email"
 					type="email"
 					required
-					class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+					class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 w-full rounded-md border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					placeholder="admin@example.com"
 					bind:value={email}
 				/>
 			</div>
 
 			<div>
-				<label for="password" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+				<label for="password" class="text-foreground mb-1 block text-sm font-medium">{t('login.password')}</label>
 				<input
 					id="password"
 					name="password"
 					type="password"
 					required
-					class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+					class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 w-full rounded-md border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					placeholder="••••••••"
 					bind:value={password}
 				/>
@@ -50,10 +52,10 @@
 
 			<button
 				type="submit"
-				class="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+				class="bg-foreground text-background w-full rounded-md px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
 				disabled={loading || !email || !password}
 			>
-				{loading ? 'Signing in...' : 'Sign In'}
+				{loading ? t('login.signing_in') : t('login.submit')}
 			</button>
 		</form>
 	</div>

@@ -9,8 +9,8 @@
 </script>
 
 <div class="mb-6">
-	<h1 class="text-2xl font-bold tracking-tight">{title}</h1>
+	<h1 class="text-foreground text-2xl font-bold tracking-tight">{title}</h1>
 	{#if description}
-		<p class="mt-1 text-sm" style="color: var(--color-muted)">{description}</p>
+		<p class="text-muted-foreground mt-1 text-sm">{description}</p>
 	{/if}
 </div>

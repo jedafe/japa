@@ -55,14 +55,18 @@ export function createArticleSchema(metadata: PageMetadata): JsonLdSchema {
 /**
  * Create Organization schema for the platform
  */
-export function createOrganizationSchema(): JsonLdSchema {
+export function createOrganizationSchema(settings?: {
+	name?: string;
+	description?: string;
+	logo_url?: string;
+}): JsonLdSchema {
 	return {
 		'@context': 'https://schema.org',
 		'@type': 'Organization',
-		name: 'JapaConnect',
-		description: 'Community platform for the Nigerian diaspora',
+		name: settings?.name || 'JapaConnect',
+		description: settings?.description || 'Community platform for the Nigerian diaspora',
 		url: SITE_URL,
-		logo: `${SITE_URL}/logo.png`,
+		logo: settings?.logo_url || `${SITE_URL}/logo.png`,
 		sameAs: [
 			'https://twitter.com/japaconnect',
 			'https://facebook.com/japaconnect',
@@ -92,12 +96,15 @@ export function createBreadcrumbSchema(
 /**
  * Create WebSite schema for the homepage
  */
-export function createWebsiteSchema(): JsonLdSchema {
+export function createWebsiteSchema(settings?: {
+	name?: string;
+	description?: string;
+}): JsonLdSchema {
 	return {
 		'@context': 'https://schema.org',
 		'@type': 'WebSite',
-		name: 'JapaConnect',
-		description: 'Community platform for the Nigerian diaspora',
+		name: settings?.name || 'JapaConnect',
+		description: settings?.description || 'Community platform for the Nigerian diaspora',
 		url: SITE_URL,
 		potentialAction: {
 			'@type': 'SearchAction',

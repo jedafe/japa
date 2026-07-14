@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
@@ -13,11 +14,13 @@
 		created_at: string;
 	};
 
-	let tags = $state<Tag[]>([]);
-	let page = $state(0);
-	let totalPages = $state(1);
+	let allTags = $state<Tag[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+
+	// Pagination
+	let page = $state(0);
+	let pageSize = $state(10);
 
 	// Create/Edit modal
 	let showModal = $state(false);
@@ -29,16 +32,19 @@
 	let showDeleteModal = $state(false);
 	let deleteTarget = $state<Tag | null>(null);
 
+	let totalPages = $derived(Math.max(1, Math.ceil(allTags.length / pageSize)));
+	let paginatedTags = $derived.by(() => {
+		const start = page * pageSize;
+		return allTags.slice(start, start + pageSize);
+	});
+
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		try {
-			// List lives at the public /tags route (admin CRUD stays under
-			// /admin/tags); it returns a plain unpaginated array.
 			const result = await api<Tag[]>('/tags');
 			if (result.ok) {
-				tags = Array.isArray(result.data) ? result.data : [];
-				totalPages = 1;
+				allTags = Array.isArray(result.data) ? result.data : [];
 			} else {
 				errorMessage = result.error;
 			}
@@ -102,11 +108,6 @@
 		}
 	}
 
-	function handlePageChange(p: number) {
-		page = p;
-		load();
-	}
-
 	onMount(load);
 </script>
 
@@ -149,14 +150,14 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each tags as tag}
+				{#each paginatedTags as tag}
 					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3 font-medium">
-							<span class="inline-block rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs text-indigo-700 dark:text-indigo-400">#{tag.name}</span>
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background-color: color-mix(in srgb, var(--color-info) 15%, transparent); color: var(--color-info)">#{tag.name}</span>
 						</td>
 						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{tag.slug}</td>
-						<td class="px-4 py-3 text-xs font-medium">{tag.post_count.toLocaleString()}</td>
-						<td class="px-4 py-3 text-xs font-medium">{tag.follower_count.toLocaleString()}</td>
+						<td class="px-4 py-3 text-xs font-medium">{(tag.post_count ?? 0).toLocaleString()}</td>
+						<td class="px-4 py-3 text-xs font-medium">{(tag.follower_count ?? 0).toLocaleString()}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{tag.created_at}</td>
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-1">
@@ -188,13 +189,12 @@
 		</table>
 	</div>
 
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
-		</div>
-	</div>
+	<Pagination
+		bind:page
+		{totalPages}
+		totalItems={allTags.length}
+		bind:pageSize
+	/>
 {/if}
 
 <!-- Create/Edit Modal -->

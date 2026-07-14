@@ -1,347 +1,308 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { analyticsAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { RefreshCw, Users, FileText, DollarSign, Search, Building, Shield, Trash2, BarChart3 } from 'lucide-svelte';
-	import Modal from '$lib/components/Modal.svelte';
-
-	type AnalyticsOverview = {
-		total_users: number;
-		active_users: number;
-		total_content: number;
-		total_spaces: number;
-		total_revenue: number;
-		recent_signups: number;
-	};
-
-	type SecurityScan = {
-		id: string;
-		scan_type: string;
-		status: string;
-		issues_found: number;
-		created_at: string;
-	};
-
-	type DomainData = Record<string, unknown>;
-
-	let overview = $state<AnalyticsOverview | null>(null);
-	let securityScans = $state<SecurityScan[]>([]);
-	let domainData = $state<DomainData | null>(null);
-	let loading = $state(true);
-	let error = $state('');
-	let activeTab = $state<'overview' | 'content' | 'revenue' | 'search' | 'spaces' | 'users' | 'security'>('overview');
-
-	// Cache flush
-	let showFlushModal = $state(false);
-	let flushTargets = $state('all');
+	import { page } from "$app/state";
+	import { goto } from "$app/navigation";
+	import PageHeader from "$lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+	import { Tabs } from "$lib/components/ui/tabs";
+	import { DataTable } from "$lib/components/ui/data-table";
+	import { Button } from "$lib/components/ui/button";
+	import { Modal } from "$lib/components/ui/modal";
+	import { Badge } from "$lib/components/ui/badge";
+	import { 
+		BarChart3, Users, Eye, MessageSquare, TrendingUp, 
+		Download, RefreshCw, Shield, DollarSign, Search, UserPlus
+	} from "lucide-svelte";
+	import { analyticsAdminApi } from "$lib/api";
+	
+	let { data } = $props();
+	
+	let activeTab = $state("overview");
+	let flushModalOpen = $state(false);
 	let flushing = $state(false);
-
-	async function load() {
-		loading = true;
-		error = '';
-		domainData = null;
-		overview = null;
-		securityScans = [];
-		try {
-			switch (activeTab) {
-				case 'overview': {
-					const result = await analyticsAdminApi.getOverview();
-					if (result.ok) {
-						overview = result.data as AnalyticsOverview;
-					} else {
-						error = result.error;
-					}
-					break;
-				}
-				case 'content': {
-					const result = await analyticsAdminApi.getContent();
-					if (result.ok) {
-						domainData = result.data as DomainData;
-					} else {
-						error = result.error;
-					}
-					break;
-				}
-				case 'revenue': {
-					const result = await analyticsAdminApi.getRevenue();
-					if (result.ok) {
-						domainData = result.data as DomainData;
-					} else {
-						error = result.error;
-					}
-					break;
-				}
-				case 'search': {
-					const result = await analyticsAdminApi.getSearch();
-					if (result.ok) {
-						domainData = result.data as DomainData;
-					} else {
-						error = result.error;
-					}
-					break;
-				}
-				case 'spaces': {
-					const result = await analyticsAdminApi.getSpaces();
-					if (result.ok) {
-						domainData = result.data as DomainData;
-					} else {
-						error = result.error;
-					}
-					break;
-				}
-				case 'users': {
-					const result = await analyticsAdminApi.getUsers();
-					if (result.ok) {
-						domainData = result.data as DomainData;
-					} else {
-						error = result.error;
-					}
-					break;
-				}
-				case 'security': {
-					const result = await analyticsAdminApi.getSecurity();
-					if (result.ok) {
-						securityScans = (result.data as SecurityScan[]) ?? [];
-					} else {
-						error = result.error;
-					}
-					break;
-				}
+	
+	const tabs = [
+		{ value: "overview", label: "Overview", icon: TrendingUp },
+		{ value: "users", label: "Users", icon: Users },
+		{ value: "content", label: "Content", icon: MessageSquare },
+		{ value: "spaces", label: "Spaces", icon: Eye },
+		{ value: "revenue", label: "Revenue", icon: DollarSign },
+		{ value: "search", label: "Search", icon: Search },
+		{ value: "security", label: "Security", icon: Shield }
+	];
+	
+	const overviewCards = $derived([
+		{ 
+			label: "Total Users", 
+			value: data.overview?.totalUsers ?? 0, 
+			change: data.overview?.usersChange ?? 0, 
+			icon: Users, 
+			color: "primary" 
+		},
+		{ 
+			label: "Active Users", 
+			value: data.overview?.activeUsers ?? 0, 
+			change: data.overview?.activeChange ?? 0, 
+			icon: Users, 
+			color: "success" 
+		},
+		{ 
+			label: "New Signups", 
+			value: data.overview?.newSignups ?? 0, 
+			change: data.overview?.signupChange ?? 0, 
+			icon: UserPlus, 
+			color: "info" 
+		},
+		{ 
+			label: "Total Spaces", 
+			value: data.overview?.totalSpaces ?? 0, 
+			change: data.overview?.spacesChange ?? 0, 
+			icon: Eye, 
+			color: "warning" 
+		},
+		{ 
+			label: "Total Posts", 
+			value: data.overview?.totalPosts ?? 0, 
+			change: data.overview?.postsChange ?? 0, 
+			icon: MessageSquare, 
+			color: "primary" 
+		},
+		{ 
+			label: "Revenue", 
+			value: `$${(data.overview?.revenue ?? 0).toLocaleString()}`, 
+			change: data.overview?.revenueChange ?? 0, 
+			icon: DollarSign, 
+			color: "success" 
+		}
+	]);
+	
+	const securityColumns = [
+		{ key: "scanId", label: "Scan ID", sortable: true },
+		{ key: "type", label: "Type", sortable: true },
+		{ 
+			key: "status", 
+			label: "Status", 
+			sortable: true,
+			render: (value: string) => {
+				const colors = value === 'passed' ? 'bg-success-100 text-success-800' : 'bg-danger-100 text-danger-800';
+				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${colors}">${value}</span>`;
 			}
-		} catch {
-			error = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function runSecurityScan() {
-		try {
-			await analyticsAdminApi.runSecurityScan({});
-			load();
-		} catch {
-			error = t('common.error');
-		}
-	}
-
-	async function resolveSecurityIssue(id: string) {
-		try {
-			await analyticsAdminApi.resolveSecurityItem(id, {});
-			load();
-		} catch {
-			error = t('common.error');
-		}
-	}
-
-	async function flushCache() {
+		},
+		{ 
+			key: "date", 
+			label: "Date", 
+			sortable: true,
+			render: (value: string) => new Date(value).toLocaleString()
+		},
+		{ key: "findings", label: "Findings", sortable: true }
+	];
+	
+	async function handleFlushCache() {
 		flushing = true;
 		try {
-			await analyticsAdminApi.flushCache({ targets: flushTargets });
-			showFlushModal = false;
-			load();
-		} catch {
-			error = t('common.error');
+			await analyticsAdminApi.flushCache({ targets: "all" });
+			flushModalOpen = false;
+			goto("", { invalidateAll: true });
+		} catch (error) {
+			console.error("Failed to flush cache:", error);
 		} finally {
 			flushing = false;
 		}
 	}
-
-	function renderDomainValue(key: string, value: unknown): string {
-		if (typeof value === 'number') return value.toLocaleString();
-		if (typeof value === 'string') return value;
-		if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-		if (Array.isArray(value)) return `${value.length} items`;
-		if (typeof value === 'object' && value !== null) return JSON.stringify(value);
-		return '—';
+	
+	function handleExport() {
+		// TODO: Implement analytics export
+		console.log("Export analytics");
 	}
-
-	function statusColor(status: string) {
-		switch (status) {
-			case 'pass': return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
-			case 'fail': return 'bg-red-500/15 text-red-700 dark:text-red-400';
-			case 'warning': return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
-			default: return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
-		}
-	}
-
-	const tabs = [
-		{ key: 'overview' as const, icon: BarChart3, labelKey: 'analytics.tab_overview' },
-		{ key: 'content' as const, icon: FileText, labelKey: 'analytics.tab_content' },
-		{ key: 'revenue' as const, icon: DollarSign, labelKey: 'analytics.tab_revenue' },
-		{ key: 'search' as const, icon: Search, labelKey: 'analytics.tab_search' },
-		{ key: 'spaces' as const, icon: Building, labelKey: 'analytics.tab_spaces' },
-		{ key: 'users' as const, icon: Users, labelKey: 'analytics.tab_users' },
-		{ key: 'security' as const, icon: Shield, labelKey: 'analytics.tab_security' },
-	];
-
-	onMount(load);
 </script>
 
-<svelte:head>
-	<title>{t('analytics.title')} — JapaConnect Admin</title>
-</svelte:head>
+<PageHeader
+	title="Analytics"
+	description="Monitor platform performance and user engagement"
+	actions={[
+		{ label: "Export Report", icon: Download, onclick: handleExport, variant: "outline" },
+		{ label: "Flush Cache", icon: RefreshCw, onclick: () => flushModalOpen = true, variant: "ghost" }
+	]}
+/>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('analytics.title')}</h1>
-<p class="mb-6 text-sm" style="color: var(--color-muted)">{t('analytics.description')}</p>
-
-<!-- Tabs -->
-<div class="mb-6 flex flex-wrap gap-1 rounded-lg border p-1" style="border-color: var(--color-border)">
-	{#each tabs as tab}
-		<button
-			class="flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors"
-			style={activeTab === tab.key ? 'background-color: var(--color-primary); color: white' : ''}
-			onclick={() => { activeTab = tab.key; load(); }}
-		>
-			<tab.icon class="h-3.5 w-3.5" />
-			{t(tab.labelKey)}
-		</button>
-	{/each}
+<div class="space-y-6">
+	<Tabs {tabs} bind:value={activeTab} />
+	
+	{#if activeTab === "overview"}
+		<!-- Stats Grid -->
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			{#each overviewCards as card}
+				<Card>
+					<CardContent class="p-6">
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm font-medium text-gray-500">{card.label}</p>
+								<p class="text-2xl font-bold text-gray-900">{card.value}</p>
+								<p class="text-sm {card.change >= 0 ? 'text-success-600' : 'text-danger-600'}">
+									{card.change >= 0 ? '+' : ''}{card.change}% from last period
+								</p>
+							</div>
+							<div class="rounded-lg bg-{card.color}-100 p-3">
+								<card.icon class="h-6 w-6 text-{card.color}-600" />
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+			{/each}
+		</div>
+		
+		<!-- Charts Placeholder -->
+		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+			<Card>
+				<CardHeader>
+					<h3 class="text-lg font-semibold text-gray-900">User Growth</h3>
+				</CardHeader>
+				<CardContent>
+					<div class="flex h-64 items-center justify-center rounded-lg bg-gray-50">
+						<p class="text-gray-500">Chart placeholder - integrate with chart library</p>
+					</div>
+				</CardContent>
+			</Card>
+			
+			<Card>
+				<CardHeader>
+					<h3 class="text-lg font-semibold text-gray-900">Content Activity</h3>
+				</CardHeader>
+				<CardContent>
+					<div class="flex h-64 items-center justify-center rounded-lg bg-gray-50">
+						<p class="text-gray-500">Chart placeholder - integrate with chart library</p>
+					</div>
+				</CardContent>
+			</Card>
+		</div>
+	{/if}
+	
+	{#if activeTab === "security"}
+		<Card>
+			<CardHeader>
+				<h3 class="text-lg font-semibold text-gray-900">Security Scans</h3>
+			</CardHeader>
+			<CardContent>
+				<DataTable
+					columns={securityColumns}
+					data={data.security?.scans ?? []}
+					pageSize={10}
+					emptyMessage="No security scans found"
+				/>
+			</CardContent>
+		</Card>
+	{/if}
+	
+	{#if activeTab === "users"}
+		<Card>
+			<CardHeader>
+				<h3 class="text-lg font-semibold text-gray-900">User Analytics</h3>
+			</CardHeader>
+			<CardContent>
+				<DataTable
+					columns={[
+						{ key: "metric", label: "Metric", sortable: true },
+						{ key: "value", label: "Value", sortable: true },
+						{ key: "change", label: "Change", sortable: true, render: (v: number) => `<span class="${v >= 0 ? 'text-success-600' : 'text-danger-600'}">${v >= 0 ? '+' : ''}${v}%</span>` }
+					]}
+					data={data.userAnalytics ?? []}
+					emptyMessage="No user analytics data"
+				/>
+			</CardContent>
+		</Card>
+	{/if}
+	
+	{#if activeTab === "content"}
+		<Card>
+			<CardHeader>
+				<h3 class="text-lg font-semibold text-gray-900">Content Analytics</h3>
+			</CardHeader>
+			<CardContent>
+				<DataTable
+					columns={[
+						{ key: "type", label: "Type", sortable: true },
+						{ key: "count", label: "Count", sortable: true },
+						{ key: "engagement", label: "Engagement", sortable: true }
+					]}
+					data={data.contentAnalytics ?? []}
+					emptyMessage="No content analytics data"
+				/>
+			</CardContent>
+		</Card>
+	{/if}
+	
+	{#if activeTab === "spaces"}
+		<Card>
+			<CardHeader>
+				<h3 class="text-lg font-semibold text-gray-900">Space Analytics</h3>
+			</CardHeader>
+			<CardContent>
+				<DataTable
+					columns={[
+						{ key: "space", label: "Space", sortable: true },
+						{ key: "members", label: "Members", sortable: true },
+						{ key: "activity", label: "Activity", sortable: true }
+					]}
+					data={data.spaceAnalytics ?? []}
+					emptyMessage="No space analytics data"
+				/>
+			</CardContent>
+		</Card>
+	{/if}
+	
+	{#if activeTab === "revenue"}
+		<Card>
+			<CardHeader>
+				<h3 class="text-lg font-semibold text-gray-900">Revenue Analytics</h3>
+			</CardHeader>
+			<CardContent>
+				<DataTable
+					columns={[
+						{ key: "period", label: "Period", sortable: true },
+						{ key: "revenue", label: "Revenue", sortable: true, render: (v: number) => `$${v.toLocaleString()}` },
+						{ key: "transactions", label: "Transactions", sortable: true }
+					]}
+					data={data.revenueAnalytics ?? []}
+					emptyMessage="No revenue analytics data"
+				/>
+			</CardContent>
+		</Card>
+	{/if}
+	
+	{#if activeTab === "search"}
+		<Card>
+			<CardHeader>
+				<h3 class="text-lg font-semibold text-gray-900">Search Analytics</h3>
+			</CardHeader>
+			<CardContent>
+				<DataTable
+					columns={[
+						{ key: "query", label: "Query", sortable: true },
+						{ key: "count", label: "Count", sortable: true },
+						{ key: "results", label: "Avg Results", sortable: true }
+					]}
+					data={data.searchAnalytics ?? []}
+					emptyMessage="No search analytics data"
+				/>
+			</CardContent>
+		</Card>
+	{/if}
 </div>
 
-{#if error}
-	<div class="mb-4 rounded-md border p-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{error}
-	</div>
-{/if}
-
-<div class="mb-4 flex justify-end gap-2">
-	{#if activeTab !== 'security'}
-		<button
-			class="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-			style="border-color: var(--color-border)"
-			onclick={() => { showFlushModal = true; }}
-		>
-			<Trash2 class="h-3 w-3" />
-			{t('analytics.flush_cache')}
-		</button>
-	{/if}
-	{#if activeTab === 'security'}
-		<button
-			class="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors"
-			style="background-color: var(--color-primary)"
-			onclick={runSecurityScan}
-		>
-			<Shield class="h-3 w-3" />
-			{t('analytics.run_scan')}
-		</button>
-	{/if}
-	<button class="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10" style="border-color: var(--color-border)" onclick={load}>
-		<RefreshCw class="h-3 w-3" />
-		{t('common.refresh')}
-	</button>
-</div>
-
-{#if loading}
-	<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else if activeTab === 'overview' && overview}
-	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-			<p class="text-sm" style="color: var(--color-muted)">{t('analytics.total_users')}</p>
-			<p class="mt-1 text-2xl font-bold">{overview.total_users.toLocaleString()}</p>
-		</div>
-		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-			<p class="text-sm" style="color: var(--color-muted)">{t('analytics.active_users')}</p>
-			<p class="mt-1 text-2xl font-bold">{overview.active_users.toLocaleString()}</p>
-		</div>
-		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-			<p class="text-sm" style="color: var(--color-muted)">{t('analytics.total_content')}</p>
-			<p class="mt-1 text-2xl font-bold">{overview.total_content.toLocaleString()}</p>
-		</div>
-		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-			<p class="text-sm" style="color: var(--color-muted)">{t('analytics.total_spaces')}</p>
-			<p class="mt-1 text-2xl font-bold">{overview.total_spaces.toLocaleString()}</p>
-		</div>
-		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-			<p class="text-sm" style="color: var(--color-muted)">{t('analytics.total_revenue')}</p>
-			<p class="mt-1 text-2xl font-bold">${overview.total_revenue.toLocaleString()}</p>
-		</div>
-		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-			<p class="text-sm" style="color: var(--color-muted)">{t('analytics.recent_signups')}</p>
-			<p class="mt-1 text-2xl font-bold">{overview.recent_signups.toLocaleString()}</p>
-		</div>
-	</div>
-{:else if activeTab === 'security'}
-	<div class="rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium">{t('analytics.scan_type')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('analytics.status')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('analytics.issues')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('analytics.created_at')}</th>
-					<th class="px-4 py-3 text-right font-medium">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each securityScans as scan (scan.id)}
-					<tr style="border-bottom: 1px solid var(--color-border)">
-						<td class="px-4 py-3">{scan.scan_type}</td>
-						<td class="px-4 py-3">
-							<span class="rounded-full px-2 py-0.5 text-xs font-medium {statusColor(scan.status)}">
-								{scan.status}
-							</span>
-						</td>
-						<td class="px-4 py-3">{scan.issues_found}</td>
-						<td class="px-4 py-3">{new Date(scan.created_at).toLocaleDateString()}</td>
-						<td class="px-4 py-3 text-right">
-							{#if scan.status === 'fail' || scan.status === 'warning'}
-								<button
-									class="text-xs text-emerald-500 hover:text-emerald-700"
-									onclick={() => resolveSecurityIssue(scan.id)}
-								>
-									{t('analytics.resolve')}
-								</button>
-							{/if}
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('analytics.no_scans')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{:else if domainData}
-	<div class="rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('analytics.metric')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('analytics.value')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each Object.entries(domainData) as [key, value] (key)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 text-xs font-medium">{key.replace(/_/g, ' ')}</td>
-						<td class="px-4 py-3 text-xs text-right">{renderDomainValue(key, value)}</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="2" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('common.no_data')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
-
-<!-- Cache Flush Modal -->
-<Modal bind:open={showFlushModal} title={t('analytics.flush_cache_title')} onConfirm={flushCache} confirmLabel={flushing ? t('common.saving') : t('analytics.flush')}>
-	<div class="space-y-4">
-		<div>
-			<label for="flush-targets" class="mb-1 block text-sm font-medium">{t('analytics.flush_targets')}</label>
-			<select id="flush-targets" bind:value={flushTargets} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)">
-				<option value="all">{t('analytics.flush_all')}</option>
-				<option value="analytics">{t('analytics.flush_analytics')}</option>
-				<option value="search">{t('analytics.flush_search')}</option>
-				<option value="cdn">{t('analytics.flush_cdn')}</option>
-			</select>
-		</div>
+<Modal
+	bind:open={flushModalOpen}
+	title="Flush Analytics Cache"
+	description="This will clear all cached analytics data. The cache will rebuild automatically."
+	size="sm"
+>
+	<div class="flex justify-end gap-3">
+		<Button variant="outline" onclick={() => flushModalOpen = false}>Cancel</Button>
+		<Button variant="destructive" onclick={handleFlushCache} disabled={flushing}>
+			{#if flushing}
+				<RefreshCw class="h-4 w-4 mr-2 animate-spin" />
+				Flushing...
+			{:else}
+				Flush Cache
+			{/if}
+		</Button>
 	</div>
 </Modal>

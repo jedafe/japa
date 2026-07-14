@@ -8,12 +8,15 @@ function authProxyPlugin(): Plugin {
 		name: 'auth-proxy',
 		configureServer(server) {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			server.middlewares.use('/api', (req: any, _res: any, next: () => void) => {
-				const headers: Record<string, string> = req.headers ?? {};
-				const cookie = headers.cookie || '';
-				const match = cookie.match(/jc_token=([^;]+)/);
-				if (match) {
-					headers['authorization'] = `Bearer ${match[1]}`;
+			server.middlewares.use((req: any, _res: any, next: () => void) => {
+				const url = req.url || '';
+				if (url.startsWith('/api/') || url.startsWith('/control')) {
+					const headers: Record<string, string> = req.headers ?? {};
+					const cookie = headers.cookie || '';
+					const match = cookie.match(/jc_token=([^;]+)/);
+					if (match) {
+						headers['authorization'] = `Bearer ${match[1]}`;
+					}
 				}
 				next();
 			});
@@ -28,13 +31,17 @@ export default defineConfig({
 	},
 	server: {
 		proxy: {
-			'/api': {
+			'/api/': {
 				target: 'http://localhost:8080',
 				changeOrigin: true
 			},
 			'/ws': {
 				target: 'ws://localhost:8080',
 				ws: true
+			},
+			'/control': {
+				target: 'http://localhost:8080',
+				changeOrigin: true
 			}
 		}
 	},

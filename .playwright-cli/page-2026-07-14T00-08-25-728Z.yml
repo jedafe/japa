@@ -1,0 +1,276 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]: Control Panel
+    - navigation [ref=e7]:
+      - button "Dashboard" [ref=e8]:
+        - link "Dashboard" [ref=e9] [cursor=pointer]:
+          - /url: /
+          - img [ref=e10]
+          - text: Dashboard
+      - button "Queue" [ref=e11]:
+        - link "Queue" [ref=e12] [cursor=pointer]:
+          - /url: /queue
+          - img [ref=e13]
+          - text: Queue
+      - button "Dead Letter Queue" [ref=e14]:
+        - link "Dead Letter Queue" [ref=e15] [cursor=pointer]:
+          - /url: /dlq
+          - img [ref=e16]
+          - text: Dead Letter Queue
+      - button "DB Health" [ref=e17]:
+        - link "DB Health" [ref=e18] [cursor=pointer]:
+          - /url: /db
+          - img [ref=e19]
+          - text: DB Health
+      - button "Audit Log" [ref=e20]:
+        - link "Audit Log" [ref=e21] [cursor=pointer]:
+          - /url: /audit
+          - img [ref=e22]
+          - text: Audit Log
+      - button "Security" [ref=e23]:
+        - link "Security" [ref=e24] [cursor=pointer]:
+          - /url: /security
+          - img [ref=e25]
+          - text: Security
+      - button "API Keys" [ref=e26]:
+        - link "API Keys" [ref=e27] [cursor=pointer]:
+          - /url: /api-keys
+          - img [ref=e28]
+          - text: API Keys
+      - button "Cache" [ref=e29]:
+        - link "Cache" [ref=e30] [cursor=pointer]:
+          - /url: /cache
+          - img [ref=e31]
+          - text: Cache
+      - button "Settings" [ref=e32]:
+        - link "Settings" [ref=e33] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e34]
+          - text: Settings
+      - button "Feature Flags" [ref=e35]:
+        - link "Feature Flags" [ref=e36] [cursor=pointer]:
+          - /url: /feature-flags
+          - img [ref=e37]
+          - text: Feature Flags
+      - button "Tenants" [ref=e38]:
+        - link "Tenants" [ref=e39] [cursor=pointer]:
+          - /url: /tenants
+          - img [ref=e40]
+          - text: Tenants
+      - button "AI Budget" [ref=e41]:
+        - link "AI Budget" [ref=e42] [cursor=pointer]:
+          - /url: /ai-budget
+          - img [ref=e43]
+          - text: AI Budget
+      - button "Cron Jobs" [ref=e44]:
+        - link "Cron Jobs" [ref=e45] [cursor=pointer]:
+          - /url: /cron
+          - img [ref=e46]
+          - text: Cron Jobs
+  - generic [ref=e47]:
+    - banner [ref=e48]:
+      - link "JapaControl" [ref=e50] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e51]:
+        - button "🌙" [ref=e52]
+        - button "P Platform Admin" [ref=e53]:
+          - generic [ref=e55]: P
+          - generic [ref=e56]: Platform Admin
+    - main [ref=e57]:
+      - generic [ref=e58]:
+        - generic [ref=e59]:
+          - heading "Dead Letter Queue" [level=1] [ref=e60]
+          - paragraph [ref=e61]: Dead letter queue for failed tasks
+        - generic [ref=e62]:
+          - textbox "Filter by task type or error..." [ref=e63]
+          - button "Refresh" [active] [ref=e64]:
+            - img [ref=e65]
+            - text: Refresh
+          - button "Discard All" [ref=e66]:
+            - button "Discard All" [ref=e67]:
+              - img [ref=e68]
+              - text: Discard All
+        - generic [ref=e69]:
+          - tablist [ref=e70]:
+            - tab "All (30)" [selected] [ref=e71]
+            - tab "By Task Type (1)" [ref=e72]
+          - tabpanel "All (30)" [ref=e73]:
+            - table [ref=e232]:
+              - rowgroup [ref=e233]:
+                - row "Task Type Error Retries Failed At Actions" [ref=e234]:
+                  - columnheader "Task Type" [ref=e235]
+                  - columnheader "Error" [ref=e236]
+                  - columnheader "Retries" [ref=e237]
+                  - columnheader "Failed At" [ref=e238]
+                  - columnheader "Actions" [ref=e239]
+              - rowgroup [ref=e240]:
+                - row "Invalid Date Retry Discard" [ref=e241]:
+                  - cell [ref=e242]
+                  - cell [ref=e243]
+                  - cell [ref=e244]
+                  - cell "Invalid Date" [ref=e245]
+                  - cell "Retry Discard" [ref=e246]:
+                    - generic [ref=e247]:
+                      - button "Retry" [ref=e248]:
+                        - button "Retry" [ref=e249]:
+                          - img [ref=e250]
+                          - text: Retry
+                      - button "Discard" [ref=e251]:
+                        - button "Discard" [ref=e252]:
+                          - img [ref=e253]
+                          - text: Discard
+                - row "Invalid Date Retry Discard" [ref=e254]:
+                  - cell [ref=e255]
+                  - cell [ref=e256]
+                  - cell [ref=e257]
+                  - cell "Invalid Date" [ref=e258]
+                  - cell "Retry Discard" [ref=e259]:
+                    - generic [ref=e260]:
+                      - button "Retry" [ref=e261]:
+                        - button "Retry" [ref=e262]:
+                          - img [ref=e263]
+                          - text: Retry
+                      - button "Discard" [ref=e264]:
+                        - button "Discard" [ref=e265]:
+                          - img [ref=e266]
+                          - text: Discard
+                - row "Invalid Date Retry Discard" [ref=e267]:
+                  - cell [ref=e268]
+                  - cell [ref=e269]
+                  - cell [ref=e270]
+                  - cell "Invalid Date" [ref=e271]
+                  - cell "Retry Discard" [ref=e272]:
+                    - generic [ref=e273]:
+                      - button "Retry" [ref=e274]:
+                        - button "Retry" [ref=e275]:
+                          - img [ref=e276]
+                          - text: Retry
+                      - button "Discard" [ref=e277]:
+                        - button "Discard" [ref=e278]:
+                          - img [ref=e279]
+                          - text: Discard
+                - row "Invalid Date Retry Discard" [ref=e280]:
+                  - cell [ref=e281]
+                  - cell [ref=e282]
+                  - cell [ref=e283]
+                  - cell "Invalid Date" [ref=e284]
+                  - cell "Retry Discard" [ref=e285]:
+                    - generic [ref=e286]:
+                      - button "Retry" [ref=e287]:
+                        - button "Retry" [ref=e288]:
+                          - img [ref=e289]
+                          - text: Retry
+                      - button "Discard" [ref=e290]:
+                        - button "Discard" [ref=e291]:
+                          - img [ref=e292]
+                          - text: Discard
+                - row "Invalid Date Retry Discard" [ref=e293]:
+                  - cell [ref=e294]
+                  - cell [ref=e295]
+                  - cell [ref=e296]
+                  - cell "Invalid Date" [ref=e297]
+                  - cell "Retry Discard" [ref=e298]:
+                    - generic [ref=e299]:
+                      - button "Retry" [ref=e300]:
+                        - button "Retry" [ref=e301]:
+                          - img [ref=e302]
+                          - text: Retry
+                      - button "Discard" [ref=e303]:
+                        - button "Discard" [ref=e304]:
+                          - img [ref=e305]
+                          - text: Discard
+                - row "Invalid Date Retry Discard" [ref=e306]:
+                  - cell [ref=e307]
+                  - cell [ref=e308]
+                  - cell [ref=e309]
+                  - cell "Invalid Date" [ref=e310]
+                  - cell "Retry Discard" [ref=e311]:
+                    - generic [ref=e312]:
+                      - button "Retry" [ref=e313]:
+                        - button "Retry" [ref=e314]:
+                          - img [ref=e315]
+                          - text: Retry
+                      - button "Discard" [ref=e316]:
+                        - button "Discard" [ref=e317]:
+                          - img [ref=e318]
+                          - text: Discard
+                - row "Invalid Date Retry Discard" [ref=e319]:
+                  - cell [ref=e320]
+                  - cell [ref=e321]
+                  - cell [ref=e322]
+                  - cell "Invalid Date" [ref=e323]
+                  - cell "Retry Discard" [ref=e324]:
+                    - generic [ref=e325]:
+                      - button "Retry" [ref=e326]:
+                        - button "Retry" [ref=e327]:
+                          - img [ref=e328]
+                          - text: Retry
+                      - button "Discard" [ref=e329]:
+                        - button "Discard" [ref=e330]:
+                          - img [ref=e331]
+                          - text: Discard
+                - row "Invalid Date Retry Discard" [ref=e332]:
+                  - cell [ref=e333]
+                  - cell [ref=e334]
+                  - cell [ref=e335]
+                  - cell "Invalid Date" [ref=e336]
+                  - cell "Retry Discard" [ref=e337]:
+                    - generic [ref=e338]:
+                      - button "Retry" [ref=e339]:
+                        - button "Retry" [ref=e340]:
+                          - img [ref=e341]
+                          - text: Retry
+                      - button "Discard" [ref=e342]:
+                        - button "Discard" [ref=e343]:
+                          - img [ref=e344]
+                          - text: Discard
+                - row "Invalid Date Retry Discard" [ref=e345]:
+                  - cell [ref=e346]
+                  - cell [ref=e347]
+                  - cell [ref=e348]
+                  - cell "Invalid Date" [ref=e349]
+                  - cell "Retry Discard" [ref=e350]:
+                    - generic [ref=e351]:
+                      - button "Retry" [ref=e352]:
+                        - button "Retry" [ref=e353]:
+                          - img [ref=e354]
+                          - text: Retry
+                      - button "Discard" [ref=e355]:
+                        - button "Discard" [ref=e356]:
+                          - img [ref=e357]
+                          - text: Discard
+                - row "Invalid Date Retry Discard" [ref=e358]:
+                  - cell [ref=e359]
+                  - cell [ref=e360]
+                  - cell [ref=e361]
+                  - cell "Invalid Date" [ref=e362]
+                  - cell "Retry Discard" [ref=e363]:
+                    - generic [ref=e364]:
+                      - button "Retry" [ref=e365]:
+                        - button "Retry" [ref=e366]:
+                          - img [ref=e367]
+                          - text: Retry
+                      - button "Discard" [ref=e368]:
+                        - button "Discard" [ref=e369]:
+                          - img [ref=e370]
+                          - text: Discard
+            - generic [ref=e371]:
+              - generic [ref=e372]:
+                - generic [ref=e373]: 30 items
+                - generic [ref=e374]:
+                  - generic [ref=e375]: "Per page:"
+                  - combobox [ref=e376]:
+                    - option "10" [selected]
+                    - option "25"
+                    - option "50"
+                    - option "100"
+              - generic [ref=e377]:
+                - button "First page" [disabled] [ref=e378]:
+                  - img [ref=e379]
+                - button "Previous page" [disabled] [ref=e380]:
+                  - img [ref=e381]
+                - generic [ref=e382]: Page 1 of 3
+                - button "Next page" [ref=e383]:
+                  - img [ref=e384]
+                - button "Last page" [ref=e385]:
+                  - img [ref=e386]

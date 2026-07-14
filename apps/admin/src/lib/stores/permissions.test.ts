@@ -5,7 +5,7 @@ vi.mock('$lib/api/client', () => ({
 }));
 
 import { apiFetch } from '$lib/api/client';
-import { fetchPermissions, permissions, permissionsLoaded, hasPermission } from './permissions.svelte';
+import { fetchPermissions, getPermissions, isPermissionsLoaded, hasPermission } from './permissions.svelte';
 
 describe('fetchPermissions', () => {
 	beforeEach(async () => {
@@ -28,8 +28,8 @@ describe('fetchPermissions', () => {
 		await fetchPermissions();
 
 		expect(apiFetch).toHaveBeenCalledWith('/me/permissions');
-		expect(permissions).toEqual(['admin.users.view', 'admin.settings']);
-		expect(permissionsLoaded).toBe(true);
+		expect(getPermissions()).toEqual(['admin.users.view', 'admin.settings']);
+		expect(isPermissionsLoaded()).toBe(true);
 		expect(hasPermission('admin.users.view')).toBe(true);
 		expect(hasPermission('admin.broadcast')).toBe(false);
 	});
@@ -43,7 +43,7 @@ describe('fetchPermissions', () => {
 
 		await fetchPermissions();
 
-		expect(permissions).toEqual([]);
-		expect(permissionsLoaded).toBe(true);
+		expect(getPermissions()).toEqual([]);
+		expect(isPermissionsLoaded()).toBe(true);
 	});
 });

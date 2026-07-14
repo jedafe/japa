@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '../app.css';
-	import favicon from '$lib/assets/favicon.svg';
 	import { Header, MobileNav, Footer, SideNav } from '$lib/components/nav';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { locale } from '$lib/stores/i18n.svelte';
@@ -105,8 +104,13 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
-	<meta name="description" content="JapaConnect — community platform for the Nigerian diaspora" />
+	<meta name="description" content={data.seoSettings?.meta_description_template || "JapaConnect — community platform for the Nigerian diaspora"} />
+	{#if data.seoSettings?.og_image}
+		<meta property="og:image" content={data.seoSettings.og_image} />
+	{/if}
+	{#if data.seoSettings?.twitter_handle}
+		<meta name="twitter:site" content="@{data.seoSettings.twitter_handle}" />
+	{/if}
 	{#each ['en', 'fr', 'yo', 'ha'] as langCode}
 		<link rel="alternate" hreflang={langCode} href="{siteUrl}/{langCode}{page.url.pathname}" />
 	{/each}

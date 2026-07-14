@@ -1,9 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import FilterBar from '$lib/components/FilterBar.svelte';
-import { api } from '$lib/api';
+	import { RefreshCw, Download, Ticket, Clock, CheckCircle, AlertCircle } from 'lucide-svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { Tabs } from '$lib/components/ui/tabs';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { FilterBar } from '$lib/components/ui/filter-bar';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import { api } from '$lib/api';
 
-	type Ticket = {
+	type TicketItem = {
 		id: string;
 		type: string;
 		subject: string;
@@ -13,32 +20,132 @@ import { api } from '$lib/api';
 		created_at: string;
 	};
 
-	let tickets = $state<Ticket[]>([]);
+	let tickets = $state<TicketItem[]>([]);
 	let page = $state(0);
 	let totalPages = $state(1);
 	let loading = $state(true);
 	let sortKey = $state('created_at');
 	let sortAsc = $state(false);
+	let filterType = $state('');
+	let filterStatus = $state('');
+	let filterPriority = $state('');
 
-	const filterDefs = [
-		{ key: 'type', label: 'Type', type: 'select' as const, options: ['bug', 'feature', 'question', 'account'] },
-		{ key: 'status', label: 'Status', type: 'select' as const, options: ['open', 'in_progress', 'waiting', 'resolved', 'closed'] },
-		{ key: 'priority', label: 'Priority', type: 'select' as const, options: ['low', 'medium', 'high', 'urgent'] },
-		{ key: 'assignee', label: 'Assignee', type: 'text' as const },
-		{ key: 'from', label: 'From', type: 'date' as const },
-		{ key: 'to', label: 'To', type: 'date' as const }
+	const tabs = [
+		{ value: 'all', label: 'All Tickets', icon: Ticket },
+		{ value: 'open', label: 'Open', icon: AlertCircle },
+		{ value: 'in_progress', label: 'In Progress', icon: Clock },
+		{ value: 'resolved', label: 'Resolved', icon: CheckCircle }
 	];
 
-	let filterValues: Record<string, string> = {};
+	const filterDefs = [
+		{
+			key: 'type',
+			label: 'Type',
+			options: [
+				{ value: 'bug', label: 'Bug' },
+				{ value: 'feature', label: 'Feature' },
+				{ value: 'question', label: 'Question' },
+				{ value: 'account', label: 'Account' }
+			]
+		},
+		{
+			key: 'priority',
+			label: 'Priority',
+			options: [
+				{ value: 'low', label: 'Low' },
+				{ value: 'medium', label: 'Medium' },
+				{ value: 'high', label: 'High' },
+				{ value: 'urgent', label: 'Urgent' }
+			]
+		}
+	];
+
+	const columns = [
+		{
+			key: 'id',
+			label: 'Ticket',
+			sortable: true,
+			render: (_: any, row: TicketItem) => `
+				<div>
+					<p class="font-medium text-gray-900">#${row.id} — ${row.subject || 'No subject'}</p>
+					<p class="text-sm text-gray-500">${row.type}</p>
+				</div>`
+		},
+		{
+			key: 'type',
+			label: 'Type',
+			sortable: true,
+			render: (value: string) => {
+				const cls = 'bg-gray-100 text-gray-800';
+				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}">${value}</span>`;
+			}
+		},
+		{
+			key: 'status',
+			label: 'Status',
+			sortable: true,
+			render: (value: string) => {
+				const cls =
+					value === 'open'
+						? 'bg-warning-100 text-warning-800'
+						: value === 'resolved'
+							? 'bg-success-100 text-success-800'
+							: value === 'in_progress'
+								? 'bg-info-100 text-info-800'
+								: 'bg-gray-100 text-gray-800';
+				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}">${value?.replace('_', ' ') || 'open'}</span>`;
+			}
+		},
+		{
+			key: 'priority',
+			label: 'Priority',
+			sortable: true,
+			render: (value: string) => {
+				const cls =
+					value === 'urgent'
+						? 'text-danger-700 font-semibold'
+						: value === 'high'
+							? 'text-warning-700 font-medium'
+							: 'text-gray-600';
+				return `<span class="text-sm ${cls}">${value}</span>`;
+			}
+		},
+		{
+			key: 'assignee',
+			label: 'Assignee',
+			render: (value: string) =>
+				`<span class="text-sm text-gray-600">${value || '—'}</span>`
+		},
+		{
+			key: 'created_at',
+			label: 'Created',
+			sortable: true,
+			render: (value: string) =>
+				`<span class="text-sm text-gray-500">${new Date(value).toLocaleDateString()}</span>`
+		},
+		{
+			key: 'actions',
+			label: '',
+			class: 'w-24',
+			render: (_: any, row: TicketItem) => `
+				<button onclick="window.location.href='/tickets/${row.id}'" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors">View</button>`
+		}
+	];
 
 	async function load() {
 		loading = true;
-		const params = new URLSearchParams({ page: String(page), sort: sortKey, order: sortAsc ? 'asc' : 'desc' });
-		for (const [k, v] of Object.entries(filterValues)) {
-			if (v) params.set(k, v);
-		}
+		const params = new URLSearchParams({
+			page: String(page),
+			sort: sortKey,
+			order: sortAsc ? 'asc' : 'desc'
+		});
+		if (filterType) params.set('type', filterType);
+		if (filterStatus) params.set('status', filterStatus);
+		if (filterPriority) params.set('priority', filterPriority);
 		try {
-			const result = await api<{ tickets: Ticket[]; page: number; total_pages: number }>(`/admin/tickets?${params}`);
+			const result = await api<{ tickets: TicketItem[]; page: number; total_pages: number }>(
+				`/admin/tickets?${params}`
+			);
 			if (result.ok) {
 				tickets = result.data.tickets;
 				totalPages = result.data.total_pages;
@@ -51,23 +158,31 @@ import { api } from '$lib/api';
 	}
 
 	function handleFilter(values: Record<string, string>) {
-		filterValues = values;
+		filterType = values.type ?? '';
+		filterPriority = values.priority ?? '';
 		page = 0;
 		load();
 	}
 
-	function sort(key: string) {
-		if (sortKey === key) {
-			sortAsc = !sortAsc;
-		} else {
-			sortKey = key;
-			sortAsc = false;
-		}
+	function handleSearch(searchFilters: Record<string, string>) {
+		handleFilter(searchFilters);
+	}
+
+	function handleClear() {
+		filterType = '';
+		filterStatus = '';
+		filterPriority = '';
+		page = 0;
 		load();
 	}
 
-	function handlePageChange(p: number) {
-		page = p;
+	function handleTabChange(tab: string) {
+		if (tab === 'all') {
+			filterStatus = '';
+		} else {
+			filterStatus = tab;
+		}
+		page = 0;
 		load();
 	}
 
@@ -78,70 +193,63 @@ import { api } from '$lib/api';
 	<title>Tickets — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Ticket Queue</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage support tickets with bulk actions</p>
+<PageHeader
+	title="Support Tickets"
+	description="Manage user support requests"
+	actions={[
+		{
+			label: 'Export',
+			icon: Download,
+			variant: 'outline' as const,
+			onclick: () => {}
+		}
+	]}
+/>
 
-<FilterBar filters={filterDefs} onApply={handleFilter} />
+<div class="space-y-6">
+	<Tabs tabs={[]} bind:value={filterStatus}>
+		{#snippet children()}
+			<!-- Custom tab bar -->
+		{/snippet}
+	</Tabs>
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="cursor-pointer px-4 py-3 text-left font-medium hover:underline" style="color: var(--color-muted); background-color: var(--color-surface)" onclick={() => sort('type')}>
-						Type {sortKey === 'type' ? (sortAsc ? '↑' : '↓') : ''}
-					</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Subject</th>
-					<th class="cursor-pointer px-4 py-3 text-left font-medium hover:underline" style="color: var(--color-muted); background-color: var(--color-surface)" onclick={() => sort('status')}>
-						Status {sortKey === 'status' ? (sortAsc ? '↑' : '↓') : ''}
-					</th>
-					<th class="cursor-pointer px-4 py-3 text-left font-medium hover:underline" style="color: var(--color-muted); background-color: var(--color-surface)" onclick={() => sort('priority')}>
-						Priority {sortKey === 'priority' ? (sortAsc ? '↑' : '↓') : ''}
-					</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Assignee</th>
-					<th class="cursor-pointer px-4 py-3 text-left font-medium hover:underline" style="color: var(--color-muted); background-color: var(--color-surface)" onclick={() => sort('created_at')}>
-						Created {sortKey === 'created_at' ? (sortAsc ? '↑' : '↓') : ''}
-					</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each tickets as ticket}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-white/10">{ticket.type}</span>
-						</td>
-						<td class="px-4 py-3 font-medium">{ticket.subject}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {ticket.status === 'open' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : ticket.status === 'resolved' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
-								{ticket.status}
-							</span>
-						</td>
-						<td class="px-4 py-3">
-							<span class="text-xs font-medium {ticket.priority === 'urgent' ? 'text-red-600 dark:text-red-400' : ticket.priority === 'high' ? 'text-amber-600 dark:text-amber-400' : ''}">
-								{ticket.priority}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{ticket.assignee || '—'}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{ticket.created_at}</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							No tickets found
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+	<div class="flex gap-1 rounded-lg bg-gray-100 p-1">
+		{#each tabs as tab}
+			{@const Icon = tab.icon}
+			<button
+				class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 {(filterStatus === '' && tab.value === 'all') || filterStatus === tab.value
+					? 'bg-white text-gray-950 shadow-sm'
+					: 'text-gray-500 hover:text-gray-900'}"
+				onclick={() => handleTabChange(tab.value)}
+			>
+				<Icon class="mr-2 h-4 w-4" />
+				{tab.label}
+			</button>
+		{/each}
 	</div>
 
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
-		</div>
-	</div>
-{/if}
+	<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+
+	{#if loading}
+		<Card>
+			<CardContent class="py-12">
+				<div class="flex items-center justify-center text-gray-500">
+					<RefreshCw class="h-5 w-5 mr-2 animate-spin" />
+					Loading...
+				</div>
+			</CardContent>
+		</Card>
+	{:else}
+		<Card>
+			<CardContent class="p-0">
+				<DataTable
+					{columns}
+					data={tickets}
+					pageSize={20}
+					selectable={true}
+					emptyMessage="No tickets found"
+				/>
+			</CardContent>
+		</Card>
+	{/if}
+</div>

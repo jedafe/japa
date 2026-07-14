@@ -1,0 +1,302 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]: Control Panel
+    - navigation [ref=e7]:
+      - button "Dashboard" [ref=e8]:
+        - link "Dashboard" [ref=e9] [cursor=pointer]:
+          - /url: /
+          - img [ref=e10]
+          - text: Dashboard
+      - button "Queue" [ref=e11]:
+        - link "Queue" [ref=e12] [cursor=pointer]:
+          - /url: /queue
+          - img [ref=e13]
+          - text: Queue
+      - button "Dead Letter Queue" [ref=e14]:
+        - link "Dead Letter Queue" [ref=e15] [cursor=pointer]:
+          - /url: /dlq
+          - img [ref=e16]
+          - text: Dead Letter Queue
+      - button "DB Health" [ref=e17]:
+        - link "DB Health" [ref=e18] [cursor=pointer]:
+          - /url: /db
+          - img [ref=e19]
+          - text: DB Health
+      - button "Audit Log" [ref=e20]:
+        - link "Audit Log" [ref=e21] [cursor=pointer]:
+          - /url: /audit
+          - img [ref=e22]
+          - text: Audit Log
+      - button "Security" [ref=e23]:
+        - link "Security" [ref=e24] [cursor=pointer]:
+          - /url: /security
+          - img [ref=e25]
+          - text: Security
+      - button "API Keys" [ref=e26]:
+        - link "API Keys" [ref=e27] [cursor=pointer]:
+          - /url: /api-keys
+          - img [ref=e28]
+          - text: API Keys
+      - button "Cache" [ref=e29]:
+        - link "Cache" [ref=e30] [cursor=pointer]:
+          - /url: /cache
+          - img [ref=e31]
+          - text: Cache
+      - button "Settings" [ref=e32]:
+        - link "Settings" [ref=e33] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e34]
+          - text: Settings
+      - button "Feature Flags" [ref=e35]:
+        - link "Feature Flags" [ref=e36] [cursor=pointer]:
+          - /url: /feature-flags
+          - img [ref=e37]
+          - text: Feature Flags
+      - button "Tenants" [ref=e38]:
+        - link "Tenants" [ref=e39] [cursor=pointer]:
+          - /url: /tenants
+          - img [ref=e40]
+          - text: Tenants
+      - button "AI Budget" [ref=e41]:
+        - link "AI Budget" [ref=e42] [cursor=pointer]:
+          - /url: /ai-budget
+          - img [ref=e43]
+          - text: AI Budget
+      - button "Cron Jobs" [ref=e44]:
+        - link "Cron Jobs" [ref=e45] [cursor=pointer]:
+          - /url: /cron
+          - img [ref=e46]
+          - text: Cron Jobs
+  - generic [ref=e47]:
+    - banner [ref=e48]:
+      - link "JapaControl" [ref=e50] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e51]:
+        - button "🌙" [ref=e52]
+        - button "P Platform Admin" [ref=e53]:
+          - generic [ref=e55]: P
+          - generic [ref=e56]: Platform Admin
+    - main [ref=e57]:
+      - generic [ref=e58]:
+        - generic [ref=e59]:
+          - heading "Cron Jobs" [level=1] [ref=e60]
+          - paragraph [ref=e61]: Scheduled task management
+        - generic [ref=e62]:
+          - button "Filter by status" [ref=e63]:
+            - generic [ref=e64]: All Status
+          - button "Refresh" [ref=e65]:
+            - img [ref=e66]
+            - text: Refresh
+        - generic [ref=e67]:
+          - tablist [ref=e68]:
+            - tab "All (18)" [ref=e69]
+            - tab "Enabled (0)" [ref=e70]
+            - tab "Disabled (18)" [active] [selected] [ref=e71]
+          - tabpanel "Disabled (18)" [ref=e330]:
+            - table [ref=e332]:
+              - rowgroup [ref=e333]:
+                - row "Job Schedule Last Run Status Actions" [ref=e334]:
+                  - columnheader "Job" [ref=e335]
+                  - columnheader "Schedule" [ref=e336]
+                  - columnheader "Last Run" [ref=e337]
+                  - columnheader "Status" [ref=e338]
+                  - columnheader "Actions" [ref=e339]
+              - rowgroup [ref=e340]:
+                - row "— — Run" [ref=e341]:
+                  - cell [ref=e342]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e343]
+                  - cell "—" [ref=e344]
+                  - cell "—" [ref=e345]
+                  - cell "Run" [ref=e346]:
+                    - button "Run" [ref=e347]:
+                      - img [ref=e348]
+                      - text: Run
+                - row "— — Run" [ref=e349]:
+                  - cell [ref=e350]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e351]
+                  - cell "—" [ref=e352]
+                  - cell "—" [ref=e353]
+                  - cell "Run" [ref=e354]:
+                    - button "Run" [ref=e355]:
+                      - img [ref=e356]
+                      - text: Run
+                - row "— — Run" [ref=e357]:
+                  - cell [ref=e358]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e359]
+                  - cell "—" [ref=e360]
+                  - cell "—" [ref=e361]
+                  - cell "Run" [ref=e362]:
+                    - button "Run" [ref=e363]:
+                      - img [ref=e364]
+                      - text: Run
+                - row "— — Run" [ref=e365]:
+                  - cell [ref=e366]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e367]
+                  - cell "—" [ref=e368]
+                  - cell "—" [ref=e369]
+                  - cell "Run" [ref=e370]:
+                    - button "Run" [ref=e371]:
+                      - img [ref=e372]
+                      - text: Run
+                - row "— — Run" [ref=e373]:
+                  - cell [ref=e374]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e375]
+                  - cell "—" [ref=e376]
+                  - cell "—" [ref=e377]
+                  - cell "Run" [ref=e378]:
+                    - button "Run" [ref=e379]:
+                      - img [ref=e380]
+                      - text: Run
+                - row "— — Run" [ref=e381]:
+                  - cell [ref=e382]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e383]
+                  - cell "—" [ref=e384]
+                  - cell "—" [ref=e385]
+                  - cell "Run" [ref=e386]:
+                    - button "Run" [ref=e387]:
+                      - img [ref=e388]
+                      - text: Run
+                - row "— — Run" [ref=e389]:
+                  - cell [ref=e390]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e391]
+                  - cell "—" [ref=e392]
+                  - cell "—" [ref=e393]
+                  - cell "Run" [ref=e394]:
+                    - button "Run" [ref=e395]:
+                      - img [ref=e396]
+                      - text: Run
+                - row "— — Run" [ref=e397]:
+                  - cell [ref=e398]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e399]
+                  - cell "—" [ref=e400]
+                  - cell "—" [ref=e401]
+                  - cell "Run" [ref=e402]:
+                    - button "Run" [ref=e403]:
+                      - img [ref=e404]
+                      - text: Run
+                - row "— — Run" [ref=e405]:
+                  - cell [ref=e406]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e407]
+                  - cell "—" [ref=e408]
+                  - cell "—" [ref=e409]
+                  - cell "Run" [ref=e410]:
+                    - button "Run" [ref=e411]:
+                      - img [ref=e412]
+                      - text: Run
+                - row "— — Run" [ref=e413]:
+                  - cell [ref=e414]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e415]
+                  - cell "—" [ref=e416]
+                  - cell "—" [ref=e417]
+                  - cell "Run" [ref=e418]:
+                    - button "Run" [ref=e419]:
+                      - img [ref=e420]
+                      - text: Run
+                - row "— — Run" [ref=e421]:
+                  - cell [ref=e422]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e423]
+                  - cell "—" [ref=e424]
+                  - cell "—" [ref=e425]
+                  - cell "Run" [ref=e426]:
+                    - button "Run" [ref=e427]:
+                      - img [ref=e428]
+                      - text: Run
+                - row "— — Run" [ref=e429]:
+                  - cell [ref=e430]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e431]
+                  - cell "—" [ref=e432]
+                  - cell "—" [ref=e433]
+                  - cell "Run" [ref=e434]:
+                    - button "Run" [ref=e435]:
+                      - img [ref=e436]
+                      - text: Run
+                - row "— — Run" [ref=e437]:
+                  - cell [ref=e438]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e439]
+                  - cell "—" [ref=e440]
+                  - cell "—" [ref=e441]
+                  - cell "Run" [ref=e442]:
+                    - button "Run" [ref=e443]:
+                      - img [ref=e444]
+                      - text: Run
+                - row "— — Run" [ref=e445]:
+                  - cell [ref=e446]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e447]
+                  - cell "—" [ref=e448]
+                  - cell "—" [ref=e449]
+                  - cell "Run" [ref=e450]:
+                    - button "Run" [ref=e451]:
+                      - img [ref=e452]
+                      - text: Run
+                - row "— — Run" [ref=e453]:
+                  - cell [ref=e454]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e455]
+                  - cell "—" [ref=e456]
+                  - cell "—" [ref=e457]
+                  - cell "Run" [ref=e458]:
+                    - button "Run" [ref=e459]:
+                      - img [ref=e460]
+                      - text: Run
+                - row "— — Run" [ref=e461]:
+                  - cell [ref=e462]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e463]
+                  - cell "—" [ref=e464]
+                  - cell "—" [ref=e465]
+                  - cell "Run" [ref=e466]:
+                    - button "Run" [ref=e467]:
+                      - img [ref=e468]
+                      - text: Run
+                - row "— — Run" [ref=e469]:
+                  - cell [ref=e470]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e471]
+                  - cell "—" [ref=e472]
+                  - cell "—" [ref=e473]
+                  - cell "Run" [ref=e474]:
+                    - button "Run" [ref=e475]:
+                      - img [ref=e476]
+                      - text: Run
+                - row "— — Run" [ref=e477]:
+                  - cell [ref=e478]:
+                    - paragraph
+                    - paragraph
+                  - cell [ref=e479]
+                  - cell "—" [ref=e480]
+                  - cell "—" [ref=e481]
+                  - cell "Run" [ref=e482]:
+                    - button "Run" [ref=e483]:
+                      - img [ref=e484]
+                      - text: Run

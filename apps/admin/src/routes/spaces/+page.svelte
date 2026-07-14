@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
@@ -16,12 +17,23 @@
 		created_at: string;
 	};
 
-	let spaces = $state<Space[]>([]);
-	let page = $state(0);
-	let totalPages = $state(1);
+	let allSpaces = $state<Space[]>([]);
 	let loading = $state(true);
 	let filterStatus = $state('');
 	let errorMessage = $state('');
+
+	// Pagination
+	let page = $state(0);
+	let pageSize = $state(10);
+
+	let filteredSpaces = $derived(
+		filterStatus ? allSpaces.filter((s) => s.status === filterStatus) : allSpaces
+	);
+	let totalPages = $derived(Math.max(1, Math.ceil(filteredSpaces.length / pageSize)));
+	let paginatedSpaces = $derived.by(() => {
+		const start = page * pageSize;
+		return filteredSpaces.slice(start, start + pageSize);
+	});
 
 	// Suspend modal
 	let showSuspendModal = $state(false);
@@ -41,14 +53,10 @@
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const params = new URLSearchParams();
-		if (filterStatus) params.set('status', filterStatus);
 		try {
-			const result = await api<{ data: Space[] }>(`/spaces?${params}`);
+			const result = await api<{ data: Space[] }>('/spaces');
 			if (result.ok) {
-				const list = Array.isArray(result.data) ? result.data : (result.data.data ?? []);
-				spaces = filterStatus ? list.filter((s) => s.status === filterStatus) : list;
-				totalPages = 1;
+				allSpaces = Array.isArray(result.data) ? result.data : (result.data.data ?? []);
 			} else {
 				errorMessage = result.error;
 			}
@@ -62,7 +70,6 @@
 	function handleFilter(values: Record<string, string>) {
 		filterStatus = values.status ?? '';
 		page = 0;
-		load();
 	}
 
 	function openSuspend(space: Space) {
@@ -121,11 +128,6 @@
 		}
 	}
 
-	function handlePageChange(p: number) {
-		page = p;
-		load();
-	}
-
 	function statusBadge(status: string) {
 		switch (status) {
 			case 'active': return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
@@ -169,7 +171,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each spaces as space}
+				{#each paginatedSpaces as space}
 					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3">
 							<a href="/spaces/{space.id}" class="font-medium hover:underline">{space.name}</a>
@@ -222,13 +224,12 @@
 		</table>
 	</div>
 
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
-		</div>
-	</div>
+	<Pagination
+		bind:page
+		{totalPages}
+		totalItems={filteredSpaces.length}
+		bind:pageSize
+	/>
 {/if}
 
 <!-- Suspend Modal -->

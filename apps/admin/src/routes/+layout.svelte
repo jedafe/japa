@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
-	import { permissions } from '$lib/stores/permissions.svelte';
+	import { getPermissions } from '$lib/stores/permissions.svelte';
 
 	import { initNotifications, addNotification } from '$lib/stores/notifications.svelte';
 	import { wsClient } from '$lib/websocket';
@@ -55,8 +55,8 @@
 	// recompute on navigation.
 	let hasAccess = $derived(
 		!requiredPermission ||
-			permissions.includes(requiredPermission) ||
-			permissions.includes('*')
+			getPermissions().includes(requiredPermission) ||
+			getPermissions().includes('*')
 	);
 
 	onMount(() => {
@@ -92,12 +92,12 @@
 	<title>JapaConnect Admin</title>
 </svelte:head>
 
-<div class="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
+<div class="flex h-screen overflow-hidden" style="background-color: var(--color-background); color: var(--color-foreground)">
 	<Sidebar currentPath={page.url.pathname} />
 
 	<div class="flex flex-1 flex-col overflow-hidden">
 		<TopBar />
-		<main class="flex-1 overflow-y-auto">
+		<main class="flex-1 overflow-y-auto" style="background-color: var(--color-background)">
 			<div class="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 md:px-8">
 				<Breadcrumb />
 				{#if hasAccess}

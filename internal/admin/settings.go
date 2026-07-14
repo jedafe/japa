@@ -171,9 +171,14 @@ var defaultSettings = map[string]SettingCategory{
 		Settings: []SettingDef{
 			{Key: "meta_title_template", Label: "Meta Title Template", Type: "text"},
 			{Key: "meta_description_template", Label: "Meta Description Template", Type: "text"},
+			{Key: "og_image", Label: "Default OG Image URL", Type: "text"},
+			{Key: "twitter_handle", Label: "Twitter/X Handle", Type: "text"},
+			{Key: "json_ld_type", Label: "Default JSON-LD Type", Type: "select", Options: []string{"Organization", "WebSite", "LocalBusiness"}},
 			{Key: "google_analytics_id", Label: "Google Analytics ID", Type: "text"},
+			{Key: "google_tag_manager_id", Label: "Google Tag Manager ID", Type: "text"},
 			{Key: "enable_sitemap", Label: "Enable Sitemap", Type: "toggle"},
 			{Key: "enable_robots_txt", Label: "Enable robots.txt", Type: "toggle"},
+			{Key: "enable_json_ld", Label: "Enable JSON-LD Structured Data", Type: "toggle"},
 		},
 	},
 	"integrations": {

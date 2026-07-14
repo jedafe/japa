@@ -155,5 +155,15 @@
 	"security.title": "Security",
 	"security.unavailable": "Security analytics API is not available.",
 	"settings.description": "Platform configuration",
-	"settings.title": "Settings"
+	"settings.title": "Settings",
+	"ai_budget.title": "AI Budget",
+	"ai_budget.description": "AI cost monitoring and limits",
+	"feature_flags.title": "Feature Flags",
+	"feature_flags.description": "Toggle feature flags across the platform",
+	"nav.dlq": "Dead Letter Queue",
+	"nav.tenants": "Tenants",
+	"nav.ai_budget": "AI Budget",
+	"nav.cron": "Cron Jobs",
+	"nav.feature_flags": "Feature Flags",
+	"nav.settings": "Settings"
 }

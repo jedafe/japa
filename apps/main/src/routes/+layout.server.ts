@@ -54,12 +54,41 @@ export const load: LayoutServerLoad = async ({ locals, cookies, url }) => {
 		return {};
 	});
 
+	// Fetch SEO settings (cached for 5 minutes)
+	type SeoSettings = {
+		og_image?: string;
+		twitter_handle?: string;
+		json_ld_type?: string;
+		meta_title_template?: string;
+		meta_description_template?: string;
+	};
+
+	const seoSettings = await getCached<SeoSettings>('seo-settings', 5 * 60 * 1000, async () => {
+		try {
+			const result = await apiFetch<{ data: Array<{ settings: Array<{ key: string; value: unknown }> }> }>('/admin/settings');
+			if (result.ok && result.data?.data) {
+				const seoCategory = result.data.data.find((c: any) => c.key === 'seo');
+				if (seoCategory) {
+					const map: Record<string, unknown> = {};
+					for (const s of seoCategory.settings) {
+						map[s.key] = s.value;
+					}
+					return map as unknown as SeoSettings;
+				}
+			}
+		} catch {
+			// SEO settings are non-critical
+		}
+		return {};
+	});
+
 	return {
 		user: locals.user,
 		flags,
 		notificationCount,
 		token: token ?? null,
 		locale,
-		translations
+		translations,
+		seoSettings
 	};
 };

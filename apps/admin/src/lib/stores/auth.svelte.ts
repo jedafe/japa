@@ -8,7 +8,9 @@ export const user = {
 	set(val: User | null) { _user = val; }
 };
 
-export const isAuth = $derived(!!_user);
+export function getIsAuth(): boolean {
+	return !!_user;
+}
 
 export function setUser(u: User | null) {
 	_user = u;

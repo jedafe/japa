@@ -1,0 +1,2 @@
+[     319ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3002/src/routes/cron/+page.svelte:0
+[     524ms] [ERROR] TypeError: Failed to fetch dynamically imported module: http://localhost:3002/.svelte-kit/generated/client/nodes/7.js?t=1783983927714 @ http://localhost:3002/@vite/client:524

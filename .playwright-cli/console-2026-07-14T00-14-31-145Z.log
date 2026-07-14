@@ -1,0 +1,11 @@
+[   18335ms] TypeError: Cannot read properties of undefined (reading 'toLowerCase')
+    at http://localhost:3002/src/routes/settings/+page.svelte?t=1783983755938:122:109
+    at Proxy.filter (<anonymous>)
+    at http://localhost:3002/src/routes/settings/+page.svelte?t=1783983755938:122:22
+    at update_reaction (http://localhost:3002/node_modules/.vite/deps/runtime-wQz-Bfh9.js?v=302561c0:4908:16)
+    at execute_derived (http://localhost:3002/node_modules/.vite/deps/runtime-wQz-Bfh9.js?v=302561c0:2528:11)
+    at update_derived (http://localhost:3002/node_modules/.vite/deps/runtime-wQz-Bfh9.js?v=302561c0:2539:14)
+    at is_dirty (http://localhost:3002/node_modules/.vite/deps/runtime-wQz-Bfh9.js?v=302561c0:4854:30)
+    at Module.get (http://localhost:3002/node_modules/.vite/deps/runtime-wQz-Bfh9.js?v=302561c0:5109:7)
+    at http://localhost:3002/src/routes/settings/+page.svelte?t=1783983755938:341:45
+    at http://localhost:3002/node_modules/.vite/deps/index-client-DOMk613i.js?v=302561c0:855:20

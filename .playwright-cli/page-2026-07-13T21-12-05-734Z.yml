@@ -1,0 +1,5 @@
+- generic [active] [ref=e1]:
+  - heading "403 â€” Insufficient Privileges" [level=1] [ref=e2]
+  - paragraph [ref=e3]: The Control Panel is restricted to super_admin users only.
+  - link "Try a different account" [ref=e4] [cursor=pointer]:
+    - /url: /login

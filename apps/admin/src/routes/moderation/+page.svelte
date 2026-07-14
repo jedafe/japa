@@ -1,8 +1,14 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { RefreshCw, List, FileText, Flag, Scale, Bell } from 'lucide-svelte';
-	import FilterBar from '$lib/components/FilterBar.svelte';
-	import Modal from '$lib/components/Modal.svelte';
+	import { RefreshCw, Check, X, AlertTriangle, FileText, Flag, Scale, Bell, List } from 'lucide-svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { Tabs } from '$lib/components/ui/tabs';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { FilterBar } from '$lib/components/ui/filter-bar';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import { Modal } from '$lib/components/ui/modal';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { page as pageState } from '$app/state';
@@ -45,7 +51,7 @@
 	let actionType = $state<'approve' | 'reject' | 'delete'>('approve');
 	let actionReason = $state('');
 	let acting = $state(false);
-	
+
 	// Tab navigation - derived from current URL
 	let activeTab = $derived.by(() => {
 		const path = pageState.url.pathname;
@@ -57,10 +63,146 @@
 		return 'queue';
 	});
 
+	const tabs = [
+		{ value: 'queue', label: t('moderation.queue'), icon: List },
+		{ value: 'content', label: t('moderation.content'), icon: FileText },
+		{ value: 'reports', label: t('moderation.reports'), icon: Flag },
+		{ value: 'appeals', label: t('moderation.appeals'), icon: Scale },
+		{ value: 'alerts', label: t('moderation.alerts'), icon: Bell }
+	];
+
 	const filterDefs = [
-		{ key: 'type', label: t('moderation.source'), type: 'select' as const, options: ['user_report', 'ai_flag'] },
-		{ key: 'content_type', label: t('moderation.content_type'), type: 'select' as const, options: ['post', 'comment', 'blog', 'forum', 'message'] },
-		{ key: 'status', label: t('moderation.status'), type: 'select' as const, options: ['pending', 'reviewed', 'resolved', 'dismissed'] }
+		{
+			key: 'type',
+			label: t('moderation.source'),
+			options: [
+				{ value: 'user_report', label: 'User Report' },
+				{ value: 'ai_flag', label: 'AI Flag' }
+			]
+		},
+		{
+			key: 'content_type',
+			label: t('moderation.content_type'),
+			options: [
+				{ value: 'post', label: 'Post' },
+				{ value: 'comment', label: 'Comment' },
+				{ value: 'blog', label: 'Blog' },
+				{ value: 'forum', label: 'Forum' },
+				{ value: 'message', label: 'Message' }
+			]
+		},
+		{
+			key: 'status',
+			label: t('moderation.status'),
+			options: [
+				{ value: 'pending', label: 'Pending' },
+				{ value: 'reviewed', label: 'Reviewed' },
+				{ value: 'resolved', label: 'Resolved' },
+				{ value: 'dismissed', label: 'Dismissed' }
+			]
+		}
+	];
+
+	const columns = [
+		{
+			key: 'type',
+			label: t('moderation.source'),
+			sortable: true,
+			render: (_: any, row: ModItem) => {
+				const label = row.type === 'ai_flag' ? 'AI Flag' : 'User Report';
+				const icon =
+					row.type === 'ai_flag'
+						? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>'
+						: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"></path>';
+				const cls =
+					row.type === 'ai_flag'
+						? 'bg-purple-100 text-purple-800'
+						: 'bg-blue-100 text-blue-800';
+				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}"><svg class="h-3.5 w-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">${icon}</svg>${label}</span>`;
+			}
+		},
+		{
+			key: 'content_type',
+			label: t('moderation.content_type'),
+			sortable: true,
+			render: (value: string) => {
+				const colorMap: Record<string, string> = {
+					post: 'bg-primary-100 text-primary-800',
+					comment: 'bg-info-100 text-info-800',
+					blog: 'bg-danger-100 text-danger-800',
+					forum: 'bg-warning-100 text-warning-800',
+					message: 'bg-gray-100 text-gray-800'
+				};
+				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${colorMap[value] ?? 'bg-gray-100 text-gray-800'}">${value}</span>`;
+			}
+		},
+		{
+			key: 'content_preview',
+			label: t('moderation.content'),
+			render: (_: any, row: ModItem) => {
+				const preview = row.content_preview || row.content_id.slice(0, 12);
+				return `<span class="text-sm text-gray-600 truncate max-w-xs block">${preview}</span>`;
+			}
+		},
+		{
+			key: 'reason',
+			label: t('moderation.reason'),
+			sortable: true,
+			render: (value: string) => `<span class="text-sm text-gray-700">${value}</span>`
+		},
+		{
+			key: 'status',
+			label: t('moderation.status'),
+			sortable: true,
+			render: (value: string) => {
+				const cls =
+					value === 'resolved'
+						? 'bg-success-100 text-success-800'
+						: value === 'pending'
+							? 'bg-warning-100 text-warning-800'
+							: value === 'reviewed'
+								? 'bg-info-100 text-info-800'
+								: 'bg-gray-100 text-gray-800';
+				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}">${value}</span>`;
+			}
+		},
+		{
+			key: 'created_at',
+			label: t('moderation.date'),
+			sortable: true,
+			render: (value: string) =>
+				`<span class="text-sm text-gray-500">${new Date(value).toLocaleDateString()}</span>`
+		},
+		{
+			key: 'actions',
+			label: '',
+			class: 'w-32',
+			render: (_: any, row: ModItem) => {
+				if (row.status === 'pending') {
+					return `
+						<div class="flex items-center gap-1">
+							<button onclick="window.moderationView('${row.id}')" class="inline-flex items-center justify-center rounded-md p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors" title="View">
+								<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+							</button>
+							<button onclick="window.moderationApprove('${row.id}')" class="inline-flex items-center justify-center rounded-md p-1.5 text-success-700 hover:bg-success-50 transition-colors" title="Approve">
+								<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+							</button>
+							<button onclick="window.moderationReject('${row.id}')" class="inline-flex items-center justify-center rounded-md p-1.5 text-danger-700 hover:bg-danger-50 transition-colors" title="Reject">
+								<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+							</button>
+						</div>`;
+				}
+				return `
+					<div class="flex items-center gap-1">
+						<button onclick="window.moderationView('${row.id}')" class="inline-flex items-center justify-center rounded-md p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors" title="View">
+							<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+						</button>
+						<button onclick="window.moderationDelete('${row.id}')" class="inline-flex items-center justify-center rounded-md p-1.5 text-danger-700 hover:bg-danger-50 transition-colors" title="Delete">
+							<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+						</button>
+					</div>`;
+			}
+		}
 	];
 
 	async function load() {
@@ -71,7 +213,9 @@
 		if (filterStatus) params.set('status', filterStatus);
 		if (filterContentType) params.set('content_type', filterContentType);
 		try {
-			const result = await api<{ items: ModItem[]; page: number; total_pages: number }>(`/admin/moderation-queue?${params}`);
+			const result = await api<{ items: ModItem[]; page: number; total_pages: number }>(
+				`/admin/moderation-queue?${params}`
+			);
 			if (result.ok) {
 				items = result.data.items;
 				totalPages = result.data.total_pages;
@@ -94,7 +238,9 @@
 			if (filterStatus) params.set('status', filterStatus);
 			if (filterContentType) params.set('content_type', filterContentType);
 			try {
-				const result = await api<{ items: ModItem[]; page: number; total_pages: number }>(`/admin/moderation-queue?${params}`);
+				const result = await api<{ items: ModItem[]; page: number; total_pages: number }>(
+					`/admin/moderation-queue?${params}`
+				);
 				if (result.ok) {
 					const newCount = result.data.items.length;
 					if (lastCount > 0 && newCount > lastCount) {
@@ -103,7 +249,7 @@
 					lastCount = newCount;
 				}
 			} catch {
-				// Silently fail polling — user can manually refresh
+				// Silently fail polling
 			}
 		}, 30_000);
 		isPolling = true;
@@ -132,21 +278,6 @@
 
 	function toggleExpand(id: string) {
 		expandedId = expandedId === id ? null : id;
-	}
-
-	function toggleSelect(id: string) {
-		const next = new Set(selectedIds);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		selectedIds = next;
-	}
-
-	function toggleAll() {
-		if (selectedIds.size === items.length) {
-			selectedIds = new Set();
-		} else {
-			selectedIds = new Set(items.map((i) => i.id));
-		}
 	}
 
 	function openAction(item: ModItem, action: 'approve' | 'reject' | 'delete') {
@@ -190,39 +321,39 @@
 		}
 	}
 
-	function handlePageChange(p: number) {
-		page = p;
+	function handleSearch(searchFilters: Record<string, string>) {
+		handleFilter(searchFilters);
+	}
+
+	function handleClear() {
+		filterType = '';
+		filterContentType = '';
+		filterStatus = '';
+		page = 0;
 		load();
 	}
 
-	function typeBadge(type: string) {
-		return type === 'ai_flag'
-			? 'bg-purple-500/15 text-purple-700 dark:text-purple-400'
-			: 'bg-blue-500/15 text-blue-700 dark:text-blue-400';
-	}
-
-	function statusBadge(status: string) {
-		switch (status) {
-			case 'pending': return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
-			case 'reviewed': return 'bg-blue-500/15 text-blue-700 dark:text-blue-400';
-			case 'resolved': return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
-			default: return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
-		}
-	}
-
-	function contentTypeBadge(ct: string) {
-		switch (ct) {
-			case 'post': return 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-400';
-			case 'comment': return 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-400';
-			case 'blog': return 'bg-rose-500/15 text-rose-700 dark:text-rose-400';
-			case 'forum': return 'bg-orange-500/15 text-orange-700 dark:text-orange-400';
-			default: return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
-		}
-	}
+	// Make functions available globally for DataTable inline onclick handlers
+	$effect(() => {
+		(window as any).moderationView = (id: string) => {
+			toggleExpand(id);
+		};
+		(window as any).moderationApprove = (id: string) => {
+			const item = items.find((i) => i.id === id);
+			if (item) openAction(item, 'approve');
+		};
+		(window as any).moderationReject = (id: string) => {
+			const item = items.find((i) => i.id === id);
+			if (item) openAction(item, 'reject');
+		};
+		(window as any).moderationDelete = (id: string) => {
+			const item = items.find((i) => i.id === id);
+			if (item) openAction(item, 'delete');
+		};
+	});
 
 	onMount(() => {
 		load();
-		// Initialize lastCount after first load completes
 		setTimeout(() => {
 			lastCount = items.length;
 			startPolling();
@@ -238,263 +369,118 @@
 	<title>{t('moderation.title')} — JapaConnect Admin</title>
 </svelte:head>
 
-<div class="mb-1 flex items-center gap-2">
-	<h1 class="text-2xl font-bold tracking-tight">{t('moderation.title')}</h1>
+<PageHeader title={t('moderation.title')} description={t('moderation.description')} />
+
+<div class="space-y-6">
 	{#if isPolling}
-		<span class="relative flex h-2.5 w-2.5" title="Auto-refresh active">
-			<span class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75" style="background-color: var(--color-success)"></span>
-			<span class="relative inline-flex h-2.5 w-2.5 rounded-full" style="background-color: var(--color-success)"></span>
-		</span>
+		<div class="flex items-center gap-2 text-sm text-gray-500">
+			<span class="relative flex h-2 w-2">
+				<span
+					class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 bg-success-500"
+				></span>
+				<span class="relative inline-flex h-2 w-2 rounded-full bg-success-500"></span>
+			</span>
+			Auto-refresh active
+		</div>
 	{/if}
-</div>
 
-<!-- Sub-navigation tabs -->
-<div class="mb-6 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border)">
-	<a
-		href="/moderation"
-		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		style={activeTab === 'queue' ? 'background-color: var(--color-primary); color: white' : ''}
-	>
-		<List class="h-4 w-4" />
-		{t('moderation.queue')}
-	</a>
-	<a
-		href="/moderation/content"
-		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		style={activeTab === 'content' ? 'background-color: var(--color-primary); color: white' : ''}
-	>
-		<FileText class="h-4 w-4" />
-		{t('moderation.content')}
-	</a>
-	<a
-		href="/moderation/reports"
-		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		style={activeTab === 'reports' ? 'background-color: var(--color-primary); color: white' : ''}
-	>
-		<Flag class="h-4 w-4" />
-		{t('moderation.reports')}
-	</a>
-	<a
-		href="/moderation/appeals"
-		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		style={activeTab === 'appeals' ? 'background-color: var(--color-primary); color: white' : ''}
-	>
-		<Scale class="h-4 w-4" />
-		{t('moderation.appeals')}
-	</a>
-	<a
-		href="/moderation/alerts"
-		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		style={activeTab === 'alerts' ? 'background-color: var(--color-primary); color: white' : ''}
-	>
-		<Bell class="h-4 w-4" />
-		{t('moderation.alerts')}
-	</a>
-</div>
-
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
-	</div>
-{/if}
-
-{#if newItemsCount > 0}
-	<div class="mb-4 flex items-center gap-3 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-info); background-color: color-mix(in srgb, var(--color-info) 8%, transparent); color: var(--color-info)">
-		<span class="font-medium">{newItemsCount} new {newItemsCount === 1 ? 'item' : 'items'}</span>
-		<button
-			class="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
-			style="background-color: var(--color-info)"
-			onclick={refreshList}
+	{#if newItemsCount > 0}
+		<div
+			class="flex items-center gap-3 rounded-lg border border-info-200 bg-info-50 px-4 py-3"
 		>
-			<RefreshCw class="h-3 w-3" />
-			Show
-		</button>
-	</div>
-{/if}
+			<AlertTriangle class="h-4 w-4 text-info-600" />
+			<span class="text-sm font-medium text-info-800">
+				{newItemsCount} new {newItemsCount === 1 ? 'item' : 'items'}
+			</span>
+			<Button variant="ghost" size="sm" onclick={refreshList}>
+				<RefreshCw class="h-3 w-3 mr-1" />
+				Show
+			</Button>
+		</div>
+	{/if}
 
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('moderation.description')}</p>
+	{#if errorMessage}
+		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-800">
+			{errorMessage}
+		</div>
+	{/if}
 
-<FilterBar filters={filterDefs} onApply={handleFilter} />
+	<Tabs {tabs} bind:value={activeTab} />
 
-<!-- Bulk actions -->
-{#if selectedIds.size > 0}
-	<div class="mb-3 flex items-center gap-2 rounded-md border p-2" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<span class="text-xs font-medium" style="color: var(--color-muted)">
-			{selectedIds.size} {selectedIds.size === 1 ? 'item' : 'items'} selected
-		</span>
-		<button
-			class="rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-white/10"
-			style="color: var(--color-success)"
-			onclick={() => bulkAction('approve')}
-		>
-			{t('moderation.resolve')}
-		</button>
-		<button
-			class="rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-white/10"
-			style="color: var(--color-warning)"
-			onclick={() => bulkAction('reject')}
-		>
-			{t('moderation.dismiss')}
-		</button>
-	</div>
-{/if}
+	<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left" style="background-color: var(--color-surface)">
-						<input type="checkbox" checked={selectedIds.size === items.length && items.length > 0} onchange={toggleAll} />
-					</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.source')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.content_type')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.content')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.reason')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.status')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.date')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each items as item}
-					<!-- Main row -->
-					<tr
-						class="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
-						style="border-color: var(--color-border)"
-						onclick={() => toggleExpand(item.id)}
-					>
-						<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
-							<input type="checkbox" checked={selectedIds.has(item.id)} onchange={() => toggleSelect(item.id)} />
-						</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {typeBadge(item.type)}">
-								{item.type === 'ai_flag' ? 'AI Flag' : 'User Report'}
-							</span>
-						</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {contentTypeBadge(item.content_type)}">
-								{item.content_type}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.content_id.slice(0, 12)}</td>
-						<td class="px-4 py-3 text-xs">{item.reason}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {statusBadge(item.status)}">
-								{item.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.created_at}</td>
-						<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
-							<div class="flex items-center gap-1">
-								{#if item.status === 'pending'}
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-										style="color: var(--color-success)"
-										onclick={() => openAction(item, 'approve')}
-									>
-										{t('moderation.approve')}
-									</button>
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-										style="color: var(--color-warning)"
-										onclick={() => openAction(item, 'reject')}
-									>
-										{t('moderation.reject')}
-									</button>
-								{/if}
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => openAction(item, 'delete')}
-								>
-									{t('common.delete')}
-								</button>
-							</div>
-						</td>
-					</tr>
-					<!-- Expanded detail row -->
-					{#if expandedId === item.id}
-						<tr style="border-color: var(--color-border)">
-							<td colspan="8" class="px-4 py-4" style="background-color: var(--color-surface)">
-								<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Reporter</p>
-										<p class="mt-1 text-sm">{item.reporter_name ?? item.reporter_id}</p>
-									</div>
-									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Content Type</p>
-										<p class="mt-1 text-sm">{item.content_type}</p>
-									</div>
-									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Content ID</p>
-										<p class="mt-1 text-sm font-mono text-xs">{item.content_id}</p>
-									</div>
-								</div>
-								{#if item.content_preview}
-									<div class="mt-3 rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
-										<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">Content Preview</p>
-										{item.content_preview}
-									</div>
-								{/if}
-								<div class="mt-3 flex gap-2">
-									{#if item.status === 'pending'}
-										<button
-											class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
-											style="background-color: var(--color-success)"
-											onclick={() => openAction(item, 'approve')}
-										>
-											{t('moderation.approve')}
-										</button>
-										<button
-											class="rounded-md px-3 py-1.5 text-xs font-medium"
-											style="background-color: var(--color-warning); color: white"
-											onclick={() => openAction(item, 'reject')}
-										>
-											{t('moderation.reject')}
-										</button>
-									{/if}
-									<button
-										class="rounded-md px-3 py-1.5 text-xs font-medium"
-										style="background-color: var(--color-danger); color: white"
-										onclick={() => openAction(item, 'delete')}
-									>
-										{t('common.delete')}
-									</button>
-								</div>
-							</td>
-						</tr>
-					{/if}
-				{:else}
-					<tr>
-						<td colspan="8" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('moderation.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	{#if selectedIds.size > 0}
+		<div class="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+			<span class="text-sm font-medium text-gray-700">
+				{selectedIds.size} {selectedIds.size === 1 ? 'item' : 'items'} selected
+			</span>
+			<Button variant="ghost" size="sm" onclick={() => bulkAction('approve')}>
+				<Check class="h-3.5 w-3.5 mr-1" />
+				{t('moderation.resolve')}
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => bulkAction('reject')}>
+				<X class="h-3.5 w-3.5 mr-1" />
+				{t('moderation.dismiss')}
+			</Button>
+		</div>
+	{/if}
 
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
+	{#if loading}
+		<Card>
+			<CardContent class="py-12">
+				<div class="flex items-center justify-center text-gray-500">
+					<RefreshCw class="h-5 w-5 mr-2 animate-spin" />
+					{t('common.loading')}
+				</div>
+			</CardContent>
+		</Card>
+	{:else}
+		<Card>
+			<CardContent class="p-0">
+				<DataTable
+					{columns}
+					data={items}
+					pageSize={20}
+					selectable={true}
+					emptyMessage={t('moderation.empty')}
+				/>
+			</CardContent>
+		</Card>
+	{/if}
+
+	<div class="flex items-center justify-between">
+		<p class="text-sm text-gray-500">Page {page + 1} of {totalPages}</p>
 		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={() => { page = page - 1; load(); }}
+				disabled={page === 0}
+			>
+				&larr;
+			</Button>
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={() => { page = page + 1; load(); }}
+				disabled={page >= totalPages - 1}
+			>
+				&rarr;
+			</Button>
 		</div>
 	</div>
-{/if}
+</div>
 
-<!-- Action Modal -->
 <Modal
 	bind:open={showActionModal}
-	title={actionType === 'approve' ? t('moderation.approve_title') : actionType === 'reject' ? t('moderation.reject_title') : t('moderation.delete_title')}
-	onConfirm={executeAction}
-	confirmLabel={acting ? t('common.saving') : actionType === 'delete' ? t('common.delete') : t('common.confirm')}
+	title={actionType === 'approve'
+		? t('moderation.approve_title')
+		: actionType === 'reject'
+			? t('moderation.reject_title')
+			: t('moderation.delete_title')}
+	size="sm"
 >
-	<p class="text-sm mb-3" style="color: var(--color-muted)">
+	<p class="text-sm text-gray-500 mb-3">
 		{actionType === 'approve'
 			? 'Approve this content and mark the report as resolved.'
 			: actionType === 'reject'
@@ -502,17 +488,45 @@
 				: 'Permanently delete this content. This cannot be undone.'}
 	</p>
 	{#if actionItem}
-		<div class="mb-3 rounded-md border p-3 text-xs" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<span class="font-medium">{actionItem.content_type}</span> &middot; {actionItem.reason}
+		<div class="rounded-lg bg-gray-50 p-4 mb-3">
+			<p class="text-sm font-medium text-gray-700">{actionItem.content_type}</p>
+			<p class="text-sm text-gray-500">{actionItem.reason}</p>
 		</div>
 	{/if}
 	{#if actionType !== 'approve'}
-		<textarea
-			class="w-full rounded-md border px-3 py-2 text-sm"
-			style="border-color: var(--color-border); background-color: var(--color-surface)"
-			rows="3"
-			placeholder={actionType === 'reject' ? 'Rejection reason (optional)' : 'Deletion reason (optional)'}
-			bind:value={actionReason}
-		></textarea>
+		<div class="mt-2">
+			<label for="action-reason" class="block text-sm font-medium text-gray-700">
+				{actionType === 'reject' ? 'Rejection reason' : 'Deletion reason'} (optional)
+			</label>
+			<textarea
+				id="action-reason"
+				rows="3"
+				class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+				placeholder="Enter a reason..."
+				bind:value={actionReason}
+			></textarea>
+		</div>
 	{/if}
+
+	<div class="mt-6 flex justify-end gap-3">
+		<Button variant="outline" onclick={() => (showActionModal = false)}>Cancel</Button>
+		<Button
+			variant={actionType === 'approve' ? 'default' : 'destructive'}
+			onclick={executeAction}
+			disabled={acting}
+		>
+			{#if acting}
+				<RefreshCw class="h-4 w-4 mr-2 animate-spin" />
+				Processing...
+			{:else if actionType === 'approve'}
+				<Check class="h-4 w-4 mr-2" />
+				Approve
+			{:else if actionType === 'reject'}
+				<X class="h-4 w-4 mr-2" />
+				Reject
+			{:else}
+				Delete
+			{/if}
+		</Button>
+	</div>
 </Modal>

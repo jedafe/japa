@@ -162,7 +162,7 @@
 								{uni.verified ? t('universities.yes') : t('universities.no')}
 							</span>
 						</td>
-						<td class="px-4 py-3 text-xs font-medium">{uni.student_count.toLocaleString()}</td>
+						<td class="px-4 py-3 text-xs font-medium">{(uni.student_count ?? 0).toLocaleString()}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{uni.created_at}</td>
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-1">
