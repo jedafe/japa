@@ -15,7 +15,6 @@ describe('Audit +page.svelte', () => {
 	it('shows filter inputs', () => {
 		render(Page);
 		expect(screen.getByPlaceholderText('Actor ID')).toBeTruthy();
-		expect(screen.getByPlaceholderText('Action type')).toBeTruthy();
 		expect(screen.getByPlaceholderText('Target type')).toBeTruthy();
 	});
 

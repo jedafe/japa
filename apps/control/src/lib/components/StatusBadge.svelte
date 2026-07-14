@@ -10,17 +10,17 @@
 	} = $props();
 
 	const colors = {
-		healthy: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
-		warning: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20',
-		critical: 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20',
-		unknown: 'bg-slate-500/15 text-slate-700 dark:text-slate-400 border-slate-500/20'
+		healthy: 'bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/20',
+		warning: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20',
+		critical: 'bg-destructive/15 text-destructive border-destructive/20',
+		unknown: 'bg-muted text-muted-foreground border-border'
 	};
 
 	const dots = {
-		healthy: 'bg-emerald-500',
+		healthy: 'bg-green-500',
 		warning: 'bg-amber-500',
-		critical: 'bg-red-500',
-		unknown: 'bg-slate-500'
+		critical: 'bg-destructive',
+		unknown: 'bg-muted-foreground'
 	};
 </script>
 

@@ -1,0 +1,16 @@
+[     843ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3002/login:0
+[  229576ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:3002/@vite/client:992
+[  229580ms] [ERROR] Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED @ http://localhost:3002/src/lib/components/AccessDenied.svelte:0
+[  229581ms] [ERROR] Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED @ http://localhost:3002/src/lib/components/layout/TopBar.svelte:0
+[  229581ms] [ERROR] Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED @ http://localhost:3002/__data.json?x-sveltekit-trailing-slash=1&x-sveltekit-invalidated=11:0
+[  229583ms] [ERROR] TypeError: Failed to fetch
+    at window.fetch (http://localhost:3002/node_modules/@sveltejs/kit/src/runtime/client/fetcher.js?v=302561c0:77:10)
+    at load_data (http://localhost:3002/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=302561c0:3123:20)
+    at load_route (http://localhost:3002/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=302561c0:1239:25)
+    at navigate (http://localhost:3002/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=302561c0:1761:43)
+    at async Module.start (http://localhost:3002/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=302561c0:405:3) @ http://localhost:3002/@vite/client:524
+[  229587ms] [ERROR] Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED @ http://localhost:3002/.svelte-kit/generated/client/nodes/2.js?t=1783982883738:0
+[  229587ms] [ERROR] Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED @ http://localhost:3002/src/lib/stores/i18n.svelte.ts:0
+[  229587ms] [ERROR] Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED @ http://localhost:3002/node_modules/.vite/deps/lucide-svelte.js?v=302561c0:0
+[  229587ms] [ERROR] Failed to load resource: net::ERR_SOCKET_NOT_CONNECTED @ http://localhost:3002/src/app.css?t=1783982789875:0
+[  229594ms] Failed to fetch dynamically imported module: http://localhost:3002/.svelte-kit/generated/client/nodes/0.js?t=1783982883734

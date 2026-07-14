@@ -737,7 +737,7 @@ export const reportsAdminApiExtended = {
 };
 
 export const reviewsAdminApiExtended = {
-	list: (params?: string) => api<unknown>(`/admin/reviews${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/reviews${params ? `?${params}` : ''}`),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/reviews/${id}`, { method: 'PATCH', body }),
 };

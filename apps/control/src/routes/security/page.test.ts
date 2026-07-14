@@ -12,8 +12,13 @@ describe('Security +page.svelte', () => {
 		expect(screen.getByText('Security')).toBeTruthy();
 	});
 
-	it('shows severity filter', () => {
+	it('shows scan findings tab', () => {
 		render(Page);
-		expect(screen.getByText('Filter severity:')).toBeTruthy();
+		expect(screen.getByText('Scan Findings')).toBeTruthy();
+	});
+
+	it('shows IP blocks tab', () => {
+		render(Page);
+		expect(screen.getByText(/IP Blocks/)).toBeTruthy();
 	});
 });

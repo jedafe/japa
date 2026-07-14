@@ -1,9 +1,16 @@
 <script lang="ts">
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-
-	let { data } = $props();
+	import { page } from "$app/state";
+	import { goto } from "$app/navigation";
+	import PageHeader from "$lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+	import { Tabs } from "$lib/components/ui/tabs";
+	import { DataTable } from "$lib/components/ui/data-table";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import { Badge } from "$lib/components/ui/badge";
+	import { Button } from "$lib/components/ui/button";
+	import { Modal } from "$lib/components/ui/modal";
+	import { BookOpen, Plus, GraduationCap, Layers, FileText, Trash2 } from "lucide-svelte";
+	import { api } from "$lib/api";
 
 	type Track = {
 		id: string;
@@ -19,6 +26,7 @@
 	type Module = {
 		id: string;
 		track_id: string;
+		track_title?: string;
 		title: string;
 		slug: string;
 		lesson_count: number;
@@ -28,265 +36,477 @@
 	type Lesson = {
 		id: string;
 		module_id: string;
+		module_title?: string;
 		title: string;
 		slug: string;
 		duration_minutes: number;
 		sort_order: number;
 	};
 
-	let activeTab = $state<'tracks' | 'modules' | 'lessons'>('tracks');
-	// svelte-ignore state_referenced_locally
+	let { data } = $props();
+
+	let activeTab = $state("tracks");
 	let tracks = $state<Track[]>(data.initial ?? []);
 	let modules = $state<Module[]>([]);
 	let lessons = $state<Lesson[]>([]);
 	let loading = $state(false);
-	// svelte-ignore state_referenced_locally
-	let error = $state(data.error ?? '');
+	let error = $state(data.error ?? "");
+	let filters = $state<Record<string, string>>({});
 
-	// Create forms
+	// Create modal
 	let showCreateModal = $state(false);
 	let creating = $state(false);
-	let newTrack = $state({ title: '', description: '' });
-	let newModule = $state({ track_id: '', title: '' });
-	let newLesson = $state({ module_id: '', title: '', body: '' });
+	let newTrack = $state({ title: "", description: "" });
+	let newModule = $state({ track_id: "", title: "" });
+	let newLesson = $state({ module_id: "", title: "", body: "" });
 
-	// Edit
-	let editingItem = $state<Track | Module | Lesson | null>(null);
-	let editModalOpen = $state(false);
+	// Delete confirmation
+	let showDeleteModal = $state(false);
+	let deleteTarget = $state<{ type: string; id: string; title: string } | null>(null);
+	let deleting = $state(false);
+
+	const tabs = [
+		{ value: "tracks", label: "Tracks", icon: GraduationCap, count: tracks.length },
+		{ value: "modules", label: "Modules", icon: Layers, count: modules.length },
+		{ value: "lessons", label: "Lessons", icon: FileText, count: lessons.length }
+	];
+
+	const trackColumns = [
+		{
+			key: "title",
+			label: "Track",
+			sortable: true,
+			render: (_: any, row: any) => `
+				<div>
+					<p class="font-medium text-gray-900">${row.title}</p>
+					<p class="text-sm text-gray-500 line-clamp-1">${row.description || "No description"}</p>
+				</div>
+			`
+		},
+		{
+			key: "module_count",
+			label: "Modules",
+			sortable: true,
+			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
+		},
+		{
+			key: "enrollment_count",
+			label: "Enrollments",
+			sortable: true,
+			render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>`
+		},
+		{
+			key: "status",
+			label: "Status",
+			sortable: true,
+			render: (value: string) => {
+				const variant = value === "published" ? "success" : value === "draft" ? "warning" : "secondary";
+				const classes: Record<string, string> = {
+					success: "bg-success-100 text-success-800 border-success-200",
+					warning: "bg-warning-100 text-warning-800 border-warning-200",
+					secondary: "bg-gray-100 text-gray-800 border-gray-200"
+				};
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[variant]}">${value}</span>`;
+			}
+		},
+		{
+			key: "actions",
+			label: "",
+			class: "w-32",
+			render: (_: any, row: any) => `
+				<div class="flex items-center gap-1">
+					${row.status === "draft" ? `<button onclick="window.__learningPublish('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-50">Publish</button>` : ""}
+					<button onclick="window.__learningDelete('track', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+				</div>
+			`
+		}
+	];
+
+	const moduleColumns = [
+		{
+			key: "title",
+			label: "Module",
+			sortable: true,
+			render: (_: any, row: any) => `
+				<div>
+					<p class="font-medium text-gray-900">${row.title}</p>
+					${row.track_title ? `<p class="text-sm text-gray-500">${row.track_title}</p>` : ""}
+				</div>
+			`
+		},
+		{
+			key: "lesson_count",
+			label: "Lessons",
+			sortable: true,
+			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
+		},
+		{
+			key: "sort_order",
+			label: "Order",
+			sortable: true,
+			render: (value: number) => `<span class="text-sm text-gray-700">${value}</span>`
+		},
+		{
+			key: "actions",
+			label: "",
+			class: "w-24",
+			render: (_: any, row: any) => `
+				<div class="flex items-center gap-1">
+					<button onclick="window.__learningDelete('module', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+				</div>
+			`
+		}
+	];
+
+	const lessonColumns = [
+		{
+			key: "title",
+			label: "Lesson",
+			sortable: true,
+			render: (_: any, row: any) => `
+				<div>
+					<p class="font-medium text-gray-900">${row.title}</p>
+					${row.module_title ? `<p class="text-sm text-gray-500">${row.module_title}</p>` : ""}
+				</div>
+			`
+		},
+		{
+			key: "duration_minutes",
+			label: "Duration",
+			sortable: true,
+			render: (value: number) => `<span class="text-sm text-gray-700">${value ? `${value} min` : "—"}</span>`
+		},
+		{
+			key: "sort_order",
+			label: "Order",
+			sortable: true,
+			render: (value: number) => `<span class="text-sm text-gray-700">${value}</span>`
+		},
+		{
+			key: "actions",
+			label: "",
+			class: "w-24",
+			render: (_: any, row: any) => `
+				<div class="flex items-center gap-1">
+					<button onclick="window.__learningDelete('lesson', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+				</div>
+			`
+		}
+	];
+
+	let currentColumns = $derived(
+		activeTab === "tracks" ? trackColumns : activeTab === "modules" ? moduleColumns : lessonColumns
+	);
+
+	let currentData = $derived(
+		activeTab === "tracks" ? tracks : activeTab === "modules" ? modules : lessons
+	);
 
 	async function refresh() {
 		loading = true;
-		error = '';
+		error = "";
 		try {
-			if (activeTab === 'tracks') {
-				const result = await api<Track[]>('/admin/learn/tracks');
+			if (activeTab === "tracks") {
+				const result = await api<Track[]>("/admin/learn/tracks");
 				tracks = result.ok ? (result.data ?? []) : [];
-			} else if (activeTab === 'modules') {
-				const result = await api<Module[]>('/admin/learn/modules');
+			} else if (activeTab === "modules") {
+				const result = await api<Module[]>("/admin/learn/modules");
 				modules = result.ok ? (result.data ?? []) : [];
 			} else {
-				const result = await api<Lesson[]>('/admin/learn/lessons');
+				const result = await api<Lesson[]>("/admin/learn/lessons");
 				lessons = result.ok ? (result.data ?? []) : [];
 			}
 		} catch {
-			error = t('common.error');
+			error = "Failed to load data";
 		} finally {
 			loading = false;
 		}
+	}
+
+	function handleFilter(values: Record<string, string>) {
+		filters = values;
+	}
+
+	function openCreate() {
+		showCreateModal = true;
 	}
 
 	async function createTrack() {
 		if (!newTrack.title.trim() || creating) return;
 		creating = true;
 		try {
-			const result = await api('/admin/learn/tracks', {
-				method: 'POST',
+			const result = await api("/admin/learn/tracks", {
+				method: "POST",
 				body: newTrack
 			});
 			if (result.ok) {
 				showCreateModal = false;
-				newTrack = { title: '', description: '' };
-			await refresh();
-		}
-	} catch {
-		error = t('common.error');
-	} finally {
-		creating = false;
-	}
-}
-
-async function createModule() {
-	if (!newModule.title.trim() || !newModule.track_id || creating) return;
-	creating = true;
-	try {
-		await api(`/admin/learn/tracks/${newModule.track_id}/modules`, {
-			method: 'POST',
-			body: { title: newModule.title }
-		});
-		showCreateModal = false;
-		newModule = { track_id: '', title: '' };
-		await refresh();
-	} catch {
-		error = t('common.error');
-	} finally {
-		creating = false;
-	}
-}
-
-async function createLesson() {
-	if (!newLesson.title.trim() || !newLesson.module_id || creating) return;
-	creating = true;
-	try {
-		await api(`/admin/learn/modules/${newLesson.module_id}/lessons`, {
-			method: 'POST',
-			body: { title: newLesson.title, body: newLesson.body }
-		});
-		showCreateModal = false;
-		newLesson = { module_id: '', title: '', body: '' };
-		await refresh();
-	} catch {
-		error = t('common.error');
-	} finally {
-		creating = false;
-	}
-}
-
-async function publishTrack(id: string) {
-	try {
-		await api(`/admin/learn/tracks/${id}/publish`, { method: 'POST' });
-		await refresh();
-	} catch {
-		error = t('common.error');
-	}
-}
-
-async function deleteItem(type: string, id: string) {
-	if (!confirm('Delete this item?')) return;
-	try {
-		if (type === 'track') await api(`/admin/learn/tracks/${id}`, { method: 'DELETE' });
-		else if (type === 'module') await api(`/admin/learn/modules/${id}`, { method: 'DELETE' });
-		else await api(`/admin/learn/lessons/${id}`, { method: 'DELETE' });
-		await refresh();
+				newTrack = { title: "", description: "" };
+				await refresh();
+			}
 		} catch {
-			error = t('common.error');
+			error = "Failed to create track";
+		} finally {
+			creating = false;
 		}
 	}
+
+	async function createModule() {
+		if (!newModule.title.trim() || !newModule.track_id || creating) return;
+		creating = true;
+		try {
+			await api(`/admin/learn/tracks/${newModule.track_id}/modules`, {
+				method: "POST",
+				body: { title: newModule.title }
+			});
+			showCreateModal = false;
+			newModule = { track_id: "", title: "" };
+			await refresh();
+		} catch {
+			error = "Failed to create module";
+		} finally {
+			creating = false;
+		}
+	}
+
+	async function createLesson() {
+		if (!newLesson.title.trim() || !newLesson.module_id || creating) return;
+		creating = true;
+		try {
+			await api(`/admin/learn/modules/${newLesson.module_id}/lessons`, {
+				method: "POST",
+				body: { title: newLesson.title, body: newLesson.body }
+			});
+			showCreateModal = false;
+			newLesson = { module_id: "", title: "", body: "" };
+			await refresh();
+		} catch {
+			error = "Failed to create lesson";
+		} finally {
+			creating = false;
+		}
+	}
+
+	async function publishTrack(id: string) {
+		try {
+			await api(`/admin/learn/tracks/${id}/publish`, { method: "POST" });
+			await refresh();
+		} catch {
+			error = "Failed to publish track";
+		}
+	}
+
+	function confirmDelete(type: string, id: string, title: string) {
+		deleteTarget = { type, id, title };
+		showDeleteModal = true;
+	}
+
+	async function deleteItem() {
+		if (!deleteTarget) return;
+		deleting = true;
+		try {
+			const { type, id } = deleteTarget;
+			if (type === "track") await api(`/admin/learn/tracks/${id}`, { method: "DELETE" });
+			else if (type === "module") await api(`/admin/learn/modules/${id}`, { method: "DELETE" });
+			else await api(`/admin/learn/lessons/${id}`, { method: "DELETE" });
+			showDeleteModal = false;
+			deleteTarget = null;
+			await refresh();
+		} catch {
+			error = "Failed to delete item";
+		} finally {
+			deleting = false;
+		}
+	}
+
+	// Expose window functions for DataTable inline actions
+	$effect(() => {
+		(window as any).__learningPublish = (id: string) => {
+			publishTrack(id);
+		};
+		(window as any).__learningDelete = (type: string, id: string, title: string) => {
+			confirmDelete(type, id, title);
+		};
+	});
+
+	let initialized = false;
+	$effect(() => {
+		if (!initialized) {
+			initialized = true;
+			refresh();
+		}
+	});
 </script>
 
-<div class="p-6">
-	<div class="mb-6 flex items-center justify-between">
-		<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Learning Management</h1>
-		<button
-			onclick={() => (showCreateModal = true)}
-			class="rounded-lg px-4 py-2 text-sm font-medium text-white"
-			style="background: var(--color-primary)"
-		>
-			Create {activeTab === 'tracks' ? 'Track' : activeTab === 'modules' ? 'Module' : 'Lesson'}
-		</button>
-	</div>
+<svelte:head>
+	<title>Learning — JapaConnect Admin</title>
+</svelte:head>
 
-	<!-- Tabs -->
-	<div class="mb-6 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border)">
-		{#each ['tracks', 'modules', 'lessons'] as tab}
-			<button
-				onclick={() => { activeTab = tab as typeof activeTab; refresh(); }}
-				class="rounded-md px-4 py-2 text-sm font-medium transition-colors"
-				style="background: {activeTab === tab ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === tab ? 'white' : 'var(--color-muted)'}"
-			>
-				{tab.charAt(0).toUpperCase() + tab.slice(1)}
-			</button>
-		{/each}
-	</div>
+<PageHeader
+	title="Learning Management"
+	description="Create and manage courses, modules, and lessons"
+	actions={[
+		{ label: `New ${activeTab === "tracks" ? "Track" : activeTab === "modules" ? "Module" : "Lesson"}`, icon: Plus, onclick: openCreate }
+	]}
+/>
 
+<div class="space-y-6">
 	{#if error}
-		<div class="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+		<div class="rounded-lg border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+			{error}
+		</div>
 	{/if}
 
-	{#if loading}
-		<div class="space-y-3">
-			{#each Array(5) as _}
-				<div class="h-16 animate-pulse rounded-lg" style="background: var(--color-surface)"></div>
-			{/each}
-		</div>
-	{:else if activeTab === 'tracks'}
-		{#if tracks.length === 0}
-			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No tracks yet</p>
-		{:else}
-			<div class="space-y-3">
-				{#each tracks as track (track.id)}
-					<div class="flex items-center justify-between rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
-						<div>
-							<h3 class="font-medium" style="color: var(--color-foreground)">{track.title}</h3>
-							<p class="text-xs" style="color: var(--color-muted)">{track.module_count} modules &middot; {track.enrollment_count} enrollments &middot; {track.status}</p>
-						</div>
-						<div class="flex gap-2">
-							{#if track.status === 'draft'}
-								<button onclick={() => publishTrack(track.id)} class="rounded px-3 py-1 text-xs font-medium text-white" style="background: var(--color-primary)">Publish</button>
-							{/if}
-							<button onclick={() => deleteItem('track', track.id)} class="rounded px-3 py-1 text-xs font-medium" style="color: #ef4444">Delete</button>
-						</div>
-					</div>
-				{/each}
-			</div>
-		{/if}
-	{:else if activeTab === 'modules'}
-		{#if modules.length === 0}
-			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No modules yet</p>
-		{:else}
-			<div class="space-y-3">
-				{#each modules as mod (mod.id)}
-					<div class="flex items-center justify-between rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
-						<div>
-							<h3 class="font-medium" style="color: var(--color-foreground)">{mod.title}</h3>
-							<p class="text-xs" style="color: var(--color-muted)">{mod.lesson_count} lessons &middot; Order: {mod.sort_order}</p>
-						</div>
-						<button onclick={() => deleteItem('module', mod.id)} class="rounded px-3 py-1 text-xs font-medium" style="color: #ef4444">Delete</button>
-					</div>
-				{/each}
-			</div>
-		{/if}
-	{:else}
-		{#if lessons.length === 0}
-			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No lessons yet</p>
-		{:else}
-			<div class="space-y-3">
-				{#each lessons as lesson (lesson.id)}
-					<div class="flex items-center justify-between rounded-lg border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
-						<div>
-							<h3 class="font-medium" style="color: var(--color-foreground)">{lesson.title}</h3>
-							<p class="text-xs" style="color: var(--color-muted)">{lesson.duration_minutes} min &middot; Order: {lesson.sort_order}</p>
-						</div>
-						<button onclick={() => deleteItem('lesson', lesson.id)} class="rounded px-3 py-1 text-xs font-medium" style="color: #ef4444">Delete</button>
-					</div>
-				{/each}
-			</div>
-		{/if}
-	{/if}
+	<Tabs {tabs} bind:value={activeTab} />
+
+	<FilterBar
+		bind:value={filters}
+		filters={[]}
+		searchPlaceholder="Search learning content..."
+		onsearch={handleFilter}
+		onclear={() => { filters = {}; }}
+	/>
+
+	<Card>
+		<CardContent class="p-0">
+			{#if loading}
+				<div class="space-y-3 p-4">
+					{#each Array(5) as _}
+						<div class="h-14 animate-pulse rounded-lg bg-gray-100"></div>
+					{/each}
+				</div>
+			{:else}
+				<DataTable
+					columns={currentColumns}
+					data={currentData}
+					pageSize={15}
+					emptyMessage={`No ${activeTab} found`}
+				/>
+			{/if}
+		</CardContent>
+	</Card>
 </div>
 
 <!-- Create Modal -->
 <Modal
 	bind:open={showCreateModal}
-	title="Create {activeTab === 'tracks' ? 'Track' : activeTab === 'modules' ? 'Module' : 'Lesson'}"
-	onConfirm={activeTab === 'tracks' ? createTrack : activeTab === 'modules' ? createModule : createLesson}
-	confirmLabel={creating ? 'Creating...' : 'Create'}
+	title={`Create ${activeTab === "tracks" ? "Track" : activeTab === "modules" ? "Module" : "Lesson"}`}
+	description={`Add a new ${activeTab.slice(0, -1)} to the learning platform`}
+	size="lg"
 >
-	{#if activeTab === 'tracks'}
+	{#if activeTab === "tracks"}
 		<div class="space-y-4">
 			<div>
-				<label for="track-title" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Title</label>
-				<input id="track-title" type="text" bind:value={newTrack.title} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface)" />
+				<label for="track-title" class="mb-1 block text-sm font-medium text-gray-900">Title</label>
+				<input
+					id="track-title"
+					type="text"
+					class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					placeholder="e.g. JavaScript Fundamentals"
+					bind:value={newTrack.title}
+				/>
 			</div>
 			<div>
-				<label for="track-description" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Description</label>
-				<textarea id="track-description" bind:value={newTrack.description} rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface)"></textarea>
+				<label for="track-description" class="mb-1 block text-sm font-medium text-gray-900">Description</label>
+				<textarea
+					id="track-description"
+					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					rows="3"
+					placeholder="What will students learn?"
+					bind:value={newTrack.description}
+				></textarea>
 			</div>
 		</div>
-	{:else if activeTab === 'modules'}
+	{:else if activeTab === "modules"}
 		<div class="space-y-4">
 			<div>
-				<label for="module-track-id" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Track ID</label>
-				<input id="module-track-id" type="text" bind:value={newModule.track_id} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface)" />
+				<label for="module-track-id" class="mb-1 block text-sm font-medium text-gray-900">Track ID</label>
+				<input
+					id="module-track-id"
+					type="text"
+					class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					placeholder="Parent track ID"
+					bind:value={newModule.track_id}
+				/>
 			</div>
 			<div>
-				<label for="module-title" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Title</label>
-				<input id="module-title" type="text" bind:value={newModule.title} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface)" />
+				<label for="module-title" class="mb-1 block text-sm font-medium text-gray-900">Title</label>
+				<input
+					id="module-title"
+					type="text"
+					class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					placeholder="e.g. Variables and Types"
+					bind:value={newModule.title}
+				/>
 			</div>
 		</div>
 	{:else}
 		<div class="space-y-4">
 			<div>
-				<label for="lesson-module-id" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Module ID</label>
-				<input id="lesson-module-id" type="text" bind:value={newLesson.module_id} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface)" />
+				<label for="lesson-module-id" class="mb-1 block text-sm font-medium text-gray-900">Module ID</label>
+				<input
+					id="lesson-module-id"
+					type="text"
+					class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					placeholder="Parent module ID"
+					bind:value={newLesson.module_id}
+				/>
 			</div>
 			<div>
-				<label for="lesson-title" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Title</label>
-				<input id="lesson-title" type="text" bind:value={newLesson.title} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface)" />
+				<label for="lesson-title" class="mb-1 block text-sm font-medium text-gray-900">Title</label>
+				<input
+					id="lesson-title"
+					type="text"
+					class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					placeholder="e.g. Introduction to Closures"
+					bind:value={newLesson.title}
+				/>
 			</div>
 			<div>
-				<label for="lesson-body" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Body (Markdown)</label>
-				<textarea id="lesson-body" bind:value={newLesson.body} rows="6" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface)"></textarea>
+				<label for="lesson-body" class="mb-1 block text-sm font-medium text-gray-900">Content (Markdown)</label>
+				<textarea
+					id="lesson-body"
+					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					rows="8"
+					placeholder="Lesson content in Markdown..."
+					bind:value={newLesson.body}
+				></textarea>
 			</div>
 		</div>
 	{/if}
+
+	<div class="flex justify-end gap-3 pt-4">
+		<Button variant="outline" onclick={() => (showCreateModal = false)}>Cancel</Button>
+		<Button
+			onclick={activeTab === "tracks" ? createTrack : activeTab === "modules" ? createModule : createLesson}
+			disabled={creating}
+		>
+			{#if creating}
+				Creating...
+			{:else}
+				Create
+			{/if}
+		</Button>
+	</div>
+</Modal>
+
+<!-- Delete Confirmation Modal -->
+<Modal bind:open={showDeleteModal} title="Delete Item" description="This action cannot be undone." size="sm">
+	{#if deleteTarget}
+		<div class="rounded-lg bg-danger-50 p-4">
+			<p class="text-sm text-danger-700">
+				Are you sure you want to delete <strong>{deleteTarget.title}</strong>?
+			</p>
+		</div>
+	{/if}
+	<div class="flex justify-end gap-3 pt-4">
+		<Button variant="outline" onclick={() => (showDeleteModal = false)}>Cancel</Button>
+		<Button variant="destructive" onclick={deleteItem} disabled={deleting}>
+			{#if deleting}
+				Deleting...
+			{:else}
+				Delete
+			{/if}
+		</Button>
+	</div>
 </Modal>

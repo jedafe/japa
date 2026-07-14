@@ -1,9 +1,9 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import { Tabs, Select, Dialog, Tooltip } from 'bits-ui';
 	import { api } from '$lib/api';
-	import { Plus, Trash2, ShieldAlert, ShieldCheck } from 'lucide-svelte';
+	import { Plus, Trash2, ShieldAlert, ShieldCheck, X } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
 	type ScanResult = {
@@ -61,6 +61,20 @@
 		api: 'API'
 	};
 
+	const severityItems = [
+		{ value: 'all', label: 'All' },
+		{ value: 'info', label: 'Info' },
+		{ value: 'warning', label: 'Warning' },
+		{ value: 'critical', label: 'Critical' }
+	];
+
+	const blockTypeItems = [
+		{ value: 'full', label: 'Full Block' },
+		{ value: 'registration', label: 'Registration' },
+		{ value: 'posting', label: 'Posting' },
+		{ value: 'api', label: 'API' }
+	];
+
 	const columns = [
 		{ key: 'severity', label: 'Severity' },
 		{ key: 'title', label: 'Title' },
@@ -68,6 +82,8 @@
 		{ key: 'created_at', label: 'Found' },
 		{ key: 'resolved', label: 'Status' }
 	];
+
+	let activeTab = $state('scan-findings');
 
 	// --- Scan findings functions ---
 	async function load() {
@@ -130,7 +146,7 @@
 		createLoading = true;
 		createError = '';
 		try {
-			const result = await api<{ data: IpBlock }>('/control/security/ip-blocks', {
+			const result = await api<IpBlock>('/control/security/ip-blocks', {
 				method: 'POST',
 				body: {
 					cidr: cidr.trim(),
@@ -139,7 +155,7 @@
 				}
 			});
 			if (result.ok) {
-				const newBlock = (result.data as any).data ?? result.data;
+				const newBlock = result.data;
 				ipBlocks = [newBlock, ...ipBlocks];
 				closeCreateModal();
 			} else {
@@ -201,231 +217,300 @@
 <PageHeader title="Security" description="Scan findings and security posture" />
 
 {#if errorMessage}
-	<div
-		class="mb-4 rounded-md border px-4 py-3 text-sm"
-		style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)"
-	>
+	<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-lg border px-4 py-3 text-sm">
 		{errorMessage}
 	</div>
 {/if}
 
 {#if !apiAvailable}
-	<div
-		class="mb-4 rounded-md border px-4 py-3 text-sm"
-		style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)"
-	>
+	<div class="border-tertiary bg-tertiary/10 text-tertiary mb-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm">
 		Security analytics API is not available.
 	</div>
 {/if}
 
-<!-- Scan Findings Section -->
-<div class="mb-4 flex items-center gap-3">
-	<label for="severity-filter" class="text-xs font-medium" style="color: var(--color-muted)">Filter severity:</label>
-	<select
-		id="severity-filter"
-		class="rounded-md border px-3 py-1.5 text-sm"
-		style="border-color: var(--color-border); background-color: var(--color-surface)"
-		bind:value={filterSeverity}
-		onchange={() => { page = 0; load(); }}
-	>
-		<option value="all">All</option>
-		<option value="info">Info</option>
-		<option value="warning">Warning</option>
-		<option value="critical">Critical</option>
-	</select>
-</div>
-
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
-{:else}
-	<DataTable {columns} rows={results} {page} {totalPages} onPageChange={handlePageChange} />
-{/if}
-
-<!-- IP Blocks Section -->
-<div class="mt-12 border-t pt-8" style="border-color: var(--color-border)">
-	<div class="mb-6 flex items-center justify-between">
-		<div class="flex items-center gap-3">
-			<h2 class="text-lg font-semibold" style="color: var(--color-text)">IP Block List</h2>
-			<span
-				class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-				style="background-color: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary)"
-			>
+<Tabs.Root bind:value={activeTab}>
+	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
+		<Tabs.Trigger
+			value="scan-findings"
+			class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
+		>
+			Scan Findings
+		</Tabs.Trigger>
+		<Tabs.Trigger
+			value="ip-blocks"
+			class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
+		>
+			IP Blocks
+			<span class="bg-accent text-accent-foreground ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium">
 				{ipBlocks.length}
 			</span>
-		</div>
-		<button
-			type="button"
-			class="inline-flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium text-white transition-colors"
-			style="background-color: var(--color-primary)"
-			onclick={openCreateModal}
-		>
-			<Plus size={16} />
-			Add IP Block
-		</button>
-	</div>
+		</Tabs.Trigger>
+	</Tabs.List>
 
-	{#if ipBlocks.length === 0}
-		<div
-			class="rounded-lg border p-8 text-center"
-			style="border-color: var(--color-border); background-color: var(--color-surface)"
-		>
-			<ShieldCheck size={40} class="mx-auto mb-3 opacity-30" style="color: var(--color-muted)" />
-			<p class="text-sm" style="color: var(--color-muted)">No IP blocks configured.</p>
-		</div>
-	{:else}
-		<div
-			class="overflow-hidden rounded-lg border"
-			style="border-color: var(--color-border); background-color: var(--color-surface)"
-		>
-			<table class="w-full text-left text-sm">
-				<thead>
-					<tr style="border-bottom: 1px solid var(--color-border); background-color: var(--color-background)">
-						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">IP / CIDR</th>
-						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Block Type</th>
-						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Reason</th>
-						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Created</th>
-						<th class="px-4 py-3 font-medium text-right" style="color: var(--color-muted)">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each ipBlocks as block (block.id)}
-						<tr style="border-bottom: 1px solid var(--color-border)">
-							<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-text)">{block.cidr}</td>
-							<td class="px-4 py-3">
-								<span
-									class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
-									style="background-color: color-mix(in srgb, var(--color-danger) 12%, transparent); color: var(--color-danger)"
-								>
-									<ShieldAlert size={12} class="mr-1" />
-									{blockTypeLabels[block.block_type] ?? block.block_type}
-								</span>
-							</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">
-								{block.reason ?? '—'}
-							</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">
-								{formatDate(block.created_at)}
-							</td>
-							<td class="px-4 py-3 text-right">
-								<button
-									type="button"
-									class="inline-flex items-center justify-center rounded p-1.5 transition-colors"
-									style="color: var(--color-muted); background-color: transparent"
-									onmouseenter={(e) => (e.currentTarget.style.color = 'var(--color-danger)')}
-									onmouseleave={(e) => (e.currentTarget.style.color = 'var(--color-muted)')}
-									title="Remove IP block"
-									onclick={() => openDeleteModal(block)}
-								>
-									<Trash2 size={15} />
-								</button>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	{/if}
-</div>
-
-<!-- Create IP Block Modal -->
-{#if showCreateModal}
-	<div class="fixed inset-0 z-50 flex items-center justify-center">
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="absolute inset-0 bg-black/50" onclick={closeCreateModal}></div>
-		<div
-			class="relative z-10 w-full max-w-md rounded-lg border p-6 shadow-xl"
-			style="border-color: var(--color-border); background-color: var(--color-surface)"
-		>
-			<h3 class="mb-4 text-lg font-semibold" style="color: var(--color-text)">Add IP Block</h3>
-
-			{#if createError}
-				<div
-					class="mb-4 rounded-md border px-3 py-2 text-xs"
-					style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)"
+	<!-- Scan Findings Tab -->
+	<Tabs.Content value="scan-findings" class="mt-4">
+		<div class="mb-4 flex items-center gap-3">
+			<Select.Root type="single" bind:value={filterSeverity} items={severityItems}>
+				<Select.Trigger
+					class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-9 items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
+					aria-label="Filter severity"
 				>
-					{createError}
+					<Select.Value placeholder="All" />
+				</Select.Trigger>
+				<Select.Portal>
+					<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1" sideOffset={4}>
+						<Select.Viewport class="p-1">
+							{#each severityItems as item}
+								<Select.Item
+									class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+									value={item.value}
+									label={item.label}
+								>
+									{#snippet children({ selected })}
+										{item.label}
+										{#if selected}<span class="ml-auto">✓</span>{/if}
+									{/snippet}
+								</Select.Item>
+							{/each}
+						</Select.Viewport>
+					</Select.Content>
+				</Select.Portal>
+			</Select.Root>
+		</div>
+
+		{#if loading}
+			<p class="text-muted-foreground py-8 text-center text-sm">Loading...</p>
+		{:else}
+			<DataTable {columns} rows={results} {page} {totalPages} onPageChange={handlePageChange} />
+		{/if}
+	</Tabs.Content>
+
+	<!-- IP Blocks Tab -->
+	<Tabs.Content value="ip-blocks" class="mt-4">
+		<div class="mb-6 flex items-center justify-between">
+			<h2 class="text-foreground text-lg font-semibold">IP Block List</h2>
+			<div class="flex items-center gap-2">
+				<Tooltip.Provider>
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							<button
+								type="button"
+								class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-2 rounded-9px border px-3.5 py-2 text-sm font-medium transition-colors"
+								onclick={openCreateModal}
+							>
+								<Plus size={16} />
+								Add IP Block
+							</button>
+						</Tooltip.Trigger>
+						<Tooltip.Content
+							class="border-border-input bg-background shadow-popover rounded-9px border px-3 py-1.5 text-xs"
+							sideOffset={8}
+						>
+							Create a new IP or CIDR block
+						</Tooltip.Content>
+					</Tooltip.Root>
+				</Tooltip.Provider>
+			</div>
+		</div>
+
+		{#if ipBlocks.length === 0}
+			<div class="border-border-card bg-background-alt shadow-card rounded-xl p-8 text-center">
+				<ShieldCheck class="text-muted-foreground mx-auto mb-3 size-10 opacity-30" />
+				<p class="text-muted-foreground text-sm">No IP blocks configured.</p>
+			</div>
+		{:else}
+			<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
+				<div class="overflow-x-auto">
+					<table class="w-full text-sm">
+						<thead>
+							<tr class="border-border-card border-b">
+								<th class="text-muted-foreground px-4 py-3 text-left font-medium">IP / CIDR</th>
+								<th class="text-muted-foreground px-4 py-3 text-left font-medium">Block Type</th>
+								<th class="text-muted-foreground px-4 py-3 text-left font-medium">Reason</th>
+								<th class="text-muted-foreground px-4 py-3 text-left font-medium">Created</th>
+								<th class="text-muted-foreground px-4 py-3 text-right font-medium">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each ipBlocks as block (block.id)}
+								<tr class="border-border-card hover:bg-dark-04 border-t transition-colors">
+									<td class="px-4 py-3 font-mono text-xs">{block.cidr}</td>
+									<td class="px-4 py-3">
+										<span class="bg-destructive/10 text-destructive inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium">
+											<ShieldAlert size={12} class="mr-1" />
+											{blockTypeLabels[block.block_type] ?? block.block_type}
+										</span>
+									</td>
+									<td class="text-muted-foreground px-4 py-3 text-xs">
+										{block.reason ?? '—'}
+									</td>
+									<td class="text-muted-foreground px-4 py-3 text-xs">
+										{formatDate(block.created_at)}
+									</td>
+									<td class="px-4 py-3 text-right">
+										<Tooltip.Provider>
+											<Tooltip.Root>
+												<Tooltip.Trigger>
+													<button
+														type="button"
+														class="hover:bg-destructive/10 hover:text-destructive rounded-9px p-1.5 text-muted-foreground transition-colors"
+														onclick={() => openDeleteModal(block)}
+													>
+														<Trash2 size={15} />
+													</button>
+												</Tooltip.Trigger>
+												<Tooltip.Content
+													class="border-border-input bg-background shadow-popover rounded-9px border px-3 py-1.5 text-xs"
+													sideOffset={8}
+												>
+													Remove IP block
+												</Tooltip.Content>
+											</Tooltip.Root>
+										</Tooltip.Provider>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
 				</div>
-			{/if}
-
-			<div class="mb-4">
-				<label for="cidr-input" class="mb-1 block text-sm font-medium" style="color: var(--color-text)">CIDR</label>
-				<input
-					id="cidr-input"
-					type="text"
-					placeholder="192.168.1.0/24 or 10.0.0.1"
-					class="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
-					style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-text); --tw-ring-color: var(--color-primary)"
-					bind:value={cidr}
-				/>
 			</div>
+		{/if}
+	</Tabs.Content>
+</Tabs.Root>
 
-			<div class="mb-4">
-				<label for="block-type-select" class="mb-1 block text-sm font-medium" style="color: var(--color-text)">Block Type</label>
-				<select
-					id="block-type-select"
-					class="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
-					style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-text); --tw-ring-color: var(--color-primary)"
-					bind:value={blockType}
-				>
-					<option value="full">Full Block</option>
-					<option value="registration">Registration</option>
-					<option value="posting">Posting</option>
-					<option value="api">API</option>
-				</select>
+<!-- Create IP Block Dialog -->
+<Dialog.Root bind:open={showCreateModal}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
+		<Dialog.Content
+			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-0"
+			onOpenAutoFocus={(e) => e.preventDefault()}
+		>
+			<div class="border-border-card flex items-center justify-between border-b px-6 py-4">
+				<Dialog.Title class="text-foreground text-lg font-semibold">Add IP Block</Dialog.Title>
+				<Dialog.Close class="hover:bg-dark-04 rounded-9px p-1.5 transition-colors">
+					<X class="size-4" />
+				</Dialog.Close>
 			</div>
+			<div class="px-6 py-4">
+				{#if createError}
+					<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-lg border px-3 py-2 text-xs">
+						{createError}
+					</div>
+				{/if}
 
-			<div class="mb-6">
-				<label for="reason-input" class="mb-1 block text-sm font-medium" style="color: var(--color-text)">Reason <span style="color: var(--color-muted)">(optional)</span></label>
-				<input
-					id="reason-input"
-					type="text"
-					placeholder="Why this IP is blocked"
-					class="w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
-					style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-text); --tw-ring-color: var(--color-primary)"
-					bind:value={reason}
-				/>
+				<div class="mb-4">
+					<label for="cidr-input" class="text-foreground mb-1 block text-sm font-medium">CIDR</label>
+					<input
+						id="cidr-input"
+						type="text"
+						placeholder="192.168.1.0/24 or 10.0.0.1"
+						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 rounded-9px w-full border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+						bind:value={cidr}
+					/>
+				</div>
+
+				<div class="mb-4">
+					<label for="block-type-select" class="text-foreground mb-1 block text-sm font-medium">Block Type</label>
+					<Select.Root type="single" bind:value={blockType} items={blockTypeItems}>
+						<Select.Trigger
+							class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-10 w-full items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
+							aria-label="Block type"
+						>
+							<Select.Value placeholder="Full Block" />
+						</Select.Trigger>
+						<Select.Portal>
+							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1" sideOffset={4}>
+								<Select.Viewport class="p-1">
+									{#each blockTypeItems as item}
+										<Select.Item
+											class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+											value={item.value}
+											label={item.label}
+										>
+											{#snippet children({ selected })}
+												{item.label}
+												{#if selected}<span class="ml-auto">✓</span>{/if}
+											{/snippet}
+										</Select.Item>
+									{/each}
+								</Select.Viewport>
+							</Select.Content>
+						</Select.Portal>
+					</Select.Root>
+				</div>
+
+				<div class="mb-6">
+					<label for="reason-input" class="text-foreground mb-1 block text-sm font-medium">
+						Reason <span class="text-muted-foreground">(optional)</span>
+					</label>
+					<input
+						id="reason-input"
+						type="text"
+						placeholder="Why this IP is blocked"
+						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 rounded-9px w-full border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+						bind:value={reason}
+					/>
+				</div>
 			</div>
-
-			<div class="flex justify-end gap-3">
-				<button
-					type="button"
-					class="rounded-md border px-4 py-2 text-sm font-medium transition-colors"
-					style="border-color: var(--color-border); color: var(--color-text)"
-					onclick={closeCreateModal}
-				>
+			<div class="border-border-card flex justify-end gap-3 border-t px-6 py-4">
+				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
 					Cancel
-				</button>
+				</Dialog.Close>
 				<button
 					type="button"
-					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background-color: var(--color-primary)"
+					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 					disabled={createLoading || !cidr.trim()}
 					onclick={createIpBlock}
 				>
 					{createLoading ? 'Creating...' : 'Create Block'}
 				</button>
 			</div>
-		</div>
-	</div>
-{/if}
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
 
-<!-- Delete Confirm Modal -->
-<ConfirmModal
-	bind:open={showDeleteModal}
-	title="Remove IP Block"
-	consequence={deleteTarget ? `Remove block for ${deleteTarget.cidr}? This will unblock this IP/CIDR.` : ''}
-	confirmText="REMOVE"
-	onConfirm={deleteIpBlock}
-	onCancel={closeDeleteModal}
-/>
-
-{#if deleteError}
-	<div class="fixed bottom-4 right-4 z-50">
-		<div
-			class="rounded-md border px-4 py-3 text-sm shadow-lg"
-			style="border-color: var(--color-danger); background-color: var(--color-surface); color: var(--color-danger)"
+<!-- Delete Confirm Dialog -->
+<Dialog.Root bind:open={showDeleteModal}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
+		<Dialog.Content
+			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-0"
+			onOpenAutoFocus={(e) => e.preventDefault()}
 		>
-			{deleteError}
-		</div>
-	</div>
-{/if}
+			<div class="border-border-card flex items-center justify-between border-b px-6 py-4">
+				<Dialog.Title class="text-foreground text-lg font-semibold">Remove IP Block</Dialog.Title>
+				<Dialog.Close class="hover:bg-dark-04 rounded-9px p-1.5 transition-colors">
+					<X class="size-4" />
+				</Dialog.Close>
+			</div>
+			<div class="px-6 py-4">
+				{#if deleteError}
+					<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-lg border px-3 py-2 text-xs">
+						{deleteError}
+					</div>
+				{/if}
+				{#if deleteTarget}
+					<div class="bg-destructive/10 border-destructive/20 rounded-lg border p-3">
+						<p class="text-destructive text-sm">
+							Remove block for <strong class="font-mono">{deleteTarget.cidr}</strong>? This will unblock this IP/CIDR.
+						</p>
+					</div>
+				{/if}
+			</div>
+			<div class="border-border-card flex justify-end gap-3 border-t px-6 py-4">
+				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
+					Cancel
+				</Dialog.Close>
+				<button
+					type="button"
+					class="bg-destructive text-white rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+					disabled={deleteLoading}
+					onclick={deleteIpBlock}
+				>
+					{deleteLoading ? 'Removing...' : 'Remove'}
+				</button>
+			</div>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>

@@ -1,0 +1,173 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - generic: Control Panel
+        - navigation:
+          - button "Dashboard":
+            - link "Dashboard":
+              - /url: /
+              - img
+              - text: Dashboard
+          - button "Queue":
+            - link "Queue":
+              - /url: /queue
+              - img
+              - text: Queue
+          - button "Dead Letter Queue":
+            - link "Dead Letter Queue":
+              - /url: /dlq
+              - img
+              - text: Dead Letter Queue
+          - button "DB Health":
+            - link "DB Health":
+              - /url: /db
+              - img
+              - text: DB Health
+          - button "Audit Log":
+            - link "Audit Log":
+              - /url: /audit
+              - img
+              - text: Audit Log
+          - button "Security":
+            - link "Security":
+              - /url: /security
+              - img
+              - text: Security
+          - button "API Keys":
+            - link "API Keys":
+              - /url: /api-keys
+              - img
+              - text: API Keys
+          - button "Cache":
+            - link "Cache":
+              - /url: /cache
+              - img
+              - text: Cache
+          - button "Settings":
+            - link "Settings":
+              - /url: /settings
+              - img
+              - text: Settings
+          - button "Feature Flags":
+            - link "Feature Flags":
+              - /url: /feature-flags
+              - img
+              - text: Feature Flags
+          - button "Tenants":
+            - link "Tenants":
+              - /url: /tenants
+              - img
+              - text: Tenants
+          - button "AI Budget":
+            - link "AI Budget":
+              - /url: /ai-budget
+              - img
+              - text: AI Budget
+          - button "Cron Jobs":
+            - link "Cron Jobs":
+              - /url: /cron
+              - img
+              - text: Cron Jobs
+      - generic:
+        - banner:
+          - generic:
+            - link "JapaControl":
+              - /url: /
+          - generic:
+            - button "🌙"
+            - button "P Platform Admin":
+              - generic:
+                - generic: P
+              - generic: Platform Admin
+        - main:
+          - generic:
+            - generic:
+              - heading "Tenants" [level=1]
+              - paragraph: Manage tenant organizations across the platform
+            - generic:
+              - generic:
+                - img
+                - textbox "Search tenants...": JapaConnect
+              - button "Filter status":
+                - generic: All Status
+              - generic: 1 tenant
+              - button "Create Tenant" [active]:
+                - img
+                - text: Create Tenant
+              - button "Refresh":
+                - img
+                - text: Refresh
+            - generic:
+              - table:
+                - rowgroup:
+                  - row "Name Slug Domain Status Created Actions":
+                    - columnheader "Name"
+                    - columnheader "Slug"
+                    - columnheader "Domain"
+                    - columnheader "Status"
+                    - columnheader "Created"
+                    - columnheader "Actions"
+                - rowgroup:
+                  - row "JapaConnect japaconnect — active 28/06/2026":
+                    - cell "JapaConnect":
+                      - paragraph: JapaConnect
+                    - cell "japaconnect"
+                    - cell "—"
+                    - cell "active"
+                    - cell "28/06/2026"
+                    - cell:
+                      - generic:
+                        - button:
+                          - button:
+                            - img
+                        - button:
+                          - button:
+                            - img
+                        - button:
+                          - button:
+                            - img
+            - generic:
+              - generic:
+                - generic: 1 item
+                - generic:
+                  - generic: "Per page:"
+                  - combobox:
+                    - option "10" [selected]
+                    - option "25"
+                    - option "50"
+                    - option "100"
+              - generic:
+                - button "First page" [disabled]:
+                  - img
+                - button "Previous page" [disabled]:
+                  - img
+                - generic: Page 1 of 1
+                - button "Next page" [disabled]:
+                  - img
+                - button "Last page" [disabled]:
+                  - img
+  - dialog "Create Tenant" [ref=e126]:
+    - generic [ref=e127]:
+      - heading "Create Tenant" [level=2] [ref=e128]
+      - button [ref=e129]:
+        - img [ref=e130]
+    - generic [ref=e131]:
+      - generic [ref=e132]:
+        - generic [ref=e133]:
+          - generic [ref=e134]: Name *
+          - textbox "Name *" [ref=e135]:
+            - /placeholder: My Organization
+        - generic [ref=e136]:
+          - generic [ref=e137]: Slug *
+          - textbox "Slug *" [ref=e138]:
+            - /placeholder: my-organization
+          - paragraph [ref=e139]: Auto-generated from name if left empty
+        - generic [ref=e140]:
+          - generic [ref=e141]: Domain
+          - textbox "Domain" [ref=e142]:
+            - /placeholder: example.com
+      - generic [ref=e143]:
+        - button "Cancel" [ref=e144]
+        - button "Create" [disabled] [ref=e145]

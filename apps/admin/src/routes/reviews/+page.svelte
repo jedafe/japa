@@ -21,7 +21,7 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<Review[]>('/admin/reviews');
+			const result = await api<Review[]>('/reviews');
 			if (result.ok) {
 				reviews = result.data ?? [];
 			} else {

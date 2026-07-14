@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { aiApi, aiAdminApi, type HitlReview, type GenerateResult } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import Modal from '$lib/components/Modal.svelte';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles, AlertTriangle, Wrench, BarChart3, Activity, Settings } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { page as pageState } from '$app/state';
@@ -743,35 +744,34 @@
 <Modal bind:open={showReviewModal} title={t('ai.review_title')}>
 	{#if selectedReview}
 		{#if actionMessage}
-			<div class="mb-3 rounded-md border px-3 py-2 text-sm" style="border-color: {actionMessageType === 'success' ? 'var(--color-success)' : 'var(--color-danger)'}; background-color: color-mix(in srgb, {actionMessageType === 'success' ? 'var(--color-success)' : 'var(--color-danger)'} 8%, transparent); color: {actionMessageType === 'success' ? 'var(--color-success)' : 'var(--color-danger)'}">
+			<div class="mb-3 rounded-md border px-3 py-2 text-sm {actionMessageType === 'success' ? 'border-success-200 bg-success-50 text-success-700' : 'border-danger-200 bg-danger-50 text-danger-700'}">
 				{actionMessage}
 			</div>
 		{/if}
 
 		<div class="space-y-3">
 			<div class="flex flex-wrap gap-2 text-xs">
-				<span class="inline-block rounded-full bg-purple-500/15 px-2 py-0.5 text-purple-700 dark:text-purple-400">
+				<span class="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-purple-700 dark:text-purple-400">
 					{selectedReview.content_type}
 				</span>
-				<span class="inline-block rounded-full px-2 py-0.5" style="background-color: color-mix(in srgb, var(--color-info) 12%, transparent); color: var(--color-info)">
+				<span class="inline-block rounded-full bg-info-100 px-2 py-0.5 text-info-700">
 					{selectedReview.source}
 				</span>
-				<span style="color: var(--color-muted)">
+				<span class="text-gray-500">
 					{new Date(selectedReview.created_at).toLocaleString()}
 				</span>
 			</div>
 
-			<div class="max-h-64 overflow-y-auto rounded-md p-3 text-sm" style="background-color: var(--color-surface)">
+			<div class="max-h-64 overflow-y-auto rounded-md bg-gray-50 p-3 text-sm text-gray-700">
 				{selectedReview.content}
 			</div>
 
 			{#if showRejectInput}
 				<div>
-					<label for="reject-reason" class="mb-1 block text-sm font-medium">{t('ai.reject_reason')}</label>
+					<label for="reject-reason" class="mb-1 block text-sm font-medium text-gray-700">{t('ai.reject_reason')}</label>
 					<textarea
 						id="reject-reason"
-						class="w-full rounded-md border px-3 py-2 text-sm"
-						style="border-color: var(--color-border); background-color: var(--color-background)"
+						class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
 						rows="3"
 						placeholder={t('ai.reject_reason_placeholder')}
 						bind:value={rejectReason}
@@ -780,9 +780,8 @@
 			{/if}
 
 			<div class="flex gap-2 pt-2">
-				<button
-					class="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
-					style="background-color: var(--color-success)"
+				<Button
+					variant="default"
 					disabled={actionLoading}
 					onclick={approveReview}
 				>
@@ -792,20 +791,18 @@
 						<CheckCircle2 class="h-3.5 w-3.5" />
 					{/if}
 					{t('ai.approve')}
-				</button>
+				</Button>
 				{#if !showRejectInput}
-					<button
-						class="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors"
-						style="background-color: var(--color-danger)"
+					<Button
+						variant="destructive"
 						onclick={() => (showRejectInput = true)}
 					>
 						<XCircle class="h-3.5 w-3.5" />
 						{t('ai.reject')}
-					</button>
+					</Button>
 				{:else}
-					<button
-						class="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
-						style="background-color: var(--color-danger)"
+					<Button
+						variant="destructive"
 						disabled={actionLoading || !rejectReason.trim()}
 						onclick={rejectReview}
 					>
@@ -813,7 +810,7 @@
 							<Loader2 class="h-3.5 w-3.5 animate-spin" />
 						{/if}
 						{t('ai.reject')}
-					</button>
+					</Button>
 				{/if}
 			</div>
 		</div>
@@ -821,22 +818,28 @@
 </Modal>
 
 <!-- ═══ Tool Edit Modal ═══ -->
-<Modal bind:open={showToolModal} title={t('ai.tools.configure')} onConfirm={saveTool} confirmLabel={toolSaving ? t('common.saving') : t('common.save')}>
+<Modal bind:open={showToolModal} title={t('ai.tools.configure')} size="lg">
 	<div class="space-y-4">
 		<div>
-			<label for="tool-name" class="mb-1 block text-sm font-medium">{t('ai.tools.name')}</label>
-			<input id="tool-name" type="text" bind:value={toolName} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+			<label for="tool-name" class="mb-1 block text-sm font-medium text-gray-700">{t('ai.tools.name')}</label>
+			<input id="tool-name" type="text" bind:value={toolName} class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" />
 		</div>
 		<div>
-			<label for="tool-desc" class="mb-1 block text-sm font-medium">{t('ai.tools.description')}</label>
-			<textarea id="tool-desc" bind:value={toolDescription} rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"></textarea>
+			<label for="tool-desc" class="mb-1 block text-sm font-medium text-gray-700">{t('ai.tools.description')}</label>
+			<textarea id="tool-desc" bind:value={toolDescription} rows="3" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"></textarea>
 		</div>
 		<div class="flex items-center gap-3">
 			<label class="relative inline-flex cursor-pointer items-center">
 				<input type="checkbox" bind:checked={toolEnabled} class="peer sr-only" />
-				<div class="peer h-5 w-9 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all peer-checked:bg-[var(--color-primary)] peer-checked:after:translate-x-full peer-checked:after:border-white dark:bg-gray-700"></div>
+				<div class="peer h-5 w-9 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all peer-checked:bg-primary-600 peer-checked:after:translate-x-full peer-checked:after:border-white dark:bg-gray-700"></div>
 			</label>
-			<span class="text-sm font-medium">{t('ai.tools.enabled')}</span>
+			<span class="text-sm font-medium text-gray-700">{t('ai.tools.enabled')}</span>
 		</div>
+	</div>
+	<div class="flex justify-end gap-3 pt-4">
+		<Button variant="outline" onclick={() => showToolModal = false}>Cancel</Button>
+		<Button onclick={saveTool} disabled={toolSaving}>
+			{toolSaving ? 'Saving...' : 'Save Changes'}
+		</Button>
 	</div>
 </Modal>

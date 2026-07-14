@@ -8,12 +8,11 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import type { PageData } from './$types';
+	import { Tabs, Tooltip } from 'bits-ui';
 	import {
 		Database,
 		RefreshCw,
-		HardDrive,
 		Table2,
-		Clock,
 		AlertTriangle,
 		Server,
 		Zap,
@@ -34,6 +33,7 @@
 	let vacuuming = $state(false);
 	let showVacuumConfirm = $state(false);
 	let vacuumMessage = $state<string | null>(null);
+	let activeTab = $state('overview');
 
 	async function refresh() {
 		refreshing = true;
@@ -73,20 +73,23 @@
 		}
 	}
 
-	function formatBytes(bytes: number): string {
+	function formatBytes(bytes: number | undefined | null): string {
+		if (bytes == null) return '—';
 		if (bytes >= 1_073_741_824) return (bytes / 1_073_741_824).toFixed(1) + ' GB';
 		if (bytes >= 1_048_576) return (bytes / 1_048_576).toFixed(1) + ' MB';
 		if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
 		return bytes + ' B';
 	}
 
-	function formatNumber(n: number): string {
+	function formatNumber(n: number | undefined | null): string {
+		if (n == null) return '—';
 		if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
 		if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
 		return n.toLocaleString();
 	}
 
-	function formatDuration(ms: number): string {
+	function formatDuration(ms: number | undefined | null): string {
+		if (ms == null) return '—';
 		if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
 		return ms.toFixed(0) + 'ms';
 	}
@@ -119,6 +122,13 @@
 		return (dbHealth?.replication?.lag_seconds ?? 0) > 5;
 	}
 
+	function poolBarColor(): string {
+		const pct = poolUsagePercent();
+		if (pct > 80) return 'bg-destructive';
+		if (pct > 60) return 'bg-accent';
+		return 'bg-foreground';
+	}
+
 	onMount(() => {
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
@@ -140,289 +150,337 @@
 <PageHeader title={t('db.title')} description={t('db.description')} />
 
 {#if !apiAvailable}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">
+	<div class="mb-4 rounded-card border border-border-card bg-destructive/10 px-4 py-3 text-sm text-destructive">
 		{t('db.unavailable')}
 	</div>
 {/if}
 
 <!-- Alert banners -->
 {#if hasPoolWarning()}
-	<div class="mb-3 flex items-center gap-2 rounded-md border px-4 py-2.5 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">
+	<div class="mb-3 flex items-center gap-2 rounded-card border border-border-card bg-accent/10 px-4 py-2.5 text-sm text-accent-foreground">
 		<AlertTriangle class="h-4 w-4 flex-shrink-0" />
 		{t('db.pool_warning')} ({poolUsagePercent()}%)
 	</div>
 {/if}
 {#if hasSlowQueryWarning()}
-	<div class="mb-3 flex items-center gap-2 rounded-md border px-4 py-2.5 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+	<div class="mb-3 flex items-center gap-2 rounded-card border border-border-card bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
 		<AlertTriangle class="h-4 w-4 flex-shrink-0" />
 		{t('db.slow_query_warning')}
 	</div>
 {/if}
 {#if hasReplicationWarning()}
-	<div class="mb-3 flex items-center gap-2 rounded-md border px-4 py-2.5 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 8%, transparent); color: var(--color-warning)">
+	<div class="mb-3 flex items-center gap-2 rounded-card border border-border-card bg-accent/10 px-4 py-2.5 text-sm text-accent-foreground">
 		<AlertTriangle class="h-4 w-4 flex-shrink-0" />
-		{t('db.replication_lag_warning')} ({dbHealth?.replication?.lag_seconds.toFixed(1)}s)
+		{t('db.replication_lag_warning')} ({dbHealth?.replication?.lag_seconds?.toFixed(1)}s)
 	</div>
 {/if}
 
 <!-- Refresh indicator -->
 <div class="mb-4 flex items-center justify-between">
 	<div class="flex items-center gap-3">
-		<p class="text-xs" style="color: var(--color-muted)">
+		<p class="text-xs text-muted-foreground">
 			{t('db.last_updated').replace('{time}', lastRefresh.toLocaleTimeString())}
 			<span class="ml-2">({secondsAgo}s ago)</span>
 		</p>
-		<span class="rounded-full px-2 py-0.5 text-[10px] font-medium" style="background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)">
+		<span class="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent-foreground">
 			{t('db.auto_refresh')}
 		</span>
 	</div>
-	<button
-		class="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
-		style="border-color: var(--color-border)"
-		disabled={refreshing}
-		onclick={refresh}
-	>
-		<RefreshCw class="h-3 w-3 {refreshing ? 'animate-spin' : ''}" />
-		{t('common.refresh')}
-	</button>
-	<button
-		class="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
-		style="border-color: var(--color-border); color: var(--color-warning)"
-		disabled={vacuuming}
-		onclick={() => { showVacuumConfirm = true; }}
-	>
-		<Scissors class="h-3 w-3 {vacuuming ? 'animate-pulse' : ''}" />
-		Vacuum DB
-	</button>
+	<div class="flex items-center gap-2">
+		<button
+			class="flex items-center gap-1.5 rounded-card border border-border-card bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background-alt disabled:opacity-50"
+			disabled={refreshing}
+			onclick={refresh}
+		>
+			<RefreshCw class="h-3 w-3 {refreshing ? 'animate-spin' : ''}" />
+			{t('common.refresh')}
+		</button>
+		<Tooltip.Provider>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<button
+						class="flex items-center gap-1.5 rounded-card border border-border-card bg-background px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-background-alt disabled:opacity-50"
+						disabled={vacuuming}
+						onclick={() => { showVacuumConfirm = true; }}
+					>
+						<Scissors class="h-3 w-3 {vacuuming ? 'animate-pulse' : ''}" />
+						Vacuum DB
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Portal>
+					<Tooltip.Content
+						sideOffset={8}
+						class="z-50 rounded-card bg-background-alt px-3 py-1.5 text-xs text-foreground shadow-card border border-border-card"
+					>
+						Run VACUUM to reclaim storage and update statistics
+						<Tooltip.Arrow class="fill-background-alt" />
+					</Tooltip.Content>
+				</Tooltip.Portal>
+			</Tooltip.Root>
+		</Tooltip.Provider>
+	</div>
 </div>
 
 {#if loading}
 	<!-- Loading skeletons -->
 	<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 		{#each Array(4) as _}
-			<div class="h-24 animate-pulse rounded-lg border" style="border-color: var(--color-border); background-color: var(--color-surface)"></div>
+			<div class="h-24 animate-pulse rounded-card border border-border-card bg-background-alt"></div>
 		{/each}
 	</div>
-	<div class="h-64 animate-pulse rounded-xl border" style="border-color: var(--color-border); background-color: var(--color-surface)"></div>
+	<div class="h-64 animate-pulse rounded-card border border-border-card bg-background-alt"></div>
 {:else if dbHealth}
-	<!-- Top metrics -->
-	<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-		<MetricCard
-			label={t('db.db_size')}
-			value={formatBytes(dbHealth.size_bytes)}
-		/>
-		<MetricCard
-			label={t('db.table_count')}
-			value={dbHealth.table_count}
-		/>
-		<MetricCard
-			label={t('db.index_count')}
-			value={dbHealth.index_count}
-		/>
-		<MetricCard
-			label={t('db.avg_query_time')}
-			value={formatDuration(dbHealth.avg_query_time_ms)}
-		/>
-	</div>
+	<Tabs.Root bind:value={activeTab}>
+		<Tabs.List class="mb-6 flex gap-1 rounded-card bg-muted p-1">
+			<Tabs.Trigger value="overview" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
+				<Activity class="h-3.5 w-3.5" />
+				Overview
+			</Tabs.Trigger>
+			<Tabs.Trigger value="tables" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
+				<Table2 class="h-3.5 w-3.5" />
+				Tables
+			</Tabs.Trigger>
+			<Tabs.Trigger value="slow-queries" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
+				<Zap class="h-3.5 w-3.5" />
+				Slow Queries
+			</Tabs.Trigger>
+			<Tabs.Trigger value="replication" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
+				<Database class="h-3.5 w-3.5" />
+				Replication
+			</Tabs.Trigger>
+		</Tabs.List>
 
-	<!-- Connection & Version status -->
-	<div class="mb-6 grid gap-4 sm:grid-cols-2">
-		<!-- Connection status card -->
-		<div class="rounded-xl border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<div class="mb-4 flex items-center gap-2">
-				<Server class="h-4 w-4" style="color: var(--color-primary)" />
-				<h3 class="text-sm font-semibold">{t('db.connection_status')}</h3>
+		<!-- Overview Tab -->
+		<Tabs.Content value="overview">
+			<!-- Top metrics -->
+			<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+				<MetricCard
+					label={t('db.db_size')}
+					value={formatBytes(dbHealth.size_bytes)}
+				/>
+				<MetricCard
+					label={t('db.table_count')}
+					value={dbHealth.table_count}
+				/>
+				<MetricCard
+					label={t('db.index_count')}
+					value={dbHealth.index_count}
+				/>
+				<MetricCard
+					label={t('db.avg_query_time')}
+					value={formatDuration(dbHealth.avg_query_time_ms)}
+				/>
 			</div>
-			<div class="space-y-3">
-				<div class="flex items-center justify-between">
-					<span class="text-sm" style="color: var(--color-muted)">Status</span>
-					<StatusBadge status={dbHealth.connected ? 'healthy' : 'critical'}>
-						{dbHealth.connected ? t('db.connected') : t('db.disconnected')}
-					</StatusBadge>
-				</div>
-				<div class="flex items-center justify-between">
-					<span class="text-sm" style="color: var(--color-muted)">{t('db.version')}</span>
-					<span class="text-sm font-mono">{dbHealth.version || '—'}</span>
-				</div>
-				<div class="flex items-center justify-between">
-					<span class="text-sm" style="color: var(--color-muted)">{t('db.db_latency')}</span>
-					<span class="text-sm font-mono">{dbHealth.latency_ms?.toFixed(1) ?? '—'}ms</span>
-				</div>
-			</div>
-		</div>
 
-		<!-- Connection pool card -->
-		<div class="rounded-xl border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<div class="mb-4 flex items-center gap-2">
-				<Activity class="h-4 w-4" style="color: var(--color-primary)" />
-				<h3 class="text-sm font-semibold">{t('db.connection_pool')}</h3>
-			</div>
-			<div class="space-y-3">
-				<div class="flex items-center justify-between">
-					<span class="text-sm" style="color: var(--color-muted)">{t('db.active_connections')}</span>
-					<span class="text-sm font-mono">{dbHealth.connection_pool?.active ?? 0}</span>
-				</div>
-				<div class="flex items-center justify-between">
-					<span class="text-sm" style="color: var(--color-muted)">{t('db.idle_connections')}</span>
-					<span class="text-sm font-mono">{dbHealth.connection_pool?.idle ?? 0}</span>
-				</div>
-				<div class="flex items-center justify-between">
-					<span class="text-sm" style="color: var(--color-muted)">{t('db.waiting_connections')}</span>
-					<span class="text-sm font-mono" style:color={(dbHealth.connection_pool?.waiting ?? 0) > 0 ? 'var(--color-warning)' : undefined}>
-						{dbHealth.connection_pool?.waiting ?? 0}
-					</span>
-				</div>
-				<div class="flex items-center justify-between">
-					<span class="text-sm" style="color: var(--color-muted)">{t('db.max_connections')}</span>
-					<span class="text-sm font-mono">{dbHealth.connection_pool?.max ?? 0}</span>
-				</div>
-				<!-- Pool usage bar -->
-				<div class="pt-1">
-					<div class="flex items-center justify-between text-xs" style="color: var(--color-muted)">
-						<span>Usage</span>
-						<span>{poolUsagePercent()}%</span>
+			<!-- Connection & Version status -->
+			<div class="grid gap-4 sm:grid-cols-2">
+				<!-- Connection status card -->
+				<div class="rounded-card border border-border-card bg-background p-6 shadow-card">
+					<div class="mb-4 flex items-center gap-2">
+						<Server class="h-4 w-4 text-accent-foreground" />
+						<h3 class="text-sm font-semibold text-foreground">{t('db.connection_status')}</h3>
 					</div>
-					<div class="mt-1 h-1.5 w-full overflow-hidden rounded-full" style="background-color: var(--color-border)">
-						<div
-							class="h-full rounded-full transition-all"
-							style="width: {poolUsagePercent()}%; background-color: {poolUsagePercent() > 80 ? 'var(--color-danger)' : poolUsagePercent() > 60 ? 'var(--color-warning)' : 'var(--color-success)'}"
-						></div>
+					<div class="space-y-3">
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-muted-foreground">Status</span>
+							<StatusBadge status={dbHealth.connected ? 'healthy' : 'critical'}>
+								{dbHealth.connected ? t('db.connected') : t('db.disconnected')}
+							</StatusBadge>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-muted-foreground">{t('db.version')}</span>
+							<span class="text-sm font-mono text-foreground">{dbHealth.version || '—'}</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-muted-foreground">{t('db.db_latency')}</span>
+							<span class="text-sm font-mono text-foreground">{dbHealth.latency_ms?.toFixed(1) ?? '—'}ms</span>
+						</div>
 					</div>
 				</div>
-			</div>
-		</div>
-	</div>
 
-	<!-- Table statistics -->
-	<div class="mb-6 overflow-hidden rounded-xl border" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<div class="border-b px-6 py-4" style="border-color: var(--color-border)">
-			<div class="flex items-center gap-2">
-				<Table2 class="h-4 w-4" style="color: var(--color-primary)" />
-				<h3 class="text-sm font-semibold">{t('db.table_stats')}</h3>
+				<!-- Connection pool card -->
+				<div class="rounded-card border border-border-card bg-background p-6 shadow-card">
+					<div class="mb-4 flex items-center gap-2">
+						<Activity class="h-4 w-4 text-accent-foreground" />
+						<h3 class="text-sm font-semibold text-foreground">{t('db.connection_pool')}</h3>
+					</div>
+					<div class="space-y-3">
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-muted-foreground">{t('db.active_connections')}</span>
+							<span class="text-sm font-mono text-foreground">{dbHealth.connection_pool?.active ?? 0}</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-muted-foreground">{t('db.idle_connections')}</span>
+							<span class="text-sm font-mono text-foreground">{dbHealth.connection_pool?.idle ?? 0}</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-muted-foreground">{t('db.waiting_connections')}</span>
+							<span class="text-sm font-mono {(dbHealth.connection_pool?.waiting ?? 0) > 0 ? 'text-accent-foreground' : 'text-foreground'}">
+								{dbHealth.connection_pool?.waiting ?? 0}
+							</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-sm text-muted-foreground">{t('db.max_connections')}</span>
+							<span class="text-sm font-mono text-foreground">{dbHealth.connection_pool?.max ?? 0}</span>
+						</div>
+						<!-- Pool usage bar -->
+						<div class="pt-1">
+							<div class="flex items-center justify-between text-xs text-muted-foreground">
+								<span>Usage</span>
+								<span>{poolUsagePercent()}%</span>
+							</div>
+							<div class="bg-muted h-2 rounded-full mt-1 overflow-hidden">
+								<div class="{poolBarColor()} h-full rounded-full transition-all" style="width: {poolUsagePercent()}%"></div>
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
-		</div>
-		<div class="overflow-x-auto">
-			<table class="w-full text-sm">
-				<thead>
-					<tr style="border-bottom: 1px solid var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('db.table_name')}</th>
-						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('db.row_count')}</th>
-						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('db.size')}</th>
-						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('db.indexes')}</th>
-						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('db.last_vacuum')}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#if dbHealth.tables && dbHealth.tables.length > 0}
-						{#each dbHealth.tables as table (table.name)}
-							<tr class="border-t" style="border-color: var(--color-border)">
-								<td class="px-4 py-3 font-medium">{table.name}</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">{formatNumber(table.row_count)}</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">{formatBytes(table.size_bytes)}</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">{table.index_count}</td>
-								<td class="px-4 py-3 text-right text-xs" style="color: var(--color-muted)">
-									{formatVacuum(table.last_vacuum)}
-								</td>
+		</Tabs.Content>
+
+		<!-- Tables Tab -->
+		<Tabs.Content value="tables">
+			<div class="overflow-hidden rounded-card border border-border-card bg-background shadow-card">
+				<div class="border-b border-border-card px-6 py-4">
+					<div class="flex items-center gap-2">
+						<Table2 class="h-4 w-4 text-accent-foreground" />
+						<h3 class="text-sm font-semibold text-foreground">{t('db.table_stats')}</h3>
+					</div>
+				</div>
+				<div class="overflow-x-auto">
+					<table class="w-full text-sm">
+						<thead>
+							<tr class="border-b border-border-card">
+								<th class="px-4 py-3 text-left font-medium text-muted-foreground">{t('db.table_name')}</th>
+								<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.row_count')}</th>
+								<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.size')}</th>
+								<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.indexes')}</th>
+								<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.last_vacuum')}</th>
 							</tr>
-						{/each}
-					{:else}
-						<tr>
-							<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-								No table statistics available
-							</td>
-						</tr>
-					{/if}
-				</tbody>
-			</table>
-		</div>
-	</div>
+						</thead>
+						<tbody>
+							{#if dbHealth.tables && dbHealth.tables.length > 0}
+								{#each dbHealth.tables as table (table.name)}
+									<tr class="border-t border-border-card">
+										<td class="px-4 py-3 font-medium text-foreground">{table.name}</td>
+										<td class="px-4 py-3 text-right font-mono text-xs text-foreground">{formatNumber(table.row_count)}</td>
+										<td class="px-4 py-3 text-right font-mono text-xs text-foreground">{formatBytes(table.size_bytes)}</td>
+										<td class="px-4 py-3 text-right font-mono text-xs text-foreground">{table.index_count}</td>
+										<td class="px-4 py-3 text-right text-xs text-muted-foreground">
+											{formatVacuum(table.last_vacuum)}
+										</td>
+									</tr>
+								{/each}
+							{:else}
+								<tr>
+									<td colspan="5" class="px-4 py-8 text-center text-muted-foreground">
+										No table statistics available
+									</td>
+								</tr>
+							{/if}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</Tabs.Content>
 
-	<!-- Slow queries -->
-	<div class="mb-6 overflow-hidden rounded-xl border" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<div class="border-b px-6 py-4" style="border-color: var(--color-border)">
-			<div class="flex items-center gap-2">
-				<Zap class="h-4 w-4" style="color: var(--color-primary)" />
-				<h3 class="text-sm font-semibold">{t('db.slow_queries')}</h3>
-				{#if dbHealth.slow_queries?.length}
-					<span class="rounded-full px-2 py-0.5 text-[10px] font-medium" style="background-color: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-						{dbHealth.slow_queries.length}
-					</span>
+		<!-- Slow Queries Tab -->
+		<Tabs.Content value="slow-queries">
+			<div class="overflow-hidden rounded-card border border-border-card bg-background shadow-card">
+				<div class="border-b border-border-card px-6 py-4">
+					<div class="flex items-center gap-2">
+						<Zap class="h-4 w-4 text-accent-foreground" />
+						<h3 class="text-sm font-semibold text-foreground">{t('db.slow_queries')}</h3>
+						{#if dbHealth.slow_queries?.length}
+							<span class="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
+								{dbHealth.slow_queries.length}
+							</span>
+						{/if}
+					</div>
+				</div>
+				{#if dbHealth.slow_queries && dbHealth.slow_queries.length > 0}
+					<div class="overflow-x-auto">
+						<table class="w-full text-sm">
+							<thead>
+								<tr class="border-b border-border-card">
+									<th class="px-4 py-3 text-left font-medium text-muted-foreground">{t('db.query')}</th>
+									<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.duration')}</th>
+									<th class="px-4 py-3 text-right font-medium text-muted-foreground">{t('db.timestamp')}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each dbHealth.slow_queries as query (query.timestamp + query.query)}
+									<tr class="border-t border-border-card">
+										<td class="max-w-md truncate px-4 py-3 font-mono text-xs text-foreground">{query.query}</td>
+										<td class="px-4 py-3 text-right font-mono text-xs">
+											<span class={query.duration_ms > 1000 ? 'text-destructive' : 'text-accent-foreground'}>
+												{formatDuration(query.duration_ms)}
+											</span>
+										</td>
+										<td class="px-4 py-3 text-right text-xs text-muted-foreground">
+											{formatTimestamp(query.timestamp)}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{:else}
+					<div class="px-6 py-8 text-center text-muted-foreground">
+						<Zap class="mx-auto h-6 w-6 opacity-40" />
+						<p class="mt-2 text-sm">{t('db.no_slow_queries')}</p>
+					</div>
 				{/if}
 			</div>
-		</div>
-		{#if dbHealth.slow_queries && dbHealth.slow_queries.length > 0}
-			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
-					<thead>
-						<tr style="border-bottom: 1px solid var(--color-border)">
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('db.query')}</th>
-							<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('db.duration')}</th>
-							<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted)">{t('db.timestamp')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each dbHealth.slow_queries as query (query.timestamp + query.query)}
-							<tr class="border-t" style="border-color: var(--color-border)">
-								<td class="max-w-md truncate px-4 py-3 font-mono text-xs">{query.query}</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">
-									<span style:color={query.duration_ms > 1000 ? 'var(--color-danger)' : 'var(--color-warning)'}>
-										{formatDuration(query.duration_ms)}
-									</span>
-								</td>
-								<td class="px-4 py-3 text-right text-xs" style="color: var(--color-muted)">
-									{formatTimestamp(query.timestamp)}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		{:else}
-			<div class="px-6 py-8 text-center" style="color: var(--color-muted)">
-				<Zap class="mx-auto h-6 w-6 opacity-40" />
-				<p class="mt-2 text-sm">{t('db.no_slow_queries')}</p>
-			</div>
-		{/if}
-	</div>
+		</Tabs.Content>
 
-	<!-- Replication status (if applicable) -->
-	{#if dbHealth.replication}
-		<div class="overflow-hidden rounded-xl border" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<div class="border-b px-6 py-4" style="border-color: var(--color-border)">
-				<div class="flex items-center gap-2">
-					<Database class="h-4 w-4" style="color: var(--color-primary)" />
-					<h3 class="text-sm font-semibold">{t('db.replication')}</h3>
-				</div>
-			</div>
-			<div class="px-6 py-4">
-				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="flex items-center justify-between">
-						<span class="text-sm" style="color: var(--color-muted)">{t('db.replication_state')}</span>
-						<StatusBadge status={dbHealth.replication.state === 'streaming' ? 'healthy' : 'warning'}>
-							{dbHealth.replication.state}
-						</StatusBadge>
+		<!-- Replication Tab -->
+		<Tabs.Content value="replication">
+			{#if dbHealth.replication}
+				<div class="overflow-hidden rounded-card border border-border-card bg-background shadow-card">
+					<div class="border-b border-border-card px-6 py-4">
+						<div class="flex items-center gap-2">
+							<Database class="h-4 w-4 text-accent-foreground" />
+							<h3 class="text-sm font-semibold text-foreground">{t('db.replication')}</h3>
+						</div>
 					</div>
-					<div class="flex items-center justify-between">
-						<span class="text-sm" style="color: var(--color-muted)">{t('db.replication_lag')}</span>
-						<span class="text-sm font-mono" style:color={dbHealth.replication.lag_seconds > 5 ? 'var(--color-danger)' : undefined}>
-							{dbHealth.replication.lag_seconds.toFixed(1)}s
-						</span>
+					<div class="px-6 py-4">
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="flex items-center justify-between">
+								<span class="text-sm text-muted-foreground">{t('db.replication_state')}</span>
+								<StatusBadge status={dbHealth.replication.state === 'streaming' ? 'healthy' : 'warning'}>
+									{dbHealth.replication.state}
+								</StatusBadge>
+							</div>
+							<div class="flex items-center justify-between">
+								<span class="text-sm text-muted-foreground">{t('db.replication_lag')}</span>
+								<span class="text-sm font-mono {dbHealth.replication.lag_seconds > 5 ? 'text-destructive' : 'text-foreground'}">
+									{dbHealth.replication.lag_seconds?.toFixed(1)}s
+								</span>
+							</div>
+						</div>
 					</div>
 				</div>
-			</div>
-		</div>
-	{/if}
+			{:else}
+				<div class="rounded-card border border-border-card bg-background p-12 text-center shadow-card">
+					<Database class="mx-auto h-10 w-10 text-muted-foreground opacity-30" />
+					<p class="mt-4 text-sm font-medium text-muted-foreground">No replication data available</p>
+					<p class="mt-1 text-xs text-muted-foreground">This instance does not appear to be configured for replication.</p>
+				</div>
+			{/if}
+		</Tabs.Content>
+	</Tabs.Root>
 {:else}
 	<!-- No data state -->
-	<div class="rounded-xl border p-12 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<Database class="mx-auto h-10 w-10 opacity-30" style="color: var(--color-muted)" />
-		<p class="mt-4 text-sm font-medium" style="color: var(--color-muted)">No database health data available</p>
-		<p class="mt-1 text-xs" style="color: var(--color-muted)">The backend may not yet expose database metrics.</p>
+	<div class="rounded-card border border-border-card bg-background p-12 text-center shadow-card">
+		<Database class="mx-auto h-10 w-10 text-muted-foreground opacity-30" />
+		<p class="mt-4 text-sm font-medium text-muted-foreground">No database health data available</p>
+		<p class="mt-1 text-xs text-muted-foreground">The backend may not yet expose database metrics.</p>
 	</div>
 {/if}
 
 {#if vacuumMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-success); background-color: color-mix(in srgb, var(--color-success) 8%, transparent); color: var(--color-success)">
+	<div class="mb-4 rounded-card border border-border-card bg-foreground/10 px-4 py-3 text-sm text-foreground">
 		{vacuumMessage}
 	</div>
 {/if}

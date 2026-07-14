@@ -10,7 +10,9 @@ export const load: PageServerLoad = async ({ cookies }) => {
 		const res = await fetch(`${API_BASE}/control/audit-logs?page=0`, { headers });
 		if (!res.ok) return { initial: null };
 		const body = await res.json();
-		return { initial: body.data ?? body };
+		const raw = body.data ?? body;
+		const entries = Array.isArray(raw) ? raw : [];
+		return { initial: { entries, page: 0, total_pages: 1 } };
 	} catch {
 		return { initial: null };
 	}

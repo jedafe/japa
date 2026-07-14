@@ -12,7 +12,9 @@ export interface AdminNotification {
 }
 
 let _notifications = $state<AdminNotification[]>([]);
-export const unreadCount = $derived(_notifications.filter((n) => !n.read).length);
+export function getUnreadCount(): number {
+	return _notifications.filter((n) => !n.read).length;
+}
 
 let initialized = false;
 
@@ -73,4 +75,6 @@ export async function markAllRead() {
 	}
 }
 
-export { _notifications as notifications };
+export function getNotifications(): AdminNotification[] {
+	return _notifications;
+}
