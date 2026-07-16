@@ -81,9 +81,15 @@ const (
 
 // Service provides payment operations with reader/writer pool separation.
 type Service struct {
-	store  *Store
-	db     *db.DB
-	wallet CreditSpender
+	store    *Store
+	db       *db.DB
+	wallet   CreditSpender
+	enqueuer paymentsEnqueuer
+}
+
+// paymentsEnqueuer is the subset of worker.Enqueuer that payments needs.
+type paymentsEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -97,4 +103,9 @@ func NewService(database *db.DB, wallet CreditSpender) *Service {
 		db:     database,
 		wallet: wallet,
 	}
+}
+
+// SetEnqueuer injects the Asynq enqueuer for async webhook processing.
+func (s *Service) SetEnqueuer(e paymentsEnqueuer) {
+	s.enqueuer = e
 }

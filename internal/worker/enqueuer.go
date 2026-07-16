@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"time"
+
 	"github.com/hibiken/asynq"
 )
 
@@ -26,14 +28,23 @@ func NewEnqueuer(client *asynq.Client) *Enqueuer {
 }
 
 // Enqueue builds an asynq.Task from the task type and payload and enqueues it
-// on the shared client. Any variadic opts that are asynq.Option values are
-// forwarded to the client; any other values are ignored so callers that pass
-// nothing (the common case) work unchanged.
+// on the shared client. Queue tier is inferred from the task type via the
+// tier lookup table. High-risk tasks get asynq.Unique() idempotency by
+// default. Any variadic opts that are asynq.Option values are forwarded to the
+// client; any other values are ignored so callers that pass nothing (the
+// common case) work unchanged.
 func (e *Enqueuer) Enqueue(taskType string, payload []byte, opts ...interface{}) error {
 	if e == nil || e.client == nil {
 		return nil
 	}
-	asynqOpts := make([]asynq.Option, 0, len(opts))
+	queue := QueueForTask(taskType)
+	asynqOpts := []asynq.Option{asynq.Queue(queue)}
+
+	// Apply task-type–specific defaults before caller opts (caller can override).
+	for _, defaultOpt := range taskDefaults(taskType) {
+		asynqOpts = append(asynqOpts, defaultOpt)
+	}
+
 	for _, o := range opts {
 		if opt, ok := o.(asynq.Option); ok {
 			asynqOpts = append(asynqOpts, opt)
@@ -41,4 +52,76 @@ func (e *Enqueuer) Enqueue(taskType string, payload []byte, opts ...interface{})
 	}
 	_, err := e.client.Enqueue(asynq.NewTask(taskType, payload), asynqOpts...)
 	return err
+}
+
+// taskDefaults returns default asynq options for a given task type. High-risk
+// tasks that would cause user-visible damage on duplicate processing get a
+// Unique() key. One-shot tasks (publish, newsletter sends, commission credits)
+// get a 24h TTL; notification/email tasks get a 1h TTL via this method plus a
+// shorter TTL via the task-level Unique call.
+var idempotentTasks = map[string]bool{
+	TypeEmailSend:               true,
+	TypePushDelivery:            true,
+	TypeScheduledPublish:        true,
+	TypeNewsletterSend:          true,
+	TypeAffiliateCreditCommission: true,
+	TypeWalletProcessActivityEvent: true,
+}
+
+func taskDefaults(taskType string) []asynq.Option {
+	if !idempotentTasks[taskType] {
+		return nil
+	}
+	// One-shot tasks prevent duplicates for 24h; notification tasks for 1h.
+	ttl := 1 * time.Hour
+	switch taskType {
+	case TypeScheduledPublish, TypeNewsletterSend, TypeAffiliateCreditCommission:
+		ttl = 24 * time.Hour
+	}
+	return []asynq.Option{asynq.Unique(ttl)}
+}
+
+// taskTier maps each task type string to its queue tier.
+var taskTier = func() map[string]string {
+	m := make(map[string]string, 70)
+
+	// Critical tier
+	for _, t := range []string{
+		TypeNotificationDispatchBatch, TypeWebhookDelivery, TypePaymentWebhookProcess,
+		TypeTicketSendConfirmation, TypePushDelivery, TypeDMNotifyRequest, TypeDMNotifyMessage,
+	} {
+		m[t] = QueueCritical
+	}
+
+	// Low tier
+	for _, t := range []string{
+		TypeDigestEmail, TypeSitemapGenerate, TypeRSSRegenerate,
+		TypeDataExport, TypeAccountDeletionCleanup, TypeAdEventIngest,
+		TypeMaintenanceUpdateVelocityScores, TypeMaintenanceCheckSLABreaches,
+		TypeMaintenanceUpdateGeoIPDB, TypeSpaceAutoPopulate,
+		TypeAnalyticsRefreshViews, TypeSecurityScan,
+		TypeMaintenanceRegenerateLLMsTxt, TypeLearningIssueCertificate,
+		TypeDBManualVacuum, TypeNewsletterDigest,
+		TypeComputeTrending, TypeComputeSuggestions,
+		TypeMaintenanceCheckExpiredBans, TypeMaintenanceCheckExpiredBoosts,
+		TypeMaintenancePruneOldFeeds, TypeMaintenancePruneAuditLogs,
+		TypeMaintenancePrunePushTokens, TypeModerationAutoHide,
+		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents,
+		TypeCouponExpireCheck, TypeAffiliateRecordClick,
+		TypeAffiliateCreditCommission, TypeAffiliateExpireCheck,
+		TypeScheduledPublishSweep, TypeVelocityScoreRecalc,
+	} {
+		m[t] = QueueLow
+	}
+
+	return m
+}()
+
+// QueueForTask returns the Asynq queue tier name for a given task type string.
+// Default tier tasks and unknown task types return QueueDefault.
+func QueueForTask(taskType string) string {
+	if q, ok := taskTier[taskType]; ok {
+		return q
+	}
+	return QueueDefault
 }

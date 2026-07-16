@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -63,7 +64,7 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, tenantID pgtype.UU
 			ReviewStatus: r.ReviewStatus,
 			ParentID:     uuidPtr(r.ParentID),
 			Position:     r.Position,
-			CreatedAt:    r.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:    r.CreatedAt.Time.Format(time.RFC3339),
 		}
 	}
 
@@ -90,8 +91,8 @@ func (s *Service) ListAllDocPagesByAudience(ctx context.Context, tenantID pgtype
 			LastReviewedAt: timestamptzPtr(r.LastReviewedAt),
 			ParentID:       uuidPtr(r.ParentID),
 			Position:       r.Position,
-			CreatedAt:      r.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-			UpdatedAt:      r.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt:      r.UpdatedAt.Time.Format(time.RFC3339),
 		}
 	}
 
@@ -325,8 +326,8 @@ func toDocPage(p gen.DocPage) *DocPage {
 		LastReviewedAt: timestamptzPtr(p.LastReviewedAt),
 		ParentID:       uuidPtr(p.ParentID),
 		Position:       p.Position,
-		CreatedAt:      p.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:      p.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:      p.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:      p.UpdatedAt.Time.Format(time.RFC3339),
 	}
 }
 
@@ -347,7 +348,7 @@ func timestamptzPtr(t pgtype.Timestamptz) *string {
 		return nil
 	}
 
-	s := t.Time.Format("2006-01-02T15:04:05Z")
+	s := t.Time.Format(time.RFC3339)
 
 	return &s
 }

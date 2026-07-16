@@ -2,11 +2,16 @@ package notifications
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // NotificationInfo extends a notification row with the type label.
@@ -71,7 +76,7 @@ func (s *Service) DispatchNotification(ctx context.Context, _, recipientID pgtyp
 		return DispatchResult{}, fmt.Errorf("creating batch window: %w", err)
 	}
 
-	// Retrieve the newly created window to get its ID.
+	// Retrieve the newly created window to get its ID and close_at.
 	window, err = s.store.getOpenBatchWindow(ctx, gen.GetOpenBatchWindowParams{
 		RecipientID:      recipientID,
 		NotificationType: nType,
@@ -82,17 +87,128 @@ func (s *Service) DispatchNotification(ctx context.Context, _, recipientID pgtyp
 		return DispatchResult{}, fmt.Errorf("retrieving new batch window: %w", err)
 	}
 
+	// Enqueue the dispatch batch task to fire at window_close_at.
+	s.enqueueBatchDispatch(window)
+
 	return DispatchResult{Action: "created", WindowID: window.ID}, nil
 }
 
+// enqueueBatchDispatch schedules a notification:dispatch_batch Asynq task
+// to fire when the batch window closes.
+func (s *Service) enqueueBatchDispatch(window gen.NotificationBatchWindow) {
+	if s.client == nil {
+		return
+	}
+
+	payload, err := json.Marshal(NotificationDispatchPayload{
+		WindowID: window.ID.String(),
+	})
+	if err != nil {
+		slog.Error("notifications: failed to marshal dispatch_batch payload", "error", err)
+		return
+	}
+
+	task := asynq.NewTask(TaskDispatchBatch, payload)
+	opts := []asynq.Option{
+		asynq.Queue(worker.QueueForTask(TaskDispatchBatch)),
+		asynq.ProcessAt(window.WindowCloseAt.Time),
+	}
+	if _, err := s.client.Enqueue(task, opts...); err != nil {
+		slog.Error("notifications: failed to enqueue dispatch_batch",
+			"window_id", window.ID.String(), "error", err)
+	}
+}
+
 // DispatchBatch processes a completed batch window.
-// Creates the final notification row with aggregated actor info
-// (e.g., "Alice and 9 others reacted") and marks the window as dispatched.
-func (s *Service) DispatchBatch(ctx context.Context, windowID, _ pgtype.UUID) error {
-	// We need the window details to build the notification.
-	// Since there's no "get by ID" query, we'll build the notification from
-	// the window's data. This is called by the Asynq task processor.
-	return s.store.markBatchWindowDispatched(ctx, windowID)
+// Reads the window, resolves actor display names, builds the aggregated notification
+// (e.g. "Alice and 9 others reacted"), inserts the row, marks the window dispatched,
+// and enqueues push/email delivery if the recipient's preferences allow.
+func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error {
+	window, err := s.store.getBatchWindowByID(ctx, windowID)
+	if err != nil {
+		return fmt.Errorf("reading batch window: %w", err)
+	}
+
+	if window.Dispatched {
+		return nil
+	}
+
+	action := notificationAction(window.NotificationType)
+
+	// Get the last actor's display name for the batch title.
+	actorName := resolveActorDisplayName(ctx, s.db, window.LastActorID)
+
+	title := BuildBatchTitle(actorName, window.ActorCount, action)
+
+	// Insert the aggregated notification.
+	var bodyPtr *string
+	var actionURLPtr *string
+
+	if err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
+		TenantID:         pgtype.UUID{}, // batch windows are tenant-less in current schema
+		RecipientID:      window.RecipientID,
+		NotificationType: window.NotificationType,
+		ActorType:        stringPtr(ActorTypeUser),
+		ActorID:          window.LastActorID,
+		SubjectType:      stringPtr(window.SubjectType),
+		SubjectID:        window.SubjectID,
+		Title:            title,
+		Body:             bodyPtr,
+		ActionUrl:        actionURLPtr,
+	}); err != nil {
+		return fmt.Errorf("inserting batch notification: %w", err)
+	}
+
+	// Mark window as dispatched.
+	if err := s.store.markBatchWindowDispatched(ctx, windowID); err != nil {
+		return fmt.Errorf("marking batch window dispatched: %w", err)
+	}
+
+	// Enqueue push delivery if user has push enabled for this type.
+	s.checkAndEnqueuePush(ctx, window.RecipientID, window.NotificationType, title, "", "")
+
+	return nil
+}
+
+// notificationAction maps notification types to human-readable action verbs.
+func notificationAction(ntype string) string {
+	switch ntype {
+	case TypeReaction:
+		return "reacted"
+	case TypeComment:
+		return "commented"
+	case TypeMention:
+		return "mentioned you"
+	case TypeNewFollower:
+		return "followed you"
+	case TypePostReply:
+		return "replied"
+	case TypeDMMessage:
+		return "sent a message"
+	default:
+		return "interacted"
+	}
+}
+
+// resolveActorDisplayName returns the display_name of a user, or "Someone" on error.
+func resolveActorDisplayName(ctx context.Context, dbase *db.DB, userID pgtype.UUID) string {
+	queries := gen.New(dbase.Reader)
+	user, err := queries.GetUserProfile(ctx, gen.GetUserProfileParams{
+		TenantID: pgtype.UUID{},
+		UserID:   userID,
+	})
+	if err != nil || user.DisplayName == nil || *user.DisplayName == "" {
+		return "Someone"
+	}
+	return *user.DisplayName
+}
+
+// stringPtr returns a pointer to s, or nil if s is empty.
+func stringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // CreateNotification directly creates a single notification (non-batch path).

@@ -176,28 +176,30 @@ func (s *Service) DeleteFollowsByEntity(ctx context.Context, entityType string, 
 // table by delta (+1 or -1). Uses a direct SQL UPDATE because not all entity
 // tables share the same column name, and triggers may not exist yet.
 func (s *Service) updateFollowerCount(ctx context.Context, entityType string, entityID pgtype.UUID, delta int32) error {
-	var table string
-
 	switch entityType {
 	case EntityTypeUser:
-		table = "users"
+		_, err := s.db.Writer.Exec(ctx,
+			"UPDATE users SET follower_count = GREATEST(0, follower_count + $1) WHERE id = $2",
+			delta, entityID)
+		if err != nil {
+			return fmt.Errorf("updating follower count on users: %w", err)
+		}
 	case EntityTypeSpace:
-		table = "spaces"
+		_, err := s.db.Writer.Exec(ctx,
+			"UPDATE spaces SET follower_count = GREATEST(0, follower_count + $1) WHERE id = $2",
+			delta, entityID)
+		if err != nil {
+			return fmt.Errorf("updating follower count on spaces: %w", err)
+		}
 	case EntityTypeTag:
-		table = "tags"
+		_, err := s.db.Writer.Exec(ctx,
+			"UPDATE tags SET follower_count = GREATEST(0, follower_count + $1) WHERE id = $2",
+			delta, entityID)
+		if err != nil {
+			return fmt.Errorf("updating follower count on tags: %w", err)
+		}
 	default:
-		// Organizations and professional_profiles don't have tables yet.
 		return nil
-	}
-
-	query := fmt.Sprintf(
-		"UPDATE %s SET follower_count = GREATEST(0, follower_count + $1) WHERE id = $2",
-		table,
-	)
-
-	_, err := s.db.Writer.Exec(ctx, query, delta, entityID)
-	if err != nil {
-		return fmt.Errorf("updating follower count on %s: %w", table, err)
 	}
 
 	return nil

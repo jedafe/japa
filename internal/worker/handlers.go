@@ -139,29 +139,19 @@ func requireDB() (*gen.Queries, error) {
 // Critical tier handlers
 // ---------------------------------------------------------------------------
 
-// HandleNotificationDispatchBatch processes a batch of notification dispatch tasks from the queue.
+// HandleNotificationDispatchBatch processes a batch notification window from the queue.
+// The notification service's DispatchBatch reads the window, builds the aggregated
+// notification row, and marks the window dispatched.
 func HandleNotificationDispatchBatch(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:notification:dispatch_batch", "payload", t.Payload())
 
-	queries, err := requireDB()
-	if err != nil {
-		slog.Warn("task:notification:dispatch_batch: no database, skipping", "error", err)
+	if notificationBatchDispatcher == nil {
+		slog.Warn("task:notification:dispatch_batch: no dispatcher registered, skipping")
 		return nil
 	}
 
 	var payload struct {
-		Notifications []struct {
-			RecipientID      string `json:"recipient_id"`
-			TenantID         string `json:"tenant_id"`
-			NotificationType string `json:"notification_type"`
-			ActorType        string `json:"actor_type"`
-			ActorID          string `json:"actor_id"`
-			SubjectType      string `json:"subject_type"`
-			SubjectID        string `json:"subject_id"`
-			Title            string `json:"title"`
-			Body             string `json:"body"`
-			ActionURL        string `json:"action_url"`
-		} `json:"notifications"`
+		WindowID string `json:"window_id"`
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -169,65 +159,15 @@ func HandleNotificationDispatchBatch(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	for _, n := range payload.Notifications {
-		recipientID, err := scanUUID(n.RecipientID)
-		if err != nil {
-			slog.Error("task:notification:dispatch_batch: invalid recipient_id", "value", n.RecipientID, "error", err)
-			continue
-		}
-
-		tenantID, err := scanUUID(n.TenantID)
-		if err != nil {
-			slog.Error("task:notification:dispatch_batch: invalid tenant_id", "value", n.TenantID, "error", err)
-			continue
-		}
-
-		var body, actionURL *string
-		if n.Body != "" {
-			body = &n.Body
-		}
-
-		if n.ActionURL != "" {
-			actionURL = &n.ActionURL
-		}
-
-		actorType := &n.ActorType
-		if n.ActorType == "" {
-			actorType = nil
-		}
-
-		actorID, _ := scanUUID(n.ActorID)
-
-		subjectType := &n.SubjectType
-		if n.SubjectType == "" {
-			subjectType = nil
-		}
-
-		subjectID, _ := scanUUID(n.SubjectID)
-
-		if err := queries.InsertNotification(ctx, gen.InsertNotificationParams{
-			TenantID:         tenantID,
-			RecipientID:      recipientID,
-			NotificationType: n.NotificationType,
-			ActorType:        actorType,
-			ActorID:          actorID,
-			SubjectType:      subjectType,
-			SubjectID:        subjectID,
-			Title:            n.Title,
-			Body:             body,
-			ActionUrl:        actionURL,
-		}); err != nil {
-			slog.Error("task:notification:dispatch_batch: failed to insert notification",
-				"recipient_id", n.RecipientID, "error", err)
-			continue
-		}
-
-		slog.Info("task:notification:dispatch_batch: notification sent",
-			"recipient_id", n.RecipientID, "type", n.NotificationType)
+	windowID, err := scanUUID(payload.WindowID)
+	if err != nil {
+		slog.Error("task:notification:dispatch_batch: invalid window_id", "value", payload.WindowID, "error", err)
+		return err
 	}
 
-	return nil
+	return notificationBatchDispatcher.DispatchBatch(ctx, windowID)
 }
+
 
 // HandleWebhookDelivery delivers a queued webhook to the registered endpoint.
 func HandleWebhookDelivery(ctx context.Context, t *asynq.Task) error {

@@ -40,6 +40,7 @@ var Tiers = map[string]RateLimitTier{
 	"tight":    {Requests: 10, Window: time.Minute},
 	"moderate": {Requests: 60, Window: time.Minute},
 	"loose":    {Requests: 300, Window: time.Minute},
+	"webhook":  {Requests: 3000, Window: time.Minute},
 }
 
 // RateLimit returns middleware that enforces a fixed-window rate limit

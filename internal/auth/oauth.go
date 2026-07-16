@@ -9,14 +9,17 @@ package auth
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -343,12 +346,33 @@ func fetchGitHubEmail(ctx context.Context, accessToken string) string {
 
 // --- Apple Provider (Sign in with Apple) ---
 
+// appleJWKS caches Apple's public keys used for ID token signature verification.
+// Keys auto-refresh every hour with a mutex-guarded on-demand fetch.
+var (
+	appleJWKS     map[string]interface{}
+	appleJWKSMu   sync.RWMutex
+	appleJWKSFetchedAt time.Time
+)
+
+// appleJWKSKeys represents the JSON structure of Apple's JWKS endpoint.
+type appleJWKSKeys struct {
+	Keys []struct {
+		Kty string `json:"kty"`
+		Kid string `json:"kid"`
+		Use string `json:"use"`
+		Alg string `json:"alg"`
+		N   string `json:"n"`
+		E   string `json:"e"`
+	} `json:"keys"`
+}
+
 type appleProvider struct {
 	clientID      string
 	teamID        string
 	keyID         string
 	privateKeyPEM string
 	redirectURL   string
+	httpClient    *http.Client
 }
 
 func (a *appleProvider) Name() string { return "apple" }
@@ -439,27 +463,175 @@ type appleIDTokenClaims struct {
 	jwt.RegisteredClaims
 }
 
-// parseIDToken parses Apple's ID token without signature verification.
-// Apple's public keys are available via JWKS; in production, verify against
-// https://appleid.apple.com/auth/keys. For this stub we decode the payload
-// only — signature verification should be added before production use.
+// parseIDToken parses and verifies Apple's ID token against Apple's JWKS endpoint.
+// Keys are fetched from https://appleid.apple.com/auth/keys, cached for up to 1 hour,
+// and refreshed on demand when the token's kid is not found in the cache.
 func (a *appleProvider) parseIDToken(idToken string) (*appleIDTokenClaims, error) {
-	parts := strings.Split(idToken, ".")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid JWT format: expected 3 parts, got %d", len(parts))
+	httpClient := a.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
 	}
 
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("decoding JWT payload: %w", err)
+	// Determine the token's key ID to decide if we need a fresh fetch.
+	kid := extractUnverifiedKid(idToken)
+
+	// Fetch JWKS if cache is empty, stale, or missing the required key.
+	if shouldRefreshAppleJWKS(kid) {
+		keys, err := fetchAppleJWKS(httpClient)
+		if err != nil {
+			return nil, fmt.Errorf("fetching Apple JWKS: %w", err)
+		}
+		appleJWKSMu.Lock()
+		appleJWKS = keys
+		appleJWKSFetchedAt = time.Now()
+		appleJWKSMu.Unlock()
+	}
+
+	appleJWKSMu.RLock()
+	keys := appleJWKS
+	appleJWKSMu.RUnlock()
+
+	if keys == nil {
+		return nil, fmt.Errorf("apple JWKS not available — cannot verify ID token")
 	}
 
 	var claims appleIDTokenClaims
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil, fmt.Errorf("unmarshalling JWT claims: %w", err)
+	token, err := jwt.ParseWithClaims(idToken, &claims, func(token *jwt.Token) (interface{}, error) {
+		kidVal, ok := token.Header["kid"]
+		if !ok {
+			return nil, fmt.Errorf("token missing kid header")
+		}
+		kidStr, ok := kidVal.(string)
+		if !ok {
+			return nil, fmt.Errorf("token kid is not a string")
+		}
+		key, ok := keys[kidStr]
+		if !ok {
+			return nil, fmt.Errorf("key %q not found in JWKS", kidStr)
+		}
+		return key, nil
+	}, jwt.WithLeeway(30*time.Second), jwt.WithValidMethods([]string{"RS256"}))
+	if err != nil {
+		return nil, fmt.Errorf("verifying Apple ID token: %w", err)
+	}
+
+	if !token.Valid {
+		return nil, fmt.Errorf("apple ID token invalid")
+	}
+
+	if claims.Issuer != "https://appleid.apple.com" {
+		return nil, fmt.Errorf("unexpected issuer: %s", claims.Issuer)
+	}
+	if claims.Audience == nil || !containsAudience(claims.Audience, a.clientID) {
+		return nil, fmt.Errorf("token audience does not include client_id")
+	}
+	if claims.Subject == "" {
+		return nil, fmt.Errorf("token missing subject")
 	}
 
 	return &claims, nil
+}
+
+// extractUnverifiedKid extracts the kid header from a JWT without verification.
+func extractUnverifiedKid(rawToken string) string {
+	parts := strings.Split(rawToken, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return ""
+	}
+	var header struct {
+		Kid string `json:"kid"`
+	}
+	if json.Unmarshal(headerJSON, &header) != nil {
+		return ""
+	}
+	return header.Kid
+}
+
+// shouldRefreshAppleJWKS returns true if the JWKS cache should be refreshed.
+func shouldRefreshAppleJWKS(kid string) bool {
+	appleJWKSMu.RLock()
+	defer appleJWKSMu.RUnlock()
+	if appleJWKS == nil {
+		return true
+	}
+	if time.Since(appleJWKSFetchedAt) > time.Hour {
+		return true
+	}
+	if kid != "" {
+		_, ok := appleJWKS[kid]
+		return !ok
+	}
+	return false
+}
+
+// fetchAppleJWKS fetches and parses Apple's JWKS endpoint into a key map.
+func fetchAppleJWKS(httpClient *http.Client) (map[string]interface{}, error) {
+	const appleJWKSEndpoint = "https://appleid.apple.com/auth/keys" //nolint:gosec
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, appleJWKSEndpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating JWKS request: %w", err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching Apple JWKS: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading JWKS response: %w", err)
+	}
+
+	var jwksResp appleJWKSKeys
+	if err := json.Unmarshal(body, &jwksResp); err != nil {
+		return nil, fmt.Errorf("parsing JWKS response: %w", err)
+	}
+
+	keys := make(map[string]interface{}, len(jwksResp.Keys))
+	for _, k := range jwksResp.Keys {
+		if k.Kid == "" {
+			continue
+		}
+		nBytes, err := base64.RawURLEncoding.DecodeString(k.N)
+		if err != nil {
+			continue
+		}
+		eBytes, err := base64.RawURLEncoding.DecodeString(k.E)
+		if err != nil {
+			continue
+		}
+		eInt := 0
+		for _, b := range eBytes {
+			eInt = eInt<<8 + int(b)
+		}
+		pubKey := &rsa.PublicKey{
+			N: new(big.Int).SetBytes(nBytes),
+			E: eInt,
+		}
+		keys[k.Kid] = pubKey
+	}
+
+	return keys, nil
+}
+
+// containsAudience checks if aud (which may be a string or []string) includes
+// the given clientID.
+func containsAudience(aud jwt.ClaimStrings, clientID string) bool {
+	for _, a := range aud {
+		if a == clientID {
+			return true
+		}
+	}
+	return false
 }
 
 // generateClientSecret creates a JWT signed with the Apple private key.

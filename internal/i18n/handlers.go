@@ -13,6 +13,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -126,8 +127,8 @@ func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 			Key:       r.Key,
 			Value:     r.Value,
 			Context:   r.Context,
-			CreatedAt: r.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-			UpdatedAt: r.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			CreatedAt: r.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt: r.UpdatedAt.Time.Format(time.RFC3339),
 		})
 	}
 

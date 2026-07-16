@@ -15,7 +15,7 @@ import (
 const anonymizeUser = `-- name: AnonymizeUser :exec
 UPDATE users
 SET username = 'Deleted User',
-    email = NULL,
+    email = 'deleted-' || id::text,
     password_hash = '',
     profile_type = NULL,
     status = 'deleted',
@@ -301,6 +301,24 @@ func (q *Queries) GetUserConsents(ctx context.Context, arg GetUserConsentsParams
 	return items, nil
 }
 
+const hardDeleteUser = `-- name: HardDeleteUser :exec
+DELETE FROM users
+WHERE id = $1 AND tenant_id = $2 AND status = 'deleted'
+`
+
+type HardDeleteUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Physically deletes the anonymized user row. ON DELETE CASCADE handles most
+// child tables; callers must SET NULL or reassign non-CASCADE FK references
+// before calling this.
+func (q *Queries) HardDeleteUser(ctx context.Context, arg HardDeleteUserParams) error {
+	_, err := q.db.Exec(ctx, hardDeleteUser, arg.UserID, arg.TenantID)
+	return err
+}
+
 const hasConsent = `-- name: HasConsent :one
 SELECT granted
 FROM consent_records
@@ -510,6 +528,55 @@ func (q *Queries) ListPendingDeletionRequests(ctx context.Context, pageLimit int
 		return nil, err
 	}
 	return items, nil
+}
+
+const nullifyPaymentUserRefs = `-- name: NullifyPaymentUserRefs :exec
+UPDATE payments SET user_id = NULL
+WHERE user_id = $1 AND tenant_id = $2
+`
+
+type NullifyPaymentUserRefsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Nulls payment-related user references for financial audit trail preservation.
+func (q *Queries) NullifyPaymentUserRefs(ctx context.Context, arg NullifyPaymentUserRefsParams) error {
+	_, err := q.db.Exec(ctx, nullifyPaymentUserRefs, arg.UserID, arg.TenantID)
+	return err
+}
+
+const nullifyTicketSubmitter = `-- name: NullifyTicketSubmitter :exec
+UPDATE tickets SET submitter_user_id = NULL
+WHERE submitter_user_id = $1 AND tenant_id = $2
+`
+
+type NullifyTicketSubmitterParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Nulls ticket submitter reference.
+func (q *Queries) NullifyTicketSubmitter(ctx context.Context, arg NullifyTicketSubmitterParams) error {
+	_, err := q.db.Exec(ctx, nullifyTicketSubmitter, arg.UserID, arg.TenantID)
+	return err
+}
+
+const reassignContentAuthor = `-- name: ReassignContentAuthor :exec
+UPDATE contents SET author_id = $1
+WHERE author_id = $2 AND tenant_id = $3
+`
+
+type ReassignContentAuthorParams struct {
+	TargetUserID pgtype.UUID `json:"target_user_id"`
+	UserID       pgtype.UUID `json:"user_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+// Reassigns content authorship before user deletion to preserve thread continuity.
+func (q *Queries) ReassignContentAuthor(ctx context.Context, arg ReassignContentAuthorParams) error {
+	_, err := q.db.Exec(ctx, reassignContentAuthor, arg.TargetUserID, arg.UserID, arg.TenantID)
+	return err
 }
 
 const recordConsent = `-- name: RecordConsent :one

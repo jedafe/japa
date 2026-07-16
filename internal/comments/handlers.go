@@ -155,6 +155,28 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": comments})
 }
 
+// GetComment handles GET /api/v1/comments/{id}.
+func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	commentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comment ID")
+		return
+	}
+
+	comment, err := h.Service.GetComment(r.Context(), tenantID, commentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": comment})
+}
+
 // CreateComment handles POST /api/v1/content/{id}/comments.
 func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

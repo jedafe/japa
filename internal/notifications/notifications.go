@@ -8,11 +8,13 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Notification type constants — must match the seeded rows in notification_types.
@@ -93,7 +95,7 @@ func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, acti
 
 	task := asynq.NewTask(TaskPushDelivery, payload)
 
-	info, err := s.client.Enqueue(task, asynq.Queue("default"))
+	info, err := s.client.Enqueue(task, asynq.Queue(worker.QueueForTask(TaskPushDelivery)), asynq.Unique(1*time.Hour))
 	if err != nil {
 		slog.Error("notifications: failed to enqueue push delivery",
 			"recipient_id", recipientID.String(), "error", err)

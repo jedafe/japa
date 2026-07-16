@@ -123,7 +123,9 @@ func (s *Service) UpdatePaymentStatus(ctx context.Context, id, tenantID pgtype.U
 }
 
 // ProcessWebhook processes a webhook event from a payment provider.
-func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, provider string, event WebhookEvent) error {
+// Status indicates the event outcome ("succeeded", "failed", "refunded") and is extracted
+// from the provider-specific payload by each HTTP handler before calling this method.
+func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, provider string, event WebhookEvent, status string) error {
 	// Check idempotency
 	processed, err := s.store.isWebhookEventProcessed(ctx, tenantID, provider, event.EventID)
 	if err != nil {
@@ -143,6 +145,17 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 	})
 	if err != nil {
 		return fmt.Errorf("recording webhook event: %w", err)
+	}
+
+	// Enqueue async processing — the worker handles payment status updates, subscription
+	// activation, wallet adjustments, and affiliate commission crediting.
+	if s.enqueuer != nil {
+		payload, _ := json.Marshal(map[string]string{
+			"event_id":  event.EventID,
+			"tenant_id": tenantID.String(),
+			"status":    status,
+		})
+		_ = s.enqueuer.Enqueue("payment:process_webhook", payload)
 	}
 
 	// Mark as processed

@@ -52,8 +52,14 @@ const (
 
 // Service provides wallet operations with reader/writer pool separation.
 type Service struct {
-	store *Store
-	db    *db.DB
+	store    *Store
+	db       *db.DB
+	enqueuer walletEnqueuer
+}
+
+// walletEnqueuer is the subset of worker.Enqueuer that wallet needs.
+type walletEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -65,4 +71,9 @@ func NewService(database *db.DB) *Service {
 		},
 		db: database,
 	}
+}
+
+// SetEnqueuer injects the Asynq enqueuer for async activity event processing.
+func (s *Service) SetEnqueuer(e walletEnqueuer) {
+	s.enqueuer = e
 }

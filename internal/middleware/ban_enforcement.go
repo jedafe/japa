@@ -12,8 +12,8 @@ import (
 )
 
 // BanEnforcement returns middleware that checks if the authenticated user
-// is banned. It checks the Valkey cache first (jc:perm:{user_id} with a
-// ban flag) and falls back to the isBanned callback for a database lookup.
+// is banned. It checks the Valkey cache first (jc:ban:{user_id}) and
+// falls back to the isBanned callback for a database lookup.
 //
 // The isBanned function should query the user_bans table and return true
 // when an active (non-expired) ban exists for the given user ID.
@@ -31,7 +31,7 @@ func BanEnforcement(rdb valkeycompat.Cmdable, isBanned func(ctx context.Context,
 			}
 
 			userID := user.UserID.String()
-			cacheKey := "jc:perm:" + userID
+			cacheKey := "jc:ban:" + userID
 
 			// Check Valkey cache for ban status.
 			if rdb != nil {

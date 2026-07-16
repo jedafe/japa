@@ -383,8 +383,11 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 	event.Provider = ProviderPaystack
 	event.RawPayload = body
 
+	// Resolve payment status from the Paystack event type in the payload.
+	status := resolvePaystackStatus(event)
+
 	// Process webhook
-	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderPaystack, event); err != nil {
+	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderPaystack, event, status); err != nil {
 		slog.Error("paystack webhook processing failed", "tenant_id", tenantID, "error", err)
 		errpkg.CaptureException(fmt.Errorf("paystack webhook processing failed (tenant=%s): %w", tenantID, err))
 		writeError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
@@ -430,8 +433,11 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	event.Provider = ProviderStripe
 	event.RawPayload = body
 
+	// Resolve payment status from the Stripe event type.
+	status := resolveStripeStatus(event)
+
 	// Process webhook
-	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderStripe, event); err != nil {
+	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderStripe, event, status); err != nil {
 		slog.Error("stripe webhook processing failed", "tenant_id", tenantID, "error", err)
 		errpkg.CaptureException(fmt.Errorf("stripe webhook processing failed (tenant=%s): %w", tenantID, err))
 		writeError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
@@ -479,8 +485,11 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 	event.Provider = ProviderNOWPayments
 	event.RawPayload = body
 
+	// Resolve payment status from the NOWPayments event payload.
+	status := resolveNOWPaymentsStatus(event)
+
 	// Process webhook
-	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderNOWPayments, event); err != nil {
+	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderNOWPayments, event, status); err != nil {
 		slog.Error("nowpayments webhook processing failed", "tenant_id", tenantID, "error", err)
 		errpkg.CaptureException(fmt.Errorf("nowpayments webhook processing failed (tenant=%s): %w", tenantID, err))
 		writeError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
@@ -488,6 +497,40 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+// resolvePaystackStatus maps Paystack event types to payment status strings.
+// Paystack sends "charge.success" for successful payments, other events map to "failed".
+func resolvePaystackStatus(event WebhookEvent) string {
+	if ev, ok := event.Payload["event"].(string); ok && ev == "charge.success" {
+		return "succeeded"
+	}
+	return "failed"
+}
+
+// resolveStripeStatus maps Stripe event types to payment status strings.
+// Stripe sends "payment_intent.succeeded" for successful payments.
+func resolveStripeStatus(event WebhookEvent) string {
+	if ev, ok := event.Payload["type"].(string); ok && ev == "payment_intent.succeeded" {
+		return "succeeded"
+	}
+	return "failed"
+}
+
+// resolveNOWPaymentsStatus maps NOWPayments event data for payment status.
+// NOWPayments sends "payment_status" or "payment_status.created" with specific statuses.
+func resolveNOWPaymentsStatus(event WebhookEvent) string {
+	if ps, ok := event.Payload["payment_status"].(string); ok {
+		switch ps {
+		case "finished", "confirmed", "completed":
+			return "succeeded"
+		case "failed", "expired":
+			return "failed"
+		case "refunded":
+			return "refunded"
+		}
+	}
+	return "failed"
 }
 
 // ListPayments handles GET /api/v1/payments.

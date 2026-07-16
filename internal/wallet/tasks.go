@@ -21,9 +21,19 @@ type ProcessActivityEventPayload struct {
 
 // EnqueueProcessActivityEvent enqueues a task to process an activity event.
 func (s *Service) EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error {
-	// This is a placeholder for Asynq integration.
-	// In production, this would use an Asynq client to enqueue the task.
-	// For now, we'll process synchronously.
+	payload, err := json.Marshal(ProcessActivityEventPayload{
+		EventID:  eventID.String(),
+		TenantID: tenantID.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("marshaling activity event payload: %w", err)
+	}
+
+	if s.enqueuer != nil {
+		return s.enqueuer.Enqueue(TaskProcessActivityEvent, payload)
+	}
+
+	// Fallback: process synchronously when Asynq is not wired.
 	return s.ProcessActivityEvent(ctx, eventID, tenantID)
 }
 

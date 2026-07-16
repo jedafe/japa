@@ -1,7 +1,11 @@
 // Package webhooks — types.go defines request/response types for webhook admin CRUD.
 package webhooks
 
-import "github.com/jackc/pgx/v5/pgtype"
+import (
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 // ListWebhooksResponse wraps a paginated list of webhook endpoints.
 type ListWebhooksResponse struct {
@@ -33,13 +37,40 @@ type TestWebhookRequest struct {
 }
 
 // WebhookEndpointWithSecret is a webhook endpoint that includes the secret for admin viewing.
+// Kept internal (pgtype fields) for the service/store layer.
 type WebhookEndpointWithSecret struct {
-	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
-	URL        string             `json:"url"`
-	Secret     string             `json:"secret"`
-	EventTypes []string           `json:"event_types"`
-	Status     string             `json:"status"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	ID         pgtype.UUID
+	TenantID   pgtype.UUID
+	URL        string
+	Secret     string
+	EventTypes []string
+	Status     string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+// WebhookEndpointResponse is the JSON-safe representation of a webhook endpoint.
+type WebhookEndpointResponse struct {
+	ID         string    `json:"id"`
+	TenantID   string    `json:"tenant_id"`
+	URL        string    `json:"url"`
+	Secret     string    `json:"secret"`
+	EventTypes []string  `json:"event_types"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// ToResponse converts a WebhookEndpointWithSecret to a JSON-safe response.
+func (e WebhookEndpointWithSecret) ToResponse() WebhookEndpointResponse {
+	return WebhookEndpointResponse{
+		ID:         e.ID.String(),
+		TenantID:   e.TenantID.String(),
+		URL:        e.URL,
+		Secret:     e.Secret,
+		EventTypes: e.EventTypes,
+		Status:     e.Status,
+		CreatedAt:  e.CreatedAt.Time,
+		UpdatedAt:  e.UpdatedAt.Time,
+	}
 }

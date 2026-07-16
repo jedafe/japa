@@ -125,7 +125,7 @@ LIMIT @page_limit;
 -- name: AnonymizeUser :exec
 UPDATE users
 SET username = 'Deleted User',
-    email = NULL,
+    email = 'deleted-' || id::text,
     password_hash = '',
     profile_type = NULL,
     status = 'deleted',
@@ -136,6 +136,28 @@ WHERE id = @user_id AND tenant_id = @tenant_id;
 UPDATE refresh_tokens
 SET revoked_at = now(), updated_at = now()
 WHERE user_id = @user_id AND tenant_id = @tenant_id AND revoked_at IS NULL;
+
+-- name: HardDeleteUser :exec
+-- Physically deletes the anonymized user row. ON DELETE CASCADE handles most
+-- child tables; callers must SET NULL or reassign non-CASCADE FK references
+-- before calling this.
+DELETE FROM users
+WHERE id = @user_id AND tenant_id = @tenant_id AND status = 'deleted';
+
+-- name: ReassignContentAuthor :exec
+-- Reassigns content authorship before user deletion to preserve thread continuity.
+UPDATE contents SET author_id = @target_user_id
+WHERE author_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: NullifyPaymentUserRefs :exec
+-- Nulls payment-related user references for financial audit trail preservation.
+UPDATE payments SET user_id = NULL
+WHERE user_id = @user_id AND tenant_id = @tenant_id;
+
+-- name: NullifyTicketSubmitter :exec
+-- Nulls ticket submitter reference.
+UPDATE tickets SET submitter_user_id = NULL
+WHERE submitter_user_id = @user_id AND tenant_id = @tenant_id;
 
 -- =====================
 -- Audit Logs

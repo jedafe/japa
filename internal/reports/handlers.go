@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 const defaultPageSize int32 = 20
@@ -112,7 +113,7 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 			"entity_id":   entityID.String(),
 			"tenant_id":   tenantID.String(),
 		})
-		if err := h.enqueuer.Enqueue("moderation:auto_hide", payload); err != nil {
+		if err := h.enqueuer.Enqueue(worker.TypeModerationAutoHide, payload); err != nil {
 			slog.Warn("reports: failed to enqueue moderation:auto_hide",
 				"entity_type", entityType, "entity_id", entityID.String(), "error", err)
 		}

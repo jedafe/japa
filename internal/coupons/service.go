@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Enqueuer is the interface for enqueuing background tasks.
@@ -218,7 +219,7 @@ func (s *Service) RecordCouponEvent(ctx context.Context, couponID pgtype.UUID, e
 		return fmt.Errorf("recording coupon event: %w", err)
 	}
 	payload := fmt.Sprintf(`{"coupon_id":"%s"}`, couponID.String())
-	if err := s.enqueuer.Enqueue("coupon:track_events", []byte(payload)); err != nil {
+	if err := s.enqueuer.Enqueue(worker.TypeCouponTrackEvents, []byte(payload)); err != nil {
 		slog.Warn("failed to enqueue coupon:track_events", "error", err)
 	}
 	return nil

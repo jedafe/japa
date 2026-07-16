@@ -80,6 +80,12 @@ WHERE id = @id;
 -- name: MarkBatchWindowDispatched :exec
 UPDATE notification_batch_windows SET dispatched = true WHERE id = @id;
 
+-- name: GetBatchWindowByID :one
+SELECT id, recipient_id, notification_type, subject_type, subject_id,
+       actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
+FROM notification_batch_windows
+WHERE id = @id;
+
 -- =====================
 -- Notification Types
 -- =====================
