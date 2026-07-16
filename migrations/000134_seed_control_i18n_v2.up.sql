@@ -1,4 +1,10 @@
+-- Seed control-app i18n keys.
+-- NOTE: This file previously attempted a curated v2 subset (28 keys), but main
+-- landed the full seed (unioned below). Both insertions are idempotent under
+-- ON CONFLICT (tenant_id, locale, "key") DO NOTHING, so keep the complete set.
+
 INSERT INTO translations (tenant_id, locale, "key", value) VALUES
+
     ('00000000-0000-0000-0000-000000000001', 'en', 'access.back_to_dashboard', 'Back to Dashboard'),
     ('00000000-0000-0000-0000-000000000001', 'en', 'access.denied_message', 'You do not have permission to access this page.'),
     ('00000000-0000-0000-0000-000000000001', 'en', 'access.title', 'Access Denied'),
