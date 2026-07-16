@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { onMount } from "svelte";
-	import { apiFetch } from "$lib/api/client";
+	import { api } from "$lib/api";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
@@ -129,8 +128,8 @@
 
 	async function loadFlags() {
 		loading = true;
-		const result = await apiFetch<FeatureFlag[]>("/feature-flags");
-		if (result.data) {
+		const result = await api<FeatureFlag[]>("/feature-flags");
+		if (result.ok) {
 			flags = Array.isArray(result.data) ? result.data : [];
 		}
 		loading = false;
@@ -140,24 +139,24 @@
 		if (!form.name.trim() || !form.key.trim()) return;
 		saving = true;
 		errorMessage = "";
-		const result = await apiFetch("/feature-flags", {
+		const result = await api("/feature-flags", {
 			method: "POST",
-			body: JSON.stringify({
+			body: {
 				name: form.name.trim(),
 				key: form.key.trim(),
 				description: form.description.trim(),
 				environment: form.environment,
 				rolloutPercentage: form.rolloutPercentage,
 				isEnabled: false
-			})
+			}
 		});
-		if (result.data) {
+		if (result.ok) {
 			createModalOpen = false;
 			resetForm();
 			successMessage = "Feature flag created successfully";
 			loadFlags();
 		} else {
-			errorMessage = result.error?.message ?? "Failed to create feature flag";
+			errorMessage = result.error ?? "Failed to create feature flag";
 		}
 		saving = false;
 	}
@@ -181,23 +180,23 @@
 		if (!editingFlag || !form.name.trim()) return;
 		saving = true;
 		errorMessage = "";
-		const result = await apiFetch(`/feature-flags/${editingFlag.id}`, {
+		const result = await api(`/feature-flags/${editingFlag.id}`, {
 			method: "PUT",
-			body: JSON.stringify({
+			body: {
 				name: form.name.trim(),
 				description: form.description.trim(),
 				environment: form.environment,
 				rolloutPercentage: form.rolloutPercentage
-			})
+			}
 		});
-		if (result.data) {
+		if (result.ok) {
 			editModalOpen = false;
 			editingFlag = null;
 			resetForm();
 			successMessage = "Feature flag updated successfully";
 			loadFlags();
 		} else {
-			errorMessage = result.error?.message ?? "Failed to update feature flag";
+			errorMessage = result.error ?? "Failed to update feature flag";
 		}
 		saving = false;
 	}
@@ -205,12 +204,12 @@
 	async function toggleFlag(id: string) {
 		const flag = flags.find((f) => f.id === id);
 		if (!flag) return;
-		const result = await apiFetch(`/feature-flags/${id}/toggle`, { method: "POST" });
-		if (!result.error) {
+		const result = await api(`/feature-flags/${id}/toggle`, { method: "POST" });
+		if (result.ok) {
 			successMessage = `Feature flag "${flag.name}" ${flag.isEnabled ? "disabled" : "enabled"}`;
 			loadFlags();
 		} else {
-			errorMessage = result.error?.message ?? "Failed to toggle flag";
+			errorMessage = result.error ?? "Failed to toggle flag";
 		}
 	}
 
@@ -222,12 +221,12 @@
 	async function confirmDelete() {
 		if (!deletingId) return;
 		saving = true;
-		const result = await apiFetch(`/feature-flags/${deletingId}`, { method: "DELETE" });
-		if (!result.error) {
+		const result = await api(`/feature-flags/${deletingId}`, { method: "DELETE" });
+		if (result.ok) {
 			successMessage = "Feature flag deleted";
 			loadFlags();
 		} else {
-			errorMessage = result.error?.message ?? "Failed to delete feature flag";
+			errorMessage = result.error ?? "Failed to delete feature flag";
 		}
 		deleteConfirmOpen = false;
 		deletingId = null;
@@ -238,10 +237,17 @@
 		form = { name: "", key: "", description: "", environment: "production", rolloutPercentage: 100 };
 	}
 
-	onMount(() => {
+	$effect(() => {
 		loadFlags();
+	});
+
+	$effect(() => {
 		(window as any).__editFlag = openEditModal;
 		(window as any).__deleteFlag = openDeleteConfirm;
+		return () => {
+			delete (window as any).__editFlag;
+			delete (window as any).__deleteFlag;
+		};
 	});
 </script>
 

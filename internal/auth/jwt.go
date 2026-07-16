@@ -21,6 +21,8 @@ import (
 
 // AccessTokenTTL is the validity period for access tokens.
 // Short lifetime limits the damage window if a token is leaked.
+// Now read from system_settings 'auth.session.access_token_ttl_minutes' with
+// a 15-minute fallback. See settings.go for the implementation.
 const AccessTokenTTL = 15 * time.Minute
 
 // JWTClaims defines the structure of our access token claims.
@@ -37,6 +39,7 @@ type JWTClaims struct {
 type KeyRotation struct {
 	CurrentKeyID string
 	Keys         map[string][]byte // kid -> secret
+	Settings     SettingsReader    // Hot-reloadable system settings for access token TTL
 }
 
 // NewKeyRotation creates a KeyRotation with a single key.
@@ -73,9 +76,17 @@ func (kr *KeyRotation) SetCurrent(kid string) error {
 }
 
 // MintAccessToken creates a signed JWT for the given user and tenant.
-// The token expires after AccessTokenTTL (15 minutes). Each token gets a
+// The token expires after the access token TTL configured in system_settings
+// 'auth.session.access_token_ttl_minutes' (default: 15 minutes). Each token gets a
 // unique JTI (JWT ID) for individual revocation support.
 func (kr *KeyRotation) MintAccessToken(userID, tenantID pgtype.UUID) (string, error) {
+	return kr.MintAccessTokenWithContext(context.Background(), userID, tenantID)
+}
+
+// MintAccessTokenWithContext creates a signed JWT with explicit context for
+// reading hot-reloadable settings. Use this when the caller has a request context
+// available for settings lookup.
+func (kr *KeyRotation) MintAccessTokenWithContext(ctx context.Context, userID, tenantID pgtype.UUID) (string, error) {
 	if !userID.Valid {
 		return "", errors.New("cannot mint token: user ID is not valid")
 	}
@@ -85,10 +96,11 @@ func (kr *KeyRotation) MintAccessToken(userID, tenantID pgtype.UUID) (string, er
 	}
 
 	jti := uuid.New().String()
+	ttl := getAccessTokenTTL(ctx, kr.Settings, tenantID)
 
 	claims := JWTClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(AccessTokenTTL)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        jti,
 		},

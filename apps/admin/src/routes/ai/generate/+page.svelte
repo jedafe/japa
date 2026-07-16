@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { aiApi, type GenerateResult } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2, Copy, Check, Sparkles, RotateCcw, Send, ChevronDown, ChevronUp, Clock, Zap, Trash2, AlertTriangle } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Select } from '$lib/components/ui/select';
 
 	const canGenerate = $derived(hasPermission('ai.context.generate'));
 
@@ -43,32 +43,34 @@
 		{ value: '', label: 'Default' }
 	]);
 
-	onMount(async () => {
-		try {
-			const res = await aiApi.listModels();
-			if (res.ok && res.data.length > 0) {
-				models = res.data.map((m) => ({ value: m.id, label: m.label }));
+	$effect(() => {
+		(async () => {
+			try {
+				const res = await aiApi.listModels();
+				if (res.ok && res.data.length > 0) {
+					models = res.data.map((m) => ({ value: m.id, label: m.label }));
+				}
+			} catch {
+				models = [
+					{ value: '', label: 'Default' },
+					{ value: 'gpt-4', label: t('ai.model.gpt4') },
+					{ value: 'gpt-3.5-turbo', label: t('ai.model.gpt35') },
+					{ value: 'claude-3', label: t('ai.model.claude3') }
+				];
 			}
-		} catch {
-			models = [
-				{ value: '', label: 'Default' },
-				{ value: 'gpt-4', label: t('ai.model.gpt4') },
-				{ value: 'gpt-3.5-turbo', label: t('ai.model.gpt35') },
-				{ value: 'claude-3', label: t('ai.model.claude3') }
-			];
-		}
-		try {
-			const catsRes = await aiApi.listCategories();
-			if (catsRes.ok && Array.isArray(catsRes.data) && catsRes.data.length > 0) {
-				categories = catsRes.data.map((c: { value: string; label: string }) => ({
-					value: c.value,
-					labelKey: `ai.category.${c.value}`,
-					desc: c.label
-				}));
+			try {
+				const catsRes = await aiApi.listCategories();
+				if (catsRes.ok && Array.isArray(catsRes.data) && catsRes.data.length > 0) {
+					categories = catsRes.data.map((c: { value: string; label: string }) => ({
+						value: c.value,
+						labelKey: `ai.category.${c.value}`,
+						desc: c.label
+					}));
+				}
+			} catch {
+				categories = defaultCategories;
 			}
-		} catch {
-			categories = defaultCategories;
-		}
+		})();
 	});
 
 	let charCount = $derived(prompt.length);
@@ -189,32 +191,17 @@
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
 						<label for="gen-category" class="mb-1 block text-sm font-medium">{t('ai.category')}</label>
-						<select
-							id="gen-category"
-							class="w-full rounded-md border px-3 py-2 text-sm"
-							style="border-color: var(--color-border); background-color: var(--color-background)"
+						<Select
+							options={categories.map(c => ({ value: c.value, label: t(c.labelKey) }))}
 							bind:value={category}
-						>
-							{#each categories as cat}
-								<option value={cat.value}>{t(cat.labelKey)}</option>
-							{/each}
-						</select>
+						/>
 						<p class="mt-1 text-xs" style="color: var(--color-muted)">
 							{categories.find(c => c.value === category)?.desc}
 						</p>
 					</div>
 					<div>
 						<label for="gen-model" class="mb-1 block text-sm font-medium">{t('ai.model_optional')}</label>
-						<select
-							id="gen-model"
-							class="w-full rounded-md border px-3 py-2 text-sm"
-							style="border-color: var(--color-border); background-color: var(--color-background)"
-							bind:value={model}
-						>
-							{#each models as m}
-								<option value={m.value}>{m.label}</option>
-							{/each}
-						</select>
+						<Select options={models} bind:value={model} />
 					</div>
 				</div>
 

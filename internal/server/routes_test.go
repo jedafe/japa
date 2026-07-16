@@ -24,11 +24,13 @@ func TestNoDuplicateRoutes(t *testing.T) {
 	}
 
 	seen := make(map[string]int) // key → first line number
+
 	for _, r := range routes {
 		key := r.method + " " + r.path
 		if prev, ok := seen[key]; ok {
 			t.Errorf("duplicate route %q first at line %d, again at line %d", key, prev, r.line)
 		}
+
 		seen[key] = r.line
 	}
 
@@ -50,6 +52,7 @@ func TestNoOverlappingParamRoutes(t *testing.T) {
 	}
 
 	normalized := make(map[string][]routeEntry)
+
 	for _, r := range routes {
 		norm := normalizePath(r.path)
 		key := r.method + " " + norm
@@ -62,6 +65,7 @@ func TestNoOverlappingParamRoutes(t *testing.T) {
 			for i, e := range entries {
 				paths[i] = fmt.Sprintf("%s (line %d)", e.path, e.line)
 			}
+
 			t.Errorf("overlapping param routes for %q: %s", key, strings.Join(paths, ", "))
 		}
 	}
@@ -78,20 +82,24 @@ type routeEntry struct {
 // those blocks get the correct prefix. This mirrors the logic in
 // scripts/route_diff.py.
 func parseServerRoutes(path string) ([]routeEntry, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // test uses variable path
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+
+	defer func() { _ = f.Close() }()
 
 	var routes []routeEntry
+
 	var routePrefix *string
+
 	prefixDepth := 0
 	depth := 0
 	re := regexp.MustCompile(`(?:^|[^A-Za-z])(Get|Post|Put|Patch|Delete)\("(/[^"]*)"`)
 
 	scanner := bufio.NewScanner(f)
 	lineNum := 0
+
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
@@ -109,6 +117,7 @@ func parseServerRoutes(path string) ([]routeEntry, error) {
 			routePrefix = &p
 			prefixDepth = d
 		}
+
 		if routePrefix != nil && depth < prefixDepth {
 			routePrefix = nil
 		}
@@ -143,9 +152,11 @@ func normalizePath(p string) string {
 	re2 := regexp.MustCompile(`:\w+`)
 	p = re2.ReplaceAllString(p, ":x")
 	p = strings.TrimRight(p, "/")
+
 	if p == "" {
 		p = "/"
 	}
+
 	return p
 }
 
@@ -173,6 +184,7 @@ func TestCatalogAndCodeRouteSymmetry(t *testing.T) {
 	// Deduplicate for comparison (route_diff.py uses a set).
 	seen := make(map[string]bool)
 	unique := 0
+
 	for _, r := range routes {
 		key := r.method + " " + normalizePath(r.path)
 		if !seen[key] {
@@ -193,6 +205,7 @@ func TestCatalogAndCodeRouteSymmetry(t *testing.T) {
 		if routes[i].method != routes[j].method {
 			return routes[i].method < routes[j].method
 		}
+
 		return routes[i].path < routes[j].path
 	})
 }

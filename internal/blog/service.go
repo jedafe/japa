@@ -199,6 +199,11 @@ func (s *Service) UpdateReviewStatus(ctx context.Context, id, tenantID pgtype.UU
 	})
 }
 
+// DeleteReview removes a content review by ID.
+func (s *Service) DeleteReview(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.store.deleteContentReview(ctx, id, tenantID)
+}
+
 // ---------------------------------------------------------------------------
 // Featured Posts
 // ---------------------------------------------------------------------------

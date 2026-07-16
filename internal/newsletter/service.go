@@ -174,6 +174,22 @@ func (s *Service) DeleteSubscriber(ctx context.Context, tenantID, id pgtype.UUID
 	return nil
 }
 
+// CreateSubscriber adds a new newsletter subscriber.
+func (s *Service) CreateSubscriber(ctx context.Context, tenantID pgtype.UUID, email string) (Subscriber, error) {
+	var sub Subscriber
+
+	err := s.db.Writer.QueryRow(ctx, `
+		INSERT INTO newsletter_subscribers (tenant_id, email, status)
+		VALUES ($1, $2, 'active')
+		RETURNING id, tenant_id, email, user_id, status, created_at
+	`, tenantID, email).Scan(&sub.ID, &sub.TenantID, &sub.Email, &sub.UserID, &sub.Status, &sub.CreatedAt)
+	if err != nil {
+		return Subscriber{}, fmt.Errorf("creating newsletter subscriber: %w", err)
+	}
+
+	return sub, nil
+}
+
 // ---------------------------------------------------------------------------
 // Campaign Operations
 // ---------------------------------------------------------------------------
@@ -236,6 +252,23 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID pgtype.UUID, name
 	}
 
 	return c, nil
+}
+
+// DeleteCampaign removes a newsletter campaign.
+func (s *Service) DeleteCampaign(ctx context.Context, tenantID, id pgtype.UUID) error {
+	tag, err := s.db.Writer.Exec(ctx, `
+		DELETE FROM newsletter_campaigns
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("deleting newsletter campaign %s: %w", id, err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("newsletter campaign %s not found", id)
+	}
+
+	return nil
 }
 
 // UpdateCampaign updates an existing newsletter campaign.

@@ -41,9 +41,9 @@ type UploadContext string
 
 const (
 	// UploadContextMedia is the upload context media constant.
-	UploadContextMedia    UploadContext = "media"
+	UploadContextMedia UploadContext = "media"
 	// UploadContextAvatar is the upload context avatar.
-	UploadContextAvatar   UploadContext = "avatar"
+	UploadContextAvatar UploadContext = "avatar"
 	// UploadContextDocument is the upload context document.
 	UploadContextDocument UploadContext = "document"
 )

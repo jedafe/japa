@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { userManagementApi, permissionsApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -99,7 +98,9 @@
 		setTimeout(() => { flashMessage = ''; flashError = ''; }, 3000);
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>

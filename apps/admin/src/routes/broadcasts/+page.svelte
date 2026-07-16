@@ -10,6 +10,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Send, Plus, Radio, Clock, CheckCircle } from "lucide-svelte";
+	import { Select } from '$lib/components/ui/select';
 	import { api } from "$lib/api";
 
 	type Broadcast = {
@@ -107,6 +108,12 @@
 				</div>
 			`
 		}
+	];
+
+	const audienceOptions = [
+		{ value: 'all', label: 'All Users' },
+		{ value: 'active', label: 'Active Users' },
+		{ value: 'premium', label: 'Premium Users' }
 	];
 
 	let filteredBroadcasts = $derived.by(() => {
@@ -272,15 +279,7 @@
 		</div>
 		<div>
 			<label for="bc-audience" class="mb-1 block text-sm font-medium text-gray-900">Target Audience</label>
-			<select
-				id="bc-audience"
-				class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-				bind:value={newBroadcast.target_audience}
-			>
-				<option value="all">All Users</option>
-				<option value="active">Active Users</option>
-				<option value="premium">Premium Users</option>
-			</select>
+			<Select options={audienceOptions} bind:value={newBroadcast.target_audience} />
 		</div>
 		<div class="flex justify-end gap-3 pt-2">
 			<Button variant="outline" onclick={() => (showCreateModal = false)}>Cancel</Button>

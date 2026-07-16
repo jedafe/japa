@@ -65,6 +65,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 				if !ok {
 					panicErr = fmt.Errorf("panic: %v", rvr)
 				}
+
 				errtracking.CaptureException(panicErr)
 
 				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")

@@ -56,11 +56,13 @@
   </div>
   
   {#each filters as filter}
-    <Select
-      bind:value={value[filter.key]}
-      options={filter.options}
-      placeholder={filter.label}
-    />
+    <div class="w-40 shrink-0">
+      <Select
+        bind:value={value[filter.key]}
+        options={filter.options}
+        placeholder={filter.label}
+      />
+    </div>
   {/each}
   
   <Button variant="default" onclick={handleSearch}>

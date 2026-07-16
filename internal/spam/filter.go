@@ -56,6 +56,7 @@ func safeCompileRegex(pattern string, timeout time.Duration) (*regexp.Regexp, er
 	}
 
 	ch := make(chan compileResult, 1)
+
 	go func() {
 		re, err := regexp.Compile(pattern)
 		select {
@@ -151,7 +152,7 @@ func CheckCensoredWords(patterns []CensoredWord, text string) CensorResult {
 			result.Flagged = true
 			result.FlagReason = "content contains flagged pattern: " + pw.Pattern
 			// Continue scanning — a later block action takes precedence
-		case "replace":
+		case CensorActionReplace:
 			result.CleanText = applyReplacement(pw.Pattern, pw.Replacement, result.CleanText)
 		}
 	}

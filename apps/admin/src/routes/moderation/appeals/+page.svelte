@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
@@ -120,7 +119,9 @@
 		}
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>

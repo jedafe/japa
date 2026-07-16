@@ -196,9 +196,9 @@ func TestNormalizeMIMEType(t *testing.T) {
 func TestMediaURLReturnsEmptyWhenEnvMissing(t *testing.T) {
 	t.Parallel()
 	// Ensure env vars are not set.
-	os.Unsetenv("JC_IMGPROXY_KEY")
-	os.Unsetenv("JC_IMGPROXY_SALT")
-	os.Unsetenv("JC_IMGPROXY_BASE_URL")
+	_ = os.Unsetenv("JC_IMGPROXY_KEY")
+	_ = os.Unsetenv("JC_IMGPROXY_SALT")
+	_ = os.Unsetenv("JC_IMGPROXY_BASE_URL")
 
 	got := MediaURL("media", "test/photo.jpg", ImageProxyOpts{
 		ResizingType: "fill",

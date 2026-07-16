@@ -5,7 +5,9 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { getNotifications, getUnreadCount, markRead, markAllRead } from '$lib/stores/notifications.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
-	import { Bell, Sun, Moon, Check } from 'lucide-svelte';
+	import { Bell, Sun, Moon, Check, Menu } from 'lucide-svelte';
+
+	let { onMenuClick }: { onMenuClick?: () => void } = $props();
 
 	let showDropdown = $state(false);
 	let showNotifications = $state(false);
@@ -44,6 +46,15 @@
 
 <header class="flex h-14 items-center justify-between border-b px-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 	<div class="flex items-center gap-3">
+		<button
+			type="button"
+			class="rounded-md p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10 md:hidden"
+			style="color: var(--color-foreground)"
+			onclick={onMenuClick}
+			aria-label="Toggle sidebar"
+		>
+			<Menu class="h-5 w-5" />
+		</button>
 		<a href="/" class="text-sm font-semibold" style="color: var(--color-foreground)">JapaConnect Admin</a>
 		{#if PUBLIC_JC_ENV === 'production'}
 			<span class="rounded bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
@@ -124,8 +135,8 @@
 					class="flex items-center gap-2 rounded p-1 hover:bg-black/5 dark:hover:bg-white/10"
 					onclick={() => (showDropdown = !showDropdown)}
 				>
-					<Avatar src={user.current.avatar_url} alt={user.current.display_name} size="sm" />
-					<span class="text-sm" style="color: var(--color-foreground)">{user.current.display_name}</span>
+					<Avatar src={user.current.avatar_url} alt={user.current.username} size="sm" />
+					<span class="text-sm" style="color: var(--color-foreground)">{user.current.username}</span>
 				</button>
 
 				{#if showDropdown}
@@ -142,5 +153,12 @@
 				{/if}
 			</div>
 		{/if}
+		
+		<!-- Logo -->
+		<a href="/" class="flex items-center gap-2 ml-2">
+			<div class="flex h-8 w-8 items-center justify-center rounded-lg" style="background-color: var(--color-primary)">
+				<span class="text-sm font-bold text-white">JC</span>
+			</div>
+		</a>
 	</div>
 </header>

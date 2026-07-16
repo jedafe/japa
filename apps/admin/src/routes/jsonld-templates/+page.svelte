@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { jsonLdApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -7,6 +6,7 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { Select } from '$lib/components/ui/select';
 	import { Modal } from '$lib/components/ui/modal';
 	import { FileJson, Plus, RefreshCw, Pencil, Trash2, Download, Upload } from 'lucide-svelte';
 
@@ -280,7 +280,9 @@
 		(window as any).__deleteTemplate = confirmDelete;
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>
@@ -364,23 +366,22 @@
 				/>
 			</div>
 			<div>
-				<label for="template-type" class="mb-1 block text-sm font-medium text-gray-700">Schema Type</label>
-				<select
-					id="template-type"
-					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-					bind:value={templateForm.type}
-				>
-					<option value="Article">Article</option>
-					<option value="Organization">Organization</option>
-					<option value="Person">Person</option>
-					<option value="Product">Product</option>
-					<option value="Event">Event</option>
-					<option value="FAQPage">FAQ Page</option>
-					<option value="HowTo">How-To</option>
-					<option value="LocalBusiness">Local Business</option>
-					<option value="Course">Course</option>
-					<option value="JobPosting">Job Posting</option>
-				</select>
+			<label for="template-type" class="mb-1 block text-sm font-medium text-gray-700">Schema Type</label>
+			<Select
+				options={[
+					{ value: 'Article', label: 'Article' },
+					{ value: 'Organization', label: 'Organization' },
+					{ value: 'Person', label: 'Person' },
+					{ value: 'Product', label: 'Product' },
+					{ value: 'Event', label: 'Event' },
+					{ value: 'FAQPage', label: 'FAQ Page' },
+					{ value: 'HowTo', label: 'How-To' },
+					{ value: 'LocalBusiness', label: 'Local Business' },
+					{ value: 'Course', label: 'Course' },
+					{ value: 'JobPosting', label: 'Job Posting' }
+				]}
+				bind:value={templateForm.type}
+			/>
 			</div>
 		</div>
 		<div>

@@ -143,6 +143,21 @@ func (q *Queries) DeleteBlogSeries(ctx context.Context, arg DeleteBlogSeriesPara
 	return err
 }
 
+const deleteContentReview = `-- name: DeleteContentReview :exec
+DELETE FROM content_reviews
+WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteContentReviewParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteContentReview(ctx context.Context, arg DeleteContentReviewParams) error {
+	_, err := q.db.Exec(ctx, deleteContentReview, arg.ID, arg.TenantID)
+	return err
+}
+
 const deleteSeriesPosts = `-- name: DeleteSeriesPosts :exec
 DELETE FROM blog_series_posts
 WHERE series_id = $1

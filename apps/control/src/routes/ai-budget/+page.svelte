@@ -4,7 +4,7 @@
 	import { Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { AiBudget } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '$lib/stores/i18n';
 	import { DollarSign, RefreshCw, AlertTriangle } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
@@ -29,8 +29,8 @@
 	}
 
 	function budgetPercent(): number {
-		if (!budget) return 0;
-		return Math.round((budget.month_to_date_cost / Math.max(budget.budget_threshold_usd, 1)) * 100);
+		if (!budget || !budget.budget_threshold_usd || budget.budget_threshold_usd <= 0) return 0;
+		return Math.round((budget.month_to_date_cost / budget.budget_threshold_usd) * 100);
 	}
 </script>
 
@@ -44,21 +44,21 @@
 </div>
 
 {#if loading}
-	<p class="text-muted-foreground py-8 text-center text-sm">Loading...</p>
+	<p class="text-muted-foreground py-8 text-center text-sm">{t('ai_budget.loading')}</p>
 {:else if budget}
-	{#if budget.alert_triggered}
+		{#if budget.alert_triggered}
 		<div class="border-destructive bg-destructive/10 text-destructive mb-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm">
 			<AlertTriangle class="size-4" />
-			Budget threshold exceeded! Current spend: {formatCost(budget.month_to_date_cost)} / {formatCost(budget.budget_threshold_usd)}
+			{t('ai_budget.threshold_exceeded', 'Budget threshold exceeded! Current spend:')} {formatCost(budget.month_to_date_cost)} / {formatCost(budget.budget_threshold_usd)}
 		</div>
 	{/if}
 
 	<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-		<MetricCard label="Month-to-Date Cost" value={formatCost(budget.month_to_date_cost)} />
-		<MetricCard label="Budget Threshold" value={formatCost(budget.budget_threshold_usd)} />
-		<MetricCard label="Budget Used" value="{budgetPercent()}%" trend={budgetPercent() > 80 ? 'down' : 'neutral'} />
+		<MetricCard label={t('ai_budget.month_to_date')} value={formatCost(budget.month_to_date_cost)} />
+		<MetricCard label={t('ai_budget.budget_threshold')} value={formatCost(budget.budget_threshold_usd)} />
+		<MetricCard label={t('ai_budget.budget_used')} value="{budgetPercent()}%" trend={budgetPercent() > 80 ? 'down' : 'neutral'} />
 		<div class="border-border-card bg-background-alt shadow-card rounded-card p-4">
-			<p class="text-muted-foreground text-xs font-medium uppercase tracking-wider">Budget Progress</p>
+			<p class="text-muted-foreground text-xs font-medium uppercase tracking-wider">{t('ai_budget.budget_progress')}</p>
 			<div class="bg-muted mt-3 h-3 w-full rounded-full">
 				<div
 					class="h-full rounded-full transition-all"
@@ -68,45 +68,45 @@
 					style="width: {Math.min(budgetPercent(), 100)}%"
 				></div>
 			</div>
-			<p class="text-muted-foreground mt-1 text-[10px]">{budgetPercent()}% of threshold</p>
+			<p class="text-muted-foreground mt-1 text-[10px]">{budgetPercent()}% {t('ai_budget.percent_of_threshold')}</p>
 		</div>
 	</div>
 
 	<Tabs.Root bind:value={activeTab}>
 		<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
 			<Tabs.Trigger value="overview" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-				Overview
+				{t('ai_budget.tab_overview')}
 			</Tabs.Trigger>
 			<Tabs.Trigger value="by-provider" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-				By Provider ({(budget.by_provider ?? []).length})
+				{t('ai_budget.cost_by_provider')} ({(budget.by_provider ?? []).length})
 			</Tabs.Trigger>
 			<Tabs.Trigger value="by-task" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-				By Task Type ({(budget.by_task_type ?? []).length})
+				{t('ai_budget.cost_by_task')} ({(budget.by_task_type ?? []).length})
 			</Tabs.Trigger>
 		</Tabs.List>
 
 		<Tabs.Content value="overview" class="mt-4">
 			<div class="border-border-card bg-background-alt shadow-card rounded-xl p-6">
-				<h3 class="text-foreground text-sm font-semibold">Budget Summary</h3>
+				<h3 class="text-foreground text-sm font-semibold">{t('ai_budget.budget_summary')}</h3>
 				<div class="mt-4 space-y-3">
 					<div class="flex items-center justify-between">
-						<span class="text-muted-foreground text-sm">Total Spend</span>
+						<span class="text-muted-foreground text-sm">{t('ai_budget.total_spend')}</span>
 						<span class="text-foreground font-mono text-sm font-medium">{formatCost(budget.month_to_date_cost)}</span>
 					</div>
 					<div class="flex items-center justify-between">
-						<span class="text-muted-foreground text-sm">Threshold</span>
+						<span class="text-muted-foreground text-sm">{t('ai_budget.budget_threshold')}</span>
 						<span class="text-foreground font-mono text-sm font-medium">{formatCost(budget.budget_threshold_usd)}</span>
 					</div>
 					<div class="flex items-center justify-between">
-						<span class="text-muted-foreground text-sm">Remaining</span>
+						<span class="text-muted-foreground text-sm">{t('ai_budget.remaining')}</span>
 						<span class="font-mono text-sm font-medium" class:text-destructive={budget.month_to_date_cost >= budget.budget_threshold_usd} class:text-green-500={budget.month_to_date_cost < budget.budget_threshold_usd}>
 							{formatCost(Math.max(0, budget.budget_threshold_usd - budget.month_to_date_cost))}
 						</span>
 					</div>
 					<div class="flex items-center justify-between">
-						<span class="text-muted-foreground text-sm">Alert Status</span>
+						<span class="text-muted-foreground text-sm">{t('ai_budget.alert_status')}</span>
 						<span class="rounded-full px-2 py-0.5 text-xs font-medium {budget.alert_triggered ? 'bg-destructive/15 text-destructive' : 'bg-green-500/15 text-green-600'}">
-							{budget.alert_triggered ? 'Alert Triggered' : 'Within Budget'}
+							{budget.alert_triggered ? t('ai_budget.alert_triggered') : t('ai_budget.within_budget')}
 						</span>
 					</div>
 				</div>
@@ -117,15 +117,15 @@
 			{#if budget.by_provider && budget.by_provider.length > 0}
 				<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
 					<div class="border-border-card border-b px-4 py-3">
-						<h3 class="text-foreground text-sm font-semibold">Cost by Provider</h3>
+						<h3 class="text-foreground text-sm font-semibold">{t('ai_budget.cost_by_provider')}</h3>
 					</div>
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="border-border-card border-b">
-								<th class="text-muted-foreground px-4 py-3 text-left font-medium">Provider</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">Tokens</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">Cost</th>
-								<th class="text-muted-foreground px-4 py-3 text-left font-medium">Share</th>
+								<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('ai_budget.provider')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('ai_budget.tokens')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('ai_budget.cost')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('ai_budget.share')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -146,7 +146,7 @@
 					</table>
 				</div>
 			{:else}
-				<p class="text-muted-foreground py-8 text-center text-sm">No provider data available.</p>
+				<p class="text-muted-foreground py-8 text-center text-sm">{t('ai_budget.no_provider_data')}</p>
 			{/if}
 		</Tabs.Content>
 
@@ -154,15 +154,15 @@
 			{#if budget.by_task_type && budget.by_task_type.length > 0}
 				<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
 					<div class="border-border-card border-b px-4 py-3">
-						<h3 class="text-foreground text-sm font-semibold">Cost by Task Type</h3>
+						<h3 class="text-foreground text-sm font-semibold">{t('ai_budget.cost_by_task')}</h3>
 					</div>
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="border-border-card border-b">
-								<th class="text-muted-foreground px-4 py-3 text-left font-medium">Task Type</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">Calls</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">Tokens</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">Cost</th>
+								<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('ai_budget.task_type')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('ai_budget.calls')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('ai_budget.tokens')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('ai_budget.cost')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -178,13 +178,13 @@
 					</table>
 				</div>
 			{:else}
-				<p class="text-muted-foreground py-8 text-center text-sm">No task type data available.</p>
+				<p class="text-muted-foreground py-8 text-center text-sm">{t('ai_budget.no_task_data')}</p>
 			{/if}
 		</Tabs.Content>
 	</Tabs.Root>
 {:else}
 	<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
 		<DollarSign class="text-muted-foreground mx-auto size-8" />
-		<p class="text-muted-foreground mt-3 text-sm">No AI budget data available.</p>
+		<p class="text-muted-foreground mt-3 text-sm">{t('ai_budget.no_data')}</p>
 	</div>
 {/if}

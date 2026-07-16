@@ -385,6 +385,8 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderPaystack, event); err != nil {
+		slog.Error("paystack webhook processing failed", "tenant_id", tenantID, "error", err)
+		errpkg.CaptureException(fmt.Errorf("paystack webhook processing failed (tenant=%s): %w", tenantID, err))
 		writeError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 		return
 	}
@@ -430,6 +432,8 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderStripe, event); err != nil {
+		slog.Error("stripe webhook processing failed", "tenant_id", tenantID, "error", err)
+		errpkg.CaptureException(fmt.Errorf("stripe webhook processing failed (tenant=%s): %w", tenantID, err))
 		writeError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 		return
 	}
@@ -477,6 +481,8 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderNOWPayments, event); err != nil {
+		slog.Error("nowpayments webhook processing failed", "tenant_id", tenantID, "error", err)
+		errpkg.CaptureException(fmt.Errorf("nowpayments webhook processing failed (tenant=%s): %w", tenantID, err))
 		writeError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 		return
 	}

@@ -10,6 +10,7 @@ package wallet
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -265,6 +266,8 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 		PointsToConvert: input.PointsToConvert,
 	})
 	if err != nil {
+		slog.Error("points conversion failed", "user_id", user.UserID, "tenant_id", tenantID, "points", input.PointsToConvert, "error", err)
+		errpkg.CaptureException(fmt.Errorf("points conversion failed (user=%s, tenant=%s, points=%d): %w", user.UserID, tenantID, input.PointsToConvert, err))
 		handleServiceError(w, err)
 		return
 	}
@@ -512,6 +515,8 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 		Reference:  input.Reference,
 	})
 	if err != nil {
+		slog.Error("admin wallet adjustment failed", "target_user_id", input.UserID, "tenant_id", tenantID, "amount", input.Amount, "error", err)
+		errpkg.CaptureException(fmt.Errorf("admin wallet adjustment failed (target_user=%s, tenant=%s, amount=%d): %w", input.UserID, tenantID, input.Amount, err))
 		handleServiceError(w, err)
 		return
 	}

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { spaceTypesApi } from '$lib/api';
 
@@ -122,7 +121,9 @@
 		load();
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>

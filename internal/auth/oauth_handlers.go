@@ -154,8 +154,8 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // issueToken mints a JWT and returns it as a JSON response.
-func (h *OAuthHandlers) issueToken(w http.ResponseWriter, _ *http.Request, userID, tenantID pgtype.UUID) {
-	token, err := h.KeyRot.MintAccessToken(userID, tenantID)
+func (h *OAuthHandlers) issueToken(w http.ResponseWriter, r *http.Request, userID, tenantID pgtype.UUID) {
+	token, err := h.KeyRot.MintAccessTokenWithContext(r.Context(), userID, tenantID)
 	if err != nil {
 		slog.Error("mint access token", "error", err)
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { aiApi, aiAdminApi, type HitlReview, type GenerateResult } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles, AlertTriangle, Wrench, BarChart3, Activity, Settings } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Select } from '$lib/components/ui/select';
 	import { page as pageState } from '$app/state';
 
 	const canGenerate = $derived(hasPermission('ai.context.generate'));
@@ -298,31 +298,33 @@
 		}
 	}
 
-	onMount(async () => {
-		try {
-			const cats = await aiApi.listCategories();
-			if (Array.isArray(cats) && cats.length > 0) {
-				categories = cats;
+	$effect(() => {
+		(async () => {
+			try {
+				const cats = await aiApi.listCategories();
+				if (Array.isArray(cats) && cats.length > 0) {
+					categories = cats;
+				}
+			} catch {
+				// Keep default categories
 			}
-		} catch {
-			// Keep default categories
-		}
 
-		try {
-			const res = await aiApi.listModels();
-			if (res.ok && res.data.length > 0) {
-				models = res.data.map((m) => ({ value: m.id, label: m.label }));
+			try {
+				const res = await aiApi.listModels();
+				if (res.ok && res.data.length > 0) {
+					models = res.data.map((m) => ({ value: m.id, label: m.label }));
+				}
+			} catch {
+				models = [
+					{ value: '', label: 'Default' },
+					{ value: 'gpt-4', label: t('ai.model.gpt4') },
+					{ value: 'gpt-3.5-turbo', label: t('ai.model.gpt35') },
+					{ value: 'claude-3', label: t('ai.model.claude3') }
+				];
 			}
-		} catch {
-			models = [
-				{ value: '', label: 'Default' },
-				{ value: 'gpt-4', label: t('ai.model.gpt4') },
-				{ value: 'gpt-3.5-turbo', label: t('ai.model.gpt35') },
-				{ value: 'claude-3', label: t('ai.model.claude3') }
-			];
-		}
 
-		loadReviews();
+			loadReviews();
+		})();
 	});
 </script>
 
@@ -386,29 +388,11 @@
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
 					<label for="ai-category" class="mb-1 block text-sm font-medium">{t('ai.category')}</label>
-					<select
-						id="ai-category"
-						class="w-full rounded-md border px-3 py-2 text-sm"
-						style="border-color: var(--color-border); background-color: var(--color-background)"
-						bind:value={category}
-					>
-						{#each categories as cat}
-							<option value={cat.value}>{cat.label}</option>
-						{/each}
-					</select>
+					<Select options={categories} bind:value={category} />
 				</div>
 				<div>
 					<label for="ai-model" class="mb-1 block text-sm font-medium">{t('ai.model_optional')}</label>
-					<select
-						id="ai-model"
-						class="w-full rounded-md border px-3 py-2 text-sm"
-						style="border-color: var(--color-border); background-color: var(--color-background)"
-						bind:value={model}
-					>
-						{#each models as m}
-							<option value={m.value}>{m.label}</option>
-						{/each}
-					</select>
+					<Select options={models} bind:value={model} />
 				</div>
 			</div>
 

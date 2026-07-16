@@ -31,10 +31,11 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 	BruteForce   BruteForceStore
 	Policy       PasswordPolicy
 	AsynqClient  *asynq.Client
-	VKClient     *valkey.Client // Valkey client for per-email rate limiting
-	SiteName     string         // Brand name for email templates (e.g. "JapaConnect")
-	SupportURL   string         // Support page URL for email footers
-	CookieDomain string         // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
+	VKClient     *valkey.Client   // Valkey client for per-email rate limiting
+	Settings     SettingsReader   // Hot-reloadable system settings for auth token TTLs
+	SiteName     string           // Brand name for email templates (e.g. "JapaConnect")
+	SupportURL   string           // Support page URL for email footers
+	CookieDomain string           // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
 }
 
 // Querier is the interface for database operations needed by auth handlers.
@@ -76,9 +77,6 @@ type RefreshToken struct {
 	ExpiresAt time.Time
 	RevokedAt pgtype.Timestamptz
 }
-
-// RefreshTokenTTL is the validity period for refresh tokens.
-const RefreshTokenTTL = 30 * 24 * time.Hour // 30 days
 
 // writeJSON writes a JSON response with the given status code.
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
@@ -193,7 +191,8 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tokenHash := hashRefreshToken(refreshToken)
-	expiresAt := time.Now().Add(RefreshTokenTTL)
+	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, tenant.ID)
+	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
 		TenantID:  tenant.ID,
@@ -210,7 +209,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		Value:    refreshToken,
 		Path:     "/api/v1/auth",
 		Domain:   h.CookieDomain,
-		MaxAge:   int(RefreshTokenTTL.Seconds()),
+		MaxAge:   int(refreshTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
@@ -319,7 +318,8 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tokenHash := hashRefreshToken(refreshToken)
-	expiresAt := time.Now().Add(RefreshTokenTTL)
+	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, user.TenantID)
+	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
 		TenantID:  user.TenantID,
@@ -336,7 +336,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		Value:    refreshToken,
 		Path:     "/api/v1/auth",
 		Domain:   h.CookieDomain,
-		MaxAge:   int(RefreshTokenTTL.Seconds()),
+		MaxAge:   int(refreshTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,

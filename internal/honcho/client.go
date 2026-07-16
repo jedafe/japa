@@ -70,6 +70,11 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 
 	_, _ = io.Copy(io.Discard, resp.Body)
 
+	// 404 means the user was already purged from Honcho — treat as success.
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("honcho: delete user %s returned status %d", userID, resp.StatusCode)
 	}
