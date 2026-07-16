@@ -9,6 +9,7 @@
   import { Modal } from "$lib/components/ui/modal";
   import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play } from "lucide-svelte";
   import { userManagementApi, impersonationApi } from "$lib/api";
+  import { hasPermission } from "$lib/stores/permissions.svelte";
 
   type UserDetail = {
     id: string;
@@ -69,6 +70,11 @@
   let impersonatingUsername = $state("");
 
   const userId = $derived(page.params.userId ?? "");
+  
+  // Permission checks
+  const canManageUsers = $derived(hasPermission('users.manage'));
+  const canImpersonate = $derived(hasPermission('admin.impersonate'));
+  const canDeleteAiContext = $derived(hasPermission('ai.context.admin_delete_entry'));
 
   const tabs = [
     { value: "overview", label: "Overview", icon: Users },
@@ -307,37 +313,41 @@
 
     <!-- Actions -->
     <div class="flex flex-wrap gap-2">
-      <Button variant="outline" size="sm" onclick={() => { showWarningModal = true; warningReason = ""; }}>
-        <AlertTriangle class="h-4 w-4 mr-2" />
-        Warn
-      </Button>
-      {#if user.status === "active"}
-        <Button variant="destructive" size="sm" onclick={() => (showBanConfirm = true)}>
-          <Ban class="h-4 w-4 mr-2" />
-          Ban
-        </Button>
-        <Button variant="outline" size="sm" onclick={() => (showSuspendConfirm = true)}>
+      {#if canManageUsers}
+        <Button variant="outline" size="sm" onclick={() => { showWarningModal = true; warningReason = ""; }}>
           <AlertTriangle class="h-4 w-4 mr-2" />
-          Suspend
+          Warn
         </Button>
-      {:else if user.status === "banned"}
-        <Button variant="outline" size="sm" onclick={() => (showUnbanConfirm = true)}>
-          <Play class="h-4 w-4 mr-2" />
-          Unban
+        {#if user.status === "active"}
+          <Button variant="destructive" size="sm" onclick={() => (showBanConfirm = true)}>
+            <Ban class="h-4 w-4 mr-2" />
+            Ban
+          </Button>
+          <Button variant="outline" size="sm" onclick={() => (showSuspendConfirm = true)}>
+            <AlertTriangle class="h-4 w-4 mr-2" />
+            Suspend
+          </Button>
+        {:else if user.status === "banned"}
+          <Button variant="outline" size="sm" onclick={() => (showUnbanConfirm = true)}>
+            <Play class="h-4 w-4 mr-2" />
+            Unban
+          </Button>
+        {/if}
+        <Button variant="outline" size="sm" onclick={() => { selectedGroups = [...user!.groups]; showGroupModal = true; }}>
+          <Users class="h-4 w-4 mr-2" />
+          Change Group
+        </Button>
+        <Button variant="destructive" size="sm" onclick={() => (showDeleteConfirm = true)}>
+          <Trash2 class="h-4 w-4 mr-2" />
+          Delete
         </Button>
       {/if}
-      <Button variant="outline" size="sm" onclick={() => { selectedGroups = [...user!.groups]; showGroupModal = true; }}>
-        <Users class="h-4 w-4 mr-2" />
-        Change Group
-      </Button>
-      <Button variant="outline" size="sm" onclick={startImpersonate}>
-        <UserPlus class="h-4 w-4 mr-2" />
-        Impersonate
-      </Button>
-      <Button variant="destructive" size="sm" onclick={() => (showDeleteConfirm = true)}>
-        <Trash2 class="h-4 w-4 mr-2" />
-        Delete
-      </Button>
+      {#if canImpersonate}
+        <Button variant="outline" size="sm" onclick={startImpersonate}>
+          <UserPlus class="h-4 w-4 mr-2" />
+          Impersonate
+        </Button>
+      {/if}
     </div>
   </div>
 
@@ -430,9 +440,11 @@
                     <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{entry.content}</td>
                     <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{entry.created_at}</td>
                     <td class="px-3 py-2">
-                      <Button variant="ghost" size="sm" onclick={() => deleteAiEntry(entry.id)}>
-                        Delete
-                      </Button>
+                      {#if canDeleteAiContext}
+                        <Button variant="ghost" size="sm" onclick={() => deleteAiEntry(entry.id)}>
+                          Delete
+                        </Button>
+                      {/if}
                     </td>
                   </tr>
                 {/each}

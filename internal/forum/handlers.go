@@ -8,11 +8,13 @@
 package forum
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -318,7 +320,11 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Increment view count fire-and-forget — never blocks the response.
-	go h.Service.IncrementThreadView(r.Context(), thread.ID, tenantID)
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		h.Service.IncrementThreadView(bgCtx, thread.ID, tenantID)
+	}()
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": thread})
 }

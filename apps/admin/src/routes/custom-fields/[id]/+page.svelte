@@ -2,8 +2,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
-	import { onMount } from 'svelte';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { Select } from '$lib/components/ui/select';
 
 	type FieldOption = { id?: string; label: string; sort_order: number };
 
@@ -147,7 +147,9 @@
 		}
 	}
 
-	onMount(loadField);
+	$effect(() => {
+		loadField();
+	});
 </script>
 
 <svelte:head>
@@ -202,31 +204,19 @@
 		<!-- Field Type -->
 		<div>
 			<label for="field-type" class="mb-1 block text-sm font-medium">{t('custom_fields.type')}</label>
-			<select
-				id="field-type"
-				class="w-full rounded-md border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface)"
+			<Select
+				options={fieldTypes.map((ft) => ({ value: ft, label: ft }))}
 				bind:value={fieldType}
-			>
-				{#each fieldTypes as ft}
-					<option value={ft}>{ft}</option>
-				{/each}
-			</select>
+			/>
 		</div>
 
 		<!-- Entity Type -->
 		<div>
 			<label for="entity-type" class="mb-1 block text-sm font-medium">{t('custom_fields.entity_type')}</label>
-			<select
-				id="entity-type"
-				class="w-full rounded-md border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface)"
+			<Select
+				options={entityTypes.map((et) => ({ value: et, label: et }))}
 				bind:value={entityType}
-			>
-				{#each entityTypes as et}
-					<option value={et}>{et}</option>
-				{/each}
-			</select>
+			/>
 		</div>
 
 		<!-- Checkboxes -->

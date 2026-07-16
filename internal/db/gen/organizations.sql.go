@@ -305,6 +305,22 @@ func (q *Queries) GetOrganizationMemberRole(ctx context.Context, arg GetOrganiza
 	return role, err
 }
 
+const incrementOrganizationMemberCount = `-- name: IncrementOrganizationMemberCount :exec
+UPDATE organizations
+SET member_count = member_count + $2, updated_at = now()
+WHERE id = $1
+`
+
+type IncrementOrganizationMemberCountParams struct {
+	ID          pgtype.UUID `json:"id"`
+	MemberCount int32       `json:"member_count"`
+}
+
+func (q *Queries) IncrementOrganizationMemberCount(ctx context.Context, arg IncrementOrganizationMemberCountParams) error {
+	_, err := q.db.Exec(ctx, incrementOrganizationMemberCount, arg.ID, arg.MemberCount)
+	return err
+}
+
 const isOrganizationMember = `-- name: IsOrganizationMember :one
 SELECT EXISTS(
     SELECT 1 FROM organization_members

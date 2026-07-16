@@ -172,6 +172,23 @@ func (r *ToolRegistry) UpdateTool(ctx context.Context, tenantID, id pgtype.UUID,
 	return updated, nil
 }
 
+// DeleteTool removes an AI tool by ID.
+func (r *ToolRegistry) DeleteTool(ctx context.Context, tenantID, id pgtype.UUID) error {
+	tag, err := r.db.Writer.Exec(ctx, `
+		DELETE FROM ai_tools
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("deleting ai tool %s: %w", id, err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("ai tool %s not found", id)
+	}
+
+	return nil
+}
+
 // UpdateToolInput is the input for updating an AI tool.
 type UpdateToolInput struct {
 	Description        *string         `json:"description,omitempty"`

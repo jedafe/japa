@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -19,6 +21,7 @@ import (
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Handlers holds dependencies for control panel HTTP handlers.
@@ -32,6 +35,7 @@ type Handlers struct {
 	Client           *asynq.Client
 	RBAC             *rbac.RBAC
 	Settings         *config.Settings
+	Valkey           valkeycompat.Cmdable
 	StartTime        time.Time
 }
 
@@ -65,6 +69,11 @@ func (h *Handlers) SetRBAC(r *rbac.RBAC) {
 // SetSettings injects the settings service for cache invalidation.
 func (h *Handlers) SetSettings(s *config.Settings) {
 	h.Settings = s
+}
+
+// SetValkey injects the Valkey client for cache stats.
+func (h *Handlers) SetValkey(v valkeycompat.Cmdable) {
+	h.Valkey = v
 }
 
 // ---------------------------------------------------------------------------
@@ -589,15 +598,101 @@ func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Cache Management Handlers (stubs — require Valkey client)
+// Cache Management Handlers
 // ---------------------------------------------------------------------------
 
+type cacheNamespace struct {
+	Prefix            string  `json:"prefix"`
+	KeyCount          int64   `json:"key_count"`
+	MemoryEstimateMB  float64 `json:"memory_estimate_mb"`
+}
+
+type cacheStatsResponse struct {
+	Namespaces      []cacheNamespace `json:"namespaces"`
+	TotalKeys       int64            `json:"total_keys"`
+	TotalMemoryMB   float64          `json:"total_memory_mb"`
+}
+
 func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"message": "Cache stats require Valkey INFO integration",
-		},
-	})
+	if h.Valkey == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"message": "Valkey client not configured",
+			},
+		})
+		return
+	}
+
+	ctx := r.Context()
+	info, err := h.Valkey.Info(ctx, "memory", "keyspace").Result()
+	if err != nil {
+		slog.Error("control: cache stats", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch cache stats")
+		return
+	}
+
+	stats := parseValkeyInfo(info)
+	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
+}
+
+func parseValkeyInfo(info string) cacheStatsResponse {
+	var totalMemoryBytes int64
+	var totalKeys int64
+	var namespaces []cacheNamespace
+
+	lines := strings.Split(info, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if strings.HasPrefix(line, "used_memory:") {
+			if val, err := strconv.ParseInt(strings.TrimPrefix(line, "used_memory:"), 10, 64); err == nil {
+				totalMemoryBytes = val
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "db") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			dbName := strings.TrimPrefix(parts[0], "db")
+			kvPairs := strings.Split(parts[1], ",")
+			var keys int64
+			for _, kv := range kvPairs {
+				kvp := strings.SplitN(kv, "=", 2)
+				if len(kvp) != 2 {
+					continue
+				}
+				if kvp[0] == "keys" {
+					keys, _ = strconv.ParseInt(kvp[1], 10, 64)
+				}
+			}
+			totalKeys += keys
+			namespaces = append(namespaces, cacheNamespace{
+				Prefix:           "db" + dbName,
+				KeyCount:         keys,
+				MemoryEstimateMB: 0,
+			})
+		}
+	}
+
+	totalMemoryMB := float64(totalMemoryBytes) / (1024 * 1024)
+
+	for i := range namespaces {
+		if totalKeys > 0 {
+			namespaces[i].MemoryEstimateMB = (float64(namespaces[i].KeyCount) / float64(totalKeys)) * totalMemoryMB
+		}
+	}
+
+	return cacheStatsResponse{
+		Namespaces:     namespaces,
+		TotalKeys:      totalKeys,
+		TotalMemoryMB:  totalMemoryMB,
+	}
 }
 
 func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
@@ -781,11 +876,11 @@ func (h *Handlers) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) GetAPIKey(w http.ResponseWriter, r *http.Request) {
-	h.PublicAPI.ListKeys(w, r)
+	h.PublicAPI.GetAPIKey(w, r)
 }
 
 func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
-	h.PublicAPI.RotateKey(w, r)
+	h.PublicAPI.UpdateAPIKey(w, r)
 }
 
 func (h *Handlers) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {

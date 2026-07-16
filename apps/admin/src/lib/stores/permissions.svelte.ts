@@ -28,6 +28,7 @@ export async function fetchPermissions(): Promise<string[]> {
 
 export function setPermissions(perms: string[]) {
 	_permissions = perms;
+	_permissionsLoaded = true;
 }
 
 export function getPermissions(): string[] {
@@ -36,4 +37,9 @@ export function getPermissions(): string[] {
 
 export function isPermissionsLoaded(): boolean {
 	return _permissionsLoaded;
+}
+
+// Reactive getter for use in templates - tracks _permissions state
+export function getPermissionState(): { permissions: string[]; loaded: boolean } {
+	return { permissions: _permissions, loaded: _permissionsLoaded };
 }

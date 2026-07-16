@@ -242,6 +242,13 @@ func (s *Store) updateContentReviewStatus(ctx context.Context, p gen.UpdateConte
 	return row, nil
 }
 
+func (s *Store) deleteContentReview(ctx context.Context, id, tenantID pgtype.UUID) error {
+	return s.write.DeleteContentReview(ctx, gen.DeleteContentReviewParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Content Featured
 // ---------------------------------------------------------------------------

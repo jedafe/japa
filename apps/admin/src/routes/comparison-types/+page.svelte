@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { comparisonAdminApi, type ComparisonType, type ComparisonTypeDetail, type ComparisonTypeAccess } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -164,7 +163,9 @@
 		accessSaving = false;
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>

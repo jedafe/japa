@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -8,6 +7,7 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { Select } from '$lib/components/ui/select';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Plus, Pencil, Trash2, Eye } from 'lucide-svelte';
 
@@ -233,8 +233,8 @@
 		}
 	}
 
-	// Expose functions for DataTable inline actions
-	if (typeof window !== 'undefined') {
+	$effect(() => {
+		load();
 		(window as any).__editCode = (id: string) => {
 			const item = codes.find((c) => c.id === id);
 			if (item) openEdit(item);
@@ -244,9 +244,12 @@
 			const item = codes.find((c) => c.id === id);
 			if (item) viewUsage(item);
 		};
-	}
-
-	onMount(load);
+		return () => {
+			delete (window as any).__editCode;
+			delete (window as any).__deleteCode;
+			delete (window as any).__viewUsage;
+		};
+	});
 </script>
 
 <svelte:head>
@@ -300,11 +303,14 @@
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="dc-type" class="mb-1 block text-sm font-medium text-gray-700">{t('discounts.type')}</label>
-				<select id="dc-type" bind:value={discountType} class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">
-					<option value="percentage">{t('discounts.percentage')}</option>
-					<option value="fixed">{t('discounts.fixed')}</option>
-				</select>
+			<label for="dc-type" class="mb-1 block text-sm font-medium text-gray-700">{t('discounts.type')}</label>
+			<Select
+				options={[
+					{ value: 'percentage', label: t('discounts.percentage') },
+					{ value: 'fixed', label: t('discounts.fixed') }
+				]}
+				bind:value={discountType}
+			/>
 			</div>
 			<div>
 				<label for="dc-value" class="mb-1 block text-sm font-medium text-gray-700">{t('discounts.value')}</label>

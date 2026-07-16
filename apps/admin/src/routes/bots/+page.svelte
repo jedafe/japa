@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { botsAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -8,6 +7,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
+	import { Select } from '$lib/components/ui/select';
 	import { Bot, MessageSquare, Shield, Settings, Plus, RefreshCw } from 'lucide-svelte';
 
 	type Bot = {
@@ -108,6 +108,18 @@
 		}
 	];
 
+	const botTypeOptions = [
+		{ value: 'chatbot', label: 'Chatbot' },
+		{ value: 'moderation', label: 'Moderation' },
+		{ value: 'utility', label: 'Utility' },
+		{ value: 'custom', label: 'Custom' }
+	];
+
+	const botStatusOptions = [
+		{ value: 'active', label: 'Active' },
+		{ value: 'inactive', label: 'Inactive' }
+	];
+
 	async function load() {
 		loading = true;
 		error = '';
@@ -198,7 +210,9 @@
 		(window as any).__deleteBot = confirmDelete;
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>
@@ -252,16 +266,7 @@
 		</div>
 		<div>
 			<label for="bot-type" class="mb-1 block text-sm font-medium text-gray-700">Type</label>
-			<select
-				id="bot-type"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-				bind:value={botForm.type}
-			>
-				<option value="chatbot">Chatbot</option>
-				<option value="moderation">Moderation</option>
-				<option value="utility">Utility</option>
-				<option value="custom">Custom</option>
-			</select>
+			<Select options={botTypeOptions} bind:value={botForm.type} />
 		</div>
 		<div>
 			<label for="bot-desc" class="mb-1 block text-sm font-medium text-gray-700">Description</label>
@@ -275,14 +280,7 @@
 		</div>
 		<div>
 			<label for="bot-status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
-			<select
-				id="bot-status"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-				bind:value={botForm.status}
-			>
-				<option value="active">Active</option>
-				<option value="inactive">Inactive</option>
-			</select>
+			<Select options={botStatusOptions} bind:value={botForm.status} />
 		</div>
 	</div>
 	<div class="flex justify-end gap-3 pt-4">

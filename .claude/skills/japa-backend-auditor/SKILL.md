@@ -1,6 +1,6 @@
 ---
 name: japa-backend-auditor
-description: Full systematic audit of the JapaConnect Go backend API for standards drift, missing catalog entries, security gaps, and architectural conformance. Use when the user says "run backend audit", "audit the backend", "full backend sweep", or triggers /japa-backend-auditor. Cross-references codebase against the JEOS specification catalogs (routes, Asynq tasks, Valkey keys, system settings, RBAC, migrations, env vars).
+description: Full systematic audit of the JapaConnect Go backend API for standards drift, missing features, unwired handlers, missing catalog entries, security gaps, and architectural conformance. Use when the user says "run backend audit", "audit the backend", "full backend sweep", or triggers /japa-backend-auditor. Cross-references codebase against the JEOS specification catalogs (routes, Asynq tasks, Valkey keys, system settings, RBAC, migrations, env vars).
 ---
 
 # Japa Backend Auditor
@@ -16,8 +16,14 @@ Systematic sweep of the JapaConnect Go backend against JEOS catalogs. Not a code
 
 ## Audit Checklist
 
-### 1. Route Catalog Coverage
+### 0 Route Completeness
 1. List every Chi route registered in the codebase.
+2. Verify if the api backend routes and features cover all use cases in .JEOS Specification
+3. Verify all entities are properly gated using RBAC acccording to JEOS
+3. Verify all RBAC entities have CRUD operation endpoints
+4. Flag: routes and features not covered yet in JEOS
+
+### 1. Route Catalog Coverage
 2. Cross-reference against the API routes catalog in JEOS (`conventions/api-routes-catalog.md`).
 3. Flag: route in code but absent from catalog (undocumented).
 4. Flag: route in catalog but absent from code (phantom).
@@ -59,7 +65,6 @@ Systematic sweep of the JapaConnect Go backend against JEOS catalogs. Not a code
 
 ### 7. Security Sweep
 1. Check all handler input-parsing paths for missing validation/sanitization before reaching sqlc queries or external services.
-2. Confirm session cookie domain = `.japaconnect.com`.
 3. Confirm Honcho erasure on account deletion is hard deletion (not soft, not best-effort, not queued-only).
 4. Check for direct MinIO references (MinIO archived per ADR-048; must use SeaweedFS).
 

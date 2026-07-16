@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -182,7 +181,15 @@
 		}
 	];
 
-	onMount(load);
+	$effect(() => {
+		load();
+		(window as any).__deleteProvider = deleteProvider;
+		(window as any).__updateMemberStatus = updateMemberStatus;
+		return () => {
+			delete (window as any).__deleteProvider;
+			delete (window as any).__updateMemberStatus;
+		};
+	});
 
 	async function load() {
 		loading = true;

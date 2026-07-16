@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from "$app/state";
 	import Tooltip from "$lib/components/ui/tooltip/tooltip.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { hasPermission, getPermissionState, getPermissions } from "$lib/stores/permissions.svelte";
+	import { user } from "$lib/stores/auth.svelte";
 	import {
 		LayoutDashboard, Users, Shield, BarChart3, Settings,
 		FileText, MessageSquare, Ticket, Wallet, Building,
@@ -18,18 +19,25 @@
 	import { clsx } from "clsx";
 
 	let {
-		collapsed = false,
-		mobile = false,
-		onclose
+		collapsed = $bindable(false),
+		mobileOpen = $bindable(false),
+		onclose,
+		permissions = []
 	}: {
 		collapsed?: boolean;
-		mobile?: boolean;
+		mobileOpen?: boolean;
 		onclose?: () => void;
+		permissions?: string[];
 	} = $props();
 
 	let expandedSections = $state(new Set(["dashboard", "users", "content", "moderation"]));
-	let open = $state(false);
 	let searchQuery = $state("");
+	
+	// Use permissions prop for reactivity
+	function canSeeItem(permission?: string): boolean {
+		if (!permission) return true;
+		return permissions.includes(permission) || permissions.includes('*');
+	}
 
 	interface NavItem {
 		path: string;
@@ -157,12 +165,13 @@
 	];
 
 	function toggleSection(id: string) {
-		if (expandedSections.has(id)) {
-			expandedSections.delete(id);
+		const next = new Set(expandedSections);
+		if (next.has(id)) {
+			next.delete(id);
 		} else {
-			expandedSections.add(id);
+			next.add(id);
 		}
-		expandedSections = expandedSections;
+		expandedSections = next;
 	}
 
 	function isActive(path: string): boolean {
@@ -188,40 +197,30 @@
 	}
 </script>
 
-{#if mobile}
-	<div class="fixed inset-0 z-50 bg-black/80 dark:bg-black/60" role="presentation" onclick={onclose}></div>
+<!-- Mobile overlay -->
+{#if mobileOpen}
+	<button
+		type="button"
+		class="fixed inset-0 z-40 bg-black/50 md:hidden"
+		aria-label="Close sidebar"
+		onclick={() => { mobileOpen = false; onclose?.(); }}
+	></button>
 {/if}
-
-<button
-	type="button"
-	class="fixed left-4 top-4 z-50 rounded-md bg-white p-2 shadow-md md:hidden dark:bg-gray-800"
-	onclick={() => (open = !open)}
->
-	{#if open}
-		<X class="h-5 w-5 text-gray-700 dark:text-gray-300" />
-	{:else}
-		<Menu class="h-5 w-5 text-gray-700 dark:text-gray-300" />
-	{/if}
-</button>
 
 <aside
 	class={clsx(
-		"flex h-full flex-col border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900",
-		mobile
-			? "fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-200"
-			: "hidden w-64 md:flex",
-		mobile && !open && "-translate-x-full",
-		collapsed && !mobile && "w-16"
+		"flex h-full flex-col border-r transition-transform duration-200",
+		"fixed inset-y-0 left-0 z-50 w-64 md:static md:translate-x-0",
+		!mobileOpen && "-translate-x-full md:translate-x-0",
+		collapsed && "md:w-16"
 	)}
+	style="border-color: var(--color-border); background-color: var(--color-surface)"
 >
 	<!-- Logo -->
-	<div class="flex h-14 items-center border-b border-gray-200 px-4 dark:border-gray-700">
+	<div class="flex h-14 items-center border-b px-4" style="border-color: var(--color-border)">
 		<a href="/" class="flex items-center gap-2">
-			<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600">
-				<span class="text-sm font-bold text-white">JC</span>
-			</div>
 			{#if !collapsed}
-				<span class="text-lg font-semibold text-gray-900 dark:text-gray-100">Admin</span>
+				<span class="text-lg font-semibold" style="color: var(--color-foreground)">Admin</span>
 			{/if}
 		</a>
 	</div>
@@ -230,11 +229,12 @@
 	{#if !collapsed}
 		<div class="px-3 pt-3">
 			<div class="relative">
-				<Search class="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+				<Search class="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
 				<input
 					type="text"
 					placeholder="Search navigation..."
-					class="w-full rounded-md border border-gray-200 bg-white py-1.5 pl-7 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
+					class="w-full rounded-md border py-1.5 pl-7 pr-3 text-sm"
+					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 					bind:value={searchQuery}
 				/>
 			</div>
@@ -248,36 +248,33 @@
 				<div class="mb-1">
 					<button
 						type="button"
-						class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+						class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+						style="color: var(--color-foreground)"
 						onclick={() => toggleSection(section.id)}
 					>
 						<span>{section.label}</span>
 						{#if expandedSections.has(section.id)}
-							<ChevronDown class="h-4 w-4 text-gray-400" />
+							<ChevronDown class="h-4 w-4" style="color: var(--color-muted)" />
 						{:else}
-							<ChevronRight class="h-4 w-4 text-gray-400" />
+							<ChevronRight class="h-4 w-4" style="color: var(--color-muted)" />
 						{/if}
 					</button>
 
 					{#if expandedSections.has(section.id)}
 						<div class="mt-1 space-y-1">
 							{#each section.items as item}
-								{#if !item.permission || hasPermission(item.permission)}
+								{#if canSeeItem(item.permission)}
 									<a
 										href={item.path}
-										class={clsx(
-											"flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-											isActive(item.path)
-												? "bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-400"
-												: "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-										)}
+										class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors"
+										style={isActive(item.path)
+											? "background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary); font-weight: 500"
+											: "color: var(--color-muted)"}
+										onclick={() => { mobileOpen = false; }}
 									>
-										<svelte:component
-											this={item.icon}
-											class={clsx(
-												"h-5 w-5 flex-shrink-0",
-												isActive(item.path) ? "text-primary-600 dark:text-primary-400" : "text-gray-400 dark:text-gray-500"
-											)}
+										<item.icon
+											class="h-5 w-5 flex-shrink-0"
+											style={isActive(item.path) ? "color: var(--color-primary)" : "color: var(--color-muted)"}
 										/>
 										<span>{item.label}</span>
 									</a>
@@ -289,23 +286,18 @@
 			{:else}
 				<!-- Collapsed view - just icons -->
 				{#each section.items as item}
-					{#if !item.permission || hasPermission(item.permission)}
+					{#if canSeeItem(item.permission)}
 						<Tooltip content={item.label} side="right">
 							<a
 								href={item.path}
-								class={clsx(
-									"mb-1 flex items-center justify-center rounded-lg p-2 transition-colors",
-									isActive(item.path)
-										? "bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400"
-										: "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-								)}
+								class="mb-1 flex items-center justify-center rounded-lg p-2 transition-colors"
+								style={isActive(item.path)
+									? "background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)"
+									: "color: var(--color-muted)"}
 							>
-								<svelte:component
-									this={item.icon}
-									class={clsx(
-										"h-5 w-5",
-										isActive(item.path) ? "text-primary-600 dark:text-primary-400" : "text-gray-400 dark:text-gray-500"
-									)}
+								<item.icon
+									class="h-5 w-5"
+									style={isActive(item.path) ? "color: var(--color-primary)" : "color: var(--color-muted)"}
 								/>
 							</a>
 						</Tooltip>
@@ -317,25 +309,30 @@
 
 	<!-- User Menu -->
 	{#if !collapsed}
-		<div class="border-t border-gray-200 p-4 dark:border-gray-700">
+		<div class="border-t p-4" style="border-color: var(--color-border)">
 			<div class="flex items-center gap-3">
-				<div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/40">
-					<span class="text-sm font-medium text-primary-700 dark:text-primary-300">A</span>
+				<div class="flex h-8 w-8 items-center justify-center rounded-full" style="background-color: color-mix(in srgb, var(--color-primary) 15%, transparent)">
+					<span class="text-sm font-medium" style="color: var(--color-primary)">
+						{(user.current?.username ?? user.current?.email ?? 'A').charAt(0).toUpperCase()}
+					</span>
 				</div>
 				<div class="min-w-0 flex-1">
-					<p class="truncate text-sm font-medium text-gray-900 dark:text-gray-100">Admin User</p>
-					<p class="truncate text-xs text-gray-500 dark:text-gray-400">admin@japa.com</p>
+					<p class="truncate text-sm font-medium" style="color: var(--color-foreground)">
+						{user.current?.username ?? user.current?.email ?? 'Admin'}
+					</p>
+					<p class="truncate text-xs" style="color: var(--color-muted)">
+						{user.current?.email ?? ''}
+					</p>
 				</div>
+				<a
+					href="/logout"
+					class="rounded p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+					style="color: var(--color-muted)"
+					title="Logout"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+				</a>
 			</div>
 		</div>
 	{/if}
 </aside>
-
-{#if mobile && open}
-	<button
-		type="button"
-		class="fixed inset-0 z-30 bg-black/50 md:hidden"
-		aria-label="Close sidebar"
-		onclick={() => (open = false)}
-	></button>
-{/if}

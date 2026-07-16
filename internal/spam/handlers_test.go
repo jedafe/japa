@@ -183,7 +183,7 @@ func TestCreateIPBlock_MissingCIDR(t *testing.T) {
 
 	var resp map[string]map[string]string
 
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp["error"]["code"] != "missing_cidr" {
 		t.Errorf("error code = %q, want missing_cidr", resp["error"]["code"])
@@ -210,7 +210,7 @@ func TestCreateIPBlock_MissingBlockType(t *testing.T) {
 
 	var resp map[string]map[string]string
 
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp["error"]["code"] != "missing_block_type" {
 		t.Errorf("error code = %q, want missing_block_type", resp["error"]["code"])
@@ -237,7 +237,7 @@ func TestCreateIPBlock_InvalidBlockType(t *testing.T) {
 
 	var resp map[string]map[string]string
 
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp["error"]["code"] != "invalid_block_type" {
 		t.Errorf("error code = %q, want invalid_block_type", resp["error"]["code"])
@@ -282,7 +282,7 @@ func TestCreateCensoredWord_MissingPattern(t *testing.T) {
 
 	var resp map[string]map[string]string
 
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp["error"]["code"] != "missing_pattern" {
 		t.Errorf("error code = %q, want missing_pattern", resp["error"]["code"])
@@ -309,7 +309,7 @@ func TestCreateCensoredWord_MissingAction(t *testing.T) {
 
 	var resp map[string]map[string]string
 
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp["error"]["code"] != "missing_action" {
 		t.Errorf("error code = %q, want missing_action", resp["error"]["code"])
@@ -336,7 +336,7 @@ func TestCreateCensoredWord_InvalidAction(t *testing.T) {
 
 	var resp map[string]map[string]string
 
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp["error"]["code"] != "invalid_action" {
 		t.Errorf("error code = %q, want invalid_action", resp["error"]["code"])
@@ -363,7 +363,7 @@ func TestCreateCensoredWord_ReplaceRequiresReplacement(t *testing.T) {
 
 	var resp map[string]map[string]string
 
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp["error"]["code"] != "missing_replacement" {
 		t.Errorf("error code = %q, want missing_replacement", resp["error"]["code"])
@@ -498,7 +498,7 @@ func TestCreateIPBlockInput_Validation(t *testing.T) {
 		t.Error("IsValidCensorAction('block') = false, want true")
 	}
 
-	if !IsValidCensorAction("replace") {
+	if !IsValidCensorAction(CensorActionReplace) {
 		t.Error("IsValidCensorAction('replace') = false, want true")
 	}
 

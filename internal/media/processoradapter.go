@@ -20,10 +20,11 @@ func NewProcessorAdapter(svc *Service) *ProcessorAdapter {
 // The operation parameter controls the resize type: "thumbnail" generates
 // a 400x300 fill, "og" generates a 1200x630 fill, and "original" returns
 // the unscaled URL.
-func (a *ProcessorAdapter) ProcessImage(ctx context.Context, mediaID, tenantID, operation string, width, height int) error {
+func (a *ProcessorAdapter) ProcessImage(_ context.Context, mediaID, _ string, operation string, width, height int) error {
 	slog.Info("media:process_image", "media_id", mediaID, "operation", operation, "width", width, "height", height)
 
 	opts := ImageProxyOpts{}
+
 	switch operation {
 	case "thumbnail":
 		opts = ImageProxyOpts{ResizingType: "fill", Width: 400, Height: 300, Format: "webp"}
@@ -40,7 +41,8 @@ func (a *ProcessorAdapter) ProcessImage(ctx context.Context, mediaID, tenantID, 
 	// Generate the signed URL and optionally update the media record.
 	// For now, we log the operation — the actual URL generation happens
 	// on read via MediaURL().
-	slog.Info("media:process_image — imgproxy opts computed",
+	slog.Info(
+		"media:process_image — imgproxy opts computed",
 		"media_id", mediaID,
 		"resizing", opts.ResizingType,
 		"width", opts.Width,

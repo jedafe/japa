@@ -12,6 +12,7 @@
 package newsletter
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"math"
@@ -27,6 +28,71 @@ const (
 	defaultPageSize int32 = 20
 	maxPageSize     int32 = 100
 )
+
+// extractTenant extracts the tenant ID from the request context.
+func extractTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusBadRequest, "missing_tenant", "Tenant ID required")
+		return pgtype.UUID{}, false
+	}
+
+	return t.ID, true
+}
+
+// requireID parses the :id URL parameter as a UUID.
+func requireID(w http.ResponseWriter, r *http.Request, paramName, entityName string) (pgtype.UUID, bool) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, paramName)); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
+		return pgtype.UUID{}, false
+	}
+
+	return id, true
+}
+
+// getByID is a shared helper for GET /{entity}/{id} handlers.
+func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, fetchFn func(ctx context.Context, tenantID, id pgtype.UUID) (T, error)) {
+	tenantID, ok := extractTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := requireID(w, r, "id", entityName)
+	if !ok {
+		return
+	}
+
+	result, err := fetchFn(r.Context(), tenantID, id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", entityName+" not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// deleteByID is a shared helper for DELETE /{entity}/{id} handlers.
+func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, deleteFn func(ctx context.Context, tenantID, id pgtype.UUID) error) {
+	tenantID, ok := extractTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := requireID(w, r, "id", entityName)
+	if !ok {
+		return
+	}
+
+	if err := deleteFn(r.Context(), tenantID, id); err != nil {
+		slog.Error("deleting newsletter "+entityName, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete "+entityName)
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
 
 // Handlers holds dependencies for newsletter admin HTTP handlers.
 type Handlers struct {
@@ -103,6 +169,39 @@ func parseOffset(r *http.Request) int32 {
 // Admin Handlers — Newsletter Subscribers
 // ---------------------------------------------------------------------------
 
+// CreateSubscriber adds a new newsletter subscriber.
+// POST /admin/newsletter/subscribers.
+func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Email string `json:"email"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	if input.Email == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "email is required")
+		return
+	}
+
+	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, input.Email)
+	if err != nil {
+		slog.Error("creating newsletter subscriber", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create subscriber")
+
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": subscriber})
+}
+
 // ListSubscribers returns all newsletter subscribers for the tenant.
 // GET /admin/newsletter/subscribers.
 func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
@@ -128,48 +227,17 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 // GetSubscriber returns a single newsletter subscriber by ID.
 // GET /admin/newsletter/subscribers/{id}.
 func (h *Handlers) GetSubscriber(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid subscriber ID")
-		return
-	}
-
-	subscriber, err := h.Service.GetSubscriber(r.Context(), tenantID, id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Subscriber not found")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": subscriber})
+	getByID(w, r, "subscriber", func(ctx context.Context, tenantID, id pgtype.UUID) (any, error) {
+		return h.Service.GetSubscriber(ctx, tenantID, id)
+	})
 }
 
 // DeleteSubscriber removes a newsletter subscriber.
 // DELETE /admin/newsletter/subscribers/{id}.
 func (h *Handlers) DeleteSubscriber(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid subscriber ID")
-		return
-	}
-
-	if err := h.Service.DeleteSubscriber(r.Context(), tenantID, id); err != nil {
-		slog.Error("deleting newsletter subscriber", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete subscriber")
-
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	deleteByID(w, r, "subscriber", func(ctx context.Context, tenantID, id pgtype.UUID) error {
+		return h.Service.DeleteSubscriber(ctx, tenantID, id)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -201,24 +269,9 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 // GetCampaign returns a single newsletter campaign by ID.
 // GET /admin/newsletter/campaigns/{id}.
 func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
-		return
-	}
-
-	campaign, err := h.Service.GetCampaign(r.Context(), tenantID, id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Campaign not found")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	getByID(w, r, "campaign", func(ctx context.Context, tenantID, id pgtype.UUID) (any, error) {
+		return h.Service.GetCampaign(ctx, tenantID, id)
+	})
 }
 
 // CreateCampaign creates a new newsletter campaign.
@@ -296,6 +349,14 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+}
+
+// DeleteCampaign removes a newsletter campaign.
+// DELETE /admin/newsletter/campaigns/{id}.
+func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
+	deleteByID(w, r, "campaign", func(ctx context.Context, tenantID, id pgtype.UUID) error {
+		return h.Service.DeleteCampaign(ctx, tenantID, id)
+	})
 }
 
 // HandleSendCampaign triggers sending a newsletter campaign.

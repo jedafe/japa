@@ -1016,6 +1016,11 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 				fedCount++
 			}
 
+			if err := rows.Err(); err != nil {
+				slog.Error("task:content:fan_out_to_feeds: bubble rows iteration error",
+					"content_id", payload.ContentID, "parent_id", parentID, "error", err)
+			}
+
 			rows.Close()
 
 			depth++
@@ -1808,7 +1813,11 @@ func HandleDataExport(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	return gdprProcessor.ProcessDataExport(ctx, requestID.Bytes)
+	if err := gdprProcessor.ProcessDataExport(ctx, requestID.Bytes); err != nil {
+		errpkg.CaptureException(fmt.Errorf("gdpr data export failed (request=%s): %w", payload.RequestID, err))
+		return err
+	}
+	return nil
 }
 
 // HandleAccountDeletionCleanup performs the final cleanup after an account deletion request.
@@ -1837,7 +1846,11 @@ func HandleAccountDeletionCleanup(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	return gdprProcessor.ProcessAccountDeletion(ctx, requestID.Bytes)
+	if err := gdprProcessor.ProcessAccountDeletion(ctx, requestID.Bytes); err != nil {
+		errpkg.CaptureException(fmt.Errorf("gdpr account deletion failed (request=%s): %w", payload.RequestID, err))
+		return err
+	}
+	return nil
 }
 
 // HandleAdEventIngest ingests an ad impression or click event for analytics.
@@ -2128,6 +2141,11 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 				scanCount++
 			}
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.Error("task:security:scan: rows iteration error", "tenant_id", payload.TenantID, "error", err)
+		return err
 	}
 
 	slog.Info("task:security:scan: complete", "scanned_count", scanCount)
@@ -2497,6 +2515,99 @@ func RegisterPushDelivery(d interface {
 },
 ) {
 	pushDelivery = d
+}
+
+// ---------------------------------------------------------------------------
+// DM notification handlers (critical tier — push notifications for DM events)
+// ---------------------------------------------------------------------------
+
+// HandleDMNotifyRequest enqueues a push notification for a new DM request.
+// Payload: { recipient_id, tenant_id, sender_username, conversation_id }
+func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:dm:notify_request", "payload", t.Payload())
+
+	var payload struct {
+		RecipientID    string `json:"recipient_id"`
+		TenantID       string `json:"tenant_id"`
+		SenderUsername string `json:"sender_username"`
+		ConversationID string `json:"conversation_id"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:dm:notify_request: invalid payload", "error", err)
+		return err
+	}
+
+	if taskEnqueuer == nil {
+		slog.Warn("task:dm:notify_request: no task enqueuer, skipping")
+		return nil
+	}
+
+	title := "New message request"
+	body := payload.SenderUsername + " wants to send you a message"
+	actionURL := "/dm/conversations/" + payload.ConversationID
+
+	pushPayload, _ := json.Marshal(map[string]string{
+		"user_id":    payload.RecipientID,
+		"title":      title,
+		"body":       body,
+		"action_url": actionURL,
+	})
+
+	if err := taskEnqueuer.Enqueue(TypePushDelivery, pushPayload); err != nil {
+		slog.Error("task:dm:notify_request: failed to enqueue push", "error", err)
+		return err
+	}
+
+	slog.Info("task:dm:notify_request: push enqueued", "recipient_id", payload.RecipientID)
+	return nil
+}
+
+// HandleDMNotifyMessage enqueues a push notification for a new DM message
+// when the conversation is not currently open. Payload:
+// { recipient_id, tenant_id, sender_username, conversation_id, body_preview }
+func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:dm:notify_message", "payload", t.Payload())
+
+	var payload struct {
+		RecipientID    string `json:"recipient_id"`
+		TenantID       string `json:"tenant_id"`
+		SenderUsername string `json:"sender_username"`
+		ConversationID string `json:"conversation_id"`
+		BodyPreview    string `json:"body_preview"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:dm:notify_message: invalid payload", "error", err)
+		return err
+	}
+
+	if taskEnqueuer == nil {
+		slog.Warn("task:dm:notify_message: no task enqueuer, skipping")
+		return nil
+	}
+
+	title := payload.SenderUsername
+	body := payload.BodyPreview
+	if body == "" {
+		body = "Sent you a message"
+	}
+	actionURL := "/dm/conversations/" + payload.ConversationID
+
+	pushPayload, _ := json.Marshal(map[string]string{
+		"user_id":    payload.RecipientID,
+		"title":      title,
+		"body":       body,
+		"action_url": actionURL,
+	})
+
+	if err := taskEnqueuer.Enqueue(TypePushDelivery, pushPayload); err != nil {
+		slog.Error("task:dm:notify_message: failed to enqueue push", "error", err)
+		return err
+	}
+
+	slog.Info("task:dm:notify_message: push enqueued", "recipient_id", payload.RecipientID)
+	return nil
 }
 
 // ---------------------------------------------------------------------------

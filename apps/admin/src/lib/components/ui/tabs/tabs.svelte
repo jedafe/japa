@@ -20,9 +20,11 @@
   } = $props();
   
   // Set initial value if not provided
-  if (!value && tabs.length > 0) {
-    value = tabs[0].value;
-  }
+  $effect(() => {
+    if (!value && tabs.length > 0) {
+      value = tabs[0].value;
+    }
+  });
 </script>
 
 <Tabs.Root bind:value class={clsx("w-full", className)}>
@@ -48,9 +50,3 @@
   
   {@render children?.()}
 </Tabs.Root>
-
-{#snippet tabContent(props: { value: string; children: any })}
-  <Tabs.Content value={props.value} class="mt-2 ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2">
-    {@render props.children()}
-  </Tabs.Content>
-{/snippet}

@@ -1,11 +1,11 @@
 import type { LayoutLoad } from './$types';
 import { browser } from '$app/environment';
 import { locale } from '$lib/stores/i18n.svelte';
-import type { User } from '$lib/api/types';
 
 export const ssr = false;
+export const prerender = false;
 
-export const load: LayoutLoad = async ({ url, data }) => {
+export const load: LayoutLoad = async ({ url }) => {
 	let localeCode = 'en';
 
 	if (browser) {
@@ -18,8 +18,7 @@ export const load: LayoutLoad = async ({ url, data }) => {
 		.catch(() => ({}));
 	locale.init(localeCode, translations);
 
-	// Use server-side data from +layout.server.ts (which validates the token
-	// via the backend /me endpoint). The server hooks already authenticated
-	// the user and set locals.user/locals.token. No need to re-fetch client-side.
-	return { token: data.token, user: data.user, permissions: data.permissions };
+	// In SPA mode, auth is handled client-side via hooks.server.ts
+	// and the API client. No server-side data needed.
+	return {};
 };

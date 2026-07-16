@@ -19,6 +19,10 @@ export const load: PageServerLoad = async ({ cookies }) => {
 		const body = await res.json();
 		const data = body?.data ?? body ?? {};
 
+		if (data && typeof data === 'object' && 'message' in data) {
+			return { stats: null, error: null };
+		}
+
 		return {
 			stats: data ?? null,
 			error: null
