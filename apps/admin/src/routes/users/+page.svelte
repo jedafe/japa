@@ -1,299 +1,463 @@
 <script lang="ts">
-  import { page } from "$app/state";
-  import { goto } from "$app/navigation";
-  import PageHeader from "$lib/components/layout/page-header.svelte";
-  import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-  import { Tabs } from "$lib/components/ui/tabs";
-  import { DataTable } from "$lib/components/ui/data-table";
-  import { FilterBar } from "$lib/components/ui/filter-bar";
-  import { Badge } from "$lib/components/ui/badge";
-  import { Button } from "$lib/components/ui/button";
-  import { Modal } from "$lib/components/ui/modal";
-  import { Select } from "$lib/components/ui/select";
-  import { Users, UserPlus, Download, RefreshCw } from "lucide-svelte";
-  import { api, impersonationApi, userManagementApi } from "$lib/api";
+	import PageHeader from "$lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+	import { DataTable } from "$lib/components/ui/data-table";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import { Button } from "$lib/components/ui/button";
+	import { Modal } from "$lib/components/ui/modal";
+	import Pagination from "$lib/components/ui/Pagination.svelte";
+	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import { RefreshCw, Eye, Pencil, Trash2, Ban, Play, UserPlus } from "lucide-svelte";
+	import { userManagementApi, impersonationApi } from "$lib/api";
+	import { t } from "$lib/stores/i18n.svelte";
+	import { goto } from "$app/navigation";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 
-  type User = {
-    id: string;
-    username: string;
-    email: string;
-    groups: string[];
-    status: string;
-    created_at: string;
-    avatar_url?: string;
-  };
+	type User = {
+		id: string;
+		username: string;
+		email: string;
+		profile_type: string;
+		status: string;
+		follower_count: number;
+		created_at: string;
+		updated_at: string;
+	};
 
-  type UserStats = {
-    total: number;
-    active: number;
-    pending: number;
-    suspended: number;
-  };
+	let users = $state<User[]>([]);
+	let currentPage = $state(0);
+	let totalItems = $state(0);
+	let pageSize = $state(25);
+	let totalPages = $state(1);
+	let loading = $state(true);
+	let error = $state("");
+	let searchQuery = $state("");
+	let filterValues = $state<Record<string, string>>({});
+	let selectedIds = $state<Set<string>>(new Set());
 
-  let { data } = $props();
+	// Modals
+	let showViewModal = $state(false);
+	let viewTarget = $state<User | null>(null);
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<User | null>(null);
+	let acting = $state(false);
 
-  let users = $state<User[]>([]);
-  let currentPage = $state(0);
-  let totalPages = $state(1);
-  let loading = $state(true);
-  let searchQuery = $state("");
-  let filterValues = $state<Record<string, string>>({});
-  let filterGroup = $derived(filterValues.group || "");
-  let groupOptions = $state<string[]>(["user", "moderator", "admin", "super_admin"]);
-  let stats = $state<UserStats>({ total: 0, active: 0, pending: 0, suspended: 0 });
+	// Impersonation state
+	let impersonating = $state(false);
+	let impersonatingUsername = $state("");
+	let impersonateError = $state("");
 
-  // Impersonation state
-  let impersonating = $state(false);
-  let impersonatingUsername = $state("");
-  let impersonateTarget = $state<User | null>(null);
-  let showImpersonateConfirm = $state(false);
-  let impersonateError = $state("");
+	const canManageUsers = $derived(hasPermission("users.manage"));
+	const canImpersonate = $derived(hasPermission("admin.impersonate"));
 
-  // Tab navigation - derived from current URL
-  let activeTab = $derived.by(() => {
-    const path = page.url.pathname;
-    if (path === "/users") return "users";
-    if (path.startsWith("/users/roles")) return "roles";
-    if (path.startsWith("/users/groups")) return "groups";
-    return "users";
-  });
+	const filterDefs = [
+		{
+			key: "status",
+			label: t("common.status", "Status"),
+			options: [
+				{ value: "active", label: "Active" },
+				{ value: "pending", label: "Pending" },
+				{ value: "suspended", label: "Suspended" },
+				{ value: "banned", label: "Banned" }
+			]
+		},
+		{
+			key: "group",
+			label: t("users.group", "Group"),
+			options: [
+				{ value: "user", label: "User" },
+				{ value: "moderator", label: "Moderator" },
+				{ value: "admin", label: "Admin" },
+				{ value: "super_admin", label: "Super Admin" }
+			]
+		}
+	];
 
-  const tabs = [
-    { value: "users", label: "Users", icon: Users },
-    { value: "roles", label: "Roles", icon: Users },
-    { value: "groups", label: "Groups", icon: Users }
-  ];
+	const columns = [
+		{
+			key: "username",
+			label: t("users.username", "Username"),
+			sortable: true
+		},
+		{
+			key: "email",
+			label: t("users.email", "Email"),
+			sortable: true
+		},
+		{
+			key: "profile_type",
+			label: t("users.profile_type", "Profile Type"),
+			sortable: true
+		},
+		{
+			key: "status",
+			label: t("common.status", "Status"),
+			sortable: true,
+			render: (v: string) => {
+				const colors = v === "active" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : v === "banned" ? "bg-red-500/15 text-red-700 dark:text-red-400" : v === "suspended" ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "bg-blue-500/15 text-blue-700 dark:text-blue-400";
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
+			}
+		},
+		{
+			key: "follower_count",
+			label: t("users.followers", "Followers"),
+			sortable: true,
+			render: (v: number) => (v ?? 0).toLocaleString()
+		},
+		{
+			key: "created_at",
+			label: t("users.joined", "Joined"),
+			sortable: true,
+			render: (value: string) => new Date(value).toLocaleDateString()
+		},
+		{
+			key: "actions",
+			label: t("common.actions", "Actions"),
+			class: "w-48",
+			component: UserActionsCell
+		}
+	];
 
-  const columns = [
-    {
-      key: "username",
-      label: "Username",
-      sortable: true,
-      render: (_: any, row: any) => `
-        <div class="flex items-center gap-3">
-          <img src="${row.avatar_url || '/default-avatar.png'}" alt="" class="h-8 w-8 rounded-full" />
-          <div>
-            <p class="font-medium text-gray-900">${row.username || 'Unknown'}</p>
-            <p class="text-sm text-gray-500">${row.email || ''}</p>
-          </div>
-        </div>
-      `
-    },
-    {
-      key: "groups",
-      label: "Groups",
-      sortable: true,
-      render: (value: string[]) => {
-        return value.map(g => `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-800">${g}</span>`).join(" ");
-      }
-    },
-    {
-      key: "status",
-      label: "Status",
-      sortable: true,
-      render: (value: string) => {
-        const variants: Record<string, string> = { active: "success", pending: "warning", suspended: "danger", banned: "destructive" };
-        const classes: Record<string, string> = {
-          active: "bg-success-100 text-success-800",
-          pending: "bg-warning-100 text-warning-800",
-          suspended: "bg-danger-100 text-danger-800",
-          banned: "bg-danger-100 text-danger-800"
-        };
-        return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${classes[value] || 'bg-gray-100 text-gray-800'}">${value || 'active'}</span>`;
-      }
-    },
-    {
-      key: "created_at",
-      label: "Joined",
-      sortable: true,
-      render: (value: string) => new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-    },
-    {
-      key: "actions",
-      label: "",
-      class: "w-24",
-      render: (_: any, row: any) => `
-        <div class="flex items-center gap-1">
-          <button onclick="window.location.href='/users/${row.id}'" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">View</button>
-          <button onclick="window.location.href='/users/${row.id}?edit=true'" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Edit</button>
-        </div>
-      `
-    }
-  ];
+	async function loadUsers() {
+		loading = true;
+		error = "";
+		try {
+			const params = new URLSearchParams({
+				page: String(currentPage),
+				limit: String(pageSize)
+			});
+			if (searchQuery) params.set("q", searchQuery);
+			if (filterValues.status) params.set("status", filterValues.status);
+			if (filterValues.group) params.set("group", filterValues.group);
 
-  let filterDefs = $derived([
-    { key: "group", label: "Group", options: groupOptions.map(g => ({ value: g, label: g })) }
-  ]);
+			const result = await userManagementApi.list(params.toString());
+			if (result.ok) {
+				const d = result.data as unknown as { items: User[]; total: number; page: number; total_pages: number };
+				users = d.items ?? [];
+				totalItems = d.total ?? users.length;
+				totalPages = d.total_pages ?? 1;
+			} else {
+				error = result.error ?? t("common.error", "Failed to load users");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to load users");
+		} finally {
+			loading = false;
+		}
+	}
 
-  async function loadUsers() {
-    loading = true;
-    const params = new URLSearchParams({ page: String(currentPage) });
-    if (searchQuery) params.set("search", searchQuery);
-    if (filterGroup) params.set("group", filterGroup);
-    try {
-      const result = await api<{ users: User[]; page: number; total_pages: number; stats?: UserStats }>(`/users?${params}`);
-      if (result.ok) {
-        users = result.data.users;
-        totalPages = result.data.total_pages;
-        stats = result.data.stats || { total: 0, active: 0, pending: 0, suspended: 0 };
-      }
-    } catch {
-      // API not available
-    } finally {
-      loading = false;
-    }
-  }
+	function handleSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? "";
+		filterValues = values;
+		currentPage = 0;
+	}
 
-  function handleFilter(values: Record<string, string>) {
-    searchQuery = values.search ?? "";
-    filterValues = values;
-    currentPage = 0;
-    loadUsers();
-  }
+	function handleClear() {
+		searchQuery = "";
+		filterValues = {};
+		currentPage = 0;
+	}
 
-  function handlePageChange(p: number) {
-    currentPage = p;
-    loadUsers();
-  }
+	function openView(user: User) {
+		viewTarget = user;
+		showViewModal = true;
+	}
 
-  async function checkImpersonationStatus() {
-    const result = await impersonationApi.status();
-    if (result.ok) {
-      const data = result.data as { impersonating: boolean; username?: string };
-      impersonating = data.impersonating;
-      impersonatingUsername = data.username ?? "";
-    }
-  }
+	function confirmDelete(user: User) {
+		deleteTarget = user;
+		showDeleteConfirm = true;
+	}
 
-  function startImpersonate(user: User) {
-    impersonateTarget = user;
-    impersonateError = "";
-    showImpersonateConfirm = true;
-  }
+	async function executeDelete() {
+		if (!deleteTarget) return;
+		acting = true;
+		try {
+			const result = await userManagementApi.deleteUser(deleteTarget.id);
+			if (result.ok) {
+				showDeleteConfirm = false;
+				deleteTarget = null;
+				loadUsers();
+			} else {
+				error = result.error;
+			}
+		} catch {
+			error = t("common.error", "Failed to delete user");
+		} finally {
+			acting = false;
+		}
+	}
 
-  async function confirmImpersonate() {
-    if (!impersonateTarget) return;
-    impersonateError = "";
-    const result = await impersonationApi.start(impersonateTarget.id);
-    if (result.ok) {
-      const data = result.data as { token: string };
-      showImpersonateConfirm = false;
-      // Redirect to main app
-      window.location.href = "/";
-    } else {
-      impersonateError = result.error;
-    }
-  }
+	async function handleBan(user: User) {
+		acting = true;
+		try {
+			const result = user.status === "banned"
+				? await userManagementApi.unbanUser(user.id)
+				: await userManagementApi.banUser(user.id);
+			if (result.ok) {
+				loadUsers();
+			} else {
+				error = result.error;
+			}
+		} catch {
+			error = t("common.error", "Failed to update user status");
+		} finally {
+			acting = false;
+		}
+	}
 
-  async function endImpersonation() {
-    const result = await impersonationApi.end();
-    if (result.ok) {
-      window.location.reload();
-    }
-  }
+	async function handleSuspend(user: User) {
+		acting = true;
+		try {
+			const result = await userManagementApi.suspendUser(user.id, {
+				status: user.status === "suspended" ? "active" : "suspended"
+			});
+			if (result.ok) {
+				loadUsers();
+			} else {
+				error = result.error;
+			}
+		} catch {
+			error = t("common.error", "Failed to update user status");
+		} finally {
+			acting = false;
+		}
+	}
 
-  function handleExport() {
-    // TODO: Implement user export
-    console.log("Export users");
-  }
+	async function handleImpersonate(user: User) {
+		acting = true;
+		try {
+			const result = await impersonationApi.start(user.id);
+			if (result.ok) {
+				window.location.reload();
+			} else {
+				error = result.error;
+			}
+		} catch {
+			error = t("common.error", "Failed to start impersonation");
+		} finally {
+			acting = false;
+		}
+	}
 
-  // Load data on mount
-  let initialized = false;
-  $effect(() => {
-    if (!initialized) {
-      initialized = true;
-      loadUsers();
-      checkImpersonationStatus();
-    }
-  });
+	async function bulkDelete() {
+		const ids = Array.from(selectedIds);
+		if (ids.length === 0) return;
+		acting = true;
+		try {
+			await Promise.all(ids.map((id) => userManagementApi.deleteUser(id)));
+			selectedIds = new Set();
+			loadUsers();
+		} catch {
+			error = t("common.error", "Failed to delete users");
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function checkImpersonation() {
+		const result = await impersonationApi.status();
+		if (result.ok) {
+			const d = result.data as unknown as { active: boolean; target_id?: string };
+			impersonating = d.active;
+			impersonatingUsername = d.target_id ?? "";
+		}
+	}
+
+	async function endImpersonation() {
+		const result = await impersonationApi.end();
+		if (result.ok) window.location.reload();
+	}
+
+	$effect(() => {
+		void currentPage;
+		void pageSize;
+		void searchQuery;
+		void filterValues;
+		loadUsers();
+	});
+
+	$effect(() => {
+		checkImpersonation();
+	});
 </script>
 
 <svelte:head>
-  <title>Users — JapaConnect Admin</title>
+	<title>{t("users.title", "Users")} — JapaConnect Admin</title>
 </svelte:head>
 
 <!-- Impersonation Banner -->
 {#if impersonating}
-  <div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 10%, transparent)">
-    <span style="color: var(--color-warning)">You are impersonating <strong>{impersonatingUsername}</strong></span>
-    <button
-      class="rounded-md border px-3 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-      style="border-color: var(--color-warning); color: var(--color-warning)"
-      onclick={endImpersonation}
-    >
-      End Impersonation
-    </button>
-  </div>
+	<div
+		class="mb-4 flex items-center justify-between rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
+	>
+		<span>{t("users.impersonating", "Impersonating")} <strong>{impersonatingUsername}</strong></span>
+		<button
+			class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+			style="background: var(--color-warning); color: white"
+			onclick={endImpersonation}
+		>
+			{t("users.end_impersonation", "End Impersonation")}
+		</button>
+	</div>
 {/if}
 
 <PageHeader
-  title="Users"
-  description="Manage user accounts, roles, and permissions"
-  actions={[
-    { label: "Add User", icon: UserPlus, href: "/users/new" },
-    { label: "Export", icon: Download, onclick: handleExport, variant: "outline" }
-  ]}
+	title={t("users.title", "Users")}
+	description={t("users.description", "Manage platform users")}
+	actions={[
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadUsers }
+	]}
 />
 
-<div class="space-y-6">
-  <Tabs {tabs} bind:value={activeTab} />
-  
-  <FilterBar
-    bind:value={filterValues}
-    filters={filterDefs}
-    onsearch={handleFilter}
-    onclear={() => {
-      searchQuery = "";
-      filterValues = {};
-      currentPage = 0;
-      loadUsers();
-    }}
-  />
-  
-  {#if impersonateError}
-    <div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-      {impersonateError}
-    </div>
-  {/if}
+{#if error}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{error}
+	</div>
+{/if}
 
-  <Card>
-    <CardContent class="p-0">
-      {#if loading}
-        <p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
-      {:else}
-        <DataTable
-          {columns}
-          data={users}
-          pageSize={20}
-          selectable={true}
-          emptyMessage="No users found"
-        />
-      {/if}
-    </CardContent>
-  </Card>
-</div>
+{#if impersonateError}
+	<div
+		class="mb-4 rounded-lg p-3 text-sm"
+		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+	>
+		{impersonateError}
+	</div>
+{/if}
 
-<!-- Impersonation Confirmation Modal -->
-<Modal bind:open={showImpersonateConfirm} title="Confirm Impersonation" size="sm">
-  {#if impersonateTarget}
-    <div class="flex items-center gap-4 rounded-lg bg-gray-50 p-4">
-      <img src={impersonateTarget.avatar_url || '/default-avatar.png'} alt="" class="h-12 w-12 rounded-full" />
-      <div>
-        <p class="font-medium text-gray-900">{impersonateTarget.username}</p>
-        <p class="text-sm text-gray-500">{impersonateTarget.email}</p>
-      </div>
-    </div>
-  {/if}
-  
-  <div class="mt-6 flex justify-end gap-3">
-    <Button variant="outline" onclick={() => showImpersonateConfirm = false}>Cancel</Button>
-    <Button variant="destructive" onclick={confirmImpersonate} disabled={loading}>
-      {#if loading}
-        <RefreshCw class="h-4 w-4 mr-2 animate-spin" />
-        Impersonating...
-      {:else}
-        Impersonate
-      {/if}
-    </Button>
-  </div>
+{#if selectedIds.size > 0}
+	<div class="mb-4 flex items-center gap-3 rounded-lg p-3" style="background: var(--color-primary); color: white">
+		<span class="text-sm font-medium">{selectedIds.size} selected</span>
+		{#if canManageUsers}
+			<Button variant="ghost" size="sm" onclick={bulkDelete} disabled={acting}>
+				<Trash2 class="mr-1 h-3.5 w-3.5" /> Delete Selected
+			</Button>
+		{/if}
+	</div>
+{/if}
+
+<Card>
+	<CardHeader>
+		<FilterBar
+			filters={filterDefs}
+			onsearch={handleSearch}
+			onclear={handleClear}
+		/>
+	</CardHeader>
+	<CardContent>
+		{#if loading}
+			<TableSkeleton rows={8} columns={columns.length} />
+		{:else}
+			<div aria-live="polite">
+				<DataTable
+					{columns}
+					data={users}
+					selectable={canManageUsers}
+					bind:selectedIds
+				/>
+			</div>
+			<Pagination
+				bind:page={currentPage}
+				{totalPages}
+				{totalItems}
+				bind:pageSize
+			/>
+		{/if}
+	</CardContent>
+</Card>
+
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t("users.details", "User Details")} size="default">
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Username</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.username}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Email</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.email}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Profile Type</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.profile_type || "—"}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Followers</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.follower_count ?? 0).toLocaleString()}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Joined</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
+				</div>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => goto(`/users/${viewTarget?.id}`)}>View Full Profile</Button>
+		<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+	</div>
 </Modal>
+
+<!-- Delete Confirmation -->
+<Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
+	{#if deleteTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			Delete user <strong>{deleteTarget.username}</strong>? This cannot be undone.
+		</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>Cancel</Button>
+		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? "Deleting..." : "Delete"}</Button>
+	</div>
+</Modal>
+
+<!-- UserActionsCell component -->
+{#snippet UserActionsCell(user: User)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(user)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageUsers}
+			<Button variant="ghost" size="sm" onclick={() => goto(`/users/${user.id}`)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+		{#if canManageUsers}
+			{#if user.status === "active"}
+				<Button variant="ghost" size="sm" onclick={() => handleBan(user)} style="color: var(--color-danger)">
+					<Ban class="h-3.5 w-3.5" />
+				</Button>
+				<Button variant="ghost" size="sm" onclick={() => handleSuspend(user)} style="color: var(--color-warning)">
+					{t("users.suspend", "Suspend")}
+				</Button>
+			{:else if user.status === "banned"}
+				<Button variant="ghost" size="sm" onclick={() => handleBan(user)} style="color: var(--color-success)">
+					<Play class="h-3.5 w-3.5" />
+				</Button>
+			{:else if user.status === "suspended"}
+				<Button variant="ghost" size="sm" onclick={() => handleSuspend(user)} style="color: var(--color-success)">
+					{t("users.unsuspend", "Unsuspend")}
+				</Button>
+			{/if}
+		{/if}
+		{#if canImpersonate}
+			<Button variant="ghost" size="sm" onclick={() => handleImpersonate(user)}>
+				<UserPlus class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+		{#if canManageUsers}
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(user)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

@@ -7,7 +7,7 @@ ALTER TABLE reactions DROP CONSTRAINT IF EXISTS reactions_reaction_key_fkey;
 ALTER TABLE reaction_types DROP CONSTRAINT IF EXISTS reaction_types_pkey;
 
 -- 2. Add tenant_id to reaction_types (nullable first for backfill)
-ALTER TABLE reaction_types ADD COLUMN tenant_id uuid;
+ALTER TABLE reaction_types ADD COLUMN IF NOT EXISTS tenant_id uuid;
 
 -- 3. Backfill existing rows with the default tenant
 UPDATE reaction_types SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
@@ -22,7 +22,7 @@ ALTER TABLE reaction_types ADD CONSTRAINT reaction_types_pkey
 CREATE INDEX IF NOT EXISTS idx_reaction_types_tenant ON reaction_types(tenant_id);
 
 -- 5. Add tenant_id to reactions
-ALTER TABLE reactions ADD COLUMN tenant_id uuid;
+ALTER TABLE reactions ADD COLUMN IF NOT EXISTS tenant_id uuid;
 
 UPDATE reactions SET tenant_id = '00000000-0000-0000-0000-000000000001' WHERE tenant_id IS NULL;
 

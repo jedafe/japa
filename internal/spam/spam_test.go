@@ -65,7 +65,7 @@ func TestCheckCensoredWords_Replace(t *testing.T) {
 	t.Parallel()
 
 	patterns := []CensoredWord{
-		{Pattern: "badword", Action: "replace", Replacement: "****"},
+		{Pattern: "badword", Action: CensorActionReplace, Replacement: "****"},
 	}
 	result := CheckCensoredWords(patterns, "This contains badword here")
 

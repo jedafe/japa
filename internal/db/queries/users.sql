@@ -1,5 +1,6 @@
 -- name: GetUserProfile :one
-SELECT up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
+SELECT DISTINCT ON (up.user_id)
+       up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
        up.timezone, up.created_at, up.updated_at,
        u.email, u.username, u.profile_type, u.status, u.follower_count,
        ug.slug AS user_group_name
@@ -7,7 +8,8 @@ FROM user_profiles up
 JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
 LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
 LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
-WHERE up.tenant_id = @tenant_id AND up.user_id = @user_id;
+WHERE up.tenant_id = @tenant_id AND up.user_id = @user_id
+ORDER BY up.user_id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
 -- name: GetUserByID :one
 SELECT id, tenant_id, email, username, profile_type, status, follower_count, created_at, updated_at
@@ -15,7 +17,8 @@ FROM users
 WHERE tenant_id = @tenant_id AND id = @user_id;
 
 -- name: GetUserByUsername :one
-SELECT up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
+SELECT DISTINCT ON (up.user_id)
+       up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
        up.timezone, up.created_at, up.updated_at,
        u.email, u.username, u.profile_type, u.status, u.follower_count,
        ug.slug AS user_group_name
@@ -23,7 +26,8 @@ FROM user_profiles up
 JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
 LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
 LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
-WHERE up.tenant_id = @tenant_id AND u.username = @username;
+WHERE up.tenant_id = @tenant_id AND u.username = @username
+ORDER BY up.user_id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
 -- name: UpsertUserProfile :exec
 INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, bio, timezone)

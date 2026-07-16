@@ -27,7 +27,7 @@ func swaggerUIHTML(siteName string) string {
     <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
     <script>
         SwaggerUIBundle({
-            url: "/api/v1/docs/openapi.json",
+            url: "/docs/openapi.json",
             dom_id: '#swagger-ui',
             presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
             layout: "BaseLayout",

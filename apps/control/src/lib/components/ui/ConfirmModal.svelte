@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
+	import { t } from '$lib/stores/i18n';
 
 	interface Props {
 		open: boolean;
@@ -13,15 +14,19 @@
 	let { open = $bindable(false), title, consequence, confirmText = '', onConfirm, onCancel }: Props = $props();
 
 	let typedText = $state('');
+	let confirming = $state(false);
 
 	function handleConfirm() {
 		if (confirmText && typedText !== confirmText) return;
+		confirming = true;
 		onConfirm?.();
 		open = false;
 		typedText = '';
+		confirming = false;
 	}
 
 	function handleCancel() {
+		if (confirming) return;
 		onCancel?.();
 		open = false;
 		typedText = '';
@@ -48,7 +53,7 @@
 			{#if confirmText}
 				<div class="mt-4">
 					<label for="confirm-input" class="text-foreground block text-sm font-medium">
-						Type <code class="bg-muted rounded px-1">{confirmText}</code> to confirm
+						{t('common.type_to_confirm', 'Type')} <code class="bg-muted rounded px-1">{confirmText}</code> {t('common.to_confirm', 'to confirm')}
 					</label>
 					<input
 						id="confirm-input"
@@ -63,7 +68,7 @@
 					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-md border px-4 py-2 text-sm font-medium transition-colors"
 					onclick={handleCancel}
 				>
-					Cancel
+					{t('common.cancel')}
 				</Dialog.Close>
 				<button
 					type="button"
@@ -71,7 +76,7 @@
 					disabled={confirmText !== '' && typedText !== confirmText}
 					onclick={handleConfirm}
 				>
-					Confirm
+					{t('common.confirm')}
 				</button>
 			</div>
 		</Dialog.Content>

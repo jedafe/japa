@@ -13,10 +13,8 @@
 </script>
 
 <div
-  class={clsx(
-    "rounded-xl border border-gray-200 bg-white text-gray-950 shadow-sm",
-    className
-  )}
+  class={clsx("rounded-xl border shadow-sm", className)}
+  style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
   {...restProps}
 >
   {@render children?.()}

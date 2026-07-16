@@ -1,9 +1,9 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import { Switch, Select, Tooltip } from 'bits-ui';
+	import { Switch, Select, Tooltip, Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { FeatureFlag } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '$lib/stores/i18n';
 	import { Flag, RefreshCw } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
@@ -29,6 +29,7 @@
 	let filterGroup = $state('all');
 	let toggling = $state<string | null>(null);
 	let message = $state('');
+	let activeTab = $state('all');
 
 	async function load() {
 		loading = true;
@@ -47,9 +48,9 @@
 		});
 		if (result.ok) {
 			flags = flags.map((f) => (f.key === key ? { ...f, enabled } : f));
-			message = t('feature_flags.toggle_success', `Flag "${key}" ${enabled ? 'enabled' : 'disabled'}.`);
+			message = t('feature_flags.toggle_success', 'Flag toggled').replace('{key}', key).replace('{status}', enabled ? t('feature_flags.enabled', 'enabled') : t('feature_flags.disabled', 'disabled'));
 		} else {
-			message = result.error || t('feature_flags.toggle_error', 'Failed to toggle flag.');
+			message = result.error || t('feature_flags.toggle_error', 'Failed to toggle flag');
 		}
 		toggling = null;
 	}
@@ -81,22 +82,32 @@
 
 	let filteredEnabled = $derived(filtered.filter((f) => f.enabled));
 	let filteredDisabled = $derived(filtered.filter((f) => !f.enabled));
+
+	let tabItems = $derived([
+		{ value: 'all', label: `${t('common.all', 'All')} (${filtered.length})` },
+		{ value: 'enabled', label: `${t('feature_flags.enabled_count', 'Enabled')} (${filteredEnabled.length})` },
+		{ value: 'disabled', label: `${t('feature_flags.disabled_count', 'Disabled')} (${filteredDisabled.length})` }
+	]);
+
+	let displayedFlags = $derived(
+		activeTab === 'all' ? filtered : activeTab === 'enabled' ? filteredEnabled : filteredDisabled
+	);
 </script>
 
-<PageHeader title={t('feature_flags.title', 'Feature Flags')} description={t('feature_flags.description', 'Manage feature flags')} />
+<PageHeader title={t('feature_flags.title', 'Feature Flags')} description={t('feature_flags.description', 'Toggle feature flags across the platform')} />
 
 <div class="mb-4 flex items-center gap-3">
 	<input
 		bind:value={filter}
-		placeholder="Search flags..."
+		placeholder={t('feature_flags.search_placeholder', 'Search flags...')}
 		class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 h-input rounded-9px w-72 border px-3 py-2.5 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 	/>
 	<Select.Root type="single" bind:value={filterGroup} items={groupItems}>
 		<Select.Trigger
 			class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-10 items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
-			aria-label="Filter by group"
+			aria-label={t('feature_flags.all_groups', 'All Groups')}
 		>
-			<Select.Value placeholder="All Groups" />
+			<Select.Value placeholder={t('feature_flags.all_groups', 'All Groups')} />
 		</Select.Trigger>
 		<Select.Portal>
 			<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1" sideOffset={4}>
@@ -117,13 +128,10 @@
 			</Select.Content>
 		</Select.Portal>
 	</Select.Root>
-	<span class="text-muted-foreground text-xs">
-		{enabledCount} {t('feature_flags.enabled', 'enabled')}, {disabledCount} {t('feature_flags.disabled', 'disabled')}
-	</span>
 	<div class="flex-1"></div>
 	<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={load}>
 		<RefreshCw class="size-3" />
-		{t('common.refresh')}
+		{t('common.refresh', 'Refresh')}
 	</button>
 </div>
 
@@ -135,103 +143,68 @@
 
 {#if loading}
 	<p class="text-muted-foreground py-8 text-center text-sm">{t('common.loading', 'Loading...')}</p>
-{:else if filtered.length === 0}
+{:else if flags.length === 0}
 	<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
 		<Flag class="text-muted-foreground mx-auto size-8" />
-		<p class="text-muted-foreground mt-3 text-sm">{filter ? t('feature_flags.no_match', 'No flags match your search.') : t('feature_flags.no_flags', 'No feature flags configured.')}</p>
+		<p class="text-muted-foreground mt-3 text-sm">{t('feature_flags.no_flags', 'No feature flags configured.')}</p>
 	</div>
 {:else}
-	<div class="space-y-6">
-		<!-- Enabled flags -->
-		{#if filteredEnabled.length > 0}
-			<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
-				<div class="border-border-card border-b px-4 py-3">
-					<h3 class="text-foreground text-sm font-semibold">{t('feature_flags.enabled_count', 'Enabled')} ({filteredEnabled.length})</h3>
-				</div>
-				<div class="divide-border-card divide-y">
-					{#each filteredEnabled as flag (flag.key)}
-						<div class="flex items-center gap-4 px-4 py-3">
-							<div class="min-w-0 flex-1">
-								<div class="flex items-center gap-2">
-									<p class="text-foreground font-mono text-sm font-medium">{flag.key}</p>
-									<Tooltip.Root>
-										<Tooltip.Trigger>
-											<span class="text-muted-foreground cursor-help text-xs">ℹ</span>
-										</Tooltip.Trigger>
-										<Tooltip.Portal>
-											<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 w-[280px] rounded-input border p-3 text-xs">
-												{flag.description}
-											</Tooltip.Content>
-										</Tooltip.Portal>
-									</Tooltip.Root>
-								</div>
-								<p class="text-muted-foreground truncate text-xs">{flag.description}</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<div class="flex flex-wrap gap-1">
-									{#each flag.allowed_groups as group}
-										<span class="bg-accent text-accent-foreground rounded-5px px-1.5 py-0.5 text-[10px]">{group}</span>
-									{/each}
-								</div>
-								<Switch.Root
-									checked={flag.enabled}
-									onCheckedChange={(checked) => toggleFlag(flag.key, checked)}
-									disabled={toggling === flag.key}
-									class="bg-muted data-[state=checked]:bg-foreground peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[3px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-								>
-									<Switch.Thumb class="bg-background pointer-events-none block size-4 shrink-0 rounded-full transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0" />
-								</Switch.Root>
-							</div>
-						</div>
-					{/each}
-				</div>
-			</div>
-		{/if}
+	<Tabs.Root bind:value={activeTab}>
+		<Tabs.List class="bg-muted mb-4 inline-flex gap-1 rounded-9px p-1">
+			{#each tabItems as tab}
+				<Tabs.Trigger value={tab.value} class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
+					{tab.label}
+				</Tabs.Trigger>
+			{/each}
+		</Tabs.List>
 
-		<!-- Disabled flags -->
-		{#if filteredDisabled.length > 0}
-			<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
-				<div class="border-border-card border-b px-4 py-3">
-					<h3 class="text-muted-foreground text-sm font-semibold">{t('feature_flags.disabled_count', 'Disabled')} ({filteredDisabled.length})</h3>
+		<Tabs.Content value={activeTab} class="mt-0">
+			{#if displayedFlags.length === 0}
+				<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
+					<Flag class="text-muted-foreground mx-auto size-8" />
+					<p class="text-muted-foreground mt-3 text-sm">{filter ? t('feature_flags.no_match', 'No flags match your filter.') : t('feature_flags.no_flags', 'No feature flags configured.')}</p>
 				</div>
-				<div class="divide-border-card divide-y">
-					{#each filteredDisabled as flag (flag.key)}
-						<div class="flex items-center gap-4 px-4 py-3">
-							<div class="min-w-0 flex-1">
+			{:else}
+				<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
+					<div class="divide-border-card divide-y">
+						{#each displayedFlags as flag (flag.key)}
+							<div class="flex items-center gap-4 px-4 py-3">
+								<div class="min-w-0 flex-1">
+									<div class="flex items-center gap-2">
+										<p class="text-foreground font-mono text-sm font-medium">{flag.key}</p>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<span class="text-muted-foreground cursor-help text-xs">{'\u2139'}</span>
+											</Tooltip.Trigger>
+											<Tooltip.Portal>
+												<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 w-[280px] rounded-input border p-3 text-xs">
+													{flag.description}
+												</Tooltip.Content>
+											</Tooltip.Portal>
+										</Tooltip.Root>
+									</div>
+									<p class="text-muted-foreground truncate text-xs">{flag.description}</p>
+								</div>
 								<div class="flex items-center gap-2">
-									<p class="text-foreground font-mono text-sm font-medium">{flag.key}</p>
-									<Tooltip.Root>
-										<Tooltip.Trigger>
-											<span class="text-muted-foreground cursor-help text-xs">ℹ</span>
-										</Tooltip.Trigger>
-										<Tooltip.Portal>
-											<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 w-[280px] rounded-input border p-3 text-xs">
-												{flag.description}
-											</Tooltip.Content>
-										</Tooltip.Portal>
-									</Tooltip.Root>
+									<div class="flex flex-wrap gap-1">
+										{#each flag.allowed_groups as group}
+											<span class="{flag.enabled ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'} rounded-5px px-1.5 py-0.5 text-[10px]">{group}</span>
+										{/each}
+									</div>
+									<Switch.Root
+										checked={flag.enabled}
+										onCheckedChange={(checked) => toggleFlag(flag.key, checked)}
+										disabled={toggling === flag.key}
+										class="bg-muted data-[state=checked]:bg-foreground peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[3px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+									>
+										<Switch.Thumb class="bg-background pointer-events-none block size-4 shrink-0 rounded-full transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0" />
+									</Switch.Root>
 								</div>
-								<p class="text-muted-foreground truncate text-xs">{flag.description}</p>
 							</div>
-							<div class="flex items-center gap-2">
-								<div class="flex flex-wrap gap-1">
-									{#each flag.allowed_groups as group}
-										<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 text-[10px]">{group}</span>
-									{/each}
-								</div>
-								<Switch.Root
-									checked={flag.enabled}
-									onCheckedChange={(checked) => toggleFlag(flag.key, checked)}
-									disabled={toggling === flag.key}
-									class="bg-muted data-[state=checked]:bg-foreground peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[3px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-								>
-									<Switch.Thumb class="bg-background pointer-events-none block size-4 shrink-0 rounded-full transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0" />
-								</Switch.Root>
-							</div>
-						</div>
-					{/each}
+						{/each}
+					</div>
 				</div>
-			</div>
-		{/if}
-	</div>
+			{/if}
+		</Tabs.Content>
+	</Tabs.Root>
 {/if}

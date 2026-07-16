@@ -1,12 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { Tabs, Tooltip } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { QueueInfo, QueueStats } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '$lib/stores/i18n';
 	import { ListTodo, Clock, RefreshCw, X } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 	import type { PageData } from './$types';
@@ -35,9 +34,15 @@
 	async function refresh() {
 		refreshing = true;
 		try {
-			const result = await api<QueueResponse>('/control/queue/stats');
+			const result = await api<QueueResponse | { message: string }>('/control/queue/stats');
 			if (result.ok) {
-				queueStats = { queues: result.data.queues ?? [], ...result.data } as QueueStats;
+				const raw = result.data;
+				if ('message' in raw && raw.message) {
+					queueStats = { queues: [], total_pending: 0, total_active: 0, total_completed_24h: 0, total_failed_24h: 0, dlq_count: 0 };
+				} else {
+					const queueData = raw as QueueResponse;
+					queueStats = { queues: queueData.queues ?? [], total_pending: queueData.total_pending, total_active: queueData.total_active, total_completed_24h: queueData.total_completed_24h, total_failed_24h: queueData.total_failed_24h, dlq_count: 0 };
+				}
 				apiAvailable = true;
 				lastRefresh = new Date();
 				secondsAgo = 0;
@@ -76,7 +81,7 @@
 		selectedQueue = q;
 	}
 
-	onMount(() => {
+	$effect(() => {
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
 				refresh();
@@ -106,7 +111,7 @@
 	<div class="flex items-center gap-3">
 		<p class="text-muted-foreground text-xs">
 			{t('queue.last_updated').replace('{time}', lastRefresh.toLocaleTimeString())}
-			<span class="ml-2">({secondsAgo}s ago)</span>
+			<span class="ml-2">({t('queue.seconds_ago').replace('{seconds}', String(secondsAgo))})</span>
 		</p>
 		<span class="bg-accent text-accent-foreground rounded-full px-2 py-0.5 text-[10px] font-medium">
 			{t('queue.auto_refresh')}
@@ -128,13 +133,13 @@
 			value="overview"
 			class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
 		>
-			Overview
+			{t('queue.tab_overview')}
 		</Tabs.Trigger>
 		<Tabs.Trigger
 			value="queues"
 			class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
 		>
-			Queues ({queueStats?.queues?.length ?? 0})
+			{t('queue.tab_queues').replace('{count}', String(queueStats?.queues?.length ?? 0))}
 		</Tabs.Trigger>
 	</Tabs.List>
 
@@ -150,28 +155,28 @@
 				<MetricCard
 					label={t('queue.total_queues')}
 					value={queueStats?.queues?.length ?? 0}
-					subtitle="queues"
+					subtitle={t('queue.subtitle_queues')}
 				/>
 				<MetricCard
 					label={t('queue.pending')}
 					value={formatNumber(queueStats?.total_pending ?? 0)}
-					subtitle="waiting"
+					subtitle={t('queue.subtitle_waiting')}
 				/>
 				<MetricCard
 					label={t('queue.active')}
 					value={formatNumber(queueStats?.total_active ?? 0)}
-					subtitle="processing"
+					subtitle={t('queue.subtitle_processing')}
 				/>
 				<MetricCard
 					label={t('queue.completed_24h')}
 					value={formatNumber(queueStats?.total_completed_24h ?? 0)}
-					subtitle="last 24h"
+					subtitle={t('queue.subtitle_last_24h')}
 					trend="up"
 				/>
 				<MetricCard
 					label={t('queue.failed_24h')}
 					value={formatNumber(queueStats?.total_failed_24h ?? 0)}
-					subtitle="last 24h"
+					subtitle={t('queue.subtitle_last_24h')}
 					trend={(queueStats?.total_failed_24h ?? 0) > 0 ? 'down' : 'neutral'}
 				/>
 			</div>
@@ -190,7 +195,7 @@
 							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.completed_count')}</th>
 							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.failed_count')}</th>
 							<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('queue.latency')}</th>
-							<th class="text-muted-foreground px-4 py-3 text-center font-medium">Status</th>
+							<th class="text-muted-foreground px-4 py-3 text-center font-medium">{t('queue.status')}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -235,7 +240,7 @@
 							<tr>
 								<td colspan="7" class="text-muted-foreground px-4 py-12 text-center">
 									<ListTodo class="mx-auto size-8 opacity-40" />
-									<p class="mt-3 text-sm">No queue data available</p>
+									<p class="mt-3 text-sm">{t('queue.no_data')}</p>
 								</td>
 							</tr>
 						{/if}
@@ -284,12 +289,12 @@
 				<div class="bg-muted/50 border-border-card rounded-9px border p-6 text-center">
 					<Clock class="text-muted-foreground mx-auto size-6 opacity-40" />
 					<p class="text-muted-foreground mt-2 text-sm">{t('queue.no_jobs')}</p>
-					<p class="text-muted-foreground mt-1 text-xs">Job-level detail requires the backend queue inspection endpoint.</p>
+					<p class="text-muted-foreground mt-1 text-xs">{t('queue.detail_not_available')}</p>
 				</div>
 			</div>
 			<div class="border-border-card flex justify-end border-t px-6 py-3">
 				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-1.5 text-sm font-medium transition-colors">
-					Close
+					{t('common.close')}
 				</Dialog.Close>
 			</div>
 		</Dialog.Content>

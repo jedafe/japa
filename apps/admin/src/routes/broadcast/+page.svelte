@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api, userManagementApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { Select } from '$lib/components/ui/select';
 	import Modal from '$lib/components/Modal.svelte';
 
 	type Broadcast = {
@@ -31,20 +31,22 @@
 		{ value: 'all', label: t('broadcast.audiences.all') }
 	]);
 
-	onMount(async () => {
-		try {
-			const result = await userManagementApi.listGroups();
-			if (result.ok) {
-				const groupScopes = result.data.groups.map((g) => ({
-					value: `group:${g.name}`,
-					label: g.name
-				}));
-				scopes = [...scopes, ...groupScopes];
+	$effect(() => {
+		(async () => {
+			try {
+				const result = await userManagementApi.listGroups();
+				if (result.ok) {
+					const groupScopes = result.data.groups.map((g) => ({
+						value: `group:${g.name}`,
+						label: g.name
+					}));
+					scopes = [...scopes, ...groupScopes];
+				}
+			} catch {
+				// Keep default scopes
 			}
-		} catch {
-			// Keep default scopes
-		}
-		if (activeTab === 'history') loadBroadcasts();
+			if (activeTab === 'history') loadBroadcasts();
+		})();
 	});
 
 	async function loadBroadcasts() {
@@ -162,16 +164,7 @@
 
 			<div>
 				<label for="bc-target" class="mb-1 block text-sm font-medium">{t('broadcast.audience')}</label>
-				<select
-					id="bc-target"
-					class="w-full rounded-md border px-3 py-2 text-sm"
-					style="border-color: var(--color-border); background-color: var(--color-background)"
-					bind:value={targetScope}
-				>
-					{#each scopes as scope}
-						<option value={scope.value}>{scope.label}</option>
-					{/each}
-				</select>
+				<Select options={scopes} bind:value={targetScope} />
 			</div>
 
 			<div>

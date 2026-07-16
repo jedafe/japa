@@ -14,6 +14,38 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// parseMediaID extracts and validates a media UUID from the :id URL parameter.
+func parseMediaID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+		return pgtype.UUID{}, false
+	}
+
+	return id, true
+}
+
+// requireMediaAuth extracts user, tenant, and media ID from the request.
+// Returns (userID, tenantID, mediaID, ok). If ok is false, an error has been written.
+func (h *Handlers) requireMediaAuth(w http.ResponseWriter, r *http.Request) (pgtype.UUID, pgtype.UUID, pgtype.UUID, bool) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
+	}
+
+	mediaID, ok := parseMediaID(w, r)
+	if !ok {
+		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
+	}
+
+	return user.UserID, tenantID, mediaID, true
+}
+
 const defaultPageSize int32 = 20
 
 // Maximum request body sizes.
@@ -205,12 +237,8 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idStr := chi.URLParam(r, "id")
-
-	var mediaID pgtype.UUID
-
-	if err := mediaID.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+	mediaID, ok := parseMediaID(w, r)
+	if !ok {
 		return
 	}
 
@@ -260,11 +288,18 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpdateMetadata handles PATCH /api/v1/media/{id}.
-// Request body: { "alt_text": "...", "caption": "...", "width": 100, "height": 200 }
-// Response: { "data": { "updated": true } }.
-func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
-	// Enforce 10MB body limit on standard PATCH endpoints.
+// metadataInput is the decoded JSON body for UpdateMetadata and AdminUpdateMetadata.
+type metadataInput struct {
+	AltText  *string  `json:"alt_text"`
+	Caption  *string  `json:"caption"`
+	Width    *int32   `json:"width"`
+	Height   *int32   `json:"height"`
+	Duration *float64 `json:"duration_secs"`
+}
+
+// updateMetadataHandler is a shared helper for PATCH /api/v1/media/{id} and
+// PATCH /admin/media/{id}. Both parse the same input and call UpdateMetadata.
+func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
 
 	_, ok := h.requireUser(w, r)
@@ -277,23 +312,12 @@ func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idStr := chi.URLParam(r, "id")
-
-	var mediaID pgtype.UUID
-
-	if err := mediaID.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+	mediaID, ok := parseMediaID(w, r)
+	if !ok {
 		return
 	}
 
-	var input struct {
-		AltText  *string  `json:"alt_text"`
-		Caption  *string  `json:"caption"`
-		Width    *int32   `json:"width"`
-		Height   *int32   `json:"height"`
-		Duration *float64 `json:"duration_secs"`
-	}
-
+	var input metadataInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		maxBytesError := &http.MaxBytesError{}
 		if errors.As(err, &maxBytesError) {
@@ -314,6 +338,13 @@ func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }
 
+// UpdateMetadata handles PATCH /api/v1/media/{id}.
+// Request body: { "alt_text": "...", "caption": "...", "width": 100, "height": 200 }
+// Response: { "data": { "updated": true } }.
+func (h *Handlers) UpdateMetadata(w http.ResponseWriter, r *http.Request) {
+	h.updateMetadataHandler(w, r)
+}
+
 // DeleteMedia handles DELETE /api/v1/media/{id}.
 // Response: { "data": { "deleted": true } }.
 func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
@@ -327,12 +358,8 @@ func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idStr := chi.URLParam(r, "id")
-
-	var mediaID pgtype.UUID
-
-	if err := mediaID.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
+	mediaID, ok := parseMediaID(w, r)
+	if !ok {
 		return
 	}
 
@@ -459,26 +486,12 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 // ApproveQuarantined handles POST /admin/media/{id}/approve.
 // Clears quarantine and confirms the media item as safe.
 func (h *Handlers) ApproveQuarantined(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
+	userID, tenantID, mediaID, ok := h.requireMediaAuth(w, r)
 	if !ok {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	idStr := chi.URLParam(r, "id")
-
-	var mediaID pgtype.UUID
-
-	if err := mediaID.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
-		return
-	}
-
-	if err := h.service.ApproveMedia(r.Context(), mediaID, tenantID, user.UserID); err != nil {
+	if err := h.service.ApproveMedia(r.Context(), mediaID, tenantID, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "approve_error", err.Error())
 		return
 	}
@@ -489,31 +502,23 @@ func (h *Handlers) ApproveQuarantined(w http.ResponseWriter, r *http.Request) {
 // RejectQuarantined handles POST /admin/media/{id}/reject.
 // Soft-deletes the quarantined media after admin review.
 func (h *Handlers) RejectQuarantined(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
+	userID, tenantID, mediaID, ok := h.requireMediaAuth(w, r)
 	if !ok {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	idStr := chi.URLParam(r, "id")
-
-	var mediaID pgtype.UUID
-
-	if err := mediaID.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_media_id", "Invalid media ID format")
-		return
-	}
-
-	if err := h.service.RejectMedia(r.Context(), mediaID, tenantID, user.UserID); err != nil {
+	if err := h.service.RejectMedia(r.Context(), mediaID, tenantID, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "reject_error", err.Error())
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "rejected"}})
+}
+
+// AdminUpdateMetadata handles PATCH /admin/media/{id}.
+// Admin-level metadata update that does not enforce ownership.
+func (h *Handlers) AdminUpdateMetadata(w http.ResponseWriter, r *http.Request) {
+	h.updateMetadataHandler(w, r)
 }
 
 // BulkDelete handles POST /api/v1/media/bulk-delete.

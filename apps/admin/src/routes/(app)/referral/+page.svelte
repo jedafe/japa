@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -8,6 +7,7 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { Select } from '$lib/components/ui/select';
 	import { Gift, Users } from 'lucide-svelte';
 
 	type ReferralProgram = {
@@ -86,7 +86,9 @@
 		}
 	];
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 
 	async function load() {
 		loading = true;
@@ -162,16 +164,15 @@
 							/>
 						</div>
 						<div>
-							<label for="prog-reward-type" class="mb-1 block text-sm font-medium text-gray-700">{t('referral.reward_type')}</label>
-							<select
-								id="prog-reward-type"
-								class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-								bind:value={program.reward_type}
-							>
-								<option value="credits">{t('referral.credits')}</option>
-								<option value="discount">{t('referral.discount')}</option>
-								<option value="points">{t('referral.points')}</option>
-							</select>
+						<label for="prog-reward-type" class="mb-1 block text-sm font-medium text-gray-700">{t('referral.reward_type')}</label>
+						<Select
+							options={[
+								{ value: 'credits', label: t('referral.credits') },
+								{ value: 'discount', label: t('referral.discount') },
+								{ value: 'points', label: t('referral.points') }
+							]}
+							bind:value={program.reward_type}
+						/>
 						</div>
 						<div>
 							<label for="prog-reward-value" class="mb-1 block text-sm font-medium text-gray-700">{t('referral.reward_value')}</label>

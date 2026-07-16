@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
 	"strconv"
+	"time"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
 
@@ -26,6 +26,38 @@ import (
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 )
+
+// listProfileSubEntities is a shared helper for listing sub-entities of a profile
+// (relocations, documents, verifiers). All follow the same pattern: require auth,
+// parse profile ID, paginate, call list function, return results.
+func listProfileSubEntities(w http.ResponseWriter, r *http.Request, h *Handlers, listFn func(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]any, error)) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	items, err := listFn(r.Context(), profileID, tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
 
 const defaultPageSize int32 = 20
 
@@ -289,6 +321,87 @@ func (h *Handlers) GetProfessionalProfileType(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
+// UpdateProfessionalProfileType handles PATCH /api/v1/professional-profiles/types/{id}.
+func (h *Handlers) UpdateProfessionalProfileType(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile type ID")
+		return
+	}
+
+	var input struct {
+		Name         string `json:"name"`
+		Icon         string `json:"icon"`
+		FieldGroupID string `json:"field_group_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		return
+	}
+
+	var fieldGroupID pgtype.UUID
+	if input.FieldGroupID != "" {
+		if err := fieldGroupID.Scan(input.FieldGroupID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_field_group_id", "Invalid field_group_id")
+			return
+		}
+	}
+
+	result, err := h.Service.UpdateProfessionalProfileType(r.Context(), tenantID, id, UpdateProfessionalProfileTypeInput{
+		Name:         input.Name,
+		Icon:         input.Icon,
+		FieldGroupID: fieldGroupID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// DeleteProfessionalProfileType handles DELETE /api/v1/professional-profiles/types/{id}.
+func (h *Handlers) DeleteProfessionalProfileType(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile type ID")
+		return
+	}
+
+	if err := h.Service.DeleteProfessionalProfileType(r.Context(), tenantID, id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
 // ---------------------------------------------------------------------------
 // Professional Profile CRUD Handlers
 // ---------------------------------------------------------------------------
@@ -305,58 +418,24 @@ func (h *Handlers) CreateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var input struct {
-		TypeID           string `json:"type_id"`
-		Name             string `json:"name"`
-		Slug             string `json:"slug"`
-		Tagline          string `json:"tagline"`
-		Description      string `json:"description"`
-		LogoMediaID      string `json:"logo_media_id"`
-		HeaderMediaID    string `json:"header_media_id"`
-		WebsiteURL       string `json:"website_url"`
-		VerificationType string `json:"verification_type"`
-		FieldValues      string `json:"field_values"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+	input, ok := decodeCreateProfileInput(w, r)
+	if !ok {
 		return
 	}
 
-	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+	typeID, ok := parseRequiredUUID(w, input.TypeID, "type_id")
+	if !ok {
 		return
 	}
 
-	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+	logoMediaID, ok := parseOptionalUUID(w, input.LogoMediaID, "logo_media_id")
+	if !ok {
 		return
 	}
 
-	if input.TypeID == "" {
-		writeError(w, http.StatusBadRequest, "missing_type_id", "type_id is required")
+	headerMediaID, ok := parseOptionalUUID(w, input.HeaderMediaID, "header_media_id")
+	if !ok {
 		return
-	}
-
-	var typeID pgtype.UUID
-	if err := typeID.Scan(input.TypeID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
-		return
-	}
-
-	var logoMediaID, headerMediaID pgtype.UUID
-	if input.LogoMediaID != "" {
-		if err := logoMediaID.Scan(input.LogoMediaID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo media ID format")
-			return
-		}
-	}
-
-	if input.HeaderMediaID != "" {
-		if err := headerMediaID.Scan(input.HeaderMediaID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_header_media_id", "Invalid header media ID format")
-			return
-		}
 	}
 
 	fieldValues := input.FieldValues
@@ -382,6 +461,72 @@ func (h *Handlers) CreateProfessionalProfile(w http.ResponseWriter, r *http.Requ
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+// createProfileInput is the decoded JSON body for CreateProfessionalProfile.
+type createProfileInput struct {
+	TypeID           string `json:"type_id"`
+	Name             string `json:"name"`
+	Slug             string `json:"slug"`
+	Tagline          string `json:"tagline"`
+	Description      string `json:"description"`
+	LogoMediaID      string `json:"logo_media_id"`
+	HeaderMediaID    string `json:"header_media_id"`
+	WebsiteURL       string `json:"website_url"`
+	VerificationType string `json:"verification_type"`
+	FieldValues      string `json:"field_values"`
+}
+
+// decodeCreateProfileInput decodes and validates the create profile request body.
+func decodeCreateProfileInput(w http.ResponseWriter, r *http.Request) (createProfileInput, bool) {
+	var input createProfileInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return input, false
+	}
+
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		return input, false
+	}
+
+	if input.Slug == "" {
+		writeError(w, http.StatusBadRequest, "missing_slug", "slug is required")
+		return input, false
+	}
+
+	if input.TypeID == "" {
+		writeError(w, http.StatusBadRequest, "missing_type_id", "type_id is required")
+		return input, false
+	}
+
+	return input, true
+}
+
+// parseRequiredUUID parses a required UUID string parameter.
+func parseRequiredUUID(w http.ResponseWriter, value, fieldName string) (pgtype.UUID, bool) {
+	var id pgtype.UUID
+	if err := id.Scan(value); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_"+fieldName, "Invalid "+fieldName)
+		return pgtype.UUID{}, false
+	}
+
+	return id, true
+}
+
+// parseOptionalUUID parses an optional UUID string parameter. Returns zero UUID if empty.
+func parseOptionalUUID(w http.ResponseWriter, value, fieldName string) (pgtype.UUID, bool) {
+	if value == "" {
+		return pgtype.UUID{}, true
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(value); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_"+fieldName, "Invalid "+fieldName+" format")
+		return pgtype.UUID{}, false
+	}
+
+	return id, true
 }
 
 // ListProfessionalProfiles handles GET /api/v1/professional-profiles.
@@ -866,32 +1011,53 @@ func (h *Handlers) GetAuthorContext(w http.ResponseWriter, r *http.Request) {
 
 // ListRelocations handles GET /api/v1/professional-profiles/{id}/relocations.
 func (h *Handlers) ListRelocations(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
+	listProfileSubEntities(w, r, h, func(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]any, error) {
+		relocations, err := h.Service.ListRelocations(ctx, profileID, tenantID, limit, offset)
+		if err != nil {
+			return nil, err
+		}
 
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
+		out := make([]any, len(relocations))
+		for i := range relocations {
+			out[i] = relocations[i]
+		}
 
-	profileID, err := parseUUIDParam(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
-		return
-	}
+		return out, nil
+	})
+}
 
-	limit := parsePageSize(r)
-	offset := parsePageSizeOffset(r)
+// ListDocuments handles GET /api/v1/professional-profiles/{id}/documents.
+func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {
+	listProfileSubEntities(w, r, h, func(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]any, error) {
+		documents, err := h.Service.ListDocuments(ctx, profileID, tenantID, limit, offset)
+		if err != nil {
+			return nil, err
+		}
 
-	relocations, err := h.Service.ListRelocations(r.Context(), profileID, tenantID, limit, offset)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
+		out := make([]any, len(documents))
+		for i := range documents {
+			out[i] = documents[i]
+		}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": relocations})
+		return out, nil
+	})
+}
+
+// ListVerifiers handles GET /api/v1/professional-profiles/{id}/verifiers.
+func (h *Handlers) ListVerifiers(w http.ResponseWriter, r *http.Request) {
+	listProfileSubEntities(w, r, h, func(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]any, error) {
+		verifiers, err := h.Service.ListVerifiers(ctx, profileID, tenantID, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+
+		out := make([]any, len(verifiers))
+		for i := range verifiers {
+			out[i] = verifiers[i]
+		}
+
+		return out, nil
+	})
 }
 
 // CreateRelocation handles POST /api/v1/professional-profiles/{id}/relocations.
@@ -1036,36 +1202,6 @@ func (h *Handlers) DeleteRelocation(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 // Document Handlers
 // ---------------------------------------------------------------------------
-
-// ListDocuments handles GET /api/v1/professional-profiles/{id}/documents.
-func (h *Handlers) ListDocuments(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	profileID, err := parseUUIDParam(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
-		return
-	}
-
-	limit := parsePageSize(r)
-	offset := parsePageSizeOffset(r)
-
-	documents, err := h.Service.ListDocuments(r.Context(), profileID, tenantID, limit, offset)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": documents})
-}
 
 // CreateDocument handles POST /api/v1/professional-profiles/{id}/documents.
 func (h *Handlers) CreateDocument(w http.ResponseWriter, r *http.Request) {
@@ -1215,36 +1351,6 @@ func (h *Handlers) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 // Verifier Handlers
 // ---------------------------------------------------------------------------
 
-// ListVerifiers handles GET /api/v1/professional-profiles/{id}/verifiers.
-func (h *Handlers) ListVerifiers(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	profileID, err := parseUUIDParam(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
-		return
-	}
-
-	limit := parsePageSize(r)
-	offset := parsePageSizeOffset(r)
-
-	verifiers, err := h.Service.ListVerifiers(r.Context(), profileID, tenantID, limit, offset)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": verifiers})
-}
-
 // CreateVerifier handles POST /api/v1/professional-profiles/{id}/verifiers.
 func (h *Handlers) CreateVerifier(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -1376,11 +1482,13 @@ func (h *Handlers) VerifyProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
+
 	_, err = h.Service.db.Writer.Exec(r.Context(),
 		`UPDATE professional_profiles SET verified = true, updated_at = now()
 		 WHERE id = $1 AND tenant_id = $2`, profileID, tenantID)
@@ -1388,6 +1496,7 @@ func (h *Handlers) VerifyProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify profile")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": profileID.String(), "verified": true}})
 }
 
@@ -1397,11 +1506,13 @@ func (h *Handlers) UnverifyProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
+
 	_, err = h.Service.db.Writer.Exec(r.Context(),
 		`UPDATE professional_profiles SET verified = false, updated_at = now()
 		 WHERE id = $1 AND tenant_id = $2`, profileID, tenantID)
@@ -1409,6 +1520,7 @@ func (h *Handlers) UnverifyProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify profile")
 		return
 	}
+
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
@@ -1418,12 +1530,15 @@ func (h *Handlers) ListProfileContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
+
 	_ = profileID
+
 	// Content is linked via author_id — return empty for now
 	writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 }
@@ -1434,25 +1549,31 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	profileID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
 		return
 	}
+
 	var input struct {
 		Email string `json:"email"`
 		Role  string `json:"role"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Email == "" {
 		writeError(w, http.StatusBadRequest, "missing_email", "Email is required")
 		return
 	}
+
 	// Create invitation via raw SQL
 	token := fmt.Sprintf("inv_%d", time.Now().UnixNano())
+
 	_, err = h.Service.db.Writer.Exec(r.Context(),
 		`INSERT INTO professional_profile_invitations (profile_id, email, role, invited_by, token, expires_at)
 		 VALUES ($1, $2, $3, $4, $5, now() + interval '7 days')`,
@@ -1461,6 +1582,7 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create invitation")
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{
 		"profile_id": profileID.String(), "email": input.Email, "token": token,
 	}})
@@ -1472,18 +1594,23 @@ func (h *Handlers) AcceptProfileInvitation(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+
 	var input struct {
 		Token string `json:"token"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Token == "" {
 		writeError(w, http.StatusBadRequest, "missing_token", "Token is required")
 		return
 	}
+
 	_ = tenantID
+
 	// Accept invitation via raw SQL
 	_, err := h.Service.db.Writer.Exec(r.Context(),
 		`UPDATE professional_profile_invitations SET accepted_at = now()
@@ -1492,5 +1619,6 @@ func (h *Handlers) AcceptProfileInvitation(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to accept invitation")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"accepted": true}})
 }

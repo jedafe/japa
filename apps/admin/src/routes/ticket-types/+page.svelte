@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { Select } from '$lib/components/ui/select';
 	import { ticketTypesApi } from '$lib/api';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	type TicketType = {
 		id: string;
@@ -33,6 +34,8 @@
 		default_priority: 'medium',
 		is_active: true
 	});
+
+	const canManageTickets = $derived(hasPermission('tickets.review'));
 
 	const priorities = ['low', 'medium', 'high', 'urgent'];
 
@@ -126,7 +129,9 @@
 		load();
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>
@@ -185,20 +190,22 @@
 						</td>
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-2">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-info)"
-									onclick={() => openEdit(item)}
-								>
-									Edit
-								</button>
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete(item.id)}
-								>
-									Delete
-								</button>
+								{#if canManageTickets}
+									<button
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										style="color: var(--color-info)"
+										onclick={() => openEdit(item)}
+									>
+										Edit
+									</button>
+									<button
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										style="color: var(--color-danger)"
+										onclick={() => confirmDelete(item.id)}
+									>
+										Delete
+									</button>
+								{/if}
 							</div>
 						</td>
 					</tr>
@@ -237,11 +244,10 @@
 		</div>
 		<div>
 			<label for="tt-priority" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Default Priority</label>
-			<select id="tt-priority" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.default_priority}>
-				{#each priorities as p}
-					<option value={p}>{p}</option>
-				{/each}
-			</select>
+			<Select
+				options={priorities.map(p => ({ value: p, label: p }))}
+				bind:value={form.default_priority}
+			/>
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="tt-active" type="checkbox" bind:checked={form.is_active} />

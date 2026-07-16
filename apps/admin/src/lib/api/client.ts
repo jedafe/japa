@@ -33,10 +33,17 @@ export async function apiFetch<T>(
 		});
 
 		if (res.status === 401) {
-			if (typeof window !== 'undefined') {
+			// In development mode with mock token, don't redirect to login
+			const isDev = typeof window !== 'undefined' &&
+				(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+			if (!isDev && typeof window !== 'undefined') {
 				window.location.href = '/login';
 			}
 			return { data: null, error: { code: 'unauthorized', message: 'Session expired', status: 401 }, status: 401 };
+		}
+
+		if (res.status === 204 || res.status === 205 || res.headers.get('content-length') === '0') {
+			return { data: null, error: null, status: res.status };
 		}
 
 		const body = await res.json();

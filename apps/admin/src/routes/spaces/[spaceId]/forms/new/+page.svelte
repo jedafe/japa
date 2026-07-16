@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
+	import { Select } from '$lib/components/ui/select';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	const spaceId = $derived(page.params.spaceId);
@@ -172,17 +173,11 @@
 							/>
 						</div>
 						<div>
-							<label for="field-type-{i}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_type')}</label>
-							<select
-								id="field-type-{i}"
-								class="w-full rounded-md border px-3 py-1.5 text-sm"
-								style="border-color: var(--color-border); background-color: var(--color-surface)"
-								bind:value={field.type}
-							>
-								{#each fieldTypes as ft}
-									<option value={ft}>{ft}</option>
-								{/each}
-							</select>
+						<label for="field-type-{i}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_type')}</label>
+						<Select
+							options={fieldTypes.map(ft => ({ value: ft, label: ft }))}
+							bind:value={field.type}
+						/>
 						</div>
 					</div>
 

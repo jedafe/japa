@@ -1,7 +1,7 @@
 <script lang="ts">
 	import clsx from 'clsx';
 
-	let { label, value, delta, class: className = '' } = $props();
+	let { label, value, delta, class: className = '' }: { label: string; value: string | number; delta?: number; class?: string } = $props();
 </script>
 
 <div class={clsx('rounded-lg border p-4', 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800', className)}>

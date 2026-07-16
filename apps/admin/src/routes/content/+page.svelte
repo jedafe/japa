@@ -1,400 +1,268 @@
 <script lang="ts">
-  import { page } from "$app/state";
-  import { goto } from "$app/navigation";
-  import PageHeader from "$lib/components/layout/page-header.svelte";
-  import { Card, CardContent } from "$lib/components/ui/card";
-  import { Tabs } from "$lib/components/ui/tabs";
-  import { DataTable } from "$lib/components/ui/data-table";
-  import { FilterBar } from "$lib/components/ui/filter-bar";
-  import { Badge } from "$lib/components/ui/badge";
-  import { Button } from "$lib/components/ui/button";
-  import { Modal } from "$lib/components/ui/modal";
-  import { FileText, Plus, Download, RefreshCw } from "lucide-svelte";
-  import { api, contentAdminApi } from "$lib/api";
+	import PageHeader from "$lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+	import { DataTable } from "$lib/components/ui/data-table";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import { Badge } from "$lib/components/ui/badge";
+	import { Button } from "$lib/components/ui/button";
+	import { Modal } from "$lib/components/ui/modal";
+	import Pagination from "$lib/components/ui/Pagination.svelte";
+	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import { RefreshCw, Eye, RotateCcw, Trash2 } from "lucide-svelte";
+	import { contentAdminApi } from "$lib/api";
+	import { t } from "$lib/stores/i18n.svelte";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 
-  type ContentItem = {
-    id: string;
-    title: string;
-    content_type: string;
-    status: string;
-    author_id: string;
-    author_name: string;
-    space_name?: string;
-    created_at: string;
-    removed_at?: string;
-    thumbnail?: string;
-    url?: string;
-    views?: number;
-  };
+	type ContentItem = {
+		id: string;
+		title: string;
+		content_type: string;
+		status: string;
+		author_name: string;
+		space_name?: string;
+		created_at: string;
+		removed_at?: string;
+		views?: number;
+		url?: string;
+	};
 
-  type ContentStats = {
-    total: number;
-    published: number;
-    drafts: number;
-    archived: number;
-  };
+	let items = $state<ContentItem[]>([]);
+	let currentPage = $state(0);
+	let totalItems = $state(0);
+	let pageSize = $state(25);
+	let loading = $state(true);
+	let error = $state("");
+	let success = $state("");
+	let searchQuery = $state("");
+	let filterValues = $state<Record<string, string>>({});
 
-  let { data } = $props();
+	// Remove modal
+	let showRemoveModal = $state(false);
+	let removeTarget = $state<ContentItem | null>(null);
+	let removeReason = $state("");
 
-  let items = $state<ContentItem[]>([]);
-  let loading = $state(true);
-  let errorMessage = $state("");
-  let activeTab = $state("all");
-  let filters = $state<Record<string, string>>({});
+	// Restore modal
+	let showRestoreModal = $state(false);
+	let restoreTarget = $state<ContentItem | null>(null);
 
-  // Remove modal state
-  let showRemoveModal = $state(false);
-  let removeTarget = $state<ContentItem | null>(null);
-  let removeReason = $state("");
-  let removing = $state(false);
+	const filterDefs = [
+		{
+			key: "content_type",
+			label: t("content.type", "Type"),
+			options: [
+				{ value: "post", label: t("content.type.post", "Post") },
+				{ value: "comment", label: t("content.type.comment", "Comment") },
+				{ value: "blog", label: t("content.type.blog", "Blog") },
+				{ value: "forum", label: t("content.type.forum", "Forum") }
+			]
+		},
+		{
+			key: "status",
+			label: t("common.status", "Status"),
+			options: [
+				{ value: "published", label: t("content.status.published", "Published") },
+				{ value: "draft", label: t("content.status.draft", "Draft") },
+				{ value: "removed", label: t("content.status.removed", "Removed") },
+				{ value: "archived", label: t("content.status.archived", "Archived") }
+			]
+		}
+	];
 
-  // Restore modal state
-  let showRestoreModal = $state(false);
-  let restoreTarget = $state<ContentItem | null>(null);
-  let restoring = $state(false);
+	const columns = [
+		{
+			key: "title",
+			label: t("content.title", "Title"),
+			sortable: true
+		},
+		{
+			key: "content_type",
+			label: t("content.type", "Type"),
+			sortable: true
+		},
+		{
+			key: "status",
+			label: t("common.status", "Status"),
+			sortable: true
+		},
+		{
+			key: "author_name",
+			label: t("content.author", "Author"),
+			sortable: true
+		},
+		{
+			key: "space_name",
+			label: t("content.space", "Space"),
+			render: (v: string) => v || "—"
+		},
+		{
+			key: "views",
+			label: t("content.views", "Views"),
+			sortable: true,
+			render: (v: number) => (v ?? 0).toLocaleString()
+		},
+		{
+			key: "created_at",
+			label: t("common.created", "Created"),
+			sortable: true,
+			render: (v: string) => new Date(v).toLocaleDateString()
+		},
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
+			render: (_: any, row: ContentItem) => {
+				const isRemoved = row.status === "removed" || !!row.removed_at;
+				if (isRemoved) {
+					return `<button onclick="window.__contentRestore('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-50">${t("content.restore", "Restore")}</button>`;
+				}
+				return `<div class="flex items-center gap-1">
+					<button onclick="window.__contentRemove('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("content.remove", "Remove")}</button>
+				</div>`;
+			}
+		}
+	];
 
-  const tabs = [
-    { value: "all", label: "All Content" },
-    { value: "published", label: "Published" },
-    { value: "draft", label: "Drafts" },
-    { value: "archived", label: "Archived" },
-    { value: "removed", label: "Removed" }
-  ];
+	async function loadItems() {
+		loading = true;
+		error = "";
+		try {
+			const params = new URLSearchParams({
+				page: String(currentPage + 1),
+				limit: String(pageSize)
+			});
+			if (searchQuery) params.set("q", searchQuery);
+			if (filterValues.content_type) params.set("content_type", filterValues.content_type);
+			if (filterValues.status) params.set("status", filterValues.status);
 
-  const columns = [
-    {
-      key: "title",
-      label: "Title",
-      sortable: true,
-      render: (_: any, row: any) => `
-        <div class="flex items-center gap-3">
-          ${row.thumbnail ? `<img src="${row.thumbnail}" alt="" class="h-10 w-10 rounded object-cover" />` : '<div class="h-10 w-10 rounded bg-gray-100 flex items-center justify-center"><span class="text-gray-400">📄</span></div>'}
-          <div>
-            <p class="font-medium text-gray-900">${row.title || "Untitled"}</p>
-            <p class="text-sm text-gray-500">${row.author_name || "Unknown"}</p>
-          </div>
-        </div>
-      `
-    },
-    {
-      key: "content_type",
-      label: "Type",
-      sortable: true,
-      render: (value: string) =>
-        `<span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">${value || "post"}</span>`
-    },
-    {
-      key: "status",
-      label: "Status",
-      sortable: true,
-      render: (value: string) => {
-        const variants: Record<string, string> = {
-          published: "bg-success-100 text-success-800",
-          draft: "bg-warning-100 text-warning-800",
-          removed: "bg-danger-100 text-danger-800",
-          archived: "bg-gray-100 text-gray-800"
-        };
-        return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[value] || "bg-gray-100 text-gray-800"}">${value || "draft"}</span>`;
-      }
-    },
-    {
-      key: "space_name",
-      label: "Space",
-      sortable: true,
-      render: (value: string) => value || "—"
-    },
-    {
-      key: "views",
-      label: "Views",
-      sortable: true,
-      render: (value: number) => (value ?? 0).toLocaleString()
-    },
-    {
-      key: "created_at",
-      label: "Created",
-      sortable: true,
-      render: (value: string) =>
-        new Date(value).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric"
-        })
-    },
-    {
-      key: "actions",
-      label: "",
-      class: "w-32",
-      render: (_: any, row: any) => {
-        if (row.status === "removed" || row.removed_at) {
-          return `
-            <div class="flex items-center gap-1">
-              <button onclick="window.__contentRestore('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-50">Restore</button>
-            </div>
-          `;
-        }
-        return `
-          <div class="flex items-center gap-1">
-            <button onclick="window.location.href='/content/${row.id}'" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Edit</button>
-            <button onclick="window.open('${row.url || "#"}', '_blank')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">View</button>
-            <button onclick="window.__contentRemove('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Remove</button>
-          </div>
-        `;
-      }
-    }
-  ];
+			const result = await contentAdminApi.list(params.toString());
+			if (result.ok) {
+				const d = result.data as { items: ContentItem[]; total: number };
+				items = d.items ?? (Array.isArray(result.data) ? result.data : []);
+				totalItems = d.total ?? items.length;
+			} else {
+				error = result.error ?? t("common.error", "Failed to load content");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to load content");
+		} finally {
+			loading = false;
+		}
+	}
 
-  let filteredItems = $derived.by(() => {
-    let result = [...items];
+	function handleSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? "";
+		filterValues = values;
+		currentPage = 0;
+		loadItems();
+	}
 
-    if (activeTab === "removed") {
-      result = result.filter((i) => i.status === "removed" || i.removed_at);
-    } else if (activeTab !== "all") {
-      result = result.filter(
-        (i) => i.status === activeTab && i.status !== "removed" && !i.removed_at
-      );
-    } else {
-      result = result.filter((i) => i.status !== "removed" && !i.removed_at);
-    }
+	function handleClear() {
+		searchQuery = "";
+		filterValues = {};
+		currentPage = 0;
+		loadItems();
+	}
 
-    if (filters.status) {
-      result = result.filter((i) => i.status === filters.status);
-    }
-    if (filters.content_type) {
-      result = result.filter((i) => i.content_type === filters.content_type);
-    }
-    if (filters.search) {
-      const q = filters.search.toLowerCase();
-      result = result.filter(
-        (i) =>
-          i.title?.toLowerCase().includes(q) ||
-          i.author_name?.toLowerCase().includes(q)
-      );
-    }
+	function openRemove(item: ContentItem) {
+		removeTarget = item;
+		removeReason = "";
+		showRemoveModal = true;
+	}
 
-    return result;
-  });
+	async function confirmRemove() {
+		if (!removeTarget) return;
+		const result = await contentAdminApi.remove(removeTarget.id, { reason: removeReason || undefined });
+		if (result.ok) {
+			showRemoveModal = false;
+			success = t("content.removed", "Content removed successfully");
+			loadItems();
+		} else {
+			error = result.error ?? t("common.error", "Failed to remove content");
+		}
+	}
 
-  async function load() {
-    loading = true;
-    errorMessage = "";
-    try {
-      const result = await api<ContentItem[]>("/admin/content");
-      if (result.ok) {
-        items = (result.data as ContentItem[]) ?? [];
-      } else {
-        errorMessage = result.error;
-      }
-    } catch {
-      errorMessage = "Failed to load content";
-    } finally {
-      loading = false;
-    }
-  }
+	function openRestore(item: ContentItem) {
+		restoreTarget = item;
+		showRestoreModal = true;
+	}
 
-  function handleSearch(searchFilters: Record<string, string>) {
-    filters = searchFilters;
-  }
+	async function confirmRestore() {
+		if (!restoreTarget) return;
+		const result = await contentAdminApi.restore(restoreTarget.id);
+		if (result.ok) {
+			showRestoreModal = false;
+			success = t("content.restored", "Content restored successfully");
+			loadItems();
+		} else {
+			error = result.error ?? t("common.error", "Failed to restore content");
+		}
+	}
 
-  function handleClear() {
-    filters = {};
-  }
-
-  function openRemove(item: ContentItem) {
-    removeTarget = item;
-    removeReason = "";
-    showRemoveModal = true;
-  }
-
-  async function confirmRemove() {
-    if (!removeTarget) return;
-    removing = true;
-    errorMessage = "";
-    try {
-      const result = await contentAdminApi.remove(removeTarget.id);
-      if (result.ok) {
-        showRemoveModal = false;
-        load();
-      } else {
-        errorMessage = result.error;
-      }
-    } catch {
-      errorMessage = "Failed to remove content";
-    } finally {
-      removing = false;
-    }
-  }
-
-  function openRestore(item: ContentItem) {
-    restoreTarget = item;
-    showRestoreModal = true;
-  }
-
-  async function confirmRestore() {
-    if (!restoreTarget) return;
-    restoring = true;
-    errorMessage = "";
-    try {
-      const result = await contentAdminApi.restore(restoreTarget.id);
-      if (result.ok) {
-        showRestoreModal = false;
-        load();
-      } else {
-        errorMessage = result.error;
-      }
-    } catch {
-      errorMessage = "Failed to restore content";
-    } finally {
-      restoring = false;
-    }
-  }
-
-  // Expose action functions for DataTable inline handlers
-  if (typeof window !== "undefined") {
-    (window as any).__contentRemove = (id: string) => {
-      const item = items.find((i) => i.id === id);
-      if (item) openRemove(item);
-    };
-    (window as any).__contentRestore = (id: string) => {
-      const item = items.find((i) => i.id === id);
-      if (item) openRestore(item);
-    };
-  }
-
-  $effect(() => {
-    load();
-  });
 </script>
 
 <svelte:head>
-  <title>Content — JapaConnect Admin</title>
+	<title>{t("content.title", "Content")} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
-  title="Content"
-  description="Manage all platform content"
-  actions={[
-    { label: "New Post", icon: Plus, href: "/content/new" },
-    { label: "Export", icon: Download, variant: "outline" }
-  ]}
+	title={t("content.title", "Content")}
+	description={t("content.description", "Manage all platform content")}
+	actions={[
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadItems }
+	]}
 />
 
-<div class="space-y-6">
-  <Tabs {tabs} bind:value={activeTab} />
+{#if error}
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+		{error}
+	</div>
+{/if}
+{#if success}
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)">
+		{success}
+	</div>
+{/if}
 
-  <FilterBar
-    bind:value={filters}
-    filters={[
-      {
-        key: "content_type",
-        label: "Type",
-        options: [
-          { value: "post", label: "Post" },
-          { value: "comment", label: "Comment" },
-          { value: "blog", label: "Blog" },
-          { value: "forum", label: "Forum" },
-          { value: "page", label: "Page" }
-        ]
-      },
-      {
-        key: "status",
-        label: "Status",
-        options: [
-          { value: "published", label: "Published" },
-          { value: "draft", label: "Draft" },
-          { value: "archived", label: "Archived" }
-        ]
-      }
-    ]}
-    onsearch={handleSearch}
-    onclear={handleClear}
-  />
-
-  {#if errorMessage}
-    <div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-800">
-      {errorMessage}
-    </div>
-  {/if}
-
-  <Card>
-    <CardContent class="p-0">
-      {#if loading}
-        <div class="flex items-center justify-center py-12">
-          <RefreshCw class="h-5 w-5 animate-spin text-gray-400" />
-          <span class="ml-2 text-sm text-gray-500">Loading content...</span>
-        </div>
-      {:else}
-        <DataTable
-          {columns}
-          data={filteredItems}
-          pageSize={20}
-          selectable={true}
-          emptyMessage="No content found"
-        />
-      {/if}
-    </CardContent>
-  </Card>
-</div>
+<Card>
+	<CardHeader>
+		<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+	</CardHeader>
+	<CardContent>
+		{#if loading}
+			<TableSkeleton rows={8} columns={columns.length} />
+		{:else}
+			<DataTable {columns} data={items} pageSize={items.length} selectable />
+			<Pagination bind:page={currentPage} totalPages={Math.ceil(totalItems / pageSize)} {totalItems} bind:pageSize />
+		{/if}
+	</CardContent>
+</Card>
 
 <!-- Remove Modal -->
-<Modal bind:open={showRemoveModal} title="Remove Content">
-  <div class="space-y-4">
-    <p class="text-sm text-gray-600">
-      Are you sure you want to remove this content? This action can be undone by restoring the content.
-    </p>
-    {#if removeTarget}
-      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
-        <span class="font-medium">{removeTarget.title || "Untitled"}</span>
-        &middot; {removeTarget.content_type}
-      </div>
-    {/if}
-    <div>
-      <label for="remove-reason" class="mb-1 block text-sm font-medium text-gray-700">
-        Reason (optional)
-      </label>
-      <textarea
-        id="remove-reason"
-        bind:value={removeReason}
-        rows="3"
-        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-        placeholder="Explain why this content is being removed..."
-      ></textarea>
-    </div>
-    <div class="flex justify-end gap-3">
-      <Button variant="outline" onclick={() => (showRemoveModal = false)}>Cancel</Button>
-      <Button variant="destructive" onclick={confirmRemove} disabled={removing}>
-        {#if removing}
-          <RefreshCw class="h-4 w-4 mr-2 animate-spin" />
-          Removing...
-        {:else}
-          Remove
-        {/if}
-      </Button>
-    </div>
-  </div>
+<Modal bind:open={showRemoveModal} title={t("content.remove_title", "Remove Content")}>
+	{#if removeTarget}
+		<p class="mb-2 text-sm" style="color: var(--color-foreground)">
+			{t("content.remove_confirm", "Remove this content?")} <strong>{removeTarget.title || "Untitled"}</strong>
+		</p>
+		<textarea
+			class="w-full rounded-lg border p-3 text-sm"
+			style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+			rows="3"
+			placeholder={t("content.remove_reason", "Reason (optional)...")}
+			bind:value={removeReason}
+		></textarea>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showRemoveModal = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={confirmRemove}>{t("content.remove", "Remove")}</Button>
+	</div>
 </Modal>
 
 <!-- Restore Modal -->
-<Modal bind:open={showRestoreModal} title="Restore Content">
-  <div class="space-y-4">
-    <p class="text-sm text-gray-600">
-      Are you sure you want to restore this content? It will become visible again on the platform.
-    </p>
-    {#if restoreTarget}
-      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
-        <span class="font-medium">{restoreTarget.title || "Untitled"}</span>
-        &middot; {restoreTarget.content_type}
-      </div>
-    {/if}
-    <div class="flex justify-end gap-3">
-      <Button variant="outline" onclick={() => (showRestoreModal = false)}>Cancel</Button>
-      <Button onclick={confirmRestore} disabled={restoring}>
-        {#if restoring}
-          <RefreshCw class="h-4 w-4 mr-2 animate-spin" />
-          Restoring...
-        {:else}
-          Restore
-        {/if}
-      </Button>
-    </div>
-  </div>
+<Modal bind:open={showRestoreModal} title={t("content.restore_title", "Restore Content")}>
+	{#if restoreTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t("content.restore_confirm", "Restore this content?")} <strong>{restoreTarget.title || "Untitled"}</strong>
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showRestoreModal = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button onclick={confirmRestore}>{t("content.restore", "Restore")}</Button>
+	</div>
 </Modal>

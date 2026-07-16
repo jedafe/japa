@@ -1,10 +1,13 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Pagination from '$lib/components/ui/Pagination.svelte';
-	import { Tabs, Select, Tooltip } from 'bits-ui';
+	import DataTable from '$lib/components/DataTable.svelte';
+	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
+	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import { Dialog, Select } from 'bits-ui';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { Clock, RefreshCw, Play, Trash2, Pause, Pencil } from 'lucide-svelte';
+	import { t } from '$lib/stores/i18n';
+	import { Play, Pause, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
+	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
 	import type { PageData } from './$types';
 
 	let { data = {} as PageData } = $props();
@@ -17,67 +20,96 @@
 		prev_run_at: string | null;
 	}
 
-	// svelte-ignore state_referenced_locally
 	let jobs = $state<CronJob[]>(data.jobs ?? []);
 	let loading = $state(false);
 	let message = $state('');
-	let messageType = $state<'success' | 'error' | ''>('');
-	let activeTab = $state('all');
+	let messageType = $state<'success' | 'error' | 'info'>('info');
 	let filterStatus = $state('all');
 
-	// Pagination
 	let page = $state(0);
 	let pageSize = $state(10);
+	let sortKey = $state('');
+	let sortDirection = $state<'asc' | 'desc'>('asc');
 
-	// Edit/Create modal state
 	let editModalOpen = $state(false);
 	let editingJob = $state<CronJob | null>(null);
 	let editForm = $state({ type: '', spec: '', payload: '{}' });
+	let saving = $state(false);
+
+	let deleteModalOpen = $state(false);
+	let deletingJob = $state<CronJob | null>(null);
 
 	const statusItems = [
 		{ value: 'all', label: t('cron.all_status', 'All Status') },
 		{ value: 'active', label: t('cron.active', 'Active') },
-		{ value: 'paused', label: t('cron.paused', 'Paused') },
+		{ value: 'paused', label: t('cron.paused', 'Paused') }
 	];
 
-	async function load() {
-		loading = true;
-		message = '';
-		const result = await api<CronJob[]>('/control/cron/jobs');
-		if (result.ok) {
-			jobs = result.data;
+	const columns: DataTableColumn[] = [
+		{
+			key: 'id',
+			label: t('cron.job', 'Job'),
+			sortable: true,
+			render: (val, row) => `<span class="font-medium">${val ?? '—'}</span>`
+		},
+		{
+			key: 'type',
+			label: t('cron.type', 'Type'),
+			sortable: true,
+			render: (val) =>
+				`<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 font-mono text-xs">${val ?? '—'}</span>`
+		},
+		{
+			key: 'spec',
+			label: t('cron.schedule', 'Schedule'),
+			sortable: true,
+			render: (val) => `<span class="font-mono text-xs">${val ?? '—'}</span>`
+		},
+		{
+			key: 'prev_run_at',
+			label: t('cron.last_run', 'Last Run'),
+			sortable: true,
+			render: (val) =>
+				`<span class="text-muted-foreground text-xs">${val ? new Date(val as string).toLocaleString() : '—'}</span>`
+		},
+		{
+			key: 'next_run_at',
+			label: t('cron.next_run', 'Next Run'),
+			sortable: true,
+			render: (val) =>
+				`<span class="text-muted-foreground text-xs">${val ? new Date(val as string).toLocaleString() : '—'}</span>`
 		}
-		loading = false;
+	];
+
+	function triggerJob(job: CronJob) {
+		void (async () => {
+			message = '';
+			const result = await api(`/control/cron/jobs/${job.id}/trigger`, { method: 'POST' });
+			if (result.ok) {
+				message = t('cron.trigger_success', 'Job triggered successfully.');
+				messageType = 'success';
+				await load();
+			} else {
+				message = result.error || t('cron.trigger_error', 'Failed to trigger job.');
+				messageType = 'error';
+			}
+		})();
 	}
 
-	async function triggerJob(id: string) {
-		message = '';
-		const result = await api(`/control/cron/jobs/${id}/trigger`, { method: 'POST' });
-		if (result.ok) {
-			message = t('cron.trigger_success', `Job triggered successfully.`);
-			messageType = 'success';
-			await load();
-		} else {
-			message = result.error || t('cron.trigger_error', 'Failed to trigger job.');
-			messageType = 'error';
-		}
+	function pauseJob(job: CronJob) {
+		void (async () => {
+			message = '';
+			const result = await api(`/control/cron/jobs/${job.id}/pause`, { method: 'POST' });
+			if (result.ok) {
+				message = t('cron.pause_success', 'Job paused successfully.');
+				messageType = 'success';
+				await load();
+			} else {
+				message = result.error || t('cron.pause_error', 'Failed to pause job.');
+				messageType = 'error';
+			}
+		})();
 	}
-
-	let filteredJobs = $derived(
-		filterStatus !== 'all'
-			? jobs.filter((j) => {
-					if (filterStatus === 'active') return true;
-					if (filterStatus === 'paused') return false;
-					return true;
-				})
-			: jobs
-	);
-
-	let totalPages = $derived(Math.max(1, Math.ceil(filteredJobs.length / pageSize)));
-	let paginatedJobs = $derived.by(() => {
-		const start = page * pageSize;
-		return filteredJobs.slice(start, start + pageSize);
-	});
 
 	function openEditModal(job?: CronJob) {
 		if (job) {
@@ -90,11 +122,136 @@
 		editModalOpen = true;
 	}
 
-	function closeModal() {
+	function closeEditModal() {
 		editModalOpen = false;
 		editingJob = null;
 		editForm = { type: '', spec: '', payload: '{}' };
 	}
+
+	async function submitJob() {
+		saving = true;
+		message = '';
+		if (editingJob) {
+			const result = await api(`/control/cron/jobs/${editingJob.id}`, {
+				method: 'PATCH',
+				body: { type: editForm.type, spec: editForm.spec, payload: editForm.payload }
+			});
+			if (result.ok) {
+				message = t('cron.update_success', 'Job updated successfully.');
+				messageType = 'success';
+				closeEditModal();
+				await load();
+			} else {
+				message = result.error || t('cron.update_error', 'Failed to update job.');
+				messageType = 'error';
+			}
+		} else {
+			const result = await api<CronJob>('/control/cron/jobs', {
+				method: 'POST',
+				body: { type: editForm.type, spec: editForm.spec, payload: editForm.payload }
+			});
+			if (result.ok) {
+				message = t('cron.create_success', 'Job created successfully.');
+				messageType = 'success';
+				closeEditModal();
+				await load();
+			} else {
+				message = result.error || t('cron.create_error', 'Failed to create job.');
+				messageType = 'error';
+			}
+		}
+		saving = false;
+	}
+
+	function confirmDelete(job: CronJob) {
+		deletingJob = job;
+		deleteModalOpen = true;
+	}
+
+	async function handleDelete() {
+		if (!deletingJob) return;
+		message = '';
+		const result = await api(`/control/cron/jobs/${deletingJob.id}`, { method: 'DELETE' });
+		if (result.ok) {
+			message = t('cron.delete_success', 'Job deleted successfully.');
+			messageType = 'success';
+			await load();
+		} else {
+			message = result.error || t('cron.delete_error', 'Failed to delete job.');
+			messageType = 'error';
+		}
+		deleteModalOpen = false;
+		deletingJob = null;
+	}
+
+	async function load() {
+		loading = true;
+		message = '';
+		const result = await api<CronJob[]>('/control/cron/jobs');
+		if (result.ok) {
+			jobs = result.data;
+		}
+		loading = false;
+	}
+
+	let filteredJobs = $derived(
+		filterStatus !== 'all'
+			? jobs.filter((j) => {
+					if (filterStatus === 'active') return true;
+					if (filterStatus === 'paused') return false;
+					return true;
+				})
+			: jobs
+	);
+
+	let sortedJobs = $derived.by(() => {
+		const list = [...filteredJobs];
+		if (sortKey) {
+			list.sort((a, b) => {
+				const row = a as unknown as Record<string, unknown>;
+				const row2 = b as unknown as Record<string, unknown>;
+				const av = row[sortKey];
+				const bv = row2[sortKey];
+				if (av == null && bv == null) return 0;
+				if (av == null) return 1;
+				if (bv == null) return -1;
+				const cmp = String(av).localeCompare(String(bv));
+				return sortDirection === 'asc' ? cmp : -cmp;
+			});
+		}
+		return list;
+	});
+
+	let totalRows = $derived(sortedJobs.length);
+
+	let paginatedJobs = $derived.by(() => {
+		const start = page * pageSize;
+		return sortedJobs.slice(start, start + pageSize);
+	});
+
+	let rowActions: DataTableRowAction[] = [
+		{
+			label: t('cron.run_now', 'Run now'),
+			icon: Play,
+			onClick: (row) => triggerJob(row as unknown as CronJob)
+		},
+		{
+			label: t('cron.edit', 'Edit'),
+			icon: Pencil,
+			onClick: (row) => openEditModal(row as unknown as CronJob)
+		},
+		{
+			label: t('cron.pause', 'Pause'),
+			icon: Pause,
+			onClick: (row) => pauseJob(row as unknown as CronJob)
+		},
+		{
+			label: t('cron.delete', 'Delete'),
+			icon: Trash2,
+			variant: 'destructive',
+			onClick: (row) => confirmDelete(row as unknown as CronJob)
+		}
+	];
 </script>
 
 <PageHeader
@@ -111,7 +268,10 @@
 			<Select.Value placeholder={t('cron.all_status', 'All Status')} />
 		</Select.Trigger>
 		<Select.Portal>
-			<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1" sideOffset={4}>
+			<Select.Content
+				class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1"
+				sideOffset={4}
+			>
 				<Select.Viewport class="p-1">
 					{#each statusItems as item}
 						<Select.Item
@@ -131,6 +291,13 @@
 	</Select.Root>
 	<div class="flex-1"></div>
 	<button
+		class="bg-foreground text-background flex items-center gap-1.5 rounded-9px px-3 py-2 text-xs font-medium transition-colors hover:opacity-90"
+		onclick={() => openEditModal()}
+	>
+		<Plus class="size-3" />
+		{t('cron.create', 'Create Job')}
+	</button>
+	<button
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px flex items-center gap-1.5 border px-3 py-2 text-xs font-medium transition-colors"
 		onclick={load}
 		disabled={loading}
@@ -141,143 +308,44 @@
 </div>
 
 {#if message}
-	<div
-		class="mb-4 rounded-lg border px-4 py-3 text-sm {messageType === 'success'
-			? 'border-green-500/30 bg-green-500/10 text-green-600'
-			: messageType === 'error'
-				? 'border-destructive/30 bg-destructive/10 text-destructive'
-				: ''}"
-	>
-		{message}
+	<div class="mb-4">
+		<AlertBanner variant={messageType} {message} />
 	</div>
 {/if}
 
-{#if loading}
-	<div class="flex items-center justify-center py-12">
-		<RefreshCw class="text-muted-foreground size-6 animate-spin" />
-	</div>
-{:else if jobs.length === 0}
-	<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
-		<Clock class="text-muted-foreground mx-auto mb-3 size-8" />
-		<p class="text-muted-foreground text-sm">{t('cron.no_jobs', 'No cron jobs configured.')}</p>
-	</div>
-{:else}
-	<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
-		<table class="w-full text-left text-sm">
-			<thead>
-				<tr class="border-border-card border-b">
-					<th class="text-muted-foreground px-4 py-3 font-medium">{t('cron.job', 'Job')}</th>
-					<th class="text-muted-foreground px-4 py-3 font-medium">{t('cron.type', 'Type')}</th>
-					<th class="text-muted-foreground px-4 py-3 font-medium">{t('cron.schedule', 'Schedule')}</th>
-					<th class="text-muted-foreground px-4 py-3 font-medium">{t('cron.last_run', 'Last Run')}</th>
-					<th class="text-muted-foreground px-4 py-3 font-medium">{t('cron.next_run', 'Next Run')}</th>
-					<th class="text-muted-foreground px-4 py-3 font-medium">{t('cron.actions', 'Actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each paginatedJobs as job, index (job.id + '-' + index)}
-					<tr class="border-border-card border-t hover:bg-muted/30 transition-colors">
-						<td class="px-4 py-3">
-							<p class="font-medium">{job.id}</p>
-						</td>
-						<td class="px-4 py-3">
-							<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 font-mono text-xs">
-								{job.type}
-							</span>
-						</td>
-						<td class="px-4 py-3 font-mono text-xs">{job.spec}</td>
-						<td class="text-muted-foreground px-4 py-3 text-xs">
-							{job.prev_run_at ? new Date(job.prev_run_at).toLocaleString() : '—'}
-						</td>
-						<td class="text-muted-foreground px-4 py-3 text-xs">
-							{job.next_run_at ? new Date(job.next_run_at).toLocaleString() : '—'}
-						</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-1">
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<button
-											class="text-green-600 hover:bg-green-500/10 rounded-5px p-1.5 transition-colors"
-											onclick={() => triggerJob(job.id)}
-										>
-											<Play class="size-3.5" />
-										</button>
-									</Tooltip.Trigger>
-									<Tooltip.Portal>
-										<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-											{t('cron.run_now', 'Run now')}
-										</Tooltip.Content>
-									</Tooltip.Portal>
-								</Tooltip.Root>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<button
-											class="text-foreground-alt hover:bg-muted rounded-5px p-1.5 transition-colors"
-											onclick={() => openEditModal(job)}
-										>
-											<Pencil class="size-3.5" />
-										</button>
-									</Tooltip.Trigger>
-									<Tooltip.Portal>
-										<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-											{t('cron.edit', 'Edit')}
-										</Tooltip.Content>
-									</Tooltip.Portal>
-								</Tooltip.Root>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<button
-											class="text-tertiary hover:bg-tertiary/10 rounded-5px p-1.5 transition-colors"
-										>
-											<Pause class="size-3.5" />
-										</button>
-									</Tooltip.Trigger>
-									<Tooltip.Portal>
-										<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-											{t('cron.pause', 'Pause')}
-										</Tooltip.Content>
-									</Tooltip.Portal>
-								</Tooltip.Root>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<button
-											class="text-destructive hover:bg-destructive/10 rounded-5px p-1.5 transition-colors"
-										>
-											<Trash2 class="size-3.5" />
-										</button>
-									</Tooltip.Trigger>
-									<Tooltip.Portal>
-										<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-											{t('cron.delete', 'Delete')}
-										</Tooltip.Content>
-									</Tooltip.Portal>
-								</Tooltip.Root>
-							</div>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+<DataTable
+	{columns}
+	rows={paginatedJobs}
+	{totalRows}
+	bind:page
+	bind:pageSize
+	bind:sortKey
+	bind:sortDirection
+	{rowActions}
+	{loading}
+	emptyMessage={t('cron.no_jobs', 'No cron jobs configured.')}
+	selectable={false}
+/>
 
-	<Pagination
-		bind:page
-		{totalPages}
-		totalItems={filteredJobs.length}
-		bind:pageSize
-	/>
-{/if}
-
-{#if editModalOpen}
-	<div class="fixed inset-0 z-50 flex items-center justify-center">
-		<div class="fixed inset-0 bg-black/50" onclick={closeModal}></div>
-		<div class="border-border-card bg-background relative z-50 w-full max-w-lg rounded-xl border p-6 shadow-lg">
-			<h2 class="text-foreground mb-4 text-lg font-semibold">
+<Dialog.Root bind:open={editModalOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay
+			class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50"
+		/>
+		<Dialog.Content
+			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 focus:outline-none"
+			role="dialog"
+			aria-modal="true"
+			onOpenAutoFocus={(e) => e.preventDefault()}
+		>
+			<Dialog.Title class="text-foreground text-lg font-semibold">
 				{editingJob ? t('cron.edit_job', 'Edit Job') : t('cron.create_job', 'Create Job')}
-			</h2>
-			<div class="space-y-4">
+			</Dialog.Title>
+			<div class="mt-4 space-y-4">
 				<div>
-					<label class="text-foreground mb-1 block text-sm font-medium">{t('cron.job_type', 'Job Type')}</label>
+					<label class="text-foreground mb-1 block text-sm font-medium">
+						{t('cron.job_type', 'Job Type')}
+					</label>
 					<input
 						type="text"
 						bind:value={editForm.type}
@@ -286,17 +354,23 @@
 					/>
 				</div>
 				<div>
-					<label class="text-foreground mb-1 block text-sm font-medium">{t('cron.schedule', 'Schedule')}</label>
+					<label class="text-foreground mb-1 block text-sm font-medium">
+						{t('cron.schedule', 'Schedule')}
+					</label>
 					<input
 						type="text"
 						bind:value={editForm.spec}
 						class="border-border-input bg-background text-foreground w-full rounded-5px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 						placeholder="0 */6 * * *"
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">Cron expression (e.g., "0 */6 * * *" for every 6 hours)</p>
+					<p class="text-muted-foreground mt-1 text-xs">
+						{t('cron.cron_expression', 'Cron expression (e.g. 0 */6 * * *)')}
+					</p>
 				</div>
 				<div>
-					<label class="text-foreground mb-1 block text-sm font-medium">{t('cron.payload', 'Payload')} (JSON)</label>
+					<label class="text-foreground mb-1 block text-sm font-medium">
+						{t('cron.payload', 'Payload')} (JSON)
+					</label>
 					<textarea
 						bind:value={editForm.payload}
 						rows="4"
@@ -306,18 +380,34 @@
 				</div>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">
-				<button
+				<Dialog.Close
 					class="border-border-input bg-background hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
-					onclick={closeModal}
+					onclick={closeEditModal}
 				>
 					{t('common.cancel', 'Cancel')}
-				</button>
+				</Dialog.Close>
 				<button
-					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90"
+					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
+					onclick={submitJob}
+					disabled={saving}
 				>
-					{editingJob ? t('common.save', 'Save') : t('cron.create', 'Create')}
+					{saving
+						? t('common.saving', 'Saving...')
+						: editingJob
+							? t('common.save', 'Save')
+							: t('cron.create', 'Create')}
 				</button>
 			</div>
-		</div>
-	</div>
-{/if}
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
+
+<ConfirmModal
+	bind:open={deleteModalOpen}
+	title={t('cron.delete_job', 'Delete Job')}
+	consequence={deletingJob
+		? t('cron.delete_confirm', 'This will permanently delete the cron job. This action cannot be undone.')
+		: ''}
+	confirmText="DELETE"
+	onConfirm={handleDelete}
+/>

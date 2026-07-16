@@ -5,21 +5,43 @@
 
 	import { initNotifications, addNotification } from '$lib/stores/notifications.svelte';
 	import { wsClient } from '$lib/websocket';
-	import Sidebar from '$lib/components/Sidebar.svelte';
+	import Sidebar from '$lib/components/layout/sidebar.svelte';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import Breadcrumb from '$lib/components/layout/Breadcrumb.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import '../app.css';
 	import { page } from '$app/state';
+	import { api } from '$lib/api';
 
-	let { children, data } = $props();
+	let { children } = $props();
+	let loading = $state(true);
+	let sidebarMobileOpen = $state(false);
+	let currentPermissions = $state<string[]>([]);
 
-	$effect(() => {
-		if (data.user) {
-			setUser(data.user);
-			setPermissions(data.permissions ?? []);
-		} else {
+	// Fetch user data client-side on mount
+	onMount(async () => {
+		try {
+			// Fetch user info
+			const userResult = await api<{ user: any }>('/me');
+			if (userResult.ok) {
+				setUser(userResult.data.user);
+				
+				// Fetch permissions separately
+				const permResult = await api<{ permissions: string[] }>('/me/permissions');
+				if (permResult.ok) {
+					setPermissions(permResult.data.permissions ?? []);
+					currentPermissions = permResult.data.permissions ?? [];
+				} else {
+					setPermissions([]);
+					currentPermissions = [];
+				}
+			} else {
+				clearUser();
+			}
+		} catch {
 			clearUser();
+		} finally {
+			loading = false;
 		}
 	});
 
@@ -59,53 +81,67 @@
 			getPermissions().includes('*')
 	);
 
-	onMount(() => {
-		initNotifications();
-		wsClient.connect(data.token ?? undefined);
+	// Connect WebSocket after user is loaded
+	$effect(() => {
+		if (!loading) {
+			initNotifications();
+			wsClient.connect();
 
-		const unsubNotification = wsClient.on('notification', (msg: any) => {
-			addNotification({
-				title: msg.title ?? 'Notification',
-				body: msg.body ?? '',
-				type: msg.type ?? 'info',
-				link: msg.link
+			const unsubNotification = wsClient.on('notification', (msg: any) => {
+				addNotification({
+					title: msg.title ?? 'Notification',
+					body: msg.body ?? '',
+					type: msg.type ?? 'info',
+					link: msg.link
+				});
 			});
-		});
 
-		const unsubAudit = wsClient.on('audit_log', (msg: any) => {
-			addNotification({
-				title: 'Audit Event',
-				body: `${msg.action_type ?? 'action'} on ${msg.entity_type ?? 'entity'}`,
-				type: 'info'
+			const unsubAudit = wsClient.on('audit_log', (msg: any) => {
+				addNotification({
+					title: 'Audit Event',
+					body: `${msg.action_type ?? 'action'} on ${msg.entity_type ?? 'entity'}`,
+					type: 'info'
+				});
 			});
-		});
 
-		return () => {
-			unsubNotification();
-			unsubAudit();
-			wsClient.disconnect();
-		};
+			return () => {
+				unsubNotification();
+				unsubAudit();
+				wsClient.disconnect();
+			};
+		}
 	});
+	// Check if we're on the login or logout page
+	let isAuthPage = $derived(
+		page.url.pathname === '/login' || 
+		page.url.pathname.startsWith('/login/') ||
+		page.url.pathname === '/logout' ||
+		page.url.pathname.startsWith('/logout/')
+	);
 </script>
 
 <svelte:head>
 	<title>JapaConnect Admin</title>
 </svelte:head>
 
-<div class="flex h-screen overflow-hidden" style="background-color: var(--color-background); color: var(--color-foreground)">
-	<Sidebar currentPath={page.url.pathname} />
+{#if isAuthPage}
+	{@render children()}
+{:else}
+	<div class="flex h-screen overflow-hidden" style="background-color: var(--color-background); color: var(--color-foreground)">
+		<Sidebar bind:mobileOpen={sidebarMobileOpen} permissions={currentPermissions} />
 
-	<div class="flex flex-1 flex-col overflow-hidden">
-		<TopBar />
-		<main class="flex-1 overflow-y-auto" style="background-color: var(--color-background)">
-			<div class="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 md:px-8">
-				<Breadcrumb />
-				{#if hasAccess}
-					{@render children()}
-				{:else}
-					<AccessDenied {requiredPermission} />
-				{/if}
-			</div>
-		</main>
+		<div class="flex flex-1 flex-col overflow-hidden">
+			<TopBar onMenuClick={() => sidebarMobileOpen = !sidebarMobileOpen} />
+			<main class="flex-1 overflow-y-auto" style="background-color: var(--color-background)">
+				<div class="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 md:px-8">
+					<Breadcrumb />
+					{#if hasAccess}
+						{@render children()}
+					{:else}
+						<AccessDenied {requiredPermission} />
+					{/if}
+				</div>
+			</main>
+		</div>
 	</div>
-</div>
+{/if}

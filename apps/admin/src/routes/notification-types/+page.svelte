@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -19,7 +18,9 @@
 	let newType = $state({ key: '', label: '', description: '' });
 	let saving = $state(false);
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 
 	async function load() {
 		loading = true;

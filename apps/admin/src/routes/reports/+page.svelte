@@ -1,8 +1,15 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api, reportsAdminApiExtended } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { RefreshCw, Eye } from 'lucide-svelte';
+	import PageHeader from "$lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+	import { DataTable } from "$lib/components/ui/data-table";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import { Button } from "$lib/components/ui/button";
+	import { Modal } from "$lib/components/ui/modal";
+	import Pagination from "$lib/components/ui/Pagination.svelte";
+	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import { RefreshCw, Eye, Trash2, Download } from "lucide-svelte";
+	import { reportsAdminApiExtended } from "$lib/api";
+	import { t } from "$lib/stores/i18n.svelte";
 
 	type Report = {
 		id: string;
@@ -11,85 +18,301 @@
 		status: string;
 		generated_at: string;
 		file_url?: string;
+		created_at: string;
 	};
 
 	let reports = $state<Report[]>([]);
 	let loading = $state(true);
-	let errorMessage = $state('');
+	let error = $state("");
+	let currentPage = $state(0);
+	let totalItems = $state(0);
+	let pageSize = $state(25);
+	let totalPages = $state(1);
+	let searchQuery = $state("");
+	let filterValues = $state<Record<string, string>>({});
+	let selectedIds = $state<Set<string>>(new Set());
 
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		try {
-			const result = await api<Report[]>('/admin/reports');
-			if (result.ok) {
-				reports = result.data ?? [];
-			} else {
-				errorMessage = result.error;
+	// Modals
+	let showViewModal = $state(false);
+	let viewTarget = $state<Report | null>(null);
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<Report | null>(null);
+	let acting = $state(false);
+
+	const filterDefs = [
+		{
+			key: "status",
+			label: t("reports.status", "Status"),
+			options: [
+				{ value: "ready", label: "Ready" },
+				{ value: "generating", label: "Generating" },
+				{ value: "failed", label: "Failed" }
+			]
+		},
+		{
+			key: "report_type",
+			label: t("reports.type", "Type"),
+			options: [
+				{ value: "analytics", label: "Analytics" },
+				{ value: "moderation", label: "Moderation" },
+				{ value: "user_activity", label: "User Activity" },
+				{ value: "financial", label: "Financial" }
+			]
+		}
+	];
+
+	const columns = [
+		{
+			key: "title",
+			label: t("reports.title", "Title"),
+			sortable: true
+		},
+		{
+			key: "report_type",
+			label: t("reports.type", "Type"),
+			sortable: true
+		},
+		{
+			key: "status",
+			label: t("reports.status", "Status"),
+			sortable: true,
+			render: (v: string) => {
+				const colors = v === "ready" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : v === "generating" ? "bg-blue-500/15 text-blue-700 dark:text-blue-400" : "bg-red-500/15 text-red-700 dark:text-red-400";
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
 			}
-		} catch {
-			errorMessage = t('common.error');
+		},
+		{
+			key: "generated_at",
+			label: t("reports.generated", "Generated"),
+			sortable: true,
+			render: (v: string) => new Date(v).toLocaleString()
+		},
+		{
+			key: "actions",
+			label: t("common.actions", "Actions"),
+			class: "w-32",
+			component: ReportActionsCell
+		}
+	];
+
+	async function loadReports() {
+		loading = true;
+		error = "";
+		try {
+			const params = new URLSearchParams({
+				page: String(currentPage),
+				limit: String(pageSize)
+			});
+			if (searchQuery) params.set("q", searchQuery);
+			if (filterValues.status) params.set("status", filterValues.status);
+			if (filterValues.report_type) params.set("report_type", filterValues.report_type);
+
+			const result = await reportsAdminApiExtended.list(params.toString());
+			if (result.ok) {
+				const d = result.data as unknown as { items: Report[]; total: number; page: number; total_pages: number };
+				reports = d.items ?? [];
+				totalItems = d.total ?? reports.length;
+				totalPages = d.total_pages ?? 1;
+			} else {
+				error = result.error ?? t("common.error", "Failed to load reports");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to load reports");
 		} finally {
 			loading = false;
 		}
 	}
 
-	onMount(load);
+	function handleSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? "";
+		filterValues = values;
+		currentPage = 0;
+	}
+
+	function handleClear() {
+		searchQuery = "";
+		filterValues = {};
+		currentPage = 0;
+	}
+
+	function openView(report: Report) {
+		viewTarget = report;
+		showViewModal = true;
+	}
+
+	function confirmDelete(report: Report) {
+		deleteTarget = report;
+		showDeleteConfirm = true;
+	}
+
+	async function executeDelete() {
+		if (!deleteTarget) return;
+		acting = true;
+		try {
+			const result = await reportsAdminApiExtended.delete(deleteTarget.id);
+			if (result.ok) {
+				showDeleteConfirm = false;
+				deleteTarget = null;
+				loadReports();
+			} else {
+				error = result.error;
+			}
+		} catch {
+			error = t("common.error", "Failed to delete report");
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function bulkDelete() {
+		const ids = Array.from(selectedIds);
+		if (ids.length === 0) return;
+		acting = true;
+		try {
+			await Promise.all(ids.map((id) => reportsAdminApiExtended.delete(id)));
+			selectedIds = new Set();
+			loadReports();
+		} catch {
+			error = t("common.error", "Failed to delete reports");
+		} finally {
+			acting = false;
+		}
+	}
+
+	function downloadReport(report: Report) {
+		if (report.file_url) {
+			window.open(report.file_url, "_blank");
+		}
+	}
+
+	$effect(() => {
+		void currentPage;
+		void pageSize;
+		void searchQuery;
+		void filterValues;
+		loadReports();
+	});
 </script>
 
 <svelte:head>
-	<title>{t('reports.title')} — JapaConnect Admin</title>
+	<title>{t("reports.title", "Reports")} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('reports.title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('reports.description')}</p>
+<PageHeader
+	title={t("reports.title", "Reports")}
+	description={t("reports.description", "View and manage generated reports")}
+	actions={[
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadReports }
+	]}
+/>
 
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+{#if error}
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+		{error}
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
-	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
-		<RefreshCw class="h-3 w-3" />
-		{t('common.refresh')}
-	</button>
-</div>
-
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reports.title')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reports.type')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reports.status')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reports.generated')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each reports as report (report.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{report.title}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{report.report_type}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {report.status === 'ready' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : report.status === 'generating' ? 'bg-blue-500/15 text-blue-700 dark:text-blue-400' : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'}">
-								{report.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(report.generated_at).toLocaleString()}</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('reports.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+{#if selectedIds.size > 0}
+	<div class="mb-4 flex items-center gap-3 rounded-lg p-3" style="background: var(--color-primary); color: white">
+		<span class="text-sm font-medium">{selectedIds.size} selected</span>
+		<Button variant="ghost" size="sm" onclick={bulkDelete} disabled={acting}>
+			<Trash2 class="mr-1 h-3.5 w-3.5" /> Delete Selected
+		</Button>
 	</div>
 {/if}
+
+<Card>
+	<CardHeader>
+		<FilterBar
+			filters={filterDefs}
+			onsearch={handleSearch}
+			onclear={handleClear}
+		/>
+	</CardHeader>
+	<CardContent>
+		{#if loading}
+			<TableSkeleton rows={8} columns={columns.length} />
+		{:else}
+			<div aria-live="polite">
+				<DataTable
+					{columns}
+					data={reports}
+					selectable
+					bind:selectedIds
+				/>
+			</div>
+			<Pagination
+				bind:page={currentPage}
+				{totalPages}
+				{totalItems}
+				bind:pageSize
+			/>
+		{/if}
+	</CardContent>
+</Card>
+
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t("reports.details", "Report Details")} size="default">
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Title</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.title}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Type</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.report_type}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Generated</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.generated_at).toLocaleString()}</p>
+				</div>
+			</div>
+			{#if viewTarget.file_url}
+				<div class="pt-4 border-t" style="border-color: var(--color-border)">
+					<Button variant="outline" onclick={() => downloadReport(viewTarget!)}>
+						<Download class="mr-2 h-4 w-4" /> Download Report
+					</Button>
+				</div>
+			{/if}
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+	</div>
+</Modal>
+
+<!-- Delete Confirmation -->
+<Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
+	{#if deleteTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			Delete report <strong>{deleteTarget.title}</strong>? This cannot be undone.
+		</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>Cancel</Button>
+		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? "Deleting..." : "Delete"}</Button>
+	</div>
+</Modal>
+
+<!-- ReportActionsCell component -->
+{#snippet ReportActionsCell(report: Report)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(report)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if report.file_url}
+			<Button variant="ghost" size="sm" onclick={() => downloadReport(report)}>
+				<Download class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+		<Button variant="ghost" size="sm" onclick={() => confirmDelete(report)} style="color: var(--color-danger)">
+			<Trash2 class="h-3.5 w-3.5" />
+		</Button>
+	</div>
+{/snippet}

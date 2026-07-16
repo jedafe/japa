@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
+	import { Select } from '$lib/components/ui/select';
 	import { docsApi } from '$lib/api';
 
 	type DocPage = {
@@ -146,7 +146,9 @@
 		load();
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>
@@ -270,11 +272,10 @@
 				</div>
 				<div>
 					<label for="doc-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Audience</label>
-					<select id="doc-audience" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.audience}>
-						{#each audiences as a}
-							<option value={a}>{a}</option>
-						{/each}
-					</select>
+					<Select
+						options={audiences.map(a => ({ value: a, label: a }))}
+						bind:value={form.audience}
+					/>
 				</div>
 				<div>
 					<label for="doc-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Body (Markdown)</label>

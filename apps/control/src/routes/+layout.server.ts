@@ -5,18 +5,17 @@ export async function load({ locals, cookies }: { locals: App.Locals; cookies: {
 	const token = cookies.get('jc_token');
 	const localeCode = cookies.get('jc_locale') ?? 'en';
 
-	const translations = await getCached<Record<string, string>>(`translations:${localeCode}`, 5 * 60 * 1000, async () => {
-		try {
-			const res = await fetch(`${API_V1_BASE}/i18n/packs/${localeCode}`);
-			if (res.ok) {
-				const body = await res.json();
-				return body?.data ?? body ?? {};
-			}
-		} catch {
-			// Graceful degradation
+	// Always fetch fresh translations (no caching)
+	let translations: Record<string, string> = {};
+	try {
+		const res = await fetch(`${API_V1_BASE}/i18n/packs/${localeCode}`);
+		if (res.ok) {
+			const body = await res.json();
+			translations = body?.data ?? body ?? {};
 		}
-		return {};
-	});
+	} catch {
+		// Graceful degradation
+	}
 
 	const raw = locals.user as Record<string, unknown> | null;
 

@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { api } from '$lib/api';
+	import { organisationsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	type Organisation = {
@@ -17,13 +16,10 @@
 	};
 
 	let orgs = $state<Organisation[]>([]);
-	let page = $state(0);
-	let totalPages = $state(1);
 	let loading = $state(true);
 	let filterVerified = $state('');
 	let errorMessage = $state('');
 
-	// Claim queue modal
 	let showClaimModal = $state(false);
 	let claimOrg = $state<Organisation | null>(null);
 	let claimNote = $state('');
@@ -37,16 +33,17 @@
 		errorMessage = '';
 		const params = new URLSearchParams();
 		if (filterVerified) params.set('verified', filterVerified);
+		const qs = params.toString();
 		try {
-			const result = await api<{ data: Organisation[] }>(`/organizations?${params}`);
-			if (result.ok) {
-				orgs = Array.isArray(result.data) ? result.data : (result.data.data ?? []);
-				totalPages = 1;
-			} else {
+			const result = await organisationsAdminApi.list(qs || undefined);
+			if (result.ok && result.data) {
+				const raw = result.data as unknown;
+				orgs = Array.isArray(raw) ? raw : ((raw as { data?: Organisation[] }).data ?? []);
+			} else if (!result.ok) {
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
+			errorMessage = t('common.error', 'Failed to load data');
 		} finally {
 			loading = false;
 		}
@@ -54,24 +51,24 @@
 
 	function handleFilter(values: Record<string, string>) {
 		filterVerified = values.verified ?? '';
-		page = 0;
 		load();
 	}
 
 	async function toggleVerify(org: Organisation) {
 		errorMessage = '';
+		const wasVerified = org.verified;
 		try {
-			const result = org.verified
-				? await api(`/admin/organizations/${org.id}/verify`, { method: 'DELETE' })
-				: await api(`/admin/organizations/${org.id}/verify`, { method: 'POST', body: { verified: true } });
+			const result = wasVerified
+				? await organisationsAdminApi.unverify(org.id)
+				: await organisationsAdminApi.verify(org.id, { verified: true });
 			if (result.ok) {
-				org.verified = !org.verified;
-				orgs = orgs;
+				org.verified = !wasVerified;
+				orgs = [...orgs];
 			} else {
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
+			errorMessage = t('common.error', 'Failed to update verification');
 		}
 	}
 
@@ -85,60 +82,54 @@
 		if (!claimOrg) return;
 		errorMessage = '';
 		try {
-			const result = await api(`/admin/organizations/${claimOrg.id}/claim`, {
-				method: 'POST',
-				body: { note: claimNote.trim() }
-			});
+			const result = await organisationsAdminApi.claim(claimOrg.id, { note: claimNote.trim() || undefined });
 			if (result.ok) {
 				showClaimModal = false;
 			} else {
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
+			errorMessage = t('common.error', 'Failed to submit claim');
 		}
 	}
 
-	function handlePageChange(p: number) {
-		page = p;
+	$effect(() => {
 		load();
-	}
-
-	onMount(load);
+	});
 </script>
 
 <svelte:head>
-	<title>{t('organisations.title')} — JapaConnect Admin</title>
+	<title>{t('organisations.title', 'Organisations')} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('organisations.title')}</h1>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('organisations.title', 'Organisations')}</h1>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage organizations, verification status, and claim requests</p>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
 		{errorMessage}
 	</div>
 {/if}
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage organizations, verification status, and claim requests</p>
 
 <FilterBar filters={filterDefs} onApply={handleFilter} />
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 		<table class="w-full text-sm">
 			<thead>
 				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('organisations.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('organisations.owner')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('organisations.members')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('organisations.verified')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('organisations.created')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('organisations.name', 'Name')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('organisations.owner', 'Owner')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('organisations.members', 'Members')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('organisations.verified', 'Verified')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('organisations.created', 'Created')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 				</tr>
 			</thead>
 			<tbody>
-				{#each orgs as org}
+				{#each orgs as org (org.id)}
 					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3">
 							<p class="font-medium">{org.name}</p>
@@ -147,13 +138,13 @@
 							{/if}
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{org.owner_user_id ?? '—'}</td>
-						<td class="px-4 py-3 text-xs font-medium">{org.member_count.toLocaleString()}</td>
+						<td class="px-4 py-3 text-xs font-medium">{(org.member_count ?? 0).toLocaleString()}</td>
 						<td class="px-4 py-3">
 							<span class="inline-block rounded-full px-2 py-0.5 text-xs {org.verified ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
-								{org.verified ? t('organisations.yes') : t('organisations.no')}
+								{org.verified ? t('organisations.yes', 'Yes') : t('organisations.no', 'No')}
 							</span>
 						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{org.created_at}</td>
+						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(org.created_at).toLocaleDateString()}</td>
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-1">
 								<button
@@ -161,14 +152,14 @@
 									style="color: {org.verified ? 'var(--color-warning)' : 'var(--color-success)'}"
 									onclick={() => toggleVerify(org)}
 								>
-									{org.verified ? t('organisations.unverify') : t('organisations.verify')}
+									{org.verified ? t('organisations.unverify', 'Unverify') : t('organisations.verify', 'Verify')}
 								</button>
 								<button
 									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-info)"
+									style="color: var(--color-primary)"
 									onclick={() => openClaim(org)}
 								>
-									{t('organisations.claim_queue')}
+									{t('organisations.claim_queue', 'Claim Queue')}
 								</button>
 							</div>
 						</td>
@@ -183,18 +174,9 @@
 			</tbody>
 		</table>
 	</div>
-
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
-		</div>
-	</div>
 {/if}
 
-<!-- Claim Queue Modal -->
-<Modal bind:open={showClaimModal} title={t('organisations.claim_queue')} onConfirm={submitClaim} confirmLabel={t('common.confirm')}>
+<Modal bind:open={showClaimModal} title={t('organisations.claim_queue', 'Claim Queue')} onConfirm={submitClaim} confirmLabel={t('common.confirm', 'Confirm')}>
 	<p class="text-sm mb-3" style="color: var(--color-muted)">
 		Review the ownership claim for <strong>{claimOrg?.name}</strong>.
 	</p>

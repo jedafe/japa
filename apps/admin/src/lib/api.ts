@@ -79,7 +79,7 @@ export const walletApi = {
 };
 
 export const spaceTypesApi = {
-	list: (params?: string) => api<unknown>(`/space-types${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/admin/space-types${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string; description?: string; is_university: boolean; icon?: string }) =>
 		api('/admin/space-types', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; slug?: string; description?: string; is_university?: boolean; icon?: string }) =>
@@ -260,6 +260,8 @@ export const permissionsApi = {
 };
 
 export const userManagementApi = {
+	list: (params?: string) =>
+		api<{ users: UserDetail[]; total: number; page: number; total_pages: number }>(`/admin/users${params ? `?${params}` : ''}`),
 	getUser: (userId: string) => api<UserDetail>(`/users/${userId}`),
 	getUserActivity: (userId: string, params?: string) =>
 		api<{ activities: UserActivity[]; total: number }>(`/admin/users/${userId}/activity${params ? `?${params}` : ''}`),
@@ -383,7 +385,14 @@ export const pageBuilderApi = {
 };
 
 export const spacesAdminApi = {
-	list: (params?: string) => api<unknown>(`/spaces${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/admin/spaces${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/spaces/${id}`),
+	create: (body: { name: string; space_type: string; owner_id?: string }) =>
+		api('/admin/spaces', { method: 'POST', body }),
+	update: (id: string, body: { name?: string; space_type?: string; status?: string }) =>
+		api(`/admin/spaces/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api(`/admin/spaces/${id}`, { method: 'DELETE' }),
 	suspend: (id: string, body: { status: string; reason?: string }) =>
 		api(`/admin/spaces/${id}/status`, { method: 'PATCH', body }),
 	assignModerator: (id: string, body: { username: string }) =>
@@ -391,31 +400,35 @@ export const spacesAdminApi = {
 };
 
 export const tagsAdminApi = {
-	list: (params?: string) => api<unknown>(`/tags${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/admin/tags${params ? `?${params}` : ''}`),
 	create: (body: { name: string; slug: string }) =>
 		api('/admin/tags', { method: 'POST', body }),
 	update: (id: string, body: { name?: string; slug?: string }) =>
 		api(`/admin/tags/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/tags/${id}`, { method: 'DELETE' }),
+	addModerator: (id: string, body: { user_id: string }) =>
+		api(`/admin/tags/${id}/moderators`, { method: 'POST', body }),
 };
 
 export const organisationsAdminApi = {
 	list: (params?: string) => api<unknown>(`/organizations${params ? `?${params}` : ''}`),
 	verify: (id: string, body: { verified: boolean }) =>
 		api(`/admin/organizations/${id}/verify`, { method: 'POST', body }),
+	unverify: (id: string) =>
+		api(`/admin/organizations/${id}/verify`, { method: 'DELETE' }),
 	claim: (id: string, body: { note?: string }) =>
 		api(`/admin/organizations/${id}/claim`, { method: 'POST', body }),
 };
 
 export const reactionsAdminApi = {
-	list: (params?: string) => api<unknown>(`/reaction-types${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/admin/reaction-types${params ? `?${params}` : ''}`),
 	create: (body: { key: string; emoji: string; label: string; enabled: boolean }) =>
-		api('/reaction-types', { method: 'POST', body }),
+		api('/admin/reaction-types', { method: 'POST', body }),
 	update: (key: string, body: { emoji?: string; label?: string; enabled?: boolean }) =>
-		api(`/reaction-types/${key}`, { method: 'PATCH', body }),
+		api(`/admin/reaction-types/${key}`, { method: 'PATCH', body }),
 	delete: (key: string) =>
-		api(`/reaction-types/${key}`, { method: 'DELETE' }),
+		api(`/admin/reaction-types/${key}`, { method: 'DELETE' }),
 };
 
 export const universitiesAdminApi = {
@@ -479,8 +492,8 @@ export const blogAdminApi = {
 
 export const contentAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/content${params ? `?${params}` : ''}`),
-	getRemove: (id: string) => api<unknown>(`/admin/content/${id}/remove`),
-	remove: (id: string) => api<unknown>(`/admin/content/${id}/remove`, { method: 'POST', body: {} }),
+	get: (id: string) => api<unknown>(`/admin/content/${id}`),
+	remove: (id: string, body?: { reason?: string }) => api<unknown>(`/admin/content/${id}/remove`, { method: 'POST', body: body ?? {} }),
 	restore: (id: string) => api<unknown>(`/admin/content/${id}/restore`, { method: 'POST', body: {} }),
 };
 
@@ -537,6 +550,8 @@ export const ticketsAdminApi = {
 export const usersAdminApiExtended = {
 	getBans: (id: string) => api<unknown>(`/admin/users/${id}/bans`),
 	getWarnings: (id: string) => api<unknown>(`/admin/users/${id}/warnings`),
+	deleteWarning: (id: string, warningId: string) =>
+		api<unknown>(`/admin/users/${id}/warnings/${warningId}`, { method: 'DELETE' }),
 	warn: (id: string, body: { reason: string }) =>
 		api<unknown>(`/admin/users/${id}/warn`, { method: 'POST', body }),
 	ban: (id: string, body: { reason?: string; duration_days?: number }) =>
@@ -574,11 +589,14 @@ export const fieldGroupsAdminApiExtended = {
 };
 
 export const webhooksAdminApiExtended = {
-	getDeliveries: (id: string) => api<unknown>(`/admin/webhooks/${id}`),
+	list: (params?: string) => api<unknown>(`/admin/webhooks${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/webhooks/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/webhooks', { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/webhooks/${id}`, { method: 'PATCH', body }),
 	replace: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/webhooks/${id}`, { method: 'PUT', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/webhooks/${id}`, { method: 'DELETE' }),
 	test: (id: string) => api<unknown>(`/admin/webhooks/${id}/test`, { method: 'POST', body: {} }),
 	verify: (id: string) => api<unknown>(`/admin/webhooks/${id}/verify`, { method: 'POST', body: {} }),
 	retryDelivery: (id: string, deliveryId: string) =>
@@ -734,10 +752,12 @@ export const reportsAdminApiExtended = {
 	get: (id: string) => api<unknown>(`/admin/reports/${id}`),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/reports/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api<unknown>(`/admin/reports/${id}`, { method: 'DELETE' }),
 };
 
 export const reviewsAdminApiExtended = {
-	list: (params?: string) => api<unknown>(`/reviews${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/admin/reviews${params ? `?${params}` : ''}`),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/reviews/${id}`, { method: 'PATCH', body }),
 };
@@ -786,4 +806,9 @@ export const fieldPermissionsApi = {
 export const affiliateLinksAdminApi = {
 	list: (params?: string) =>
 		api<unknown>(`/admin/affiliate-links${params ? `?${params}` : ''}`),
+};
+
+export const auditLogsAdminApi = {
+	list: (params?: string) =>
+		api<unknown>(`/admin/audit-logs${params ? `?${params}` : ''}`),
 };
