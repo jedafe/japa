@@ -357,12 +357,12 @@ func TestDispatcherContextPropagation(t *testing.T) {
 
 	d := NewDispatcher()
 
-	var capturedCtx context.Context
+	var ctxValue any
 
 	p := &mockProvider{
 		name: "ctx-test",
 		sendFn: func(ctx context.Context, _ Request) (Response, error) {
-			capturedCtx = ctx
+			ctxValue = ctx.Value(ctxKey{})
 			return Response{ProviderRef: "ok"}, nil
 		},
 	}
@@ -375,7 +375,7 @@ func TestDispatcherContextPropagation(t *testing.T) {
 		t.Fatalf("Dispatch() error: %v", err)
 	}
 
-	if capturedCtx.Value(ctxKey{}) != "test-value" {
+	if ctxValue != "test-value" {
 		t.Error("context value not propagated to provider")
 	}
 }

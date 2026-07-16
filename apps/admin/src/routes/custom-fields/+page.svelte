@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api, fieldGroupsAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Plus, Pencil, Trash2, Shield } from 'lucide-svelte';
@@ -177,7 +176,9 @@
 		return permissions.find((p) => p.field_id === fieldId && p.user_group_id === groupId);
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>

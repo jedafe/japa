@@ -5,9 +5,11 @@ import type { SystemSetting } from '$lib/api/types';
 function deriveSettingType(value: unknown): SystemSetting['type'] {
 	if (value === true || value === false) return 'bool';
 	if (typeof value === 'string') {
-		const lower = value.toLowerCase();
+		// Strip surrounding quotes if present (from JSONB storage)
+		const unquoted = value.replace(/^"(.*)"$/, '$1');
+		const lower = unquoted.toLowerCase();
 		if (lower === 'true' || lower === 'false') return 'bool';
-		if (/^\d+(\.\d+)?$/.test(value)) return value.includes('.') ? 'float' : 'int';
+		if (/^\d+(\.\d+)?$/.test(unquoted)) return unquoted.includes('.') ? 'float' : 'int';
 	}
 	if (typeof value === 'number') return value % 1 === 0 ? 'int' : 'float';
 	if (Array.isArray(value) || (typeof value === 'string' && value.includes(','))) return 'csv';
@@ -51,7 +53,7 @@ export const load: PageServerLoad = async ({ cookies }) => {
 			return { settings: null, error: 'Unexpected response format' };
 		}
 
-		const settings: SystemSetting[] = raw.map((s: any) => deriveSetting(s));
+		const settings: SystemSetting[] = raw.map((s: { key: string; value: unknown }) => deriveSetting(s));
 
 		return { settings, error: null };
 	} catch (e) {

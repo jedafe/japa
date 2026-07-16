@@ -150,6 +150,30 @@ func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
 	toolWriteJSON(w, http.StatusOK, map[string]any{"data": tool})
 }
 
+// DeleteTool removes an AI tool by ID.
+// DELETE /admin/ai/tools/{id}.
+func (h *ToolHandlers) DeleteTool(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		toolWriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tool ID")
+		return
+	}
+
+	if err := h.Registry.DeleteTool(r.Context(), tenantID, id); err != nil {
+		slog.Error("deleting ai tool", "error", err)
+		toolWriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tool")
+
+		return
+	}
+
+	toolWriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
 // ListToolUsage returns usage statistics for a tool.
 // GET /admin/ai/tools/usage?tool_id=...&days=30.
 func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {

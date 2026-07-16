@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -32,6 +34,10 @@ type SpacesService interface {
 	GetSpaceTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.SpaceType, error)
 	ListSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID) ([]gen.Space, error)
 	GetSpaceBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Space, error)
+	GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.Space, error)
+	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.Space, error)
+	UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.Space, error)
+	DeleteSpace(ctx context.Context, id, tenantID pgtype.UUID) error
 }
 
 // CustomFieldsService is the subset of customfields.Service the university
@@ -151,6 +157,23 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 // ─── Admin University CRUD (P5.6 — Task 11) ──────────────────────────────
 
+var (
+	invalidSlugChars  = regexp.MustCompile(`[^a-z0-9-]+`)
+	multipleHyphens   = regexp.MustCompile(`-{2,}`)
+	trimHyphens       = regexp.MustCompile(`^-+|-+$`)
+)
+
+func slugify(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = invalidSlugChars.ReplaceAllString(s, "-")
+	s = multipleHyphens.ReplaceAllString(s, "-")
+	s = trimHyphens.ReplaceAllString(s, "")
+	if s == "" {
+		return "untitled"
+	}
+	return s
+}
+
 // CreateUniversity handles POST /admin/universities — creates a University-type space.
 func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -158,20 +181,54 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name string `json:"name"`
-		Slug string `json:"slug"`
+		Name     string `json:"name"`
+		Slug     string `json:"slug"`
+		Verified bool   `json:"verified"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
 		return
 	}
+	if strings.TrimSpace(input.Name) == "" {
+		writeError(w, http.StatusBadRequest, "missing_name", "Name is required")
+		return
+	}
+
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load university space type")
 		return
 	}
-	_ = spaceType
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"name": input.Name, "slug": input.Slug}})
+
+	slug := strings.TrimSpace(input.Slug)
+	if slug == "" {
+		slug = slugify(input.Name)
+	}
+
+	status := "active"
+	if !input.Verified {
+		status = "active"
+	}
+
+	space, err := h.spaces.CreateSpace(r.Context(), gen.CreateSpaceParams{
+		TenantID:       tenantID,
+		SpaceTypeID:    spaceType.ID,
+		Name:           strings.TrimSpace(input.Name),
+		Slug:           slug,
+		Level:          "custom",
+		Visibility:     "public",
+		PostingPerm:    "members",
+		ReplyingPerm:   "members",
+		CommentingPerm: "members",
+		JoiningPerm:    "open",
+		Status:         status,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create university")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
 
 // UpdateUniversity handles PATCH /admin/universities/:id.
@@ -180,8 +237,63 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = tenantID
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": chi.URLParam(r, "id")}})
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		return
+	}
+
+	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		return
+	}
+
+	var input struct {
+		Name     *string `json:"name"`
+		Slug     *string `json:"slug"`
+		Verified *bool   `json:"verified"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
+		return
+	}
+
+	name := existing.Name
+	if input.Name != nil && strings.TrimSpace(*input.Name) != "" {
+		name = strings.TrimSpace(*input.Name)
+	}
+
+	status := existing.Status
+	if input.Verified != nil {
+		if *input.Verified {
+			status = "active"
+		} else {
+			status = "suspended"
+		}
+	}
+
+	space, err := h.spaces.UpdateSpace(r.Context(), gen.UpdateSpaceParams{
+		ID:             id,
+		TenantID:       tenantID,
+		Name:           name,
+		Description:    existing.Description,
+		WikiContent:    existing.WikiContent,
+		GeoCode:        existing.GeoCode,
+		Visibility:     existing.Visibility,
+		PostingPerm:    existing.PostingPerm,
+		ReplyingPerm:   existing.ReplyingPerm,
+		CommentingPerm: existing.CommentingPerm,
+		JoiningPerm:    existing.JoiningPerm,
+		Status:         status,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update university")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
 // DeleteUniversity handles DELETE /admin/universities/:id.
@@ -190,8 +302,19 @@ func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = tenantID
-	writeJSON(w, http.StatusNoContent, nil)
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		return
+	}
+
+	if err := h.spaces.DeleteSpace(r.Context(), id, tenantID); err != nil {
+		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete university")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // VerifyUniversity handles POST /admin/universities/:id/verify.

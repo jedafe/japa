@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
@@ -110,7 +109,7 @@
 		return String(value);
 	}
 
-	onMount(() => {
+	$effect(() => {
 		load();
 		loadSubmissions();
 	});

@@ -215,6 +215,31 @@ func (q *Queries) GetActiveIPBlocks(ctx context.Context, tenantID pgtype.UUID) (
 	return items, nil
 }
 
+const getCensoredWordByID = `-- name: GetCensoredWordByID :one
+SELECT id, tenant_id, pattern, action, replacement, created_at
+FROM censored_words
+WHERE id = $1 AND tenant_id = $2
+`
+
+type GetCensoredWordByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetCensoredWordByID(ctx context.Context, arg GetCensoredWordByIDParams) (CensoredWord, error) {
+	row := q.db.QueryRow(ctx, getCensoredWordByID, arg.ID, arg.TenantID)
+	var i CensoredWord
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Pattern,
+		&i.Action,
+		&i.Replacement,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getCensoredWordsByTenant = `-- name: GetCensoredWordsByTenant :many
 SELECT id, tenant_id, pattern, action, replacement, created_at
 FROM censored_words
@@ -263,6 +288,33 @@ type GetIPBlockByCIDRParams struct {
 
 func (q *Queries) GetIPBlockByCIDR(ctx context.Context, arg GetIPBlockByCIDRParams) (IpBlock, error) {
 	row := q.db.QueryRow(ctx, getIPBlockByCIDR, arg.TenantID, arg.Cidr)
+	var i IpBlock
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Cidr,
+		&i.BlockType,
+		&i.Reason,
+		&i.BlockedBy,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getIPBlockByID = `-- name: GetIPBlockByID :one
+SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+FROM ip_blocks
+WHERE id = $1 AND tenant_id = $2
+`
+
+type GetIPBlockByIDParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetIPBlockByID(ctx context.Context, arg GetIPBlockByIDParams) (IpBlock, error) {
+	row := q.db.QueryRow(ctx, getIPBlockByID, arg.ID, arg.TenantID)
 	var i IpBlock
 	err := row.Scan(
 		&i.ID,
@@ -450,6 +502,41 @@ func (q *Queries) ListIPBlocks(ctx context.Context, arg ListIPBlocksParams) ([]I
 	return items, nil
 }
 
+const updateCensoredWord = `-- name: UpdateCensoredWord :one
+UPDATE censored_words
+SET pattern = $1, action = $2, replacement = $3
+WHERE id = $4 AND tenant_id = $5
+RETURNING id, tenant_id, pattern, action, replacement, created_at
+`
+
+type UpdateCensoredWordParams struct {
+	Pattern     string      `json:"pattern"`
+	Action      string      `json:"action"`
+	Replacement *string     `json:"replacement"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateCensoredWord(ctx context.Context, arg UpdateCensoredWordParams) (CensoredWord, error) {
+	row := q.db.QueryRow(ctx, updateCensoredWord,
+		arg.Pattern,
+		arg.Action,
+		arg.Replacement,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i CensoredWord
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Pattern,
+		&i.Action,
+		&i.Replacement,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const updateContentHash = `-- name: UpdateContentHash :exec
 
 UPDATE contents
@@ -469,4 +556,46 @@ type UpdateContentHashParams struct {
 func (q *Queries) UpdateContentHash(ctx context.Context, arg UpdateContentHashParams) error {
 	_, err := q.db.Exec(ctx, updateContentHash, arg.ID, arg.ContentHash, arg.TenantID)
 	return err
+}
+
+const updateIPBlock = `-- name: UpdateIPBlock :one
+UPDATE ip_blocks
+SET cidr = $1, block_type = $2, reason = $3,
+    expires_at = $4, blocked_by = $5
+WHERE id = $6 AND tenant_id = $7
+RETURNING id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+`
+
+type UpdateIPBlockParams struct {
+	Cidr      netip.Addr         `json:"cidr"`
+	BlockType string             `json:"block_type"`
+	Reason    *string            `json:"reason"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	BlockedBy pgtype.UUID        `json:"blocked_by"`
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateIPBlock(ctx context.Context, arg UpdateIPBlockParams) (IpBlock, error) {
+	row := q.db.QueryRow(ctx, updateIPBlock,
+		arg.Cidr,
+		arg.BlockType,
+		arg.Reason,
+		arg.ExpiresAt,
+		arg.BlockedBy,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i IpBlock
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Cidr,
+		&i.BlockType,
+		&i.Reason,
+		&i.BlockedBy,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }

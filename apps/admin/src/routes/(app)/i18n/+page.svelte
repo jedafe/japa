@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { onMount } from "svelte";
-	import { apiFetch } from "$lib/api/client";
+	import { api } from "$lib/api";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
@@ -141,15 +140,15 @@
 	];
 
 	async function loadLanguages() {
-		const result = await apiFetch<Language[]>("/i18n/languages");
-		if (result.data) {
+		const result = await api<Language[]>("/i18n/languages");
+		if (result.ok) {
 			languages = Array.isArray(result.data) ? result.data : [];
 		}
 	}
 
 	async function loadTranslations() {
-		const result = await apiFetch<TranslationEntry[]>("/i18n/translations");
-		if (result.data) {
+		const result = await api<TranslationEntry[]>("/i18n/translations");
+		if (result.ok) {
 			translations = Array.isArray(result.data) ? result.data : [];
 		}
 	}
@@ -164,21 +163,21 @@
 		if (!form.code.trim() || !form.name.trim()) return;
 		saving = true;
 		errorMessage = "";
-		const result = await apiFetch("/i18n/languages", {
+		const result = await api("/i18n/languages", {
 			method: "POST",
-			body: JSON.stringify({
+			body: {
 				code: form.code.trim(),
 				name: form.name.trim(),
 				flag: form.flag.trim() || undefined
-			})
+			}
 		});
-		if (result.data) {
+		if (result.ok) {
 			createModalOpen = false;
 			form = { code: "", name: "", flag: "" };
 			successMessage = "Language added successfully";
 			loadLanguages();
 		} else {
-			errorMessage = result.error?.message ?? "Failed to add language";
+			errorMessage = result.error ?? "Failed to add language";
 		}
 		saving = false;
 	}
@@ -196,18 +195,18 @@
 		if (!editingLanguage || !form.name.trim()) return;
 		saving = true;
 		errorMessage = "";
-		const result = await apiFetch(`/i18n/languages/${editingLanguage.code}`, {
+		const result = await api(`/i18n/languages/${editingLanguage.code}`, {
 			method: "PUT",
-			body: JSON.stringify({ name: form.name.trim(), flag: form.flag.trim() || undefined })
+			body: { name: form.name.trim(), flag: form.flag.trim() || undefined }
 		});
-		if (result.data) {
+		if (result.ok) {
 			editModalOpen = false;
 			editingLanguage = null;
 			form = { code: "", name: "", flag: "" };
 			successMessage = "Language updated successfully";
 			loadLanguages();
 		} else {
-			errorMessage = result.error?.message ?? "Failed to update language";
+			errorMessage = result.error ?? "Failed to update language";
 		}
 		saving = false;
 	}
@@ -224,23 +223,24 @@
 			deletingTarget.type === "language"
 				? `/i18n/languages/${deletingTarget.key}`
 				: `/i18n/translations/${encodeURIComponent(deletingTarget.key)}`;
-		const result = await apiFetch(endpoint, { method: "DELETE" });
-		if (!result.error) {
+		const result = await api(endpoint, { method: "DELETE" });
+		if (result.ok) {
 			successMessage = `${deletingTarget.type === "language" ? "Language" : "Translation"} deleted`;
 			if (deletingTarget.type === "language") loadLanguages();
 			else loadTranslations();
 		} else {
-			errorMessage = result.error?.message ?? "Failed to delete";
+			errorMessage = result.error ?? "Failed to delete";
 		}
 		deleteConfirmOpen = false;
 		deletingTarget = null;
 		saving = false;
 	}
 
-	onMount(() => {
+	$effect(() => {
 		loadData();
+	});
 
-		// Expose handlers for DataTable inline buttons
+	$effect(() => {
 		(window as any).__editLanguage = openEditModal;
 		(window as any).__deleteLanguage = openDeleteConfirm;
 		(window as any).__editTranslation = (key: string) => {
@@ -249,6 +249,12 @@
 		(window as any).__deleteTranslation = (key: string) => {
 			deletingTarget = { type: "translation", key };
 			deleteConfirmOpen = true;
+		};
+		return () => {
+			delete (window as any).__editLanguage;
+			delete (window as any).__deleteLanguage;
+			delete (window as any).__editTranslation;
+			delete (window as any).__deleteTranslation;
 		};
 	});
 </script>

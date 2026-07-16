@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import DataTable from '$lib/components/DataTable.svelte';
+	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import Pagination from '$lib/components/ui/Pagination.svelte';
-	import { Key, Search, Ban, Trash2, Plus, Pencil, Copy, Check } from 'lucide-svelte';
-	import { Dialog, Tabs, Tooltip, Select } from 'bits-ui';
+	import { Key, Plus, Copy, Check } from 'lucide-svelte';
+	import { Dialog, Tabs, Select } from 'bits-ui';
+	import { t } from '$lib/stores/i18n';
 	import type { PageData } from './$types';
-
-	let { data = {} as PageData } = $props();
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 
 	interface AdminApiKey {
 		id: string;
@@ -24,41 +25,192 @@
 		allowed_ips?: string[];
 	}
 
-	// svelte-ignore state_referenced_locally
+	let { data = {} as PageData } = $props();
+
 	let keys = $state<AdminApiKey[]>(data.keys ?? []);
 	let loading = $state(false);
 	let filter = $state('');
 	let filterTier = $state('all');
 	let activeTab = $state('active');
-	// svelte-ignore state_referenced_locally
 	let errorMessage = $state(data.error ?? '');
+
 	let confirmOpen = $state(false);
 	let confirmAction = $state<{ type: 'revoke' | 'suspend'; key: AdminApiKey } | null>(null);
 
-	// Pagination
 	let page = $state(0);
 	let pageSize = $state(10);
+	let sortKey = $state('');
+	let sortDirection = $state<'asc' | 'desc'>('asc');
+	let selectedIds = $state(new Set<string>());
 
-	// Create modal state
 	let createModalOpen = $state(false);
 	let createForm = $state({ name: '', scopes: '', rate_limit_tier: 'standard', expires_at: '' });
 	let createLoading = $state(false);
 
-	// One-time key display modal state
 	let oneTimeKeyModalOpen = $state(false);
 	let oneTimeKeyValue = $state('');
 	let copiedToClipboard = $state(false);
 
-	// Edit modal state
 	let editModalOpen = $state(false);
 	let editForm = $state({ id: '', name: '', scopes: '' });
 	let editLoading = $state(false);
 
-	const tierItems = [
-		{ value: 'all', label: 'All Tiers' },
-		{ value: 'standard', label: 'Standard' },
-		{ value: 'premium', label: 'Premium' },
-		{ value: 'unlimited', label: 'Unlimited' }
+	const tierItems = $derived([
+		{ value: 'all', label: t('api_keys.tier_all') },
+		{ value: 'standard', label: t('api_keys.tier_standard') },
+		{ value: 'premium', label: t('api_keys.tier_premium') },
+		{ value: 'unlimited', label: t('api_keys.tier_unlimited') }
+	]);
+
+	let filtered = $derived(
+		keys
+			.filter((k) => {
+				if (activeTab === 'active' && k.status !== 'active') return false;
+				if (filterTier !== 'all' && k.rate_limit_tier !== filterTier) return false;
+				if (filter) {
+					const q = filter.toLowerCase();
+					if (
+						!k.name?.toLowerCase().includes(q) &&
+						!k.key_prefix?.toLowerCase().includes(q) &&
+						!k.user_id?.toLowerCase().includes(q)
+					)
+						return false;
+				}
+				return true;
+			})
+			.sort((a, b) => {
+				if (!sortKey) return 0;
+				const aVal = String((a as unknown as Record<string, unknown>)[sortKey] ?? '');
+				const bVal = String((b as unknown as Record<string, unknown>)[sortKey] ?? '');
+				const cmp = aVal.localeCompare(bVal);
+				return sortDirection === 'asc' ? cmp : -cmp;
+			})
+	);
+
+	let totalRows = $derived(filtered.length);
+
+	let rows = $derived(
+		filtered.slice(page * pageSize, page * pageSize + pageSize).map((k) => ({
+			...k,
+			id: k.id
+		}))
+	);
+
+	let activeCount = $derived(keys.filter((k) => k.status === 'active').length);
+
+	function statusColor(status: string): string {
+		switch (status) {
+			case 'active': return 'text-emerald-500';
+			case 'suspended': return 'text-amber-500';
+			case 'revoked': return 'text-destructive';
+			default: return 'text-muted-foreground';
+		}
+	}
+
+	function statusBg(status: string): string {
+		switch (status) {
+			case 'active': return 'bg-emerald-500/10';
+			case 'suspended': return 'bg-amber-500/10';
+			case 'revoked': return 'bg-destructive/10';
+			default: return 'bg-muted';
+		}
+	}
+
+	function formatNumber(n: number): string {
+		if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+		if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+		return n.toString();
+	}
+
+	const columns: DataTableColumn[] = [
+		{
+			key: 'name',
+			label: t('api_keys.name'),
+			sortable: true,
+			render: (_val: unknown, row: Record<string, unknown>) =>
+				`<span class="font-medium">${String(row.name)}</span>`
+		},
+		{
+			key: 'key_prefix',
+			label: t('api_keys.prefix'),
+			render: (val: unknown) =>
+				`<span class="font-mono text-xs text-muted-foreground">${String(val)}...</span>`
+		},
+		{
+			key: 'user_id',
+			label: t('api_keys.user'),
+			render: (val: unknown) =>
+				val
+					? `<span class="text-muted-foreground text-xs">${String(val).slice(0, 8)}...</span>`
+					: `<span class="text-muted-foreground text-xs">${t('api_keys.system')}</span>`
+		},
+		{
+			key: 'rate_limit_tier',
+			label: t('api_keys.tier'),
+			sortable: true,
+			render: (val: unknown) =>
+				`<span class="bg-accent text-accent-foreground rounded-5px px-1.5 py-0.5 text-xs">${String(val)}</span>`
+		},
+		{
+			key: 'status',
+			label: t('api_keys.status'),
+			sortable: true,
+			render: (val: unknown, row: Record<string, unknown>) => {
+				const status = String(val);
+				return `<span class="${statusBg(status)} ${statusColor(status)} rounded-full px-2 py-0.5 text-xs font-medium">${status}</span>`;
+			}
+		},
+		{
+			key: 'request_count',
+			label: t('api_keys.requests'),
+			sortable: true,
+			class: 'text-right',
+			render: (val: unknown) =>
+				`<span class="font-mono text-xs">${formatNumber(Number(val))}</span>`
+		}
+	];
+
+	function toKey(row: Record<string, unknown>): AdminApiKey {
+		return row as unknown as AdminApiKey;
+	}
+
+	const rowActions: DataTableRowAction[] = [
+		{
+			label: t('api_keys.edit_key'),
+			onClick: (row) => openEditModal(toKey(row)),
+			disabled: (row) => row.status === 'revoked'
+		},
+		{
+			label: t('api_keys.suspend_key'),
+			onClick: (row) => openConfirm('suspend', toKey(row)),
+			disabled: (row) => row.status !== 'active'
+		},
+		{
+			label: t('api_keys.revoke_key'),
+			onClick: (row) => openConfirm('revoke', toKey(row)),
+			variant: 'destructive',
+			disabled: (row) => row.status === 'revoked'
+		}
+	];
+
+	const bulkActions: DataTableBulkAction[] = [
+		{
+			label: t('api_keys.suspend_selected'),
+			onClick: async (ids: string[]) => {
+				for (const id of ids) {
+					await suspendKey(id);
+				}
+			}
+		},
+		{
+			label: t('api_keys.revoke_selected'),
+			variant: 'destructive',
+			onClick: async (ids: string[]) => {
+				for (const id of ids) {
+					await revokeKey(id);
+				}
+			}
+		}
 	];
 
 	async function suspendKey(id: string) {
@@ -66,23 +218,22 @@
 		if (result.ok) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'suspended' } : k));
 		} else {
-			errorMessage = result.error || 'Failed to suspend key.';
+			errorMessage = result.error || t('api_keys.suspend_error');
 		}
 	}
 
 	async function revokeKey(id: string) {
-		if (!confirm('Permanently revoke this key? The developer will lose access immediately.')) return;
 		const result = await api(`/control/api-keys/${id}`, { method: 'DELETE' });
 		if (result.ok) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'revoked' } : k));
 		} else {
-			errorMessage = result.error || 'Failed to revoke key.';
+			errorMessage = result.error || t('api_keys.revoke_error');
 		}
 	}
 
 	async function createKey() {
 		if (!createForm.name.trim()) {
-			errorMessage = 'Name is required.';
+			errorMessage = t('api_keys.name_required');
 			return;
 		}
 
@@ -115,13 +266,13 @@
 			keys = [{ ...keyData }, ...keys];
 			oneTimeKeyModalOpen = true;
 		} else {
-			errorMessage = result.error || 'Failed to create API key.';
+			errorMessage = result.error || t('api_keys.create_error');
 		}
 	}
 
 	async function updateKey() {
 		if (!editForm.name.trim()) {
-			errorMessage = 'Name is required.';
+			errorMessage = t('api_keys.name_required');
 			return;
 		}
 
@@ -143,12 +294,12 @@
 		if (result.ok) {
 			keys = keys.map((k) =>
 				k.id === editForm.id
-					? { ...k, name: editForm.name.trim(), scopes: body.scopes as string[] || k.scopes }
+					? { ...k, name: editForm.name.trim(), scopes: (body.scopes as string[]) || k.scopes }
 					: k
 			);
 			editModalOpen = false;
 		} else {
-			errorMessage = result.error || 'Failed to update API key.';
+			errorMessage = result.error || t('api_keys.update_error');
 		}
 	}
 
@@ -167,68 +318,27 @@
 		setTimeout(() => (copiedToClipboard = false), 2000);
 	}
 
-	let filtered = $derived(
-		keys
-			.filter((k) => {
-				if (activeTab === 'active' && k.status !== 'active') return false;
-				if (filterTier !== 'all' && k.rate_limit_tier !== filterTier) return false;
-				if (filter) {
-					const q = filter.toLowerCase();
-					if (
-						!k.name?.toLowerCase().includes(q) &&
-						!k.key_prefix?.toLowerCase().includes(q) &&
-						!k.user_id?.toLowerCase().includes(q)
-					)
-						return false;
-				}
-				return true;
-			})
-	);
-
-	let totalPages = $derived(Math.max(1, Math.ceil(filtered.length / pageSize)));
-	let paginatedKeys = $derived.by(() => {
-		const start = page * pageSize;
-		return filtered.slice(start, start + pageSize);
-	});
-
-	let activeCount = $derived(keys.filter((k) => k.status === 'active').length);
-
-	function statusColor(status: string): string {
-		switch (status) {
-			case 'active':
-				return 'text-emerald-500';
-			case 'suspended':
-				return 'text-amber-500';
-			case 'revoked':
-				return 'text-destructive';
-			default:
-				return 'text-muted-foreground';
-		}
+	function openConfirm(type: 'revoke' | 'suspend', key: AdminApiKey) {
+		confirmAction = { type, key };
+		confirmOpen = true;
 	}
 
-	function statusBg(status: string): string {
-		switch (status) {
-			case 'active':
-				return 'bg-emerald-500/10';
-			case 'suspended':
-				return 'bg-amber-500/10';
-			case 'revoked':
-				return 'bg-destructive/10';
-			default:
-				return 'bg-muted';
-		}
+	function handleTabChange(value: string) {
+		activeTab = value;
+		page = 0;
+		selectedIds = new Set();
 	}
 
-	function formatNumber(n: number): string {
-		if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-		if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-		return n.toString();
+	function handleTierChange(value: string) {
+		filterTier = value;
+		page = 0;
+		selectedIds = new Set();
 	}
 </script>
 
 <PageHeader
-	title="API Key Management"
-	description="Monitor and control developer API keys across the platform"
+	title={t('api_keys.title')}
+	description={t('api_keys.description')}
 />
 
 {#if errorMessage}
@@ -238,18 +348,15 @@
 {/if}
 
 <div class="mb-4 flex items-center gap-3">
-	<div class="relative">
-		<Search class="text-muted-foreground absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
-		<input
-			bind:value={filter}
-			placeholder="Filter by name, prefix, or user..."
-			class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 h-input rounded-9px w-72 border px-3 py-2.5 pl-9 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-		/>
-	</div>
+	<SearchInput
+		bind:value={filter}
+		placeholder={t('api_keys.search_placeholder')}
+		class="w-72"
+	/>
 
 	<Select.Root type="single" bind:value={filterTier} items={tierItems}>
-		<Select.Trigger class="border-border-input bg-background rounded-9px border px-3 py-2 text-sm" aria-label="Filter tier">
-			<Select.Value placeholder="All Tiers" />
+		<Select.Trigger class="border-border-input bg-background rounded-9px border px-3 py-2 text-sm" aria-label={t('api_keys.tier')}>
+			<Select.Value placeholder={t('api_keys.tier_all')} />
 		</Select.Trigger>
 		<Select.Portal>
 			<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1">
@@ -268,7 +375,7 @@
 	</Select.Root>
 
 	<span class="text-muted-foreground text-xs">
-		{filtered.length} key{filtered.length !== 1 ? 's' : ''}
+		{filtered.length !== 1 ? t('api_keys.key_count_plural').replace('{count}', String(filtered.length)) : t('api_keys.key_count').replace('{count}', String(filtered.length))}
 	</span>
 	<div class="flex-1"></div>
 	<button
@@ -276,275 +383,61 @@
 		onclick={() => (createModalOpen = true)}
 	>
 		<Plus class="h-4 w-4" />
-		Create API Key
+		{t('api_keys.create')}
 	</button>
 </div>
 
-<Tabs.Root bind:value={activeTab}>
+<Tabs.Root bind:value={activeTab} onValueChange={handleTabChange}>
 	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
 		<Tabs.Trigger value="active" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			Active Keys ({activeCount})
+			{t('api_keys.tab_active')} ({activeCount})
 		</Tabs.Trigger>
 		<Tabs.Trigger value="all" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			All Keys ({keys.length})
+			{t('api_keys.tab_all')} ({keys.length})
 		</Tabs.Trigger>
 	</Tabs.List>
-
-	<Tabs.Content value="active" class="mt-4">
-		{#if loading}
-			<div class="space-y-3">
-				{#each Array(5) as _}
-					<div class="bg-muted h-16 animate-pulse rounded-lg"></div>
-				{/each}
-			</div>
-		{:else if filtered.length === 0}
-			<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
-				<Key class="text-muted-foreground mx-auto h-8 w-8" />
-				<p class="text-muted-foreground mt-3 text-sm">
-					{filter || filterTier !== 'all' ? 'No keys match your filter.' : 'No active API keys.'}
-				</p>
-			</div>
-		{:else}
-			<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
-				<table class="text-foreground w-full text-left text-sm">
-					<thead>
-						<tr class="border-border-card border-b">
-							<th class="text-muted-foreground px-4 py-3 font-medium">Name</th>
-							<th class="text-muted-foreground px-4 py-3 font-medium">Key Prefix</th>
-							<th class="text-muted-foreground px-4 py-3 font-medium">User</th>
-							<th class="text-muted-foreground px-4 py-3 font-medium">Tier</th>
-							<th class="text-muted-foreground px-4 py-3 font-medium">Status</th>
-							<th class="text-muted-foreground px-4 py-3 text-right font-medium">Requests</th>
-							<th class="text-muted-foreground px-4 py-3 font-medium">Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each paginatedKeys as key (key.id)}
-							<tr class="border-border-card border-t">
-								<td class="px-4 py-3 font-medium">{key.name}</td>
-								<td class="font-muted-foreground px-4 py-3 font-mono text-xs">{key.key_prefix}...</td>
-								<td class="text-muted-foreground px-4 py-3 text-xs">
-									{key.user_id ? key.user_id.slice(0, 8) + '...' : 'System'}
-								</td>
-								<td class="px-4 py-3">
-									<span class="bg-accent text-accent-foreground rounded-5px px-1.5 py-0.5 text-xs">
-										{key.rate_limit_tier}
-									</span>
-								</td>
-								<td class="px-4 py-3">
-									<span class="{statusBg(key.status)} {statusColor(key.status)} rounded-full px-2 py-0.5 text-xs font-medium">
-										{key.status}
-									</span>
-								</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">
-									{formatNumber(key.request_count)}
-								</td>
-								<td class="px-4 py-3">
-									<div class="flex items-center gap-1">
-										{#if key.status !== 'revoked'}
-											<Tooltip.Root>
-												<Tooltip.Trigger>
-													<button
-														class="text-accent-foreground hover:bg-accent flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
-														onclick={() => openEditModal(key)}
-													>
-														<Pencil class="h-3 w-3" />
-													</button>
-												</Tooltip.Trigger>
-												<Tooltip.Portal>
-													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-														Edit key
-													</Tooltip.Content>
-												</Tooltip.Portal>
-											</Tooltip.Root>
-										{/if}
-										{#if key.status === 'active'}
-											<Tooltip.Root>
-												<Tooltip.Trigger>
-													<button
-														class="text-amber-500 hover:bg-amber-500/10 flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
-														onclick={() => (confirmAction = { type: 'suspend', key })}
-													>
-														<Ban class="h-3 w-3" />
-													</button>
-												</Tooltip.Trigger>
-												<Tooltip.Portal>
-													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-														Suspend key
-													</Tooltip.Content>
-												</Tooltip.Portal>
-											</Tooltip.Root>
-										{/if}
-										{#if key.status !== 'revoked'}
-											<Tooltip.Root>
-												<Tooltip.Trigger>
-													<button
-														class="text-destructive hover:bg-destructive/10 flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
-														onclick={() => (confirmAction = { type: 'revoke', key })}
-													>
-														<Trash2 class="h-3 w-3" />
-													</button>
-												</Tooltip.Trigger>
-												<Tooltip.Portal>
-													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-														Revoke key
-													</Tooltip.Content>
-												</Tooltip.Portal>
-											</Tooltip.Root>
-										{/if}
-									</div>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-
-			<Pagination
-				bind:page
-				{totalPages}
-				totalItems={filtered.length}
-				bind:pageSize
-			/>
-		{/if}
-	</Tabs.Content>
-
-	<Tabs.Content value="all" class="mt-4">
-		{#if loading}
-			<div class="space-y-3">
-				{#each Array(5) as _}
-					<div class="bg-muted h-16 animate-pulse rounded-lg"></div>
-				{/each}
-			</div>
-		{:else if filtered.length === 0}
-			<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
-				<Key class="text-muted-foreground mx-auto h-8 w-8" />
-				<p class="text-muted-foreground mt-3 text-sm">
-					{filter || filterTier !== 'all' ? 'No keys match your filter.' : 'No API keys exist yet.'}
-				</p>
-			</div>
-		{:else}
-			<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
-				<table class="text-foreground w-full text-left text-sm">
-					<thead>
-						<tr class="border-border-card border-b">
-							<th class="text-muted-foreground px-4 py-3 font-medium">Name</th>
-							<th class="text-muted-foreground px-4 py-3 font-medium">Key Prefix</th>
-							<th class="text-muted-foreground px-4 py-3 font-medium">User</th>
-							<th class="text-muted-foreground px-4 py-3 font-medium">Tier</th>
-							<th class="text-muted-foreground px-4 py-3 font-medium">Status</th>
-							<th class="text-muted-foreground px-4 py-3 text-right font-medium">Requests</th>
-							<th class="text-muted-foreground px-4 py-3 font-medium">Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each paginatedKeys as key (key.id)}
-							<tr class="border-border-card border-t">
-								<td class="px-4 py-3 font-medium">{key.name}</td>
-								<td class="text-muted-foreground px-4 py-3 font-mono text-xs">{key.key_prefix}...</td>
-								<td class="text-muted-foreground px-4 py-3 text-xs">
-									{key.user_id ? key.user_id.slice(0, 8) + '...' : 'System'}
-								</td>
-								<td class="px-4 py-3">
-									<span class="bg-accent text-accent-foreground rounded-5px px-1.5 py-0.5 text-xs">
-										{key.rate_limit_tier}
-									</span>
-								</td>
-								<td class="px-4 py-3">
-									<span class="{statusBg(key.status)} {statusColor(key.status)} rounded-full px-2 py-0.5 text-xs font-medium">
-										{key.status}
-									</span>
-								</td>
-								<td class="px-4 py-3 text-right font-mono text-xs">
-									{formatNumber(key.request_count)}
-								</td>
-								<td class="px-4 py-3">
-									<div class="flex items-center gap-1">
-										{#if key.status !== 'revoked'}
-											<Tooltip.Root>
-												<Tooltip.Trigger>
-													<button
-														class="text-accent-foreground hover:bg-accent flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
-														onclick={() => openEditModal(key)}
-													>
-														<Pencil class="h-3 w-3" />
-													</button>
-												</Tooltip.Trigger>
-												<Tooltip.Portal>
-													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-														Edit key
-													</Tooltip.Content>
-												</Tooltip.Portal>
-											</Tooltip.Root>
-										{/if}
-										{#if key.status === 'active'}
-											<Tooltip.Root>
-												<Tooltip.Trigger>
-													<button
-														class="text-amber-500 hover:bg-amber-500/10 flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
-														onclick={() => (confirmAction = { type: 'suspend', key })}
-													>
-														<Ban class="h-3 w-3" />
-													</button>
-												</Tooltip.Trigger>
-												<Tooltip.Portal>
-													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-														Suspend key
-													</Tooltip.Content>
-												</Tooltip.Portal>
-											</Tooltip.Root>
-										{/if}
-										{#if key.status !== 'revoked'}
-											<Tooltip.Root>
-												<Tooltip.Trigger>
-													<button
-														class="text-destructive hover:bg-destructive/10 flex items-center gap-1 rounded-5px px-2 py-1 text-xs font-medium transition-colors"
-														onclick={() => (confirmAction = { type: 'revoke', key })}
-													>
-														<Trash2 class="h-3 w-3" />
-													</button>
-												</Tooltip.Trigger>
-												<Tooltip.Portal>
-													<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-														Revoke key
-													</Tooltip.Content>
-												</Tooltip.Portal>
-											</Tooltip.Root>
-										{/if}
-									</div>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		{/if}
-	</Tabs.Content>
 </Tabs.Root>
+
+<div class="mt-4">
+	<DataTable
+		{columns}
+		{rows}
+		{totalRows}
+		bind:page
+		bind:pageSize
+		bind:sortKey
+		bind:sortDirection
+		bind:selectedIds
+		{rowActions}
+		{bulkActions}
+		{loading}
+		emptyMessage={filter || filterTier !== 'all' ? t('api_keys.empty_filter') : t('api_keys.empty')}
+		emptyIcon={Key as any}
+	/>
+</div>
 
 {#if confirmAction}
 	{#if confirmAction.type === 'revoke'}
 		<ConfirmModal
 			bind:open={confirmOpen}
-			title="Revoke API Key"
-			consequence="Permanently revoke key '{confirmAction.key.name}' ({confirmAction.key.key_prefix}...). This cannot be undone."
-			confirmText="REVOKE"
+			title={t('api_keys.revoke_title')}
+			consequence={t('api_keys.revoke_confirm_detail').replace('{name}', confirmAction.key.name).replace('{prefix}', confirmAction.key.key_prefix)}
+			confirmText={t('api_keys.revoke_text')}
 			onConfirm={async () => { await revokeKey(confirmAction!.key.id); confirmAction = null; }}
 			onCancel={() => (confirmAction = null)}
 		/>
 	{:else}
 		<ConfirmModal
 			bind:open={confirmOpen}
-			title="Suspend API Key"
-			consequence="Suspend key '{confirmAction.key.name}' ({confirmAction.key.key_prefix}...). The key owner will need to generate a new key."
-			confirmText="SUSPEND"
+			title={t('api_keys.suspend_title')}
+			consequence={t('api_keys.suspend_confirm_detail').replace('{name}', confirmAction.key.name).replace('{prefix}', confirmAction.key.key_prefix)}
+			confirmText={t('api_keys.suspend_text')}
 			onConfirm={async () => { await suspendKey(confirmAction!.key.id); confirmAction = null; }}
 			onCancel={() => (confirmAction = null)}
 		/>
 	{/if}
 {/if}
 
-<!-- Create API Key Modal -->
 <Dialog.Root bind:open={createModalOpen} onOpenChange={(isOpen) => { if (!isOpen) createForm = { name: '', scopes: '', rate_limit_tier: 'standard', expires_at: '' }; }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
@@ -555,10 +448,10 @@
 			onOpenAutoFocus={(e) => e.preventDefault()}
 		>
 			<Dialog.Title class="text-foreground text-lg font-semibold">
-				Create API Key
+				{t('api_keys.create')}
 			</Dialog.Title>
 			<p class="text-muted-foreground mt-1 text-sm">
-				Generate a new API key for a developer.
+				{t('api_keys.create_description')}
 			</p>
 
 			{#if errorMessage}
@@ -570,20 +463,20 @@
 			<div class="mt-4 space-y-4">
 				<div>
 					<label for="create-name" class="text-foreground block text-sm font-medium">
-						Name <span class="text-destructive">*</span>
+						{t('api_keys.name')} <span class="text-destructive">*</span>
 					</label>
 					<input
 						id="create-name"
 						type="text"
 						bind:value={createForm.name}
-						placeholder="e.g., Production Backend"
+						placeholder={t('api_keys.name_placeholder')}
 						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
 				</div>
 
 				<div>
 					<label for="create-scopes" class="text-foreground block text-sm font-medium">
-						Scopes
+						{t('api_keys.scopes')}
 					</label>
 					<input
 						id="create-scopes"
@@ -592,27 +485,27 @@
 						placeholder="read,write,admin"
 						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">Comma-separated list of scopes</p>
+					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.name_required_scopes')}</p>
 				</div>
 
 				<div>
 					<label for="create-tier" class="text-foreground block text-sm font-medium">
-						Rate Limit Tier
+						{t('api_keys.rate_limit_tier')}
 					</label>
 					<select
 						id="create-tier"
 						bind:value={createForm.rate_limit_tier}
 						class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					>
-						<option value="standard">Standard</option>
-						<option value="premium">Premium</option>
-						<option value="unlimited">Unlimited</option>
+						<option value="standard">{t('api_keys.tier_standard')}</option>
+						<option value="premium">{t('api_keys.tier_premium')}</option>
+						<option value="unlimited">{t('api_keys.tier_unlimited')}</option>
 					</select>
 				</div>
 
 				<div>
 					<label for="create-expires" class="text-foreground block text-sm font-medium">
-						Expires At
+						{t('api_keys.expires_at')}
 					</label>
 					<input
 						id="create-expires"
@@ -620,13 +513,13 @@
 						bind:value={createForm.expires_at}
 						class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">Leave empty for no expiration</p>
+					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.expires_hint')}</p>
 				</div>
 			</div>
 
 			<div class="mt-6 flex justify-end gap-3">
 				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
-					Cancel
+					{t('api_keys.cancel')}
 				</Dialog.Close>
 				<button
 					type="button"
@@ -634,14 +527,13 @@
 					disabled={createLoading || !createForm.name.trim()}
 					onclick={createKey}
 				>
-					{createLoading ? 'Creating...' : 'Create Key'}
+					{createLoading ? t('api_keys.creating') : t('api_keys.create')}
 				</button>
 			</div>
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>
 
-<!-- One-Time Key Display Modal -->
 <Dialog.Root bind:open={oneTimeKeyModalOpen}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
@@ -652,18 +544,18 @@
 			onOpenAutoFocus={(e) => e.preventDefault()}
 		>
 			<Dialog.Title class="text-foreground text-lg font-semibold">
-				API Key Created
+				{t('api_keys.key_created')}
 			</Dialog.Title>
 
 			<div class="bg-amber-500/10 mt-3 rounded-md p-3">
 				<p class="text-amber-500 text-sm font-medium">
-					Save this key now. It will not be shown again.
+					{t('api_keys.save_warning')}
 				</p>
 			</div>
 
 			<div class="mt-4">
 				<label for="one-time-key" class="text-foreground block text-sm font-medium">
-					Your API Key
+					{t('api_keys.your_key')}
 				</label>
 				<div class="mt-1 flex items-center gap-2">
 					<input
@@ -680,10 +572,10 @@
 					>
 						{#if copiedToClipboard}
 							<Check class="h-4 w-4 text-emerald-500" />
-							Copied
+							{t('api_keys.copied')}
 						{:else}
 							<Copy class="h-4 w-4" />
-							Copy to Clipboard
+							{t('api_keys.copy')}
 						{/if}
 					</button>
 				</div>
@@ -691,14 +583,13 @@
 
 			<div class="mt-6 flex justify-end">
 				<Dialog.Close class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90">
-					Done
+					{t('api_keys.done')}
 				</Dialog.Close>
 			</div>
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>
 
-<!-- Edit API Key Modal -->
 <Dialog.Root bind:open={editModalOpen} onOpenChange={(isOpen) => { if (!isOpen) editForm = { id: '', name: '', scopes: '' }; }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
@@ -709,7 +600,7 @@
 			onOpenAutoFocus={(e) => e.preventDefault()}
 		>
 			<Dialog.Title class="text-foreground text-lg font-semibold">
-				Edit API Key
+				{t('api_keys.edit')}
 			</Dialog.Title>
 
 			{#if errorMessage}
@@ -721,20 +612,20 @@
 			<div class="mt-4 space-y-4">
 				<div>
 					<label for="edit-name" class="text-foreground block text-sm font-medium">
-						Name <span class="text-destructive">*</span>
+						{t('api_keys.name')} <span class="text-destructive">*</span>
 					</label>
 					<input
 						id="edit-name"
 						type="text"
 						bind:value={editForm.name}
-						placeholder="e.g., Production Backend"
+						placeholder={t('api_keys.name_placeholder')}
 						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
 				</div>
 
 				<div>
 					<label for="edit-scopes" class="text-foreground block text-sm font-medium">
-						Scopes
+						{t('api_keys.scopes')}
 					</label>
 					<input
 						id="edit-scopes"
@@ -743,13 +634,13 @@
 						placeholder="read,write,admin"
 						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
-					<p class="text-muted-foreground mt-1 text-xs">Comma-separated list of scopes</p>
+					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.name_required_scopes')}</p>
 				</div>
 			</div>
 
 			<div class="mt-6 flex justify-end gap-3">
 				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
-					Cancel
+					{t('api_keys.cancel')}
 				</Dialog.Close>
 				<button
 					type="button"
@@ -757,7 +648,7 @@
 					disabled={editLoading || !editForm.name.trim()}
 					onclick={updateKey}
 				>
-					{editLoading ? 'Saving...' : 'Save Changes'}
+					{editLoading ? t('api_keys.saving') : t('api_keys.save_key')}
 				</button>
 			</div>
 		</Dialog.Content>

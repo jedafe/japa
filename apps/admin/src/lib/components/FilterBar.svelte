@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
+	import { Select } from '$lib/components/ui/select';
 
 	let {
 		filters,
@@ -21,6 +22,10 @@
 	function apply() {
 		onApply?.(localValues);
 	}
+
+	function handleSelectChange(key: string, val: string) {
+		localValues[key] = val;
+	}
 </script>
 
 <div class="mb-4 flex flex-wrap items-end gap-3">
@@ -28,17 +33,12 @@
 		<div>
 			<label for="filter-{filter.key}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{filter.label}</label>
 			{#if filter.type === 'select'}
-				<select
-					id="filter-{filter.key}"
-					class="rounded-md border px-3 py-1.5 text-sm"
-					style="border-color: var(--color-border); background-color: var(--color-surface)"
-					bind:value={localValues[filter.key]}
-				>
-					<option value="">{t('common.all')}</option>
-					{#each filter.options ?? [] as opt}
-						<option value={opt}>{opt}</option>
-					{/each}
-				</select>
+				<Select
+					options={[{ value: '', label: t('common.all') }, ...(filter.options ?? []).map(o => ({ value: o, label: o }))]}
+					value={localValues[filter.key] ?? ''}
+					onchange={(val) => handleSelectChange(filter.key, val)}
+					class="!h-9"
+				/>
 			{:else if filter.type === 'date'}
 				<input
 					id="filter-{filter.key}"

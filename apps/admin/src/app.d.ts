@@ -12,6 +12,8 @@ declare global {
 				email: string;
 				username: string;
 				displayName: string;
+				groups?: string[];
+				avatar_url?: string | null;
 			} | null;
 			token: string | null;
 		}

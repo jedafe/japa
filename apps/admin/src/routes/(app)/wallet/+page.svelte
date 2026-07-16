@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { walletApi } from '$lib/api';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
@@ -8,6 +7,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
+	import { Select } from '$lib/components/ui/select';
 	import { Wallet, DollarSign, ArrowUpRight, ArrowDownLeft, Download, Plus, Settings } from 'lucide-svelte';
 
 	type ActivityRule = {
@@ -58,6 +58,11 @@
 		{ value: 'rules', label: 'Activity Rules', icon: Settings },
 		{ value: 'settings', label: 'Wallet Settings', icon: Wallet },
 		{ value: 'adjust', label: 'Balance Adjustment', icon: DollarSign }
+	];
+
+	const adjTypeOptions = [
+		{ value: 'points', label: 'Points' },
+		{ value: 'credits', label: 'Credits' }
 	];
 
 	const ruleColumns = [
@@ -176,7 +181,7 @@
 		adjustSaving = false;
 	}
 
-	onMount(() => {
+	$effect(() => {
 		loadRules();
 		loadSettings();
 	});
@@ -350,10 +355,7 @@
 						</div>
 						<div>
 							<label for="adj-type" class="mb-1 block text-sm font-medium text-gray-700">Type</label>
-							<select id="adj-type" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" bind:value={adjustForm.type}>
-								<option value="points">Points</option>
-								<option value="credits">Credits</option>
-							</select>
+							<Select options={adjTypeOptions} bind:value={adjustForm.type} />
 						</div>
 						<div>
 							<label for="adj-reason" class="mb-1 block text-sm font-medium text-gray-700">Reason</label>

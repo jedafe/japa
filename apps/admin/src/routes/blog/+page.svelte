@@ -1,15 +1,14 @@
 <script lang="ts">
-  import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import PageHeader from "$lib/components/layout/page-header.svelte";
   import { Card, CardContent } from "$lib/components/ui/card";
   import { Tabs } from "$lib/components/ui/tabs";
   import { DataTable } from "$lib/components/ui/data-table";
   import { FilterBar } from "$lib/components/ui/filter-bar";
-  import { Badge } from "$lib/components/ui/badge";
   import { Button } from "$lib/components/ui/button";
   import { Modal } from "$lib/components/ui/modal";
-  import { FileText, Plus, Download, RefreshCw, ExternalLink } from "lucide-svelte";
+  import { TableSkeleton } from "$lib/components/ui/skeleton";
+  import { FileText, Plus, Download, RefreshCw, Eye, Pencil, Trash2, ExternalLink } from "lucide-svelte";
   import { api, blogAdminApi } from "$lib/api";
 
   type BlogPost = {
@@ -28,19 +27,20 @@
     url?: string;
   };
 
-  let { data } = $props();
-
   let posts = $state<BlogPost[]>([]);
   let loading = $state(true);
-  let errorMessage = $state("");
+  let error = $state("");
   let activeTab = $state("all");
   let filters = $state<Record<string, string>>({});
+  let selectedIds = $state<Set<string>>(new Set());
 
-  // Reject modal state
+  // Modals
+  let showViewModal = $state(false);
+  let viewTarget = $state<BlogPost | null>(null);
   let showRejectModal = $state(false);
   let rejectTarget = $state<BlogPost | null>(null);
   let rejectReason = $state("");
-  let rejecting = $state(false);
+  let acting = $state(false);
 
   const tabs = [
     { value: "all", label: "All Posts" },
@@ -53,18 +53,7 @@
     {
       key: "title",
       label: "Title",
-      sortable: true,
-      render: (_: any, row: any) => `
-        <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded bg-primary-100">
-            <span class="text-primary-600">📝</span>
-          </div>
-          <div>
-            <p class="font-medium text-gray-900">${row.title || "Untitled"}</p>
-            <p class="text-sm text-gray-500">${row.excerpt ? row.excerpt.slice(0, 60) + "..." : ""}</p>
-          </div>
-        </div>
-      `
+      sortable: true
     },
     {
       key: "author_name",
@@ -75,31 +64,9 @@
     {
       key: "categories",
       label: "Categories",
-      sortable: false,
       render: (value: string[]) => {
-        if (!value || value.length === 0) return '<span class="text-gray-400">—</span>';
-        return value
-          .slice(0, 2)
-          .map(
-            (c) =>
-              `<span class="inline-flex items-center rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-800 mr-1">${c}</span>`
-          )
-          .join("") + (value.length > 2 ? `<span class="text-xs text-gray-500">+${value.length - 2}</span>` : "");
-      }
-    },
-    {
-      key: "tags",
-      label: "Tags",
-      sortable: false,
-      render: (value: string[]) => {
-        if (!value || value.length === 0) return '<span class="text-gray-400">—</span>';
-        return value
-          .slice(0, 3)
-          .map(
-            (t) =>
-              `<span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 mr-1">${t}</span>`
-          )
-          .join("");
+        if (!value || value.length === 0) return "—";
+        return value.slice(0, 2).join(", ") + (value.length > 2 ? ` +${value.length - 2}` : "");
       }
     },
     {
@@ -107,27 +74,20 @@
       label: "Status",
       sortable: true,
       render: (value: string) => {
-        const variants: Record<string, string> = {
-          published: "bg-success-100 text-success-800",
-          draft: "bg-warning-100 text-warning-800",
-          review: "bg-info-100 text-info-800",
-          archived: "bg-gray-100 text-gray-800"
+        const colors: Record<string, string> = {
+          published: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+          draft: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+          review: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+          archived: "bg-slate-500/15 text-slate-700 dark:text-slate-400"
         };
-        return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[value] || "bg-gray-100 text-gray-800"}">${value || "draft"}</span>`;
+        return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors[value] || colors.draft}">${value || "draft"}</span>`;
       }
     },
     {
       key: "published_at",
       label: "Published",
       sortable: true,
-      render: (value: string) =>
-        value
-          ? new Date(value).toLocaleDateString("en-US", {
-              year: "numeric",
-              month: "short",
-              day: "numeric"
-            })
-          : '<span class="text-gray-400">—</span>'
+      render: (value: string) => value ? new Date(value).toLocaleDateString() : "—"
     },
     {
       key: "views",
@@ -137,26 +97,17 @@
     },
     {
       key: "actions",
-      label: "",
-      class: "w-32",
-      render: (_: any, row: any) => `
-        <div class="flex items-center gap-1">
-          <button onclick="window.location.href='/blog/${row.slug || row.id}'" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Edit</button>
-          <button onclick="window.open('${row.url || "#"}', '_blank')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">
-            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-          </button>
-        </div>
-      `
+      label: "Actions",
+      class: "w-40",
+      component: BlogActionsCell
     }
   ];
 
   let filteredPosts = $derived.by(() => {
     let result = [...posts];
-
     if (activeTab !== "all") {
       result = result.filter((p) => p.status === activeTab);
     }
-
     if (filters.status) {
       result = result.filter((p) => p.status === filters.status);
     }
@@ -172,22 +123,21 @@
           p.tags?.some((t) => t.toLowerCase().includes(q))
       );
     }
-
     return result;
   });
 
-  async function load() {
+  async function loadPosts() {
     loading = true;
-    errorMessage = "";
+    error = "";
     try {
       const result = await api<BlogPost[]>("/admin/blog");
       if (result.ok) {
         posts = (result.data as BlogPost[]) ?? [];
       } else {
-        errorMessage = result.error;
+        error = result.error;
       }
     } catch {
-      errorMessage = "Failed to load blog posts";
+      error = "Failed to load blog posts";
     } finally {
       loading = false;
     }
@@ -201,6 +151,11 @@
     filters = {};
   }
 
+  function openView(post: BlogPost) {
+    viewTarget = post;
+    showViewModal = true;
+  }
+
   function openReject(post: BlogPost) {
     rejectTarget = post;
     rejectReason = "";
@@ -209,27 +164,47 @@
 
   async function confirmReject() {
     if (!rejectTarget) return;
-    rejecting = true;
-    errorMessage = "";
+    acting = true;
+    error = "";
     try {
-      const result = await blogAdminApi.rejectPost(rejectTarget.id, {
-        reason: rejectReason
-      });
+      const result = await blogAdminApi.rejectPost(rejectTarget.id, { reason: rejectReason });
       if (result.ok) {
         showRejectModal = false;
-        load();
+        loadPosts();
       } else {
-        errorMessage = result.error;
+        error = result.error;
       }
     } catch {
-      errorMessage = "Failed to reject post";
+      error = "Failed to reject post";
     } finally {
-      rejecting = false;
+      acting = false;
+    }
+  }
+
+  async function deletePost(post: BlogPost) {
+    acting = true;
+    try {
+      const result = await api(`/admin/blog/${post.id}`, { method: "DELETE" });
+      if (result.ok) {
+        loadPosts();
+      } else {
+        error = result.error;
+      }
+    } catch {
+      error = "Failed to delete post";
+    } finally {
+      acting = false;
+    }
+  }
+
+  function openExternal(post: BlogPost) {
+    if (post.url) {
+      window.open(post.url, "_blank");
     }
   }
 
   $effect(() => {
-    load();
+    loadPosts();
   });
 </script>
 
@@ -241,9 +216,9 @@
   title="Blog Posts"
   description="Manage blog content and review submissions"
   actions={[
-    { label: "New Post", icon: Plus, href: "/blog/new" },
-    { label: "Review Queue", icon: FileText, href: "/blog/review-queue" },
-    { label: "Export", icon: Download, variant: "outline" }
+    { label: "New Post", icon: Plus, onclick: () => goto("/blog/new") },
+    { label: "Review Queue", icon: FileText, onclick: () => goto("/blog/review-queue") },
+    { label: "Refresh", icon: RefreshCw, variant: "ghost", onclick: loadPosts }
   ]}
 />
 
@@ -251,7 +226,6 @@
   <Tabs {tabs} bind:value={activeTab} />
 
   <FilterBar
-    bind:value={filters}
     filters={[
       {
         key: "status",
@@ -278,60 +252,140 @@
     onclear={handleClear}
   />
 
-  {#if errorMessage}
-    <div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-800">
-      {errorMessage}
+  {#if error}
+    <div class="rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+      {error}
     </div>
   {/if}
 
   <Card>
     <CardContent class="p-0">
       {#if loading}
-        <div class="flex items-center justify-center py-12">
-          <RefreshCw class="h-5 w-5 animate-spin text-gray-400" />
-          <span class="ml-2 text-sm text-gray-500">Loading posts...</span>
-        </div>
+        <TableSkeleton rows={8} columns={columns.length} />
       {:else}
-        <DataTable
-          {columns}
-          data={filteredPosts}
-          pageSize={20}
-          selectable={true}
-          emptyMessage="No blog posts found"
-        />
+        <div aria-live="polite">
+          <DataTable
+            {columns}
+            data={filteredPosts}
+            selectable
+            bind:selectedIds
+            emptyMessage="No blog posts found"
+          />
+        </div>
       {/if}
     </CardContent>
   </Card>
 </div>
 
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title="Post Details" size="default">
+  {#if viewTarget}
+    <div class="space-y-4">
+      <div>
+        <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Title</p>
+        <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.title}</p>
+      </div>
+      {#if viewTarget.excerpt}
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Excerpt</p>
+          <p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.excerpt}</p>
+        </div>
+      {/if}
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Author</p>
+          <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.author_name}</p>
+        </div>
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+          <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
+        </div>
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Views</p>
+          <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.views ?? 0).toLocaleString()}</p>
+        </div>
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Published</p>
+          <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.published_at ? new Date(viewTarget.published_at).toLocaleString() : "—"}</p>
+        </div>
+      </div>
+      {#if viewTarget.categories?.length}
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Categories</p>
+          <div class="mt-1 flex flex-wrap gap-1">
+            {#each viewTarget.categories as cat}
+              <span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary)">{cat}</span>
+            {/each}
+          </div>
+        </div>
+      {/if}
+      {#if viewTarget.tags?.length}
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Tags</p>
+          <div class="mt-1 flex flex-wrap gap-1">
+            {#each viewTarget.tags as tag}
+              <span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background: var(--color-surface); color: var(--color-muted)">{tag}</span>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}
+  <div class="mt-6 flex justify-end gap-2">
+    <Button variant="outline" onclick={() => goto(`/blog/${viewTarget?.slug || viewTarget?.id}`)}>Edit</Button>
+    {#if viewTarget?.url}
+      <Button variant="outline" onclick={() => openExternal(viewTarget!)}>
+        <ExternalLink class="mr-1 h-3.5 w-3.5" /> View Live
+      </Button>
+    {/if}
+    <Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+  </div>
+</Modal>
+
 <!-- Reject Modal -->
 <Modal bind:open={showRejectModal} title="Reject Post">
   <div class="space-y-4">
-    <p class="text-sm text-gray-600">
+    <p class="text-sm" style="color: var(--color-foreground)">
       Are you sure you want to reject "{rejectTarget?.title}"? The author will be notified.
     </p>
     <div>
-      <label for="reject-reason" class="mb-1 block text-sm font-medium text-gray-700">
-        Reason (optional)
-      </label>
+      <label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Reason (optional)</label>
       <textarea
         id="reject-reason"
         bind:value={rejectReason}
         rows="3"
-        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        class="w-full rounded-lg border p-3 text-sm"
+        style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
         placeholder="Explain why this post was rejected..."
       ></textarea>
     </div>
-    <div class="flex justify-end gap-3">
-      <Button variant="outline" onclick={() => (showRejectModal = false)}>Cancel</Button>
-      <Button variant="destructive" onclick={confirmReject} disabled={rejecting}>
-        {#if rejecting}
-          <RefreshCw class="h-4 w-4 mr-2 animate-spin" />
-          Rejecting...
-        {:else}
-          Reject
-        {/if}
-      </Button>
-    </div>
+  </div>
+  <div class="mt-4 flex justify-end gap-2">
+    <Button variant="ghost" onclick={() => (showRejectModal = false)}>Cancel</Button>
+    <Button variant="destructive" onclick={confirmReject} disabled={acting}>
+      {acting ? "Rejecting..." : "Reject"}
+    </Button>
   </div>
 </Modal>
+
+<!-- BlogActionsCell component -->
+{#snippet BlogActionsCell(post: BlogPost)}
+  <div class="flex items-center gap-1">
+    <Button variant="ghost" size="sm" onclick={() => openView(post)}>
+      <Eye class="h-3.5 w-3.5" />
+    </Button>
+    <Button variant="ghost" size="sm" onclick={() => goto(`/blog/${post.slug || post.id}`)}>
+      <Pencil class="h-3.5 w-3.5" />
+    </Button>
+    {#if post.url}
+      <Button variant="ghost" size="sm" onclick={() => openExternal(post)}>
+        <ExternalLink class="h-3.5 w-3.5" />
+      </Button>
+    {/if}
+    {#if post.status === "review"}
+      <Button variant="ghost" size="sm" onclick={() => openReject(post)} style="color: var(--color-danger)">
+        <Trash2 class="h-3.5 w-3.5" />
+      </Button>
+    {/if}
+  </div>
+{/snippet}

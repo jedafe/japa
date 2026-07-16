@@ -1,9 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import Pagination from '$lib/components/ui/Pagination.svelte';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import PageHeader from "$lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+	import { DataTable } from "$lib/components/ui/data-table";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import { Button } from "$lib/components/ui/button";
+	import { Modal } from "$lib/components/ui/modal";
+	import Pagination from "$lib/components/ui/Pagination.svelte";
+	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import { Plus, Pencil, Trash2, RefreshCw, Eye } from "lucide-svelte";
+	import { tagsAdminApi } from "$lib/api";
+	import { t } from "$lib/stores/i18n.svelte";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type Tag = {
 		id: string;
@@ -14,226 +21,317 @@
 		created_at: string;
 	};
 
-	let allTags = $state<Tag[]>([]);
+	let tags = $state<Tag[]>([]);
 	let loading = $state(true);
-	let errorMessage = $state('');
+	let error = $state("");
+	let success = $state("");
+	let currentPage = $state(0);
+	let totalItems = $state(0);
+	let pageSize = $state(25);
+	let totalPages = $state(1);
+	let searchQuery = $state("");
+	let filterValues = $state<Record<string, string>>({});
+	let selectedIds = $state<Set<string>>(new Set());
 
-	// Pagination
-	let page = $state(0);
-	let pageSize = $state(10);
-
-	// Create/Edit modal
+	// Modals
+	let showViewModal = $state(false);
+	let viewTarget = $state<Tag | null>(null);
 	let showModal = $state(false);
 	let editingTag = $state<Tag | null>(null);
-	let form = $state({ name: '', slug: '' });
+	let formName = $state("");
+	let formSlug = $state("");
 	let saving = $state(false);
-
-	// Delete modal
-	let showDeleteModal = $state(false);
+	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<Tag | null>(null);
 
-	let totalPages = $derived(Math.max(1, Math.ceil(allTags.length / pageSize)));
-	let paginatedTags = $derived.by(() => {
-		const start = page * pageSize;
-		return allTags.slice(start, start + pageSize);
-	});
+	const canManageTags = $derived(hasPermission("tags.manage"));
 
-	async function load() {
+	const filterDefs = [
+		{
+			key: "post_count",
+			label: t("tags.min_posts", "Min Posts"),
+			options: [
+				{ value: "0", label: "Any" },
+				{ value: "10", label: "10+" },
+				{ value: "100", label: "100+" },
+				{ value: "1000", label: "1000+" }
+			]
+		}
+	];
+
+	const columns = [
+		{ key: "name", label: t("tags.name", "Name"), sortable: true },
+		{ key: "slug", label: t("tags.slug", "Slug"), sortable: true },
+		{ key: "post_count", label: t("tags.posts", "Posts"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
+		{ key: "follower_count", label: t("tags.followers", "Followers"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
+		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-36", component: TagActionsCell }
+	];
+
+	function slugify(text: string): string {
+		return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+	}
+
+	async function loadTags() {
 		loading = true;
-		errorMessage = '';
+		error = "";
 		try {
-			const result = await api<Tag[]>('/tags');
+			const params = new URLSearchParams({
+				page: String(currentPage),
+				limit: String(pageSize)
+			});
+			if (searchQuery) params.set("q", searchQuery);
+
+			const result = await tagsAdminApi.list(params.toString());
 			if (result.ok) {
-				allTags = Array.isArray(result.data) ? result.data : [];
+				const d = result.data as unknown as { items: Tag[]; total: number; page: number; total_pages: number };
+				tags = d.items ?? (Array.isArray(result.data) ? result.data : []);
+				totalItems = d.total ?? tags.length;
+				totalPages = d.total_pages ?? 1;
 			} else {
-				errorMessage = result.error;
+				error = result.error ?? t("common.error", "Failed to load tags");
 			}
-		} catch {
-			errorMessage = t('common.error');
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to load tags");
 		} finally {
 			loading = false;
 		}
 	}
 
-	function slugify(text: string): string {
-		return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+	function handleSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? "";
+		filterValues = values;
+		currentPage = 0;
+	}
+
+	function handleClear() {
+		searchQuery = "";
+		filterValues = {};
+		currentPage = 0;
+	}
+
+	function openView(tag: Tag) {
+		viewTarget = tag;
+		showViewModal = true;
 	}
 
 	function openCreate() {
 		editingTag = null;
-		form = { name: '', slug: '' };
+		formName = "";
+		formSlug = "";
 		showModal = true;
 	}
 
 	function openEdit(tag: Tag) {
 		editingTag = tag;
-		form = { name: tag.name, slug: tag.slug };
+		formName = tag.name;
+		formSlug = tag.slug;
 		showModal = true;
 	}
 
 	async function submit() {
-		if (!form.name.trim()) return;
+		if (!formName.trim()) return;
 		saving = true;
-		errorMessage = '';
-		const body = {
-			name: form.name.trim(),
-			slug: form.slug.trim() || slugify(form.name)
-		};
+		error = "";
+		const body = { name: formName.trim(), slug: formSlug.trim() || slugify(formName) };
 		const result = editingTag
-			? await api(`/admin/tags/${editingTag.id}`, { method: 'PATCH', body })
-			: await api('/admin/tags', { method: 'POST', body });
+			? await tagsAdminApi.update(editingTag.id, body)
+			: await tagsAdminApi.create(body);
 		if (result.ok) {
 			showModal = false;
-			load();
+			success = editingTag ? t("tags.updated", "Tag updated") : t("tags.created", "Tag created");
+			loadTags();
 		} else {
-			errorMessage = result.error;
+			error = result.error ?? t("common.error", "Failed to save tag");
 		}
 		saving = false;
 	}
 
 	function confirmDelete(tag: Tag) {
 		deleteTarget = tag;
-		showDeleteModal = true;
+		showDeleteConfirm = true;
 	}
 
 	async function executeDelete() {
 		if (!deleteTarget) return;
-		errorMessage = '';
-		const result = await api(`/admin/tags/${deleteTarget.id}`, { method: 'DELETE' });
+		const result = await tagsAdminApi.delete(deleteTarget.id);
 		if (result.ok) {
-			showDeleteModal = false;
-			load();
+			showDeleteConfirm = false;
+			deleteTarget = null;
+			success = t("tags.deleted", "Tag deleted");
+			loadTags();
 		} else {
-			errorMessage = result.error;
+			error = result.error ?? t("common.error", "Failed to delete tag");
 		}
 	}
 
-	onMount(load);
+	async function bulkDelete() {
+		const ids = Array.from(selectedIds);
+		if (ids.length === 0) return;
+		saving = true;
+		try {
+			await Promise.all(ids.map((id) => tagsAdminApi.delete(id)));
+			selectedIds = new Set();
+			loadTags();
+		} catch {
+			error = t("common.error", "Failed to delete tags");
+		} finally {
+			saving = false;
+		}
+	}
+
+	$effect(() => {
+		void currentPage;
+		void pageSize;
+		void searchQuery;
+		void filterValues;
+		loadTags();
+	});
 </script>
 
 <svelte:head>
-	<title>{t('tags.title')} — JapaConnect Admin</title>
+	<title>{t("tags.title", "Tags")} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('tags.title')}</h1>
+<PageHeader
+	title={t("tags.title", "Tags")}
+	description={t("tags.description", "Manage platform tags")}
+	actions={[
+		...(canManageTags ? [{ label: t("tags.create", "Create Tag"), icon: Plus, onclick: openCreate }] : []),
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadTags }
+	]}
+/>
 
-{#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
-		{errorMessage}
+{#if error}
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+		{error}
 	</div>
 {/if}
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Create, edit, and manage tags used across the platform</p>
-
-<div class="mb-4 flex justify-end">
-	<button
-		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-		style="background-color: var(--color-primary)"
-		onclick={openCreate}
-	>
-		{t('tags.create')}
-	</button>
-</div>
-
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('tags.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('tags.slug')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('tags.posts')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('tags.followers')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('tags.created')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each paginatedTags as tag}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background-color: color-mix(in srgb, var(--color-info) 15%, transparent); color: var(--color-info)">#{tag.name}</span>
-						</td>
-						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{tag.slug}</td>
-						<td class="px-4 py-3 text-xs font-medium">{(tag.post_count ?? 0).toLocaleString()}</td>
-						<td class="px-4 py-3 text-xs font-medium">{(tag.follower_count ?? 0).toLocaleString()}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{tag.created_at}</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-1">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-info)"
-									onclick={() => openEdit(tag)}
-								>
-									{t('common.edit')}
-								</button>
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete(tag)}
-								>
-									{t('common.delete')}
-								</button>
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							No tags found
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+{#if success}
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)">
+		{success}
 	</div>
-
-	<Pagination
-		bind:page
-		{totalPages}
-		totalItems={allTags.length}
-		bind:pageSize
-	/>
 {/if}
+
+{#if selectedIds.size > 0}
+	<div class="mb-4 flex items-center gap-3 rounded-lg p-3" style="background: var(--color-primary); color: white">
+		<span class="text-sm font-medium">{selectedIds.size} selected</span>
+		{#if canManageTags}
+			<Button variant="ghost" size="sm" onclick={bulkDelete} disabled={saving}>
+				<Trash2 class="mr-1 h-3.5 w-3.5" /> Delete Selected
+			</Button>
+		{/if}
+	</div>
+{/if}
+
+<Card>
+	<CardHeader>
+		<FilterBar
+			filters={filterDefs}
+			onsearch={handleSearch}
+			onclear={handleClear}
+		/>
+	</CardHeader>
+	<CardContent>
+		{#if loading}
+			<TableSkeleton rows={8} columns={columns.length} />
+		{:else}
+			<div aria-live="polite">
+				<DataTable
+					{columns}
+					data={tags}
+					selectable={canManageTags}
+					bind:selectedIds
+				/>
+			</div>
+			<Pagination
+				bind:page={currentPage}
+				{totalPages}
+				{totalItems}
+				bind:pageSize
+			/>
+		{/if}
+	</CardContent>
+</Card>
+
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t("tags.details", "Tag Details")} size="sm">
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Name</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Slug</p>
+					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.slug}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Posts</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.post_count ?? 0).toLocaleString()}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Followers</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.follower_count ?? 0).toLocaleString()}</p>
+				</div>
+				<div class="col-span-2">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Created</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
+				</div>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+	</div>
+</Modal>
 
 <!-- Create/Edit Modal -->
-<Modal
-	bind:open={showModal}
-	title={editingTag ? t('tags.edit') : t('tags.create')}
-	onConfirm={submit}
-	confirmLabel={saving ? t('common.saving') : editingTag ? t('common.save') : t('tags.create')}
->
-	<div class="space-y-3">
+<Modal bind:open={showModal} title={editingTag ? t("tags.edit", "Edit Tag") : t("tags.create", "Create Tag")}>
+	<div class="space-y-4">
 		<div>
-			<label for="tag-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('tags.name')}</label>
-			<input
-				id="tag-name"
-				type="text"
-				class="w-full rounded-md border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface)"
-				placeholder="e.g. javascript"
-				bind:value={form.name}
-				oninput={() => { if (!editingTag) form.slug = slugify(form.name); }}
-			/>
+			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.name", "Name")}</label>
+			<input type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g. javascript" bind:value={formName} oninput={() => { if (!editingTag) formSlug = slugify(formName); }} />
 		</div>
 		<div>
-			<label for="tag-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('tags.slug')}</label>
-			<input
-				id="tag-slug"
-				type="text"
-				class="w-full rounded-md border px-3 py-2 text-sm font-mono"
-				style="border-color: var(--color-border); background-color: var(--color-surface)"
-				placeholder="javascript"
-				bind:value={form.slug}
-			/>
+			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.slug", "Slug")}</label>
+			<input type="text" class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="javascript" bind:value={formSlug} />
 		</div>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showModal = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button onclick={submit} disabled={saving}>{saving ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
 	</div>
 </Modal>
 
 <!-- Delete Confirmation -->
-<Modal bind:open={showDeleteModal} title={t('common.confirm')} onConfirm={executeDelete} confirmLabel={t('common.delete')}>
-	<p class="text-sm" style="color: var(--color-muted)">
-		Are you sure you want to delete the tag <strong>#{deleteTarget?.name}</strong>? This action cannot be undone.
-	</p>
+<Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")}>
+	{#if deleteTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t("tags.delete_confirm", "Delete tag")} <strong>#{deleteTarget.name}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t("common.cannotUndo", "This action cannot be undone.")}</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showDeleteConfirm = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={executeDelete}>{t("common.delete", "Delete")}</Button>
+	</div>
 </Modal>
+
+<!-- TagActionsCell component -->
+{#snippet TagActionsCell(tag: Tag)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(tag)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageTags}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(tag)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(tag)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { adsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -261,15 +260,19 @@
 		}
 	}
 
-	// Expose functions for DataTable inline actions
-	if (typeof window !== 'undefined') {
+	$effect(() => {
+		load();
 		(window as any).__toggleCampaign = toggleCampaign;
 		(window as any).__endCampaign = endCampaign;
 		(window as any).__endBoost = endBoost;
 		(window as any).__viewStats = viewStats;
-	}
-
-	onMount(load);
+		return () => {
+			delete (window as any).__toggleCampaign;
+			delete (window as any).__endCampaign;
+			delete (window as any).__endBoost;
+			delete (window as any).__viewStats;
+		};
+	});
 </script>
 
 <svelte:head>

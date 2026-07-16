@@ -26,6 +26,33 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// deleteEntity is a shared helper for DELETE handlers that follow the pattern:
+// require user → require tenant → parse UUID → call delete function → return 204.
+func deleteEntity(w http.ResponseWriter, r *http.Request, h *Handlers, paramName, entityName string, deleteFn func(ctx context.Context, tenantID, id pgtype.UUID) error) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, paramName)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
+		return
+	}
+
+	if err := deleteFn(r.Context(), tenantID, id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
 const defaultPageSize int32 = 20
 
 // contentTypeBlogPost is the content_type used for blog posts — blog posts
@@ -361,28 +388,9 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSeries handles DELETE /api/v1/blog/series/{id}.
 func (h *Handlers) DeleteSeries(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid series ID")
-		return
-	}
-
-	if err := h.Service.DeleteSeries(r.Context(), id, tenantID); err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusNoContent, nil)
+	deleteEntity(w, r, h, "id", "series", func(ctx context.Context, tenantID, id pgtype.UUID) error {
+		return h.Service.DeleteSeries(ctx, id, tenantID)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -659,6 +667,32 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": review})
 }
 
+// DeleteReview handles DELETE /api/v1/blog/reviews/{id}.
+func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		return
+	}
+
+	if err := h.Service.DeleteReview(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
 // ---------------------------------------------------------------------------
 // Featured Handlers
 // ---------------------------------------------------------------------------
@@ -720,28 +754,9 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 
 // UnfeaturePost handles DELETE /api/v1/blog/featured/{contentId}.
 func (h *Handlers) UnfeaturePost(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	contentID, err := parseUUIDParam(r, "contentId")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content ID")
-		return
-	}
-
-	if err := h.Service.UnfeaturePost(r.Context(), tenantID, contentID); err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusNoContent, nil)
+	deleteEntity(w, r, h, "contentId", "content", func(ctx context.Context, tenantID, id pgtype.UUID) error {
+		return h.Service.UnfeaturePost(ctx, tenantID, id)
+	})
 }
 
 // ListFeatured handles GET /api/v1/blog/featured.

@@ -1,22 +1,19 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { api } from '$lib/api';
+	import { universitiesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
 	type University = {
 		id: string;
 		name: string;
-		domain: string;
-		verified: boolean;
-		student_count: number;
+		slug: string;
+		member_count: number;
+		status: string;
 		created_at: string;
-		logo_url?: string;
+		description?: string;
 	};
 
 	let universities = $state<University[]>([]);
-	let page = $state(0);
-	let totalPages = $state(1);
 	let loading = $state(true);
 	let errorMessage = $state('');
 
@@ -34,17 +31,15 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			// List lives at the public /universities route (admin CRUD stays
-			// under /admin/universities); it returns a plain unpaginated array.
-			const result = await api<University[]>('/universities');
-			if (result.ok) {
-				universities = Array.isArray(result.data) ? result.data : [];
-				totalPages = 1;
-			} else {
+			const result = await universitiesAdminApi.list();
+			if (result.ok && result.data) {
+				const raw = result.data as unknown;
+				universities = Array.isArray(raw) ? raw : ((raw as { data?: University[] }).data ?? []);
+			} else if (!result.ok) {
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
+			errorMessage = t('common.error', 'Failed to load data');
 		} finally {
 			loading = false;
 		}
@@ -60,14 +55,14 @@
 		editingUni = uni;
 		form = {
 			name: uni.name,
-			domain: uni.domain,
-			verified: uni.verified
+			domain: uni.slug,
+			verified: uni.status === 'active'
 		};
 		showModal = true;
 	}
 
 	async function submit() {
-		if (!form.name.trim() || !form.domain.trim()) return;
+		if (!form.name.trim()) return;
 		saving = true;
 		errorMessage = '';
 		const body = {
@@ -75,16 +70,21 @@
 			domain: form.domain.trim(),
 			verified: form.verified
 		};
-		const result = editingUni
-			? await api(`/admin/universities/${editingUni.id}`, { method: 'PATCH', body })
-			: await api('/admin/universities', { method: 'POST', body });
-		if (result.ok) {
-			showModal = false;
-			load();
-		} else {
-			errorMessage = result.error;
+		try {
+			const result = editingUni
+				? await universitiesAdminApi.update(editingUni.id, body)
+				: await universitiesAdminApi.create(body);
+			if (result.ok) {
+				showModal = false;
+				await load();
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error', 'Failed to save');
+		} finally {
+			saving = false;
 		}
-		saving = false;
 	}
 
 	function confirmDelete(uni: University) {
@@ -95,35 +95,36 @@
 	async function executeDelete() {
 		if (!deleteTarget) return;
 		errorMessage = '';
-		const result = await api(`/admin/universities/${deleteTarget.id}`, { method: 'DELETE' });
-		if (result.ok) {
-			showDeleteModal = false;
-			load();
-		} else {
-			errorMessage = result.error;
+		try {
+			const result = await universitiesAdminApi.delete(deleteTarget.id);
+			if (result.ok) {
+				showDeleteModal = false;
+				await load();
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error', 'Failed to delete');
 		}
 	}
 
-	function handlePageChange(p: number) {
-		page = p;
+	$effect(() => {
 		load();
-	}
-
-	onMount(load);
+	});
 </script>
 
 <svelte:head>
-	<title>{t('universities.title')} — JapaConnect Admin</title>
+	<title>{t('universities.title', 'Universities')} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('universities.title')}</h1>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('universities.title', 'Universities')}</h1>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage university registrations and verification</p>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
 		{errorMessage}
 	</div>
 {/if}
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage university registrations and verification</p>
 
 <div class="mb-4 flex justify-end">
 	<button
@@ -131,54 +132,54 @@
 		style="background-color: var(--color-primary)"
 		onclick={openCreate}
 	>
-		{t('universities.create')}
+		{t('universities.create', 'Create University')}
 	</button>
 </div>
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 		<table class="w-full text-sm">
 			<thead>
 				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.domain')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.verified')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.students')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.created')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.name', 'Name')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Slug</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Status</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.students', 'Members')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.created', 'Created')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 				</tr>
 			</thead>
 			<tbody>
-				{#each universities as uni}
+				{#each universities as uni (uni.id)}
 					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3">
 							<p class="font-medium">{uni.name}</p>
 						</td>
-						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{uni.domain}</td>
+						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{uni.slug}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {uni.verified ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
-								{uni.verified ? t('universities.yes') : t('universities.no')}
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs {uni.status === 'active' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'}">
+								{uni.status}
 							</span>
 						</td>
-						<td class="px-4 py-3 text-xs font-medium">{(uni.student_count ?? 0).toLocaleString()}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{uni.created_at}</td>
+						<td class="px-4 py-3 text-xs font-medium">{(uni.member_count ?? 0).toLocaleString()}</td>
+						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(uni.created_at).toLocaleDateString()}</td>
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-1">
 								<button
 									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-info)"
+									style="color: var(--color-primary)"
 									onclick={() => openEdit(uni)}
 								>
-									{t('common.edit')}
+									{t('common.edit', 'Edit')}
 								</button>
 								<button
 									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
 									style="color: var(--color-danger)"
 									onclick={() => confirmDelete(uni)}
 								>
-									{t('common.delete')}
+									{t('common.delete', 'Delete')}
 								</button>
 							</div>
 						</td>
@@ -193,26 +194,18 @@
 			</tbody>
 		</table>
 	</div>
-
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
-		</div>
-	</div>
 {/if}
 
 <!-- Create/Edit Modal -->
 <Modal
 	bind:open={showModal}
-	title={editingUni ? t('universities.edit') : t('universities.create')}
+	title={editingUni ? t('universities.edit', 'Edit University') : t('universities.create', 'Create University')}
 	onConfirm={submit}
-	confirmLabel={saving ? t('common.saving') : editingUni ? t('common.save') : t('universities.create')}
+	confirmLabel={saving ? t('common.saving', 'Saving...') : editingUni ? t('common.save', 'Save') : t('universities.create', 'Create')}
 >
 	<div class="space-y-3">
 		<div>
-			<label for="uni-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('universities.name')}</label>
+			<label for="uni-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('universities.name', 'Name')}</label>
 			<input
 				id="uni-name"
 				type="text"
@@ -223,7 +216,7 @@
 			/>
 		</div>
 		<div>
-			<label for="uni-domain" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('universities.domain')}</label>
+			<label for="uni-domain" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Domain / Slug</label>
 			<input
 				id="uni-domain"
 				type="text"
@@ -235,13 +228,13 @@
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="uni-verified" type="checkbox" bind:checked={form.verified} />
-			<label for="uni-verified" class="text-sm">{t('universities.verified')}</label>
+			<label for="uni-verified" class="text-sm">{t('universities.verified', 'Verified')}</label>
 		</div>
 	</div>
 </Modal>
 
 <!-- Delete Confirmation -->
-<Modal bind:open={showDeleteModal} title={t('common.confirm')} onConfirm={executeDelete} confirmLabel={t('common.delete')}>
+<Modal bind:open={showDeleteModal} title={t('common.confirm', 'Confirm')} onConfirm={executeDelete} confirmLabel={t('common.delete', 'Delete')}>
 	<p class="text-sm" style="color: var(--color-muted)">
 		Are you sure you want to delete <strong>{deleteTarget?.name}</strong>?
 	</p>

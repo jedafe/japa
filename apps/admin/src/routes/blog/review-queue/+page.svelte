@@ -4,8 +4,6 @@
 	import { CheckCircle, XCircle, RefreshCw, ExternalLink } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
 
-	let { data } = $props();
-
 	type ReviewItem = {
 		id: string;
 		title: string;
@@ -17,11 +15,9 @@
 		excerpt?: string;
 	};
 
-	// svelte-ignore state_referenced_locally
-	let items = $state<ReviewItem[]>(data.initial ?? []);
-	let loading = $state(false);
-	// svelte-ignore state_referenced_locally
-	let errorMessage = $state(data.error ?? '');
+	let items = $state<ReviewItem[]>([]);
+	let loading = $state(true);
+	let errorMessage = $state('');
 
 	// Reject modal
 	let showRejectModal = $state(false);
@@ -45,6 +41,10 @@
 			loading = false;
 		}
 	}
+	
+	$effect(() => {
+		refresh();
+	});
 
 	async function approve(id: string) {
 		acting = true;

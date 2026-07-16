@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { FilterBar } from '$lib/components/ui/filter-bar';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Plus, Pencil, Trash2, Tag } from 'lucide-svelte';
+	import PageHeader from "$lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
+	import { DataTable } from "$lib/components/ui/data-table";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import { Badge } from "$lib/components/ui/badge";
+	import { Button } from "$lib/components/ui/button";
+	import { Select } from "$lib/components/ui/select";
+	import { Modal } from "$lib/components/ui/modal";
+	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import { Plus, Pencil, Trash2, RefreshCw } from "lucide-svelte";
+	import { couponsAdminApiExtended } from "$lib/api";
+	import { t } from "$lib/stores/i18n.svelte";
 
 	type Coupon = {
 		id: string;
@@ -27,145 +27,105 @@
 
 	let coupons = $state<Coupon[]>([]);
 	let loading = $state(true);
-	let errorMessage = $state('');
+	let error = $state("");
+	let success = $state("");
 
-	let showCreateModal = $state(false);
-	let showEditModal = $state(false);
+	// Modal state
+	let showModal = $state(false);
+	let modalMode = $state<"create" | "edit">("create");
 	let editingCoupon = $state<Coupon | null>(null);
 	let saving = $state(false);
 
-	let code = $state('');
-	let discountType = $state('percentage');
-	let discountValue = $state('');
-	let validFrom = $state('');
-	let validUntil = $state('');
-	let usageLimit = $state('');
+	// Delete state
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<Coupon | null>(null);
+
+	// Form state
+	let code = $state("");
+	let discountType = $state("percentage");
+	let discountValue = $state("");
+	let validFrom = $state("");
+	let validUntil = $state("");
+	let usageLimit = $state("");
 	let isActive = $state(true);
 
-	let activeTab = $state('active');
-	let filters = $state<Record<string, string>>({});
-
-	const tabs = $derived([
-		{ value: 'active', label: 'Active', count: coupons.filter((c) => c.is_active).length },
-		{ value: 'inactive', label: 'Inactive', count: coupons.filter((c) => !c.is_active).length },
-		{ value: 'all', label: 'All', count: coupons.length }
-	]);
-
 	const columns = [
+		{ key: "code", label: t("coupons.code", "Code"), sortable: true },
 		{
-			key: 'code',
-			label: 'Code',
+			key: "discount_value",
+			label: t("coupons.discount", "Discount"),
 			sortable: true,
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-2">
-					<span class="font-mono text-sm font-medium text-gray-900">${row.code}</span>
-					<button onclick="navigator.clipboard.writeText('${row.code}')" class="text-gray-400 hover:text-gray-600" title="Copy code">
-						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-					</button>
-				</div>
-			`
+			render: (v: number, row: Coupon) => row.discount_type === "percentage" ? `${v}%` : `${v} credits`
 		},
 		{
-			key: 'discount_value',
-			label: 'Discount',
+			key: "used_count",
+			label: t("coupons.used", "Used"),
 			sortable: true,
-			render: (value: number, row: any) => `<span class="font-medium">${row.discount_type === 'percentage' ? `${value}%` : `${value} credits`}</span>`
+			render: (v: number, row: Coupon) => `${v ?? 0}${row.usage_limit ? ` / ${row.usage_limit}` : ""}`
 		},
 		{
-			key: 'used_count',
-			label: 'Used',
+			key: "valid_until",
+			label: t("coupons.expires", "Expires"),
 			sortable: true,
-			render: (value: number, row: any) => `<span class="text-sm text-gray-600">${value ?? 0}${row.usage_limit ? ` / ${row.usage_limit}` : ''}</span>`
+			render: (v: string) => v ? new Date(v).toLocaleDateString() : t("coupons.never", "Never")
 		},
-		{
-			key: 'valid_until',
-			label: 'Expires',
-			sortable: true,
-			render: (value: string) => value ? `<span class="text-sm">${new Date(value).toLocaleDateString()}</span>` : '<span class="text-sm text-gray-400">Never</span>'
-		},
-		{
-			key: 'is_active',
-			label: 'Status',
-			sortable: true,
-			render: (_: any, row: any) => {
-				const isExpired = row.valid_until && new Date(row.valid_until) < new Date();
-				const isUsedUp = row.usage_limit && row.used_count >= row.usage_limit;
-				const status = isExpired ? 'expired' : isUsedUp ? 'used' : row.is_active ? 'active' : 'inactive';
-				const classes: Record<string, string> = {
-					active: 'bg-success-100 text-success-800 border-success-200',
-					inactive: 'bg-gray-100 text-gray-800 border-gray-200',
-					expired: 'bg-gray-100 text-gray-800 border-gray-200',
-					used: 'bg-warning-100 text-warning-800 border-warning-200'
-				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[status]}">${status}</span>`;
-			}
-		},
-		{
-			key: 'actions',
-			label: '',
-			class: 'w-24',
-			render: (_: any, row: any) => `
+		{ key: "is_active", label: t("common.status", "Status"), sortable: true },
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
+			render: (_: any, row: Coupon) => `
 				<div class="flex items-center gap-1">
-					<button onclick="window.__editCoupon('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Edit</button>
-					<button onclick="window.__deleteCoupon('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
-				</div>
-			`
+					<button onclick="window.__editCoupon('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.edit", "Edit")}</button>
+					<button onclick="window.__deleteCoupon('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete", "Delete")}</button>
+				</div>`
 		}
 	];
 
-	let filteredCoupons = $derived.by(() => {
-		let result = [...coupons];
-		if (activeTab === 'active') result = result.filter((c) => c.is_active);
-		else if (activeTab === 'inactive') result = result.filter((c) => !c.is_active);
-		if (filters.type) result = result.filter((c) => c.discount_type === filters.type);
-		return result;
-	});
-
-	async function load() {
+	async function loadCoupons() {
 		loading = true;
-		errorMessage = '';
+		error = "";
 		try {
-			const result = await api<Coupon[]>('/admin/coupons');
+			const result = await couponsAdminApiExtended.list();
 			if (result.ok) {
-				coupons = result.data ?? [];
+				coupons = (result.data as Coupon[]) ?? [];
 			} else {
-				errorMessage = result.error;
+				error = result.error ?? t("common.error", "Failed to load coupons");
 			}
-		} catch {
-			errorMessage = t('common.error');
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to load coupons");
 		} finally {
 			loading = false;
 		}
 	}
 
 	function openCreate() {
-		code = '';
-		discountType = 'percentage';
-		discountValue = '';
-		validFrom = '';
-		validUntil = '';
-		usageLimit = '';
-		isActive = true;
+		modalMode = "create";
 		editingCoupon = null;
-		showCreateModal = true;
+		code = "";
+		discountType = "percentage";
+		discountValue = "";
+		validFrom = "";
+		validUntil = "";
+		usageLimit = "";
+		isActive = true;
+		showModal = true;
 	}
 
 	function openEdit(coupon: Coupon) {
+		modalMode = "edit";
 		editingCoupon = coupon;
 		code = coupon.code;
 		discountType = coupon.discount_type;
 		discountValue = String(coupon.discount_value);
-		validFrom = coupon.valid_from || '';
-		validUntil = coupon.valid_until || '';
-		usageLimit = coupon.usage_limit ? String(coupon.usage_limit) : '';
+		validFrom = coupon.valid_from || "";
+		validUntil = coupon.valid_until || "";
+		usageLimit = coupon.usage_limit ? String(coupon.usage_limit) : "";
 		isActive = coupon.is_active;
-		showCreateModal = true;
+		showModal = true;
 	}
 
 	async function saveCoupon() {
 		if (!code.trim() || !discountValue) return;
 		saving = true;
-		errorMessage = '';
+		error = "";
 		try {
 			const body: Record<string, unknown> = {
 				code: code.trim().toUpperCase(),
@@ -177,143 +137,132 @@
 			if (validUntil) body.valid_until = validUntil;
 			if (usageLimit) body.usage_limit = Number(usageLimit);
 
-			const url = editingCoupon ? `/admin/coupons/${editingCoupon.id}` : '/admin/coupons';
-			const method = editingCoupon ? 'PATCH' : 'POST';
-			const result = await api(url, { method, body });
+			const result = editingCoupon
+				? await couponsAdminApiExtended.update(editingCoupon.id, body)
+				: await couponsAdminApiExtended.create(body);
+
 			if (result.ok) {
-				showCreateModal = false;
-				editingCoupon = null;
-				load();
+				showModal = false;
+				success = editingCoupon ? t("coupons.updated", "Coupon updated") : t("coupons.created", "Coupon created");
+				loadCoupons();
 			} else {
-				errorMessage = result.error;
+				error = result.error ?? t("common.error", "Failed to save coupon");
 			}
-		} catch {
-			errorMessage = t('common.error');
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to save coupon");
 		} finally {
 			saving = false;
 		}
 	}
 
-	async function deleteCoupon(id: string) {
-		errorMessage = '';
-		try {
-			const result = await api(`/admin/coupons/${id}`, { method: 'DELETE' });
-			if (result.ok) {
-				coupons = coupons.filter((c) => c.id !== id);
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
+	function openDelete(coupon: Coupon) {
+		deleteTarget = coupon;
+		showDeleteConfirm = true;
+	}
+
+	async function confirmDelete() {
+		if (!deleteTarget) return;
+		const result = await couponsAdminApiExtended.delete(deleteTarget.id);
+		if (result.ok) {
+			showDeleteConfirm = false;
+			deleteTarget = null;
+			success = t("coupons.deleted", "Coupon deleted");
+			loadCoupons();
+		} else {
+			error = result.error ?? t("common.error", "Failed to delete coupon");
 		}
 	}
 
-	// Expose functions for DataTable inline actions
-	if (typeof window !== 'undefined') {
-		(window as any).__editCoupon = openEdit;
-		(window as any).__deleteCoupon = deleteCoupon;
-	}
-
-	onMount(load);
 </script>
 
 <svelte:head>
-	<title>{t('coupons.title')} — JapaConnect Admin</title>
+	<title>{t("coupons.title", "Coupons")} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
-	title={t('coupons.title')}
-	description={t('coupons.description')}
+	title={t("coupons.title", "Coupons")}
+	description={t("coupons.description", "Manage discount coupons")}
 	actions={[
-		{ label: t('coupons.create'), icon: Plus, onclick: openCreate }
+		{ label: t("coupons.create", "Create Coupon"), icon: Plus, onclick: openCreate },
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadCoupons }
 	]}
 />
 
-<div class="space-y-6">
-	{#if errorMessage}
-		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
-			{errorMessage}
-		</div>
-	{/if}
+{#if error}
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+		{error}
+	</div>
+{/if}
+{#if success}
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)">
+		{success}
+	</div>
+{/if}
 
-	<Tabs {tabs} bind:value={activeTab} />
-
-	<FilterBar
-		bind:value={filters}
-		filters={[
-			{
-				key: 'type',
-				label: 'Type',
-				options: [
-					{ value: 'percentage', label: 'Percentage' },
-					{ value: 'fixed', label: 'Fixed Amount' }
-				]
-			}
-		]}
-	/>
-
-	<Card>
-		<CardContent class="p-0">
-			{#if loading}
-				<p class="py-8 text-center text-sm text-gray-500">{t('common.loading')}</p>
-			{:else}
-				<DataTable
-					columns={filteredCoupons.length > 0 ? columns : []}
-					data={filteredCoupons}
-					pageSize={20}
-					selectable={true}
-					emptyMessage={t('coupons.empty')}
-				/>
-			{/if}
-		</CardContent>
-	</Card>
-</div>
+<Card>
+	<CardContent>
+		{#if loading}
+			<TableSkeleton rows={8} columns={columns.length} />
+		{:else}
+			<DataTable {columns} data={coupons} pageSize={coupons.length} selectable />
+		{/if}
+	</CardContent>
+</Card>
 
 <!-- Create/Edit Modal -->
-<Modal bind:open={showCreateModal} title={editingCoupon ? t('coupons.edit') : t('coupons.create')}>
+<Modal bind:open={showModal} title={modalMode === "create" ? t("coupons.create", "Create Coupon") : t("coupons.edit", "Edit Coupon")}>
 	<div class="space-y-4">
 		<div>
-			<label for="cp-code" class="mb-1 block text-sm font-medium text-gray-700">{t('coupons.code')}</label>
-			<input id="cp-code" type="text" bind:value={code} required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm uppercase placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" />
+			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.code", "Code")}</label>
+			<input type="text" bind:value={code} class="mt-1 w-full rounded-lg border p-2 text-sm uppercase" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="cp-type" class="mb-1 block text-sm font-medium text-gray-700">{t('coupons.type')}</label>
-				<select id="cp-type" bind:value={discountType} class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">
-					<option value="percentage">{t('coupons.percentage')}</option>
-					<option value="fixed">{t('coupons.fixed')}</option>
-				</select>
+				<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.type", "Type")}</label>
+				<Select options={[{ value: "percentage", label: t("coupons.percentage", "Percentage") }, { value: "fixed", label: t("coupons.fixed", "Fixed") }]} bind:value={discountType} />
 			</div>
 			<div>
-				<label for="cp-value" class="mb-1 block text-sm font-medium text-gray-700">{t('coupons.value')}</label>
-				<input id="cp-value" type="number" bind:value={discountValue} required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" />
-			</div>
-		</div>
-		<div class="grid grid-cols-2 gap-4">
-			<div>
-				<label for="cp-from" class="mb-1 block text-sm font-medium text-gray-700">{t('coupons.valid_from')}</label>
-				<input id="cp-from" type="date" bind:value={validFrom} class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" />
-			</div>
-			<div>
-				<label for="cp-until" class="mb-1 block text-sm font-medium text-gray-700">{t('coupons.valid_until')}</label>
-				<input id="cp-until" type="date" bind:value={validUntil} class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" />
+				<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.value", "Value")}</label>
+				<input type="number" bind:value={discountValue} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 			</div>
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="cp-limit" class="mb-1 block text-sm font-medium text-gray-700">{t('coupons.usage_limit')}</label>
-				<input id="cp-limit" type="number" bind:value={usageLimit} class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" />
+				<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.valid_from", "Valid From")}</label>
+				<input type="date" bind:value={validFrom} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+			</div>
+			<div>
+				<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.valid_until", "Valid Until")}</label>
+				<input type="date" bind:value={validUntil} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+			</div>
+		</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.usage_limit", "Usage Limit")}</label>
+				<input type="number" bind:value={usageLimit} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 			</div>
 			<div class="flex items-center gap-2 pt-6">
-				<input id="cp-active" type="checkbox" bind:checked={isActive} class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-				<label for="cp-active" class="text-sm font-medium text-gray-700">{t('coupons.active')}</label>
+				<input type="checkbox" bind:checked={isActive} class="h-4 w-4 rounded" style="accent-color: var(--color-primary)" />
+				<label class="text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.active", "Active")}</label>
 			</div>
 		</div>
-		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="outline" onclick={() => showCreateModal = false}>{t('common.cancel')}</Button>
-			<Button onclick={saveCoupon} disabled={saving}>
-				{saving ? t('common.saving') : editingCoupon ? t('common.save') : t('common.create')}
-			</Button>
-		</div>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showModal = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button onclick={saveCoupon} disabled={saving}>{saving ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
+	</div>
+</Modal>
+
+<!-- Delete Confirmation -->
+<Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")}>
+	{#if deleteTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t("coupons.delete_confirm", "Delete coupon")} <strong class="font-mono">{deleteTarget.code}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t("common.cannotUndo", "This action cannot be undone.")}</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showDeleteConfirm = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={confirmDelete}>{t("common.delete", "Delete")}</Button>
 	</div>
 </Modal>
