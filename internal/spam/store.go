@@ -111,6 +111,59 @@ func (s *Store) DeleteIPBlock(ctx context.Context, id, tenantID pgtype.UUID) err
 	})
 }
 
+// UpdateIPBlockInput holds the parameters for updating an IP block.
+type UpdateIPBlockInput struct {
+	CIDR      *string
+	BlockType *string
+	Reason    *string
+	ExpiresAt *pgtype.Timestamptz
+	BlockedBy pgtype.UUID
+}
+
+// UpdateIPBlock updates an existing IP block by ID.
+func (s *Store) UpdateIPBlock(ctx context.Context, id, tenantID pgtype.UUID, input UpdateIPBlockInput) (gen.IpBlock, error) {
+	current, err := s.queries.GetIPBlockByID(ctx, gen.GetIPBlockByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.IpBlock{}, fmt.Errorf("getting ip block for update: %w", err)
+	}
+
+	cidr := current.Cidr
+
+	if input.CIDR != nil {
+		addr, parseErr := netipParseAddrOrCIDR(*input.CIDR)
+		if parseErr != nil {
+			return gen.IpBlock{}, fmt.Errorf("parsing CIDR: %w", parseErr)
+		}
+
+		cidr = addr
+	}
+
+	blockType := current.BlockType
+	if input.BlockType != nil {
+		blockType = *input.BlockType
+	}
+
+	reason := current.Reason
+	if input.Reason != nil {
+		reason = input.Reason
+	}
+
+	expiresAt := current.ExpiresAt
+	if input.ExpiresAt != nil {
+		expiresAt = *input.ExpiresAt
+	}
+
+	return s.queries.UpdateIPBlock(ctx, gen.UpdateIPBlockParams{
+		ID:        id,
+		TenantID:  tenantID,
+		Cidr:      cidr,
+		BlockType: blockType,
+		Reason:    reason,
+		ExpiresAt: expiresAt,
+		BlockedBy: input.BlockedBy,
+	})
+}
+
 // GetActiveIPBlocks returns all non-expired IP blocks for the tenant.
 func (s *Store) GetActiveIPBlocks(ctx context.Context, tenantID pgtype.UUID) ([]gen.IpBlock, error) {
 	return s.queries.GetActiveIPBlocks(ctx, tenantID)
@@ -207,6 +260,44 @@ func (s *Store) DeleteCensoredWord(ctx context.Context, id, tenantID pgtype.UUID
 	return s.queries.DeleteCensoredWord(ctx, gen.DeleteCensoredWordParams{
 		ID:       id,
 		TenantID: tenantID,
+	})
+}
+
+// UpdateCensoredWordInput holds the parameters for updating a censored word.
+type UpdateCensoredWordInput struct {
+	Pattern     *string
+	Action      *string
+	Replacement *string
+}
+
+// UpdateCensoredWord updates an existing censored word by ID.
+func (s *Store) UpdateCensoredWord(ctx context.Context, id, tenantID pgtype.UUID, input UpdateCensoredWordInput) (gen.CensoredWord, error) {
+	current, err := s.queries.GetCensoredWordByID(ctx, gen.GetCensoredWordByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.CensoredWord{}, fmt.Errorf("getting censored word for update: %w", err)
+	}
+
+	pattern := current.Pattern
+	if input.Pattern != nil {
+		pattern = *input.Pattern
+	}
+
+	action := current.Action
+	if input.Action != nil {
+		action = *input.Action
+	}
+
+	replacement := current.Replacement
+	if input.Replacement != nil {
+		replacement = input.Replacement
+	}
+
+	return s.queries.UpdateCensoredWord(ctx, gen.UpdateCensoredWordParams{
+		ID:          id,
+		TenantID:    tenantID,
+		Pattern:     pattern,
+		Action:      action,
+		Replacement: replacement,
 	})
 }
 

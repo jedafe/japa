@@ -31,7 +31,12 @@ func fullKey(key string) string {
 
 // GetFailCount returns the current failure count for the given key.
 // Returns 0 when the key does not exist (no prior failures).
+// Returns 0 when Valkey is unreachable (graceful degradation).
 func (s *ValkeyBruteForceStore) GetFailCount(ctx context.Context, key string) (int, error) {
+	if s.rdb == nil {
+		return 0, nil
+	}
+
 	val, err := s.rdb.Get(ctx, fullKey(key)).Result()
 	if err != nil {
 		// A missing key is not an error — it means zero prior failures.
@@ -52,8 +57,12 @@ func (s *ValkeyBruteForceStore) GetFailCount(ctx context.Context, key string) (i
 
 // IncrFailCount atomically increments the failure counter and sets (or
 // refreshes) the TTL to FailWindow. Returns the new count after
-// incrementing.
+// incrementing. No-op when Valkey is unreachable (graceful degradation).
 func (s *ValkeyBruteForceStore) IncrFailCount(ctx context.Context, key string) error {
+	if s.rdb == nil {
+		return nil
+	}
+
 	fk := fullKey(key)
 
 	// Pipeline INCR + EXPIRE for atomicity — both execute in a single
@@ -72,7 +81,12 @@ func (s *ValkeyBruteForceStore) IncrFailCount(ctx context.Context, key string) e
 
 // ResetFailCount deletes the failure counter for the given key.
 // It is not an error to reset a key that does not exist.
+// No-op when Valkey is unreachable (graceful degradation).
 func (s *ValkeyBruteForceStore) ResetFailCount(ctx context.Context, key string) error {
+	if s.rdb == nil {
+		return nil
+	}
+
 	if err := s.rdb.Del(ctx, fullKey(key)).Err(); err != nil {
 		return fmt.Errorf("bruteforce reset: %w", err)
 	}

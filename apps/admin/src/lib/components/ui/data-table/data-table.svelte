@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
-  import Pagination from "$lib/components/ui/Pagination.svelte";
+  import type { Component, Snippet } from "svelte";
 
   type Column = {
     key: string;
@@ -9,34 +9,37 @@
     sortable?: boolean;
     class?: string;
     render?: (value: any, row: any) => string;
+    component?: Component<any> | ((...args: any[]) => any);
   };
 
   let {
     columns,
     data = [],
-    pageSize = $bindable(10),
     selectable = false,
+    selectedIds = $bindable(new Set<string>()),
     onrowclick,
     emptyMessage = "No data available",
-    class: className
+    class: className,
+    showPagination = true,
+    loading = false,
+    pageSize
   }: {
     columns: Column[];
     data?: any[];
-    pageSize?: number;
     selectable?: boolean;
+    selectedIds?: Set<string>;
     onrowclick?: (row: any) => void;
     emptyMessage?: string;
     class?: ClassValue;
+    showPagination?: boolean;
+    loading?: boolean;
+    pageSize?: number;
   } = $props();
 
-  let currentPage = $state(0);
   let sortColumn = $state<string | null>(null);
   let sortDirection = $state<"asc" | "desc">("asc");
-  let selectedRows = $state(new Set<any>());
 
-  let totalPages = $derived(Math.ceil(data.length / pageSize));
-
-  let paginatedData = $derived.by(() => {
+  let sortedData = $derived.by(() => {
     let sorted = [...data];
     if (sortColumn) {
       sorted.sort((a, b) => {
@@ -48,8 +51,7 @@
         return sortDirection === "asc" ? compare : -compare;
       });
     }
-    const start = currentPage * pageSize;
-    return sorted.slice(start, start + pageSize);
+    return sorted;
   });
 
   function handleSort(column: string) {
@@ -62,24 +64,25 @@
   }
 
   function toggleRow(row: any) {
-    if (selectedRows.has(row.id)) {
-      selectedRows.delete(row.id);
+    const next = new Set(selectedIds);
+    if (next.has(row.id)) {
+      next.delete(row.id);
     } else {
-      selectedRows.add(row.id);
+      next.add(row.id);
     }
-    selectedRows = selectedRows;
+    selectedIds = next;
   }
 
   function toggleAll() {
-    if (selectedRows.size === paginatedData.length) {
-      selectedRows = new Set();
+    if (selectedIds.size === sortedData.length && sortedData.length > 0) {
+      selectedIds = new Set();
     } else {
-      selectedRows = new Set(paginatedData.map(r => r.id));
+      selectedIds = new Set(sortedData.map(r => r.id));
     }
   }
 </script>
 
-<div class={clsx("w-full", className)}>
+<div class={clsx("w-full", className)} aria-live="polite" aria-busy={loading}>
   <div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
     <table class="w-full caption-bottom text-sm">
       <thead>
@@ -88,9 +91,10 @@
             <th class="h-12 w-12 px-4 text-left align-middle font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">
               <input
                 type="checkbox"
-                checked={selectedRows.size === paginatedData.length && paginatedData.length > 0}
+                checked={selectedIds.size === sortedData.length && sortedData.length > 0}
                 onchange={toggleAll}
                 class="h-4 w-4 rounded border-gray-300"
+                aria-label="Select all rows"
               />
             </th>
           {/if}
@@ -102,6 +106,8 @@
                 column.class
               )}
               style="color: var(--color-muted); background-color: var(--color-surface)"
+              scope="col"
+              aria-sort={column.sortable ? (sortColumn === column.key ? (sortDirection === "asc" ? "ascending" : "descending") : "none") : undefined}
               onclick={() => column.sortable && handleSort(column.key)}
             >
               <div class="flex items-center gap-2">
@@ -123,12 +129,12 @@
         </tr>
       </thead>
       <tbody>
-        {#each paginatedData as row, i (row.id ?? i)}
+        {#each sortedData as row, i (row.id ?? i)}
           <tr
             class={clsx(
               "transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]",
               onrowclick && "cursor-pointer",
-              selectedRows.has(row.id) && "bg-primary-50 dark:bg-primary-950/30"
+              selectedIds.has(row.id) && "bg-primary-50 dark:bg-primary-950/30"
             )}
             style="border-color: var(--color-border)"
             onclick={() => onrowclick?.(row)}
@@ -137,16 +143,19 @@
               <td class="w-12 p-4 align-middle" style="border-color: var(--color-border)">
                 <input
                   type="checkbox"
-                  checked={selectedRows.has(row.id)}
+                  checked={selectedIds.has(row.id)}
                   onchange={() => toggleRow(row)}
                   class="h-4 w-4 rounded border-gray-300"
                   onclick={(e) => e.stopPropagation()}
+                  aria-label={`Select row ${row.id}`}
                 />
               </td>
             {/if}
             {#each columns as column}
               <td class="p-4 align-middle" style="border-color: var(--color-border)">
-                {#if column.render}
+                {#if column.component}
+                  <column.component value={row[column.key]} {row} />
+                {:else if column.render}
                   {@html column.render(row[column.key], row)}
                 {:else}
                   {row[column.key] ?? "—"}
@@ -166,13 +175,4 @@
       </tbody>
     </table>
   </div>
-
-  {#if totalPages > 0}
-    <Pagination
-      bind:page={currentPage}
-      {totalPages}
-      totalItems={data.length}
-      bind:pageSize
-    />
-  {/if}
 </div>

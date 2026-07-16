@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-svelte';
+	import { Select } from '$lib/components/ui/select';
 
 	let {
 		page = $bindable(0),
@@ -18,6 +19,11 @@
 	function goTo(p: number) {
 		page = Math.max(0, Math.min(p, totalPages - 1));
 	}
+
+	function handlePageSizeChange(val: string) {
+		pageSize = Number(val);
+		page = 0;
+	}
 </script>
 
 <div class="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3" style="border-color: var(--color-border)">
@@ -26,19 +32,12 @@
 
 		<div class="flex items-center gap-1.5">
 			<span class="text-xs">Per page:</span>
-			<select
-				class="h-7 rounded-md border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
-				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-				value={pageSize}
-				onchange={(e) => {
-					pageSize = Number((e.target as HTMLSelectElement).value);
-					page = 0;
-				}}
-			>
-				{#each pageSizeOptions as opt}
-					<option value={opt}>{opt}</option>
-				{/each}
-			</select>
+			<Select
+				options={pageSizeOptions.map(o => ({ value: String(o), label: String(o) }))}
+				value={String(pageSize)}
+				onchange={handlePageSizeChange}
+				class="!h-7 !text-xs !w-20"
+			/>
 		</div>
 	</div>
 

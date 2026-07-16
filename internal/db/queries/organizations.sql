@@ -100,3 +100,8 @@ SELECT EXISTS(
 -- name: GetOrganizationMemberRole :one
 SELECT role FROM organization_members
 WHERE organization_id = $1 AND user_id = $2;
+
+-- name: IncrementOrganizationMemberCount :exec
+UPDATE organizations
+SET member_count = member_count + $2, updated_at = now()
+WHERE id = $1;

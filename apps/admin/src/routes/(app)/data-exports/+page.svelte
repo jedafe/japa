@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { onMount } from "svelte";
-	import { apiFetch } from "$lib/api/client";
+	import { api } from "$lib/api";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
@@ -162,8 +161,8 @@
 
 	async function loadExports() {
 		loading = true;
-		const result = await apiFetch<DataExport[]>("/data-exports");
-		if (result.data) {
+		const result = await api<DataExport[]>("/data-exports");
+		if (result.ok) {
 			exports = Array.isArray(result.data) ? result.data : [];
 		}
 		loading = false;
@@ -173,22 +172,22 @@
 		if (!form.name.trim()) return;
 		saving = true;
 		errorMessage = "";
-		const result = await apiFetch("/data-exports", {
+		const result = await api("/data-exports", {
 			method: "POST",
-			body: JSON.stringify({
+			body: {
 				name: form.name.trim(),
 				type: form.type,
 				format: form.format,
 				includeMetadata: form.includeMetadata
-			})
+			}
 		});
-		if (result.data) {
+		if (result.ok) {
 			createModalOpen = false;
 			resetForm();
 			successMessage = "Export job queued successfully";
 			loadExports();
 		} else {
-			errorMessage = result.error?.message ?? "Failed to create export";
+			errorMessage = result.error ?? "Failed to create export";
 		}
 		saving = false;
 	}
@@ -201,12 +200,12 @@
 	async function confirmDelete() {
 		if (!deletingId) return;
 		saving = true;
-		const result = await apiFetch(`/data-exports/${deletingId}`, { method: "DELETE" });
-		if (!result.error) {
+		const result = await api(`/data-exports/${deletingId}`, { method: "DELETE" });
+		if (result.ok) {
 			successMessage = "Export deleted";
 			loadExports();
 		} else {
-			errorMessage = result.error?.message ?? "Failed to delete export";
+			errorMessage = result.error ?? "Failed to delete export";
 		}
 		deleteConfirmOpen = false;
 		deletingId = null;
@@ -217,9 +216,15 @@
 		form = { name: "", type: "users", format: "csv", includeMetadata: true };
 	}
 
-	onMount(() => {
+	$effect(() => {
 		loadExports();
+	});
+
+	$effect(() => {
 		(window as any).__deleteExport = openDeleteConfirm;
+		return () => {
+			delete (window as any).__deleteExport;
+		};
 	});
 </script>
 

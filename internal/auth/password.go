@@ -58,6 +58,7 @@ func DefaultPasswordPolicy() PasswordPolicy {
 type SettingsReader interface {
 	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
 	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 }
 
 // PasswordPolicyFromSettings returns a password policy configured from system_settings.

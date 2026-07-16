@@ -1,11 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { api } from '$lib/api';
 	import type { DbHealth } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '$lib/stores/i18n';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import type { PageData } from './$types';
 	import { Tabs, Tooltip } from 'bits-ui';
@@ -38,9 +37,23 @@
 	async function refresh() {
 		refreshing = true;
 		try {
-			const result = await api<DbHealth>('/control/health/db');
+			const result = await api<{ status: string; error?: string; latency_ms?: number }>('/control/health/db');
 			if (result.ok) {
-				dbHealth = result.data;
+				const raw = result.data;
+				dbHealth = {
+					connected: raw.status === 'ok',
+					version: '',
+					latency_ms: raw.latency_ms ?? 0,
+					size_bytes: 0,
+					table_count: 0,
+					index_count: 0,
+					avg_query_time_ms: 0,
+					tables: [],
+					slow_queries: [],
+					indexes_unused: [],
+					connection_pool: undefined,
+					replication: undefined
+				};
 				apiAvailable = true;
 				lastRefresh = new Date();
 				secondsAgo = 0;
@@ -129,7 +142,7 @@
 		return 'bg-foreground';
 	}
 
-	onMount(() => {
+	$effect(() => {
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
 				refresh();
@@ -188,23 +201,23 @@
 	</div>
 	<div class="flex items-center gap-2">
 		<button
-			class="flex items-center gap-1.5 rounded-card border border-border-card bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background-alt disabled:opacity-50"
+			class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
 			disabled={refreshing}
 			onclick={refresh}
 		>
-			<RefreshCw class="h-3 w-3 {refreshing ? 'animate-spin' : ''}" />
+			<RefreshCw class="size-3 {refreshing ? 'animate-spin' : ''}" />
 			{t('common.refresh')}
 		</button>
 		<Tooltip.Provider>
 			<Tooltip.Root>
 				<Tooltip.Trigger>
 					<button
-						class="flex items-center gap-1.5 rounded-card border border-border-card bg-background px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-background-alt disabled:opacity-50"
+						class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
 						disabled={vacuuming}
 						onclick={() => { showVacuumConfirm = true; }}
 					>
-						<Scissors class="h-3 w-3 {vacuuming ? 'animate-pulse' : ''}" />
-						Vacuum DB
+						<Scissors class="size-3 {vacuuming ? 'animate-pulse' : ''}" />
+						{t('db.vacuum_button')}
 					</button>
 				</Tooltip.Trigger>
 				<Tooltip.Portal>
@@ -212,7 +225,7 @@
 						sideOffset={8}
 						class="z-50 rounded-card bg-background-alt px-3 py-1.5 text-xs text-foreground shadow-card border border-border-card"
 					>
-						Run VACUUM to reclaim storage and update statistics
+						{t('db.vacuum_tooltip')}
 						<Tooltip.Arrow class="fill-background-alt" />
 					</Tooltip.Content>
 				</Tooltip.Portal>
@@ -234,19 +247,19 @@
 		<Tabs.List class="mb-6 flex gap-1 rounded-card bg-muted p-1">
 			<Tabs.Trigger value="overview" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
 				<Activity class="h-3.5 w-3.5" />
-				Overview
+				{t('db.tab_overview')}
 			</Tabs.Trigger>
 			<Tabs.Trigger value="tables" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
 				<Table2 class="h-3.5 w-3.5" />
-				Tables
+				{t('db.tab_tables')}
 			</Tabs.Trigger>
 			<Tabs.Trigger value="slow-queries" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
 				<Zap class="h-3.5 w-3.5" />
-				Slow Queries
+				{t('db.tab_slow_queries')}
 			</Tabs.Trigger>
 			<Tabs.Trigger value="replication" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
 				<Database class="h-3.5 w-3.5" />
-				Replication
+				{t('db.tab_replication')}
 			</Tabs.Trigger>
 		</Tabs.List>
 
@@ -282,7 +295,7 @@
 					</div>
 					<div class="space-y-3">
 						<div class="flex items-center justify-between">
-							<span class="text-sm text-muted-foreground">Status</span>
+							<span class="text-sm text-muted-foreground">{t('db.status_label')}</span>
 							<StatusBadge status={dbHealth.connected ? 'healthy' : 'critical'}>
 								{dbHealth.connected ? t('db.connected') : t('db.disconnected')}
 							</StatusBadge>
@@ -326,7 +339,7 @@
 						<!-- Pool usage bar -->
 						<div class="pt-1">
 							<div class="flex items-center justify-between text-xs text-muted-foreground">
-								<span>Usage</span>
+								<span>{t('db.usage_label')}</span>
 								<span>{poolUsagePercent()}%</span>
 							</div>
 							<div class="bg-muted h-2 rounded-full mt-1 overflow-hidden">
@@ -374,7 +387,7 @@
 							{:else}
 								<tr>
 									<td colspan="5" class="px-4 py-8 text-center text-muted-foreground">
-										No table statistics available
+										{t('db.no_table_stats')}
 									</td>
 								</tr>
 							{/if}
@@ -464,8 +477,8 @@
 			{:else}
 				<div class="rounded-card border border-border-card bg-background p-12 text-center shadow-card">
 					<Database class="mx-auto h-10 w-10 text-muted-foreground opacity-30" />
-					<p class="mt-4 text-sm font-medium text-muted-foreground">No replication data available</p>
-					<p class="mt-1 text-xs text-muted-foreground">This instance does not appear to be configured for replication.</p>
+					<p class="mt-4 text-sm font-medium text-muted-foreground">{t('db.no_replication_data')}</p>
+					<p class="mt-1 text-xs text-muted-foreground">{t('db.replication_not_configured')}</p>
 				</div>
 			{/if}
 		</Tabs.Content>
@@ -474,8 +487,8 @@
 	<!-- No data state -->
 	<div class="rounded-card border border-border-card bg-background p-12 text-center shadow-card">
 		<Database class="mx-auto h-10 w-10 text-muted-foreground opacity-30" />
-		<p class="mt-4 text-sm font-medium text-muted-foreground">No database health data available</p>
-		<p class="mt-1 text-xs text-muted-foreground">The backend may not yet expose database metrics.</p>
+		<p class="mt-4 text-sm font-medium text-muted-foreground">{t('db.no_health_data')}</p>
+		<p class="mt-1 text-xs text-muted-foreground">{t('db.metrics_not_exposed')}</p>
 	</div>
 {/if}
 
@@ -487,9 +500,9 @@
 
 <ConfirmModal
 	bind:open={showVacuumConfirm}
-	title="Vacuum Database"
-	consequence="Run VACUUM on the database. This reclaims storage and updates statistics. The operation may take a while on large databases."
-	confirmText="VACUUM"
+	title={t('db.vacuum_title')}
+	consequence={t('db.vacuum_consequence')}
+	confirmText={t('db.vacuum_confirm')}
 	onConfirm={vacuum}
 	onCancel={() => {}}
 />

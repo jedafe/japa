@@ -24,7 +24,7 @@ func NewStore(read, write *gen.Queries) *Store {
 // Profile Type Definitions
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) createProfessionalProfileType(ctx context.Context, p gen.CreateProfessionalProfileTypeParams) (gen.ProfessionalProfileType, error) {
 	row, err := s.write.CreateProfessionalProfileType(ctx, p)
 	if err != nil {
@@ -34,7 +34,7 @@ func (s *Store) createProfessionalProfileType(ctx context.Context, p gen.CreateP
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) getProfessionalProfileTypeByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ProfessionalProfileType, error) {
 	row, err := s.read.GetProfessionalProfileTypeByID(ctx, gen.GetProfessionalProfileTypeByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
@@ -44,7 +44,7 @@ func (s *Store) getProfessionalProfileTypeByID(ctx context.Context, id, tenantID
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) getProfessionalProfileTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.ProfessionalProfileType, error) {
 	row, err := s.read.GetProfessionalProfileTypeBySlug(ctx, gen.GetProfessionalProfileTypeBySlugParams{Slug: slug, TenantID: tenantID})
 	if err != nil {
@@ -54,7 +54,7 @@ func (s *Store) getProfessionalProfileTypeBySlug(ctx context.Context, slug strin
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) listProfessionalProfileTypesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalProfileType, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -72,7 +72,7 @@ func (s *Store) listProfessionalProfileTypesByTenant(ctx context.Context, tenant
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) updateProfessionalProfileType(ctx context.Context, p gen.UpdateProfessionalProfileTypeParams) (gen.ProfessionalProfileType, error) {
 	row, err := s.write.UpdateProfessionalProfileType(ctx, p)
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *Store) updateProfessionalProfileType(ctx context.Context, p gen.UpdateP
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) deleteProfessionalProfileType(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteProfessionalProfileType(ctx, gen.DeleteProfessionalProfileTypeParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting professional profile type: %w", err)
@@ -95,7 +95,7 @@ func (s *Store) deleteProfessionalProfileType(ctx context.Context, id, tenantID 
 // Professional Profiles
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) createProfessionalProfile(ctx context.Context, p gen.CreateProfessionalProfileParams) (gen.ProfessionalProfile, error) {
 	row, err := s.write.CreateProfessionalProfile(ctx, p)
 	if err != nil {
@@ -105,7 +105,7 @@ func (s *Store) createProfessionalProfile(ctx context.Context, p gen.CreateProfe
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) getProfessionalProfileByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ProfessionalProfile, error) {
 	row, err := s.read.GetProfessionalProfileByID(ctx, gen.GetProfessionalProfileByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
@@ -115,7 +115,7 @@ func (s *Store) getProfessionalProfileByID(ctx context.Context, id, tenantID pgt
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) getProfessionalProfileBySlug(ctx context.Context, slug string) (gen.ProfessionalProfile, error) {
 	row, err := s.read.GetProfessionalProfileBySlug(ctx, slug)
 	if err != nil {
@@ -125,7 +125,7 @@ func (s *Store) getProfessionalProfileBySlug(ctx context.Context, slug string) (
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) listProfessionalProfilesByOwner(ctx context.Context, ownerUserID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalProfile, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -144,7 +144,7 @@ func (s *Store) listProfessionalProfilesByOwner(ctx context.Context, ownerUserID
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) listProfessionalProfilesByType(ctx context.Context, typeID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalProfile, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -163,7 +163,7 @@ func (s *Store) listProfessionalProfilesByType(ctx context.Context, typeID, tena
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) updateProfessionalProfile(ctx context.Context, p gen.UpdateProfessionalProfileParams) (gen.ProfessionalProfile, error) {
 	row, err := s.write.UpdateProfessionalProfile(ctx, p)
 	if err != nil {
@@ -173,7 +173,7 @@ func (s *Store) updateProfessionalProfile(ctx context.Context, p gen.UpdateProfe
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) deleteProfessionalProfile(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteProfessionalProfile(ctx, gen.DeleteProfessionalProfileParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting professional profile: %w", err)
@@ -182,7 +182,7 @@ func (s *Store) deleteProfessionalProfile(ctx context.Context, id, tenantID pgty
 	return nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) incrementFollowerCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
 	if err := s.write.IncrementFollowerCount(ctx, gen.IncrementFollowerCountParams{ID: id, TenantID: tenantID, Delta: delta}); err != nil {
 		return fmt.Errorf("incrementing follower count: %w", err)
@@ -195,7 +195,7 @@ func (s *Store) incrementFollowerCount(ctx context.Context, id, tenantID pgtype.
 // Professional Profile Members
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) addProfessionalProfileMember(ctx context.Context, p gen.AddProfessionalProfileMemberParams) error {
 	if err := s.write.AddProfessionalProfileMember(ctx, p); err != nil {
 		return fmt.Errorf("adding professional profile member: %w", err)
@@ -204,7 +204,7 @@ func (s *Store) addProfessionalProfileMember(ctx context.Context, p gen.AddProfe
 	return nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) removeProfessionalProfileMember(ctx context.Context, profileID, userID pgtype.UUID) error {
 	if err := s.write.RemoveProfessionalProfileMember(ctx, gen.RemoveProfessionalProfileMemberParams{ProfileID: profileID, UserID: userID}); err != nil {
 		return fmt.Errorf("removing professional profile member: %w", err)
@@ -213,7 +213,7 @@ func (s *Store) removeProfessionalProfileMember(ctx context.Context, profileID, 
 	return nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) listProfessionalProfileMembers(ctx context.Context, profileID pgtype.UUID) ([]gen.ListProfessionalProfileMembersRow, error) {
 	rows, err := s.read.ListProfessionalProfileMembers(ctx, profileID)
 	if err != nil {
@@ -223,7 +223,7 @@ func (s *Store) listProfessionalProfileMembers(ctx context.Context, profileID pg
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) updateProfessionalProfileMemberRole(ctx context.Context, profileID, userID pgtype.UUID, role string) error {
 	if err := s.write.UpdateProfessionalProfileMemberRole(ctx, gen.UpdateProfessionalProfileMemberRoleParams{
 		ProfileID: profileID,
@@ -236,7 +236,7 @@ func (s *Store) updateProfessionalProfileMemberRole(ctx context.Context, profile
 	return nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) getProfessionalProfileMember(ctx context.Context, profileID, userID pgtype.UUID) (gen.ProfessionalProfileMember, error) {
 	row, err := s.read.GetProfessionalProfileMember(ctx, gen.GetProfessionalProfileMemberParams{ProfileID: profileID, UserID: userID})
 	if err != nil {
@@ -246,7 +246,7 @@ func (s *Store) getProfessionalProfileMember(ctx context.Context, profileID, use
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) isProfessionalProfileMember(ctx context.Context, profileID, userID pgtype.UUID) (bool, error) {
 	exists, err := s.read.IsProfessionalProfileMember(ctx, gen.IsProfessionalProfileMemberParams{ProfileID: profileID, UserID: userID})
 	if err != nil {
@@ -256,7 +256,7 @@ func (s *Store) isProfessionalProfileMember(ctx context.Context, profileID, user
 	return exists, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) isProfessionalProfileOwner(ctx context.Context, profileID, userID, tenantID pgtype.UUID) (bool, error) {
 	exists, err := s.read.IsProfessionalProfileOwner(ctx, gen.IsProfessionalProfileOwnerParams{
 		ProfileID: profileID,
@@ -274,7 +274,7 @@ func (s *Store) isProfessionalProfileOwner(ctx context.Context, profileID, userI
 // Professional Profile Invitations
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) createProfessionalProfileInvitation(ctx context.Context, p gen.CreateProfessionalProfileInvitationParams) (gen.ProfessionalProfileInvitation, error) {
 	row, err := s.write.CreateProfessionalProfileInvitation(ctx, p)
 	if err != nil {
@@ -284,7 +284,7 @@ func (s *Store) createProfessionalProfileInvitation(ctx context.Context, p gen.C
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) getProfessionalProfileInvitationByToken(ctx context.Context, token string) (gen.ProfessionalProfileInvitation, error) {
 	row, err := s.read.GetProfessionalProfileInvitationByToken(ctx, token)
 	if err != nil {
@@ -294,7 +294,7 @@ func (s *Store) getProfessionalProfileInvitationByToken(ctx context.Context, tok
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) acceptProfessionalProfileInvitation(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.AcceptProfessionalProfileInvitation(ctx, id); err != nil {
 		return fmt.Errorf("accepting professional profile invitation: %w", err)
@@ -303,7 +303,7 @@ func (s *Store) acceptProfessionalProfileInvitation(ctx context.Context, id pgty
 	return nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) listProfessionalProfileInvitations(ctx context.Context, profileID pgtype.UUID) ([]gen.ProfessionalProfileInvitation, error) {
 	rows, err := s.read.ListProfessionalProfileInvitations(ctx, profileID)
 	if err != nil {
@@ -313,7 +313,7 @@ func (s *Store) listProfessionalProfileInvitations(ctx context.Context, profileI
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) deleteExpiredInvitations(ctx context.Context) error {
 	if err := s.write.DeleteExpiredInvitations(ctx); err != nil {
 		return fmt.Errorf("deleting expired invitations: %w", err)
@@ -326,7 +326,7 @@ func (s *Store) deleteExpiredInvitations(ctx context.Context) error {
 // Professional Profile Relocations
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) createProfessionalRelocation(ctx context.Context, p gen.CreateProfessionalRelocationParams) (gen.ProfessionalRelocation, error) {
 	row, err := s.write.CreateProfessionalRelocation(ctx, p)
 	if err != nil {
@@ -336,17 +336,7 @@ func (s *Store) createProfessionalRelocation(ctx context.Context, p gen.CreatePr
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
-func (s *Store) getProfessionalRelocationByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ProfessionalRelocation, error) {
-	row, err := s.read.GetProfessionalRelocationByID(ctx, gen.GetProfessionalRelocationByIDParams{ID: id, TenantID: tenantID})
-	if err != nil {
-		return gen.ProfessionalRelocation{}, fmt.Errorf("getting professional relocation by ID: %w", err)
-	}
-
-	return row, nil
-}
-
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) listProfessionalRelocationsByProfile(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalRelocation, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -365,7 +355,7 @@ func (s *Store) listProfessionalRelocationsByProfile(ctx context.Context, profil
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) updateProfessionalRelocation(ctx context.Context, p gen.UpdateProfessionalRelocationParams) (gen.ProfessionalRelocation, error) {
 	row, err := s.write.UpdateProfessionalRelocation(ctx, p)
 	if err != nil {
@@ -375,7 +365,7 @@ func (s *Store) updateProfessionalRelocation(ctx context.Context, p gen.UpdatePr
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) deleteProfessionalRelocation(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteProfessionalRelocation(ctx, gen.DeleteProfessionalRelocationParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting professional relocation: %w", err)
@@ -388,7 +378,7 @@ func (s *Store) deleteProfessionalRelocation(ctx context.Context, id, tenantID p
 // Professional Profile Documents
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) createProfessionalDocument(ctx context.Context, p gen.CreateProfessionalDocumentParams) (gen.ProfessionalDocument, error) {
 	row, err := s.write.CreateProfessionalDocument(ctx, p)
 	if err != nil {
@@ -398,17 +388,7 @@ func (s *Store) createProfessionalDocument(ctx context.Context, p gen.CreateProf
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
-func (s *Store) getProfessionalDocumentByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ProfessionalDocument, error) {
-	row, err := s.read.GetProfessionalDocumentByID(ctx, gen.GetProfessionalDocumentByIDParams{ID: id, TenantID: tenantID})
-	if err != nil {
-		return gen.ProfessionalDocument{}, fmt.Errorf("getting professional document by ID: %w", err)
-	}
-
-	return row, nil
-}
-
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) listProfessionalDocumentsByProfile(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ProfessionalDocument, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -427,7 +407,7 @@ func (s *Store) listProfessionalDocumentsByProfile(ctx context.Context, profileI
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) updateProfessionalDocument(ctx context.Context, p gen.UpdateProfessionalDocumentParams) (gen.ProfessionalDocument, error) {
 	row, err := s.write.UpdateProfessionalDocument(ctx, p)
 	if err != nil {
@@ -437,7 +417,7 @@ func (s *Store) updateProfessionalDocument(ctx context.Context, p gen.UpdateProf
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) deleteProfessionalDocument(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteProfessionalDocument(ctx, gen.DeleteProfessionalDocumentParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting professional document: %w", err)
@@ -450,7 +430,7 @@ func (s *Store) deleteProfessionalDocument(ctx context.Context, id, tenantID pgt
 // Professional Profile Verifiers
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) createProfessionalVerifier(ctx context.Context, p gen.CreateProfessionalVerifierParams) (gen.ProfessionalVerifier, error) {
 	row, err := s.write.CreateProfessionalVerifier(ctx, p)
 	if err != nil {
@@ -460,7 +440,7 @@ func (s *Store) createProfessionalVerifier(ctx context.Context, p gen.CreateProf
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) listProfessionalVerifiersByProfile(ctx context.Context, profileID, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListProfessionalVerifiersByProfileRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -479,7 +459,7 @@ func (s *Store) listProfessionalVerifiersByProfile(ctx context.Context, profileI
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) deleteProfessionalVerifier(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteProfessionalVerifier(ctx, gen.DeleteProfessionalVerifierParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting professional verifier: %w", err)
@@ -494,7 +474,7 @@ func (s *Store) deleteProfessionalVerifier(ctx context.Context, id, tenantID pgt
 
 // getRelocationProfileID returns the profile_id that owns the given relocation.
 //
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) getRelocationProfileID(ctx context.Context, relocationID, tenantID pgtype.UUID) (pgtype.UUID, error) {
 	row, err := s.read.GetProfessionalRelocationByID(ctx, gen.GetProfessionalRelocationByIDParams{ID: relocationID, TenantID: tenantID})
 	if err != nil {
@@ -506,7 +486,7 @@ func (s *Store) getRelocationProfileID(ctx context.Context, relocationID, tenant
 
 // getDocumentProfileID returns the profile_id that owns the given document.
 //
-//nolint:unused // reserved for future features
+// Reserved for future features.
 func (s *Store) getDocumentProfileID(ctx context.Context, documentID, tenantID pgtype.UUID) (pgtype.UUID, error) {
 	row, err := s.read.GetProfessionalDocumentByID(ctx, gen.GetProfessionalDocumentByIDParams{ID: documentID, TenantID: tenantID})
 	if err != nil {

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import Badge from '$lib/components/ui/Badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { Select } from '$lib/components/ui/select';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 
@@ -26,18 +26,18 @@
 	let filterSeverity = $state('');
 	let filterStatus = $state('');
 
-	function severityVariant(severity: string): 'danger' | 'warning' | 'default' {
+	function severityVariant(severity: string): 'destructive' | 'warning' | 'default' {
 		switch (severity) {
-			case 'critical': return 'danger';
-			case 'high': return 'danger';
+			case 'critical': return 'destructive';
+			case 'high': return 'destructive';
 			case 'medium': return 'warning';
 			default: return 'default';
 		}
 	}
 
-	function statusVariant(status: string): 'danger' | 'warning' | 'success' {
+	function statusVariant(status: string): 'destructive' | 'warning' | 'success' {
 		switch (status) {
-			case 'open': return 'danger';
+			case 'open': return 'destructive';
 			case 'acknowledged': return 'warning';
 			case 'resolved': return 'success';
 			default: return 'default' as any;
@@ -95,7 +95,9 @@
 		}
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>
@@ -112,29 +114,27 @@
 {/if}
 
 <div class="mb-4 flex gap-2">
-	<select
-		class="rounded-md border px-3 py-1.5 text-sm"
-		style="border-color: var(--color-border); background-color: var(--color-surface)"
+	<Select
+		options={[
+			{ value: '', label: 'All Severities' },
+			{ value: 'critical', label: 'Critical' },
+			{ value: 'high', label: 'High' },
+			{ value: 'medium', label: 'Medium' },
+			{ value: 'low', label: 'Low' }
+		]}
 		bind:value={filterSeverity}
 		onchange={load}
-	>
-		<option value="">All Severities</option>
-		<option value="critical">Critical</option>
-		<option value="high">High</option>
-		<option value="medium">Medium</option>
-		<option value="low">Low</option>
-	</select>
-	<select
-		class="rounded-md border px-3 py-1.5 text-sm"
-		style="border-color: var(--color-border); background-color: var(--color-surface)"
+	/>
+	<Select
+		options={[
+			{ value: '', label: 'All Statuses' },
+			{ value: 'open', label: 'Open' },
+			{ value: 'acknowledged', label: 'Acknowledged' },
+			{ value: 'resolved', label: 'Resolved' }
+		]}
 		bind:value={filterStatus}
 		onchange={load}
-	>
-		<option value="">All Statuses</option>
-		<option value="open">Open</option>
-		<option value="acknowledged">Acknowledged</option>
-		<option value="resolved">Resolved</option>
-	</select>
+	/>
 </div>
 
 {#if loading}

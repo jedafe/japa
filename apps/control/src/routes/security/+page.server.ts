@@ -14,7 +14,12 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	let initial = null;
 	if (securityRes?.ok) {
 		const body = await securityRes.json();
-		initial = body.data ?? body;
+		const raw = body.data ?? body;
+		if (raw && typeof raw === 'object' && 'active_ip_blocks' in raw) {
+			initial = { results: [], total_pages: 1 };
+		} else {
+			initial = raw;
+		}
 	}
 
 	let ipBlocks: unknown[] = [];

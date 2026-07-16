@@ -90,7 +90,7 @@ func TestGenerateContentEmbedding_CustomModel(t *testing.T) {
 	p := &mockProvider{
 		name: "test-embedder",
 		sendFn: func(_ context.Context, req Request) (Response, error) {
-			capturedModel = req.Payload["model"].(string)
+			capturedModel, _ = req.Payload["model"].(string)
 			return Response{
 				ProviderRef: "test-ref",
 				Status:      "success",

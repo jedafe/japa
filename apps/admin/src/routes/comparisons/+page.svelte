@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api, comparisonsAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Plus, Pencil, Trash2 } from 'lucide-svelte';
@@ -123,7 +122,9 @@
 		}
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>

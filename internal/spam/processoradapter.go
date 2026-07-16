@@ -40,6 +40,7 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID, t
 
 	// Look up the entity body for content-type entities.
 	var body string
+
 	if entityType == "post" && a.pipeline.db != nil {
 		var eid pgtype.UUID
 		if err := eid.Scan(entityID); err == nil {
@@ -48,6 +49,7 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID, t
 				ID:       eid,
 				TenantID: tid,
 			})
+
 			if err == nil {
 				body = row.Body
 			}
@@ -62,15 +64,16 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID, t
 		return fmt.Errorf("spam: pipeline check failed for %s/%s: %w", entityType, entityID, err)
 	}
 
-	if result.Blocked {
+	switch {
+	case result.Blocked:
 		slog.Warn("spam:worker_adapter: content blocked",
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)
-	} else if result.Flagged {
+	case result.Flagged:
 		slog.Info("spam:worker_adapter: content flagged for review",
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)
-	} else {
+	default:
 		slog.Debug("spam:worker_adapter: content clean",
 			"entity_type", entityType, "entity_id", entityID, "score", result.Score)
 	}
