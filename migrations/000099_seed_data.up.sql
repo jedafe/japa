@@ -4,7 +4,7 @@
 -- Default tenant UUID: '00000000-0000-0000-0000-000000000001'
 
 -- ============================================================
--- 1. System Settings (49 keys from system-settings-catalog.md)
+-- 1. System Settings (61 keys from system-settings-catalog.md)
 -- ============================================================
 INSERT INTO system_settings (tenant_id, key, value) VALUES
     -- Authentication

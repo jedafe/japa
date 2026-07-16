@@ -33,6 +33,11 @@ func InitGlitchTip(dsn, release string) {
 	}
 
 	slog.Info("error tracking initialized", "release", release)
+
+	// Fire a canary event to verify the DSN is valid and the GlitchTip
+	// server is reachable. This surfaces configuration errors at boot
+	// rather than silently failing until the first real exception.
+	CaptureMessage("jc:bootstrap — GlitchTip initialized successfully")
 }
 
 // CaptureException forwards an error to the configured error tracking service.

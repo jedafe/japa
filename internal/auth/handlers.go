@@ -126,7 +126,6 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &breached) {
 			slog.Warn(
 				"registration blocked: breached password",
-				"email", req.Email,
 				"breach_count", breached.Count,
 			)
 			writeError(w, http.StatusBadRequest, "password_breached",
@@ -913,7 +912,8 @@ func (h *AuthHandlers) enqueueEmail(to, subject, body string, isHTML bool) {
 	}
 
 	task := asynq.NewTask(worker.TypeEmailSend, payload)
-	if _, err := h.AsynqClient.Enqueue(task, asynq.Queue("default")); err != nil {
+	// Use QueueForTask to route to the correct tier (default for emails).
+	if _, err := h.AsynqClient.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend)), asynq.Unique(1*time.Hour)); err != nil {
 		slog.Error("auth: failed to enqueue email", "to", to, "error", err)
 	}
 }

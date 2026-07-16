@@ -24,6 +24,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 const defaultPageSize int32 = 20
@@ -175,7 +176,7 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID, titl
 
 	if _, err := h.AsynqClient.Enqueue(
 		asynq.NewTask(taskTypeAIGenerateContentEmbedding, payload),
-		asynq.Queue("default"),
+		asynq.Queue(worker.QueueForTask(worker.TypeAIGenerateContentEmbedding)),
 	); err != nil {
 		slog.Warn("content: failed to enqueue embedding task",
 			"content_id", contentID.String(), "error", err)
@@ -661,6 +662,8 @@ func (h *Handlers) enqueueScheduledPublish(contentID, tenantID pgtype.UUID, publ
 	if _, err := h.AsynqClient.Enqueue(
 		asynq.NewTask(taskTypeScheduledPublish, payload),
 		asynq.ProcessAt(publishAt),
+		asynq.Queue(worker.QueueForTask(worker.TypeScheduledPublish)),
+		asynq.Unique(24*time.Hour),
 	); err != nil {
 		slog.Warn("content: failed to enqueue scheduled_publish task", "content_id", contentID.String(), "error", err)
 	}

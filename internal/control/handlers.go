@@ -463,8 +463,8 @@ func (h *Handlers) ListCronJobs(w http.ResponseWriter, r *http.Request) {
 			"id":          e.ID,
 			"spec":        e.Spec,
 			"type":        taskType,
-			"next_run_at": e.Next.Format("2006-01-02T15:04:05Z"),
-			"prev_run_at": e.Prev.Format("2006-01-02T15:04:05Z"),
+			"next_run_at": e.Next.Format(time.RFC3339),
+			"prev_run_at": e.Prev.Format(time.RFC3339),
 		})
 	}
 
@@ -494,7 +494,7 @@ func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
 		if e.ID != id || e.Task == nil {
 			continue
 		}
-		if _, err := h.Client.Enqueue(e.Task); err != nil {
+		if _, err := h.Client.Enqueue(e.Task, asynq.Queue(worker.QueueForTask(e.Task.Type()))); err != nil {
 			writeError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
 			return
 		}
@@ -528,7 +528,7 @@ func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 				"error":       entry.LastErr,
 				"retries":     entry.Retried,
 				"max_retries": entry.MaxRetry,
-				"last_failed": entry.LastFailedAt.Format("2006-01-02T15:04:05Z"),
+				"last_failed": entry.LastFailedAt.Format(time.RFC3339),
 			})
 		}
 	}

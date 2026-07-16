@@ -29,8 +29,14 @@ const MaxPageSize = 100
 
 // Service provides feed operations with reader/writer pool separation.
 type Service struct {
-	store *Store
-	db    *db.DB
+	store    *Store
+	db       *db.DB
+	enqueuer feedEnqueuer
+}
+
+// feedEnqueuer is the subset of worker.Enqueuer that feed needs.
+type feedEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -42,4 +48,9 @@ func NewService(database *db.DB) *Service {
 		},
 		db: database,
 	}
+}
+
+// SetEnqueuer injects the Asynq enqueuer for async fan-out tasks.
+func (s *Service) SetEnqueuer(e feedEnqueuer) {
+	s.enqueuer = e
 }

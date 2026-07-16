@@ -75,12 +75,16 @@ func (s *Service) FanOutPost(_ context.Context, tenantID, contentID, spaceID pgt
 		return fmt.Errorf("marshaling fan-out payload: %w", err)
 	}
 
-	// Note: In production, this should use the Asynq client to enqueue.
-	// For now, we log the intent and let the worker handle it synchronously.
-	slog.Info("fan_out_post: enqueueing fan-out task",
+	if s.enqueuer != nil {
+		if err := s.enqueuer.Enqueue(TaskFanOutToFeeds, payload); err != nil {
+			return fmt.Errorf("enqueueing fan-out task: %w", err)
+		}
+		return nil
+	}
+
+	slog.Info("fan_out_post: no enqueuer wired, skipping fan-out",
 		"content_id", contentID.String(),
-		"fan_out_type", fanOutType,
-		"payload", string(payload))
+		"fan_out_type", fanOutType)
 
 	return nil
 }

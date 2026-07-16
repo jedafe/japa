@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -74,6 +75,19 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Count total flagged reviews for pagination metadata.
+	var total int32
+	if err := h.DB.Reader.QueryRow(ctx,
+		`SELECT COUNT(*)::int FROM reviews WHERE tenant_id = $1 AND status = 'flagged'`,
+		tenantID).Scan(&total); err != nil {
+		slog.Warn("moderation: counting flagged reviews", "error", err)
+	}
+
+	totalPages := int32(0)
+	if limit > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
+
 	items := make([]ModerationItem, 0, len(rows))
 	for _, row := range rows {
 		content := ""
@@ -94,7 +108,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 			Content:   content,
 			Reporter:  "system",
 			AuthorID:  authorID,
-			Created:   row.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+			Created:   row.CreatedAt.Time.Format(time.RFC3339),
 			EntityRef: "review:" + row.ID.String(),
 		})
 	}
@@ -103,7 +117,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]any{
 			"items":       items,
 			"page":        offset / limit,
-			"total_pages": 0,
+			"total_pages": totalPages,
 		},
 	})
 }
@@ -462,7 +476,7 @@ func (h *Handlers) ListUserBans(w http.ResponseWriter, r *http.Request) {
 		}
 		expiresAt := (*string)(nil)
 		if b.ExpiresAt.Valid {
-			s := b.ExpiresAt.Time.Format("2006-01-02T15:04:05Z07:00")
+			s := b.ExpiresAt.Time.Format(time.RFC3339)
 			expiresAt = &s
 		}
 		bans = append(bans, banRow{
@@ -470,7 +484,7 @@ func (h *Handlers) ListUserBans(w http.ResponseWriter, r *http.Request) {
 			Action:    b.Action,
 			Reason:    reason,
 			ExpiresAt: expiresAt,
-			CreatedAt: b.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+			CreatedAt: b.CreatedAt.Time.Format(time.RFC3339),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": bans})
@@ -529,7 +543,7 @@ func (h *Handlers) ListUserWarnings(w http.ResponseWriter, r *http.Request) {
 		warnings = append(warnings, warnRow{
 			ID:        w.ID.String(),
 			Reason:    reason,
-			CreatedAt: w.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+			CreatedAt: w.CreatedAt.Time.Format(time.RFC3339),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": warnings})
@@ -655,7 +669,7 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 	for _, a := range rows {
 		appeals = append(appeals, map[string]any{
 			"id": a.ID.String(), "user_id": a.UserID.String(), "entity_type": a.EntityType,
-			"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+			"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format(time.RFC3339),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": appeals})
@@ -676,7 +690,7 @@ func (h *Handlers) GetAppeal(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"id": a.ID.String(), "user_id": a.UserID.String(), "entity_type": a.EntityType,
-		"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+		"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format(time.RFC3339),
 	}})
 }
 
@@ -885,14 +899,24 @@ func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list broadcasts")
 		return
 	}
+
+	var total int32
+	if err := h.DB.Reader.QueryRow(r.Context(),
+		`SELECT COUNT(*)::int FROM admin_broadcasts`).Scan(&total); err != nil {
+		slog.Warn("moderation: counting broadcasts", "error", err)
+	}
+
 	broadcasts := make([]map[string]any, 0, len(rows))
 	for _, b := range rows {
 		broadcasts = append(broadcasts, map[string]any{
 			"id": b.ID.String(), "title": b.Title, "body": b.Body, "sent_by": b.SentBy.String(),
-			"sent_at": b.SentAt.Time.Format("2006-01-02T15:04:05Z07:00"), "recipient_count": b.RecipientCount,
+			"sent_at": b.SentAt.Time.Format(time.RFC3339), "recipient_count": b.RecipientCount,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": broadcasts})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": broadcasts,
+		"meta": map[string]any{"total": total},
+	})
 }
 
 // DeleteBroadcast handles DELETE /admin/broadcasts/:id.

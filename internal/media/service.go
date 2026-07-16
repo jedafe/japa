@@ -239,16 +239,16 @@ func (s *Service) getMediaForScan(ctx context.Context, mediaID []byte) (ScanMedi
 	return s.store.GetMediaForScan(ctx, mediaID)
 }
 
-// confirmMediaByID marks a media item as confirmed by ID alone (no tenant).
+// confirmMediaByID marks a media item as confirmed, scoped to tenant.
 // Used by the background scan processor.
-func (s *Service) confirmMediaByID(ctx context.Context, mediaID []byte) error {
-	return s.store.ConfirmMediaByID(ctx, mediaID)
+func (s *Service) confirmMediaByID(ctx context.Context, mediaID []byte, tenantID string) error {
+	return s.store.ConfirmMediaByID(ctx, mediaID, tenantID)
 }
 
-// rejectMediaByID quarantines a media item instead of soft-deleting it.
+// rejectMediaByID quarantines a media item, scoped to tenant.
 // This gives admins a chance to review false positives before removal.
-func (s *Service) rejectMediaByID(ctx context.Context, mediaID []byte, virusName string) error {
-	return s.store.QuarantineMedia(ctx, mediaID, virusName)
+func (s *Service) rejectMediaByID(ctx context.Context, mediaID []byte, tenantID string, virusName string) error {
+	return s.store.QuarantineMedia(ctx, mediaID, tenantID, virusName)
 }
 
 // ApproveMedia clears quarantine and confirms the media item.

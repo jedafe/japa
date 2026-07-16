@@ -5,6 +5,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -13,12 +14,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
+
 
 // SettingDef defines the metadata for a single setting within a category.
 type SettingDef struct {
@@ -45,10 +48,11 @@ type SettingValue struct {
 
 // Handlers holds dependencies for admin HTTP handlers.
 type Handlers struct {
-	DB      *db.DB
-	Queries *gen.Queries
-	RBAC    *rbac.RBAC
-	Valkey  valkeycompat.Cmdable
+	DB       *db.DB
+	Queries  *gen.Queries
+	RBAC     *rbac.RBAC
+	Valkey   valkeycompat.Cmdable
+	Settings *config.Settings
 }
 
 // NewHandlers creates Handlers with the given database pool.
@@ -64,6 +68,11 @@ func (h *Handlers) SetRBAC(r *rbac.RBAC) {
 // SetValkey injects the Valkey client for permission cache invalidation.
 func (h *Handlers) SetValkey(v valkeycompat.Cmdable) {
 	h.Valkey = v
+}
+
+// SetSettings injects the hot-reloadable settings reader for cache invalidation.
+func (h *Handlers) SetSettings(s *config.Settings) {
+	h.Settings = s
 }
 
 // defaultSettings defines every available setting with its metadata.
@@ -237,6 +246,26 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{
 		"error": map[string]string{"code": code, "message": message},
 	})
+}
+
+// invalidateLinkPreviewCache removes all cached link previews so that an
+// updated domain blacklist takes effect immediately instead of after the 24h TTL.
+func invalidateLinkPreviewCache(ctx context.Context, vk valkeycompat.Cmdable) {
+	var cursor uint64
+	for {
+		keys, nextCursor, err := vk.Scan(ctx, cursor, "jc:link_preview:*", 100).Result()
+		if err != nil {
+			slog.Warn("settings: failed to scan link preview cache for invalidation", "error", err)
+			return
+		}
+		if len(keys) > 0 {
+			_ = vk.Del(ctx, keys...).Err()
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -434,6 +463,18 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(ctx); err != nil {
 		writeError(w, http.StatusInternalServerError, "commit_error", "Failed to save settings")
 		return
+	}
+
+	// Invalidate both the in-memory cache and Valkey so the next read picks
+	// up the new values.
+	if h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
+	}
+
+	// Invalidate link preview cache when the blacklist is updated, since
+	// already-cached previews for now-blocklisted domains would survive their 24h TTL.
+	if category == "content" && h.Valkey != nil {
+		invalidateLinkPreviewCache(r.Context(), h.Valkey)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{

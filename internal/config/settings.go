@@ -92,19 +92,23 @@ func (s *Settings) GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key
 	if err != nil {
 		return false, err
 	}
-	// Values are stored JSON-encoded in a JSONB column. Accept a JSON bool
-	// (true), a JSON string ("true"/"1"), or a bare token for resilience.
-	sv := strings.TrimSpace(val)
+	return parseBool(val), nil
+}
+
+// parseBool decodes a JSON-encoded system_setting value into a bool.
+// Accepts JSON bool (true), JSON string ("true"/"1"), or bare token.
+func parseBool(sv string) bool {
+	sv = strings.TrimSpace(sv)
 	var b bool
 	if json.Unmarshal([]byte(sv), &b) == nil {
-		return b, nil
+		return b
 	}
 	var str string
 	if json.Unmarshal([]byte(sv), &str) == nil {
 		str = strings.TrimSpace(str)
-		return str == "true" || str == "1", nil
+		return str == "true" || str == "1"
 	}
-	return sv == "true" || sv == "1", nil
+	return sv == "true" || sv == "1"
 }
 
 func (s *Settings) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error) {
@@ -112,9 +116,13 @@ func (s *Settings) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key 
 	if err != nil {
 		return 0, err
 	}
-	// Values are stored JSON-encoded in a JSONB column. Accept a JSON number
-	// (5000), a JSON string ("5000"), or a bare integer for resilience.
-	sv := strings.TrimSpace(val)
+	return parseInt(val)
+}
+
+// parseInt decodes a JSON-encoded system_setting value into an int.
+// Accepts JSON number (5000), JSON string ("5000"), or bare token.
+func parseInt(sv string) (int, error) {
+	sv = strings.TrimSpace(sv)
 	var n int
 	if json.Unmarshal([]byte(sv), &n) == nil {
 		return n, nil
@@ -128,7 +136,7 @@ func (s *Settings) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key 
 	if m, convErr := strconv.Atoi(sv); convErr == nil {
 		return m, nil
 	}
-	return 0, fmt.Errorf("setting %q is not an integer: %q", key, val)
+	return 0, fmt.Errorf("value is not an integer: %q", sv)
 }
 
 func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID) {

@@ -1,0 +1,67 @@
+// Package menus implements navigation menus with hierarchical, RBAC-gated
+// menu items for JapaConnect (ADR-054).
+//
+// Menus have a placement (sidebar or bottom_bar) and contain a tree of
+// menu items. Each item can be gated by permission_node (only shown to
+// users with that RBAC permission) and visibility (all, authenticated, guest).
+// Ad slots can be placed in the menu tree via is_ad_slot items.
+package menus
+
+import "errors"
+
+var (
+	ErrMenuNotFound     = errors.New("menu not found")
+	ErrMenuItemNotFound = errors.New("menu item not found")
+	ErrInvalidPlacement = errors.New("invalid placement; must be sidebar or bottom_bar")
+	ErrInvalidVisibility = errors.New("invalid visibility; must be all, authenticated, or guest")
+	ErrDuplicateSlug     = errors.New("menu slug already exists for this tenant")
+)
+
+// Placement defines where the menu appears in the UI.
+type Placement string
+
+const (
+	PlacementSidebar   Placement = "sidebar"
+	PlacementBottomBar Placement = "bottom_bar"
+)
+
+// Visibility controls which auth states see a menu item.
+type Visibility string
+
+const (
+	VisibilityAll           Visibility = "all"
+	VisibilityAuthenticated Visibility = "authenticated"
+	VisibilityGuest         Visibility = "guest"
+)
+
+// Status represents the lifecycle state.
+type Status string
+
+const (
+	StatusActive   Status = "active"
+	StatusInactive Status = "inactive"
+)
+
+// Target controls how the link opens.
+type Target string
+
+const (
+	TargetSelf  Target = "_self"
+	TargetBlank Target = "_blank"
+)
+
+// Pagination defaults.
+const (
+	DefaultPageSize = 20
+	MaxPageSize     = 100
+)
+
+// ValidPlacement checks whether a string is a valid placement.
+func ValidPlacement(s string) bool {
+	return s == string(PlacementSidebar) || s == string(PlacementBottomBar)
+}
+
+// ValidVisibility checks whether a string is a valid visibility.
+func ValidVisibility(s string) bool {
+	return s == string(VisibilityAll) || s == string(VisibilityAuthenticated) || s == string(VisibilityGuest)
+}

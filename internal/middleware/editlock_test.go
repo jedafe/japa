@@ -88,7 +88,7 @@ func editLockResponse(t *testing.T, rr *httptest.ResponseRecorder) map[string]an
 func TestEditLock_AcquiresOnPost(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -111,7 +111,7 @@ func TestEditLock_AcquiresOnPost(t *testing.T) {
 func TestEditLock_AcquiresOnPut(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -134,7 +134,7 @@ func TestEditLock_AcquiresOnPut(t *testing.T) {
 func TestEditLock_AcquiresOnPatch(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -157,11 +157,11 @@ func TestEditLock_AcquiresOnPatch(t *testing.T) {
 func TestEditLock_ReleasesOnDelete(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	// Acquire the lock first.
-	rdb.Set(t.Context(), "jc:editor_lock:posts:abc-123", testUser1, editLockTTL)
+	rdb.Set(t.Context(), "jc:editor_lock:posts:abc-123", testUser1, editLockTTLDefault)
 
 	rr := httptest.NewRecorder()
 	mw(h).ServeHTTP(rr, editLockRequest(http.MethodDelete, "/api/v1/posts/abc-123", testUser1))
@@ -179,7 +179,7 @@ func TestEditLock_ReleasesOnDelete(t *testing.T) {
 func TestEditLock_SameUserCanRefreshLock(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	// User acquires the lock.
@@ -202,7 +202,7 @@ func TestEditLock_SameUserCanRefreshLock(t *testing.T) {
 func TestEditLock_DifferentUserGetsConflict(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	// User 1 acquires the lock.
@@ -240,7 +240,7 @@ func TestEditLock_DifferentUserGetsConflict(t *testing.T) {
 func TestEditLock_PassesThroughOnGET(t *testing.T) {
 	t.Parallel()
 	mr, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -259,7 +259,7 @@ func TestEditLock_PassesThroughOnGET(t *testing.T) {
 func TestEditLock_PassesThroughOnHEAD(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -277,7 +277,7 @@ func TestEditLock_PassesThroughOnHEAD(t *testing.T) {
 func TestEditLock_AnonymousUserPassesThrough(t *testing.T) {
 	t.Parallel()
 	mr, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -300,7 +300,7 @@ func TestEditLock_AnonymousUserPassesThrough(t *testing.T) {
 func TestEditLock_NilRedisDegradesGracefully(t *testing.T) {
 	t.Parallel()
 
-	mw := EditLockMiddleware(nil)
+	mw := EditLockMiddleware(nil, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -316,7 +316,7 @@ func TestEditLock_ValkeyUnreachableDegradesGracefully(t *testing.T) {
 
 	vk := valkeypkg.NewWithFallback("127.0.0.1:1")
 
-	mw := EditLockMiddleware(vk.Redis())
+	mw := EditLockMiddleware(vk.Redis(), nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -334,7 +334,7 @@ func TestEditLock_ValkeyUnreachableDegradesGracefully(t *testing.T) {
 func TestEditLock_ParsesStandardRESTPath(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -357,7 +357,7 @@ func TestEditLock_ParsesStandardRESTPath(t *testing.T) {
 func TestEditLock_ParsesNestedResourcePath(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -380,7 +380,7 @@ func TestEditLock_ParsesNestedResourcePath(t *testing.T) {
 func TestEditLock_ShortPathPassesThrough(t *testing.T) {
 	t.Parallel()
 	mr, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	// Two-segment path — not enough info to distinguish resource from
@@ -401,7 +401,7 @@ func TestEditLock_ShortPathPassesThrough(t *testing.T) {
 func TestEditLock_TwoSegmentPathPassesThrough(t *testing.T) {
 	t.Parallel()
 	mr, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -420,7 +420,7 @@ func TestEditLock_TwoSegmentPathPassesThrough(t *testing.T) {
 func TestEditLock_EmptyPathPassesThrough(t *testing.T) {
 	t.Parallel()
 	mr, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -477,10 +477,10 @@ func TestExtractContentFromPath(t *testing.T) {
 func TestEditLock_DeleteOwnLockSucceeds(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
-	rdb.Set(t.Context(), "jc:editor_lock:posts:abc-123", testUser1, editLockTTL)
+	rdb.Set(t.Context(), "jc:editor_lock:posts:abc-123", testUser1, editLockTTLDefault)
 
 	rr := httptest.NewRecorder()
 	mw(h).ServeHTTP(rr, editLockRequest(http.MethodDelete, "/api/v1/posts/abc-123", testUser1))
@@ -498,10 +498,10 @@ func TestEditLock_DeleteOwnLockSucceeds(t *testing.T) {
 func TestEditLock_DeleteOtherUsersLockForbidden(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
-	rdb.Set(t.Context(), "jc:editor_lock:posts:abc-123", testUser1, editLockTTL)
+	rdb.Set(t.Context(), "jc:editor_lock:posts:abc-123", testUser1, editLockTTLDefault)
 
 	rr := httptest.NewRecorder()
 	mw(h).ServeHTTP(rr, editLockRequest(http.MethodDelete, "/api/v1/posts/abc-123", testUser2))
@@ -524,7 +524,7 @@ func TestEditLock_DeleteOtherUsersLockForbidden(t *testing.T) {
 func TestEditLock_DeleteNonexistentLockPassesThrough(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr := httptest.NewRecorder()
@@ -542,7 +542,7 @@ func TestEditLock_DeleteNonexistentLockPassesThrough(t *testing.T) {
 func TestEditLock_ConflictDoesNotOverwriteExistingLock(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr1 := httptest.NewRecorder()
@@ -572,7 +572,7 @@ func TestEditLock_ConflictDoesNotOverwriteExistingLock(t *testing.T) {
 func TestEditLock_ConflictResponseBody(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	rr1 := httptest.NewRecorder()
@@ -604,7 +604,7 @@ func TestEditLock_ConflictResponseBody(t *testing.T) {
 func TestEditLock_AtomicAcquirePreventsRace(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	// Two concurrent requests for the same content — only one should
@@ -642,7 +642,7 @@ func TestEditLock_AtomicSetNXOnlySetsIfNotExists(t *testing.T) {
 	ctx := t.Context()
 
 	// First SET NX — should succeed (key didn't exist).
-	set, err := rdb.SetNX(ctx, key, testUser1, editLockTTL).Result()
+	set, err := rdb.SetNX(ctx, key, testUser1, editLockTTLDefault).Result()
 	if err != nil {
 		t.Fatalf("SetNX error: %v", err)
 	}
@@ -652,7 +652,7 @@ func TestEditLock_AtomicSetNXOnlySetsIfNotExists(t *testing.T) {
 	}
 
 	// Second SET NX with different user — should fail (key exists).
-	set, err = rdb.SetNX(ctx, key, testUser2, editLockTTL).Result()
+	set, err = rdb.SetNX(ctx, key, testUser2, editLockTTLDefault).Result()
 	if err != nil {
 		t.Fatalf("SetNX error: %v", err)
 	}
@@ -675,7 +675,7 @@ func TestEditLock_AtomicSetNXOnlySetsIfNotExists(t *testing.T) {
 func TestEditLock_AtomicSetNXRefreshesSameUser(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	key := "jc:editor_lock:posts:refresh-test"
@@ -725,7 +725,7 @@ func TestEditLock_AtomicSetNXRefreshesSameUser(t *testing.T) {
 func TestEditLock_LockExpiresAfterTTL(t *testing.T) {
 	t.Parallel()
 	mr, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	key := "jc:editor_lock:posts:ttl-test"
@@ -745,7 +745,7 @@ func TestEditLock_LockExpiresAfterTTL(t *testing.T) {
 	}
 
 	// Fast-forward time past the TTL using miniredis.
-	mr.FastForward(editLockTTL + 1*time.Second)
+	mr.FastForward(editLockTTLDefault + 1*time.Second)
 
 	// Lock should have expired.
 	_, err = rdb.Get(t.Context(), key).Result()
@@ -783,7 +783,7 @@ func TestEditLock_DeleteOwnershipScript_DeletesWhenOwnerMatches(t *testing.T) {
 	ctx := t.Context()
 
 	// Set up a lock.
-	rdb.Set(ctx, key, testUser1, editLockTTL)
+	rdb.Set(ctx, key, testUser1, editLockTTLDefault)
 
 	// Run the Lua script as the owner.
 	result, err := deleteOwnershipScript.Run(ctx, rdb, []string{key}, testUser1).Int64()
@@ -810,7 +810,7 @@ func TestEditLock_DeleteOwnershipScript_RejectsWhenOwnerMismatch(t *testing.T) {
 	ctx := t.Context()
 
 	// Set up a lock owned by user1.
-	rdb.Set(ctx, key, testUser1, editLockTTL)
+	rdb.Set(ctx, key, testUser1, editLockTTLDefault)
 
 	// Try to delete as user2.
 	result, err := deleteOwnershipScript.Run(ctx, rdb, []string{key}, testUser2).Int64()
@@ -854,14 +854,14 @@ func TestEditLock_DeleteOwnershipScript_NoKeyReturnsZero(t *testing.T) {
 func TestEditLock_DeleteOwnLockViaMiddleware(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	key := "jc:editor_lock:posts:lua-mw-test"
 	ctx := t.Context()
 
 	// Set up a lock owned by user1.
-	rdb.Set(ctx, key, testUser1, editLockTTL)
+	rdb.Set(ctx, key, testUser1, editLockTTLDefault)
 
 	// User1 deletes — should succeed.
 	rr := httptest.NewRecorder()
@@ -881,14 +881,14 @@ func TestEditLock_DeleteOwnLockViaMiddleware(t *testing.T) {
 func TestEditLock_DeleteOtherUsersLockViaMiddleware(t *testing.T) {
 	t.Parallel()
 	_, rdb := editLockTestRedis(t)
-	mw := EditLockMiddleware(rdb)
+	mw := EditLockMiddleware(rdb, nil)
 	h := handler()
 
 	key := "jc:editor_lock:posts:lua-mw-test"
 	ctx := t.Context()
 
 	// Set up a lock owned by user1.
-	rdb.Set(ctx, key, testUser1, editLockTTL)
+	rdb.Set(ctx, key, testUser1, editLockTTLDefault)
 
 	// User2 tries to delete — should get 403.
 	rr := httptest.NewRecorder()

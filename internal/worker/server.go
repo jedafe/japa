@@ -66,44 +66,49 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// ── Internal sweep tasks ────────────────────────────────────────
 
 	// Scheduled content publishing sweep — every 60 seconds.
-	_, _ = scheduler.Register("*/60 * * * *", asynq.NewTask(TypeScheduledPublishSweep, nil))
+	_, _ = scheduler.Register("*/60 * * * *", scheduledTask(TypeScheduledPublishSweep))
 
 	// Velocity score recalculation — every 5 minutes.
-	_, _ = scheduler.Register("*/5 * * * *", asynq.NewTask(TypeVelocityScoreRecalc, nil))
+	_, _ = scheduler.Register("*/5 * * * *", scheduledTask(TypeVelocityScoreRecalc))
 
 	// Every 15 min: check ticket SLA breaches.
-	_, _ = scheduler.Register("*/15 * * * *", asynq.NewTask(TypeMaintenanceCheckSLABreaches, nil))
+	_, _ = scheduler.Register("*/15 * * * *", scheduledTask(TypeMaintenanceCheckSLABreaches))
 
 	// Every 30 min: check expired bans and expired boosts.
-	_, _ = scheduler.Register("*/30 * * * *", asynq.NewTask(TypeMaintenanceCheckExpiredBans, nil))
-	_, _ = scheduler.Register("*/30 * * * *", asynq.NewTask(TypeMaintenanceCheckExpiredBoosts, nil))
+	_, _ = scheduler.Register("*/30 * * * *", scheduledTask(TypeMaintenanceCheckExpiredBans))
+	_, _ = scheduler.Register("*/30 * * * *", scheduledTask(TypeMaintenanceCheckExpiredBoosts))
 
 	// Hourly: trending, llms.txt, analytics views, RSS.
-	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeComputeTrending, nil))
-	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeMaintenanceRegenerateLLMsTxt, nil))
-	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeAnalyticsRefreshViews, nil))
-	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeRSSRegenerate, nil))
+	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeComputeTrending))
+	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeMaintenanceRegenerateLLMsTxt))
+	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeAnalyticsRefreshViews))
+	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeRSSRegenerate))
 
 	// 6-hourly: user/space suggestions.
-	_, _ = scheduler.Register("0 */6 * * *", asynq.NewTask(TypeComputeSuggestions, nil))
+	_, _ = scheduler.Register("0 */6 * * *", scheduledTask(TypeComputeSuggestions))
 
 	// Daily 03:00 UTC: security scan.
-	_, _ = scheduler.Register("0 3 * * *", asynq.NewTask(TypeSecurityScan, nil))
+	_, _ = scheduler.Register("0 3 * * *", scheduledTask(TypeSecurityScan))
 
 	// Weekly: prune old feeds, prune audit logs, DM cleanup, prune push tokens.
-	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePruneOldFeeds, nil))
-	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePruneAuditLogs, nil))
-	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeDMCleanupDeclinedRequests, nil))
-	_, _ = scheduler.Register("0 2 * * 0", asynq.NewTask(TypeMaintenancePrunePushTokens, nil))
+	_, _ = scheduler.Register("0 2 * * 0", scheduledTask(TypeMaintenancePruneOldFeeds))
+	_, _ = scheduler.Register("0 2 * * 0", scheduledTask(TypeMaintenancePruneAuditLogs))
+	_, _ = scheduler.Register("0 2 * * 0", scheduledTask(TypeDMCleanupDeclinedRequests))
+	_, _ = scheduler.Register("0 2 * * 0", scheduledTask(TypeMaintenancePrunePushTokens))
 
 	// Coupon expiry check + event flush — hourly.
-	_, _ = scheduler.Register("0 * * * *", asynq.NewTask(TypeCouponExpireCheck, nil))
-	_, _ = scheduler.Register("5 * * * *", asynq.NewTask(TypeCouponTrackEvents, nil))
+	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeCouponExpireCheck))
+	_, _ = scheduler.Register("5 * * * *", scheduledTask(TypeCouponTrackEvents))
 
 	// Affiliate link expiry — daily.
-	_, _ = scheduler.Register("0 4 * * *", asynq.NewTask(TypeAffiliateExpireCheck, nil))
+	_, _ = scheduler.Register("0 4 * * *", scheduledTask(TypeAffiliateExpireCheck))
 
 	return scheduler
+}
+
+// scheduledTask creates a scheduled Asynq task with the correct queue tier.
+func scheduledTask(taskType string) *asynq.Task {
+	return asynq.NewTask(taskType, nil, asynq.Queue(QueueForTask(taskType)))
 }
 
 // Addr returns the Valkey address from the config as a formatted string.

@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Subscriber represents a newsletter subscriber.
@@ -94,9 +96,9 @@ func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID, tenantID 
 		return fmt.Errorf("marshalling newsletter payload: %w", err)
 	}
 
-	task := asynq.NewTask("newsletter:send", payload)
+	task := asynq.NewTask(worker.TypeNewsletterSend, payload)
 
-	info, err := s.client.Enqueue(task, asynq.Queue("default"))
+	info, err := s.client.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeNewsletterSend)), asynq.Unique(24*time.Hour))
 	if err != nil {
 		return fmt.Errorf("enqueuing newsletter send: %w", err)
 	}
