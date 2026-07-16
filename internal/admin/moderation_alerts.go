@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -33,7 +34,21 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": alerts})
+	// Count total matching alerts for pagination metadata.
+	var total int32
+	countErr := h.DB.Reader.QueryRow(r.Context(),
+		`SELECT COUNT(*)::int FROM moderation_alerts
+		 WHERE tenant_id = $1 AND (NULLIF($2, '') IS NULL OR status = $2)`,
+		tenantID, status,
+	).Scan(&total)
+	if countErr != nil {
+		slog.Warn("moderation: counting alerts", "error", countErr)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": alerts,
+		"meta": map[string]any{"total": total},
+	})
 }
 
 // AcknowledgeModerationAlert handles POST /api/v1/admin/moderation/alerts/{id}/acknowledge.

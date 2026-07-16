@@ -737,6 +737,20 @@ type EditorBlockPermission struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type EmailTemplate struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	Type          string             `json:"type"`
+	Name          string             `json:"name"`
+	Subject       string             `json:"subject"`
+	HtmlBody      string             `json:"html_body"`
+	PlainTextBody string             `json:"plain_text_body"`
+	Variables     []byte             `json:"variables"`
+	Status        string             `json:"status"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type EmailVerification struct {
 	ID         pgtype.UUID        `json:"id"`
 	TenantID   pgtype.UUID        `json:"tenant_id"`
@@ -1127,6 +1141,36 @@ type MentorshipProgram struct {
 	IsActive    bool               `json:"is_active"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Menu struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	Placement string             `json:"placement"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MenuItem struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	MenuID         pgtype.UUID        `json:"menu_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	Label          string             `json:"label"`
+	Url            string             `json:"url"`
+	Icon           *string            `json:"icon"`
+	SortOrder      int32              `json:"sort_order"`
+	PermissionNode *string            `json:"permission_node"`
+	Visibility     string             `json:"visibility"`
+	Target         string             `json:"target"`
+	IsAdSlot       bool               `json:"is_ad_slot"`
+	AdSlotConfig   []byte             `json:"ad_slot_config"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ModerationAlert struct {
@@ -1637,6 +1681,20 @@ type ReactionType struct {
 	Position  int32              `json:"position"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Redirect struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	SourcePath string             `json:"source_path"`
+	TargetUrl  string             `json:"target_url"`
+	HttpStatus int16              `json:"http_status"`
+	IsActive   bool               `json:"is_active"`
+	Notes      *string            `json:"notes"`
+	HitCount   int32              `json:"hit_count"`
+	LastHitAt  pgtype.Timestamptz `json:"last_hit_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Referral struct {

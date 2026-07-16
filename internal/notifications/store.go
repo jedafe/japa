@@ -152,6 +152,16 @@ func (s *Store) markBatchWindowDispatched(ctx context.Context, windowID pgtype.U
 	return nil
 }
 
+// getBatchWindowByID returns a batch window by its ID.
+func (s *Store) getBatchWindowByID(ctx context.Context, windowID pgtype.UUID) (gen.NotificationBatchWindow, error) {
+	window, err := s.read.GetBatchWindowByID(ctx, windowID)
+	if err != nil {
+		return gen.NotificationBatchWindow{}, fmt.Errorf("getting batch window by ID: %w", err)
+	}
+
+	return window, nil
+}
+
 // getNotificationTypes returns all configured notification types.
 func (s *Store) getNotificationTypes(ctx context.Context) ([]gen.NotificationType, error) {
 	types, err := s.read.GetNotificationTypes(ctx)

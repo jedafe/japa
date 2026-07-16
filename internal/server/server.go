@@ -30,6 +30,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/docs"
+	emailtemplates "github.com/jedafe/japa/internal/email/templates"
 	errtracking "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/feed"
@@ -45,6 +46,7 @@ import (
 	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentorship"
+	"github.com/jedafe/japa/internal/menus"
 	mw "github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/newsletter"
 	"github.com/jedafe/japa/internal/notifications"
@@ -55,6 +57,7 @@ import (
 	"github.com/jedafe/japa/internal/professional"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/redirects"
 	"github.com/jedafe/japa/internal/referral"
 	"github.com/jedafe/japa/internal/renderer"
 	"github.com/jedafe/japa/internal/reports"
@@ -330,6 +333,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Feed System subsystem (Section 32 — Activity Feed / Timeline).
 	feedService := feed.NewService(database)
+	feedService.SetEnqueuer(taskEnqueuer)
 	feedHandlers := feed.NewHandlers(feedService)
 	feedHandlers.SetSettings(settingsService)
 
@@ -365,9 +369,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
 	walletHandlers := wallet.NewHandlers(walletService)
+	walletService.SetEnqueuer(taskEnqueuer)
 
 	// Payment Core subsystem (Section 17 — Payment Core).
 	paymentService := payments.NewService(database, &walletCreditAdapter{svc: walletService})
+	paymentService.SetEnqueuer(taskEnqueuer)
 	paymentHandlers := payments.NewHandlers(paymentService)
 	paymentHandlers.StripeWebhookSecret = cfg.StripeWebhookSecret
 	paymentHandlers.NOWPaymentsIPNKey = cfg.NOWPaymentsIPNSecret
@@ -399,11 +405,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// GDPR / NDPR Compliance subsystem (Section 19).
 	gdprService := gdpr.NewServiceWithEnqueuer(database, taskEnqueuer, cfg.SiteName)
 	gdprService.SetHonchoEraser(honcho.NewClient(cfg.HonchoURL))
+	gdprService.SetSessionDeleter(gdpr.NewValkeySessionDeleter(vkClient.Redis()))
+	gdprService.SetSettings(settingsService)
 	gdprHandlers := gdpr.NewHandlers(gdprService)
 
 	// Register GDPR processor with worker for background tasks.
 	gdprAdapter := gdpr.NewWorkerAdapter(gdprService)
 	worker.RegisterGDPRProcessor(gdprAdapter)
+
+	// Menus — Navigation menus with RBAC-gated items (ADR-054).
+	menusService := menus.NewService(database)
+	menusHandlers := menus.NewHandlers(menusService)
+
+	// Email Templates — Tenant-customizable transactional emails (ADR-055).
+	emailTemplatesService := emailtemplates.NewService(database)
+	emailTemplatesHandlers := emailtemplates.NewHandlers(emailTemplatesService)
+
+	// Redirects — Admin-managed URL redirect rules (ADR-056).
+	redirectsService := redirects.NewService(database, vkClient.Redis())
+	redirectsService.SetEnqueuer(taskEnqueuer)
+	redirectsHandlers := redirects.NewHandlers(redirectsService)
 
 	// Media subsystem (Section 34 — Media System).
 	mediaService := media.NewService(database)
@@ -428,6 +449,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// webhook_delivery handler can fetch, sign, and deliver outgoing webhooks.
 	webhookService := webhooks.NewService(database, cfg.SiteName)
 	webhookService.SetSettings(settingsService)
+	webhookService.SetEnqueuer(taskEnqueuer)
 	webhookHandlers := webhooks.NewHandlers(webhookService)
 	webhookAdapter := webhooks.NewWorkerAdapter(webhookService)
 	worker.RegisterWebhookProcessor(webhookAdapter)
@@ -435,6 +457,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Push Delivery — registers the VAPID push delivery implementation
 	// so the Asynq push_delivery handler can send web push notifications.
 	worker.RegisterPushDelivery(notificationService.PushDelivery())
+	worker.RegisterNotificationBatchDispatcher(notificationService)
 
 	// Documentation System subsystem (Section 44).
 	docsService := docs.NewService(database)
@@ -444,6 +467,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers := admin.NewHandlers(database, gen.New(database.Writer))
 	adminHandlers.SetRBAC(rbacResolver)
 	adminHandlers.SetValkey(vkClient.Redis())
+	adminHandlers.SetSettings(settingsService)
 
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
@@ -966,6 +990,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/related", contentHandlers.GetRelatedContent)
 
 			// Comments (Section 49 — Unified Comment System)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comments/{id}", commentsHandlers.GetComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/comments", commentsHandlers.ListComments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/comments", commentsHandlers.CreateComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/comments/{id}", commentsHandlers.UpdateComment)
@@ -1263,7 +1288,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/admin/reviews/{id}", reviewHandlers.ModerateReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.moderate")).Patch("/admin/reviews/{id}", reviewHandlers.ModerateReview)
 			})
 
 			// Generic Comparison System routes — gated by feature.comparison (Section 30)
@@ -1426,10 +1451,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.create"),
 				mw.IdempotencyMiddleware(vkClient.Redis())).
 				Post("/payments/intent", paymentHandlers.InitiatePayment)
-			// Webhooks (public - no auth required)
-			r.Post("/payments/webhook/paystack", paymentHandlers.HandlePaystackWebhook)
-			r.Post("/payments/webhook/stripe", paymentHandlers.HandleStripeWebhook)
-			r.Post("/payments/webhook/nowpayments", paymentHandlers.HandleNOWPaymentsWebhook)
+			// Webhook routes moved outside /api/v1 rate limit group — see webhook group below.
 			// Payment listing and details (catalog: /me/payments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments", paymentHandlers.ListPayments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments/{id}", paymentHandlers.GetPayment)
@@ -1781,6 +1803,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
 			// Admin user routes (catalog: /admin/users)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users", usersHandlers.ListUsers)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Post("/admin/users", adminHandlers.CreateUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users/{id}", usersHandlers.GetUserByUsername)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Get("/admin/users/{id}/sessions", usersHandlers.ListUserSessions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Get("/admin/users/{id}/activity", usersHandlers.ListUserActivity)
@@ -1937,6 +1960,60 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/newsletter/campaigns/{id}", newsletterHandlers.DeleteCampaign)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "newsletter.admin")).
 				Post("/admin/newsletter/campaigns/{id}/send", newsletterHandlers.HandleSendCampaign)
+
+			// ── Menus — Navigation (ADR-054) ───────────────────────────
+
+			// Admin: menu CRUD
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "menus.manage")).
+				Get("/admin/menus", menusHandlers.ListMenus)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "menus.manage")).
+				Post("/admin/menus", menusHandlers.CreateMenu)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "menus.manage")).
+				Get("/admin/menus/{id}", menusHandlers.GetMenu)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "menus.manage")).
+				Patch("/admin/menus/{id}", menusHandlers.UpdateMenu)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "menus.manage")).
+				Delete("/admin/menus/{id}", menusHandlers.DeleteMenu)
+			// Admin: menu item CRUD
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "menus.manage")).
+				Post("/admin/menus/{id}/items", menusHandlers.CreateMenuItem)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "menus.manage")).
+				Patch("/admin/menus/{id}/items/{itemId}", menusHandlers.UpdateMenuItem)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "menus.manage")).
+				Delete("/admin/menus/{id}/items/{itemId}", menusHandlers.DeleteMenuItem)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "menus.manage")).
+				Post("/admin/menus/{id}/items/reorder", menusHandlers.ReorderMenuItems)
+
+			// Public: resolve menu by slug (no auth required)
+			r.Get("/menus/{slug}", menusHandlers.GetMenuBySlug)
+
+			// ── Email Templates (ADR-055) ───────────────────────────────
+
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "email.templates.manage")).
+				Get("/admin/email-templates", emailTemplatesHandlers.ListTemplates)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "email.templates.manage")).
+				Get("/admin/email-templates/{id}", emailTemplatesHandlers.GetTemplate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "email.templates.manage")).
+				Patch("/admin/email-templates/{id}", emailTemplatesHandlers.UpdateTemplate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "email.templates.manage")).
+				Post("/admin/email-templates/{id}/reset", emailTemplatesHandlers.ResetTemplate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "email.templates.manage")).
+				Post("/admin/email-templates/{id}/test", emailTemplatesHandlers.TestTemplate)
+
+			// ── Redirects (ADR-056) ─────────────────────────────────────
+
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "redirects.manage")).
+				Get("/admin/redirects", redirectsHandlers.ListRedirects)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "redirects.manage")).
+				Post("/admin/redirects", redirectsHandlers.CreateRedirect)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "redirects.manage")).
+				Get("/admin/redirects/{id}", redirectsHandlers.GetRedirect)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "redirects.manage")).
+				Patch("/admin/redirects/{id}", redirectsHandlers.UpdateRedirect)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "redirects.manage")).
+				Delete("/admin/redirects/{id}", redirectsHandlers.DeleteRedirect)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "redirects.manage")).
+				Post("/admin/redirects/bulk", redirectsHandlers.BulkAction)
 
 			// ── Coupons & External Affiliate Providers (Section 55) ────
 
@@ -2528,6 +2605,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 11: Universities compare
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/universities/{id}/compare", universitiesHandlers.CompareUniversities)
+		})
+	})
+
+	// Payment webhook routes — outside /api/v1 group so they don't inherit
+	// the "loose" (300/min) rate limit. Payment providers (Paystack, Stripe,
+	// NOWPayments) can send high-frequency webhook traffic.
+	r.Group(func(r chi.Router) {
+		r.Use(tenant.Middleware(tenantStore))
+		r.Route("/api/v1", func(r chi.Router) {
+			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/paystack", paymentHandlers.HandlePaystackWebhook)
+			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/stripe", paymentHandlers.HandleStripeWebhook)
+			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/nowpayments", paymentHandlers.HandleNOWPaymentsWebhook)
 		})
 	})
 

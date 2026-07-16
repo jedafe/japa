@@ -227,6 +227,7 @@ type ScanMediaRow struct {
 	StoragePath      string
 	OriginalFilename string
 	UploaderUserID   string
+	TenantID         string
 }
 
 // UpdateMediaStoragePath updates the storage path for a media item.
@@ -242,65 +243,62 @@ func (s *Store) UpdateMediaStoragePath(ctx context.Context, id, tenantID pgtype.
 	return nil
 }
 
-// GetMediaForScan retrieves a media item by ID without tenant filtering.
-// Used by background workers that operate across all tenants.
+// GetMediaForScan retrieves a media item by ID with its tenant_id.
+// Used by background workers that operate across all tenants — the tenant_id
+// returned from this read is threaded into subsequent write operations
+// (ConfirmMediaByID, QuarantineMedia) to prevent cross-tenant modification.
 func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaRow, error) {
 	var row ScanMediaRow
-
 	err := s.readPool.QueryRow(ctx, `
-		SELECT storage_bucket, storage_path, original_filename, uploader_user_id::text
+		SELECT storage_bucket, storage_path, original_filename, uploader_user_id::text, tenant_id::text
 		FROM media
 		WHERE id = $1 AND deleted_at IS NULL
-	`, mediaID).Scan(&row.StorageBucket, &row.StoragePath, &row.OriginalFilename, &row.UploaderUserID)
+	`, mediaID).Scan(&row.StorageBucket, &row.StoragePath, &row.OriginalFilename, &row.UploaderUserID, &row.TenantID)
 	if err != nil {
 		return ScanMediaRow{}, fmt.Errorf("getting media for scan: %w", err)
 	}
-
 	return row, nil
 }
 
-// ConfirmMediaByID marks a media item as confirmed by ID alone (no tenant).
+// ConfirmMediaByID marks a media item as confirmed, scoped to tenant.
 // Used by the background scan processor after a clean virus scan.
-func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte) error {
+func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte, tenantID string) error {
 	_, err := s.writePool.Exec(ctx, `
-		UPDATE media SET confirmed = true WHERE id = $1 AND deleted_at IS NULL
-	`, mediaID)
+		UPDATE media SET confirmed = true WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+	`, mediaID, tenantID)
 	if err != nil {
 		return fmt.Errorf("confirming media by ID: %w", err)
 	}
-
 	return nil
 }
 
 // RejectMediaByID soft-deletes a media item and logs the virus name.
 // Used by the background scan processor when ClamAV detects malware.
-func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, virusName string) error {
+func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, tenantID string, virusName string) error {
 	_, err := s.writePool.Exec(ctx, `
 		UPDATE media
 		SET deleted_at = now(),
 		    alt_text = coalesce(alt_text, '') || ' [REJECTED: ' || $2 || ']'
-		WHERE id = $1 AND deleted_at IS NULL
-	`, mediaID, virusName)
+		WHERE id = $1 AND tenant_id = $3 AND deleted_at IS NULL
+	`, mediaID, virusName, tenantID)
 	if err != nil {
 		return fmt.Errorf("rejecting media by ID: %w", err)
 	}
-
 	return nil
 }
 
-// QuarantineMedia marks a media item as quarantined instead of soft-deleting it.
+// QuarantineMedia marks a media item as quarantined, scoped to tenant.
 // This allows admins to review false positives before permanent removal.
-func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, reason string) error {
+func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, tenantID string, reason string) error {
 	_, err := s.writePool.Exec(ctx, `
 		UPDATE media
 		SET quarantine_reason = $2,
 		    quarantined_at = now()
-		WHERE id = $1 AND deleted_at IS NULL
-	`, mediaID, reason)
+		WHERE id = $1 AND tenant_id = $3 AND deleted_at IS NULL
+	`, mediaID, reason, tenantID)
 	if err != nil {
 		return fmt.Errorf("quarantining media by ID: %w", err)
 	}
-
 	return nil
 }
 

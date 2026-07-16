@@ -43,6 +43,14 @@ type Service struct {
 	honchoEraser   HonchoEraser
 	sessionDeleter SessionDeleter
 	siteName       string
+	settings       SettingsProvider
+}
+
+// SettingsProvider abstracts system settings access for hard-delete configuration.
+type SettingsProvider interface {
+	GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error)
+	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
+	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -77,6 +85,11 @@ func (s *Service) SetHonchoEraser(h HonchoEraser) {
 // during account deletion. When nil (development), the step is skipped.
 func (s *Service) SetSessionDeleter(d SessionDeleter) {
 	s.sessionDeleter = d
+}
+
+// SetSettings injects the system settings provider for hard-delete configuration.
+func (s *Service) SetSettings(sp SettingsProvider) {
+	s.settings = sp
 }
 
 // noopEnqueuer is a no-op implementation for development.
@@ -391,7 +404,38 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			"request_id", requestID, "user_id", request.UserID)
 	}
 
-	// 5. Mark deletion as completed.
+	// 5. Hard delete — optional physical erasure phase (ADR-057).
+	//    Only runs if gdpr.hard_delete_enabled is true and the retention window
+	//    (gdpr.retention_days) has elapsed since the request was created.
+	if s.settings != nil {
+		hardDeleteEnabled, settingsErr := s.settings.GetSettingBool(ctx, request.TenantID, "gdpr.hard_delete_enabled")
+		if settingsErr == nil && hardDeleteEnabled {
+			retentionDays, _ := s.settings.GetSettingInt(ctx, request.TenantID, "gdpr.retention_days")
+			retentionDeadline := request.CreatedAt.Time.Add(time.Duration(retentionDays) * 24 * time.Hour)
+			if time.Now().After(retentionDeadline) {
+				slog.Info("gdpr: performing physical erasure",
+					"user_id", request.UserID.String(),
+					"request_id", requestID.String())
+
+				if hardErr := s.hardDeleteUser(ctx, request.UserID, request.TenantID); hardErr != nil {
+					if _, statusErr := s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
+						ID:     requestID,
+						Status: string(DeletionFailed),
+					}); statusErr != nil {
+						slog.Error("update deletion status to failed", "error", statusErr)
+					}
+					return fmt.Errorf("hard deleting user %s: %w", request.UserID, hardErr)
+				}
+			} else {
+				slog.Info("gdpr: retention period not elapsed, skipping hard delete",
+					"user_id", request.UserID.String(),
+					"retention_days", retentionDays,
+					"retention_deadline", retentionDeadline.Format(time.RFC3339))
+			}
+		}
+	}
+
+	// 6. Mark deletion as completed.
 	_, err = s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
 		ID:          requestID,
 		Status:      string(DeletionCompleted),
@@ -400,6 +444,61 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	if err != nil {
 		return fmt.Errorf("marking deletion as completed: %w", err)
 	}
+
+	return nil
+}
+
+// hardDeleteUser performs physical deletion of the user row after handling
+// non-CASCADE foreign key references. Called only when gdpr.hard_delete_enabled
+// is true and the retention period has elapsed.
+func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+	// Resolve the deleted-user placeholder UUID from settings, or use zero UUID.
+	deletedUserPlaceholder := pgtype.UUID{}
+	_ = deletedUserPlaceholder.Scan("00000000-0000-0000-0000-000000000000")
+
+	if s.settings != nil {
+		if placeholderStr, err := s.settings.GetSetting(ctx, tenantID, "gdpr.deleted_user_placeholder_uuid"); err == nil && placeholderStr != "" {
+			var p pgtype.UUID
+			if scanErr := p.Scan(placeholderStr); scanErr == nil {
+				deletedUserPlaceholder = p
+			}
+		}
+	}
+
+	// 1. Reassign content authorship to preserve thread continuity.
+	if err := s.store.reassignContentAuthor(ctx, gen.ReassignContentAuthorParams{
+		UserID:       userID,
+		TenantID:     tenantID,
+		TargetUserID: deletedUserPlaceholder,
+	}); err != nil {
+		slog.Warn("gdpr: failed to reassign content author", "user_id", userID.String(), "error", err)
+		return fmt.Errorf("reassigning content authorship: %w", err)
+	}
+
+	// 2. Nullify payment user references (financial audit trail survives).
+	if err := s.store.nullifyPaymentUserRefs(ctx, gen.NullifyPaymentUserRefsParams{
+		UserID: userID, TenantID: tenantID,
+	}); err != nil {
+		slog.Warn("gdpr: failed to nullify payment user refs", "user_id", userID.String(), "error", err)
+	}
+
+	// 3. Nullify ticket submitter references.
+	if err := s.store.nullifyTicketSubmitter(ctx, gen.NullifyTicketSubmitterParams{
+		UserID: userID, TenantID: tenantID,
+	}); err != nil {
+		slog.Warn("gdpr: failed to nullify ticket submitter", "user_id", userID.String(), "error", err)
+	}
+
+	// 4. Physical deletion — ON DELETE CASCADE handles all child tables.
+	if err := s.store.hardDeleteUser(ctx, gen.HardDeleteUserParams{
+		UserID: userID, TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("physically deleting user row: %w", err)
+	}
+
+	slog.Info("gdpr: user physically deleted",
+		"user_id", userID.String(),
+		"tenant_id", tenantID.String())
 
 	return nil
 }

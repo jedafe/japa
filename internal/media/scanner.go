@@ -42,11 +42,10 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 		return fmt.Errorf("media:scan: invalid media_id %q: %w", mediaID, err)
 	}
 
-	// We need a tenant ID to fetch the media record. Since the Asynq
-	// payload only carries media_id, we use a system-wide scan context.
-	// The store method GetMediaByIDForScan uses the read pool directly
-	// without tenant filtering — this is intentional for background
-	// workers that operate across all tenants.
+	// Fetch media record including tenant_id for scoped writes.
+	// The Asynq payload only carries media_id, but GetMediaForScan returns
+	// the tenant_id from the row, which is then threaded into confirm/reject
+	// operations to prevent cross-tenant modification.
 	m, err := p.svc.getMediaForScan(ctx, mid[:])
 	if err != nil {
 		return fmt.Errorf("media:scan: fetch media %s: %w", mediaID, err)
@@ -68,12 +67,12 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 		// pattern used throughout the codebase.
 		slog.Error("media:scan: ClamAV error, confirming without scan",
 			"media_id", mediaID, "error", err)
-		return p.svc.confirmMediaByID(ctx, mid[:])
+		return p.svc.confirmMediaByID(ctx, mid[:], m.TenantID)
 	}
 
 	if result.Clean {
 		slog.Info("media:scan: clean", "media_id", mediaID)
-		return p.svc.confirmMediaByID(ctx, mid[:])
+		return p.svc.confirmMediaByID(ctx, mid[:], m.TenantID)
 	}
 
 	// Infected — soft-delete and log the incident.
@@ -85,7 +84,7 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 		"uploader", m.UploaderUserID,
 	)
 
-	if err := p.svc.rejectMediaByID(ctx, mid[:], result.VirusName); err != nil {
+	if err := p.svc.rejectMediaByID(ctx, mid[:], m.TenantID, result.VirusName); err != nil {
 		return fmt.Errorf("media:scan: reject infected media %s: %w", mediaID, err)
 	}
 

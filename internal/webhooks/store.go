@@ -34,6 +34,41 @@ type WebhookDelivery struct {
 	CreatedAt   pgtype.Timestamptz
 }
 
+// WebhookDeliveryResponse is the JSON-safe representation of a webhook delivery.
+type WebhookDeliveryResponse struct {
+	ID          string     `json:"id"`
+	TenantID    string     `json:"tenant_id"`
+	EndpointID  string     `json:"endpoint_id"`
+	EventID     string     `json:"event_id"`
+	EventType   string     `json:"event_type"`
+	Payload     []byte     `json:"payload"`
+	Status      string     `json:"status"`
+	Attempts    int32      `json:"attempts"`
+	LastError   *string    `json:"last_error"`
+	DeliveredAt *time.Time `json:"delivered_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// ToResponse converts a WebhookDelivery to a JSON-safe response.
+func (d WebhookDelivery) ToResponse() WebhookDeliveryResponse {
+	r := WebhookDeliveryResponse{
+		ID:         d.ID.String(),
+		TenantID:   d.TenantID.String(),
+		EndpointID: d.EndpointID.String(),
+		EventID:    d.EventID.String(),
+		EventType:  d.EventType,
+		Payload:    d.Payload,
+		Status:     d.Status,
+		Attempts:   d.Attempts,
+		LastError:  d.LastError,
+		CreatedAt:  d.CreatedAt.Time,
+	}
+	if d.DeliveredAt.Valid {
+		r.DeliveredAt = &d.DeliveredAt.Time
+	}
+	return r
+}
+
 // Store provides database access for webhook delivery using direct pgx
 // queries. The webhook tables are managed outside sqlc to keep the delivery
 // subsystem self-contained.

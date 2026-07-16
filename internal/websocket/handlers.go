@@ -160,6 +160,11 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Immediately delete the Valkey key so a replayed request cannot pass the cache lookup.
+	if h.vkClient != nil {
+		h.vkClient.Redis().Del(ctx, "jc:ws_ticket:"+ticketStr)
+	}
+
 	// Upgrade to WebSocket.
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {

@@ -468,20 +468,24 @@ func strPtr(s string) *string {
 
 // ExecuteDeletion handles POST /admin/gdpr/deletion-requests/:id/execute (P5.6).
 func (h *Handlers) ExecuteDeletion(w http.ResponseWriter, r *http.Request) {
-	requestID := chi.URLParam(r, "id")
-	_, ok := h.requireTenant(w, r)
-	if !ok {
+	if _, ok := h.requireTenant(w, r); !ok {
 		return
 	}
-	// Mark the deletion request as executed — actual deletion is async via worker
-	_, err := h.Service.db.Writer.Exec(r.Context(),
-		`UPDATE account_deletion_requests SET status = 'completed', completed_at = now()
-		 WHERE id = $1 AND status = 'pending'`, requestID)
-	if err != nil {
+
+	var requestID pgtype.UUID
+	if err := requestID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid deletion request ID")
+		return
+	}
+
+	// Process the actual account deletion pipeline (anonymize user, revoke tokens,
+	// delete sessions, purge Honcho AI context, mark request as completed).
+	if err := h.Service.ProcessAccountDeletion(r.Context(), requestID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
-		"request_id": requestID, "status": "executed",
+		"request_id": requestID.String(), "status": "executed",
 	}})
 }

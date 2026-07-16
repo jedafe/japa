@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -53,8 +54,8 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 		Status:        p.Status,
 		FollowerCount: p.FollowerCount,
 		UserGroupName: groupName,
-		CreatedAt:     p.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:     p.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:     p.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:     p.UpdatedAt.Time.Format(time.RFC3339),
 	}, nil
 }
 
@@ -82,8 +83,8 @@ func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID
 		Status:        p.Status,
 		FollowerCount: p.FollowerCount,
 		UserGroupName: groupName,
-		CreatedAt:     p.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:     p.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:     p.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:     p.UpdatedAt.Time.Format(time.RFC3339),
 	}, nil
 }
 
@@ -201,8 +202,8 @@ func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search st
 			ProfileType:   u.ProfileType,
 			Status:        u.Status,
 			FollowerCount: u.FollowerCount,
-			CreatedAt:     u.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-			UpdatedAt:     u.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:     u.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt:     u.UpdatedAt.Time.Format(time.RFC3339),
 		}
 	}
 
@@ -289,8 +290,8 @@ func (s *Service) ListSessions(ctx context.Context, userID pgtype.UUID) ([]Sessi
 	for i, sess := range sessions {
 		result[i] = SessionInfo{
 			ID:        sess.ID.String(),
-			CreatedAt: sess.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-			ExpiresAt: sess.ExpiresAt.Time.Format("2006-01-02T15:04:05Z"),
+			CreatedAt: sess.CreatedAt.Time.Format(time.RFC3339),
+			ExpiresAt: sess.ExpiresAt.Time.Format(time.RFC3339),
 		}
 	}
 
@@ -315,7 +316,7 @@ func (s *Service) ListUserActivity(ctx context.Context, tenantID, userID pgtype.
 		items[i] = UserActivityItem{
 			Type:      row.Type,
 			Content:   row.Content,
-			CreatedAt: row.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			CreatedAt: row.CreatedAt.Time.Format(time.RFC3339),
 		}
 	}
 
@@ -354,7 +355,7 @@ func (s *Service) ListConnectedAccounts(ctx context.Context, tenantID, userID pg
 	for i, acc := range accounts {
 		result[i] = ConnectedAccountInfo{
 			Provider:    acc.Provider,
-			ConnectedAt: acc.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			ConnectedAt: acc.CreatedAt.Time.Format(time.RFC3339),
 		}
 	}
 
@@ -380,8 +381,8 @@ func (s *Service) ListUserContent(ctx context.Context, tenantID, userID pgtype.U
 			Title:       c.Title,
 			ContentType: c.ContentType,
 			Status:      c.Status,
-			CreatedAt:   c.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-			UpdatedAt:   c.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:   c.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt:   c.UpdatedAt.Time.Format(time.RFC3339),
 		}
 	}
 
@@ -402,7 +403,7 @@ func (s *Service) ListUserBookmarks(ctx context.Context, userID pgtype.UUID, lim
 			EntityType: b.EntityType,
 			EntityID:   b.EntityID.String(),
 			Folder:     b.Folder,
-			CreatedAt:  b.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+			CreatedAt:  b.CreatedAt.Time.Format(time.RFC3339),
 		}
 	}
 

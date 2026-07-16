@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -51,8 +52,8 @@ func (s *Service) GetState(ctx context.Context, tenantID, userID pgtype.UUID) (*
 		Completed:     row.Completed,
 		StepData:      row.StepData,
 		TourDismissed: row.TourDismissed,
-		CreatedAt:     row.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:     row.UpdatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:     row.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:     row.UpdatedAt.Time.Format(time.RFC3339),
 	}, nil
 }
 
@@ -204,6 +205,8 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.
 
 	// Build an ILIKE pattern for each tag so the SQL can pre-filter spaces
 	// whose name or description mentions at least one of the user's interests.
+	// Build parameterized ILIKE clauses — each tag becomes its own $N placeholder.
+	// fmt.Sprintf is used only for the parenthetical OR grouping, not for values.
 	likePatterns := make([]string, 0, len(tags))
 	args := []any{tenantID}
 	for i, tag := range tags {

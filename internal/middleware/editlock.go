@@ -17,15 +17,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
 )
 
-// editLockTTL controls how long an edit lock is held before auto-releasing.
-// 120 seconds covers the typical editing window without requiring an explicit
-// unlock on every save — the key auto-expires if the editor walks away.
-const editLockTTL = 120 * time.Second
+// editLockTTLDefault is the fallback TTL when the system setting is unavailable.
+const editLockTTLDefault = 120 * time.Second
+
+// editLockSettingsReader is the subset of config.Settings the edit lock needs.
+type editLockSettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
+
+var defaultTenantUUID = pgtype.UUID{Bytes: [16]byte{}, Valid: true}
 
 // deleteOwnershipScript atomically checks ownership and deletes the lock key.
 // Returns 1 if the key was deleted (ownership verified), 0 otherwise.
@@ -55,7 +61,7 @@ end
 // When Valkey is unreachable the middleware degrades gracefully and allows
 // the request through, consistent with the rate limiter and idempotency
 // middleware.
-func EditLockMiddleware(rdb valkeycompat.Cmdable) func(http.Handler) http.Handler {
+func EditLockMiddleware(rdb valkeycompat.Cmdable, settings editLockSettingsReader) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only state-changing methods need edit locks.
@@ -88,12 +94,18 @@ func EditLockMiddleware(rdb valkeycompat.Cmdable) func(http.Handler) http.Handle
 			key := "jc:editor_lock:" + contentType + ":" + contentID
 			ctx := r.Context()
 
+			// Read TTL from system settings with fallback to the default.
+			ttl := editLockTTLDefault
+			if settings != nil {
+				ttl = time.Duration(settings.GetIntOr(ctx, defaultTenantUUID, "content.edit_lock_ttl_seconds", 120)) * time.Second
+			}
+
 			if r.Method == http.MethodDelete {
 				handleEditLockDelete(ctx, w, r, rdb, key, userID, next)
 				return
 			}
 
-			handleEditLockAcquire(ctx, w, r, rdb, key, userID, next)
+			handleEditLockAcquire(ctx, w, r, rdb, key, userID, ttl, next)
 		})
 	}
 }
@@ -159,11 +171,11 @@ func handleEditLockDelete(ctx context.Context, w http.ResponseWriter, r *http.Re
 // sets the key only if it does not already exist, with a TTL. This eliminates
 // the TOCTOU race condition in the previous GET+SET implementation where two
 // concurrent requests could both see no lock and both acquire it.
-func handleEditLockAcquire(ctx context.Context, w http.ResponseWriter, r *http.Request, rdb valkeycompat.Cmdable, key, userID string, next http.Handler) {
-	// Atomic acquire: SET key userID NX EX 120
+func handleEditLockAcquire(ctx context.Context, w http.ResponseWriter, r *http.Request, rdb valkeycompat.Cmdable, key, userID string, ttl time.Duration, next http.Handler) {
+	// Atomic acquire: SET key userID NX EX ttl_seconds
 	// NX = only set if key does not exist (acquire new lock)
 	// EX = set expiry in seconds (auto-release if editor stalls)
-	set, err := rdb.SetNX(ctx, key, userID, editLockTTL).Result()
+	set, err := rdb.SetNX(ctx, key, userID, ttl).Result()
 	if err != nil {
 		slog.Warn("editlock: failed to acquire lock (SET NX), allowing request",
 			"key", key, "err", err)
@@ -184,7 +196,7 @@ func handleEditLockAcquire(ctx context.Context, w http.ResponseWriter, r *http.R
 	if err != nil {
 		// Key disappeared between SET NX and GET — race with expiry.
 		// Try to acquire again.
-		set2, err2 := rdb.SetNX(ctx, key, userID, editLockTTL).Result()
+		set2, err2 := rdb.SetNX(ctx, key, userID, ttl).Result()
 		if err2 != nil || !set2 {
 			slog.Warn("editlock: lost lock during re-acquire, allowing request",
 				"key", key, "err", err2)
@@ -200,7 +212,7 @@ func handleEditLockAcquire(ctx context.Context, w http.ResponseWriter, r *http.R
 
 	if existing == userID {
 		// Same user — refresh the TTL.
-		if err := rdb.Set(ctx, key, userID, editLockTTL).Err(); err != nil {
+		if err := rdb.Set(ctx, key, userID, ttl).Err(); err != nil {
 			slog.Warn("editlock: failed to refresh lock TTL",
 				"key", key, "err", err)
 		}

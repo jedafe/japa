@@ -67,6 +67,32 @@ func (q *Queries) ExtendBatchWindow(ctx context.Context, arg ExtendBatchWindowPa
 	return err
 }
 
+const getBatchWindowByID = `-- name: GetBatchWindowByID :one
+SELECT id, recipient_id, notification_type, subject_type, subject_id,
+       actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
+FROM notification_batch_windows
+WHERE id = $1
+`
+
+func (q *Queries) GetBatchWindowByID(ctx context.Context, id pgtype.UUID) (NotificationBatchWindow, error) {
+	row := q.db.QueryRow(ctx, getBatchWindowByID, id)
+	var i NotificationBatchWindow
+	err := row.Scan(
+		&i.ID,
+		&i.RecipientID,
+		&i.NotificationType,
+		&i.SubjectType,
+		&i.SubjectID,
+		&i.ActorIds,
+		&i.ActorCount,
+		&i.LastActorID,
+		&i.WindowOpenAt,
+		&i.WindowCloseAt,
+		&i.Dispatched,
+	)
+	return i, err
+}
+
 const getNotificationPreferences = `-- name: GetNotificationPreferences :many
 
 SELECT np.user_id, np.notification_type, np.in_app, np.email, np.push,
