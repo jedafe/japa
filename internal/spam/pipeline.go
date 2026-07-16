@@ -369,10 +369,12 @@ func (p *SpamPipeline) checkUserAge(ctx context.Context, tenantID pgtype.UUID, r
 
 	age := time.Since(user.CreatedAt.Time)
 	threshold := newAccountThreshold
+
 	if p.settings != nil {
 		days := p.settings.GetIntOr(ctx, tenantID, "moderation.new_account_threshold_days", 7)
 		threshold = time.Duration(days) * 24 * time.Hour
 	}
+
 	if age < threshold {
 		return name, 0.3, []string{fmt.Sprintf("new account: %s old", age.Round(time.Hour))}
 	}

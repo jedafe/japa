@@ -127,6 +127,10 @@ WHERE id = @id AND tenant_id = @tenant_id
 RETURNING id, tenant_id, content_id, reviewer_user_id, status, feedback,
           created_at, updated_at;
 
+-- name: DeleteContentReview :exec
+DELETE FROM content_reviews
+WHERE id = @id AND tenant_id = @tenant_id;
+
 -- =====================
 -- Content Featured
 -- =====================

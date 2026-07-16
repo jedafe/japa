@@ -1,0 +1,94 @@
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { apiFetch } from '$lib/api/client';
+
+	let email = $state('');
+	let password = $state('');
+	let loading = $state(false);
+	let error = $state('');
+
+	async function handleLogin() {
+		if (!email || !password || loading) return;
+		
+		loading = true;
+		error = '';
+		
+		try {
+			// Call login endpoint directly with fetch to get cookies set
+			const res = await fetch('/api/v1/auth/login', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ email, password })
+			});
+			
+			const body = await res.json();
+			
+			if (res.ok && body.data?.access_token) {
+				// Now call /api/v1/me to trigger the server to set the cookie
+				// The hooks.server.ts will handle setting the cookie
+				window.location.href = '/';
+			} else {
+				error = body.error?.message || 'Invalid credentials';
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Login failed';
+		} finally {
+			loading = false;
+		}
+	}
+</script>
+
+<svelte:head>
+	<title>Login — JapaConnect Admin</title>
+</svelte:head>
+
+<div class="flex min-h-screen items-center justify-center px-4">
+	<div class="w-full max-w-sm rounded-lg border p-6" style="border-color: var(--color-border); background: var(--color-surface)">
+		<h1 class="mb-1 text-center text-xl font-bold tracking-tight" style="color: var(--color-foreground)">JapaConnect Admin</h1>
+		<p class="mb-6 text-center text-sm" style="color: var(--color-muted)">Content Moderation & Management</p>
+
+		{#if error}
+			<div class="mb-4 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+				{error}
+			</div>
+		{/if}
+
+		<form onsubmit={(e) => { e.preventDefault(); handleLogin(); }} class="space-y-4">
+			<div>
+				<label for="email" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Email</label>
+				<input
+					id="email"
+					type="email"
+					required
+					class="w-full rounded-md border px-3 py-2 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					placeholder="admin@example.com"
+					bind:value={email}
+				/>
+			</div>
+
+			<div>
+				<label for="password" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Password</label>
+				<input
+					id="password"
+					type="password"
+					required
+					class="w-full rounded-md border px-3 py-2 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					placeholder="••••••••"
+					bind:value={password}
+				/>
+			</div>
+
+			<button
+				type="submit"
+				class="w-full rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
+				style="background: var(--color-primary)"
+				disabled={loading || !email || !password}
+			>
+				{loading ? 'Signing in...' : 'Sign In'}
+			</button>
+		</form>
+	</div>
+</div>

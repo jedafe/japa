@@ -161,7 +161,7 @@ func TestTranscodeIntegration(t *testing.T) {
 	// Create a minimal valid MP4 input (1-second black video).
 	inputPath := filepath.Join(dir, "input.mp4")
 
-	cmd := exec.Command(
+	cmd := exec.Command( //nolint:gosec // test uses variable path
 		"ffmpeg",
 		"-y", "-f", "lavfi", "-i", "color=c=black:s=320x240:d=1",
 		"-c:v", "libx264", "-preset", "ultrafast",
@@ -193,7 +193,7 @@ func TestThumbnailIntegration(t *testing.T) {
 
 	inputPath := filepath.Join(dir, "input.mp4")
 
-	cmd := exec.Command(
+	cmd := exec.Command( //nolint:gosec // test uses variable path
 		"ffmpeg",
 		"-y", "-f", "lavfi", "-i", "color=c=black:s=320x240:d=2",
 		"-c:v", "libx264", "-preset", "ultrafast",
@@ -225,7 +225,7 @@ func TestCompressIntegration(t *testing.T) {
 
 	inputPath := filepath.Join(dir, "input.mp4")
 
-	cmd := exec.Command(
+	cmd := exec.Command( //nolint:gosec // test uses variable path
 		"ffmpeg",
 		"-y", "-f", "lavfi", "-i", "color=c=black:s=320x240:d=1",
 		"-c:v", "libx264", "-preset", "ultrafast",

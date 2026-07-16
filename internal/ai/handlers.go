@@ -71,6 +71,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
 		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+
 		return pgtype.UUID{}, false
 	}
 
@@ -81,6 +82,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+
 		return nil, false
 	}
 
@@ -145,16 +147,19 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+
 		return
 	}
 
 	if input.Category == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "category is required")
+
 		return
 	}
 
 	if input.Prompt == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+
 		return
 	}
 
@@ -187,7 +192,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 
 // HandleChat handles POST /api/v1/ai/chat — JapaBot conversational AI.
 // Request body: { "message": "user message", "context": {optional context} }
-// Response: { "data": { "response": "AI response", "provider_ref": "...", "status": "..." } }
+// Response: { "data": { "response": "AI response", "provider_ref": "...", "status": "..." } }.
 func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -206,11 +211,13 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+
 		return
 	}
 
 	if input.Message == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "message is required")
+
 		return
 	}
 
@@ -229,6 +236,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ai chat failed", "error", err)
 		writeError(w, http.StatusBadGateway, "ai_error", "JapaBot is unavailable")
+
 		return
 	}
 
@@ -240,7 +248,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // HandleImprove handles POST /api/v1/ai/improve — improve writing quality.
-// Request body: { "text": "...", "tone": "professional|casual|academic" }
+// Request body: { "text": "...", "tone": "professional|casual|academic" }.
 func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -259,11 +267,13 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+
 		return
 	}
 
 	if input.Text == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "text is required")
+
 		return
 	}
 
@@ -287,6 +297,7 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ai improve failed", "error", err)
 		writeError(w, http.StatusBadGateway, "ai_error", "AI improvement failed")
+
 		return
 	}
 
@@ -294,7 +305,7 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleSummarize handles POST /api/v1/ai/summarize — summarize text.
-// Request body: { "text": "...", "max_words": 100 }
+// Request body: { "text": "...", "max_words": 100 }.
 func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -313,11 +324,13 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+
 		return
 	}
 
 	if input.Text == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "text is required")
+
 		return
 	}
 
@@ -341,6 +354,7 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ai summarize failed", "error", err)
 		writeError(w, http.StatusBadGateway, "ai_error", "AI summarization failed")
+
 		return
 	}
 
@@ -348,7 +362,7 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleTranslate handles POST /api/v1/ai/translate — translate text.
-// Request body: { "text": "...", "target_locale": "fr" }
+// Request body: { "text": "...", "target_locale": "fr" }.
 func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -367,16 +381,19 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+
 		return
 	}
 
 	if input.Text == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "text is required")
+
 		return
 	}
 
 	if input.TargetLocale == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "target_locale is required")
+
 		return
 	}
 
@@ -395,6 +412,7 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ai translate failed", "error", err)
 		writeError(w, http.StatusBadGateway, "ai_error", "AI translation failed")
+
 		return
 	}
 
@@ -402,7 +420,7 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleGenerateTags handles POST /api/v1/ai/generate-tags — generate content tags.
-// Request body: { "title": "...", "text": "..." }
+// Request body: { "title": "...", "text": "..." }.
 func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -421,11 +439,13 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+
 		return
 	}
 
 	if input.Title == "" && input.Text == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "title or text is required")
+
 		return
 	}
 
@@ -443,6 +463,7 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ai generate-tags failed", "error", err)
 		writeError(w, http.StatusBadGateway, "ai_error", "AI tag generation failed")
+
 		return
 	}
 
@@ -450,7 +471,7 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleGenerateOG handles POST /api/v1/ai/generate-og — generate OG metadata.
-// Request body: { "title": "...", "text": "...", "content_type": "post" }
+// Request body: { "title": "...", "text": "...", "content_type": "post" }.
 func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -470,11 +491,13 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+
 		return
 	}
 
 	if input.Title == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "title is required")
+
 		return
 	}
 
@@ -484,11 +507,11 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload := map[string]any{
-		"prompt":        "Generate Open Graph metadata (og:title, og:description, og:image alt text) for the following " + contentType + ". Return as JSON.\n\nTitle: " + input.Title + "\n\nText: " + input.Text,
-		"user_id":       user.UserID.String(),
-		"tenant_id":     tenantID.String(),
-		"task":          "generate_og",
-		"content_type":  contentType,
+		"prompt":       "Generate Open Graph metadata (og:title, og:description, og:image alt text) for the following " + contentType + ". Return as JSON.\n\nTitle: " + input.Title + "\n\nText: " + input.Text,
+		"user_id":      user.UserID.String(),
+		"tenant_id":    tenantID.String(),
+		"task":         "generate_og",
+		"content_type": contentType,
 	}
 
 	resp, err := h.Dispatcher.Dispatch(r.Context(), "content_generation", Request{
@@ -498,6 +521,7 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ai generate-og failed", "error", err)
 		writeError(w, http.StatusBadGateway, "ai_error", "AI OG generation failed")
+
 		return
 	}
 
@@ -528,18 +552,21 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+
 		return
 	}
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan(input.ContentID); err != nil {
 		writeError(w, http.StatusBadRequest, "validation_error", "invalid content_id")
+
 		return
 	}
 
 	aiOutputBytes, err := json.Marshal(input.AIOutput)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "validation_error", "invalid ai_output")
+
 		return
 	}
 
@@ -595,6 +622,7 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(chi.URLParam(r, "id")); err != nil {
 		writeError(w, http.StatusBadRequest, "validation_error", "invalid review ID")
+
 		return
 	}
 
@@ -618,6 +646,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(chi.URLParam(r, "id")); err != nil {
 		writeError(w, http.StatusBadRequest, "validation_error", "invalid review ID")
+
 		return
 	}
 
@@ -627,6 +656,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+
 		return
 	}
 
@@ -645,16 +675,18 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // HandleGetUserContext returns the AI context entries for a specific user.
-// GET /admin/ai/context/{user_id}
+// GET /admin/ai/context/{user_id}.
 func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) {
 	if h.Honcho == nil {
 		writeError(w, http.StatusServiceUnavailable, "honcho_unavailable", "Honcho client not configured")
+
 		return
 	}
 
 	userID := chi.URLParam(r, "user_id")
 	if userID == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "user_id is required")
+
 		return
 	}
 
@@ -662,6 +694,7 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Error("getting user AI context", "error", err, "user_id", userID)
 		writeError(w, http.StatusBadGateway, "honcho_error", "Failed to retrieve user context")
+
 		return
 	}
 
@@ -672,28 +705,32 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 }
 
 // HandleDeleteUserContextEntry deletes a specific AI context entry for a user.
-// DELETE /admin/ai/context/{user_id}/{entry_id}
+// DELETE /admin/ai/context/{user_id}/{entry_id}.
 func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.Request) {
 	if h.Honcho == nil {
 		writeError(w, http.StatusServiceUnavailable, "honcho_unavailable", "Honcho client not configured")
+
 		return
 	}
 
 	userID := chi.URLParam(r, "user_id")
 	if userID == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "user_id is required")
+
 		return
 	}
 
 	entryID := chi.URLParam(r, "entry_id")
 	if entryID == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "entry_id is required")
+
 		return
 	}
 
 	if err := h.Honcho.DeleteEntry(r.Context(), userID, entryID); err != nil {
 		slog.Error("deleting user context entry", "error", err, "user_id", userID, "entry_id", entryID)
 		writeError(w, http.StatusBadGateway, "honcho_error", "Failed to delete context entry")
+
 		return
 	}
 
@@ -706,8 +743,8 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 
 // HandleGetAIUsage returns AI usage logs. Currently a stub that returns an
 // empty dataset until the ai_usage_log migration is added.
-// GET /admin/ai/usage
-func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
+// GET /admin/ai/usage.
+func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data":        []any{},
 		"total_count": 0,
@@ -719,19 +756,19 @@ func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
 // AI Models Handler
 // ---------------------------------------------------------------------------
 
-// AIModel represents an available AI model for the admin UI.
-type AIModel struct {
+// Model represents an available AI model for the admin UI.
+type Model struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
 }
 
 // HandleListModels returns the list of available AI models.
-// GET /admin/ai/models
-func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
+// GET /admin/ai/models.
+func (h *Handlers) HandleListModels(w http.ResponseWriter, _ *http.Request) {
 	// Models are derived from the registered providers in the dispatcher.
 	// In the current setup, the Xiaomi provider is the primary one.
 	// The admin can select "Default" (auto-select) or a specific model.
-	models := []AIModel{
+	models := []Model{
 		{ID: "", Label: "Default"},
 		{ID: "mimo-flash", Label: "MiMo Flash (Xiaomi)"},
 		{ID: "gpt-4", Label: "GPT-4"},
@@ -749,6 +786,7 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+
 		return
 	}
 	// Conversation history is stored in Honcho — list context entries as conversations
@@ -758,6 +796,7 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
 }
 
@@ -766,6 +805,7 @@ func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request)
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+
 		return
 	}
 	// Conversation history is stored in Honcho — return context entries
@@ -774,16 +814,17 @@ func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
 }
 
 // HandleListCategories handles GET /ai/categories — returns available AI categories.
-func (h *Handlers) HandleListCategories(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleListCategories(w http.ResponseWriter, _ *http.Request) {
 	categories := []map[string]string{
-		{ "value": "content_generation", "label": "Content Generation", "description": "Generate blog posts, articles, and other content" },
-		{ "value": "chat", "label": "Chat", "description": "Conversational AI assistant" },
-		{ "value": "moderation", "label": "Moderation", "description": "Content moderation and safety" },
-		{ "value": "embedding", "label": "Embedding", "description": "Vector embeddings for search and recommendations" },
+		{"value": "content_generation", "label": "Content Generation", "description": "Generate blog posts, articles, and other content"},
+		{"value": "chat", "label": "Chat", "description": "Conversational AI assistant"},
+		{"value": "moderation", "label": "Moderation", "description": "Content moderation and safety"},
+		{"value": "embedding", "label": "Embedding", "description": "Vector embeddings for search and recommendations"},
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": categories})

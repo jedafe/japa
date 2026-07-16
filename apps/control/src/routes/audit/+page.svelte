@@ -3,28 +3,22 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import { Select } from 'bits-ui';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '$lib/stores/i18n';
+	import type { AuditLogEntry, PaginatedResponse, DataTableColumn } from '$lib/api/types';
 	import type { PageData } from './$types';
-
-	type AuditEntry = {
-		id: string;
-		actor_id: string;
-		action_type: string;
-		target_type: string;
-		target_id: string;
-		created_at: string;
-	};
 
 	let { data = {} as PageData } = $props();
 
-	// svelte-ignore state_referenced_locally
-	let entries = $state<AuditEntry[]>(data.initial?.entries ?? []);
+	let entries = $state<AuditLogEntry[]>(data.initial?.entries ?? []);
 	let page = $state(0);
-	// svelte-ignore state_referenced_locally
-	let totalPages = $state(data.initial?.total_pages ?? 1);
+	let pageSize = $state(10);
+	let totalRows = $state((data.initial?.entries?.length ?? 0) as number);
 	let loading = $state(false);
 	// svelte-ignore state_referenced_locally
 	let apiAvailable = $state(data.initial !== null);
+
+	let sortKey = $state('timestamp');
+	let sortDirection = $state<'asc' | 'desc'>('desc');
 
 	let filterActor = $state('');
 	let filterAction = $state('all');
@@ -33,43 +27,108 @@
 	let filterTo = $state('');
 
 	const actionTypes = [
-		{ value: 'all', label: 'All Actions' },
-		{ value: 'create', label: 'Create' },
-		{ value: 'update', label: 'Update' },
-		{ value: 'delete', label: 'Delete' },
-		{ value: 'login', label: 'Login' },
-		{ value: 'logout', label: 'Logout' },
+		{ value: 'all', label: t('audit.action_all', 'All Actions') },
+		{ value: 'create', label: t('audit.action_create', 'Create') },
+		{ value: 'update', label: t('audit.action_update', 'Update') },
+		{ value: 'delete', label: t('audit.action_delete', 'Delete') },
+		{ value: 'login', label: t('audit.action_login', 'Login') },
+		{ value: 'logout', label: t('audit.action_logout', 'Logout') }
 	];
 
-	const columns = [
-		{ key: 'created_at', label: 'Timestamp' },
-		{ key: 'actor_id', label: 'Actor' },
-		{ key: 'action_type', label: 'Action' },
-		{ key: 'target_type', label: 'Target Type' },
-		{ key: 'target_id', label: 'Target ID' }
+	function formatTimestamp(val: unknown): string {
+		if (!val) return '—';
+		try {
+			return new Date(String(val)).toLocaleString();
+		} catch {
+			return String(val);
+		}
+	}
+
+	function formatActor(val: unknown): string {
+		const actor = val as AuditLogEntry['actor'];
+		if (!actor) return '—';
+		return actor.username || actor.id || '—';
+	}
+
+	const columns: DataTableColumn[] = [
+		{
+			key: 'timestamp',
+			label: t('audit.timestamp', 'Timestamp'),
+			sortable: true,
+			render: (val: unknown) =>
+				`<span class="font-mono text-xs">${formatTimestamp(val)}</span>`
+		},
+		{
+			key: 'actor',
+			label: t('audit.actor', 'Actor'),
+			render: (val: unknown) => {
+				const actor = val as AuditLogEntry['actor'];
+				if (!actor) return `<span class="text-muted-foreground">—</span>`;
+				return `<span class="font-medium">${actor.username}</span>
+					<span class="text-muted-foreground ml-1 text-xs">${actor.id.slice(0, 8)}...</span>`;
+			}
+		},
+		{
+			key: 'action_type',
+			label: t('audit.action', 'Action'),
+			sortable: true,
+			render: (val: unknown) => {
+				const action = String(val);
+				const color =
+					action === 'delete'
+						? 'bg-destructive/10 text-destructive'
+						: action === 'create'
+							? 'bg-green-500/10 text-green-600'
+							: 'bg-accent text-accent-foreground';
+				return `<span class="${color} rounded-full px-2 py-0.5 text-xs font-medium">${action}</span>`;
+			}
+		},
+		{
+			key: 'entity_type',
+			label: t('audit.target_type', 'Target Type'),
+			render: (val: unknown) =>
+				`<span class="text-muted-foreground text-xs">${val ? String(val) : '—'}</span>`
+		},
+		{
+			key: 'entity_id',
+			label: t('audit.target_id', 'Target ID'),
+			render: (val: unknown) =>
+				`<span class="font-mono text-xs">${val ? String(val).slice(0, 12) : '—'}${val && String(val).length > 12 ? '...' : ''}</span>`
+		}
 	];
 
 	function buildQuery() {
-		const params = new URLSearchParams({ page: String(page) });
+		const params = new URLSearchParams({
+			page: String(page),
+			per_page: String(pageSize)
+		});
 		if (filterActor) params.set('actor', filterActor);
 		if (filterAction !== 'all') params.set('action_type', filterAction);
-		if (filterTarget) params.set('target_type', filterTarget);
+		if (filterTarget) params.set('entity_type', filterTarget);
 		if (filterFrom) params.set('from', filterFrom);
 		if (filterTo) params.set('to', filterTo);
+		if (sortKey) {
+			params.set('sort_by', sortKey);
+			params.set('sort_dir', sortDirection);
+		}
 		return params.toString();
 	}
 
 	async function load() {
 		loading = true;
 		try {
-			const result = await api<{
-				entries: AuditEntry[];
-				page: number;
-				total_pages: number;
-			}>(`/control/audit-logs?${buildQuery()}`);
+			const result = await api<PaginatedResponse<AuditLogEntry> | AuditLogEntry[]>(
+				`/control/audit-logs?${buildQuery()}`
+			);
 			if (result.ok) {
-				entries = result.data.entries;
-				totalPages = result.data.total_pages;
+				const raw = result.data;
+				if (Array.isArray(raw)) {
+					entries = raw;
+					totalRows = raw.length;
+				} else {
+					entries = raw.data ?? [];
+					totalRows = raw.total ?? entries.length;
+				}
 				apiAvailable = true;
 			} else {
 				apiAvailable = false;
@@ -86,33 +145,53 @@
 		load();
 	}
 
-	function handlePageChange(p: number) {
-		page = p;
-		load();
+	function handleFilterKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') applyFilters();
 	}
+
+	let prevPage = $state(0);
+	let prevPageSize = $state(10);
+	let prevSortKey = $state('timestamp');
+	let prevSortDirection = $state<'asc' | 'desc'>('desc');
+
+	$effect(() => {
+		if (
+			page !== prevPage ||
+			pageSize !== prevPageSize ||
+			sortKey !== prevSortKey ||
+			sortDirection !== prevSortDirection
+		) {
+			prevPage = page;
+			prevPageSize = pageSize;
+			prevSortKey = sortKey;
+			prevSortDirection = sortDirection;
+			if (apiAvailable) load();
+		}
+	});
 </script>
 
-<PageHeader title={t('audit.title')} description={t('audit.description')} />
+<PageHeader title={t('audit.title', 'Audit Log')} description={t('audit.description', 'View system activity and user actions')} />
 
 {#if !apiAvailable}
 	<div class="border-tertiary bg-tertiary/10 text-tertiary mb-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm">
-		Audit log API is not available.
+		{t('audit.unavailable', 'Audit log is currently unavailable.')}
 	</div>
 {/if}
 
 <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
 	<input
 		type="text"
-		placeholder="Actor ID"
+		placeholder={t('audit.actor_placeholder', 'Filter by actor...')}
 		class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		bind:value={filterActor}
+		onkeydown={handleFilterKeydown}
 	/>
 	<Select.Root type="single" bind:value={filterAction} items={actionTypes}>
 		<Select.Trigger
 			class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-10 w-full items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
-			aria-label="Filter action type"
+			aria-label={t('audit.action_placeholder', 'Filter by action')}
 		>
-			<Select.Value placeholder="All Actions" />
+			<Select.Value placeholder={t('audit.action_all', 'All Actions')} />
 		</Select.Trigger>
 		<Select.Portal>
 			<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1" sideOffset={4}>
@@ -125,7 +204,7 @@
 						>
 							{#snippet children({ selected })}
 								{item.label}
-								{#if selected}<span class="ml-auto">✓</span>{/if}
+								{#if selected}<span class="ml-auto">&#10003;</span>{/if}
 							{/snippet}
 						</Select.Item>
 					{/each}
@@ -135,9 +214,10 @@
 	</Select.Root>
 	<input
 		type="text"
-		placeholder="Target type"
+		placeholder={t('audit.target_placeholder', 'Filter by target type...')}
 		class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		bind:value={filterTarget}
+		onkeydown={handleFilterKeydown}
 	/>
 	<input
 		type="date"
@@ -155,12 +235,19 @@
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-sm font-medium transition-colors"
 		onclick={applyFilters}
 	>
-		Apply Filters
+		{t('audit.apply_filters', 'Apply Filters')}
 	</button>
 </div>
 
-{#if loading}
-	<p class="text-muted-foreground py-8 text-center text-sm">Loading...</p>
-{:else}
-	<DataTable {columns} rows={entries} {page} {totalPages} onPageChange={handlePageChange} />
-{/if}
+<DataTable
+	{columns}
+	rows={entries}
+	{totalRows}
+	{loading}
+	bind:page
+	bind:pageSize
+	bind:sortKey
+	bind:sortDirection
+	selectable={false}
+	emptyMessage={t('audit.empty', 'No audit entries found')}
+/>

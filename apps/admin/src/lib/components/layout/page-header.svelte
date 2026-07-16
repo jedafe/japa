@@ -38,7 +38,8 @@
 						style="background-color: var(--color-primary)"
 					>
 						{#if action.icon}
-							<svelte:component this={action.icon} class="h-4 w-4" />
+							{@const Icon = action.icon}
+						<Icon class="h-4 w-4" />
 						{/if}
 						{action.label}
 					</a>
@@ -55,7 +56,8 @@
 						style={action.variant === "destructive" ? "background-color: var(--color-danger)" : `border: 1px solid var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)`}
 					>
 						{#if action.icon}
-							<svelte:component this={action.icon} class="h-4 w-4" />
+							{@const Icon = action.icon}
+						<Icon class="h-4 w-4" />
 						{/if}
 						{action.label}
 					</button>

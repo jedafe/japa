@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/jedafe/japa/internal/tenant"
+	errtracking "github.com/jedafe/japa/internal/errors"
 )
 
 // WebhookHandler handles incoming webhooks from payment providers.
@@ -81,6 +83,8 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), t.ID, provider, webhookEvent); err != nil {
+		slog.Error("webhook processing failed", "provider", provider, "event_id", eventID, "error", err)
+		errtracking.CaptureException(fmt.Errorf("webhook processing failed (provider=%s, event_id=%s): %w", provider, eventID, err))
 		writeError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 		return
 	}

@@ -1,3 +1,5 @@
+import type { Snippet } from 'svelte';
+
 export interface User {
 	id: string;
 	username: string;
@@ -180,4 +182,30 @@ export interface PaginatedResponse<T> {
 	page: number;
 	per_page: number;
 	total_pages: number;
+}
+
+export interface DataTableColumn<T = Record<string, unknown>> {
+	key: string;
+	label: string;
+	sortable?: boolean;
+	class?: string;
+	render?: (value: unknown, row: T) => string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SvelteIcon = any;
+
+export interface DataTableRowAction<T = Record<string, unknown>> {
+	label: string;
+	icon?: SvelteIcon;
+	onClick: (row: T) => void;
+	variant?: 'default' | 'destructive';
+	disabled?: (row: T) => boolean;
+}
+
+export interface DataTableBulkAction {
+	label: string;
+	icon?: SvelteIcon;
+	onClick: (ids: string[]) => void;
+	variant?: 'default' | 'destructive';
 }

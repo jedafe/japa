@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import MetricCard from '$lib/components/MetricCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '$lib/stores/i18n';
 	import type { PageData } from './$types';
+	import { PieChart, BarChart } from 'layerchart';
+	import { RotateCw } from 'lucide-svelte';
 
 	type ServiceStatus = {
 		name: string;
@@ -22,79 +24,64 @@
 
 	let { data = {} as PageData } = $props();
 
+	let health = $state<HealthResponse>({
+		infrastructure: [],
+		application: [],
+		background: [],
+		realtime: []
+	});
+	let lastRefresh = $state(new Date().toLocaleTimeString());
+	let apiAvailable = $state(true);
+
+	const groupKeys: Array<{ key: keyof HealthResponse; fallback: string; i18n: string }> = [
+		{ key: 'infrastructure', fallback: 'Infrastructure', i18n: 'dashboard.groups.infra' },
+		{ key: 'application', fallback: 'Application', i18n: 'dashboard.groups.app' },
+		{ key: 'background', fallback: 'Background', i18n: 'dashboard.groups.background' },
+		{ key: 'realtime', fallback: 'Realtime', i18n: 'dashboard.groups.realtime' }
+	];
+
 	function statusToHealth(s: ServiceStatus['status']): 'healthy' | 'warning' | 'critical' | 'unknown' {
 		if (s === 'degraded') return 'warning';
 		if (s === 'down') return 'critical';
 		return s === 'healthy' ? 'healthy' : 'unknown';
 	}
 
-	function applyOverview(health: HealthResponse) {
-		const mapGroup = (label: string, items: ServiceStatus[]) => ({
-			name: label,
-			items: items.map((s) => ({ name: s.name, status: statusToHealth(s.status), latency: s.latency_ms, message: s.message }))
-		});
-		groups = [
-			mapGroup('dashboard.groups.infra', health.infrastructure),
-			mapGroup('dashboard.groups.app', health.application),
-			mapGroup('dashboard.groups.background', health.background),
-			mapGroup('dashboard.groups.realtime', health.realtime)
-		];
+	function applyOverview(resp: HealthResponse) {
+		health = resp;
 		lastRefresh = new Date().toLocaleTimeString();
 		apiAvailable = true;
 	}
 
-	const groupFallbacks: Record<string, string> = {
-		'dashboard.groups.infra': 'Infrastructure',
-		'dashboard.groups.app': 'Application',
-		'dashboard.groups.background': 'Background',
-		'dashboard.groups.realtime': 'Realtime'
-	};
-
-	let groups = $state<{ name: string; items: { name: string; status: 'healthy' | 'warning' | 'critical' | 'unknown'; latency?: number; message?: string }[] }[]>([
-		{
-			name: 'dashboard.groups.infra',
-			items: [
-				{ name: 'PostgreSQL', status: 'unknown' },
-				{ name: 'Valkey', status: 'unknown' },
-				{ name: 'Meilisearch', status: 'unknown' },
-				{ name: 'SeaweedFS', status: 'unknown' }
-			]
-		},
-		{
-			name: 'dashboard.groups.app',
-			items: [
-				{ name: 'API Server', status: 'unknown' },
-				{ name: 'imgproxy', status: 'unknown' },
-				{ name: 'Nginx', status: 'unknown' }
-			]
-		},
-		{
-			name: 'dashboard.groups.background',
-			items: [
-				{ name: 'Asynq Workers', status: 'unknown' },
-				{ name: 'Queue Depth', status: 'unknown' }
-			]
-		},
-		{
-			name: 'dashboard.groups.realtime',
-			items: [
-				{ name: 'WebSocket Hub', status: 'unknown' },
-				{ name: 'SSE Connections', status: 'unknown' }
-			]
-		}
-	]);
-
-	let displayGroups = $derived(
-		groups.map((group) => ({
-			...group,
-			name: t(group.name, groupFallbacks[group.name] ?? group.name)
-		}))
+	const allServices = $derived(
+		groupKeys.flatMap((g) => health[g.key].map((s) => ({ ...s, group: g.key })))
 	);
 
-	let lastRefresh = $state(new Date().toLocaleTimeString());
-	let apiAvailable = $state(true);
+	const totalServices = $derived(allServices.length);
+	const healthyCount = $derived(allServices.filter((s) => s.status === 'healthy').length);
+	const uptimePercent = $derived(
+		totalServices > 0 ? Math.round((healthyCount / totalServices) * 100) : 0
+	);
 
-	// svelte-ignore state_referenced_locally
+	const pieData = $derived(() => {
+		const counts = { healthy: 0, degraded: 0, down: 0, unknown: 0 };
+		for (const s of allServices) {
+			counts[s.status === 'healthy' ? 'healthy' : s.status === 'degraded' ? 'degraded' : s.status === 'down' ? 'down' : 'unknown']++;
+		}
+		return [
+			{ key: 'healthy', label: t('dashboard.healthy'), value: counts.healthy },
+			{ key: 'degraded', label: t('dashboard.degraded'), value: counts.degraded },
+			{ key: 'down', label: t('dashboard.down'), value: counts.down },
+			{ key: 'unknown', label: t('dashboard.unknown_short'), value: counts.unknown }
+		].filter((d) => d.value > 0);
+	});
+
+	const barData = $derived(() => {
+		return allServices
+			.filter((s) => s.latency_ms > 0)
+			.sort((a, b) => b.latency_ms - a.latency_ms)
+			.map((s) => ({ key: s.name, label: s.name, value: s.latency_ms }));
+	});
+
 	if (data.initial) {
 		if (data.initial.infrastructure) {
 			applyOverview(data.initial);
@@ -115,9 +102,20 @@
 	}
 
 	let interval: ReturnType<typeof setInterval>;
-	onMount(() => {
+	let mounted = $state(false);
+
+	$effect(() => {
+		if (!mounted) return;
 		interval = setInterval(refresh, 30_000);
 		return () => clearInterval(interval);
+	});
+
+	$effect(() => {
+		mounted = true;
+		return () => {
+			mounted = false;
+			clearInterval(interval);
+		};
 	});
 </script>
 
@@ -132,29 +130,85 @@
 <div class="mb-4 flex items-center justify-between">
 	<p class="text-muted-foreground text-xs font-medium">{t('dashboard.last_refresh').replace('{time}', lastRefresh)}</p>
 	<button
-		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors"
+		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
 		onclick={refresh}
 	>
+		<RotateCw class="h-3 w-3" />
 		{t('common.refresh')}
 	</button>
 </div>
 
+<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+	<MetricCard label={t('dashboard.total_services')} value={totalServices} />
+	<MetricCard label={t('dashboard.healthy_services')} value={healthyCount} subtitle="{uptimePercent}%" trend={uptimePercent >= 80 ? 'up' : 'down'} />
+	<MetricCard label={t('dashboard.api_uptime')} value="{uptimePercent}%" subtitle={t('dashboard.units.percent')} trend={uptimePercent >= 90 ? 'up' : 'down'} />
+	<MetricCard label={t('dashboard.last_check')} value={lastRefresh} />
+</div>
+
+<div class="grid gap-4 lg:grid-cols-2 mb-6">
+	<div class="border-border-card bg-background-alt shadow-card rounded-card p-5">
+		<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('dashboard.health_distribution')}</h3>
+		{#if pieData().length > 0}
+			<div class="h-[240px]">
+				<PieChart
+					data={pieData()}
+					key="key"
+					label="label"
+					value="value"
+					innerRadius={50}
+					outerRadius={90}
+					cornerRadius={4}
+					legend
+				/>
+			</div>
+		{:else}
+			<p class="text-muted-foreground text-sm py-8 text-center">{t('dashboard.no_services')}</p>
+		{/if}
+	</div>
+
+	<div class="border-border-card bg-background-alt shadow-card rounded-card p-5">
+		<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('dashboard.latency_chart')}</h3>
+		{#if barData().length > 0}
+			<div class="h-[240px]">
+				<BarChart
+					data={barData()}
+					x="label"
+					y="value"
+					orientation="horizontal"
+					grid={false}
+				/>
+			</div>
+		{:else}
+			<p class="text-muted-foreground text-sm py-8 text-center">{t('dashboard.no_services')}</p>
+		{/if}
+	</div>
+</div>
+
 <div class="grid gap-4 sm:grid-cols-2">
-	{#each displayGroups as group, i}
+	{#each groupKeys as group, i}
+		{@const items = health[group.key]}
 		<div
 			class="border-border-card bg-background-alt shadow-card rounded-card-lg p-5"
 			style="animation: fade-in 0.3s ease-out {i * 50}ms both"
 		>
-			<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{group.name}</h3>
+			<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t(group.i18n, group.fallback)}</h3>
 			<div class="space-y-3">
-				{#each group.items as item}
+				{#each items as item}
 					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-2">
-							<span class="text-foreground text-sm font-medium" title="{item.latency !== undefined ? `Latency: ${item.latency}ms` : ''}{item.message ? ` - ${item.message}` : ''}">{item.name}</span>
+							<span class="text-foreground text-sm font-medium" title={item.message ? `${t('dashboard.latency_label').replace('{ms}', String(item.latency_ms))} - ${item.message}` : ''}>{item.name}</span>
 						</div>
-						<StatusBadge status={item.status} />
+						<div class="flex items-center gap-3">
+							{#if item.latency_ms > 0}
+								<span class="text-muted-foreground text-xs font-medium">{t('dashboard.latency_value').replace('{ms}', String(item.latency_ms))}</span>
+							{/if}
+							<StatusBadge status={statusToHealth(item.status)} />
+						</div>
 					</div>
 				{/each}
+				{#if items.length === 0}
+					<p class="text-muted-foreground text-xs text-center py-2">{t('dashboard.no_services')}</p>
+				{/if}
 			</div>
 		</div>
 	{/each}

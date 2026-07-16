@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -303,55 +304,47 @@ func TestXiaomiProviderSend_Success(t *testing.T) {
 	}
 
 	// Verify HTTP request details.
-	if gotMethod != http.MethodPost {
-		t.Errorf("method = %q, want %q", gotMethod, http.MethodPost)
-	}
-	// The mock server's ts.URL has no /v1 suffix, so the path is /chat/completions.
-	// In production the baseURL constants include /v1, yielding /v1/chat/completions.
-	if gotPath != "/chat/completions" {
-		t.Errorf("path = %q, want %q", gotPath, "/chat/completions")
-	}
-
-	if gotAPIKey != "sk-test-key" {
-		t.Errorf("api-key header = %q, want %q", gotAPIKey, "sk-test-key")
-	}
-
-	if gotContentType != "application/json" {
-		t.Errorf("Content-Type = %q, want %q", gotContentType, "application/json")
-	}
+	t.Run("http request", func(t *testing.T) {
+		t.Parallel()
+		assertEqual(t, "method", gotMethod, http.MethodPost)
+		assertEqual(t, "path", gotPath, "/chat/completions")
+		assertEqual(t, "api-key header", gotAPIKey, "sk-test-key")
+		assertEqual(t, "Content-Type", gotContentType, "application/json")
+	})
 
 	// Verify request body.
-	if gotBody.Model != XiaomiModelFlash {
-		t.Errorf("model = %q, want %q", gotBody.Model, XiaomiModelFlash)
-	}
+	t.Run("request body", func(t *testing.T) {
+		t.Parallel()
 
-	if len(gotBody.Messages) != 1 {
-		t.Fatalf("messages len = %d, want 1", len(gotBody.Messages))
-	}
+		assertEqual(t, "model", gotBody.Model, XiaomiModelFlash)
 
-	if gotBody.Messages[0].Content != "What is JapaConnect?" {
-		t.Errorf("message content = %q, want %q", gotBody.Messages[0].Content, "What is JapaConnect?")
-	}
+		if len(gotBody.Messages) != 1 {
+			t.Fatalf("messages len = %d, want 1", len(gotBody.Messages))
+		}
 
-	if gotBody.Stream {
-		t.Error("Stream should be false")
-	}
+		assertEqual(t, "message content", gotBody.Messages[0].Content, "What is JapaConnect?")
+
+		if gotBody.Stream {
+			t.Error("Stream should be false")
+		}
+	})
 
 	// Verify response mapping.
-	if resp.ProviderRef != "chatcmpl-test-123" {
-		t.Errorf("ProviderRef = %q, want %q", resp.ProviderRef, "chatcmpl-test-123")
-	}
+	t.Run("response mapping", func(t *testing.T) {
+		t.Parallel()
+		assertEqual(t, "ProviderRef", resp.ProviderRef, "chatcmpl-test-123")
+		assertEqual(t, "Status", resp.Status, "success")
+		assertEqual(t, "Raw[id]", fmt.Sprint(resp.Raw["id"]), "chatcmpl-test-123")
+		assertEqual(t, "Raw[model]", fmt.Sprint(resp.Raw["model"]), "mimo-v2-flash")
+	})
+}
 
-	if resp.Status != "success" {
-		t.Errorf("Status = %q, want %q", resp.Status, "success")
-	}
+// assertEqual is a test helper for simple string comparisons.
+func assertEqual(t *testing.T, label, got, want string) {
+	t.Helper()
 
-	if resp.Raw["id"] != "chatcmpl-test-123" {
-		t.Errorf("Raw[id] = %v, want %q", resp.Raw["id"], "chatcmpl-test-123")
-	}
-
-	if resp.Raw["model"] != "mimo-v2-flash" {
-		t.Errorf("Raw[model] = %v, want %q", resp.Raw["model"], "mimo-v2-flash")
+	if got != want {
+		t.Errorf("%s = %q, want %q", label, got, want)
 	}
 }
 

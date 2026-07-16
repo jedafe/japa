@@ -29,6 +29,18 @@ LIMIT $2;
 DELETE FROM ip_blocks
 WHERE id = $1 AND tenant_id = $2;
 
+-- name: GetIPBlockByID :one
+SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+FROM ip_blocks
+WHERE id = $1 AND tenant_id = $2;
+
+-- name: UpdateIPBlock :one
+UPDATE ip_blocks
+SET cidr = @cidr, block_type = @block_type, reason = sqlc.narg(reason),
+    expires_at = sqlc.narg(expires_at), blocked_by = @blocked_by
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at;
+
 -- name: GetActiveIPBlocks :many
 SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
@@ -93,6 +105,17 @@ ORDER BY created_at DESC;
 -- name: DeleteCensoredWord :exec
 DELETE FROM censored_words
 WHERE id = $1 AND tenant_id = $2;
+
+-- name: GetCensoredWordByID :one
+SELECT id, tenant_id, pattern, action, replacement, created_at
+FROM censored_words
+WHERE id = $1 AND tenant_id = $2;
+
+-- name: UpdateCensoredWord :one
+UPDATE censored_words
+SET pattern = @pattern, action = @action, replacement = sqlc.narg(replacement)
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING id, tenant_id, pattern, action, replacement, created_at;
 
 -- name: GetCensoredWordsByTenant :many
 SELECT id, tenant_id, pattern, action, replacement, created_at

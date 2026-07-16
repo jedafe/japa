@@ -1,6 +1,7 @@
 package spam
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -19,6 +20,34 @@ const (
 	defaultPageSize int32 = 50
 	maxPageSize     int32 = 200
 )
+
+// deleteByID is a shared helper for DELETE handlers that follow the pattern:
+// require user → require tenant → parse UUID → call delete function → return.
+func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, deleteFn func(ctx context.Context, id, tenantID pgtype.UUID) error) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
+		return
+	}
+
+	if err := deleteFn(r.Context(), id, tenantID); err != nil {
+		slog.Error("deleting "+entityName, "error", err)
+		handleServiceError(w, err)
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
 
 // Handlers holds dependencies for spam admin HTTP handlers.
 type Handlers struct {
@@ -213,9 +242,10 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": block})
 }
 
-// DeleteIPBlock handles DELETE /admin/spam/ip-blocks/{id}.
-func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+// UpdateIPBlock handles PATCH /admin/spam/ip-blocks/{id}.
+func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -230,14 +260,57 @@ func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.DeleteIPBlock(r.Context(), id, tenantID); err != nil {
-		slog.Error("deleting ip block", "error", err)
+	var input struct {
+		CIDR      *string `json:"cidr"`
+		BlockType *string `json:"block_type"`
+		Reason    *string `json:"reason"`
+		ExpiresAt *string `json:"expires_at"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.BlockType != nil && !IsValidBlockType(*input.BlockType) {
+		writeError(w, http.StatusBadRequest, "invalid_block_type", "block_type must be one of: full, registration, posting, api")
+		return
+	}
+
+	var expiresAt *pgtype.Timestamptz
+
+	if input.ExpiresAt != nil && *input.ExpiresAt != "" {
+		var ts pgtype.Timestamptz
+		if err := ts.Scan(*input.ExpiresAt); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_expires_at", "expires_at must be a valid timestamp")
+			return
+		}
+
+		expiresAt = &ts
+	}
+
+	block, err := h.Store.UpdateIPBlock(r.Context(), id, tenantID, UpdateIPBlockInput{
+		CIDR:      input.CIDR,
+		BlockType: input.BlockType,
+		Reason:    input.Reason,
+		ExpiresAt: expiresAt,
+		BlockedBy: user.UserID,
+	})
+	if err != nil {
+		slog.Error("updating ip block", "error", err)
 		handleServiceError(w, err)
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": block})
+}
+
+// DeleteIPBlock handles DELETE /admin/spam/ip-blocks/{id}.
+func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
+	deleteByID(w, r, "IP block", func(ctx context.Context, id, tenantID pgtype.UUID) error {
+		return h.Store.DeleteIPBlock(ctx, id, tenantID)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +376,7 @@ func (h *Handlers) CreateCensoredWord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Action == "replace" && (input.Replacement == nil || *input.Replacement == "") {
+	if input.Action == CensorActionReplace && (input.Replacement == nil || *input.Replacement == "") {
 		writeError(w, http.StatusBadRequest, "missing_replacement", "replacement is required when action is replace")
 		return
 	}
@@ -324,8 +397,8 @@ func (h *Handlers) CreateCensoredWord(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": word})
 }
 
-// DeleteCensoredWord handles DELETE /admin/spam/censored-words/{id}.
-func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
+// UpdateCensoredWord handles PATCH /admin/spam/censored-words/{id}.
+func (h *Handlers) UpdateCensoredWord(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -341,14 +414,47 @@ func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.DeleteCensoredWord(r.Context(), id, tenantID); err != nil {
-		slog.Error("deleting censored word", "error", err)
+	var input struct {
+		Pattern     *string `json:"pattern"`
+		Action      *string `json:"action"`
+		Replacement *string `json:"replacement"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Action != nil && !IsValidCensorAction(*input.Action) {
+		writeError(w, http.StatusBadRequest, "invalid_action", "action must be one of: block, replace, flag")
+		return
+	}
+
+	if input.Action != nil && *input.Action == CensorActionReplace && (input.Replacement == nil || *input.Replacement == "") {
+		writeError(w, http.StatusBadRequest, "missing_replacement", "replacement is required when action is replace")
+		return
+	}
+
+	word, err := h.Store.UpdateCensoredWord(r.Context(), id, tenantID, UpdateCensoredWordInput{
+		Pattern:     input.Pattern,
+		Action:      input.Action,
+		Replacement: input.Replacement,
+	})
+	if err != nil {
+		slog.Error("updating censored word", "error", err)
 		handleServiceError(w, err)
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": word})
+}
+
+// DeleteCensoredWord handles DELETE /admin/spam/censored-words/{id}.
+func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
+	deleteByID(w, r, "censored word", func(ctx context.Context, id, tenantID pgtype.UUID) error {
+		return h.Store.DeleteCensoredWord(ctx, id, tenantID)
+	})
 }
 
 // ---------------------------------------------------------------------------

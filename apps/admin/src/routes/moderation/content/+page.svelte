@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { api } from '$lib/api';
+	import { contentAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	type ContentItem = {
 		id: string;
@@ -33,6 +33,8 @@
 	let showDeleteModal = $state(false);
 	let deleteTarget = $state<ContentItem | null>(null);
 
+	const canModerateContent = $derived(hasPermission('content.moderate'));
+
 	const filterDefs = [
 		{ key: 'type', label: t('moderation.content_type'), type: 'select' as const, options: ['post', 'comment', 'blog', 'forum'] },
 		{ key: 'status', label: t('moderation.status'), type: 'select' as const, options: ['published', 'draft', 'archived', 'flagged'] }
@@ -45,10 +47,11 @@
 		if (filterType) params.set('type', filterType);
 		if (filterStatus) params.set('status', filterStatus);
 		try {
-			const result = await api<{ items: ContentItem[]; page: number; total_pages: number }>(`/admin/content?${params}`);
+			const result = await contentAdminApi.list(params.toString());
 			if (result.ok) {
-				items = result.data.items;
-				totalPages = result.data.total_pages;
+				const d = result.data as { items: ContentItem[]; total_pages: number };
+				items = d.items;
+				totalPages = d.total_pages;
 			} else {
 				errorMessage = result.error;
 			}
@@ -79,7 +82,7 @@
 		if (!deleteTarget) return;
 		errorMessage = '';
 		try {
-			const result = await api(`/admin/content/${deleteTarget.id}/remove`, { method: 'POST' });
+			const result = await contentAdminApi.remove(deleteTarget.id);
 			if (result.ok) {
 				showDeleteModal = false;
 				load();
@@ -115,7 +118,9 @@
 		}
 	}
 
-	onMount(load);
+	$effect(() => {
+		load();
+	});
 </script>
 
 <svelte:head>
@@ -189,13 +194,15 @@
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.created_at}</td>
 						<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
 							<div class="flex items-center gap-1">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete(item)}
-								>
-									{t('common.delete')}
-								</button>
+								{#if canModerateContent}
+									<button
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										style="color: var(--color-danger)"
+										onclick={() => confirmDelete(item)}
+									>
+										{t('common.delete')}
+									</button>
+								{/if}
 							</div>
 						</td>
 					</tr>
@@ -224,13 +231,15 @@
 									</div>
 								{/if}
 								<div class="mt-3 flex gap-2">
-									<button
-										class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
-										style="background-color: var(--color-danger)"
-										onclick={() => confirmDelete(item)}
-									>
-										{t('common.delete')}
-									</button>
+									{#if canModerateContent}
+										<button
+											class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
+											style="background-color: var(--color-danger)"
+											onclick={() => confirmDelete(item)}
+										>
+											{t('common.delete')}
+										</button>
+									{/if}
 								</div>
 							</td>
 						</tr>

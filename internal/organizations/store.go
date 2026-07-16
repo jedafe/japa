@@ -2,7 +2,6 @@ package organizations
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -148,13 +147,8 @@ func (s *Store) ReviewOwnershipClaim(ctx context.Context, params gen.ReviewOwner
 
 // IncrementMemberCount atomically increments/decrements member count.
 func (s *Store) IncrementMemberCount(ctx context.Context, orgID pgtype.UUID, delta int32) error {
-	_, err := s.pool.Exec(
-		ctx,
-		`UPDATE organizations SET member_count = member_count + $2, updated_at = now() WHERE id = $1`,
-		orgID, delta,
-	)
-	if err != nil {
-		return fmt.Errorf("updating member count: %w", err)
-	}
-	return nil
+	return s.write.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
+		ID:          orgID,
+		MemberCount: delta,
+	})
 }

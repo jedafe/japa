@@ -25,7 +25,7 @@ const (
 	XiaomiModelPro         = "mimo-v2-pro"
 	XiaomiModelV25Pro      = "mimo-v2.5-pro"
 	XiaomiModelOmni        = "mimo-v2-omni"
-	XiaomiBasePayg         = "https://api.xiaomimimo.com/v1"            //nolint:gosec // G101: API endpoint URL, not a credential
+	XiaomiBasePayg         = "https://api.xiaomimimo.com/v1"            // API endpoint URL, not a credential.
 	XiaomiBaseTokenPlanCN  = "https://token-plan-cn.xiaomimimo.com/v1"  //nolint:gosec // G101: API endpoint URL, not a credential
 	XiaomiBaseTokenPlanSGP = "https://token-plan-sgp.xiaomimimo.com/v1" //nolint:gosec // G101: API endpoint URL, not a credential
 	XiaomiBaseTokenPlanAMS = "https://token-plan-ams.xiaomimimo.com/v1" //nolint:gosec // G101: API endpoint URL, not a credential

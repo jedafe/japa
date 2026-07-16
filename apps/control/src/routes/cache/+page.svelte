@@ -3,7 +3,7 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '$lib/stores/i18n';
 	import { Database, RefreshCw } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
@@ -29,11 +29,22 @@
 	let stats = $state<CacheStats | null>(data.stats ?? null);
 	let loadingStats = $state(false);
 
+	$effect(() => {
+		if (!stats) {
+			loadStats();
+		}
+	});
+
 	async function loadStats() {
 		loadingStats = true;
-		const result = await api<CacheStats>('/control/cache/stats');
+		const result = await api<CacheStats | { message: string }>('/control/cache/stats');
 		if (result.ok) {
-			stats = result.data;
+			const raw = result.data;
+			if ('message' in raw && raw.message) {
+				stats = null;
+			} else {
+				stats = raw as CacheStats;
+			}
 		}
 		loadingStats = false;
 	}
@@ -68,31 +79,42 @@
 
 <PageHeader title={t('cache.title')} description={t('cache.description')} />
 
+<div class="mb-4 flex items-center justify-end">
+	<button
+		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px flex items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition-colors"
+		onclick={loadStats}
+		disabled={loadingStats}
+	>
+		<RefreshCw class="size-3 {loadingStats ? 'animate-spin' : ''}" />
+		{t('common.refresh')}
+	</button>
+</div>
+
 <Tabs.Root bind:value={activeTab}>
 	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
 		<Tabs.Trigger value="stats" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			Stats
+			{t('cache.stats_tab')}
 		</Tabs.Trigger>
 		<Tabs.Trigger value="flush" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			Flush
+			{t('cache.flush_tab')}
 		</Tabs.Trigger>
 	</Tabs.List>
 
 	<Tabs.Content value="stats" class="mt-4">
 		{#if loadingStats}
-			<p class="text-muted-foreground py-8 text-center text-sm">Loading cache stats...</p>
+			<p class="text-muted-foreground py-8 text-center text-sm">{t('common.loading')}</p>
 		{:else if stats?.total_keys !== undefined}
 			<div class="mb-6 grid gap-3 sm:grid-cols-3">
 				<div class="border-border-card bg-background-alt shadow-card rounded-card p-4">
-					<p class="text-muted-foreground text-xs font-medium uppercase tracking-wider">Total Keys</p>
+					<p class="text-muted-foreground text-xs font-medium uppercase tracking-wider">{t('cache.total_keys')}</p>
 					<p class="text-foreground mt-2 text-2xl font-bold">{(stats.total_keys ?? 0).toLocaleString()}</p>
 				</div>
 				<div class="border-border-card bg-background-alt shadow-card rounded-card p-4">
-					<p class="text-muted-foreground text-xs font-medium uppercase tracking-wider">Total Memory</p>
+					<p class="text-muted-foreground text-xs font-medium uppercase tracking-wider">{t('cache.total_memory')}</p>
 					<p class="text-foreground mt-2 text-2xl font-bold">{formatMemory(stats.total_memory_mb ?? 0)}</p>
 				</div>
 				<div class="border-border-card bg-background-alt shadow-card rounded-card p-4">
-					<p class="text-muted-foreground text-xs font-medium uppercase tracking-wider">Namespaces</p>
+					<p class="text-muted-foreground text-xs font-medium uppercase tracking-wider">{t('cache.namespaces')}</p>
 					<p class="text-foreground mt-2 text-2xl font-bold">{stats?.namespaces?.length ?? 0}</p>
 				</div>
 			</div>
@@ -100,15 +122,15 @@
 			{#if stats?.namespaces && stats.namespaces.length > 0}
 				<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
 					<div class="border-border-card border-b px-4 py-3">
-						<h3 class="text-foreground text-sm font-semibold">Namespaces</h3>
+						<h3 class="text-foreground text-sm font-semibold">{t('cache.namespaces')}</h3>
 					</div>
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="border-border-card border-b">
-								<th class="text-muted-foreground px-4 py-3 text-left font-medium">Prefix</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">Keys</th>
-								<th class="text-muted-foreground px-4 py-3 text-right font-medium">Memory</th>
-								<th class="text-muted-foreground px-4 py-3 text-left font-medium">Usage</th>
+								<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('cache.prefix')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('cache.keys')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-right font-medium">{t('cache.memory')}</th>
+								<th class="text-muted-foreground px-4 py-3 text-left font-medium">{t('cache.usage')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -134,7 +156,7 @@
 		{:else}
 			<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
 				<Database class="text-muted-foreground mx-auto size-8 opacity-40" />
-				<p class="text-muted-foreground mt-3 text-sm">No cache stats available.</p>
+				<p class="text-muted-foreground mt-3 text-sm">{t('cache.no_stats')}</p>
 			</div>
 		{/if}
 	</Tabs.Content>
@@ -167,9 +189,9 @@
 
 <ConfirmModal
 	bind:open={showFlushConfirm}
-	title="Flush All Caches"
-	consequence="This will clear all cached data across all namespaces."
-	confirmText="FLUSH"
+	title={t('cache.flush_all')}
+	consequence={t('cache.flush_description')}
+	confirmText={t('cache.flush_confirm')}
 	onConfirm={flush}
 	onCancel={() => {}}
 />

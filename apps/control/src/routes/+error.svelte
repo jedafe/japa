@@ -1,22 +1,23 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { t } from '$lib/stores/i18n';
 </script>
 
 <svelte:head>
-	<title>Error — JapaControl</title>
+	<title>{t('error.title')} — JapaControl</title>
 </svelte:head>
 
 <div class="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
 	<h1 class="text-foreground mb-2 text-6xl font-bold">
-		{page.error?.code ?? 'Error'}
+		{page.error?.code ?? t('error.generic')}
 	</h1>
 	<p class="text-muted-foreground mb-6 text-lg">
-		{page.error?.message ?? 'Something went wrong.'}
+		{page.error?.message ?? t('error.something_wrong')}
 	</p>
 	<a
 		href="/"
 		class="bg-foreground text-background rounded-lg px-6 py-2 text-sm font-medium"
 	>
-		Back to Dashboard
+		{t('error.back_to_dashboard')}
 	</a>
 </div>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '$lib/stores/i18n';
 
 	let { form } = $props();
 
@@ -9,13 +9,13 @@
 </script>
 
 <svelte:head>
-	<title>{t('login.title')} — JapaConnect Control</title>
+	<title>{t('login.title', 'Sign In')} — JapaConnect Control</title>
 </svelte:head>
 
-<div class="flex min-h-screen items-center justify-center px-4">
+<div class="px-4">
 	<div class="border-border-card bg-background-alt w-full max-w-sm rounded-lg border p-6">
-		<h1 class="text-foreground mb-1 text-center text-xl font-bold tracking-tight">{t('control.brand')}</h1>
-		<p class="text-muted-foreground mb-6 text-center text-sm">{t('login.title')}</p>
+		<h1 class="text-foreground mb-1 text-center text-xl font-bold tracking-tight">{t('control.brand', 'Control Panel')}</h1>
+		<p class="text-muted-foreground mb-6 text-center text-sm">{t('login.title', 'Sign in to your account')}</p>
 
 		{#if form?.error}
 			<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-md border px-3 py-2 text-sm">
@@ -25,7 +25,7 @@
 
 		<form method="POST" onsubmit={() => { loading = true; }} class="space-y-4">
 			<div>
-				<label for="email" class="text-foreground mb-1 block text-sm font-medium">{t('login.email')}</label>
+				<label for="email" class="text-foreground mb-1 block text-sm font-medium">{t('login.email', 'Email')}</label>
 				<input
 					id="email"
 					name="email"
@@ -38,7 +38,7 @@
 			</div>
 
 			<div>
-				<label for="password" class="text-foreground mb-1 block text-sm font-medium">{t('login.password')}</label>
+				<label for="password" class="text-foreground mb-1 block text-sm font-medium">{t('login.password', 'Password')}</label>
 				<input
 					id="password"
 					name="password"
@@ -55,7 +55,7 @@
 				class="bg-foreground text-background w-full rounded-md px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
 				disabled={loading || !email || !password}
 			>
-				{loading ? t('login.signing_in') : t('login.submit')}
+				{loading ? t('login.signing_in', 'Signing in...') : t('login.submit', 'Sign In')}
 			</button>
 		</form>
 	</div>

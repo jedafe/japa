@@ -43,14 +43,12 @@
 		sort_order: number;
 	};
 
-	let { data } = $props();
-
 	let activeTab = $state("tracks");
-	let tracks = $state<Track[]>(data.initial ?? []);
+	let tracks = $state<Track[]>([]);
 	let modules = $state<Module[]>([]);
 	let lessons = $state<Lesson[]>([]);
-	let loading = $state(false);
-	let error = $state(data.error ?? "");
+	let loading = $state(true);
+	let error = $state("");
 	let filters = $state<Record<string, string>>({});
 
 	// Create modal
@@ -65,11 +63,11 @@
 	let deleteTarget = $state<{ type: string; id: string; title: string } | null>(null);
 	let deleting = $state(false);
 
-	const tabs = [
+	const tabs = $derived([
 		{ value: "tracks", label: "Tracks", icon: GraduationCap, count: tracks.length },
 		{ value: "modules", label: "Modules", icon: Layers, count: modules.length },
 		{ value: "lessons", label: "Lessons", icon: FileText, count: lessons.length }
-	];
+	]);
 
 	const trackColumns = [
 		{
@@ -327,14 +325,15 @@
 		(window as any).__learningDelete = (type: string, id: string, title: string) => {
 			confirmDelete(type, id, title);
 		};
+		
+		return () => {
+			delete (window as any).__learningPublish;
+			delete (window as any).__learningDelete;
+		};
 	});
 
-	let initialized = false;
 	$effect(() => {
-		if (!initialized) {
-			initialized = true;
-			refresh();
-		}
+		refresh();
 	});
 </script>
 
