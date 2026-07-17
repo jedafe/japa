@@ -98,7 +98,7 @@ var taskTier = func() map[string]string {
 		TypeDigestEmail, TypeSitemapGenerate, TypeRSSRegenerate,
 		TypeDataExport, TypeAccountDeletionCleanup, TypeAdEventIngest,
 		TypeMaintenanceUpdateVelocityScores, TypeMaintenanceCheckSLABreaches,
-		TypeMaintenanceUpdateGeoIPDB, TypeSpaceAutoPopulate,
+		TypeMaintenanceUpdateGeoIPDB,
 		TypeAnalyticsRefreshViews, TypeSecurityScan,
 		TypeMaintenanceRegenerateLLMsTxt, TypeLearningIssueCertificate,
 		TypeDBManualVacuum, TypeNewsletterDigest,
