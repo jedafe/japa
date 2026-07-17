@@ -2048,6 +2048,37 @@ func HandleMaintenanceUpdateGeoIPDB(_ context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// HandleSpaceAutoPopulate auto-populates a space with recommended content based on its tags.
+func HandleSpaceAutoPopulate(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:space:auto_populate", "payload", t.Payload())
+
+	if spaceAutoPopulateProcessor == nil {
+		slog.Warn("task:space:auto_populate: no space auto-populate processor registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		SpaceID  string `json:"space_id"`
+		TenantID string `json:"tenant_id"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:space:auto_populate: invalid payload", "error", err)
+		return err
+	}
+
+	if err := spaceAutoPopulateProcessor.AutoPopulateSpace(ctx, payload.SpaceID, payload.TenantID); err != nil {
+		slog.Error("task:space:auto_populate: failed",
+			"space_id", payload.SpaceID, "error", err)
+		return err
+	}
+
+	slog.Info("task:space:auto_populate: completed",
+		"space_id", payload.SpaceID)
+
+	return nil
+}
+
 // HandleAnalyticsRefreshViews refreshes the materialized analytics view counts.
 func HandleAnalyticsRefreshViews(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:analytics:refresh_views", "payload", t.Payload())

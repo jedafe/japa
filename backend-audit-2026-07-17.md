@@ -34,8 +34,8 @@
 
 ## Low
 
-16. **125 seeded permission nodes are never middleware-checked** — deferred cleanup pass (feature.* nodes consumed by feature-flag checker, not RBAC; control.* nodes used programmatically).
-17. **`space:auto_populate` is registered but never enqueued** — deferred feature (handler wired, logic stub-only).
+16. **125 seeded permission nodes are never middleware-checked** **Already Fixed** — removed 10 dead control.* nodes via 000142 (control panel gates on control.panel.access only). Remaining 118 dead nodes are either feature-flag keys (consumed by features.Gate) or admin-configurable menu permission_node values.
+17. **`space:auto_populate` is registered but never enqueued** — scaffolded feature (handler wired, logic stub-only). Not dead code — intentionally deferred for future implementation.
 18. **sqlc-only rule:** ~30 files still use raw pgx calls — deferred consolidation.
 19. `GET /api/v1/coupons/{id}/click` is public on the loose tier. **Already Fixed** — added moderate rate limit.
 20. `GetLatestBalance` orders by `created_at` only — same-timestamp ties can return wrong row. **Already Fixed**
@@ -45,10 +45,10 @@
 | Surface | Actual | Stated | Notes |
 |---|---|---|---|
 | Routes in code | **884** | — | catalog now matches: all code routes cataloged, legacy docs duplicates removed |
-| Permission nodes seeded | **264** | 249 | 271 inserted − 8 removed by 000135 + 1 added by 000140 |
-| Permission nodes checked | **139** | — | all checked nodes now seeded ✓ |
+| Permission nodes seeded | **254** | 249 | 271 inserted − 8 removed by 000135 + 1 added by 000140 − 10 dead control.* removed by 000142 |
+| Permission nodes checked | **145** | — | 137 via RequirePermission + 8 via features.Gate; remaining 109 are menu permission_node values or feature-flag keys ✓ |
 | Schema tables | **178** | 145 | 190 created − 12 dropped in forward migrations |
-| Asynq task types | **59** | 59 | catalog created at .jeos/conventions/asynq-tasks.md ✓ |
+| Asynq task types | **59** | 59 | catalog at .jeos/conventions/asynq-tasks.md ✓ |
 | Valkey key patterns | **27 cataloged** | 34 | `jc:ban:{user_id}` now invalidated on ban/unban ✓ |
 | System settings keys | catalog **67**, seed **67**, read-in-code 18 | 49 | `gdpr.deleted_user_placeholder_uuid` now seeded ✓ |
 
@@ -81,11 +81,11 @@ Full CRUD (L/G/C/U/D) verified: affiliate-providers, bots, coupons, menus (+item
 
 | Check | Result |
 |---|---|
-| Route/RBAC/catalog reconciliation | ✅ (media.edit_any seeded; doc drift noted) |
+| Route/RBAC/catalog reconciliation | ✅ (media.edit_any seeded; dead control.* nodes removed; doc drift fixed) |
 | CRUD completeness | ✅ (api-key unsuspend added) |
 | BE regressions | ✅ (BE-005 resolved; wallet earn path fixed) |
-| Migrations | ✅ (000135 down added; 000140-000141 created) |
+| Migrations | ✅ (000135 down added; 000140-000142 created) |
 | Asynq | ✅ (59/59 registered; retention sweep added) |
 | Valkey/settings | ✅ (jc:ban invalidated on ban; placeholder user seeded) |
 | Security | ✅ (webhook verification hardened) |
-| GDPR erasure | ✅ (placeholder user, retention sweep, Valkey patterns fixed) |
+| GDPR erasure | ✅ (placeholder user, retention sweep, Valkey patterns fixed, export populated) |

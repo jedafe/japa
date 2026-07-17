@@ -175,6 +175,7 @@ func allTaskTypes() []string {
 		TypeMaintenanceUpdateVelocityScores,
 		TypeMaintenanceCheckSLABreaches,
 		TypeMaintenanceUpdateGeoIPDB,
+		TypeSpaceAutoPopulate,
 		TypeAnalyticsRefreshViews,
 		TypeSecurityScan,
 		TypeMaintenanceRegenerateLLMsTxt,
