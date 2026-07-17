@@ -349,7 +349,7 @@ func (s *Service) UpdateTicketStatus(ctx context.Context, id, tenantID pgtype.UU
 	}
 
 	// Enqueue status update email.
-	s.enqueueTicketStatusUpdate(ticket)
+	s.enqueueTicketStatusUpdate(ticket, current.Status)
 
 	return ticket, nil
 }
@@ -626,7 +626,6 @@ func (s *Service) enqueueTicketConfirmation(ticket gen.Ticket) {
 	payload, err := json.Marshal(map[string]any{
 		"ticket_id": ticket.ID.String(),
 		"tenant_id": ticket.TenantID.String(),
-		"subject":   ticket.Subject,
 	})
 	if err != nil {
 		return
@@ -637,12 +636,12 @@ func (s *Service) enqueueTicketConfirmation(ticket gen.Ticket) {
 	}
 }
 
-func (s *Service) enqueueTicketStatusUpdate(ticket gen.Ticket) {
+func (s *Service) enqueueTicketStatusUpdate(ticket gen.Ticket, oldStatus string) {
 	payload, err := json.Marshal(map[string]any{
-		"ticket_id": ticket.ID.String(),
-		"tenant_id": ticket.TenantID.String(),
-		"status":    ticket.Status,
-		"subject":   ticket.Subject,
+		"ticket_id":  ticket.ID.String(),
+		"tenant_id":  ticket.TenantID.String(),
+		"old_status": oldStatus,
+		"new_status": ticket.Status,
 	})
 	if err != nil {
 		return

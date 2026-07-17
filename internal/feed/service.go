@@ -76,7 +76,7 @@ func (s *Service) FanOutPost(_ context.Context, tenantID, contentID, spaceID pgt
 	}
 
 	if s.enqueuer != nil {
-		if err := s.enqueuer.Enqueue(TaskFanOutToFeeds, payload); err != nil {
+		if err := s.enqueuer.Enqueue("content:fan_out_to_feeds", payload); err != nil {
 			return fmt.Errorf("enqueueing fan-out task: %w", err)
 		}
 		return nil

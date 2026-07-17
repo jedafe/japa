@@ -83,7 +83,6 @@ const (
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
 	TypeScheduledPublishSweep = "content:publish_sweep"
-	TypeVelocityScoreRecalc   = "maintenance:recalc_velocity_scores"
 	TypeGdprRetentionSweep    = "gdpr:retention_sweep"
 )
 
@@ -156,6 +155,5 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 
 	// Periodic sweep handlers
 	mux.HandleFunc(TypeScheduledPublishSweep, HandleScheduledPublishSweep)
-	mux.HandleFunc(TypeVelocityScoreRecalc, HandleVelocityScoreRecalc)
 	mux.HandleFunc(TypeGdprRetentionSweep, HandleGdprRetentionSweep)
 }

@@ -111,19 +111,19 @@ Payload carries `subject`, full `html_body`, and the entire `recipients` array (
 |---|---|---|
 | `search:index_entity` | Search never updates (H1) | wire producers on entity writes |
 | `content:scan_media` | No virus scanning (H2) | wire at upload |
-| `content:process_image` / `content:process_video` | No async media processing (H2) | wire or delete (imgproxy may make image task moot) |
+| `content:process_image` / `content:process_video` | No async media processing (H2) | wire (imgproxy may make image task moot) |
 | `dm:notify_request` / `dm:notify_message` | DM notifications dead (H3) | wire from DM message/request creation |
 | `maintenance:update_velocity_scores` | Feeds ranking stale (H4) | consolidate with recalc task |
 | `content:scan_moderation` | Moderation scan pipeline unused | wire at content create/update |
 | `content:fetch_link_preview` | Previews never fetched async | wire from block editor flow |
-| `ai:process_task` | AI queue processing dead | wire or delete |
+| `ai:process_task` | AI queue processing dead | wire |
 | `i18n:translate_language_pack` | Admin translate feature has no trigger | wire from admin i18n endpoint |
 | `learning:update_track_completion` / `learning:issue_certificate` | Progress/certificates never issued async | wire from lesson-completion flow |
 | `email:send_digest` / `newsletter:digest` | Digest features dead (also unscheduled) | schedule + wire |
-| `sitemap:generate` | Never triggered (sitemap served on-request today) | delete or schedule |
-| `ad:ingest_event_batch` | Ad events never ingested | wire or delete |
+| `sitemap:generate` | Never triggered (sitemap served on-request today) | schedule |
+| `ad:ingest_event_batch` | Ad events never ingested | wire |
 | `maintenance:update_geoip_db` | GeoIP DB never refreshed | schedule it |
-| `db:manual_vacuum` | No control-panel trigger exists | add control route or delete |
+| `db:manual_vacuum` | No control-panel trigger exists | add control route |
 | `space:auto_populate` | Known dead (audit #17) | per prior decision |
 | `content:update_engagement` / `content:recalc_review_aggregate` / `affiliate:record_click` | Superseded by inline paths | **delete** (dead weight) |
 

@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -9,9 +10,11 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // parseMediaID extracts and validates a media UUID from the :id URL parameter.
@@ -58,7 +61,8 @@ const (
 
 // Handlers holds dependencies for media HTTP handlers.
 type Handlers struct {
-	service *Service
+	service    *Service
+	AsynqClient *asynq.Client
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -247,7 +251,88 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enqueue background processing tasks — fire-and-forget.
+	h.enqueueMediaTasks(r.Context(), tenantID, mediaID)
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"confirmed": true}})
+}
+
+// enqueueMediaTasks enqueues image/video processing and virus scan tasks
+// based on the media's MIME type. Fire-and-forget: errors are logged only.
+func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	// Fetch media record to get MIME type for routing.
+	m, err := h.service.GetMedia(ctx, tenantID, mediaID)
+	if err != nil {
+		slog.Warn("media: failed to fetch media for task enqueue",
+			"media_id", mediaID.String(), "error", err)
+		return
+	}
+
+	mediaIDStr := mediaID.String()
+	tenantIDStr := tenantID.String()
+
+	// Always enqueue virus scan for all confirmed uploads.
+	scanPayload, _ := json.Marshal(map[string]string{
+		"media_id": mediaIDStr,
+	})
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeMediaScan, scanPayload),
+		asynq.Queue(worker.QueueForTask(worker.TypeMediaScan)),
+	); err != nil {
+		slog.Warn("media: failed to enqueue scan task",
+			"media_id", mediaIDStr, "error", err)
+	}
+
+	// Route by MIME type for processing.
+	mimeType := m.MimeType
+	switch {
+	case isImageMIME(mimeType):
+		processPayload, _ := json.Marshal(map[string]string{
+			"media_id":   mediaIDStr,
+			"tenant_id":  tenantIDStr,
+			"operation":  "optimize",
+		})
+		if _, err := h.AsynqClient.Enqueue(
+			asynq.NewTask(worker.TypeImageProcessing, processPayload),
+			asynq.Queue(worker.QueueForTask(worker.TypeImageProcessing)),
+		); err != nil {
+			slog.Warn("media: failed to enqueue image processing",
+				"media_id", mediaIDStr, "error", err)
+		}
+	case isVideoMIME(mimeType):
+		processPayload, _ := json.Marshal(map[string]string{
+			"media_id":   mediaIDStr,
+			"tenant_id":  tenantIDStr,
+			"operation":  "transcode",
+		})
+		if _, err := h.AsynqClient.Enqueue(
+			asynq.NewTask(worker.TypeVideoProcessing, processPayload),
+			asynq.Queue(worker.QueueForTask(worker.TypeVideoProcessing)),
+		); err != nil {
+			slog.Warn("media: failed to enqueue video processing",
+				"media_id", mediaIDStr, "error", err)
+		}
+	}
+}
+
+func isImageMIME(mimeType string) bool {
+	switch mimeType {
+	case "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml":
+		return true
+	}
+	return false
+}
+
+func isVideoMIME(mimeType string) bool {
+	switch mimeType {
+	case "video/mp4", "video/webm", "video/quicktime", "video/x-msvideo":
+		return true
+	}
+	return false
 }
 
 // GetMedia handles GET /api/v1/media/{id}.
