@@ -78,11 +78,13 @@ const (
 	TypeAffiliateRecordClick            = "affiliate:record_click"
 	TypeAffiliateCreditCommission       = "affiliate:credit_commission"
 	TypeAffiliateExpireCheck            = "affiliate:expire_check"
+	TypeRedirectRecordHit               = "redirect:record_hit"
 
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
 	TypeScheduledPublishSweep = "content:publish_sweep"
 	TypeVelocityScoreRecalc   = "maintenance:recalc_velocity_scores"
+	TypeGdprRetentionSweep    = "gdpr:retention_sweep"
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -150,8 +152,10 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeAffiliateRecordClick, HandleAffiliateRecordClick)
 	mux.HandleFunc(TypeAffiliateCreditCommission, HandleAffiliateCreditCommission)
 	mux.HandleFunc(TypeAffiliateExpireCheck, HandleAffiliateExpireCheck)
+	mux.HandleFunc(TypeRedirectRecordHit, HandleRedirectRecordHit)
 
 	// Periodic sweep handlers
 	mux.HandleFunc(TypeScheduledPublishSweep, HandleScheduledPublishSweep)
 	mux.HandleFunc(TypeVelocityScoreRecalc, HandleVelocityScoreRecalc)
+	mux.HandleFunc(TypeGdprRetentionSweep, HandleGdprRetentionSweep)
 }

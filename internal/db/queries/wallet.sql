@@ -26,7 +26,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: GetLatestBalance :one
 SELECT resulting_balance FROM wallet_ledger
 WHERE tenant_id = @tenant_id AND user_id = @user_id AND ledger_type = @ledger_type
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id DESC
 LIMIT 1;
 
 -- name: CheckIdempotencyKey :one

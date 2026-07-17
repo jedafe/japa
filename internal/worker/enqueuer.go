@@ -109,7 +109,8 @@ var taskTier = func() map[string]string {
 		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents,
 		TypeCouponExpireCheck, TypeAffiliateRecordClick,
 		TypeAffiliateCreditCommission, TypeAffiliateExpireCheck,
-		TypeScheduledPublishSweep, TypeVelocityScoreRecalc,
+		TypeRedirectRecordHit,
+		TypeScheduledPublishSweep, TypeVelocityScoreRecalc, TypeGdprRetentionSweep,
 	} {
 		m[t] = QueueLow
 	}

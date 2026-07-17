@@ -171,6 +171,7 @@ INSERT INTO permissions (key, description) VALUES
     ('media.delete_own', 'Media Delete Own'),
     ('media.library.view_all', 'Media Library View All'),
     ('media.library.view_own', 'Media Library View Own'),
+    ('media.edit_any', 'Media Edit Any'),
     ('media.quarantine.manage', 'Media Quarantine Manage'),
     ('media.upload', 'Media Upload'),
     ('media.video.upload', 'Media Video Upload'),

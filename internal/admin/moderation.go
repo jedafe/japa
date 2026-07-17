@@ -421,9 +421,10 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")
 		return
 	}
-	// Rule 6: invalidate cache after ban
+	// Rule 6: invalidate caches after ban. 
 	if h.Valkey != nil {
 		_ = rbac.InvalidatePermCache(ctx, h.Valkey, uid)
+		_ = h.Valkey.Del(ctx, "jc:ban:"+userID)
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "banned"})
 }
@@ -441,9 +442,10 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unban user")
 		return
 	}
-	// Rule 6: invalidate cache after unban
+	// Rule 6: invalidate caches after unban. 
 	if h.Valkey != nil {
 		_ = rbac.InvalidatePermCache(r.Context(), h.Valkey, uid)
+		_ = h.Valkey.Del(r.Context(), "jc:ban:"+userID)
 	}
 	writeJSON(w, http.StatusNoContent, nil)
 }

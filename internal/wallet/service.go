@@ -75,7 +75,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		return nil
 	}
 
-	// Check frequency caps
+	// Check frequency caps (read-only queries outside tx — safe, caps are advisory)
 	if rule.CapPerDay != nil {
 		count, err := s.store.countUserActivityToday(ctx, tenantID, event.UserID, event.ActivityKey)
 		if err != nil {
@@ -98,10 +98,30 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		}
 	}
 
-	// Get current balance
-	currentBalance, err := s.store.getLatestBalance(ctx, tenantID, event.UserID, LedgerTypePoints)
+	// Begin transaction to atomically read balance and insert ledger entry.
+	//  Previously this path lacked both a tx and an
+	// advisory lock, so concurrent earns could silently overwrite each other.
+	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
-		// If no balance yet, start at 0
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	// Serialize concurrent balance mutations for this user.
+	lockKey := "wallet:" + tenantID.String() + ":" + event.UserID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return fmt.Errorf("acquiring wallet lock: %w", err)
+	}
+
+	// Get current balance within the transaction.
+	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+		TenantID:   tenantID,
+		UserID:     event.UserID,
+		LedgerType: LedgerTypePoints,
+	})
+	if err != nil {
 		currentBalance = 0
 	}
 
@@ -112,7 +132,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	idempotencyKey := fmt.Sprintf("activity:%s:%s", event.ActivityKey, event.Reference)
 
 	// Insert ledger entry
-	_, err = s.store.insertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 		TenantID:         tenantID,
 		UserID:           event.UserID,
 		LedgerType:       LedgerTypePoints,
@@ -128,9 +148,16 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		return fmt.Errorf("inserting ledger entry: %w", err)
 	}
 
-	// Mark event as processed
-	if err := s.store.markEventProcessed(ctx, eventID, tenantID); err != nil {
+	// Mark event as processed within the transaction.
+	if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
+		ID:       eventID,
+		TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("marking event processed: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
 	}
 
 	return nil
