@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { ArrowLeft, Star, MessageCircle } from 'lucide-svelte';
 	import { formatTimestamp } from '$lib/utils/timezone';
 
@@ -29,7 +30,7 @@
 		Back to blog
 	</a>
 
-	<h1 class="text-2xl font-bold tracking-tight" style="color: var(--color-foreground)">Blog Reviews</h1>
+	<h1 class="text-2xl font-bold tracking-tight" style="color: var(--color-foreground)">{t('blog.reviews.blog_reviews')}</h1>
 	<p class="mt-2 text-sm" style="color: var(--color-muted)">
 		Reviews and ratings from the community
 	</p>
@@ -37,7 +38,7 @@
 	{#if reviews.length === 0}
 		<div class="mt-12 text-center">
 			<MessageCircle class="mx-auto h-10 w-10" style="color: var(--color-muted)" />
-			<p class="mt-3 text-sm" style="color: var(--color-muted)">No reviews yet</p>
+			<p class="mt-3 text-sm" style="color: var(--color-muted)">{t('blog.reviews.no_reviews_yet')}</p>
 		</div>
 	{:else}
 		<div class="mt-6 space-y-4">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { spaceTypesApi } from '$lib/api';
 
@@ -130,8 +131,8 @@
 	<title>Space Types — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Space Types</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage space type categories including university designation</p>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('space-types.space_types')}</h1>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('space-types.manage_space_type_categories_including_u')}</p>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -150,17 +151,17 @@
 </div>
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('space-types.loading')}</p>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 		<table class="w-full text-sm">
 			<thead>
 				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Name</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Slug</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Description</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">University</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Icon</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space-types.name')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space-types.slug')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space-types.description')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space-types.university')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space-types.icon')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 				</tr>
 			</thead>
@@ -197,7 +198,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">No space types configured</td>
+						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">{t('space-types.no_space_types_configured')}</td>
 					</tr>
 				{/each}
 			</tbody>
@@ -217,29 +218,29 @@
 <Modal bind:open={showModal} title={editingId ? 'Edit Space Type' : 'Add Space Type'} onConfirm={submit} confirmLabel={saving ? 'Saving...' : (editingId ? 'Update' : 'Create')}>
 	<div class="space-y-3">
 		<div>
-			<label for="st-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Name</label>
+			<label for="st-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space-types.name')}</label>
 			<input id="st-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="University" bind:value={form.name} oninput={() => { if (!editingId) form.slug = slugify(form.name); }} />
 		</div>
 		<div>
-			<label for="st-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Slug</label>
+			<label for="st-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space-types.slug')}</label>
 			<input id="st-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="university" bind:value={form.slug} />
 		</div>
 		<div>
-			<label for="st-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Description</label>
+			<label for="st-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space-types.description')}</label>
 			<textarea id="st-desc" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="2" bind:value={form.description}></textarea>
 		</div>
 		<div>
-			<label for="st-icon" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Icon (emoji or name)</label>
+			<label for="st-icon" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space-types.icon_emoji_or_name')}</label>
 			<input id="st-icon" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="🎓" bind:value={form.icon} />
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="st-uni" type="checkbox" bind:checked={form.is_university} />
-			<label for="st-uni" class="text-sm">University type</label>
+			<label for="st-uni" class="text-sm">{t('space-types.university_type')}</label>
 		</div>
 	</div>
 </Modal>
 
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteConfirm} title="Confirm Delete" onConfirm={executeDelete} confirmLabel="Delete">
-	<p class="text-sm" style="color: var(--color-muted)">Are you sure you want to delete this space type? This action cannot be undone.</p>
+	<p class="text-sm" style="color: var(--color-muted)">{t('space-types.are_you_sure_you_want_to_delete_this_spa')}</p>
 </Modal>

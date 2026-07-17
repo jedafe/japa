@@ -282,33 +282,33 @@
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Source</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.source')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type === "ai_flag" ? "AI Flag" : "User Report"}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Content Type</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.content_type')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.content_type}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.status')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Reporter</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.reporter')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.reporter_name || "—"}</p>
 				</div>
 				<div class="col-span-2">
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Reason</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.reason')}</p>
 					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.reason}</p>
 				</div>
 				{#if viewTarget.content_preview}
 					<div class="col-span-2">
-						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Content Preview</p>
+						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.content_preview')}</p>
 						<p class="mt-1 text-sm rounded-lg p-3" style="background: var(--color-surface); color: var(--color-foreground)">{viewTarget.content_preview}</p>
 					</div>
 				{/if}
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Created</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.created')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
 				</div>
 			</div>
@@ -323,7 +323,7 @@
 				<X class="mr-1 h-3.5 w-3.5" /> Reject
 			</Button>
 		{/if}
-		<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('moderation.close')}</Button>
 	</div>
 </Modal>
 

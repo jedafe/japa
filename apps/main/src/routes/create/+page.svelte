@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import ContentTypeSelector from '$lib/create/ContentTypeSelector.svelte';
 	import { MetadataHead } from '$lib/seo';
 	import { api } from '$lib/api';
@@ -39,7 +40,7 @@
 <MetadataHead {metadata} noindex={true} />
 
 <main class="mx-auto max-w-4xl px-6 py-16">
-	<h1 class="text-3xl font-bold tracking-tight">Create New Post</h1>
+	<h1 class="text-3xl font-bold tracking-tight">{t('create.create_new_post')}</h1>
 	<p class="mt-2 text-lg" style="color: var(--color-muted)">
 		Choose a content type to get started
 	</p>

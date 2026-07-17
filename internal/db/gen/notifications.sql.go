@@ -49,6 +49,15 @@ func (q *Queries) DeleteNotification(ctx context.Context, arg DeleteNotification
 	return err
 }
 
+const deleteNotificationType = `-- name: DeleteNotificationType :exec
+DELETE FROM notification_types WHERE key = $1
+`
+
+func (q *Queries) DeleteNotificationType(ctx context.Context, key string) error {
+	_, err := q.db.Exec(ctx, deleteNotificationType, key)
+	return err
+}
+
 const extendBatchWindow = `-- name: ExtendBatchWindow :exec
 UPDATE notification_batch_windows
 SET actor_ids = array_append(actor_ids, $1),
@@ -397,6 +406,29 @@ func (q *Queries) MarkNotificationRead(ctx context.Context, arg MarkNotification
 	return err
 }
 
+const updateNotificationType = `-- name: UpdateNotificationType :exec
+UPDATE notification_types
+SET label = $1, description = $2, enabled = $3
+WHERE key = $4
+`
+
+type UpdateNotificationTypeParams struct {
+	Label       string  `json:"label"`
+	Description *string `json:"description"`
+	Enabled     bool    `json:"enabled"`
+	Key         string  `json:"key"`
+}
+
+func (q *Queries) UpdateNotificationType(ctx context.Context, arg UpdateNotificationTypeParams) error {
+	_, err := q.db.Exec(ctx, updateNotificationType,
+		arg.Label,
+		arg.Description,
+		arg.Enabled,
+		arg.Key,
+	)
+	return err
+}
+
 const upsertNotificationPreference = `-- name: UpsertNotificationPreference :exec
 INSERT INTO notification_preferences (user_id, notification_type, in_app, email, push)
 VALUES ($1, $2, $3, $4, $5)
@@ -419,6 +451,29 @@ func (q *Queries) UpsertNotificationPreference(ctx context.Context, arg UpsertNo
 		arg.InApp,
 		arg.Email,
 		arg.Push,
+	)
+	return err
+}
+
+const upsertNotificationType = `-- name: UpsertNotificationType :exec
+INSERT INTO notification_types (key, label, description, enabled, default_in_app, default_email, default_push)
+VALUES ($1, $2, $3, $4, true, true, false)
+ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, description = EXCLUDED.description
+`
+
+type UpsertNotificationTypeParams struct {
+	Key         string  `json:"key"`
+	Label       string  `json:"label"`
+	Description *string `json:"description"`
+	Enabled     bool    `json:"enabled"`
+}
+
+func (q *Queries) UpsertNotificationType(ctx context.Context, arg UpsertNotificationTypeParams) error {
+	_, err := q.db.Exec(ctx, upsertNotificationType,
+		arg.Key,
+		arg.Label,
+		arg.Description,
+		arg.Enabled,
 	)
 	return err
 }

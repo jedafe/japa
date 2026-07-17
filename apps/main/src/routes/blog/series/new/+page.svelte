@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { ArrowLeft, Save } from 'lucide-svelte';
@@ -41,7 +42,7 @@
 		Back to series
 	</a>
 
-	<h1 class="text-2xl font-bold tracking-tight" style="color: var(--color-foreground)">Create New Series</h1>
+	<h1 class="text-2xl font-bold tracking-tight" style="color: var(--color-foreground)">{t('blog.series.new.create_new_series')}</h1>
 
 	{#if error}
 		<div class="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-700 dark:bg-red-900/30 dark:text-red-400">
@@ -51,7 +52,7 @@
 
 	<form onsubmit={handleCreate} class="mt-6 space-y-5">
 		<div>
-			<label for="title" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">Title *</label>
+			<label for="title" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">{t('blog.series.new.title')}</label>
 			<input
 				id="title"
 				type="text"
@@ -64,7 +65,7 @@
 		</div>
 
 		<div>
-			<label for="description" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">Description</label>
+			<label for="description" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">{t('blog.series.new.description')}</label>
 			<textarea
 				id="description"
 				bind:value={description}

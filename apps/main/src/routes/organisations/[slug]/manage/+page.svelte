@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Building2, Users, Mail, Trash2, Save, Loader2, Shield, UserMinus } from 'lucide-svelte';
 	import { api, type Organization, type OrganizationMember, type OrganizationInvitation } from '$lib/api';
 	import Badge from '$lib/components/ui/Badge.svelte';
@@ -110,7 +111,7 @@
 			{org.name}
 		</a>
 		<span style="color: var(--color-muted)">/</span>
-		<h1 class="text-xl font-bold tracking-tight">Settings</h1>
+		<h1 class="text-xl font-bold tracking-tight">{t('organisations.slug.manage.settings')}</h1>
 	</div>
 
 	{#if saveMessage}
@@ -129,11 +130,11 @@
 		{#if editing}
 			<form onsubmit={saveSettings} class="space-y-4">
 				<div>
-					<label for="org-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Name</label>
+					<label for="org-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('organisations.slug.manage.name')}</label>
 					<input id="org-name" type="text" bind:value={editName} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" />
 				</div>
 				<div>
-					<label for="org-headline" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Headline</label>
+					<label for="org-headline" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('organisations.slug.manage.headline')}</label>
 					<input id="org-headline" type="text" bind:value={editHeadline} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" />
 				</div>
 				<div>
@@ -142,7 +143,7 @@
 				</div>
 				<div class="flex items-center gap-2">
 					<input id="org-public" type="checkbox" bind:checked={editPublic} class="rounded" />
-					<label for="org-public" class="text-sm">Public organisation</label>
+					<label for="org-public" class="text-sm">{t('organisations.slug.manage.public_organisation')}</label>
 				</div>
 				<div class="flex gap-2">
 					<button type="submit" disabled={saving} class="flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50" style="background-color: var(--color-primary)">
@@ -157,12 +158,12 @@
 		{:else}
 			<div class="space-y-3">
 				<div>
-					<p class="text-xs font-medium" style="color: var(--color-muted)">Name</p>
+					<p class="text-xs font-medium" style="color: var(--color-muted)">{t('organisations.slug.manage.name')}</p>
 					<p class="text-sm">{org.name}</p>
 				</div>
 				{#if org.headline}
 					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">Headline</p>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('organisations.slug.manage.headline')}</p>
 						<p class="text-sm">{org.headline}</p>
 					</div>
 				{/if}
@@ -173,7 +174,7 @@
 					</div>
 				{/if}
 				<div>
-					<p class="text-xs font-medium" style="color: var(--color-muted)">Visibility</p>
+					<p class="text-xs font-medium" style="color: var(--color-muted)">{t('organisations.slug.manage.visibility')}</p>
 					<p class="text-sm">{org.is_public ? 'Public' : 'Private'}</p>
 				</div>
 				<button onclick={() => (editing = true)} class="mt-2 rounded-md border px-4 py-2 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10" style="border-color: var(--color-border)">
@@ -218,8 +219,8 @@
 									value={member.role}
 									onchange={(e) => updateMemberRole(member.user_id, (e.target as HTMLSelectElement).value)}
 								>
-									<option value="member">Member</option>
-									<option value="admin">Admin</option>
+									<option value="member">{t('organisations.slug.manage.member')}</option>
+									<option value="admin">{t('organisations.slug.manage.admin')}</option>
 								</select>
 								<button
 									class="rounded p-1 hover:bg-red-50 dark:hover:bg-red-950"
@@ -259,8 +260,8 @@
 				class="rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-surface)"
 			>
-				<option value="member">Member</option>
-				<option value="admin">Admin</option>
+				<option value="member">{t('organisations.slug.manage.member')}</option>
+				<option value="admin">{t('organisations.slug.manage.admin')}</option>
 			</select>
 			<button type="submit" disabled={inviting || !inviteEmail.trim()} class="flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50" style="background-color: var(--color-primary)">
 				{#if inviting}<Loader2 class="h-4 w-4 animate-spin" />{:else}Invite{/if}
@@ -268,7 +269,7 @@
 		</form>
 
 		{#if invitations.length === 0}
-			<p class="py-4 text-center text-xs" style="color: var(--color-muted)">No pending invitations.</p>
+			<p class="py-4 text-center text-xs" style="color: var(--color-muted)">{t('organisations.slug.manage.no_pending_invitations')}</p>
 		{:else}
 			<div class="space-y-1">
 				{#each invitations as inv}

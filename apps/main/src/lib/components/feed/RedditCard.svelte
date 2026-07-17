@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Clock, MessageCircle, Heart } from 'lucide-svelte';
 	import { formatRelativeTime } from '$lib/utils/timezone';
 	import type { FeedItem } from '$lib/api';

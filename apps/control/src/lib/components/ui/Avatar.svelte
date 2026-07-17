@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n';
 	import clsx from 'clsx';
 
 	let { src, alt = '', size = 'md', class: className = '' } = $props();

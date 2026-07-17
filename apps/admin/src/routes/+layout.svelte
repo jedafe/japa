@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
 	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
 	import { getPermissions } from '$lib/stores/permissions.svelte';

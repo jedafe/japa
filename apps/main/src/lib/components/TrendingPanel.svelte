@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { TrendingUp, Hash, Users, Layers } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { onMount } from 'svelte';
@@ -69,7 +70,7 @@
 >
 	<div class="mb-3 flex items-center gap-2">
 		<TrendingUp class="h-4 w-4" style="color: var(--color-primary)" />
-		<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">Trending</h2>
+		<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t('lib.components.TrendingPanel.svelte.trending')}</h2>
 	</div>
 
 	<!-- Tab strip -->
@@ -97,7 +98,7 @@
 			{/each}
 		</div>
 	{:else if activeItems.length === 0}
-		<p class="text-center text-xs py-4" style="color: var(--color-muted)">Nothing trending yet</p>
+		<p class="text-center text-xs py-4" style="color: var(--color-muted)">{t('lib.components.TrendingPanel.svelte.nothing_trending_yet')}</p>
 	{:else}
 		<ol class="space-y-1">
 			{#each activeItems as item, i (item.id)}

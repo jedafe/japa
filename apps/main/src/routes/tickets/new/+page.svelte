@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { ArrowLeft, Loader2, Headphones } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
@@ -64,8 +65,8 @@
 				<Headphones class="h-5 w-5" style="color: var(--color-primary)" />
 			</div>
 			<div>
-				<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">New Support Ticket</h1>
-				<p class="text-sm" style="color: var(--color-muted)">Describe your issue and we'll help you out.</p>
+				<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('tickets.new.new_support_ticket')}</h1>
+				<p class="text-sm" style="color: var(--color-muted)">{t('tickets.new.describe_your_issue_and_we_ll_help_you_o')}</p>
 			</div>
 		</div>
 	</header>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Clock, MessageCircle, Bookmark } from 'lucide-svelte';
 	import { imgproxy } from '$lib/utils/imgproxy';
 	import { formatRelativeTime } from '$lib/utils/timezone';

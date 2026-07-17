@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Mail, Check, Loader2, X } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { page } from '$app/state';
@@ -58,8 +59,8 @@
 	{:else if result === 'accepted'}
 		<div class="mt-6 flex flex-col items-center">
 			<Check class="h-8 w-8" style="color: var(--color-primary)" />
-			<h1 class="mt-2 text-xl font-bold" style="color: var(--color-foreground)">Welcome aboard!</h1>
-			<p class="mt-1 text-sm" style="color: var(--color-muted)">Taking you to the organisation…</p>
+			<h1 class="mt-2 text-xl font-bold" style="color: var(--color-foreground)">{t('organisations.invitations.token.welcome_aboard')}</h1>
+			<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('organisations.invitations.token.taking_you_to_the_organisation')}</p>
 		</div>
 	{:else}
 		<div class="mt-6 flex flex-col items-center">

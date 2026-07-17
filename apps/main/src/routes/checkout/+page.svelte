@@ -197,19 +197,19 @@
 			>
 				<div class="space-y-2 text-sm">
 					<div class="flex justify-between">
-						<span style="color: var(--color-muted)">Payment ID</span>
+						<span style="color: var(--color-muted)">{t('checkout.payment_id')}</span>
 						<span class="font-mono text-xs" style="color: var(--color-foreground)">
 							{paymentResult.payment_id.slice(0, 12)}...
 						</span>
 					</div>
 					<div class="flex justify-between">
-						<span style="color: var(--color-muted)">Reference</span>
+						<span style="color: var(--color-muted)">{t('checkout.reference')}</span>
 						<span class="font-mono text-xs" style="color: var(--color-foreground)">
 							{paymentResult.reference}
 						</span>
 					</div>
 					<div class="flex justify-between">
-						<span style="color: var(--color-muted)">Amount</span>
+						<span style="color: var(--color-muted)">{t('checkout.amount')}</span>
 						<span class="font-semibold" style="color: var(--color-foreground)">
 						{formatKobo(discountedAmount)}
 					</span>

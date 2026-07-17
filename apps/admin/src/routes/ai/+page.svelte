@@ -821,7 +821,7 @@
 		</div>
 	</div>
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => showToolModal = false}>Cancel</Button>
+		<Button variant="outline" onclick={() => showToolModal = false}>{t('ai.cancel')}</Button>
 		<Button onclick={saveTool} disabled={toolSaving}>
 			{toolSaving ? 'Saving...' : 'Save Changes'}
 		</Button>

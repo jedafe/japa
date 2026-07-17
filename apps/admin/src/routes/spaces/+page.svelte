@@ -331,34 +331,34 @@
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Name</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.name')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Owner</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.owner')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.owner}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Members</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.members')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.member_count.toLocaleString()}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Type</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.type')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.space_type || "—"}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.status')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Created</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.created')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
 				</div>
 			</div>
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('spaces.close')}</Button>
 	</div>
 </Modal>
 
@@ -367,7 +367,7 @@
 	{#if editTarget}
 		<div class="space-y-4">
 			<div>
-				<label for="edit-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Name</label>
+				<label for="edit-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.name')}</label>
 				<input
 					id="edit-name"
 					type="text"
@@ -377,22 +377,22 @@
 				/>
 			</div>
 			<div>
-				<label for="edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Type</label>
+				<label for="edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.type')}</label>
 				<select
 					id="edit-type"
 					class="w-full rounded-lg border px-3 py-2 text-sm"
 					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					bind:value={editType}
 				>
-					<option value="public">Public</option>
-					<option value="private">Private</option>
-					<option value="university">University</option>
+					<option value="public">{t('spaces.public')}</option>
+					<option value="private">{t('spaces.private')}</option>
+					<option value="university">{t('spaces.university')}</option>
 				</select>
 			</div>
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showEditModal = false)}>Cancel</Button>
+		<Button variant="ghost" onclick={() => (showEditModal = false)}>{t('spaces.cancel')}</Button>
 		<Button onclick={saveEdit} disabled={acting}>{acting ? "Saving..." : "Save"}</Button>
 	</div>
 </Modal>
@@ -405,7 +405,7 @@
 		</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>Cancel</Button>
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('spaces.cancel')}</Button>
 		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? "Deleting..." : "Delete"}</Button>
 	</div>
 </Modal>
@@ -431,7 +431,7 @@
 		{/if}
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showSuspendModal = false)}>Cancel</Button>
+		<Button variant="ghost" onclick={() => (showSuspendModal = false)}>{t('spaces.cancel')}</Button>
 		<Button variant={suspendTarget?.status === "suspended" ? "default" : "destructive"} onclick={executeSuspend} disabled={acting}>
 			{acting ? "Processing..." : suspendTarget?.status === "suspended" ? "Unsuspend" : "Suspend"}
 		</Button>

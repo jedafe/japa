@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
   import { Tabs } from "bits-ui";
   import { clsx, type ClassValue } from "clsx";
   

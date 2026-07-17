@@ -105,7 +105,7 @@
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('moderation.alerts_title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Real-time moderation alerts and security notifications</p>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('moderation.alerts.real_time_moderation_alerts_and_security')}</p>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">

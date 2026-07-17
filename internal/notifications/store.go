@@ -171,3 +171,43 @@ func (s *Store) getNotificationTypes(ctx context.Context) ([]gen.NotificationTyp
 
 	return types, nil
 }
+
+// upsertNotificationType inserts a notification type, updating label/description on conflict.
+func (s *Store) upsertNotificationType(ctx context.Context, p gen.UpsertNotificationTypeParams) error {
+	if err := s.write.UpsertNotificationType(ctx, p); err != nil {
+		return fmt.Errorf("upserting notification type: %w", err)
+	}
+
+	return nil
+}
+
+// updateNotificationType updates an existing notification type definition.
+func (s *Store) updateNotificationType(ctx context.Context, p gen.UpdateNotificationTypeParams) error {
+	if err := s.write.UpdateNotificationType(ctx, p); err != nil {
+		return fmt.Errorf("updating notification type: %w", err)
+	}
+
+	return nil
+}
+
+// deleteNotificationType removes a notification type definition.
+func (s *Store) deleteNotificationType(ctx context.Context, key string) error {
+	if err := s.write.DeleteNotificationType(ctx, key); err != nil {
+		return fmt.Errorf("deleting notification type: %w", err)
+	}
+
+	return nil
+}
+
+// getUserDisplayName returns a user's display_name (nil when unset).
+func (s *Store) getUserDisplayName(ctx context.Context, userID pgtype.UUID) (*string, error) {
+	user, err := s.read.GetUserProfile(ctx, gen.GetUserProfileParams{
+		TenantID: pgtype.UUID{},
+		UserID:   userID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting user profile: %w", err)
+	}
+
+	return user.DisplayName, nil
+}

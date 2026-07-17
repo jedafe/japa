@@ -318,7 +318,7 @@
 	{:else}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold text-gray-900">Templates</h3>
+				<h3 class="text-lg font-semibold text-gray-900">{t('jsonld-templates.templates')}</h3>
 				<p class="text-sm text-gray-500">
 					{templates.length} template{templates.length !== 1 ? 's' : ''} configured
 				</p>
@@ -335,8 +335,8 @@
 
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold text-gray-900">Preview</h3>
-				<p class="text-sm text-gray-500">Example JSON-LD output for search engines</p>
+				<h3 class="text-lg font-semibold text-gray-900">{t('jsonld-templates.preview')}</h3>
+				<p class="text-sm text-gray-500">{t('jsonld-templates.example_json_ld_output_for_search_engine')}</p>
 			</CardHeader>
 			<CardContent>
 				{#if templates.length > 0}
@@ -344,7 +344,7 @@
 						<pre class="overflow-x-auto text-xs text-gray-700"><code>{JSON.stringify(templates[0]?.content || {}, null, 2)}</code></pre>
 					</div>
 				{:else}
-					<p class="text-sm text-gray-500">No templates to preview</p>
+					<p class="text-sm text-gray-500">{t('jsonld-templates.no_templates_to_preview')}</p>
 				{/if}
 			</CardContent>
 		</Card>
@@ -356,7 +356,7 @@
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="template-name" class="mb-1 block text-sm font-medium text-gray-700">Name</label>
+				<label for="template-name" class="mb-1 block text-sm font-medium text-gray-700">{t('jsonld-templates.name')}</label>
 				<input
 					id="template-name"
 					type="text"
@@ -366,7 +366,7 @@
 				/>
 			</div>
 			<div>
-			<label for="template-type" class="mb-1 block text-sm font-medium text-gray-700">Schema Type</label>
+			<label for="template-type" class="mb-1 block text-sm font-medium text-gray-700">{t('jsonld-templates.schema_type')}</label>
 			<Select
 				options={[
 					{ value: 'Article', label: 'Article' },
@@ -403,7 +403,7 @@
 		</div>
 	</div>
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => showTemplateModal = false}>Cancel</Button>
+		<Button variant="outline" onclick={() => showTemplateModal = false}>{t('jsonld-templates.cancel')}</Button>
 		<Button onclick={saveTemplate} disabled={saving || !templateForm.name || !!jsonError}>
 			{saving ? 'Saving...' : editingTemplate ? 'Save Changes' : 'Create Template'}
 		</Button>
@@ -416,7 +416,7 @@
 		Are you sure you want to delete <strong>{deletingTemplate?.name}</strong>? This action cannot be undone.
 	</p>
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => showDeleteModal = false}>Cancel</Button>
-		<Button variant="destructive" onclick={deleteTemplate}>Delete</Button>
+		<Button variant="outline" onclick={() => showDeleteModal = false}>{t('jsonld-templates.cancel')}</Button>
+		<Button variant="destructive" onclick={deleteTemplate}>{t('jsonld-templates.delete')}</Button>
 	</div>
 </Modal>

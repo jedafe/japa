@@ -9,7 +9,6 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -136,7 +135,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	action := notificationAction(window.NotificationType)
 
 	// Get the last actor's display name for the batch title.
-	actorName := resolveActorDisplayName(ctx, s.db, window.LastActorID)
+	actorName := s.resolveActorDisplayName(ctx, window.LastActorID)
 
 	title := BuildBatchTitle(actorName, window.ActorCount, action)
 
@@ -190,17 +189,14 @@ func notificationAction(ntype string) string {
 	}
 }
 
-// resolveActorDisplayName returns the display_name of a user, or "Someone" on error.
-func resolveActorDisplayName(ctx context.Context, dbase *db.DB, userID pgtype.UUID) string {
-	queries := gen.New(dbase.Reader)
-	user, err := queries.GetUserProfile(ctx, gen.GetUserProfileParams{
-		TenantID: pgtype.UUID{},
-		UserID:   userID,
-	})
-	if err != nil || user.DisplayName == nil || *user.DisplayName == "" {
+// resolveActorDisplayName returns the display_name of a user, or "Someone" on
+// error. Routed through the store rather than constructing gen.Queries inline.
+func (s *Service) resolveActorDisplayName(ctx context.Context, userID pgtype.UUID) string {
+	name, err := s.store.getUserDisplayName(ctx, userID)
+	if err != nil || name == nil || *name == "" {
 		return "Someone"
 	}
-	return *user.DisplayName
+	return *name
 }
 
 // stringPtr returns a pointer to s, or nil if s is empty.
@@ -358,25 +354,21 @@ func SplitNames(names string) string {
 }
 
 // CreateNotificationType inserts a new notification type definition (P5.6).
+// Hand-written SQL consolidated into sqlc (notifications.sql).
 func (s *Service) CreateNotificationType(ctx context.Context, key, label string, description *string, enabled bool) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`INSERT INTO notification_types (key, label, description, enabled, default_in_app, default_email, default_push)
-		 VALUES ($1, $2, $3, $4, true, true, false)
-		 ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, description = EXCLUDED.description`,
-		key, label, description, enabled)
-	return err
+	return s.store.upsertNotificationType(ctx, gen.UpsertNotificationTypeParams{
+		Key: key, Label: label, Description: description, Enabled: enabled,
+	})
 }
 
 // UpdateNotificationType updates an existing notification type (P5.6).
 func (s *Service) UpdateNotificationType(ctx context.Context, key, label string, description *string, enabled bool) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`UPDATE notification_types SET label = $2, description = $3, enabled = $4 WHERE key = $1`,
-		key, label, description, enabled)
-	return err
+	return s.store.updateNotificationType(ctx, gen.UpdateNotificationTypeParams{
+		Key: key, Label: label, Description: description, Enabled: enabled,
+	})
 }
 
 // DeleteNotificationType removes a notification type (P5.6).
 func (s *Service) DeleteNotificationType(ctx context.Context, key string) error {
-	_, err := s.db.Writer.Exec(ctx, `DELETE FROM notification_types WHERE key = $1`, key)
-	return err
+	return s.store.deleteNotificationType(ctx, key)
 }

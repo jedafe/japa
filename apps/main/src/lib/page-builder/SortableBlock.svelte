@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { createSortable } from '@dnd-kit/svelte/sortable';
 	import { GripVertical, Trash2, Copy } from 'lucide-svelte';
 	import { onMount } from 'svelte';

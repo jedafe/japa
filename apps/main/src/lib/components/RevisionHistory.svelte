@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { History, ChevronDown, ChevronUp, Loader2 } from 'lucide-svelte';
 	import { api, type ContentRevision } from '$lib/api';
 
@@ -70,7 +71,7 @@
 			{:else if error}
 				<p class="text-sm" style="color: var(--color-danger)">{error}</p>
 			{:else if revisions.length === 0}
-				<p class="text-sm" style="color: var(--color-muted)">No revision history available.</p>
+				<p class="text-sm" style="color: var(--color-muted)">{t('lib.components.RevisionHistory.svelte.no_revision_history_available')}</p>
 			{:else}
 				<div class="space-y-2">
 					{#each revisions as rev (rev.id)}

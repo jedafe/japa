@@ -70,7 +70,7 @@
 	{:else if forms.length === 0}
 		<div class="rounded-lg border p-8 text-center" style="border-color: var(--color-border)">
 			<FileText class="mx-auto mb-3 h-8 w-8" style="color: var(--color-muted)" />
-			<p class="text-sm" style="color: var(--color-muted)">No forms available in this space.</p>
+			<p class="text-sm" style="color: var(--color-muted)">{t('spaces.slug.forms.no_forms_available_in_this_space')}</p>
 		</div>
 	{:else}
 		<div class="space-y-3">

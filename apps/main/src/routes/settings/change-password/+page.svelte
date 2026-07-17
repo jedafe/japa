@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { ArrowLeft, Loader2, CheckCircle2 } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
@@ -63,7 +64,7 @@
 		Back to Settings
 	</a>
 
-	<h1 class="mb-6 text-2xl font-bold" style="color: var(--color-foreground)">Change Password</h1>
+	<h1 class="mb-6 text-2xl font-bold" style="color: var(--color-foreground)">{t('settings.change-password.change_password')}</h1>
 
 	{#if success}
 		<div class="mb-6 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm" style="border-color: var(--color-success, #16a34a); background-color: color-mix(in srgb, var(--color-success, #16a34a) 8%, transparent); color: var(--color-success, #16a34a)">

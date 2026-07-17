@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Tag, ArrowLeft, MessageSquare } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api';
@@ -34,7 +35,7 @@
 			<ArrowLeft class="h-4 w-4" />
 			Back to Forum
 		</a>
-		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Forum Tags</h1>
+		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{t('forum.tags.forum_tags')}</h1>
 		<p class="mt-2 text-sm" style="color: var(--color-muted)">
 			Browse discussions by topic.
 		</p>

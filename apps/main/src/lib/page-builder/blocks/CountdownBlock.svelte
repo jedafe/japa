@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	interface Props {
 		target_date?: string;
 		title?: string;
@@ -81,25 +82,25 @@
 				{#if show_days}
 					<div class="flex flex-col items-center">
 						<span class="text-4xl font-bold tabular-nums text-gray-900 dark:text-white">{pad(timeLeft.days)}</span>
-						<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">Days</span>
+						<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('lib.page-builder.blocks.CountdownBlock.svelte.days')}</span>
 					</div>
 				{/if}
 				{#if show_hours}
 					<div class="flex flex-col items-center">
 						<span class="text-4xl font-bold tabular-nums text-gray-900 dark:text-white">{pad(timeLeft.hours)}</span>
-						<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">Hours</span>
+						<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('lib.page-builder.blocks.CountdownBlock.svelte.hours')}</span>
 					</div>
 				{/if}
 				{#if show_minutes}
 					<div class="flex flex-col items-center">
 						<span class="text-4xl font-bold tabular-nums text-gray-900 dark:text-white">{pad(timeLeft.minutes)}</span>
-						<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">Minutes</span>
+						<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('lib.page-builder.blocks.CountdownBlock.svelte.minutes')}</span>
 					</div>
 				{/if}
 				{#if show_seconds}
 					<div class="flex flex-col items-center">
 						<span class="text-4xl font-bold tabular-nums text-gray-900 dark:text-white">{pad(timeLeft.seconds)}</span>
-						<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">Seconds</span>
+						<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('lib.page-builder.blocks.CountdownBlock.svelte.seconds')}</span>
 					</div>
 				{/if}
 			</div>

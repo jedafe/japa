@@ -78,25 +78,25 @@
 			<!-- Header with gradient -->
 			<div class="relative px-8 py-10 text-center" style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 10%, transparent), color-mix(in srgb, var(--color-primary) 5%, transparent))">
 				<Award class="mx-auto mb-4 h-16 w-16" style="color: var(--color-primary)" />
-				<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Certificate of Completion</h1>
+				<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('certificates.id.certificate_of_completion')}</h1>
 				<p class="mt-2 text-lg" style="color: var(--color-muted)">{cert.track_title}</p>
 			</div>
 
 			<!-- Certificate body -->
 			<div class="px-8 py-8 text-center">
-				<p class="text-sm" style="color: var(--color-muted)">This certifies that</p>
+				<p class="text-sm" style="color: var(--color-muted)">{t('certificates.id.this_certifies_that')}</p>
 				<p class="my-3 text-2xl font-bold" style="color: var(--color-foreground)">{cert.username ?? 'Student'}</p>
-				<p class="text-sm" style="color: var(--color-muted)">has successfully completed the learning track</p>
+				<p class="text-sm" style="color: var(--color-muted)">{t('certificates.id.has_successfully_completed_the_learning_')}</p>
 				<p class="my-3 text-xl font-semibold" style="color: var(--color-primary)">{cert.track_title ?? 'Learning Track'}</p>
 
 				<div class="my-6 flex items-center justify-center gap-8 text-sm" style="color: var(--color-muted)">
 					<div>
-						<p class="font-medium" style="color: var(--color-foreground)">Issued</p>
+						<p class="font-medium" style="color: var(--color-foreground)">{t('certificates.id.issued')}</p>
 						<p>{formatDate(cert.issued_at)}</p>
 					</div>
 					<div class="h-8 w-px" style="background-color: var(--color-border)"></div>
 					<div>
-						<p class="font-medium" style="color: var(--color-foreground)">Certificate No.</p>
+						<p class="font-medium" style="color: var(--color-foreground)">{t('certificates.id.certificate_no')}</p>
 						<p class="font-mono">{cert.certificate_number}</p>
 					</div>
 				</div>

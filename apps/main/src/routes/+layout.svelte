@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import '../app.css';
 	import { Header, MobileNav, Footer, SideNav } from '$lib/components/nav';
 	import { theme } from '$lib/stores/theme.svelte';

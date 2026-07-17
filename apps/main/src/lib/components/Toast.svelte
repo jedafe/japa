@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { X } from 'lucide-svelte';
 	import { CheckCircle, AlertCircle, AlertTriangle, Info } from 'lucide-svelte';
 	import { getToasts, dismissToast } from '$lib/stores/toast.svelte';

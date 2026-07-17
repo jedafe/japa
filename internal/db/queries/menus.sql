@@ -87,10 +87,13 @@ RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
 DELETE FROM menu_items
 WHERE id = @id AND tenant_id = @tenant_id;
 
--- name: UpdateMenuItemSortOrder :exec
+-- name: BulkUpdateMenuItemSortOrder :exec
 UPDATE menu_items
-SET sort_order = @sort_order, updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id;
+SET sort_order = u.sort_order, updated_at = now()
+FROM (
+    SELECT unnest(@ids::uuid[]) AS id, unnest(@sort_orders::int[]) AS sort_order
+) AS u
+WHERE menu_items.id = u.id AND menu_items.tenant_id = @tenant_id;
 
 -- =====================
 -- Public resolution (no tenant filter — called from public endpoint)

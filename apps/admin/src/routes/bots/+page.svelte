@@ -255,7 +255,7 @@
 <Modal bind:open={showBotModal} title={editingBot ? 'Edit Bot' : 'Create Bot'} size="lg">
 	<div class="space-y-4">
 		<div>
-			<label for="bot-name" class="mb-1 block text-sm font-medium text-gray-700">Name</label>
+			<label for="bot-name" class="mb-1 block text-sm font-medium text-gray-700">{t('bots.name')}</label>
 			<input
 				id="bot-name"
 				type="text"
@@ -265,11 +265,11 @@
 			/>
 		</div>
 		<div>
-			<label for="bot-type" class="mb-1 block text-sm font-medium text-gray-700">Type</label>
+			<label for="bot-type" class="mb-1 block text-sm font-medium text-gray-700">{t('bots.type')}</label>
 			<Select options={botTypeOptions} bind:value={botForm.type} />
 		</div>
 		<div>
-			<label for="bot-desc" class="mb-1 block text-sm font-medium text-gray-700">Description</label>
+			<label for="bot-desc" class="mb-1 block text-sm font-medium text-gray-700">{t('bots.description_2')}</label>
 			<input
 				id="bot-desc"
 				type="text"
@@ -279,12 +279,12 @@
 			/>
 		</div>
 		<div>
-			<label for="bot-status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
+			<label for="bot-status" class="mb-1 block text-sm font-medium text-gray-700">{t('bots.status')}</label>
 			<Select options={botStatusOptions} bind:value={botForm.status} />
 		</div>
 	</div>
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => showBotModal = false}>Cancel</Button>
+		<Button variant="outline" onclick={() => showBotModal = false}>{t('bots.cancel')}</Button>
 		<Button onclick={saveBot} disabled={saving || !botForm.name}>
 			{saving ? 'Saving...' : editingBot ? 'Save Changes' : 'Create Bot'}
 		</Button>
@@ -297,7 +297,7 @@
 		Are you sure you want to delete <strong>{deletingBot?.name}</strong>? This action cannot be undone.
 	</p>
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => showDeleteModal = false}>Cancel</Button>
-		<Button variant="destructive" onclick={deleteBot}>Delete</Button>
+		<Button variant="outline" onclick={() => showDeleteModal = false}>{t('bots.cancel')}</Button>
+		<Button variant="destructive" onclick={deleteBot}>{t('bots.delete')}</Button>
 	</div>
 </Modal>

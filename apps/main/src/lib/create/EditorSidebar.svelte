@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import {
 		X,
 		Upload,
@@ -252,7 +253,7 @@
 					<div class="mt-3 flex h-32 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-100 dark:border-gray-600 dark:bg-gray-800">
 						<div class="text-center">
 							<Upload class="mx-auto h-8 w-8 text-gray-400 dark:text-gray-500" />
-							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">No image selected</p>
+							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('lib.create.EditorSidebar.svelte.no_image_selected')}</p>
 						</div>
 					</div>
 				{/if}
@@ -278,7 +279,7 @@
 							onchange={handleSpaceChange}
 							class="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2 pr-10 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
 						>
-							<option value="">No space</option>
+							<option value="">{t('lib.create.EditorSidebar.svelte.no_space')}</option>
 							{#each spaces as space}
 								<option value={space.id}>{space.name}</option>
 							{/each}
@@ -338,9 +339,9 @@
 						<div class="flex-1">
 							<div class="flex items-center gap-2">
 								<Globe class="h-4 w-4 text-gray-600 dark:text-gray-400" />
-								<span class="text-sm font-medium text-gray-900 dark:text-gray-100">Public</span>
+								<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{t('lib.create.EditorSidebar.svelte.public')}</span>
 							</div>
-							<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Visible to everyone</p>
+							<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{t('lib.create.EditorSidebar.svelte.visible_to_everyone')}</p>
 						</div>
 					</label>
 
@@ -356,9 +357,9 @@
 						<div class="flex-1">
 							<div class="flex items-center gap-2">
 								<Users class="h-4 w-4 text-gray-600 dark:text-gray-400" />
-								<span class="text-sm font-medium text-gray-900 dark:text-gray-100">Members Only</span>
+								<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{t('lib.create.EditorSidebar.svelte.members_only')}</span>
 							</div>
-							<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Visible to registered members</p>
+							<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{t('lib.create.EditorSidebar.svelte.visible_to_registered_members')}</p>
 						</div>
 					</label>
 
@@ -374,9 +375,9 @@
 						<div class="flex-1">
 							<div class="flex items-center gap-2">
 								<Lock class="h-4 w-4 text-gray-600 dark:text-gray-400" />
-								<span class="text-sm font-medium text-gray-900 dark:text-gray-100">Private</span>
+								<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{t('lib.create.EditorSidebar.svelte.private')}</span>
 							</div>
-							<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Only visible to you</p>
+							<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{t('lib.create.EditorSidebar.svelte.only_visible_to_you')}</p>
 						</div>
 					</label>
 				</div>
@@ -455,7 +456,7 @@
 				{#if showPreview && previewUrl}
 					<div class="mt-4">
 						<div class="mb-2 flex items-center justify-between">
-							<span class="text-xs font-medium text-gray-700 dark:text-gray-300">Preview</span>
+							<span class="text-xs font-medium text-gray-700 dark:text-gray-300">{t('lib.create.EditorSidebar.svelte.preview')}</span>
 							<button
 								onclick={clearLinkPreview}
 								class="rounded p-1 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
@@ -470,7 +471,7 @@
 					</div>
 				{:else if showPreview}
 					<div class="mt-4 flex h-24 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-800/50">
-						<p class="text-xs text-gray-400 dark:text-gray-500">Enter a URL to preview</p>
+						<p class="text-xs text-gray-400 dark:text-gray-500">{t('lib.create.EditorSidebar.svelte.enter_a_url_to_preview')}</p>
 					</div>
 				{/if}
 			</div>
@@ -513,7 +514,7 @@
 										onchange={(e) => handleCustomFieldChange(field.key, (e.target as HTMLSelectElement).value)}
 										class="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2 pr-10 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
 									>
-										<option value="">Select...</option>
+										<option value="">{t('lib.create.EditorSidebar.svelte.select')}</option>
 										{#each field.options as option}
 											<option value={option}>{option}</option>
 										{/each}
@@ -545,7 +546,7 @@
 										onchange={(e) => handleCustomFieldChange(field.key, (e.target as HTMLInputElement).checked)}
 										class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
 									/>
-									<span class="text-sm text-gray-700 dark:text-gray-300">Enable</span>
+									<span class="text-sm text-gray-700 dark:text-gray-300">{t('lib.create.EditorSidebar.svelte.enable')}</span>
 								</label>
 							{/if}
 						</div>

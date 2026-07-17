@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { browser } from '$app/environment';
 	import EditorHeader from './EditorHeader.svelte';
 	import EditorSidebar from './EditorSidebar.svelte';

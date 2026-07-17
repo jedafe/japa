@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Building2, Search, BadgeCheck } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api';
@@ -35,7 +36,7 @@
 
 <main class="mx-auto max-w-6xl px-4 py-8">
 	<header class="mb-8">
-		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Organisations</h1>
+		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{t('organisations.organisations')}</h1>
 		<p class="mt-2 text-sm" style="color: var(--color-muted)">
 			Browse professional organisations and verified profiles.
 		</p>

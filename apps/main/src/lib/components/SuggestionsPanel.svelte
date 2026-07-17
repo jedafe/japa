@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { UserPlus, Layers, Hash, Loader2 } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { onMount } from 'svelte';

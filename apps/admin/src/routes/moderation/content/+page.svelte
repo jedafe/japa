@@ -138,7 +138,7 @@
 		{errorMessage}
 	</div>
 {/if}
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Browse and manage platform content across all spaces</p>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('moderation.content.browse_and_manage_platform_content_acros')}</p>
 
 <FilterBar filters={filterDefs} onApply={handleFilter} />
 
@@ -168,7 +168,7 @@
 						<td class="px-4 py-3">
 							<p class="font-medium">{item.title}</p>
 							{#if item.is_featured}
-								<span class="inline-block rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs text-yellow-700 dark:text-yellow-400">Featured</span>
+								<span class="inline-block rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs text-yellow-700 dark:text-yellow-400">{t('moderation.content.featured')}</span>
 							{/if}
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.author}</td>
@@ -211,22 +211,22 @@
 							<td colspan="7" class="px-4 py-4" style="background-color: var(--color-surface)">
 								<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Title</p>
+										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.content.title')}</p>
 										<p class="mt-1 text-sm font-medium">{item.title}</p>
 									</div>
 									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Author</p>
+										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.content.author')}</p>
 										<p class="mt-1 text-sm">{item.author}</p>
 										<p class="text-xs font-mono" style="color: var(--color-muted)">{item.author_id.slice(0, 12)}</p>
 									</div>
 									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Created</p>
+										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.content.created')}</p>
 										<p class="mt-1 text-sm">{item.created_at}</p>
 									</div>
 								</div>
 								{#if item.body_preview}
 									<div class="mt-3 rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
-										<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">Content Preview</p>
+										<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">{t('moderation.content.content_preview')}</p>
 										{item.body_preview}
 									</div>
 								{/if}
@@ -266,5 +266,5 @@
 
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteModal} title="Confirm Delete" onConfirm={executeDelete} confirmLabel={t('common.delete')}>
-	<p class="text-sm" style="color: var(--color-muted)">Are you sure you want to delete this content? This action cannot be undone.</p>
+	<p class="text-sm" style="color: var(--color-muted)">{t('moderation.content.are_you_sure_you_want_to_delete_this_con')}</p>
 </Modal>

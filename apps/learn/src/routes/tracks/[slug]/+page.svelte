@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import type { TrackDetail } from '$lib/api';
 	import { api } from '$lib/api';
 	import {
@@ -131,7 +132,7 @@
 				{#if mounted && progress && totalLessons > 0}
 					<div class="mt-5">
 						<div class="flex items-center justify-between text-sm">
-							<span style="color: var(--color-muted)">Progress</span>
+							<span style="color: var(--color-muted)">{t('tracks.slug.progress')}</span>
 							<span class="font-medium" style="color: var(--color-foreground)">{progressPercent}%</span>
 						</div>
 						<div class="mt-1.5 h-2 w-full overflow-hidden rounded-full" style="background-color: var(--color-border)">
@@ -191,7 +192,7 @@
 
 	<!-- Modules -->
 	<section class="mt-8">
-		<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">Course Content</h2>
+		<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('tracks.slug.course_content')}</h2>
 
 		<div class="mt-4 space-y-3">
 			{#each track.modules as mod, i (mod.id)}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { ArrowLeft, Save } from 'lucide-svelte';
@@ -49,7 +50,7 @@
 		Back to comparisons
 	</a>
 
-	<h1 class="text-2xl font-bold tracking-tight" style="color: var(--color-foreground)">Create Comparison Type</h1>
+	<h1 class="text-2xl font-bold tracking-tight" style="color: var(--color-foreground)">{t('comparisons.new.create_comparison_type')}</h1>
 
 	{#if error}
 		<div class="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>
@@ -57,20 +58,20 @@
 
 	<form onsubmit={handleCreate} class="mt-6 space-y-5">
 		<div>
-			<label for="name" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">Name *</label>
+			<label for="name" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">{t('comparisons.new.name')}</label>
 			<input id="name" type="text" bind:value={name} oninput={generateSlug} required placeholder="e.g., Visa Comparison" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 		</div>
 		<div>
-			<label for="slug" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">Slug *</label>
+			<label for="slug" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">{t('comparisons.new.slug')}</label>
 			<input id="slug" type="text" bind:value={slug} required placeholder="visa-comparison" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 		</div>
 		<div>
-			<label for="description" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">Description</label>
+			<label for="description" class="mb-1.5 block text-sm font-medium" style="color: var(--color-foreground)">{t('comparisons.new.description')}</label>
 			<textarea id="description" bind:value={description} rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"></textarea>
 		</div>
 		<div class="flex items-center gap-2">
 			<input type="checkbox" id="is_public" bind:checked={isPublic} class="h-4 w-4" />
-			<label for="is_public" class="text-sm" style="color: var(--color-foreground)">Public</label>
+			<label for="is_public" class="text-sm" style="color: var(--color-foreground)">{t('comparisons.new.public')}</label>
 		</div>
 		<button type="submit" disabled={!name.trim() || !slug.trim() || saving} class="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50" style="background: var(--color-primary)">
 			<Save class="h-4 w-4" />

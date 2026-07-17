@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api/client';
 
@@ -45,8 +46,8 @@
 
 <div class="flex min-h-screen items-center justify-center px-4">
 	<div class="w-full max-w-sm rounded-lg border p-6" style="border-color: var(--color-border); background: var(--color-surface)">
-		<h1 class="mb-1 text-center text-xl font-bold tracking-tight" style="color: var(--color-foreground)">JapaConnect Admin</h1>
-		<p class="mb-6 text-center text-sm" style="color: var(--color-muted)">Content Moderation & Management</p>
+		<h1 class="mb-1 text-center text-xl font-bold tracking-tight" style="color: var(--color-foreground)">{t('auth.login.japaconnect_admin')}</h1>
+		<p class="mb-6 text-center text-sm" style="color: var(--color-muted)">{t('auth.login.content_moderation_management')}</p>
 
 		{#if error}
 			<div class="mb-4 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
@@ -56,7 +57,7 @@
 
 		<form onsubmit={(e) => { e.preventDefault(); handleLogin(); }} class="space-y-4">
 			<div>
-				<label for="email" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Email</label>
+				<label for="email" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.email')}</label>
 				<input
 					id="email"
 					type="email"
@@ -69,7 +70,7 @@
 			</div>
 
 			<div>
-				<label for="password" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Password</label>
+				<label for="password" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('auth.login.password')}</label>
 				<input
 					id="password"
 					type="password"

@@ -73,9 +73,9 @@
 		{#if showResults}
 			<div class="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border bg-white shadow-lg dark:bg-gray-800" style="border-color: var(--color-border)">
 				{#if searching}
-					<p class="px-3 py-2 text-sm" style="color: var(--color-muted)">Searching...</p>
+					<p class="px-3 py-2 text-sm" style="color: var(--color-muted)">{t('lib.components.DocSidebar.svelte.searching')}</p>
 				{:else if results.length === 0}
-					<p class="px-3 py-2 text-sm" style="color: var(--color-muted)">No results found</p>
+					<p class="px-3 py-2 text-sm" style="color: var(--color-muted)">{t('lib.components.DocSidebar.svelte.no_results_found')}</p>
 				{:else}
 					{#each results as result}
 						<button

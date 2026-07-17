@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import PageBuilder from '$lib/page-builder/PageBuilder.svelte';
 	import type { BlockInstance } from '$lib/page-builder/types';
 	import { ArrowLeft, Edit } from 'lucide-svelte';
@@ -33,7 +34,7 @@
 		<PageBuilder {blocks} readOnly />
 	{:else}
 		<div class="rounded-xl border p-12 text-center" style="border-color: var(--color-border); background: var(--color-surface)">
-			<p class="text-sm" style="color: var(--color-muted)">This page has no content blocks.</p>
+			<p class="text-sm" style="color: var(--color-muted)">{t('pages.id.this_page_has_no_content_blocks')}</p>
 		</div>
 	{/if}
 </main>

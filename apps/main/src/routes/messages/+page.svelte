@@ -132,15 +132,15 @@
 	{#if showPrivacy}
 		<div class="mb-6 rounded-xl border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
 			<div class="flex items-center justify-between mb-3">
-				<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">DM Privacy Settings</h3>
+				<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">{t('messages.dm_privacy_settings')}</h3>
 				<button onclick={() => showPrivacy = false}>
 					<X class="h-4 w-4" style="color: var(--color-muted)" />
 				</button>
 			</div>
 			{#if privacyLoading}
-				<p class="text-sm" style="color: var(--color-muted)">Loading...</p>
+				<p class="text-sm" style="color: var(--color-muted)">{t('messages.loading')}</p>
 			{:else}
-				<p class="mb-3 text-sm" style="color: var(--color-muted)">Who can send you direct messages?</p>
+				<p class="mb-3 text-sm" style="color: var(--color-muted)">{t('messages.who_can_send_you_direct_messages')}</p>
 				<div class="space-y-2">
 					{#each [{ value: 'everyone', label: 'Everyone' }, { value: 'followers', label: 'People I follow' }, { value: 'nobody', label: 'Nobody' }] as option}
 						<label class="flex items-center gap-2 cursor-pointer">
@@ -164,7 +164,7 @@
 	{#if showNewChat}
 		<div class="mb-6 rounded-xl border p-4" style="border-color: var(--color-border); background: var(--color-surface)">
 			<div class="flex items-center justify-between mb-3">
-				<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">New Conversation</h3>
+				<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">{t('messages.new_conversation')}</h3>
 				<button onclick={() => { showNewChat = false; newChatUsername = ''; newChatMessage = ''; createError = ''; }}>
 					<X class="h-4 w-4" style="color: var(--color-muted)" />
 				</button>

@@ -221,7 +221,7 @@
 					</button>
 					{#if showAdvanced}
 						<div class="mt-3 rounded-md border p-3" style="border-color: var(--color-border); background-color: var(--color-background)">
-							<p class="text-xs" style="color: var(--color-muted)">Advanced parameters (temperature, max tokens) will be available when the backend supports them.</p>
+							<p class="text-xs" style="color: var(--color-muted)">{t('ai.generate.advanced_parameters_temperature_max_toke')}</p>
 						</div>
 					{/if}
 				</div>
