@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -66,10 +67,7 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 	case "country", "state", "city":
 		return a.populateGeoSpace(ctx, &space, spaceType, tid)
 	case "university":
-		slog.Info("space:auto_populate — university space, no external data source available yet",
-			"space_id", spaceID,
-			"name", space.Name,
-		)
+		return a.populateUniversitySpace(ctx, &space, tid)
 	default:
 		slog.Info("space:auto_populate — custom space, no auto-population needed",
 			"space_id", spaceID,
@@ -121,6 +119,164 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.Spac
 	)
 
 	return nil
+}
+
+// populateUniversitySpace fetches university data from Wikidata SPARQL and
+// stores it as WikiContent. Retrieves: description, country, founding year,
+// student count, official website, logo, and coordinates.
+func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *gen.Space, tenantID pgtype.UUID) error {
+	uniData, err := fetchWikidataUniversity(ctx, space.Name)
+	if err != nil {
+		slog.Warn("space:auto_populate — Wikidata fetch failed, trying Wikipedia fallback",
+			"space_id", space.ID.String(),
+			"error", err,
+		)
+		// Fallback to Wikipedia summary.
+		return a.populateGeoSpace(ctx, space, "university", tenantID)
+	}
+
+	wikiJSON, err := json.Marshal(uniData)
+	if err != nil {
+		slog.Warn("space:auto_populate — failed to marshal wikidata", "error", err)
+		return nil
+	}
+
+	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, tenantID, wikiJSON); err != nil {
+		slog.Warn("space:auto_populate — failed to update wiki content",
+			"space_id", space.ID.String(),
+			"error", err,
+		)
+		return nil
+	}
+
+	slog.Info("space:auto_populate — populated university data from Wikidata",
+		"space_id", space.ID.String(),
+		"name", space.Name,
+	)
+
+	return nil
+}
+
+// wikidataUniversity holds structured data fetched from Wikidata SPARQL.
+type wikidataUniversity struct {
+	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
+	Country      string `json:"country,omitempty"`
+	Founded      string `json:"founded,omitempty"`
+	Students     string `json:"students,omitempty"`
+	Website      string `json:"website,omitempty"`
+	Logo         string `json:"logo,omitempty"`
+	Image        string `json:"image,omitempty"`
+	WikidataID   string `json:"wikidata_id,omitempty"`
+	WikipediaURL string `json:"wikipedia_url,omitempty"`
+}
+
+// fetchWikidataUniversity queries the Wikidata SPARQL endpoint for a
+// university matching the given name. Returns structured data including
+// description, country, founding year, student count, website, and logo.
+func fetchWikidataUniversity(ctx context.Context, name string) (*wikidataUniversity, error) {
+	// SPARQL query: find university by name (en label), retrieve key properties.
+	query := fmt.Sprintf(`
+SELECT ?uni ?uniLabel ?description ?countryLabel ?founded ?students ?website ?logo ?image
+WHERE {
+  ?uni wdt:P31 wd:Q3918 .                    # instance of university
+  ?uni rdfs:label ?uniLabel .                 # get the label
+  FILTER(LANG(?uniLabel) = "en")              # English labels only
+  FILTER(CONTAINS(LCASE(?uniLabel), LCASE(%s)))  # case-insensitive name match
+
+  OPTIONAL { ?uni schema:description ?description . FILTER(LANG(?description) = "en") }
+  OPTIONAL { ?uni wdt:P17 ?country . ?country rdfs:label ?countryLabel . FILTER(LANG(?countryLabel) = "en") }
+  OPTIONAL { ?uni wdt:P571 ?founded }
+  OPTIONAL { ?uni wdt:P2196 ?students }
+  OPTIONAL { ?uni wdt:P856 ?website }
+  OPTIONAL { ?uni wdt:P154 ?logo }
+  OPTIONAL { ?uni wdt:P18 ?image }
+
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
+}
+LIMIT 1`, sparqlStringLiteral(name))
+
+	sparqlURL := "https://query.wikidata.org/sparql"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sparqlURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating SPARQL request: %w", err)
+	}
+
+	q := req.URL.Query()
+	q.Set("query", query)
+	q.Set("format", "json")
+	req.URL.RawQuery = q.Encode()
+
+	req.Header.Set("User-Agent", "JapaConnect/1.0 (space:auto_populate)")
+	req.Header.Set("Accept", "application/sparql-results+json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("executing SPARQL query: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("SPARQL endpoint returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Results struct {
+			Bindings []struct {
+				UniLabel struct{ Value string } `json:"uniLabel"`
+				Desc     struct{ Value string } `json:"description"`
+				Country  struct{ Value string } `json:"countryLabel"`
+				Founded  struct{ Value string } `json:"founded"`
+				Students struct{ Value string } `json:"students"`
+				Website  struct{ Value string } `json:"website"`
+				Logo     struct{ Value string } `json:"logo"`
+				Image    struct{ Value string } `json:"image"`
+				Uni      struct{ Value string } `json:"uni"`
+			} `json:"bindings"`
+		} `json:"results"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding SPARQL response: %w", err)
+	}
+
+	if len(result.Results.Bindings) == 0 {
+		return nil, fmt.Errorf("no university found matching %q", name)
+	}
+
+	b := result.Results.Bindings[0]
+	uni := &wikidataUniversity{
+		Name:        b.UniLabel.Value,
+		Description: b.Desc.Value,
+		Country:     b.Country.Value,
+		Founded:     b.Founded.Value,
+		Students:    b.Students.Value,
+		Website:     b.Website.Value,
+		Logo:        b.Logo.Value,
+		Image:       b.Image.Value,
+	}
+
+	// Extract Wikidata QID from the URI (e.g. "http://www.wikidata.org/entity/Q12345").
+	if b.Uni.Value != "" {
+		uni.WikidataID = b.Uni.Value
+		if idx := strings.LastIndex(b.Uni.Value, "/"); idx >= 0 {
+			qid := b.Uni.Value[idx+1:]
+			uni.WikipediaURL = "https://en.wikipedia.org/wiki/" + qid
+		}
+	}
+
+	return uni, nil
+}
+
+// sparqlStringLiteral wraps a string in SPARQL string literal syntax with
+// proper escaping for special characters.
+func sparqlStringLiteral(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return `"` + s + `"`
 }
 
 // wikipediaSummary is the subset of the Wikipedia REST API response we store.
