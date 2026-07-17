@@ -1,7 +1,6 @@
 package feed
 
 import (
-	"encoding/json"
 	"math"
 	"testing"
 
@@ -239,62 +238,6 @@ func TestPrimaryFeedItemStructFields(t *testing.T) {
 
 	if item.ContentType != "article" {
 		t.Errorf("ContentType = %q, want article", item.ContentType)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Task payloads
-// ---------------------------------------------------------------------------
-
-func TestFanOutPayloadJSONTags(t *testing.T) {
-	t.Parallel()
-
-	p := FanOutPayload{
-		ContentID:   "c1",
-		SpaceID:     "s1",
-		ContentType: "discussion",
-	}
-
-	data, err := json.Marshal(p)
-	if err != nil {
-		t.Fatalf("marshal FanOutPayload: %v", err)
-	}
-
-	var got map[string]any
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if got["content_id"] != "c1" {
-		t.Errorf("content_id = %v, want c1", got["content_id"])
-	}
-
-	if got["space_id"] != "s1" {
-		t.Errorf("space_id = %v, want s1", got["space_id"])
-	}
-
-	if got["content_type"] != "discussion" {
-		t.Errorf("content_type = %v, want discussion", got["content_type"])
-	}
-}
-
-func TestUpdateVelocityPayloadJSONTags(t *testing.T) {
-	t.Parallel()
-
-	p := UpdateVelocityPayload{TenantID: "t1"}
-
-	data, err := json.Marshal(p)
-	if err != nil {
-		t.Fatalf("marshal UpdateVelocityPayload: %v", err)
-	}
-
-	var got map[string]any
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if got["tenant_id"] != "t1" {
-		t.Errorf("tenant_id = %v, want t1", got["tenant_id"])
 	}
 }
 

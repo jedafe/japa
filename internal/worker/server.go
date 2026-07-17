@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/hibiken/asynq"
 	errtracking "github.com/jedafe/japa/internal/errors"
@@ -63,53 +64,72 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 		&asynq.SchedulerOpts{},
 	)
 
+	// schedule registers a periodic task with a Unique key matching the
+	// cron period. This prevents duplicate execution across replicas.
+	// If the task type has an override in SchedulerCronSpecs, use that instead.
+	schedule := func(defaultSpec string, taskType string, uniquePeriod time.Duration) {
+		spec := defaultSpec
+		if override, ok := cfg.SchedulerCronSpecs[taskType]; ok && override != "" {
+			spec = override
+		}
+		if _, err := scheduler.Register(spec, scheduledTask(taskType, uniquePeriod)); err != nil {
+			slog.Error("scheduler: failed to register task",
+				"spec", spec, "task", taskType, "error", err)
+		}
+	}
+
 	// ── Internal sweep tasks ────────────────────────────────────────
 
-	// Scheduled content publishing sweep — every 60 seconds.
-	_, _ = scheduler.Register("*/60 * * * *", scheduledTask(TypeScheduledPublishSweep))
+	// Scheduled content publishing sweep — every minute.
+	schedule("* * * * *", TypeScheduledPublishSweep, 1*time.Minute)
 
 	// Velocity score recalculation — every 5 minutes.
-	_, _ = scheduler.Register("*/5 * * * *", scheduledTask(TypeVelocityScoreRecalc))
+	// Writes to content_scores.velocity_score (used by feed ranking queries).
+	schedule("*/5 * * * *", TypeMaintenanceUpdateVelocityScores, 5*time.Minute)
 
 	// Every 15 min: check ticket SLA breaches.
-	_, _ = scheduler.Register("*/15 * * * *", scheduledTask(TypeMaintenanceCheckSLABreaches))
+	schedule("*/15 * * * *", TypeMaintenanceCheckSLABreaches, 15*time.Minute)
 
 	// Every 30 min: check expired bans and expired boosts.
-	_, _ = scheduler.Register("*/30 * * * *", scheduledTask(TypeMaintenanceCheckExpiredBans))
-	_, _ = scheduler.Register("*/30 * * * *", scheduledTask(TypeMaintenanceCheckExpiredBoosts))
+	schedule("*/30 * * * *", TypeMaintenanceCheckExpiredBans, 30*time.Minute)
+	schedule("*/30 * * * *", TypeMaintenanceCheckExpiredBoosts, 30*time.Minute)
 
 	// Hourly: trending, llms.txt, analytics views, RSS, GDPR retention sweep.
-	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeComputeTrending))
-	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeMaintenanceRegenerateLLMsTxt))
-	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeAnalyticsRefreshViews))
-	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeRSSRegenerate))
-	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeGdprRetentionSweep))
+	schedule("0 * * * *", TypeComputeTrending, 1*time.Hour)
+	schedule("0 * * * *", TypeMaintenanceRegenerateLLMsTxt, 1*time.Hour)
+	schedule("0 * * * *", TypeAnalyticsRefreshViews, 1*time.Hour)
+	schedule("0 * * * *", TypeRSSRegenerate, 1*time.Hour)
+	schedule("0 * * * *", TypeGdprRetentionSweep, 1*time.Hour)
 
 	// 6-hourly: user/space suggestions.
-	_, _ = scheduler.Register("0 */6 * * *", scheduledTask(TypeComputeSuggestions))
+	schedule("0 */6 * * *", TypeComputeSuggestions, 6*time.Hour)
 
 	// Daily 03:00 UTC: security scan.
-	_, _ = scheduler.Register("0 3 * * *", scheduledTask(TypeSecurityScan))
+	schedule("0 3 * * *", TypeSecurityScan, 24*time.Hour)
 
 	// Weekly: prune old feeds, prune audit logs, DM cleanup, prune push tokens.
-	_, _ = scheduler.Register("0 2 * * 0", scheduledTask(TypeMaintenancePruneOldFeeds))
-	_, _ = scheduler.Register("0 2 * * 0", scheduledTask(TypeMaintenancePruneAuditLogs))
-	_, _ = scheduler.Register("0 2 * * 0", scheduledTask(TypeDMCleanupDeclinedRequests))
-	_, _ = scheduler.Register("0 2 * * 0", scheduledTask(TypeMaintenancePrunePushTokens))
+	schedule("0 2 * * 0", TypeMaintenancePruneOldFeeds, 7*24*time.Hour)
+	schedule("0 2 * * 0", TypeMaintenancePruneAuditLogs, 7*24*time.Hour)
+	schedule("0 2 * * 0", TypeDMCleanupDeclinedRequests, 7*24*time.Hour)
+	schedule("0 2 * * 0", TypeMaintenancePrunePushTokens, 7*24*time.Hour)
 
 	// Coupon expiry check + event flush — hourly.
-	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeCouponExpireCheck))
-	_, _ = scheduler.Register("5 * * * *", scheduledTask(TypeCouponTrackEvents))
+	schedule("0 * * * *", TypeCouponExpireCheck, 1*time.Hour)
+	schedule("5 * * * *", TypeCouponTrackEvents, 1*time.Hour)
 
 	// Affiliate link expiry — daily.
-	_, _ = scheduler.Register("0 4 * * *", scheduledTask(TypeAffiliateExpireCheck))
+	schedule("0 4 * * *", TypeAffiliateExpireCheck, 24*time.Hour)
 
 	return scheduler
 }
 
-// scheduledTask creates a scheduled Asynq task with the correct queue tier.
-func scheduledTask(taskType string) *asynq.Task {
-	return asynq.NewTask(taskType, nil, asynq.Queue(QueueForTask(taskType)))
+// scheduledTask creates a scheduled Asynq task with the correct queue tier
+// and a Unique key to prevent duplicate execution across replicas.
+func scheduledTask(taskType string, uniquePeriod time.Duration) *asynq.Task {
+	return asynq.NewTask(taskType, nil,
+		asynq.Queue(QueueForTask(taskType)),
+		asynq.Unique(uniquePeriod),
+	)
 }
 
 // Addr returns the Valkey address from the config as a formatted string.
