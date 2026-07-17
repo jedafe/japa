@@ -253,6 +253,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// payment webhook) can enqueue follow-up tasks like affiliate commission.
 	worker.RegisterTaskEnqueuer(taskEnqueuer)
 
+	// Wire enqueuer into services that need async tasks.
+	spaceService.SetEnqueuer(taskEnqueuer)
+
 	// Hot-reloadable system settings (AUDIT-BE-009). Previously config.NewSettings
 	// was never instantiated, so documented operational limits were dead and
 	// services used compiled-in constants. Instantiate once and inject where limits
