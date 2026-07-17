@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { beforeNavigate } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
-	import { Tabs, Switch, Tooltip, Label, Select, Combobox } from 'bits-ui';
+	import { Tabs, Switch, Tooltip, Label, Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { SystemSetting } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n';
@@ -17,7 +16,18 @@
 		ChevronDown,
 		Save,
 		Undo2,
-		AlertTriangle
+		AlertTriangle,
+		Sliders,
+		Globe,
+		Shield,
+		Mail,
+		Monitor,
+		Palette,
+		CreditCard,
+		Server,
+		Cpu,
+		Bell,
+		FolderOpen
 	} from 'lucide-svelte';
 	import type { PageData } from './$types';
 
@@ -35,7 +45,6 @@
 	);
 
 	let isSaving = $state(false);
-	let isResetting = $state(false);
 	let filter = $state('');
 	let activeTab = $state('all');
 	let message = $state('');
@@ -43,6 +52,21 @@
 	let confirmResetSetting = $state<SystemSetting | null>(null);
 	let resetModalOpen = $state(false);
 	let confirmResetAllOpen = $state(false);
+
+	const categoryIcons: Record<string, typeof Settings> = {
+		general: Monitor,
+		advanced: Cpu,
+		feed: FolderOpen,
+		appearance: Palette,
+		media: Server,
+		i18n: Globe,
+		payment: CreditCard,
+		notification: Bell,
+		security: Shield,
+		email: Mail,
+		cors: Globe,
+		content: Sliders
+	};
 
 	const selectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
@@ -354,6 +378,10 @@
 		}
 	}
 
+	function getCategoryIcon(cat: string): typeof Settings {
+		return categoryIcons[cat] ?? Settings;
+	}
+
 	const inputClasses =
 		'border-border-input bg-background text-foreground rounded-lg border px-3 py-2 text-sm transition-all hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus disabled:opacity-50';
 	const selectTriggerClasses =
@@ -369,14 +397,6 @@
 	description={t('settings.description', 'Platform configuration by category')}
 />
 
-{#if isDirty}
-	<AlertBanner
-		variant="warning"
-		message={t('settings.unsaved_changes', `You have ${dirtyCount} unsaved change(s).`)}
-		class="mb-4"
-	/>
-{/if}
-
 {#if message}
 	<div
 		class="mb-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm {messageType ===
@@ -388,6 +408,45 @@
 			<Check class="size-4" />
 		{/if}
 		{message}
+	</div>
+{/if}
+
+{#if isDirty}
+	<div
+		class="border-amber-500/30 bg-amber-500/5 mb-4 flex items-center gap-3 rounded-xl border px-4 py-3"
+	>
+		<AlertTriangle class="text-amber-500 size-4 flex-shrink-0" />
+		<span class="text-foreground text-sm font-medium">
+			{t('settings.unsaved_changes', `You have ${dirtyCount} unsaved change(s).`)}
+		</span>
+		<div class="flex-1"></div>
+		<button
+			class="border-border-input bg-background hover:bg-muted text-foreground flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+			onclick={() => {
+				confirmResetAllOpen = true;
+			}}
+			disabled={isSaving}
+		>
+			<Undo2 class="size-3" />
+			{t('settings.reset_all', 'Reset All')}
+		</button>
+		<button
+			class="bg-accent text-accent-foreground hover:bg-accent/90 flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+			onclick={saveAll}
+			disabled={isSaving || !isDirty}
+		>
+			{#if isSaving}
+				<Loader2 class="size-3 animate-spin" />
+			{:else}
+				<Save class="size-3" />
+			{/if}
+			{t('settings.save_all', 'Save All')}
+			{#if dirtyCount > 0}
+				<span class="bg-accent-foreground/20 rounded-full px-1.5 py-0.5 text-[10px] font-bold">
+					{dirtyCount}
+				</span>
+			{/if}
+		</button>
 	</div>
 {/if}
 
@@ -406,49 +465,20 @@
 		{t('common.refresh', 'Refresh')}
 	</button>
 	<div class="flex-1"></div>
-	{#if isDirty}
-		<button
-			class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-2 text-sm font-medium transition-colors"
-			onclick={() => {
-				confirmResetAllOpen = true;
-			}}
-			disabled={isSaving}
-		>
-			<Undo2 class="size-4" />
-			{t('settings.reset_all', 'Reset All')}
-		</button>
-		<button
-			class="bg-accent text-accent-foreground hover:bg-accent/90 flex items-center gap-1.5 rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
-			onclick={saveAll}
-			disabled={isSaving || !isDirty}
-		>
-			{#if isSaving}
-				<Loader2 class="size-4 animate-spin" />
-			{:else}
-				<Save class="size-4" />
-			{/if}
-			{t('settings.save_all', 'Save All')}
-			{#if dirtyCount > 0}
-				<span class="bg-accent-foreground/20 rounded-full px-1.5 py-0.5 text-[10px] font-bold">
-					{dirtyCount}
-				</span>
-			{/if}
-		</button>
-	{/if}
 	<span class="text-muted-foreground text-xs">
 		{filtered.length} {t('settings.of', 'of')} {currentSettings.length} {t('settings.settings', 'settings')}
 	</span>
 </div>
 
-{#if isSaving}
-	<div class="space-y-3">
-		{#each Array(8) as _}
-			<div class="bg-muted h-16 animate-pulse rounded-lg"></div>
+{#if isSaving && currentSettings.length === 0}
+	<div class="space-y-4">
+		{#each Array(4) as _}
+			<div class="border-border-card bg-background-alt h-48 animate-pulse rounded-xl border"></div>
 		{/each}
 	</div>
 {:else}
 	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List class="bg-muted mb-4 inline-flex flex-wrap gap-1 rounded-9px p-1">
+		<Tabs.List class="bg-muted mb-5 inline-flex flex-wrap gap-1 rounded-9px p-1">
 			<Tabs.Trigger
 				value="all"
 				class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
@@ -474,31 +504,44 @@
 					</p>
 				</div>
 			{:else}
-				<div class="space-y-4">
+				<div class="space-y-5">
 					{#each grouped as [namespace, items]}
+						{@const catKey = namespace.split('.')[0] ?? namespace}
+						{@const CatIcon = getCategoryIcon(catKey)}
+						{@const hasDirtyItems = items.some((s) => isSettingDirty(s.key))}
 						<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
-							<div class="border-border-card bg-muted/50 border-b px-5 py-3">
-								<h3 class="text-foreground flex items-center gap-2 text-sm font-semibold">
-									<Settings class="text-accent-foreground size-4" />
-									{formatNamespace(namespace)}
-									<span class="text-muted-foreground font-normal">({items.length})</span>
-									{#if items.some((s) => isSettingDirty(s.key))}
+							<div class="border-border-card flex items-center justify-between border-b px-5 py-3.5">
+								<div class="flex items-center gap-2.5">
+									<div class="bg-accent flex size-8 items-center justify-center rounded-lg">
+										<CatIcon class="text-accent-foreground size-4" />
+									</div>
+									<div>
+										<h3 class="text-foreground text-sm font-semibold">
+											{formatNamespace(namespace)}
+										</h3>
+										<p class="text-muted-foreground text-xs">
+											{items.length} {items.length === 1 ? 'setting' : 'settings'}
+										</p>
+									</div>
+								</div>
+								<div class="flex items-center gap-2">
+									{#if hasDirtyItems}
 										<span
 											class="bg-amber-500/10 text-amber-600 border-amber-500/20 rounded-full border px-2 py-0.5 text-[10px] font-medium"
 										>
-											{items.filter((s) => isSettingDirty(s.key)).length}
-											{t('settings.modified', 'modified')}
+											{items.filter((s) => isSettingDirty(s.key)).length} modified
 										</span>
 									{/if}
-								</h3>
+								</div>
 							</div>
+
 							<div class="divide-border-card divide-y">
 								{#each items as setting (setting.key)}
 									{@const componentType = getSettingComponentType(setting)}
 									{@const dirty = isSettingDirty(setting.key)}
 									<div
-										class="px-5 py-4 transition-colors {dirty
-											? 'bg-amber-500/5 border-l-2 border-l-amber-500'
+										class="group px-5 py-4 transition-colors {dirty
+											? 'bg-amber-500/5'
 											: 'hover:bg-muted/30'}"
 									>
 										<div class="flex items-start gap-4">
@@ -519,20 +562,20 @@
 														<span
 															class="bg-accent text-accent-foreground rounded-full border px-2 py-0.5 text-[10px] font-medium"
 														>
-															{t('settings.badge_dropdown', 'dropdown')}
+															dropdown
 														</span>
 													{:else if componentType === 'textarea'}
 														<span
 															class="bg-amber-500/10 text-amber-600 border-amber-500/20 rounded-full border px-2 py-0.5 text-[10px] font-medium"
 														>
-															{t('settings.badge_multiline', 'multiline')}
+															multiline
 														</span>
 													{/if}
 													{#if dirty}
 														<span
 															class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600"
 														>
-															{t('settings.badge_dirty', 'unsaved')}
+															unsaved
 														</span>
 													{/if}
 												</div>
@@ -543,8 +586,7 @@
 												{/if}
 												{#if dirty}
 													<p class="mt-1 text-[10px] text-amber-600/70">
-														{t('settings.original_value', 'Original:')}
-														{getOriginalValue(setting.key)}
+														Original: {getOriginalValue(setting.key)}
 													</p>
 												{/if}
 											</div>
@@ -567,7 +609,7 @@
 															/>
 														</Switch.Root>
 														<span class="text-muted-foreground w-10 text-center text-xs">
-															{isTrue ? t('settings.on', 'On') : t('settings.off', 'Off')}
+															{isTrue ? 'On' : 'Off'}
 														</span>
 													</div>
 
@@ -583,9 +625,7 @@
 															class={selectTriggerClasses}
 															id="setting-{setting.key}"
 														>
-															<Select.Value
-																placeholder={t('settings.select_placeholder', 'Select...')}
-															/>
+															<Select.Value placeholder="Select..." />
 															<ChevronDown class="text-muted-foreground size-4" />
 														</Select.Trigger>
 														<Select.Portal>
@@ -654,9 +694,7 @@
 																class="{selectTriggerClasses} w-full"
 																id="setting-{setting.key}"
 															>
-																<Select.Value
-																	placeholder={t('settings.add_language', 'Add language...')}
-																/>
+																<Select.Value placeholder="Add language..." />
 																<ChevronDown class="text-muted-foreground size-4" />
 															</Select.Trigger>
 															<Select.Portal>
@@ -737,16 +775,12 @@
 															sideOffset={4}
 															class="border-dark-10 bg-background shadow-popover z-50 w-[240px] rounded-xl border p-3 text-xs"
 														>
-															<p class="font-medium">
-																{t('settings.reset_to_default', 'Reset to default')}
-															</p>
+															<p class="font-medium">Reset to default</p>
 															<p class="text-muted-foreground mt-1">
-																{t('settings.current_label', 'Current:')}
-																<span class="font-medium">{setting.value}</span>
+																Current: <span class="font-medium">{setting.value}</span>
 															</p>
 															<p class="text-muted-foreground">
-																{t('settings.default_label', 'Default:')}
-																<span class="font-medium">{setting.default_value}</span>
+																Default: <span class="font-medium">{setting.default_value}</span>
 															</p>
 														</Tooltip.Content>
 													</Tooltip.Portal>

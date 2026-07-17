@@ -1,6 +1,6 @@
 ---
 name: jc-main-develop
-description: Use when building new pages or components for the JapaConnect Main App (apps/web, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart, dev.to/Reddit/Ghost design rules, the API-Readiness Gate, and Rule 16.
+description: Use when building new pages or components for the JapaConnect Main App (apps/web, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart, dev.to/Reddit/Ghost/x.com design rules, the API-Readiness Gate, and Rule 16.
 ---
 
 # JapaConnect Main App — Development Skill
@@ -68,13 +68,15 @@ Rules: chart colors ONLY via CSS custom properties (dark-mode safe) · chart dat
 SSR for all indexable routes (`/`, `/forum/*`, `/blog/*`, `/spaces/*`, `/u/*`, `/org/*`) · CSR for auth-only (`/home`, `/dms`, `/notifications`) · Optimistic UI + rollback for reactions/bookmarks/follows · skeletons for every async section · `data-sveltekit-preload-data="hover"` already on `<body>`.
 
 ## Design Rules (dev.to / Reddit / Ghost)
-1. **Homepage `/`:** hero banner (welcome + CTA) → tabbed latest content (one tab per post type from API + Spaces + Comparisons) → Explore button → trending sidebar
+0. **Homepage `/`:** hero banner (welcome + CTA) → tabbed latest content (one tab per post type from API + Spaces + Comparisons) → Explore button → trending sidebar
+1. **Feeds/timeline/Explore for login users feeds, space feeds, organization feeds, etc:** should mimic https://x.com/explore expecially top tab and sidebars
 2. **Blog single:** dev.to — sticky left action sidebar (desktop), bottom bar (mobile), right sidebar (TOC + related), TipTap HTML in `.prose`
 3. **Forum thread:** Reddit — vote rail, nested threaded replies, Best/Top/New/Controversial tabs
 4. **Blog listing:** Ghost — magazine cards, feature image, reading time
 5. **Profiles/dashboards/settings/analytics:** dev.to (analytics tab uses LayerChart)
 6. **Spaces/Tags/Users/Orgs listings:** dev.to tags page — search bar + filters + sorting + tab switcher between entity types + Follow/Unfollow per card
-7. Palette: `--color-bg #FAFAFA/#0A0A0A`, `--color-primary #3B49DF`, `--color-surface`, `--color-muted`, `--color-border` — all as CSS custom properties
+7. **Content create page:** The page should get inspiration from https://dev.to/new but with TipTap editor
+8. Palette: `--color-bg #FAFAFA/#0A0A0A`, `--color-primary #3B49DF`, `--color-surface`, `--color-muted`, `--color-border` — all as CSS custom properties
 
 ## TipTap Triggers (Locked)
 `/` slash commands · `@` mentions · `#` tags · `[[` interlinking

@@ -50,60 +50,26 @@ func NewService(database *db.DB, siteName string) *Service {
 
 // ListEndpoints returns all webhook endpoints for the given tenant.
 func (s *Service) ListEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]WebhookEndpointResponse, error) {
-	rows, err := s.store.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, url, secret, event_types, status, created_at, updated_at
-		FROM webhook_endpoints
-		WHERE tenant_id = $1
-		ORDER BY created_at DESC
-	`, tenantID)
+	rows, err := s.store.ListEndpoints(ctx, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("listing webhook endpoints: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
 
 	var endpoints []WebhookEndpointResponse
-
-	for rows.Next() {
-		var ep WebhookEndpointWithSecret
-		if err := rows.Scan(
-			&ep.ID, &ep.TenantID, &ep.URL, &ep.Secret, &ep.EventTypes,
-			&ep.Status, &ep.CreatedAt, &ep.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scanning webhook endpoint: %w", err)
-		}
-
+	for _, ep := range rows {
 		endpoints = append(endpoints, ep.ToResponse())
 	}
 
-	return endpoints, rows.Err()
+	return endpoints, nil
 }
 
 // GetEndpoint returns a single webhook endpoint by ID.
 func (s *Service) GetEndpoint(ctx context.Context, tenantID, id pgtype.UUID) (WebhookEndpointResponse, error) {
-	ep, err := s.getEndpointInternal(ctx, tenantID, id)
+	ep, err := s.store.GetEndpoint(ctx, tenantID, id)
 	if err != nil {
 		return WebhookEndpointResponse{}, err
 	}
 	return ep.ToResponse(), nil
-}
-
-// getEndpointInternal returns the internal pgtype representation (for use by service layer).
-func (s *Service) getEndpointInternal(ctx context.Context, tenantID, id pgtype.UUID) (WebhookEndpointWithSecret, error) {
-	var ep WebhookEndpointWithSecret
-
-	err := s.store.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, url, secret, event_types, status, created_at, updated_at
-		FROM webhook_endpoints
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id).Scan(
-		&ep.ID, &ep.TenantID, &ep.URL, &ep.Secret, &ep.EventTypes,
-		&ep.Status, &ep.CreatedAt, &ep.UpdatedAt,
-	)
-	if err != nil {
-		return WebhookEndpointWithSecret{}, fmt.Errorf("fetching webhook endpoint %s: %w", id, err)
-	}
-
-	return ep, nil
 }
 
 // CreateEndpoint registers a new webhook endpoint.
@@ -113,18 +79,9 @@ func (s *Service) CreateEndpoint(ctx context.Context, tenantID pgtype.UUID, inpu
 		status = "active"
 	}
 
-	var ep WebhookEndpointWithSecret
-
-	err := s.store.db.Writer.QueryRow(ctx, `
-		INSERT INTO webhook_endpoints (tenant_id, url, secret, event_types, status)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, tenant_id, url, secret, event_types, status, created_at, updated_at
-	`, tenantID, input.URL, input.Secret, input.EventTypes, status).Scan(
-		&ep.ID, &ep.TenantID, &ep.URL, &ep.Secret, &ep.EventTypes,
-		&ep.Status, &ep.CreatedAt, &ep.UpdatedAt,
-	)
+	ep, err := s.store.CreateEndpoint(ctx, tenantID, input.URL, input.Secret, input.EventTypes, status)
 	if err != nil {
-		return WebhookEndpointResponse{}, fmt.Errorf("creating webhook endpoint: %w", err)
+		return WebhookEndpointResponse{}, err
 	}
 
 	return ep.ToResponse(), nil
@@ -133,7 +90,7 @@ func (s *Service) CreateEndpoint(ctx context.Context, tenantID pgtype.UUID, inpu
 // UpdateEndpoint updates an existing webhook endpoint.
 func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, input UpdateWebhookRequest) (WebhookEndpointResponse, error) {
 	// Fetch current values for merge.
-	current, err := s.getEndpointInternal(ctx, tenantID, id)
+	current, err := s.store.GetEndpoint(ctx, tenantID, id)
 	if err != nil {
 		return WebhookEndpointResponse{}, err
 	}
@@ -158,19 +115,9 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 		status = *input.Status
 	}
 
-	var updated WebhookEndpointWithSecret
-
-	err = s.store.db.Writer.QueryRow(ctx, `
-		UPDATE webhook_endpoints
-		SET url = $3, secret = $4, event_types = $5, status = $6, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2
-		RETURNING id, tenant_id, url, secret, event_types, status, created_at, updated_at
-	`, tenantID, id, url, secret, eventTypes, status).Scan(
-		&updated.ID, &updated.TenantID, &updated.URL, &updated.Secret, &updated.EventTypes,
-		&updated.Status, &updated.CreatedAt, &updated.UpdatedAt,
-	)
+	updated, err := s.store.UpdateEndpoint(ctx, tenantID, id, url, secret, eventTypes, status)
 	if err != nil {
-		return WebhookEndpointResponse{}, fmt.Errorf("updating webhook endpoint %s: %w", id, err)
+		return WebhookEndpointResponse{}, err
 	}
 
 	return updated.ToResponse(), nil
@@ -178,25 +125,13 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 
 // DeleteEndpoint removes a webhook endpoint by ID.
 func (s *Service) DeleteEndpoint(ctx context.Context, tenantID, id pgtype.UUID) error {
-	tag, err := s.store.db.Writer.Exec(ctx, `
-		DELETE FROM webhook_endpoints
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id)
-	if err != nil {
-		return fmt.Errorf("deleting webhook endpoint %s: %w", id, err)
-	}
-
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("webhook endpoint %s not found", id)
-	}
-
-	return nil
+	return s.store.DeleteEndpoint(ctx, tenantID, id)
 }
 
 // TestEndpoint sends a test event to a webhook endpoint and records the delivery.
 func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.UUID, eventType string) (pgtype.UUID, error) {
 	// Verify the endpoint exists and belongs to this tenant.
-	endpoint, err := s.getEndpointInternal(ctx, tenantID, endpointID)
+	endpoint, err := s.store.GetEndpoint(ctx, tenantID, endpointID)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
@@ -311,53 +246,24 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 
 // ListDeliveries returns delivery records for a specific endpoint.
 func (s *Service) ListDeliveries(ctx context.Context, tenantID, endpointID pgtype.UUID, limit, offset int32) ([]WebhookDeliveryResponse, error) {
-	rows, err := s.store.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, endpoint_id, event_id, event_type, payload,
-		       status, attempts, last_error, delivered_at, created_at
-		FROM webhook_deliveries
-		WHERE tenant_id = $1 AND endpoint_id = $2
-		ORDER BY created_at DESC
-		LIMIT $3 OFFSET $4
-	`, tenantID, endpointID, limit, offset)
+	rows, err := s.store.ListDeliveries(ctx, tenantID, endpointID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("list deliveries: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
 
 	var deliveries []WebhookDeliveryResponse
-
-	for rows.Next() {
-		var d WebhookDelivery
-		if err := rows.Scan(
-			&d.ID, &d.TenantID, &d.EndpointID, &d.EventID,
-			&d.EventType, &d.Payload, &d.Status, &d.Attempts,
-			&d.LastError, &d.DeliveredAt, &d.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan delivery: %w", err)
-		}
-
+	for _, d := range rows {
 		deliveries = append(deliveries, d.ToResponse())
 	}
 
-	return deliveries, rows.Err()
+	return deliveries, nil
 }
 
 // GetDelivery returns a specific delivery record.
 func (s *Service) GetDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUID) (*WebhookDelivery, error) {
-	var d WebhookDelivery
-
-	err := s.store.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, endpoint_id, event_id, event_type, payload,
-		       status, attempts, last_error, delivered_at, created_at
-		FROM webhook_deliveries
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, deliveryID).Scan(
-		&d.ID, &d.TenantID, &d.EndpointID, &d.EventID,
-		&d.EventType, &d.Payload, &d.Status, &d.Attempts,
-		&d.LastError, &d.DeliveredAt, &d.CreatedAt,
-	)
+	d, err := s.store.GetDelivery(ctx, tenantID, deliveryID)
 	if err != nil {
-		return nil, fmt.Errorf("get delivery: %w", err)
+		return nil, err
 	}
 
 	return &d, nil
@@ -365,18 +271,8 @@ func (s *Service) GetDelivery(ctx context.Context, tenantID, deliveryID pgtype.U
 
 // RetryDelivery reschedules a failed delivery for immediate retry.
 func (s *Service) RetryDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUID) error {
-	result, err := s.store.db.Writer.Exec(ctx, `
-		UPDATE webhook_deliveries
-		SET status = 'pending', attempts = 0, last_error = NULL
-		WHERE tenant_id = $1 AND id = $2 AND status = 'failed'
-	`, tenantID, deliveryID)
-	if err != nil {
-		return fmt.Errorf("retry delivery: %w", err)
-	}
-
-	rowsAffected := result.RowsAffected()
-	if rowsAffected == 0 {
-		return fmt.Errorf("delivery not found or not in failed state")
+	if err := s.store.RetryDelivery(ctx, tenantID, deliveryID); err != nil {
+		return err
 	}
 
 	// Enqueue the retry delivery task.
@@ -401,16 +297,5 @@ func (s *Service) CreateDelivery(ctx context.Context, tenantID, endpointID, even
 		return pgtype.UUID{}, fmt.Errorf("marshaling webhook payload: %w", err)
 	}
 
-	var id pgtype.UUID
-
-	err = s.store.db.Writer.QueryRow(ctx, `
-		INSERT INTO webhook_deliveries (tenant_id, endpoint_id, event_id, event_type, payload)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id
-	`, tenantID, endpointID, eventID, eventType, payloadJSON).Scan(&id)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("creating webhook delivery: %w", err)
-	}
-
-	return id, nil
+	return s.store.CreateDelivery(ctx, tenantID, endpointID, eventID, eventType, payloadJSON)
 }
