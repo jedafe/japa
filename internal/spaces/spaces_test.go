@@ -188,7 +188,19 @@ func TestWriteError(t *testing.T) {
 	}
 }
 
+func TestNewNoopEnqueuer(t *testing.T) {
+	t.Parallel()
 
+	enq := NewNoopEnqueuer()
+	if enq == nil {
+		t.Fatal("NewNoopEnqueuer returned nil")
+	}
+
+	uid := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
+	if err := enq.EnqueueSpaceAutoPopulate(t.Context(), uid); err != nil {
+		t.Errorf("EnqueueSpaceAutoPopulate returned error: %v", err)
+	}
+}
 
 func TestUnreadCounter_NilClient(t *testing.T) {
 	t.Parallel()
