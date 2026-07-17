@@ -693,9 +693,83 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		}
 	}
 
-	// Note: In production, collect from additional tables (content, comments,
-	// spaces, payments, notifications) using the database reader.
-	// For now, we collect what's available through the GDPR store.
+	// Collect user's published content.
+	if contentRows, err := s.store.gdprExportUserContent(ctx, userID, tenantID); err == nil {
+		for _, c := range contentRows {
+			export.Content = append(export.Content, map[string]interface{}{
+				"id":           c.ID.String(),
+				"title":        c.Title,
+				"slug":         c.Slug,
+				"content_type": c.ContentType,
+				"status":       c.Status,
+				"created_at":   c.CreatedAt.Time,
+			})
+		}
+	} else {
+		slog.Warn("failed to collect content for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Collect user's comments.
+	if commentRows, err := s.store.gdprExportUserComments(ctx, userID, tenantID); err == nil {
+		for _, c := range commentRows {
+			export.Comments = append(export.Comments, map[string]interface{}{
+				"id":         c.ID.String(),
+				"content_id": c.ContentID.String(),
+				"body":       c.Body,
+				"created_at": c.CreatedAt.Time,
+			})
+		}
+	} else {
+		slog.Warn("failed to collect comments for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Collect user's space memberships.
+	if spaceRows, err := s.store.gdprExportUserSpaces(ctx, userID, tenantID); err == nil {
+		for _, sp := range spaceRows {
+			export.Spaces = append(export.Spaces, map[string]interface{}{
+				"id":        sp.ID.String(),
+				"name":      sp.Name,
+				"slug":      sp.Slug,
+				"status":    sp.Status,
+				"role":      sp.Role,
+				"joined_at": sp.JoinedAt.Time,
+			})
+		}
+	} else {
+		slog.Warn("failed to collect spaces for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Collect user's payment history.
+	if paymentRows, err := s.store.gdprExportUserPayments(ctx, userID, tenantID); err == nil {
+		for _, p := range paymentRows {
+			export.Payments = append(export.Payments, map[string]interface{}{
+				"id":         p.ID.String(),
+				"provider":   p.Provider,
+				"amount":     p.Amount,
+				"currency":   p.Currency,
+				"status":     p.Status,
+				"created_at": p.CreatedAt.Time,
+			})
+		}
+	} else {
+		slog.Warn("failed to collect payments for export", "user_id", userID.String(), "error", err)
+	}
+
+	// Collect user's notifications.
+	if notifRows, err := s.store.gdprExportUserNotifications(ctx, userID, tenantID); err == nil {
+		for _, n := range notifRows {
+			export.Notifications = append(export.Notifications, map[string]interface{}{
+				"id":                n.ID.String(),
+				"notification_type": n.NotificationType,
+				"title":             n.Title,
+				"body":              n.Body,
+				"read_at":           n.ReadAt,
+				"created_at":        n.CreatedAt.Time,
+			})
+		}
+	} else {
+		slog.Warn("failed to collect notifications for export", "user_id", userID.String(), "error", err)
+	}
 
 	return export, nil
 }

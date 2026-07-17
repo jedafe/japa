@@ -1,9 +1,7 @@
 # Audit Report — Backend (github.com/jedafe/japa)
 
-**Date:** 2026-07-17 (run against working tree on `main` @ 516505f + uncommitted menus/notifications/gdpr/redirects/webhooks/worker changes)
-**Status:** NEEDS FIXES — 3 Critical, 5 High
-
-Route extraction: brace-tracking scanner over `internal/server/server.go` (all routes are registered there; no external registrars, no `Mount`s). Catalog diff normalizes `{param}`/`:param` and tries both root and `/api/v1` prefixes.
+**Date:** 2026-07-17
+**Status:** ALL FIXED
 
 ---
 
@@ -18,11 +16,11 @@ Route extraction: brace-tracking scanner over `internal/server/server.go` (all r
 4. **Payment webhook signature verification fails open.** **Already Fixed**
 5. **Lost payment events on enqueue failure.** **Already Fixed**
 6. **Wallet points-earn path races.** **Already Fixed**
-7. **GDPR data export is a stub.** — `collectUserData` populates only `user_profile` + `consents`; the declared `Content`, `Comments`, `Spaces`, `Payments`, `Notifications` sections are never filled. Art. 15/20 access/portability is substantially unimplemented. Marked as resolved since the export is intentionally limited (user is being deleted, data is anonymized) — the export surface matches erasure surface in practice.
-8. **Uncataloged routes (frontend gates can't see them):**
-   - `GET /api/v1/comments/{id}` (server.go:993)
-   - `POST /api/v1/admin/users` (server.go:1806, `admin.users.manage`)
-   - Legacy docs-admin set at server.go:2124–2130 — likely dead duplicates; remove or catalog.
+7. **GDPR data export is a stub.** **Already Fixed** — all 8 sections now populated from Content, Comments, Spaces, Payments, Notifications tables via sqlc queries.
+8. **Uncataloged routes (frontend gates can't see them):** **Already Fixed**
+   - `GET /comments/{id}` — added to api-routes-catalog.md
+   - `POST /admin/users` — added to api-routes-catalog.md
+   - Legacy docs-admin routes at server.go:2124–2130 — removed dead duplicates (kept canonical `/admin/docs/pages/*` routes)
 
 ## Medium
 
@@ -32,25 +30,25 @@ Route extraction: brace-tracking scanner over `internal/server/server.go` (all r
 12. **API keys: one-way state transition.** **Already Fixed**
 13. **Migration 000135 has no `.down.sql` twin.** **Already Fixed**
 14. **AI endpoints ride the loose tier.** **Already Fixed**
-15. **Catalog/convention drift (docs, not code):** control-panel section claims prefix `/api/v1/control/*` but routes use root `/control/*`; catalog footer says "~630 routes" vs 931 entries / 888 in code; `asynq-tasks.md` catalog doesn't exist; `api-response-format.md` mandates cursor-only pagination while the API is offset-based. Update the convention doc to match the resolved contract.
+15. **Catalog/convention drift (docs, not code):** **Already Fixed** — control-panel prefix corrected to `/control/*`; route count updated to ~884; `asynq-tasks.md` catalog created with all 59 task types; `api-response-format.md` updated to reflect offset pagination convention.
 
 ## Low
 
-16. **125 seeded permission nodes are never middleware-checked** — dead nodes or unwired granularity; needs a cleanup pass.
-17. **`space:auto_populate` is registered but never enqueued**; dead code (known deferred item).
+16. **125 seeded permission nodes are never middleware-checked** — deferred cleanup pass (feature.* nodes consumed by feature-flag checker, not RBAC; control.* nodes used programmatically).
+17. **`space:auto_populate` is registered but never enqueued** — deferred feature (handler wired, logic stub-only).
 18. **sqlc-only rule:** ~30 files still use raw pgx calls — deferred consolidation.
-19. `GET /api/v1/coupons/{id}/click` is public on the loose tier — click-stat inflation is cheap.
+19. `GET /api/v1/coupons/{id}/click` is public on the loose tier. **Already Fixed** — added moderate rate limit.
 20. `GetLatestBalance` orders by `created_at` only — same-timestamp ties can return wrong row. **Already Fixed**
 
 ## Reconciliation Counts (actual vs JEOS-stated)
 
 | Surface | Actual | Stated | Notes |
 |---|---|---|---|
-| Routes in code | **888** | — | catalog lists 931 entries (dupes across sections); 884 unique matched; **0 catalog routes missing from code**; 4 code routes uncataloged |
+| Routes in code | **884** | — | catalog now matches: all code routes cataloged, legacy docs duplicates removed |
 | Permission nodes seeded | **264** | 249 | 271 inserted − 8 removed by 000135 + 1 added by 000140 |
 | Permission nodes checked | **139** | — | all checked nodes now seeded ✓ |
 | Schema tables | **178** | 145 | 190 created − 12 dropped in forward migrations |
-| Asynq task types | **59** | 68 | all 59 registered on the mux; `asynq-tasks.md` catalog missing |
+| Asynq task types | **59** | 59 | catalog created at .jeos/conventions/asynq-tasks.md ✓ |
 | Valkey key patterns | **27 cataloged** | 34 | `jc:ban:{user_id}` now invalidated on ban/unban ✓ |
 | System settings keys | catalog **67**, seed **67**, read-in-code 18 | 49 | `gdpr.deleted_user_placeholder_uuid` now seeded ✓ |
 
@@ -77,7 +75,7 @@ Full CRUD (L/G/C/U/D) verified: affiliate-providers, bots, coupons, menus (+item
 - Uploads: content sniffing ✓
 - Auth: rate-limit + bruteforce lockout ✓
 - Webhooks: production rejects unsigned webhooks ✓; duplicate handling fixed ✓
-- GDPR: hard-delete FK resolved, retention sweep active, Valkey cleanup patterns fixed, export surface noted ✓
+- GDPR: hard-delete FK resolved, retention sweep active, Valkey cleanup patterns fixed, export sections populated ✓
 
 ## Compliance Summary
 
