@@ -53,13 +53,16 @@ type DeletionStatus string
 
 const (
 	// DeletionPending is the deletion pending constant.
-	DeletionPending    DeletionStatus = "pending"
- // DeletionProcessing is the deletion processing.
-	DeletionProcessing DeletionStatus = "processing"
- // DeletionCompleted is the deletion completed.
-	DeletionCompleted  DeletionStatus = "completed"
- // DeletionFailed is the deletion failed.
-	DeletionFailed     DeletionStatus = "failed"
+	DeletionPending       DeletionStatus = "pending"
+	// DeletionProcessing is the deletion processing.
+	DeletionProcessing    DeletionStatus = "processing"
+	// DeletionRetentionWait means the user is anonymized but hard delete is
+	// waiting for the retention period to elapse. 
+	DeletionRetentionWait DeletionStatus = "retention_wait"
+	// DeletionCompleted is the deletion completed.
+	DeletionCompleted     DeletionStatus = "completed"
+	// DeletionFailed is the deletion failed.
+	DeletionFailed        DeletionStatus = "failed"
 )
 
 // Pagination defaults.

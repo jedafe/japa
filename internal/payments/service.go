@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // CreatePaymentInput holds parameters for creating a new payment.
@@ -136,14 +139,15 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 		return nil // Already processed
 	}
 
-	// Record the event
-	_, err = s.store.insertWebhookEvent(ctx, gen.InsertWebhookEventParams{
+	// Record the event (idempotent via ON CONFLICT DO NOTHING on unique constraint).
+	// ErrNoRows from ON CONFLICT DO NOTHING means duplicate — treat as success.
+	// 
+	if _, err := s.store.insertWebhookEvent(ctx, gen.InsertWebhookEventParams{
 		TenantID:   tenantID,
 		Provider:   provider,
 		EventID:    event.EventID,
 		RawPayload: event.RawPayload,
-	})
-	if err != nil {
+	}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("recording webhook event: %w", err)
 	}
 
@@ -155,7 +159,15 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 			"tenant_id": tenantID.String(),
 			"status":    status,
 		})
-		_ = s.enqueuer.Enqueue("payment:process_webhook", payload)
+		// Return the error so the provider receives a 5xx and retries.
+		// The event is already recorded in the DB; on retry the idempotency
+		// check sees it as processed and returns 200.
+		if err := s.enqueuer.Enqueue("payment:process_webhook", payload); err != nil {
+			slog.Error("payments: failed to enqueue webhook processing",
+				"event_id", event.EventID, "provider", provider, "error", err)
+			errpkg.CaptureException(fmt.Errorf("enqueue payment:process_webhook (event %s): %w", event.EventID, err))
+			return fmt.Errorf("enqueue payment:process_webhook (event %s): %w", event.EventID, err)
+		}
 	}
 
 	// Mark as processed

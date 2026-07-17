@@ -407,6 +407,9 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	// 5. Hard delete — optional physical erasure phase (ADR-057).
 	//    Only runs if gdpr.hard_delete_enabled is true and the retention window
 	//    (gdpr.retention_days) has elapsed since the request was created.
+	//    If retention hasn't elapsed, mark as retention_wait so a periodic
+	//    sweep can re-process it later. 
+	retentionWait := false
 	if s.settings != nil {
 		hardDeleteEnabled, settingsErr := s.settings.GetSettingBool(ctx, request.TenantID, "gdpr.hard_delete_enabled")
 		if settingsErr == nil && hardDeleteEnabled {
@@ -427,22 +430,33 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 					return fmt.Errorf("hard deleting user %s: %w", request.UserID, hardErr)
 				}
 			} else {
-				slog.Info("gdpr: retention period not elapsed, skipping hard delete",
+				slog.Info("gdpr: retention period not elapsed, entering retention_wait",
 					"user_id", request.UserID.String(),
 					"retention_days", retentionDays,
 					"retention_deadline", retentionDeadline.Format(time.RFC3339))
+				retentionWait = true
 			}
 		}
 	}
 
-	// 6. Mark deletion as completed.
-	_, err = s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
-		ID:          requestID,
-		Status:      string(DeletionCompleted),
-		CompletedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-	})
-	if err != nil {
-		return fmt.Errorf("marking deletion as completed: %w", err)
+	// 6. Mark deletion as completed or retention_wait.
+	if retentionWait {
+		_, err = s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
+			ID:     requestID,
+			Status: string(DeletionRetentionWait),
+		})
+		if err != nil {
+			return fmt.Errorf("marking deletion as retention_wait: %w", err)
+		}
+	} else {
+		_, err = s.store.updateAccountDeletionRequestStatus(ctx, gen.UpdateAccountDeletionRequestStatusParams{
+			ID:          requestID,
+			Status:      string(DeletionCompleted),
+			CompletedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		})
+		if err != nil {
+			return fmt.Errorf("marking deletion as completed: %w", err)
+		}
 	}
 
 	return nil
@@ -465,35 +479,45 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}
 	}
 
-	// 1. Reassign content authorship to preserve thread continuity.
-	if err := s.store.reassignContentAuthor(ctx, gen.ReassignContentAuthorParams{
-		UserID:       userID,
-		TenantID:     tenantID,
-		TargetUserID: deletedUserPlaceholder,
-	}); err != nil {
-		slog.Warn("gdpr: failed to reassign content author", "user_id", userID.String(), "error", err)
-		return fmt.Errorf("reassigning content authorship: %w", err)
-	}
+	// All four steps run in one transaction so a failure cannot leave the user
+	// half-erased (e.g. authorship reassigned but the user row still present).
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		// 1. Reassign content authorship to preserve thread continuity.
+		if err := q.ReassignContentAuthor(ctx, gen.ReassignContentAuthorParams{
+			UserID:       userID,
+			TenantID:     tenantID,
+			TargetUserID: deletedUserPlaceholder,
+		}); err != nil {
+			return fmt.Errorf("reassigning content authorship: %w", err)
+		}
 
-	// 2. Nullify payment user references (financial audit trail survives).
-	if err := s.store.nullifyPaymentUserRefs(ctx, gen.NullifyPaymentUserRefsParams{
-		UserID: userID, TenantID: tenantID,
-	}); err != nil {
-		slog.Warn("gdpr: failed to nullify payment user refs", "user_id", userID.String(), "error", err)
-	}
+		// 2. Nullify payment user references (financial audit trail survives).
+		//    Errors are fatal inside the tx — a leftover reference would block
+		//    the final DELETE on its foreign key anyway.
+		if err := q.NullifyPaymentUserRefs(ctx, gen.NullifyPaymentUserRefsParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("nullifying payment user refs: %w", err)
+		}
 
-	// 3. Nullify ticket submitter references.
-	if err := s.store.nullifyTicketSubmitter(ctx, gen.NullifyTicketSubmitterParams{
-		UserID: userID, TenantID: tenantID,
-	}); err != nil {
-		slog.Warn("gdpr: failed to nullify ticket submitter", "user_id", userID.String(), "error", err)
-	}
+		// 3. Nullify ticket submitter references.
+		if err := q.NullifyTicketSubmitter(ctx, gen.NullifyTicketSubmitterParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("nullifying ticket submitter: %w", err)
+		}
 
-	// 4. Physical deletion — ON DELETE CASCADE handles all child tables.
-	if err := s.store.hardDeleteUser(ctx, gen.HardDeleteUserParams{
-		UserID: userID, TenantID: tenantID,
+		// 4. Physical deletion — ON DELETE CASCADE handles all child tables.
+		if err := q.HardDeleteUser(ctx, gen.HardDeleteUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("physically deleting user row: %w", err)
+		}
+
+		return nil
 	}); err != nil {
-		return fmt.Errorf("physically deleting user row: %w", err)
+		slog.Warn("gdpr: hard delete transaction failed", "user_id", userID.String(), "error", err)
+		return err
 	}
 
 	slog.Info("gdpr: user physically deleted",

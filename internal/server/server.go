@@ -1853,20 +1853,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.generate")).
 				Post("/ai/generate", aiHandlers.HandleGenerate)
 
-			// JapaBot chat — gated by feature.ai_chat
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_chat")).
+			// JapaBot chat — gated by feature.ai_chat, moderate rate limit.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_chat"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/chat", aiHandlers.HandleChat)
 
-			// Content AI Assist endpoints (catalog: /ai/assist/*)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			// Content AI Assist endpoints (catalog: /ai/assist/*), moderate rate limit.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/improve", aiHandlers.HandleImprove)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/summarize", aiHandlers.HandleSummarize)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/translate", aiHandlers.HandleTranslate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/generate-tags", aiHandlers.HandleGenerateTags)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/generate-og", aiHandlers.HandleGenerateOG)
 
 			// HITL review routes
@@ -2681,6 +2681,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Patch("/api-keys/{id}", controlHandlers.UpdateAPIKey)
 			r.Delete("/api-keys/{id}", controlHandlers.DeleteAPIKey)
 			r.Post("/api-keys/{id}/suspend", publicAPIHandlers.SuspendKey)
+			r.Delete("/api-keys/{id}/suspend", publicAPIHandlers.UnsuspendKey)
 			r.Get("/api-keys/analytics", controlHandlers.GetAPIKeyAnalytics)
 
 			// AI Budget

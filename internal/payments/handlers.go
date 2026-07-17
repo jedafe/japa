@@ -17,6 +17,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -365,7 +366,14 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 	defer func() { _ = r.Body.Close() }()
 
 	// Verify Paystack webhook signature (HMAC-SHA256 of body with secret key).
-	if h.PaystackSecretKey != "" {
+	// In production, reject webhooks when the secret is unset — a misconfigured
+	// deploy must not silently accept forged webhooks. 
+	if h.PaystackSecretKey == "" {
+		if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+			writeError(w, http.StatusInternalServerError, "misconfigured", "Paystack webhook secret not configured")
+			return
+		}
+	} else {
 		sig := r.Header.Get("X-Paystack-Signature")
 		if err := verifyHMACSHA256(body, sig, h.PaystackSecretKey); err != nil {
 			writeError(w, http.StatusUnauthorized, "invalid_signature", "Invalid webhook signature")
@@ -415,7 +423,13 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	// Verify Stripe webhook signature (HMAC-SHA256 with webhook secret).
-	if h.StripeWebhookSecret != "" {
+	// In production, reject webhooks when the secret is unset. 
+	if h.StripeWebhookSecret == "" {
+		if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+			writeError(w, http.StatusInternalServerError, "misconfigured", "Stripe webhook secret not configured")
+			return
+		}
+	} else {
 		sig := r.Header.Get("Stripe-Signature")
 		if err := verifyStripeSignature(body, sig, h.StripeWebhookSecret); err != nil {
 			writeError(w, http.StatusUnauthorized, "invalid_signature", "Invalid webhook signature")
@@ -467,7 +481,13 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 	defer func() { _ = r.Body.Close() }()
 
 	// Verify NOWPayments IPN signature (HMAC-SHA256 with IPN secret).
-	if h.NOWPaymentsIPNKey != "" {
+	// In production, reject webhooks when the secret is unset. 
+	if h.NOWPaymentsIPNKey == "" {
+		if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+			writeError(w, http.StatusInternalServerError, "misconfigured", "NOWPayments IPN secret not configured")
+			return
+		}
+	} else {
 		sig := r.Header.Get("x-nowpayments-sig")
 		if err := verifyHMACSHA256(body, sig, h.NOWPaymentsIPNKey); err != nil {
 			writeError(w, http.StatusUnauthorized, "invalid_signature", "Invalid webhook signature")

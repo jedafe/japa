@@ -235,6 +235,7 @@ INSERT INTO permissions (key, description) VALUES
     ('media.video.upload', 'Upload video files'),
     ('media.library.view_own', 'View own media library'),
     ('media.library.view_all', 'View all media library (admin)'),
+    ('media.edit_any', 'Edit any media (admin)'),
     ('media.quarantine.manage', 'Review and manage quarantined media'),
     -- Reactions
     ('reactions.create', 'React to content'),
