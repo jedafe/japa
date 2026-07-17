@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
 	import { api, type AdRender } from '$lib/api';
 	import { imgproxy } from '$lib/utils/imgproxy';

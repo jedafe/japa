@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -103,8 +104,8 @@
 			class: "w-24",
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-1">
-					<button onclick="window.__broadcastView('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">View</button>
-					${row.status === "draft" ? `<button onclick="window.__broadcastSend('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50">Send</button>` : ""}
+					<button onclick="window.__broadcastView('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.view")}</button>
+					${row.status === "draft" ? `<button onclick="window.__broadcastSend('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50">${t("common.send")}</button>` : ""}
 				</div>
 			`
 		}
@@ -241,7 +242,7 @@
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
-				<p class="py-8 text-center text-sm text-gray-500">Loading broadcasts...</p>
+				<p class="py-8 text-center text-sm text-gray-500">{t('broadcasts.loading_broadcasts')}</p>
 			{:else}
 				<DataTable
 					columns={columns}
@@ -258,7 +259,7 @@
 <Modal bind:open={showCreateModal} title="New Broadcast" description="Create and send a broadcast message" size="lg">
 	<div class="space-y-4">
 		<div>
-			<label for="bc-title" class="mb-1 block text-sm font-medium text-gray-900">Title</label>
+			<label for="bc-title" class="mb-1 block text-sm font-medium text-gray-900">{t('broadcasts.title_2')}</label>
 			<input
 				id="bc-title"
 				type="text"
@@ -268,7 +269,7 @@
 			/>
 		</div>
 		<div>
-			<label for="bc-body" class="mb-1 block text-sm font-medium text-gray-900">Message</label>
+			<label for="bc-body" class="mb-1 block text-sm font-medium text-gray-900">{t('broadcasts.message')}</label>
 			<textarea
 				id="bc-body"
 				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
@@ -278,11 +279,11 @@
 			></textarea>
 		</div>
 		<div>
-			<label for="bc-audience" class="mb-1 block text-sm font-medium text-gray-900">Target Audience</label>
+			<label for="bc-audience" class="mb-1 block text-sm font-medium text-gray-900">{t('broadcasts.target_audience')}</label>
 			<Select options={audienceOptions} bind:value={newBroadcast.target_audience} />
 		</div>
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => (showCreateModal = false)}>Cancel</Button>
+			<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('broadcasts.cancel')}</Button>
 			<Button onclick={createBroadcast} disabled={creating || !newBroadcast.title.trim() || !newBroadcast.body.trim()}>
 				{#if creating}
 					Creating...
@@ -303,7 +304,7 @@
 		</div>
 	{/if}
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showSendModal = false)}>Cancel</Button>
+		<Button variant="outline" onclick={() => (showSendModal = false)}>{t('broadcasts.cancel')}</Button>
 		<Button onclick={sendBroadcast} disabled={sending}>
 		{#if sending}
 			<Send class="h-4 w-4 mr-2 animate-spin" />

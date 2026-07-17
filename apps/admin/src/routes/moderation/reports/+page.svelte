@@ -221,25 +221,25 @@
 							<td colspan="6" class="px-4 py-4" style="background-color: var(--color-surface)">
 								<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Reporter</p>
+										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.reporter')}</p>
 										<p class="mt-1 text-sm">{report.reporter_name}</p>
 										{#if report.reporter_email}
 											<p class="text-xs" style="color: var(--color-muted)">{report.reporter_email}</p>
 										{/if}
 									</div>
 									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Target Content</p>
+										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.target_content')}</p>
 										<p class="mt-1 text-sm">{report.target_content_type}</p>
 										<p class="text-xs font-mono" style="color: var(--color-muted)">{report.target_content_id}</p>
 									</div>
 									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Report Reason</p>
+										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.report_reason')}</p>
 										<p class="mt-1 text-sm">{report.reason}</p>
 									</div>
 								</div>
 								{#if report.content_preview}
 									<div class="mt-3 rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
-										<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">Content Preview</p>
+										<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">{t('moderation.reports.content_preview')}</p>
 										{report.content_preview}
 									</div>
 								{/if}

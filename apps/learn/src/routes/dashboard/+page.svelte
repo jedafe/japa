@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import type { Enrollment, Track } from '$lib/api';
 	import { api } from '$lib/api';
 	import { GraduationCap, BookOpen, Clock, ArrowRight, Award } from 'lucide-svelte';
@@ -38,8 +39,8 @@
 </svelte:head>
 
 <main class="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-	<h1 class="mb-2 text-2xl font-bold tracking-tight">My Learning Dashboard</h1>
-	<p class="mb-8 text-sm" style="color: var(--color-muted)">Track your progress across all enrolled learning tracks.</p>
+	<h1 class="mb-2 text-2xl font-bold tracking-tight">{t('dashboard.my_learning_dashboard')}</h1>
+	<p class="mb-8 text-sm" style="color: var(--color-muted)">{t('dashboard.track_your_progress_across_all_enrolled_')}</p>
 
 	{#if loading}
 		<div class="flex items-center justify-center py-12">
@@ -53,8 +54,8 @@
 			>
 				<GraduationCap class="h-8 w-8" style="color: var(--color-muted)" />
 			</div>
-			<p class="mt-4 text-lg font-semibold" style="color: var(--color-foreground)">No enrollments yet</p>
-			<p class="mt-1 text-sm" style="color: var(--color-muted)">Enroll in a learning track to get started.</p>
+			<p class="mt-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('dashboard.no_enrollments_yet')}</p>
+			<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('dashboard.enroll_in_a_learning_track_to_get_starte')}</p>
 			<Button variant="primary" class="mt-6" onclick={() => window.location.href = '/'}>
 				Browse Tracks
 				<ArrowRight class="h-4 w-4" />

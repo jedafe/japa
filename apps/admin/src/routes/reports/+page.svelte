@@ -257,19 +257,19 @@
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Title</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reports.title_2')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.title}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Type</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reports.type')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.report_type}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reports.status')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Generated</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reports.generated')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.generated_at).toLocaleString()}</p>
 				</div>
 			</div>
@@ -283,7 +283,7 @@
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('reports.close')}</Button>
 	</div>
 </Modal>
 
@@ -295,7 +295,7 @@
 		</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>Cancel</Button>
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('reports.cancel')}</Button>
 		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? "Deleting..." : "Delete"}</Button>
 	</div>
 </Modal>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import {
@@ -158,9 +159,9 @@
 {#if !isFeatureEnabled('feature.forum')}
 	<main class="mx-auto max-w-2xl px-6 py-16">
 		<div class="text-center">
-			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Forum is not available</h1>
-			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
-			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('forum.slug.forum_is_not_available')}</h1>
+			<p class="mt-2" style="color: var(--color-muted)">{t('forum.slug.this_feature_is_currently_disabled')}</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">{t('forum.slug.go_home')}</a>
 		</div>
 	</main>
 {:else}

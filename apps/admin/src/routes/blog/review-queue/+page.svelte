@@ -93,7 +93,7 @@
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold">Blog Review Queue</h1>
+		<h1 class="text-2xl font-bold">{t('blog.review-queue.blog_review_queue')}</h1>
 		<button class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700" onclick={refresh}>
 			<RefreshCw class="h-4 w-4" />
 			Refresh
@@ -105,7 +105,7 @@
 	{/if}
 
 	{#if loading}
-		<div class="py-12 text-center text-sm text-gray-500">Loading...</div>
+		<div class="py-12 text-center text-sm text-gray-500">{t('blog.review-queue.loading')}</div>
 	{:else if items.length === 0}
 		<div class="rounded-md border p-8 text-center text-sm text-gray-500" style="border-color: var(--color-border)">
 			No posts pending review.
@@ -160,7 +160,7 @@
 			Are you sure you want to reject "{rejectItem?.title}"?
 		</p>
 		<div>
-			<label for="reject-reason" class="mb-1 block text-sm font-medium">Reason (optional)</label>
+			<label for="reject-reason" class="mb-1 block text-sm font-medium">{t('blog.review-queue.reason_optional')}</label>
 			<textarea
 				id="reject-reason"
 				class="w-full rounded-md border px-3 py-2 text-sm"

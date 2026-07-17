@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
   import { Dialog } from "bits-ui";
   import { X } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
@@ -68,7 +69,7 @@
         onclick={handleClose}
       >
         <X class="h-4 w-4" />
-        <span class="sr-only">Close</span>
+        <span class="sr-only">{t('lib.components.ui.modal.modal.svelte.close')}</span>
       </Dialog.Close>
     </Dialog.Content>
   </Dialog.Portal>

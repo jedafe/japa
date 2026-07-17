@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Search, ChevronDown } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import type { Certificate } from '$lib/api';
 	import { api } from '$lib/api';
 	import { Award, Download, ExternalLink, GraduationCap, ArrowRight, Loader2 } from 'lucide-svelte';
@@ -43,7 +44,7 @@
 			<Award class="h-6 w-6" style="color: var(--color-primary)" />
 		</div>
 		<div>
-			<h1 class="text-2xl font-bold tracking-tight" style="color: var(--color-foreground)">My Certificates</h1>
+			<h1 class="text-2xl font-bold tracking-tight" style="color: var(--color-foreground)">{t('certificates.my_certificates')}</h1>
 			<p class="text-sm" style="color: var(--color-muted)">
 				Certificates earned by completing learning tracks
 			</p>
@@ -53,7 +54,7 @@
 	{#if certificates.length === 0}
 		<div class="mt-8 rounded-lg border px-6 py-16 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
 			<GraduationCap class="mx-auto h-16 w-16" style="color: var(--color-muted)" />
-			<h2 class="mt-4 text-lg font-semibold" style="color: var(--color-foreground)">No certificates yet</h2>
+			<h2 class="mt-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('certificates.no_certificates_yet')}</h2>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
 				Complete a learning track to earn your first certificate!
 			</p>

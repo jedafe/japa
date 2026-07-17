@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/state';
 

@@ -268,7 +268,7 @@
 
 {:else if activeTab === 'permissions'}
 	{#if !selectedGroup}
-		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Select a field group to manage permissions.</p>
+		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('custom-fields.select_a_field_group_to_manage_permissio')}</p>
 	{:else if permissionsLoading}
 		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 	{:else}
@@ -277,19 +277,19 @@
 		</p>
 
 		{#if groupFields.length === 0}
-			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No fields in this group.</p>
+			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('custom-fields.no_fields_in_this_group')}</p>
 		{:else}
 			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 				<table class="w-full text-sm">
 					<thead>
 						<tr style="border-bottom: 1px solid var(--color-border)">
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Field</th>
+							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('custom-fields.field')}</th>
 							{#each userGroups as ug}
 								<th class="px-4 py-3 text-center font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">
 									{ug.name}
 									<div class="mt-1 flex justify-center gap-4 text-[10px] font-normal">
-										<span>View</span>
-										<span>Edit</span>
+										<span>{t('custom-fields.view')}</span>
+										<span>{t('custom-fields.edit')}</span>
 									</div>
 								</th>
 							{/each}

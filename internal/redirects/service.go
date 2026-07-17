@@ -164,7 +164,8 @@ func (s *Service) ResolveRedirect(ctx context.Context, tenantID pgtype.UUID, pat
 			RedirectID string `json:"redirect_id"`
 		}
 		if json.Unmarshal([]byte(cached), &entry) == nil && entry.TargetURL != "" {
-			go s.recordHit(context.Background(), tenantID, entry.RedirectID)
+			// Hit counting moved to an Asynq task — no per-request goroutines.
+			s.enqueueRecordHit(tenantID, entry.RedirectID)
 			return entry.TargetURL, entry.HTTPStatus
 		}
 	}
@@ -183,19 +184,28 @@ func (s *Service) resolveFromDB(ctx context.Context, tenantID pgtype.UUID, path 
 	})
 	if s.vk != nil {
 		cacheKey := redirectCacheKeyPrefix + tenantID.String() + ":" + path
-		s.vk.Set(context.Background(), cacheKey, string(entry), redirectCacheTTL)
+		// Propagate the request context instead of a detached Background one.
+		if err := s.vk.Set(ctx, cacheKey, string(entry), redirectCacheTTL).Err(); err != nil {
+			slog.Warn("failed to cache redirect", "key", cacheKey, "error", err)
+		}
 	}
-	go s.recordHit(context.Background(), tenantID, r.ID.String())
+	s.enqueueRecordHit(tenantID, r.ID.String())
 	return r.TargetUrl, int(r.HttpStatus)
 }
 
-func (s *Service) recordHit(ctx context.Context, tenantID pgtype.UUID, idStr string) {
-	var id pgtype.UUID
-	if err := id.Scan(idStr); err != nil {
+// enqueueRecordHit hands hit counting to the worker (redirect:record_hit, low
+// queue). Best-effort: a failed enqueue must never fail the redirect itself.
+func (s *Service) enqueueRecordHit(tenantID pgtype.UUID, idStr string) {
+	payload, err := json.Marshal(map[string]string{
+		"redirect_id": idStr,
+		"tenant_id":   tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("failed to marshal redirect hit payload", "id", idStr, "error", err)
 		return
 	}
-	if err := s.store.recordRedirectHit(ctx, id, tenantID); err != nil {
-		slog.Warn("failed to record redirect hit", "id", idStr, "error", err)
+	if err := s.enqueuer.Enqueue("redirect:record_hit", payload); err != nil {
+		slog.Warn("failed to enqueue redirect hit", "id", idStr, "error", err)
 	}
 }
 

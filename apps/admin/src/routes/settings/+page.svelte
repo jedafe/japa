@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
@@ -154,7 +155,7 @@
 {#if loading}
 	<div class="flex items-center justify-center py-12">
 		<RefreshCw class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
-		<span class="ml-2 text-sm" style="color: var(--color-muted)">Loading settings...</span>
+		<span class="ml-2 text-sm" style="color: var(--color-muted)">{t('settings.loading_settings')}</span>
 	</div>
 {:else if error}
 	<div class="rounded-lg p-4 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
@@ -238,7 +239,7 @@
 						{#if savedCategory === category.key}
 							<div class="flex items-center gap-2" style="color: var(--color-success)">
 								<Check class="h-4 w-4" />
-								<span class="text-sm font-medium">Saved!</span>
+								<span class="text-sm font-medium">{t('settings.saved')}</span>
 							</div>
 						{/if}
 

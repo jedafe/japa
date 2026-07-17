@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { ArrowLeft, Pencil, Briefcase, MapPin, FileText, Shield, Plus, Loader2, Trash2, UserPlus, Users, Heart } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { isFeatureEnabled } from '$lib/stores/features.svelte';
@@ -163,9 +164,9 @@
 {#if !isFeatureEnabled('feature.professional')}
 	<main class="mx-auto max-w-2xl px-6 py-16">
 		<div class="text-center">
-			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Professional Profiles is not available</h1>
-			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
-			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('professional.slug.professional_profiles_is_not_available')}</h1>
+			<p class="mt-2" style="color: var(--color-muted)">{t('professional.slug.this_feature_is_currently_disabled')}</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">{t('professional.slug.go_home')}</a>
 		</div>
 	</main>
 {:else}
@@ -272,7 +273,7 @@
 			<form onsubmit={addRelocation} class="mt-4 space-y-3 rounded-lg p-4" style="background-color: var(--color-background);">
 				<div class="grid grid-cols-2 gap-3">
 					<div>
-						<label for="relo_country" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">Country</label>
+						<label for="relo_country" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">{t('professional.slug.country')}</label>
 						<input
 							id="relo_country"
 							type="text"
@@ -284,7 +285,7 @@
 						/>
 					</div>
 					<div>
-						<label for="relo_city" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">City (optional)</label>
+						<label for="relo_city" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">{t('professional.slug.city_optional')}</label>
 						<input
 							id="relo_city"
 							type="text"
@@ -297,7 +298,7 @@
 				</div>
 				<div class="grid grid-cols-2 gap-3">
 					<div>
-						<label for="relo_status" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">Status</label>
+						<label for="relo_status" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">{t('professional.slug.status')}</label>
 						<select
 							id="relo_status"
 							bind:value={relocationStatus}
@@ -310,7 +311,7 @@
 						</select>
 					</div>
 					<div>
-						<label for="relo_year" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">Year (optional)</label>
+						<label for="relo_year" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">{t('professional.slug.year_optional')}</label>
 						<input
 							id="relo_year"
 							type="number"
@@ -350,7 +351,7 @@
 		{/if}
 
 		{#if relocations.length === 0}
-			<p class="mt-4 text-sm" style="color: var(--color-muted)">No relocations added yet.</p>
+			<p class="mt-4 text-sm" style="color: var(--color-muted)">{t('professional.slug.no_relocations_added_yet')}</p>
 		{:else}
 			<div class="mt-4 space-y-3">
 				{#each relocations as relo (relo.id)}
@@ -403,7 +404,7 @@
 			<form onsubmit={addDocument} class="mt-4 space-y-3 rounded-lg p-4" style="background-color: var(--color-background);">
 				<div class="grid grid-cols-2 gap-3">
 					<div>
-						<label for="doc_type" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">Document Type</label>
+						<label for="doc_type" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">{t('professional.slug.document_type')}</label>
 						<input
 							id="doc_type"
 							type="text"
@@ -415,7 +416,7 @@
 						/>
 					</div>
 					<div>
-						<label for="doc_title" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">Title</label>
+						<label for="doc_title" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">{t('professional.slug.title')}</label>
 						<input
 							id="doc_title"
 							type="text"
@@ -428,7 +429,7 @@
 					</div>
 				</div>
 				<div>
-					<label for="doc_desc" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">Description (optional)</label>
+					<label for="doc_desc" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">{t('professional.slug.description_optional')}</label>
 					<textarea
 						id="doc_desc"
 						rows="2"
@@ -465,7 +466,7 @@
 		{/if}
 
 		{#if documents.length === 0}
-			<p class="mt-4 text-sm" style="color: var(--color-muted)">No documents added yet.</p>
+			<p class="mt-4 text-sm" style="color: var(--color-muted)">{t('professional.slug.no_documents_added_yet')}</p>
 		{:else}
 			<div class="mt-4 space-y-2">
 				{#each documents as doc (doc.id)}
@@ -500,7 +501,7 @@
 			</h2>
 
 			{#if verifiers.length === 0}
-				<p class="mt-4 text-sm" style="color: var(--color-muted)">No verifiers assigned yet.</p>
+				<p class="mt-4 text-sm" style="color: var(--color-muted)">{t('professional.slug.no_verifiers_assigned_yet')}</p>
 			{:else}
 				<div class="mt-4 space-y-2">
 					{#each verifiers as v (v.id)}
@@ -544,7 +545,7 @@
 			{#if showMemberForm}
 				<form onsubmit={addMember} class="mt-4 space-y-3 rounded-lg p-4" style="background-color: var(--color-background);">
 					<div>
-						<label for="member_user" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">User ID or Username *</label>
+						<label for="member_user" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">{t('professional.slug.user_id_or_username')}</label>
 						<input
 							id="member_user"
 							type="text"
@@ -556,20 +557,20 @@
 						/>
 					</div>
 					<div>
-						<label for="member_role" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">Role</label>
+						<label for="member_role" class="mb-1 block text-xs font-medium" style="color: var(--color-foreground)">{t('professional.slug.role')}</label>
 						<select
 							id="member_role"
 							bind:value={memberRole}
 							class="w-full rounded-lg border px-3 py-2 text-sm"
 							style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 						>
-							<option value="member">Member</option>
-							<option value="admin">Admin</option>
-							<option value="editor">Editor</option>
+							<option value="member">{t('professional.slug.member')}</option>
+							<option value="admin">{t('professional.slug.admin')}</option>
+							<option value="editor">{t('professional.slug.editor')}</option>
 						</select>
 					</div>
 					<div class="flex justify-end gap-2">
-						<button type="button" onclick={() => showMemberForm = false} class="rounded-lg px-3 py-1.5 text-sm font-medium" style="color: var(--color-muted)">Cancel</button>
+						<button type="button" onclick={() => showMemberForm = false} class="rounded-lg px-3 py-1.5 text-sm font-medium" style="color: var(--color-muted)">{t('professional.slug.cancel')}</button>
 						<button type="submit" disabled={formLoading || !memberUsername.trim()} class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50" style="background-color: var(--color-primary)">
 							{#if formLoading}<Loader2 class="h-3.5 w-3.5 animate-spin" />{:else}<Plus class="h-3.5 w-3.5" />{/if}
 							Add
@@ -579,7 +580,7 @@
 			{/if}
 
 			{#if members.length === 0}
-				<p class="mt-4 text-sm" style="color: var(--color-muted)">No members added yet.</p>
+				<p class="mt-4 text-sm" style="color: var(--color-muted)">{t('professional.slug.no_members_added_yet')}</p>
 			{:else}
 				<div class="mt-4 space-y-2">
 					{#each members as m (m.user_id)}
@@ -591,7 +592,7 @@
 								<span class="text-sm font-medium" style="color: var(--color-foreground)">{m.display_name || m.username}</span>
 								<div class="text-xs" style="color: var(--color-muted)">{m.role}</div>
 							</div>
-							<button onclick={() => removeMember(m.user_id)} class="text-xs" style="color: #ef4444">Remove</button>
+							<button onclick={() => removeMember(m.user_id)} class="text-xs" style="color: #ef4444">{t('professional.slug.remove')}</button>
 						</div>
 					{/each}
 				</div>

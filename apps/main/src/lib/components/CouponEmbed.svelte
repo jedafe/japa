@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Tag, ExternalLink, Loader2, Clock } from 'lucide-svelte';
 	import { api, type Coupon } from '$lib/api';
 	import { onMount } from 'svelte';

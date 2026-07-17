@@ -106,8 +106,8 @@
 	{:else if submitted}
 		<div class="rounded-lg border p-8 text-center" style="border-color: var(--color-border)">
 			<CheckCircle class="mx-auto mb-3 h-10 w-10 text-green-500" />
-			<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">Submission received!</h2>
-			<p class="mt-2 text-sm" style="color: var(--color-muted)">Thank you for your submission.</p>
+			<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('spaces.slug.forms.formId.submission_received')}</h2>
+			<p class="mt-2 text-sm" style="color: var(--color-muted)">{t('spaces.slug.forms.formId.thank_you_for_your_submission')}</p>
 			<div class="mt-4 flex justify-center gap-3">
 				<a href="/spaces/{slug}/forms" class="rounded-lg border px-4 py-2 text-sm font-medium" style="border-color: var(--color-border); color: var(--color-foreground)">
 					Back to forms
@@ -159,7 +159,7 @@
 							class="w-full rounded-lg border px-3 py-2 text-sm"
 							style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
 						>
-							<option value="">Select...</option>
+							<option value="">{t('spaces.slug.forms.formId.select')}</option>
 							{#each field.options as option}
 								<option value={option}>{option}</option>
 							{/each}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ArrowLeft, Loader2, Save, X, Trash2 } from 'lucide-svelte';
@@ -125,7 +126,7 @@
 		</div>
 	{:else if profile}
 		<div class="rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-surface);">
-			<h1 class="text-xl font-bold" style="color: var(--color-foreground)">Edit professional profile</h1>
+			<h1 class="text-xl font-bold" style="color: var(--color-foreground)">{t('professional.slug.edit.edit_professional_profile')}</h1>
 			<p class="mt-1 text-sm" style="color: var(--color-muted)">
 				Update your profile information.
 			</p>

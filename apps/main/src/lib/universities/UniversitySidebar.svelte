@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Globe, DollarSign, BookOpen, Award, ExternalLink } from 'lucide-svelte';
 	import type { CustomFieldValue } from '$lib/types';
 
@@ -32,7 +33,7 @@
 </script>
 
 <aside class="space-y-4">
-	<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">Key Information</h3>
+	<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('lib.universities.UniversitySidebar.svelte.key_information')}</h3>
 
 	{#if fields.length > 0}
 		<div class="space-y-3">

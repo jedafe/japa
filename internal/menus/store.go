@@ -122,11 +122,11 @@ func (s *Store) deleteMenuItem(ctx context.Context, id, tenantID pgtype.UUID) er
 	return nil
 }
 
-func (s *Store) updateMenuItemSortOrder(ctx context.Context, id, tenantID pgtype.UUID, sortOrder int32) error {
-	if err := s.write.UpdateMenuItemSortOrder(ctx, gen.UpdateMenuItemSortOrderParams{
-		ID: id, TenantID: tenantID, SortOrder: sortOrder,
+func (s *Store) bulkUpdateMenuItemSortOrder(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID, sortOrders []int32) error {
+	if err := s.write.BulkUpdateMenuItemSortOrder(ctx, gen.BulkUpdateMenuItemSortOrderParams{
+		TenantID: tenantID, Ids: ids, SortOrders: sortOrders,
 	}); err != nil {
-		return fmt.Errorf("updating menu item sort order: %w", err)
+		return fmt.Errorf("bulk updating menu item sort order: %w", err)
 	}
 	return nil
 }

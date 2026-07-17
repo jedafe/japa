@@ -82,13 +82,6 @@ func (s *Store) deleteRedirect(ctx context.Context, id, tenantID pgtype.UUID) er
 	return nil
 }
 
-func (s *Store) recordRedirectHit(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.RecordRedirectHit(ctx, gen.RecordRedirectHitParams{ID: id, TenantID: tenantID}); err != nil {
-		return fmt.Errorf("recording redirect hit: %w", err)
-	}
-	return nil
-}
-
 func (s *Store) bulkUpdateRedirectStatus(ctx context.Context, tenantID pgtype.UUID, isActive bool, ids []pgtype.UUID) error {
 	if err := s.write.BulkUpdateRedirectStatus(ctx, gen.BulkUpdateRedirectStatusParams{
 		TenantID: tenantID, IsActive: isActive, Ids: ids,

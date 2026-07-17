@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import { Select } from '$lib/components/ui/select';
@@ -155,8 +156,8 @@
 	<title>Documentation — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Documentation</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage documentation pages for developers, users, admins, and the public</p>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('docs.documentation')}</h1>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('docs.manage_documentation_pages_for_developer')}</p>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -177,17 +178,17 @@
 </div>
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('docs.loading')}</p>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 		<table class="w-full text-sm">
 			<thead>
 				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Title</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Slug</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Audience</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Status</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Updated</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('docs.title_2')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('docs.slug')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('docs.audience')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('docs.status')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('docs.updated')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 				</tr>
 			</thead>
@@ -233,7 +234,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">No documentation pages found</td>
+						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">{t('docs.no_documentation_pages_found')}</td>
 					</tr>
 				{/each}
 			</tbody>
@@ -262,23 +263,23 @@
 			<div class="mt-4 space-y-3">
 				<div class="grid gap-3 sm:grid-cols-2">
 					<div>
-						<label for="doc-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Title</label>
+						<label for="doc-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.title_2')}</label>
 						<input id="doc-title" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.title} oninput={() => { if (!editingId) form.slug = slugify(form.title); }} />
 					</div>
 					<div>
-						<label for="doc-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Slug</label>
+						<label for="doc-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.slug')}</label>
 						<input id="doc-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.slug} />
 					</div>
 				</div>
 				<div>
-					<label for="doc-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Audience</label>
+					<label for="doc-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}</label>
 					<Select
 						options={audiences.map(a => ({ value: a, label: a }))}
 						bind:value={form.audience}
 					/>
 				</div>
 				<div>
-					<label for="doc-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Body (Markdown)</label>
+					<label for="doc-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_markdown')}</label>
 					<textarea id="doc-body" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="12" bind:value={form.body}></textarea>
 				</div>
 			</div>
@@ -305,5 +306,5 @@
 
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteConfirm} title="Confirm Delete" onConfirm={executeDelete} confirmLabel="Delete">
-	<p class="text-sm" style="color: var(--color-muted)">Are you sure you want to delete this documentation page? This action cannot be undone.</p>
+	<p class="text-sm" style="color: var(--color-muted)">{t('docs.are_you_sure_you_want_to_delete_this_doc')}</p>
 </Modal>

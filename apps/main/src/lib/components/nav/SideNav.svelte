@@ -47,7 +47,7 @@
 			class="flex h-14 items-center justify-between border-b px-4"
 			style="border-color: var(--color-border)"
 		>
-			<span class="text-lg font-bold" style="color: var(--color-primary)">JapaConnect</span>
+			<span class="text-lg font-bold" style="color: var(--color-primary)">{t('lib.components.nav.SideNav.svelte.japaconnect')}</span>
 			<button class="rounded-md p-1 hover:bg-black/5 dark:hover:bg-white/10" onclick={onclose} aria-label="Close">
 				<X class="h-5 w-5" />
 			</button>

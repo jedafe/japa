@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
   import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
   import type { Component, Snippet } from "svelte";

@@ -84,14 +84,14 @@
 		Back to docs
 	</a>
 
-	<h1 class="text-3xl font-bold tracking-tight">API Playground</h1>
+	<h1 class="text-3xl font-bold tracking-tight">{t('api-playground.api_playground')}</h1>
 	<p class="mt-2 text-sm" style="color: var(--color-muted)">
 		Test API endpoints directly from the browser. Authentication is optional.
 	</p>
 
 	<!-- Sample endpoints -->
 	<div class="mt-6 rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<h3 class="mb-3 text-sm font-semibold">Quick Endpoints</h3>
+		<h3 class="mb-3 text-sm font-semibold">{t('api-playground.quick_endpoints')}</h3>
 		<div class="flex flex-wrap gap-2">
 			{#each sampleEndpoints as ep}
 				<button
@@ -117,9 +117,9 @@
 				bind:value={method}
 			>
 				<option value="GET">GET</option>
-				<option value="POST">POST</option>
-				<option value="PATCH">PATCH</option>
-				<option value="DELETE">DELETE</option>
+				<option value="POST">{t('api-playground.post')}</option>
+				<option value="PATCH">{t('api-playground.patch')}</option>
+				<option value="DELETE">{t('api-playground.delete')}</option>
 			</select>
 			<input
 				type="text"
@@ -153,7 +153,7 @@
 
 		{#if method !== 'GET'}
 			<div class="mt-4">
-				<label for="req-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Request Body (JSON)</label>
+				<label for="req-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('api-playground.request_body_json')}</label>
 				<textarea
 					id="req-body"
 					class="w-full rounded-md border px-3 py-2 font-mono text-xs"
@@ -171,7 +171,7 @@
 		<div class="mt-6 rounded-lg border" style="border-color: var(--color-border); background-color: var(--color-surface)">
 			<div class="flex items-center justify-between border-b px-4 py-3" style="border-color: var(--color-border)">
 				<div class="flex items-center gap-3">
-					<h3 class="text-sm font-semibold">Response</h3>
+					<h3 class="text-sm font-semibold">{t('api-playground.response')}</h3>
 					{#if responseStatus !== null}
 						<span
 							class="rounded-full px-2 py-0.5 text-xs font-medium"

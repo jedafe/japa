@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Users } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type FeedItem } from '$lib/api';
@@ -61,7 +62,7 @@
 <main class="mx-auto max-w-3xl px-4 py-8">
 	<header class="mb-8">
 		<div class="flex items-center gap-2 text-xs" style="color: var(--color-muted)">
-			<a href="/spaces" class="hover:underline">Spaces</a>
+			<a href="/spaces" class="hover:underline">{t('feed.space.spaceId.spaces')}</a>
 			<span>/</span>
 			<span>{space.name}</span>
 		</div>
@@ -111,7 +112,7 @@
 		{#if hasMore}
 			<div id="feed-sentinel" class="flex justify-center py-8">
 				{#if loadingMore}
-					<p class="text-sm" style="color: var(--color-muted)">Loading more...</p>
+					<p class="text-sm" style="color: var(--color-muted)">{t('feed.space.spaceId.loading_more')}</p>
 				{:else}
 					<button
 						onclick={loadMore}

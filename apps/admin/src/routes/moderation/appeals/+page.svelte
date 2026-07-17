@@ -207,7 +207,7 @@
 							<td colspan="6" class="px-4 py-4" style="background-color: var(--color-surface)">
 								<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Original Action</p>
+										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.appeals.original_action')}</p>
 										<p class="mt-1">
 											<span class="inline-block rounded-full px-2 py-0.5 text-xs {actionBadgeColor(appeal.original_action)}">
 												{appeal.original_action}
@@ -216,7 +216,7 @@
 										<p class="mt-1 text-sm" style="color: var(--color-muted)">{appeal.original_reason || 'No reason provided'}</p>
 									</div>
 									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">Appeal Reason</p>
+										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.appeals.appeal_reason')}</p>
 										<p class="mt-1 text-sm">{appeal.appeal_reason}</p>
 									</div>
 								</div>

@@ -125,7 +125,7 @@
 		{errorMessage}
 	</div>
 {/if}
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage reaction types used across the platform</p>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('reactions.manage_reaction_types_used_across_the_pl')}</p>
 
 <div class="mb-4 flex justify-end">
 	<button
@@ -243,7 +243,7 @@
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="rx-active" type="checkbox" bind:checked={form.enabled} />
-			<label for="rx-active" class="text-sm">Active</label>
+			<label for="rx-active" class="text-sm">{t('reactions.active')}</label>
 		</div>
 	</div>
 </Modal>

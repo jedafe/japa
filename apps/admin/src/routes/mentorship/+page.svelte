@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -101,8 +102,8 @@
 			class: "w-24",
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-1">
-					<button onclick="window.__mentorshipEdit('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Edit</button>
-					<button onclick="window.__mentorshipDelete('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+					<button onclick="window.__mentorshipEdit('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.edit")}</button>
+					<button onclick="window.__mentorshipDelete('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
 				</div>
 			`
 		}
@@ -247,7 +248,7 @@
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
-				<p class="py-8 text-center text-sm text-gray-500">Loading programs...</p>
+				<p class="py-8 text-center text-sm text-gray-500">{t('mentorship.loading_programs')}</p>
 			{:else}
 				<DataTable
 					columns={columns}
@@ -263,25 +264,25 @@
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">Total Programs</p>
+				<p class="text-sm text-gray-500">{t('mentorship.total_programs')}</p>
 				<p class="text-2xl font-bold text-gray-900">{programs.length}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">Active Programs</p>
+				<p class="text-sm text-gray-500">{t('mentorship.active_programs')}</p>
 				<p class="text-2xl font-bold text-gray-900">{programs.filter((p) => p.is_active).length}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">Total Mentors</p>
+				<p class="text-sm text-gray-500">{t('mentorship.total_mentors')}</p>
 				<p class="text-2xl font-bold text-gray-900">{programs.reduce((sum, p) => sum + (p.mentor_count ?? 0), 0)}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">Total Mentees</p>
+				<p class="text-sm text-gray-500">{t('mentorship.total_mentees')}</p>
 				<p class="text-2xl font-bold text-gray-900">{programs.reduce((sum, p) => sum + (p.mentee_count ?? 0), 0)}</p>
 			</CardContent>
 		</Card>
@@ -297,7 +298,7 @@
 >
 	<div class="space-y-4">
 		<div>
-			<label for="mp-name" class="mb-1 block text-sm font-medium text-gray-900">Program Name</label>
+			<label for="mp-name" class="mb-1 block text-sm font-medium text-gray-900">{t('mentorship.program_name')}</label>
 			<input
 				id="mp-name"
 				type="text"
@@ -307,7 +308,7 @@
 			/>
 		</div>
 		<div>
-			<label for="mp-desc" class="mb-1 block text-sm font-medium text-gray-900">Description</label>
+			<label for="mp-desc" class="mb-1 block text-sm font-medium text-gray-900">{t('mentorship.description_2')}</label>
 			<textarea
 				id="mp-desc"
 				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
@@ -332,7 +333,7 @@
 	</div>
 
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showModal = false)}>Cancel</Button>
+		<Button variant="outline" onclick={() => (showModal = false)}>{t('mentorship.cancel')}</Button>
 		<Button onclick={saveProgram} disabled={saving || !name.trim()}>
 			{#if saving}
 				Saving...
@@ -356,7 +357,7 @@
 		</div>
 	{/if}
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showDeleteModal = false)}>Cancel</Button>
+		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('mentorship.cancel')}</Button>
 		<Button variant="destructive" onclick={deleteProgram} disabled={deleting}>
 			{#if deleting}
 				Deleting...

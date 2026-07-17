@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import { User, Bell, Shield, Loader2, Save, Trash2, KeyRound, Lock, Monitor, Link2 } from 'lucide-svelte';
 	import { api } from '$lib/api';
@@ -84,7 +85,7 @@
 </svelte:head>
 
 <main class="mx-auto max-w-3xl px-4 py-8">
-	<h1 class="mb-6 text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Settings</h1>
+	<h1 class="mb-6 text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{t('settings.settings')}</h1>
 
 	<div class="flex gap-6">
 		<!-- Sidebar Tabs -->
@@ -200,7 +201,7 @@
 		<!-- Content -->
 		<div class="flex-1 rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-surface);">
 			{#if activeTab === 'profile'}
-				<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">Profile Settings</h2>
+				<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('settings.profile_settings')}</h2>
 				<div class="space-y-4">
 					<div>
 						<label for="display_name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
@@ -249,7 +250,7 @@
 				</div>
 
 			{:else if activeTab === 'notifications'}
-				<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">Notification Preferences</h2>
+				<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('settings.notification_preferences')}</h2>
 				<div class="space-y-4">
 					{#each Object.entries(notificationPrefs) as [key, value]}
 						<label class="flex items-center justify-between rounded-lg border p-3" style="border-color: var(--color-border)">
@@ -270,10 +271,10 @@
 				</div>
 
 			{:else if activeTab === 'account'}
-				<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">Account Settings</h2>
+				<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('settings.account_settings')}</h2>
 				<div class="space-y-4">
 					<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
-						<h3 class="text-sm font-medium" style="color: var(--color-foreground)">Change Password</h3>
+						<h3 class="text-sm font-medium" style="color: var(--color-foreground)">{t('settings.change_password')}</h3>
 						<p class="mt-1 text-sm" style="color: var(--color-muted)">
 							Update your password to keep your account secure.
 						</p>
@@ -334,7 +335,7 @@
 						</a>
 					</div>
 					<div class="rounded-lg border p-4" style="border-color: var(--color-danger)">
-						<h3 class="text-sm font-medium" style="color: var(--color-danger)">Danger Zone</h3>
+						<h3 class="text-sm font-medium" style="color: var(--color-danger)">{t('settings.danger_zone')}</h3>
 						<p class="mt-1 text-sm" style="color: var(--color-muted)">
 							Permanently delete your account and all associated data. This action cannot be undone.
 						</p>
@@ -358,7 +359,7 @@
 									</div>
 								{/if}
 								<p class="text-sm" style="color: var(--color-danger)">
-									Type <strong>DELETE</strong> to confirm:
+									Type <strong>{t('settings.delete')}</strong> to confirm:
 								</p>
 								<Input
 									type="text"

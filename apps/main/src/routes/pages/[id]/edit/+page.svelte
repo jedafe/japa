@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import PageBuilder from '$lib/page-builder/PageBuilder.svelte';
 	import type { BlockInstance } from '$lib/page-builder/types';
 	import { api } from '$lib/api';
@@ -53,7 +54,7 @@
 			<a href="/pages/{data.page?.id}" class="rounded-md p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10">
 				<ArrowLeft class="h-5 w-5" style="color: var(--color-muted)" />
 			</a>
-			<h1 class="text-xl font-bold" style="color: var(--color-foreground)">Edit Page</h1>
+			<h1 class="text-xl font-bold" style="color: var(--color-foreground)">{t('pages.id.edit.edit_page')}</h1>
 		</div>
 		<div class="flex items-center gap-2">
 			<button
@@ -88,7 +89,7 @@
 	{/if}
 
 	<div class="mb-6">
-		<label for="page-title" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">Title</label>
+		<label for="page-title" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('pages.id.edit.title')}</label>
 		<input
 			id="page-title"
 			type="text"

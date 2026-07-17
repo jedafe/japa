@@ -227,15 +227,22 @@ type ReorderItem struct {
 }
 
 func (s *Service) ReorderMenuItems(ctx context.Context, tenantID pgtype.UUID, items []ReorderItem) error {
-	for _, item := range items {
-		var itemID pgtype.UUID
-		if err := itemID.Scan(item.ID); err != nil {
+	if len(items) == 0 {
+		return nil
+	}
+	// Single unnest-based UPDATE replaces the per-item loop: one round trip,
+	// and the reorder is atomic instead of failing halfway.
+	ids := make([]pgtype.UUID, len(items))
+	sortOrders := make([]int32, len(items))
+	for i, item := range items {
+		if err := ids[i].Scan(item.ID); err != nil {
 			return fmt.Errorf("invalid item id %s: %w", item.ID, err)
 		}
-		if err := s.store.updateMenuItemSortOrder(ctx, itemID, tenantID, int32(item.SortOrder)); err != nil {
-			slog.Error("reorder menu item failed", "item_id", item.ID, "error", err)
-			return err
-		}
+		sortOrders[i] = int32(item.SortOrder)
+	}
+	if err := s.store.bulkUpdateMenuItemSortOrder(ctx, tenantID, ids, sortOrders); err != nil {
+		slog.Error("reorder menu items failed", "tenant_id", tenantID.String(), "error", err)
+		return err
 	}
 	return nil
 }

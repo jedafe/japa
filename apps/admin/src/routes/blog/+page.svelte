@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
   import { goto } from "$app/navigation";
   import PageHeader from "$lib/components/layout/page-header.svelte";
   import { Card, CardContent } from "$lib/components/ui/card";
@@ -282,36 +283,36 @@
   {#if viewTarget}
     <div class="space-y-4">
       <div>
-        <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Title</p>
+        <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.title')}</p>
         <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.title}</p>
       </div>
       {#if viewTarget.excerpt}
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Excerpt</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.excerpt')}</p>
           <p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.excerpt}</p>
         </div>
       {/if}
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Author</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.author')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.author_name}</p>
         </div>
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.status')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
         </div>
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Views</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.views')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.views ?? 0).toLocaleString()}</p>
         </div>
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Published</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.published')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.published_at ? new Date(viewTarget.published_at).toLocaleString() : "—"}</p>
         </div>
       </div>
       {#if viewTarget.categories?.length}
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Categories</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.categories')}</p>
           <div class="mt-1 flex flex-wrap gap-1">
             {#each viewTarget.categories as cat}
               <span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary)">{cat}</span>
@@ -321,7 +322,7 @@
       {/if}
       {#if viewTarget.tags?.length}
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Tags</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.tags')}</p>
           <div class="mt-1 flex flex-wrap gap-1">
             {#each viewTarget.tags as tag}
               <span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background: var(--color-surface); color: var(--color-muted)">{tag}</span>
@@ -332,13 +333,13 @@
     </div>
   {/if}
   <div class="mt-6 flex justify-end gap-2">
-    <Button variant="outline" onclick={() => goto(`/blog/${viewTarget?.slug || viewTarget?.id}`)}>Edit</Button>
+    <Button variant="outline" onclick={() => goto(`/blog/${viewTarget?.slug || viewTarget?.id}`)}>{t('blog.edit')}</Button>
     {#if viewTarget?.url}
       <Button variant="outline" onclick={() => openExternal(viewTarget!)}>
         <ExternalLink class="mr-1 h-3.5 w-3.5" /> View Live
       </Button>
     {/if}
-    <Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+    <Button variant="outline" onclick={() => (showViewModal = false)}>{t('blog.close')}</Button>
   </div>
 </Modal>
 
@@ -349,7 +350,7 @@
       Are you sure you want to reject "{rejectTarget?.title}"? The author will be notified.
     </p>
     <div>
-      <label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">Reason (optional)</label>
+      <label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('blog.reason_optional')}</label>
       <textarea
         id="reject-reason"
         bind:value={rejectReason}
@@ -361,7 +362,7 @@
     </div>
   </div>
   <div class="mt-4 flex justify-end gap-2">
-    <Button variant="ghost" onclick={() => (showRejectModal = false)}>Cancel</Button>
+    <Button variant="ghost" onclick={() => (showRejectModal = false)}>{t('blog.cancel')}</Button>
     <Button variant="destructive" onclick={confirmReject} disabled={acting}>
       {acting ? "Rejecting..." : "Reject"}
     </Button>

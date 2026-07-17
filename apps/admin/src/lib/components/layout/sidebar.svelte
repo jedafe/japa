@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from "$app/state";
 	import Tooltip from "$lib/components/ui/tooltip/tooltip.svelte";
 	import { hasPermission, getPermissionState, getPermissions } from "$lib/stores/permissions.svelte";
@@ -220,7 +221,7 @@
 	<div class="flex h-14 items-center border-b px-4" style="border-color: var(--color-border)">
 		<a href="/" class="flex items-center gap-2">
 			{#if !collapsed}
-				<span class="text-lg font-semibold" style="color: var(--color-foreground)">Admin</span>
+				<span class="text-lg font-semibold" style="color: var(--color-foreground)">{t('lib.components.layout.sidebar.svelte.admin')}</span>
 			{/if}
 		</a>
 	</div>

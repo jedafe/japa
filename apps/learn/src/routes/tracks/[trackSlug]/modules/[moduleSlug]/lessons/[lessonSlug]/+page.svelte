@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { api, type TrackDetail, type Lesson, type QuizQuestion, type QuizResult } from '$lib/api';

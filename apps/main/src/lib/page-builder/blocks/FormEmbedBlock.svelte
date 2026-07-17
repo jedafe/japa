@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
 	import { request } from '$lib/api';
 
@@ -53,7 +54,7 @@
 <div class={wrapperClass}>
 	{#if loading}
 		<div class="flex h-32 items-center justify-center rounded-lg {show_border ? 'border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50' : 'bg-transparent'}">
-			<p class="text-sm text-gray-400 dark:text-gray-500">Loading form...</p>
+			<p class="text-sm text-gray-400 dark:text-gray-500">{t('lib.page-builder.blocks.FormEmbedBlock.svelte.loading_form')}</p>
 		</div>
 	{:else if error}
 		<div class="flex h-32 items-center justify-center rounded-lg border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950">

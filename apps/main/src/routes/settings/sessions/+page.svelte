@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { ArrowLeft, Loader2, Monitor, Smartphone, Trash2 } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
@@ -94,7 +95,7 @@
 	</a>
 
 	<div class="mb-6 flex items-center justify-between">
-		<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Active Sessions</h1>
+		<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('settings.sessions.active_sessions')}</h1>
 		{#if sessions.length > 1}
 			<button
 				onclick={revokeAllSessions}
@@ -168,7 +169,7 @@
 					{/if}
 				</div>
 			{:else}
-				<p class="text-center text-sm" style="color: var(--color-muted)">No active sessions.</p>
+				<p class="text-center text-sm" style="color: var(--color-muted)">{t('settings.sessions.no_active_sessions')}</p>
 			{/each}
 		</div>
 	{/if}

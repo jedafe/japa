@@ -93,3 +93,16 @@ WHERE id = @id;
 -- name: GetNotificationTypes :many
 SELECT key, label, description, enabled, default_in_app, default_email, default_push
 FROM notification_types ORDER BY key;
+
+-- name: UpsertNotificationType :exec
+INSERT INTO notification_types (key, label, description, enabled, default_in_app, default_email, default_push)
+VALUES (@key, @label, @description, @enabled, true, true, false)
+ON CONFLICT (key) DO UPDATE SET label = EXCLUDED.label, description = EXCLUDED.description;
+
+-- name: UpdateNotificationType :exec
+UPDATE notification_types
+SET label = @label, description = @description, enabled = @enabled
+WHERE key = @key;
+
+-- name: DeleteNotificationType :exec
+DELETE FROM notification_types WHERE key = @key;

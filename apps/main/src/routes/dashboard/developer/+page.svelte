@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
 	import { api, type DeveloperApiKey } from '$lib/api';
 	import { Key, Plus, Trash2, Copy, Check, Shield, AlertTriangle, Webhook as WebhookIcon } from 'lucide-svelte';
@@ -141,7 +142,7 @@
 			class="mb-6 rounded-xl border p-5"
 			style="border-color: color-mix(in srgb, #22c55e 30%, transparent); background: color-mix(in srgb, #22c55e 6%, transparent)"
 		>
-			<p class="font-medium" style="color: #16a34a">API Key Created</p>
+			<p class="font-medium" style="color: #16a34a">{t('dashboard.developer.api_key_created')}</p>
 			<div class="mt-3 flex items-center gap-2">
 				<code
 					class="flex-1 break-all rounded-lg px-3 py-2 text-sm"
@@ -180,7 +181,7 @@
 		<div class="flex items-start gap-3">
 			<Shield class="mt-0.5 h-4 w-4 flex-shrink-0" style="color: var(--color-primary)" />
 			<div class="text-xs" style="color: var(--color-muted)">
-				<p class="font-medium" style="color: var(--color-foreground)">API Access</p>
+				<p class="font-medium" style="color: var(--color-foreground)">{t('dashboard.developer.api_access')}</p>
 				<p class="mt-1">
 					Use your API keys to access JapaConnect programmatically. Keys are scoped to specific
 					permissions and can be revoked at any time.
@@ -190,7 +191,7 @@
 	</div>
 
 	<div class="flex items-center justify-between">
-		<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">My API Keys</h2>
+		<h2 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('dashboard.developer.my_api_keys')}</h2>
 		<button
 			class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
 			style="background-color: var(--color-primary)"
@@ -299,7 +300,7 @@
 				/>
 
 				<div class="mt-4">
-					<p class="mb-2 text-xs font-medium" style="color: var(--color-muted)">Scopes</p>
+					<p class="mb-2 text-xs font-medium" style="color: var(--color-muted)">{t('dashboard.developer.scopes')}</p>
 					<div class="flex flex-wrap gap-2">
 						{#each availableScopes as scope}
 							<label class="flex items-center gap-1.5 text-xs" style="color: var(--color-foreground)" title={scope.description}>

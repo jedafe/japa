@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -113,8 +114,8 @@
 			class: "w-32",
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-1">
-					${row.status === "draft" ? `<button onclick="window.__learningPublish('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-50">Publish</button>` : ""}
-					<button onclick="window.__learningDelete('track', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+					${row.status === "draft" ? `<button onclick="window.__learningPublish('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-50">${t("common.publish")}</button>` : ""}
+					<button onclick="window.__learningDelete('track', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
 				</div>
 			`
 		}
@@ -150,7 +151,7 @@
 			class: "w-24",
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-1">
-					<button onclick="window.__learningDelete('module', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+					<button onclick="window.__learningDelete('module', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
 				</div>
 			`
 		}
@@ -186,7 +187,7 @@
 			class: "w-24",
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-1">
-					<button onclick="window.__learningDelete('lesson', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+					<button onclick="window.__learningDelete('lesson', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
 				</div>
 			`
 		}
@@ -396,7 +397,7 @@
 	{#if activeTab === "tracks"}
 		<div class="space-y-4">
 			<div>
-				<label for="track-title" class="mb-1 block text-sm font-medium text-gray-900">Title</label>
+				<label for="track-title" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.title')}</label>
 				<input
 					id="track-title"
 					type="text"
@@ -406,7 +407,7 @@
 				/>
 			</div>
 			<div>
-				<label for="track-description" class="mb-1 block text-sm font-medium text-gray-900">Description</label>
+				<label for="track-description" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.description')}</label>
 				<textarea
 					id="track-description"
 					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
@@ -419,7 +420,7 @@
 	{:else if activeTab === "modules"}
 		<div class="space-y-4">
 			<div>
-				<label for="module-track-id" class="mb-1 block text-sm font-medium text-gray-900">Track ID</label>
+				<label for="module-track-id" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.track_id')}</label>
 				<input
 					id="module-track-id"
 					type="text"
@@ -429,7 +430,7 @@
 				/>
 			</div>
 			<div>
-				<label for="module-title" class="mb-1 block text-sm font-medium text-gray-900">Title</label>
+				<label for="module-title" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.title')}</label>
 				<input
 					id="module-title"
 					type="text"
@@ -442,7 +443,7 @@
 	{:else}
 		<div class="space-y-4">
 			<div>
-				<label for="lesson-module-id" class="mb-1 block text-sm font-medium text-gray-900">Module ID</label>
+				<label for="lesson-module-id" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.module_id')}</label>
 				<input
 					id="lesson-module-id"
 					type="text"
@@ -452,7 +453,7 @@
 				/>
 			</div>
 			<div>
-				<label for="lesson-title" class="mb-1 block text-sm font-medium text-gray-900">Title</label>
+				<label for="lesson-title" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.title')}</label>
 				<input
 					id="lesson-title"
 					type="text"
@@ -462,7 +463,7 @@
 				/>
 			</div>
 			<div>
-				<label for="lesson-body" class="mb-1 block text-sm font-medium text-gray-900">Content (Markdown)</label>
+				<label for="lesson-body" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.content_markdown')}</label>
 				<textarea
 					id="lesson-body"
 					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
@@ -475,7 +476,7 @@
 	{/if}
 
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showCreateModal = false)}>Cancel</Button>
+		<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('learning.cancel')}</Button>
 		<Button
 			onclick={activeTab === "tracks" ? createTrack : activeTab === "modules" ? createModule : createLesson}
 			disabled={creating}
@@ -499,7 +500,7 @@
 		</div>
 	{/if}
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showDeleteModal = false)}>Cancel</Button>
+		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('learning.cancel')}</Button>
 		<Button variant="destructive" onclick={deleteItem} disabled={deleting}>
 			{#if deleting}
 				Deleting...

@@ -59,7 +59,7 @@
 
 		{#if info.commission_rates && Object.keys(info.commission_rates).length > 0}
 			<section class="mb-8">
-				<h2 class="mb-4 text-xl font-semibold">Commission Rates</h2>
+				<h2 class="mb-4 text-xl font-semibold">{t('affiliate-program.commission_rates')}</h2>
 				<div class="grid gap-4 sm:grid-cols-3">
 					{#each Object.entries(info.commission_rates) as [key, rate]}
 						<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
@@ -73,7 +73,7 @@
 
 		{#if info.requirements && info.requirements.length > 0}
 			<section class="mb-8">
-				<h2 class="mb-4 text-xl font-semibold">Requirements</h2>
+				<h2 class="mb-4 text-xl font-semibold">{t('affiliate-program.requirements')}</h2>
 				<ul class="list-disc space-y-2 pl-5 text-sm" style="color: var(--color-muted)">
 					{#each info.requirements as req}
 						<li>{req}</li>
@@ -83,7 +83,7 @@
 		{/if}
 
 		<section class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<h2 class="mb-2 text-xl font-semibold">Ready to Join?</h2>
+			<h2 class="mb-2 text-xl font-semibold">{t('affiliate-program.ready_to_join')}</h2>
 			<p class="mb-4 text-sm" style="color: var(--color-muted)">
 				Earn commissions by sharing your unique affiliate links. Track your performance and payouts from your dashboard.
 			</p>

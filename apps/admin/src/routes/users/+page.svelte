@@ -375,35 +375,35 @@
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Username</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.username')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.username}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Email</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.email')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.email}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Profile Type</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.profile_type')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.profile_type || "—"}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.status')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Followers</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.followers')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.follower_count ?? 0).toLocaleString()}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Joined</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.joined')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
 				</div>
 			</div>
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => goto(`/users/${viewTarget?.id}`)}>View Full Profile</Button>
-		<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+		<Button variant="outline" onclick={() => goto(`/users/${viewTarget?.id}`)}>{t('users.view_full_profile')}</Button>
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('users.close')}</Button>
 	</div>
 </Modal>
 
@@ -415,7 +415,7 @@
 		</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>Cancel</Button>
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('users.cancel')}</Button>
 		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? "Deleting..." : "Delete"}</Button>
 	</div>
 </Modal>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { UserPlus, UserCheck, Loader2, MapPin, Calendar, Rss } from 'lucide-svelte';
 	import { api, type UserProfile } from '$lib/api';
@@ -158,7 +159,7 @@
 
 		<!-- User's Content Feed -->
 		<div class="mt-6">
-			<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">Posts</h2>
+			<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('profile.username.posts')}</h2>
 			<div
 				class="rounded-xl border p-8 text-center"
 				style="border-color: var(--color-border)"

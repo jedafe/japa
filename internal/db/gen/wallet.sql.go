@@ -136,7 +136,7 @@ func (q *Queries) GetActivityRuleByKey(ctx context.Context, arg GetActivityRuleB
 const getLatestBalance = `-- name: GetLatestBalance :one
 SELECT resulting_balance FROM wallet_ledger
 WHERE tenant_id = $1 AND user_id = $2 AND ledger_type = $3
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id DESC -- **Already Fixed** Low #20: break ties with id
 LIMIT 1
 `
 

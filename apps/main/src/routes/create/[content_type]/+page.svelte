@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import PostCreateLayout from '$lib/create/PostCreateLayout.svelte';
@@ -99,7 +100,7 @@
 {:else}
 	<div class="flex min-h-screen items-center justify-center">
 		<div class="text-center">
-			<h1 class="text-2xl font-bold">Content type not found</h1>
+			<h1 class="text-2xl font-bold">{t('create.content_type.content_type_not_found')}</h1>
 			<p class="mt-2" style="color: var(--color-muted)">
 				The content type "{page.params.content_type}" does not exist.
 			</p>

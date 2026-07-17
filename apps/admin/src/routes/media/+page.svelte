@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -352,7 +353,7 @@
   {#if loading}
     <div class="flex items-center justify-center py-12">
       <RefreshCw class="h-5 w-5 animate-spin text-gray-400" />
-      <span class="ml-2 text-sm text-gray-500">Loading media...</span>
+      <span class="ml-2 text-sm text-gray-500">{t('media.loading_media')}</span>
     </div>
   {:else if viewMode === "grid"}
     <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
@@ -403,8 +404,8 @@
       Are you sure you want to delete "{deleteTargetName}"? This action cannot be undone.
     </p>
     <div class="flex justify-end gap-3">
-      <Button variant="outline" onclick={() => (showDeleteModal = false)}>Cancel</Button>
-      <Button variant="destructive" onclick={deleteMedia}>Delete</Button>
+      <Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('media.cancel')}</Button>
+      <Button variant="destructive" onclick={deleteMedia}>{t('media.delete')}</Button>
     </div>
   </div>
 </Modal>

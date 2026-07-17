@@ -38,11 +38,11 @@
 
 	async function createKey() {
 		if (!newName.trim()) {
-			createError = 'Key name is required.';
+			createError = t('apikeys.name_required');
 			return;
 		}
 		if (newScopes.length === 0) {
-			createError = 'Select at least one scope.';
+			createError = t('apikeys.scope_required');
 			return;
 		}
 
@@ -150,7 +150,7 @@
 <div class="mx-auto max-w-4xl">
 	<!-- Header -->
 	<div class="mb-8">
-		<h1 class="text-3xl font-bold tracking-tight">Developer API Keys</h1>
+		<h1 class="text-3xl font-bold tracking-tight">{t('api-keys.developer_api_keys')}</h1>
 		<p class="mt-2 text-sm" style="color: var(--color-muted)">
 			Create and manage API keys for programmatic access to the JapaConnect API.
 			Keys are shown only once at creation — store them securely.
@@ -179,7 +179,7 @@
 			style="border-color: var(--color-border); background-color: var(--color-surface)"
 		>
 			<Key class="mx-auto h-10 w-10" style="color: var(--color-muted)" />
-			<h3 class="mt-4 text-lg font-semibold">No API keys yet</h3>
+			<h3 class="mt-4 text-lg font-semibold">{t('api-keys.no_api_keys_yet')}</h3>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
 				Create your first API key to start integrating with the JapaConnect API.
 			</p>
@@ -200,13 +200,13 @@
 			<table class="w-full text-left text-sm" style="color: var(--color-foreground)">
 				<thead>
 					<tr style="border-bottom: 1px solid var(--color-border)">
-						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Name</th>
+						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">{t('api-keys.name')}</th>
 						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Key</th>
-						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Scopes</th>
-						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Status</th>
-						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Created</th>
-						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Last Used</th>
-						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Actions</th>
+						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">{t('api-keys.scopes')}</th>
+						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">{t('api-keys.status')}</th>
+						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">{t('api-keys.created')}</th>
+						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">{t('api-keys.last_used')}</th>
+						<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">{t('api-keys.actions')}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -244,7 +244,7 @@
 								{#if key.status === 'active'}
 									{#if confirmRevokeId === key.id}
 										<div class="flex items-center gap-2">
-											<span class="text-xs" style="color: var(--color-danger)">Revoke?</span>
+											<span class="text-xs" style="color: var(--color-danger)">{t('api-keys.revoke')}</span>
 											<button
 												class="rounded px-2 py-1 text-xs font-medium transition-colors"
 												style="color: var(--color-danger)"
@@ -293,7 +293,7 @@
 			onkeydown={(e) => e.stopPropagation()}
 		>
 			<div class="mb-4 flex items-center justify-between">
-				<h2 class="text-lg font-semibold">Create New API Key</h2>
+				<h2 class="text-lg font-semibold">{t('api-keys.create_new_api_key')}</h2>
 				<button
 					class="rounded p-1 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
 					onclick={closeCreateModal}
@@ -314,7 +314,7 @@
 
 			<div class="space-y-4">
 				<div>
-					<label for="key-name" class="mb-1 block text-sm font-medium">Key Name</label>
+					<label for="key-name" class="mb-1 block text-sm font-medium">{t('api-keys.key_name')}</label>
 					<input
 						id="key-name"
 						type="text"
@@ -330,7 +330,7 @@
 
 				<div>
 					<!-- svelte-ignore a11y_label_has_associated_control -->
-					<label class="mb-2 block text-sm font-medium">Scopes</label>
+					<label class="mb-2 block text-sm font-medium">{t('api-keys.scopes')}</label>
 					<div class="flex flex-wrap gap-2">
 						{#each availableScopes as scope}
 							<button
@@ -390,7 +390,7 @@
 					<Check class="h-5 w-5" style="color: var(--color-success)" />
 				</div>
 				<div>
-					<h2 class="text-lg font-semibold">API Key Created</h2>
+					<h2 class="text-lg font-semibold">{t('api-keys.api_key_created')}</h2>
 					<p class="text-sm" style="color: var(--color-muted)">
 						Copy your key now — it won't be shown again.
 					</p>

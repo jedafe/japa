@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	let { open = $bindable(false), title = '', children, onConfirm, confirmLabel = 'Confirm' } = $props();
 </script>
 
@@ -8,7 +9,7 @@
 		{#if children}
 			{@render children()}
 		{/if}
-		<button onclick={() => (open = false)}>Cancel</button>
+		<button onclick={() => (open = false)}>{t('bots.id.ModalStub.svelte.cancel')}</button>
 		{#if onConfirm}
 			<button onclick={() => { onConfirm(); open = false; }}>{confirmLabel}</button>
 		{/if}

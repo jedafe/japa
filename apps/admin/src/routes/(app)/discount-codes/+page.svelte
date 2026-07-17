@@ -357,7 +357,7 @@
 				<table class="w-full text-sm">
 					<thead>
 						<tr class="border-b border-gray-200 bg-gray-50">
-							<th class="px-4 py-2 text-left text-xs font-medium text-gray-500">User</th>
+							<th class="px-4 py-2 text-left text-xs font-medium text-gray-500">{t('app.discount-codes.user')}</th>
 							<th class="px-4 py-2 text-left text-xs font-medium text-gray-500">{t('discounts.used_at')}</th>
 						</tr>
 					</thead>

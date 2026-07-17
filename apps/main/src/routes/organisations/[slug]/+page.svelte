@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Building2, BadgeCheck, Users, Mail, UserPlus, Loader2, Shield } from 'lucide-svelte';
 	import { api } from '$lib/api';
 
@@ -183,8 +184,8 @@
 						class="rounded-lg border px-3 py-2 text-sm outline-none"
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					>
-						<option value="member">Member</option>
-						<option value="admin">Admin</option>
+						<option value="member">{t('organisations.slug.member')}</option>
+						<option value="admin">{t('organisations.slug.admin')}</option>
 					</select>
 				</div>
 				<button
@@ -203,7 +204,7 @@
 		{/if}
 
 		{#if members.length === 0}
-			<p class="py-6 text-center text-sm" style="color: var(--color-muted)">No members yet.</p>
+			<p class="py-6 text-center text-sm" style="color: var(--color-muted)">{t('organisations.slug.no_members_yet')}</p>
 		{:else}
 			<ul class="divide-y" style="border-color: var(--color-border)">
 				{#each members as member (member.user_id)}
@@ -254,7 +255,7 @@
 	<section class="mt-4 rounded-2xl border p-5" style="border-color: var(--color-border); background: var(--color-surface)">
 		<div class="flex items-center justify-between">
 			<div>
-				<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">Is this your organisation?</h2>
+				<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t('organisations.slug.is_this_your_organisation')}</h2>
 				<p class="mt-0.5 text-xs" style="color: var(--color-muted)">
 					Claim ownership to manage members, invitations, and the profile.
 				</p>

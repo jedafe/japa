@@ -1,15 +1,16 @@
 <script lang="ts">
-	import { api } from "$lib/api";
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent } from "$lib/components/ui/card";
-	import { Tabs } from "$lib/components/ui/tabs";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
-	import { Badge } from "$lib/components/ui/badge";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Select } from "$lib/components/ui/select";
-	import { Globe, Plus, Download, RefreshCw, FileText } from "lucide-svelte";
+	import { t } from '$lib/stores/i18n.svelte';
+	import { api, i18nAdminApiExtended } from '$lib/api';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { Tabs } from '$lib/components/ui/tabs';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { FilterBar } from '$lib/components/ui/filter-bar';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Select } from '$lib/components/ui/select';
+	import { Globe, Plus, Download, RefreshCw, FileText } from 'lucide-svelte';
 
 	type Language = {
 		code: string;
@@ -21,85 +22,74 @@
 	};
 
 	type TranslationEntry = {
+		id: string;
 		key: string;
-		translations: Record<string, string>;
+		locale: string;
+		value: string;
 	};
 
 	let languages = $state<Language[]>([]);
 	let translations = $state<TranslationEntry[]>([]);
 	let loading = $state(true);
-	let activeTab = $state("languages");
-	let filters = $state<Record<string, string>>({});
+	let activeTab = $state('languages');
+	let selectedLocale = $state('en');
 	let createModalOpen = $state(false);
 	let editModalOpen = $state(false);
-	let editingLanguage = $state<Language | null>(null);
+	let editingString = $state<TranslationEntry | null>(null);
 	let deleteConfirmOpen = $state(false);
-	let deletingTarget = $state<{ type: "language" | "translation"; key: string } | null>(null);
+	let deletingTarget = $state<{ type: 'string'; id: string } | null>(null);
 	let saving = $state(false);
-	let errorMessage = $state("");
-	let successMessage = $state("");
+	let errorMessage = $state('');
+	let successMessage = $state('');
+	let creatingLocale = $state(false);
 
-	let form = $state({ code: "", name: "", flag: "" });
+	let form = $state({ code: '', name: '', flag: '' });
 
 	let tabs = $derived([
-		{ value: "languages", label: "Languages", icon: Globe, count: languages.length },
-		{ value: "translations", label: "Translations", icon: FileText, count: translations.length }
+		{ value: 'languages', label: 'Languages', icon: Globe, count: languages.length },
+		{ value: 'translations', label: 'Translations', icon: FileText, count: translations.length }
 	]);
 
 	const languageColumns = [
 		{
-			key: "code",
-			label: "Code",
+			key: 'code',
+			label: 'Code',
 			sortable: true,
 			render: (value: string) => `<span class="font-mono text-sm text-gray-900">${value}</span>`
 		},
 		{
-			key: "name",
-			label: "Language",
+			key: 'name',
+			label: 'Language',
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-2">
-					<span class="text-lg">${row.flag || "🌐"}</span>
+					<span class="text-lg">${row.flag || '🌐'}</span>
 					<span class="font-medium text-gray-900">${row.name}</span>
 				</div>
 			`
 		},
 		{
-			key: "completion",
-			label: "Completion",
-			sortable: true,
-			render: (value: number) => `
-				<div class="flex items-center gap-2">
-					<div class="h-2 w-24 rounded-full bg-gray-200">
-						<div class="h-2 rounded-full bg-primary-600" style="width: ${value ?? 0}%"></div>
-					</div>
-					<span class="text-sm text-gray-600">${value ?? 0}%</span>
-				</div>
-			`
-		},
-		{
-			key: "status",
-			label: "Status",
+			key: 'status',
+			label: 'Status',
 			sortable: true,
 			render: (_: any, row: any) => {
-				const status = row.isDefault ? "default" : row.isEnabled ? "enabled" : "disabled";
+				const status = row.isDefault ? 'default' : row.isEnabled ? 'enabled' : 'disabled';
 				const cls =
-					status === "default"
-						? "bg-primary-100 text-primary-800 border-primary-200"
-						: status === "enabled"
-							? "bg-success-100 text-success-800 border-success-200"
-							: "bg-gray-100 text-gray-800 border-gray-200";
+					status === 'default'
+						? 'bg-primary-100 text-primary-800 border-primary-200'
+						: status === 'enabled'
+							? 'bg-success-100 text-success-800 border-success-200'
+							: 'bg-gray-100 text-gray-800 border-gray-200';
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${status}</span>`;
 			}
 		},
 		{
-			key: "actions",
-			label: "",
-			class: "w-24",
+			key: 'actions',
+			label: '',
+			class: 'w-24',
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-1">
-					<button onclick="window.__editLanguage('${row.code}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Edit</button>
-					<button onclick="window.__deleteLanguage('${row.code}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+					<button onclick="window.__deleteLanguage('${row.code}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
 				</div>
 			`
 		}
@@ -107,49 +97,49 @@
 
 	const translationColumns = [
 		{
-			key: "key",
-			label: "Key",
+			key: 'key',
+			label: 'Key',
 			sortable: true,
 			render: (value: string) => `<span class="font-mono text-sm text-gray-900">${value}</span>`
 		},
 		{
-			key: "translations",
-			label: "Translations",
+			key: 'value',
+			label: 'Value',
 			render: (_: any, row: any) => `
-				<div class="flex flex-wrap gap-1">
-					${Object.entries(row.translations || {})
-						.map(
-							([lang, val]) =>
-								`<span class="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">${lang}: ${val || "—"}</span>`
-						)
-						.join("")}
-				</div>
+				<div class="max-w-md truncate text-sm text-gray-700">${row.value || '—'}</div>
 			`
 		},
 		{
-			key: "actions",
-			label: "",
-			class: "w-24",
+			key: 'actions',
+			label: '',
+			class: 'w-24',
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-1">
-					<button onclick="window.__editTranslation('${row.key}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Edit</button>
-					<button onclick="window.__deleteTranslation('${row.key}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+					<button onclick="window.__editTranslation('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.edit")}</button>
+					<button onclick="window.__deleteTranslation('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
 				</div>
 			`
 		}
 	];
 
 	async function loadLanguages() {
-		const result = await api<Language[]>("/i18n/languages");
+		const result = await i18nAdminApiExtended.listLanguages();
 		if (result.ok) {
-			languages = Array.isArray(result.data) ? result.data : [];
+			const data = (result.data as Array<{ locale: string; count: number }>) ?? [];
+			languages = data.map((l) => ({
+				code: l.locale,
+				name: l.locale.toUpperCase(),
+				isDefault: l.locale === 'en',
+				isEnabled: true,
+				completion: l.count
+			}));
 		}
 	}
 
 	async function loadTranslations() {
-		const result = await api<TranslationEntry[]>("/i18n/translations");
+		const result = await i18nAdminApiExtended.listStrings(`locale=${selectedLocale}`);
 		if (result.ok) {
-			translations = Array.isArray(result.data) ? result.data : [];
+			translations = (result.data as TranslationEntry[]) ?? [];
 		}
 	}
 
@@ -161,75 +151,76 @@
 
 	async function submitLanguage() {
 		if (!form.code.trim() || !form.name.trim()) return;
-		saving = true;
-		errorMessage = "";
-		const result = await api("/i18n/languages", {
-			method: "POST",
-			body: {
-				code: form.code.trim(),
-				name: form.name.trim(),
-				flag: form.flag.trim() || undefined
-			}
-		});
-		if (result.ok) {
+		creatingLocale = true;
+		errorMessage = '';
+		// Provision a new locale by copying all English keys into the new locale.
+		// The backend implicitly creates the locale once any translation row exists for it.
+		const enResult = await i18nAdminApiExtended.listStrings('locale=en');
+		if (!enResult.ok) {
+			errorMessage = 'Failed to load source strings';
+			creatingLocale = false;
+			return;
+		}
+		const enStrings = (enResult.data as TranslationEntry[]) ?? [];
+		const batch = enStrings.map((s) => ({
+			locale: form.code.trim(),
+			key: s.key,
+			value: s.value
+		}));
+		const res = await i18nAdminApiExtended.batchCreate({ translations: batch });
+		if (res.ok) {
 			createModalOpen = false;
-			form = { code: "", name: "", flag: "" };
-			successMessage = "Language added successfully";
+			form = { code: '', name: '', flag: '' };
+			successMessage = 'Language added successfully';
 			loadLanguages();
 		} else {
-			errorMessage = result.error ?? "Failed to add language";
+			errorMessage = res.error ?? 'Failed to add language';
 		}
-		saving = false;
+		creatingLocale = false;
 	}
 
-	function openEditModal(code: string) {
-		const lang = languages.find((l) => l.code === code);
-		if (lang) {
-			editingLanguage = lang;
-			form = { code: lang.code, name: lang.name, flag: lang.flag ?? "" };
-			editModalOpen = true;
-		}
+	function openEditModal(entry: TranslationEntry) {
+		editingString = { ...entry };
+		editModalOpen = true;
 	}
 
-	async function submitEditLanguage() {
-		if (!editingLanguage || !form.name.trim()) return;
+	async function submitEditString() {
+		if (!editingString) return;
 		saving = true;
-		errorMessage = "";
-		const result = await api(`/i18n/languages/${editingLanguage.code}`, {
-			method: "PUT",
-			body: { name: form.name.trim(), flag: form.flag.trim() || undefined }
+		errorMessage = '';
+		const res = await i18nAdminApiExtended.createString({
+			locale: editingString.locale,
+			key: editingString.key,
+			value: editingString.value
 		});
-		if (result.ok) {
+		if (res.ok) {
 			editModalOpen = false;
-			editingLanguage = null;
-			form = { code: "", name: "", flag: "" };
-			successMessage = "Language updated successfully";
-			loadLanguages();
+			editingString = null;
+			successMessage = 'Translation updated';
+			loadTranslations();
 		} else {
-			errorMessage = result.error ?? "Failed to update language";
+			errorMessage = res.error ?? 'Failed to update translation';
 		}
 		saving = false;
 	}
 
-	function openDeleteConfirm(code: string) {
-		deletingTarget = { type: "language", key: code };
+	function openDeleteConfirm(id: string) {
+		deletingTarget = { type: 'string', id };
 		deleteConfirmOpen = true;
 	}
 
 	async function confirmDelete() {
 		if (!deletingTarget) return;
 		saving = true;
-		const endpoint =
-			deletingTarget.type === "language"
-				? `/i18n/languages/${deletingTarget.key}`
-				: `/i18n/translations/${encodeURIComponent(deletingTarget.key)}`;
-		const result = await api(endpoint, { method: "DELETE" });
-		if (result.ok) {
-			successMessage = `${deletingTarget.type === "language" ? "Language" : "Translation"} deleted`;
-			if (deletingTarget.type === "language") loadLanguages();
-			else loadTranslations();
+		const res = await api(`/admin/i18n/strings/${deletingTarget.id}`, {
+			method: 'DELETE',
+			body: { locale: selectedLocale }
+		});
+		if (res.ok) {
+			successMessage = 'Translation deleted';
+			loadTranslations();
 		} else {
-			errorMessage = result.error ?? "Failed to delete";
+			errorMessage = res.error ?? 'Failed to delete';
 		}
 		deleteConfirmOpen = false;
 		deletingTarget = null;
@@ -241,35 +232,36 @@
 	});
 
 	$effect(() => {
-		(window as any).__editLanguage = openEditModal;
-		(window as any).__deleteLanguage = openDeleteConfirm;
-		(window as any).__editTranslation = (key: string) => {
-			/* TODO: open translation edit modal */
+		(window as any).__editTranslation = (id: string) => {
+			const entry = translations.find((tr) => tr.id === id);
+			if (entry) openEditModal(entry);
 		};
-		(window as any).__deleteTranslation = (key: string) => {
-			deletingTarget = { type: "translation", key };
-			deleteConfirmOpen = true;
+		(window as any).__deleteTranslation = (id: string) => {
+			openDeleteConfirm(id);
+		};
+		(window as any).__deleteLanguage = (code: string) => {
+			// Deleting a locale is not supported by the backend; languages are derived
+			// from existing translation rows. Admins remove a locale by clearing its strings.
+			errorMessage = 'Language removal is managed by deleting its translation strings.';
 		};
 		return () => {
-			delete (window as any).__editLanguage;
-			delete (window as any).__deleteLanguage;
 			delete (window as any).__editTranslation;
 			delete (window as any).__deleteTranslation;
+			delete (window as any).__deleteLanguage;
 		};
 	});
 </script>
 
 <svelte:head>
-	<title>Translations — JapaConnect Admin</title>
+	<title>{t('app.i18n.title')} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
-	title="Translations"
-	description="Manage languages and translation keys"
+	title={t('app.i18n.title')}
+	description={t('app.i18n.description')}
 	actions={[
-		{ label: "Add Language", icon: Plus, onclick: () => (createModalOpen = true) },
-		{ label: "Export", icon: Download, variant: "outline" },
-		{ label: "Refresh", icon: RefreshCw, variant: "ghost", onclick: loadData }
+		{ label: t('app.i18n.add_language'), icon: Plus, onclick: () => (createModalOpen = true) },
+		{ label: t('common.refresh'), icon: RefreshCw, variant: 'ghost', onclick: loadData }
 	]}
 />
 
@@ -287,7 +279,7 @@
 
 	<Tabs {tabs} bind:value={activeTab} />
 
-	{#if activeTab === "languages"}
+	{#if activeTab === 'languages'}
 		<Card>
 			<CardContent class="p-0">
 				{#if loading}
@@ -297,24 +289,25 @@
 						columns={languageColumns}
 						data={languages}
 						pageSize={20}
-						emptyMessage="No languages configured"
+						emptyMessage={t('app.i18n.no_languages')}
 					/>
 				{/if}
 			</CardContent>
 		</Card>
 	{/if}
 
-	{#if activeTab === "translations"}
-		<FilterBar
-			bind:value={filters}
-			filters={[
-				{
-					key: "language",
-					label: "Language",
-					options: languages.map((l) => ({ value: l.code, label: l.name }))
-				}
-			]}
-		/>
+	{#if activeTab === 'translations'}
+		<div class="mb-4 flex items-center gap-3">
+			<label for="locale-select" class="text-sm font-medium text-gray-700">Language</label>
+			<Select
+				options={languages.map((l) => ({ value: l.code, label: l.name }))}
+				value={selectedLocale}
+				onchange={(val: string) => {
+					selectedLocale = val;
+					loadTranslations();
+				}}
+			/>
+		</div>
 
 		<Card>
 			<CardContent class="p-0">
@@ -325,7 +318,7 @@
 						columns={translationColumns}
 						data={translations}
 						pageSize={50}
-						emptyMessage="No translations found"
+						emptyMessage={t('app.i18n.no_translations')}
 					/>
 				{/if}
 			</CardContent>
@@ -334,7 +327,7 @@
 </div>
 
 <!-- Add Language Modal -->
-<Modal bind:open={createModalOpen} title="Add Language" description="Add a new language to the platform">
+<Modal bind:open={createModalOpen} title={t('app.i18n.add_language')} description={t('app.i18n.add_language_desc')}>
 	<div class="space-y-4">
 		<div>
 			<label for="lang-code" class="mb-1 block text-sm font-medium text-gray-700">Language Code</label>
@@ -342,7 +335,7 @@
 				id="lang-code"
 				type="text"
 				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-				placeholder="e.g., fr"
+				placeholder="e.g., es"
 				bind:value={form.code}
 			/>
 		</div>
@@ -352,7 +345,7 @@
 				id="lang-name"
 				type="text"
 				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-				placeholder="e.g., French"
+				placeholder="e.g., Spanish"
 				bind:value={form.name}
 			/>
 		</div>
@@ -362,71 +355,55 @@
 				id="lang-flag"
 				type="text"
 				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-				placeholder="e.g., 🇫🇷"
+				placeholder="e.g., 🇪🇸"
 				bind:value={form.flag}
 			/>
 		</div>
+		<p class="text-xs text-gray-500">{t('app.i18n.add_language_note')}</p>
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => (createModalOpen = false)}>Cancel</Button>
-			<Button onclick={submitLanguage} disabled={saving || !form.code.trim() || !form.name.trim()}>
-				{saving ? "Adding..." : "Add Language"}
+			<Button variant="outline" onclick={() => (createModalOpen = false)}>${t("common.cancel")}</Button>
+			<Button onclick={submitLanguage} disabled={creatingLocale || !form.code.trim() || !form.name.trim()}>
+				{creatingLocale ? t('common.saving') : t('app.i18n.create')}
 			</Button>
 		</div>
 	</div>
 </Modal>
 
-<!-- Edit Language Modal -->
-<Modal bind:open={editModalOpen} title="Edit Language" description="Update language details">
-	<div class="space-y-4">
-		<div>
-			<label for="edit-lang-code" class="mb-1 block text-sm font-medium text-gray-700">Language Code</label>
-			<input
-				id="edit-lang-code"
-				type="text"
-				class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500"
-				value={editingLanguage?.code}
-				disabled
-			/>
+<!-- Edit Translation Modal -->
+<Modal bind:open={editModalOpen} title={t('app.i18n.edit_translation')} description={t('app.i18n.edit_translation_desc')}>
+	{#if editingString}
+		<div class="space-y-4">
+			<div>
+				<label class="mb-1 block text-sm font-medium text-gray-700">Key</label>
+				<p class="rounded-lg bg-gray-50 px-3 py-2 font-mono text-xs text-gray-600">{editingString.key}</p>
+			</div>
+			<div>
+				<label for="edit-value" class="mb-1 block text-sm font-medium text-gray-700">Value ({editingString.locale})</label>
+				<textarea
+					id="edit-value"
+					rows="4"
+					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					bind:value={editingString.value}
+				></textarea>
+			</div>
+			<div class="flex justify-end gap-3 pt-2">
+				<Button variant="outline" onclick={() => (editModalOpen = false)}>${t("common.cancel")}</Button>
+				<Button onclick={submitEditString} disabled={saving}>{saving ? t('common.saving') : t('common.save')}</Button>
+			</div>
 		</div>
-		<div>
-			<label for="edit-lang-name" class="mb-1 block text-sm font-medium text-gray-700">Language Name</label>
-			<input
-				id="edit-lang-name"
-				type="text"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-				placeholder="e.g., French"
-				bind:value={form.name}
-			/>
-		</div>
-		<div>
-			<label for="edit-lang-flag" class="mb-1 block text-sm font-medium text-gray-700">Flag Emoji (optional)</label>
-			<input
-				id="edit-lang-flag"
-				type="text"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-				placeholder="e.g., 🇫🇷"
-				bind:value={form.flag}
-			/>
-		</div>
-		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => (editModalOpen = false)}>Cancel</Button>
-			<Button onclick={submitEditLanguage} disabled={saving || !form.name.trim()}>
-				{saving ? "Saving..." : "Save Changes"}
-			</Button>
-		</div>
-	</div>
+	{/if}
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal bind:open={deleteConfirmOpen} title="Confirm Delete" description="This action cannot be undone">
+<Modal bind:open={deleteConfirmOpen} title={t('common.confirmDelete')} description={t('app.i18n.delete_confirm_desc')}>
 	<div class="space-y-4">
 		<p class="text-sm text-gray-600">
-			Are you sure you want to delete this {deletingTarget?.type}? All associated data will be permanently removed.
+			{t('app.i18n.delete_confirm_body')}
 		</p>
 		<div class="flex justify-end gap-3">
-			<Button variant="outline" onclick={() => (deleteConfirmOpen = false)}>Cancel</Button>
+			<Button variant="outline" onclick={() => (deleteConfirmOpen = false)}>${t("common.cancel")}</Button>
 			<Button variant="destructive" onclick={confirmDelete} disabled={saving}>
-				{saving ? "Deleting..." : "Delete"}
+				{saving ? t('common.saving') : t('common.delete')}
 			</Button>
 		</div>
 	</div>

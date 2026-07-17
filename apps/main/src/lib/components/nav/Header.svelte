@@ -57,7 +57,7 @@
 			<button class="flex h-11 w-11 items-center justify-center rounded-lg p-2.5 md:hidden" onclick={onsidenavToggle} aria-label="Toggle navigation">
 				<Menu class="h-5 w-5" />
 			</button>
-			<a href="/" class="text-lg font-bold" style="color: var(--color-primary)">JapaConnect</a>
+			<a href="/" class="text-lg font-bold" style="color: var(--color-primary)">{t('lib.components.nav.Header.svelte.japaconnect')}</a>
 		</div>
 
 		<!-- Center: search (desktop) -->

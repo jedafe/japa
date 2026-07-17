@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ArrowLeft, Loader2, Plus, X } from 'lucide-svelte';
@@ -67,7 +68,7 @@
 	</a>
 
 	<div class="rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-surface);">
-		<h1 class="text-xl font-bold" style="color: var(--color-foreground)">Create a comparison</h1>
+		<h1 class="text-xl font-bold" style="color: var(--color-foreground)">{t('comparisons.slug.new.create_a_comparison')}</h1>
 		<p class="mt-1 text-sm" style="color: var(--color-muted)">
 			Add items to compare side by side.
 		</p>

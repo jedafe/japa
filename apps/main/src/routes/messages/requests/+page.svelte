@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Check, X, Ban, MessageCircle } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
@@ -64,9 +65,9 @@
 
 {#if !isFeatureEnabled('feature.dm')}
 	<main class="mx-auto max-w-2xl px-6 py-16 text-center">
-		<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Messages not available</h1>
-		<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
-		<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+		<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('messages.requests.messages_not_available')}</h1>
+		<p class="mt-2" style="color: var(--color-muted)">{t('messages.requests.this_feature_is_currently_disabled')}</p>
+		<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">{t('messages.requests.go_home')}</a>
 	</main>
 {:else}
 	<main class="mx-auto max-w-2xl px-4 py-8">
@@ -79,7 +80,7 @@
 			Back to messages
 		</a>
 
-		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Message Requests</h1>
+		<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{t('messages.requests.message_requests')}</h1>
 		<p class="mt-2 text-sm" style="color: var(--color-muted)">
 			People who want to message you
 		</p>
