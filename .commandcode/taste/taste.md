@@ -15,6 +15,9 @@
 # testing
 - Use Playwright for end-to-end testing in this project. Confidence: 0.65
 
+# data
+- Use Wikidata SPARQL for university ranking data instead of paid APIs. Confidence: 0.50
+
 # i18n
 - All user-facing strings must use `t()` with proper i18n keys — no hardcoded strings in code. Manage translations via the admin panel (not by editing JSON files directly). Confidence: 0.95
 - New locales can be created by copying all keys from `en` via the admin panel's "Add Language" feature (batch-upserts to backend). Confidence: 0.80

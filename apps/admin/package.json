@@ -12,28 +12,28 @@
 		"prepare": "svelte-kit sync || echo ''"
 	},
 	"devDependencies": {
-		"@sveltejs/adapter-node": "^5.2.0",
-		"@sveltejs/kit": "^2.63.0",
-		"@sveltejs/vite-plugin-svelte": "^7.1.2",
+		"@sveltejs/adapter-node": "^5.5.7",
+		"@sveltejs/kit": "^2.69.3",
+		"@sveltejs/vite-plugin-svelte": "^7.2.0",
 		"@tailwindcss/forms": "^0.5.11",
-		"@tailwindcss/vite": "^4.3.1",
+		"@tailwindcss/vite": "^4.3.3",
 		"@testing-library/svelte": "^5.4.2",
 		"jsdom": "^29.1.1",
-		"svelte": "^5.56.1",
-		"svelte-check": "^4.6.0",
-		"tailwindcss": "^4.3.1",
+		"svelte": "^5.56.6",
+		"svelte-check": "^4.7.3",
+		"tailwindcss": "^4.3.3",
 		"typescript": "^6.0.3",
-		"vite": "^8.0.16",
-		"vitest": "^4.1.8"
+		"vite": "^8.1.5",
+		"vitest": "^4.1.10"
 	},
 	"dependencies": {
-		"@formkit/auto-animate": "^0.8.2",
+		"@formkit/auto-animate": "^0.8.4",
 		"@internationalized/date": "^3.12.2",
-		"@sentry/sveltekit": "^10.65.0",
+		"@sentry/sveltekit": "^10.66.0",
 		"bits-ui": "^2.18.1",
 		"clsx": "^2.1.1",
 		"layerchart": "^2.0.1",
 		"lucide-svelte": "^1.0.1",
-		"mode-watcher": "^1.0.2"
+		"mode-watcher": "^1.1.0"
 	}
 }
