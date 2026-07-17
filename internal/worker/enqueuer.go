@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -34,8 +35,11 @@ func NewEnqueuer(client *asynq.Client) *Enqueuer {
 // client; any other values are ignored so callers that pass nothing (the
 // common case) work unchanged.
 func (e *Enqueuer) Enqueue(taskType string, payload []byte, opts ...interface{}) error {
-	if e == nil || e.client == nil {
-		return nil
+	if e == nil {
+		return nil // not wired — graceful degradation (tests, development)
+	}
+	if e.client == nil {
+		return errors.New("worker: asynq client not configured — task " + taskType + " dropped")
 	}
 	queue := QueueForTask(taskType)
 	asynqOpts := []asynq.Option{asynq.Queue(queue)}
@@ -60,25 +64,44 @@ func (e *Enqueuer) Enqueue(taskType string, payload []byte, opts ...interface{})
 // get a 24h TTL; notification/email tasks get a 1h TTL via this method plus a
 // shorter TTL via the task-level Unique call.
 var idempotentTasks = map[string]bool{
-	TypeEmailSend:               true,
-	TypePushDelivery:            true,
-	TypeScheduledPublish:        true,
-	TypeNewsletterSend:          true,
+	TypeEmailSend:                  true,
+	TypePushDelivery:              true,
+	TypeScheduledPublish:          true,
+	TypeNewsletterSend:            true,
 	TypeAffiliateCreditCommission: true,
 	TypeWalletProcessActivityEvent: true,
+	TypePaymentWebhookProcess:     true,
 }
 
 func taskDefaults(taskType string) []asynq.Option {
-	if !idempotentTasks[taskType] {
-		return nil
+	opts := []asynq.Option{}
+
+	// Idempotency keys for high-risk tasks.
+	if idempotentTasks[taskType] {
+		ttl := 1 * time.Hour
+		switch taskType {
+		case TypeScheduledPublish, TypeNewsletterSend, TypeAffiliateCreditCommission:
+			ttl = 24 * time.Hour
+		}
+		opts = append(opts, asynq.Unique(ttl))
 	}
-	// One-shot tasks prevent duplicates for 24h; notification tasks for 1h.
-	ttl := 1 * time.Hour
+
+	// Per-task timeout and retry limits.
 	switch taskType {
-	case TypeScheduledPublish, TypeNewsletterSend, TypeAffiliateCreditCommission:
-		ttl = 24 * time.Hour
+	// External-service tasks: short timeout, more retries.
+	case TypeEmailSend, TypeTicketSendConfirmation, TypeTicketSendStatusUpdate,
+		TypePushDelivery, TypeDMNotifyRequest, TypeDMNotifyMessage:
+		opts = append(opts, asynq.Timeout(30*time.Second), asynq.MaxRetry(10))
+	// Webhook delivery: moderate timeout.
+	case TypeWebhookDelivery, TypePaymentWebhookProcess:
+		opts = append(opts, asynq.Timeout(60*time.Second), asynq.MaxRetry(15))
+	// DB-only tasks: standard timeout.
+	case TypeScheduledPublish, TypeScheduledPublishSweep:
+		opts = append(opts, asynq.Timeout(1*time.Minute), asynq.MaxRetry(5))
+	// Default: no explicit timeout/retry — asynq defaults apply.
 	}
-	return []asynq.Option{asynq.Unique(ttl)}
+
+	return opts
 }
 
 // taskTier maps each task type string to its queue tier.
@@ -110,7 +133,7 @@ var taskTier = func() map[string]string {
 		TypeCouponExpireCheck, TypeAffiliateRecordClick,
 		TypeAffiliateCreditCommission, TypeAffiliateExpireCheck,
 		TypeRedirectRecordHit,
-		TypeScheduledPublishSweep, TypeVelocityScoreRecalc, TypeGdprRetentionSweep,
+		TypeScheduledPublishSweep, TypeGdprRetentionSweep,
 	} {
 		m[t] = QueueLow
 	}

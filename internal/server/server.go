@@ -374,6 +374,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	walletHandlers := wallet.NewHandlers(walletService)
 	walletService.SetEnqueuer(taskEnqueuer)
 
+	// Register wallet processor with worker for background tasks.
+	worker.RegisterWalletProcessor(walletService)
+
 	// Payment Core subsystem (Section 17 — Payment Core).
 	paymentService := payments.NewService(database, &walletCreditAdapter{svc: walletService})
 	paymentService.SetEnqueuer(taskEnqueuer)
@@ -1115,6 +1118,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			wsService := websocket.NewService(database, wsHub)
 			wsDMStore := websocket.NewDMStore(gen.New(database.Reader), gen.New(database.Writer))
 			wsDMService := websocket.NewDMService(wsDMStore, wsHub)
+			wsDMService.AsynqClient = asynqClient
 			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
 			wsHandlers.SetSpamPipeline(spamPipeline)
 
@@ -1143,6 +1147,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Media routes (Section 34 — Media System)
 			mediaHandlers := media.NewHandlers(mediaService)
+			mediaHandlers.AsynqClient = asynqClient
 
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/media/upload", mediaHandlers.InitiateUpload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/media/confirm/{id}", mediaHandlers.ConfirmUpload)

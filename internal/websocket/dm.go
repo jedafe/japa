@@ -2,11 +2,15 @@ package websocket
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // DMStore provides low-level database access for DM operations.
@@ -230,8 +234,9 @@ type DMPrivacyResult struct {
 
 // DMService provides DM operations with business logic.
 type DMService struct {
-	store *DMStore
-	hub   *Hub
+	store      *DMStore
+	hub        *Hub
+	AsynqClient *asynq.Client
 }
 
 // NewDMService creates a DMService with the given store and hub.
@@ -313,6 +318,9 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 			"body":            body,
 		},
 	})
+
+	// Enqueue push notification for recipient — fire-and-forget.
+	s.enqueueDMNotifyMessage(ctx, tenantID, recipientID, senderID, conversationID, preview)
 
 	return nil
 }
@@ -496,4 +504,67 @@ func (s *DMService) DeleteMessage(ctx context.Context, tenantID, conversationID,
 // checking blocks and privacy settings per Section 48.
 func (s *DMService) GetOrCreateConversationForInitiator(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID) (ConversationResult, error) {
 	return s.GetOrCreateConversation(ctx, tenantID, initiatorID, recipientID)
+}
+
+// enqueueDMNotifyMessage enqueues a push notification for a new DM message.
+func (s *DMService) enqueueDMNotifyMessage(ctx context.Context, tenantID, recipientID, senderID, conversationID pgtype.UUID, bodyPreview string) {
+	if s.AsynqClient == nil {
+		return
+	}
+
+	// Look up sender username for notification title.
+	var senderUsername string
+	if row, err := s.store.read.GetUserByID(ctx, gen.GetUserByIDParams{
+		TenantID: tenantID,
+		UserID:   senderID,
+	}); err == nil {
+		senderUsername = row.Username
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"recipient_id":    recipientID.String(),
+		"tenant_id":       tenantID.String(),
+		"sender_username": senderUsername,
+		"conversation_id": conversationID.String(),
+		"body_preview":    bodyPreview,
+	})
+
+	if _, err := s.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeDMNotifyMessage, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeDMNotifyMessage)),
+	); err != nil {
+		slog.Warn("dm: failed to enqueue notify_message",
+			"conversation_id", conversationID.String(), "error", err)
+	}
+}
+
+// enqueueDMNotifyRequest enqueues a push notification for a new DM request.
+func (s *DMService) enqueueDMNotifyRequest(ctx context.Context, tenantID, recipientID, senderID, conversationID pgtype.UUID) {
+	if s.AsynqClient == nil {
+		return
+	}
+
+	// Look up sender username for notification title.
+	var senderUsername string
+	if row, err := s.store.read.GetUserByID(ctx, gen.GetUserByIDParams{
+		TenantID: tenantID,
+		UserID:   senderID,
+	}); err == nil {
+		senderUsername = row.Username
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"recipient_id":    recipientID.String(),
+		"tenant_id":       tenantID.String(),
+		"sender_username": senderUsername,
+		"conversation_id": conversationID.String(),
+	})
+
+	if _, err := s.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeDMNotifyRequest, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeDMNotifyRequest)),
+	); err != nil {
+		slog.Warn("dm: failed to enqueue notify_request",
+			"conversation_id", conversationID.String(), "error", err)
+	}
 }

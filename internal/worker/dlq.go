@@ -21,8 +21,9 @@ type DLQStats struct {
 func HandleQueueStats(inspector *asynq.Inspector) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		stats := map[string]any{}
+		dlqDepth := 0
 
-		// Get queue info for each tier.
+		// Get queue info for each tier — single call per queue.
 		for _, queueName := range []string{QueueCritical, QueueDefault, QueueLow} {
 			qi, err := inspector.GetQueueInfo(queueName)
 			if err != nil {
@@ -39,16 +40,8 @@ func HandleQueueStats(inspector *asynq.Inspector) http.HandlerFunc {
 				"paused":          qi.Paused,
 				"latency_seconds": qi.Latency.Seconds(),
 			}
-		}
-
-		// DLQ depth = sum of failed tasks across all queues.
-		dlqDepth := 0
-		for _, queueName := range []string{QueueCritical, QueueDefault, QueueLow} {
-			qi, err := inspector.GetQueueInfo(queueName)
-			if err != nil {
-				continue
-			}
-			dlqDepth += qi.Failed
+			// Archived = dead-lettered tasks (exhausted retries).
+			dlqDepth += qi.Archived
 		}
 
 		stats["dlq"] = DLQStats{

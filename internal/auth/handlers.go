@@ -895,16 +895,11 @@ func (h *AuthHandlers) enqueueEmail(to, subject, body string, isHTML bool) {
 		return
 	}
 
-	htmlStr := "false"
-	if isHTML {
-		htmlStr = "true"
-	}
-
-	payload, err := json.Marshal(map[string]string{
+	payload, err := json.Marshal(map[string]any{
 		"to":      to,
 		"subject": subject,
 		"body":    body,
-		"html":    htmlStr,
+		"html":    isHTML,
 	})
 	if err != nil {
 		slog.Error("auth: failed to marshal email payload", "error", err)

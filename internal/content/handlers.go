@@ -32,13 +32,6 @@ const defaultPageSize int32 = 20
 // Task type constant for embedding generation — matches worker.TypeAIGenerateContentEmbedding.
 const taskTypeAIGenerateContentEmbedding = "content:generate_embedding"
 
-// Task type constant for scheduled publishing — matches worker.TypeScheduledPublish.
-// NOTE: this intentionally does NOT reuse content.TaskTypeScheduledPublish
-// ("content:scheduled_publish") from tasks.go — that constant's noopEnqueuer
-// was never wired to a real handler; the worker package's registered handler
-// listens for the "content:publish_scheduled" string used here.
-const taskTypeScheduledPublish = "content:publish_scheduled"
-
 // TaskEnqueueClient is the interface for enqueueing background tasks.
 // The Asynq client satisfies this interface. A nil client means tasks
 // are silently skipped (useful for tests and development).
@@ -148,26 +141,17 @@ func parsePageSize(r *http.Request) int32 {
 }
 
 // enqueueContentEmbedding enqueues an async task to generate a vector embedding
-// for the given content. The embedding text is a combination of title and body.
+// for the given content. Payload contains only IDs — the worker handler re-fetches
+// fresh content text at processing time to avoid stale-on-edit issues.
 // Fire-and-forget: errors are logged but never propagated to the caller.
-func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID, title, body string) {
+func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 	if h.AsynqClient == nil {
 		return
-	}
-
-	text := title
-	if body != "" {
-		if text != "" {
-			text += "\n\n"
-		}
-
-		text += body
 	}
 
 	payload, err := json.Marshal(map[string]string{
 		"content_id": contentID.String(),
 		"tenant_id":  tenantID.String(),
-		"text":       text,
 	})
 	if err != nil {
 		slog.Warn("content: failed to marshal embedding task payload", "error", err)
@@ -179,6 +163,33 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID, titl
 		asynq.Queue(worker.QueueForTask(worker.TypeAIGenerateContentEmbedding)),
 	); err != nil {
 		slog.Warn("content: failed to enqueue embedding task",
+			"content_id", contentID.String(), "error", err)
+	}
+}
+
+// enqueueSearchIndex enqueues an async task to sync content to the Meilisearch
+// search index. operation can be "index" (create/update) or "delete".
+func (h *Handlers) enqueueSearchIndex(contentID, tenantID pgtype.UUID, operation string) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"content_id":  contentID.String(),
+		"entity_type": "content",
+		"tenant_id":   tenantID.String(),
+		"operation":   operation,
+	})
+	if err != nil {
+		slog.Warn("content: failed to marshal search index payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeSearchIndexSync, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
+	); err != nil {
+		slog.Warn("content: failed to enqueue search index task",
 			"content_id", contentID.String(), "error", err)
 	}
 }
@@ -305,7 +316,10 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue async embedding generation — fire-and-forget.
-	h.enqueueContentEmbedding(content.ID, tenantID, input.Title, createInput.Body)
+	h.enqueueContentEmbedding(content.ID, tenantID)
+
+	// Enqueue search index sync — fire-and-forget.
+	h.enqueueSearchIndex(content.ID, tenantID, "index")
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": content})
 }
@@ -472,7 +486,10 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue async embedding generation — fire-and-forget.
-	h.enqueueContentEmbedding(id, tenantID, input.Title, updateInput.Body)
+	h.enqueueContentEmbedding(id, tenantID)
+
+	// Enqueue search index sync — fire-and-forget.
+	h.enqueueSearchIndex(id, tenantID, "index")
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": content})
 }
@@ -494,6 +511,9 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Enqueue search index deletion — fire-and-forget.
+	h.enqueueSearchIndex(id, tenantID, "delete")
 
 	writeJSON(w, http.StatusNoContent, nil)
 }
@@ -660,7 +680,7 @@ func (h *Handlers) enqueueScheduledPublish(contentID, tenantID pgtype.UUID, publ
 	}
 
 	if _, err := h.AsynqClient.Enqueue(
-		asynq.NewTask(taskTypeScheduledPublish, payload),
+		asynq.NewTask(worker.TypeScheduledPublish, payload),
 		asynq.ProcessAt(publishAt),
 		asynq.Queue(worker.QueueForTask(worker.TypeScheduledPublish)),
 		asynq.Unique(24*time.Hour),

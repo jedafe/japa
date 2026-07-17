@@ -114,6 +114,16 @@ func parsePayload(t *asynq.Task, v any) error {
 	return json.Unmarshal(t.Payload(), v)
 }
 
+// parsePayloadOrSkip wraps parsePayload and returns asynq.SkipRetry on
+// decode failure — malformed payloads are permanent errors that should
+// not burn retries.
+func parsePayloadOrSkip(t *asynq.Task, v any) error {
+	if err := parsePayload(t, v); err != nil {
+		return fmt.Errorf("malformed payload: %v: %w", err, asynq.SkipRetry)
+	}
+	return nil
+}
+
 // scanUUID parses a UUID string into a pgtype.UUID.
 func scanUUID(s string) (pgtype.UUID, error) {
 	var u pgtype.UUID
@@ -143,7 +153,7 @@ func requireDB() (*gen.Queries, error) {
 // The notification service's DispatchBatch reads the window, builds the aggregated
 // notification row, and marks the window dispatched.
 func HandleNotificationDispatchBatch(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:notification:dispatch_batch", "payload", t.Payload())
+	slog.Info("task:notification:dispatch_batch")
 
 	if notificationBatchDispatcher == nil {
 		slog.Warn("task:notification:dispatch_batch: no dispatcher registered, skipping")
@@ -171,7 +181,7 @@ func HandleNotificationDispatchBatch(ctx context.Context, t *asynq.Task) error {
 
 // HandleWebhookDelivery delivers a queued webhook to the registered endpoint.
 func HandleWebhookDelivery(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:webhook:deliver", "payload", t.Payload())
+	slog.Info("task:webhook:deliver")
 
 	if webhookProcessor == nil {
 		slog.Warn("task:webhook:deliver: no webhook processor registered, skipping")
@@ -198,7 +208,7 @@ func HandleWebhookDelivery(ctx context.Context, t *asynq.Task) error {
 
 // HandlePaymentWebhookProcess processes an incoming payment webhook event and updates payment status.
 func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:payment:process_webhook", "payload", t.Payload())
+	slog.Info("task:payment:process_webhook")
 
 	queries, err := requireDB()
 	if err != nil {
@@ -212,7 +222,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		Status   string `json:"status"` // "succeeded", "failed", "refunded"
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:payment:process_webhook: invalid payload", "error", err)
 		return err
 	}
@@ -236,6 +246,13 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 
 	for _, p := range rows {
 		if p.ProviderRef != nil && *p.ProviderRef == payload.EventID {
+			// Status-transition guard: prevent downgrading from succeeded.
+			if p.Status == "succeeded" && payload.Status != "refunded" {
+				slog.Info("task:payment:process_webhook: skipping — payment already succeeded",
+					"payment_id", p.ID, "current_status", p.Status, "new_status", payload.Status)
+				continue
+			}
+
 			if _, err := queries.UpdatePaymentStatus(ctx, gen.UpdatePaymentStatusParams{
 				Status:   payload.Status,
 				ID:       p.ID,
@@ -253,10 +270,19 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 
 			// Enqueue affiliate commission crediting on successful payment.
 			if payload.Status == "succeeded" && taskEnqueuer != nil {
-				commissionPayload, _ := json.Marshal(map[string]string{
+				// Resolve the user's active affiliate link at enqueue time.
+				var linkCode string
+				_ = dbPool.Reader.QueryRow(ctx, `
+					SELECT code FROM user_affiliate_links
+					WHERE user_id = $1 AND tenant_id = $2 AND is_active = true
+					LIMIT 1
+				`, p.UserID, tenantID).Scan(&linkCode)
+
+				commissionPayload, _ := json.Marshal(map[string]any{
 					"payment_id": p.ID.String(),
 					"user_id":    p.UserID.String(),
-					"amount":     fmt.Sprintf("%d", p.Amount),
+					"amount":     p.Amount,
+					"link_code":  linkCode,
 				})
 				if err := taskEnqueuer.Enqueue(TypeAffiliateCreditCommission, commissionPayload); err != nil {
 					slog.Error("task:payment:process_webhook: failed to enqueue affiliate commission",
@@ -274,9 +300,9 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-// HandleGdprRetentionSweep sweeps for GDPR deletion requests in retention_wait
-// whose retention period has elapsed, and triggers hard delete for each.
-// 
+// HandleGdprRetentionSweep performs two sweeps:
+// 1. Re-enqueues stale `pending` deletion/export requests whose enqueue was lost.
+// 2. Processes `retention_wait` requests whose retention period has elapsed.
 func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("task:gdpr:retention_sweep: starting sweep")
 
@@ -285,17 +311,62 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 		return nil
 	}
 
+	// Sweep 1: Re-enqueue stale pending deletion requests (older than 30 min).
+	// These are requests whose initial enqueue was lost (H10).
+	reenqueued := 0
+	if taskEnqueuer != nil {
+		pendingRows, err := dbPool.Reader.Query(ctx, `
+			SELECT id, tenant_id, user_id
+			FROM account_deletion_requests
+			WHERE status = 'pending'
+			  AND created_at < now() - interval '30 minutes'
+			ORDER BY created_at ASC
+			LIMIT 50
+		`)
+		if err != nil {
+			slog.Error("task:gdpr:retention_sweep: pending query failed", "error", err)
+		} else {
+			defer pendingRows.Close()
+			for pendingRows.Next() {
+				var id, tenantID, userID pgtype.UUID
+				if err := pendingRows.Scan(&id, &tenantID, &userID); err != nil {
+					slog.Error("task:gdpr:retention_sweep: pending scan error", "error", err)
+					continue
+				}
+				payload, _ := json.Marshal(map[string]string{
+					"request_id": id.String(),
+					"tenant_id":  tenantID.String(),
+					"user_id":    userID.String(),
+				})
+				if err := taskEnqueuer.Enqueue(TypeAccountDeletionCleanup, payload); err != nil {
+					slog.Error("task:gdpr:retention_sweep: failed to re-enqueue deletion",
+						"request_id", id.String(), "error", err)
+					continue
+				}
+				reenqueued++
+			}
+			if err := pendingRows.Err(); err != nil {
+				slog.Error("task:gdpr:retention_sweep: pending rows error", "error", err)
+			}
+		}
+	}
+
+	if reenqueued > 0 {
+		slog.Info("task:gdpr:retention_sweep: re-enqueued stale pending requests", "count", reenqueued)
+	}
+
+	// Sweep 2: Process retention_wait requests whose retention period has elapsed.
 	if gdprProcessor == nil {
-		slog.Warn("task:gdpr:retention_sweep: no GDPR processor, skipping")
+		slog.Warn("task:gdpr:retention_sweep: no GDPR processor, skipping retention sweep")
 		return nil
 	}
 
 	rows, err := dbPool.Reader.Query(ctx, `
 		SELECT r.id, r.tenant_id
 		FROM account_deletion_requests r
-		JOIN system_settings s ON s.tenant_id = r.tenant_id AND s.key = 'gdpr.retention_days'
+		LEFT JOIN system_settings s ON s.tenant_id = r.tenant_id AND s.key = 'gdpr.retention_days'
 		WHERE r.status = 'retention_wait'
-		  AND r.created_at + ((s.value->>0)::int || ' days')::interval <= now()
+		  AND r.created_at + ((COALESCE(s.value->>0, '30'))::int || ' days')::interval <= now()
 		ORDER BY r.created_at ASC
 		LIMIT 100
 	`)
@@ -318,7 +389,7 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 		return err
 	}
 
-	if len(requestIDs) == 0 {
+	if len(requestIDs) == 0 && reenqueued == 0 {
 		return nil
 	}
 
@@ -332,13 +403,13 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 	}
 
 	slog.Info("task:gdpr:retention_sweep: sweep complete",
-		"completed", completed, "total", len(requestIDs))
+		"retention_completed", completed, "pending_reenqueued", reenqueued)
 	return nil
 }
 
 // HandleTicketSendConfirmation sends a confirmation email when a new ticket is created.
 func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:ticket:send_confirmation", "payload", t.Payload())
+	slog.Info("task:ticket:send_confirmation")
 
 	queries, err := requireDB()
 	if err != nil {
@@ -349,12 +420,9 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		TicketID string `json:"ticket_id"`
 		TenantID string `json:"tenant_id"`
-		UserID   string `json:"user_id"`
-		Email    string `json:"email"`
-		Subject  string `json:"subject"`
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:ticket:send_confirmation: invalid payload", "error", err)
 		return err
 	}
@@ -379,17 +447,23 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
+	if ticket.SubmitterEmail == nil || *ticket.SubmitterEmail == "" {
+		slog.Warn("task:ticket:send_confirmation: no submitter email, skipping",
+			"ticket_id", payload.TicketID)
+		return nil
+	}
+
 	body := fmt.Sprintf("Your support ticket \"%s\" has been received. Ticket ID: %s",
 		ticket.Subject, ticketID.String())
 
-	if err := sendEmail(payload.Email, "Ticket Confirmation - "+ticket.Subject, body, false); err != nil {
+	if err := sendEmail(*ticket.SubmitterEmail, "Ticket Confirmation - "+ticket.Subject, body, false); err != nil {
 		slog.Error("task:ticket:send_confirmation: email failed",
 			"ticket_id", payload.TicketID, "error", err)
 		return err
 	}
 
 	slog.Info("task:ticket:send_confirmation: confirmation sent",
-		"ticket_id", payload.TicketID, "email", payload.Email)
+		"ticket_id", payload.TicketID, "email", *ticket.SubmitterEmail)
 
 	return nil
 }
@@ -400,7 +474,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 
 // HandleEmailSend sends a single transactional email via SMTP.
 func HandleEmailSend(_ context.Context, t *asynq.Task) error {
-	slog.Info("task:email:send", "payload", t.Payload())
+	slog.Info("task:email:send")
 
 	var payload struct {
 		To      string `json:"to"`
@@ -409,7 +483,7 @@ func HandleEmailSend(_ context.Context, t *asynq.Task) error {
 		HTML    bool   `json:"html"`
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:email:send: invalid payload", "error", err)
 		return err
 	}
@@ -430,7 +504,7 @@ func HandleEmailSend(_ context.Context, t *asynq.Task) error {
 
 // HandleSearchIndexSync synchronizes an entity to the Meilisearch index.
 func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:search:index_entity", "payload", t.Payload())
+	slog.Info("task:search:index_entity")
 
 	if searchIndexer == nil {
 		slog.Warn("task:search:index_entity: no search indexer registered, skipping")
@@ -442,6 +516,7 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 		EntityID   string `json:"entity_id"`
 		EntityType string `json:"entity_type"`
 		TenantID   string `json:"tenant_id"`
+		Operation  string `json:"operation"`
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -477,6 +552,21 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 		entityType = "content"
 	}
 
+	// Handle delete operation.
+	if payload.Operation == "delete" {
+		indexName := "contents"
+		if entityType == "forum_thread" {
+			indexName = "forum_threads"
+		} else if entityType == "space" {
+			indexName = "spaces"
+		} else if entityType == "user" {
+			indexName = "users"
+		} else if entityType == "tag" {
+			indexName = "tags"
+		}
+		return searchIndexer.DeleteDocument(ctx, indexName, entityID.Bytes)
+	}
+
 	switch entityType {
 	case "content":
 		return searchIndexer.IndexContent(ctx, entityID.Bytes, tenantID.Bytes)
@@ -496,7 +586,7 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 
 // HandleImageProcessing processes uploaded images through imgproxy for resizing and optimization.
 func HandleImageProcessing(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:content:process_image", "payload", t.Payload())
+	slog.Info("task:content:process_image")
 
 	if imageProcessor == nil {
 		slog.Warn("task:content:process_image: no image processor registered, skipping")
@@ -538,7 +628,7 @@ func HandleImageProcessing(ctx context.Context, t *asynq.Task) error {
 
 // HandleAITaskProcessing executes an AI task through the configured provider.
 func HandleAITaskProcessing(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:ai:process_task", "payload", t.Payload())
+	slog.Info("task:ai:process_task")
 
 	if aiProcessor == nil {
 		slog.Warn("task:ai:process_task: no ai processor registered, skipping")
@@ -573,7 +663,7 @@ func HandleAITaskProcessing(ctx context.Context, t *asynq.Task) error {
 
 // HandleEngagementCountUpdate recalculates engagement counts for a content entity.
 func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:content:update_engagement", "payload", t.Payload())
+	slog.Info("task:content:update_engagement")
 
 	queries, err := requireDB()
 	if err != nil {
@@ -655,7 +745,7 @@ func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 
 // HandleModerationScan runs content through the spam and moderation pipeline.
 func HandleModerationScan(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:content:scan_moderation", "payload", t.Payload())
+	slog.Info("task:content:scan_moderation")
 
 	if moderationProcessor == nil {
 		slog.Warn("task:content:scan_moderation: no moderation processor registered, skipping")
@@ -688,11 +778,10 @@ func HandleModerationScan(ctx context.Context, t *asynq.Task) error {
 
 // HandleScheduledPublish publishes content that has reached its scheduled publish time.
 func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:content:publish_scheduled", "payload", t.Payload())
+	slog.Info("task:content:publish_scheduled")
 
-	queries, err := requireDB()
-	if err != nil {
-		slog.Warn("task:content:publish_scheduled: no database, skipping", "error", err)
+	if dbPool == nil {
+		slog.Warn("task:content:publish_scheduled: no database, skipping")
 		return nil
 	}
 
@@ -701,7 +790,7 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 		TenantID  string `json:"tenant_id"`
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:content:publish_scheduled: invalid payload", "error", err)
 		return err
 	}
@@ -716,15 +805,28 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:content:publish_scheduled: %w", err)
 	}
 
-	// Update the content status to published.
-	if _, err := queries.UpdateContentStatus(ctx, gen.UpdateContentStatusParams{
-		Status:   "published",
-		ID:       contentID,
-		TenantID: tenantID,
-	}); err != nil {
+	// Re-validate: only publish if still scheduled and publish_at has passed.
+	// Prevents force-publishing canceled or already-published content.
+	result, err := dbPool.Writer.Exec(ctx, `
+		UPDATE contents
+		SET status = 'published',
+		    published_at = COALESCE(published_at, now()),
+		    updated_at = now()
+		WHERE id = $1
+		  AND tenant_id = $2
+		  AND status = 'scheduled'
+		  AND publish_at <= now()
+	`, contentID, tenantID)
+	if err != nil {
 		slog.Error("task:content:publish_scheduled: failed to publish",
 			"content_id", payload.ContentID, "error", err)
 		return err
+	}
+
+	if rowsAffected := result.RowsAffected(); rowsAffected == 0 {
+		slog.Info("task:content:publish_scheduled: content no longer scheduled or publish_at not reached",
+			"content_id", payload.ContentID)
+		return nil
 	}
 
 	slog.Info("task:content:publish_scheduled: content published",
@@ -735,7 +837,7 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 
 // HandleLinkPreviewFetch fetches and stores OpenGraph metadata for a URL.
 func HandleLinkPreviewFetch(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:content:fetch_link_preview", "payload", t.Payload())
+	slog.Info("task:content:fetch_link_preview")
 
 	if linkPreviewProcessor == nil {
 		slog.Warn("task:content:fetch_link_preview: no link preview processor registered, skipping")
@@ -772,7 +874,7 @@ func HandleLinkPreviewFetch(ctx context.Context, t *asynq.Task) error {
 
 // HandleLanguagePackAITranslate translates a language pack using AI.
 func HandleLanguagePackAITranslate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:i18n:translate_language_pack", "payload", t.Payload())
+	slog.Info("task:i18n:translate_language_pack")
 
 	if aiTranslateProcessor == nil {
 		slog.Warn("task:i18n:translate_language_pack: no ai translate processor registered, skipping")
@@ -807,7 +909,7 @@ func HandleLanguagePackAITranslate(ctx context.Context, t *asynq.Task) error {
 
 // HandleMediaScan scans uploaded media for viruses and validates file integrity.
 func HandleMediaScan(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:content:scan_media", "payload", t.Payload())
+	slog.Info("task:content:scan_media")
 
 	if mediaScanProcessor == nil {
 		slog.Warn("task:content:scan_media: no media scan processor registered, skipping")
@@ -833,7 +935,7 @@ func HandleMediaScan(ctx context.Context, t *asynq.Task) error {
 
 // HandleContentFanOutToFeeds fans out a published content item to all relevant user feeds.
 func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:content:fan_out_to_feeds", "payload", t.Payload())
+	slog.Info("task:content:fan_out_to_feeds")
 
 	queries, err := requireDB()
 	if err != nil {
@@ -1037,7 +1139,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 
 // HandleAIGenerateContentEmbedding generates a vector embedding for content search.
 func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:content:generate_embedding", "payload", t.Payload())
+	slog.Info("task:content:generate_embedding")
 
 	if contentEmbedder == nil {
 		slog.Warn("task:content:generate_embedding: no content embedder registered, skipping")
@@ -1047,10 +1149,9 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 	var payload struct {
 		ContentID string `json:"content_id"`
 		TenantID  string `json:"tenant_id"`
-		Text      string `json:"text"`
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:content:generate_embedding: invalid payload", "error", err)
 		return err
 	}
@@ -1065,18 +1166,43 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 		return fmt.Errorf("task:content:generate_embedding: %w", err)
 	}
 
-	if payload.Text == "" {
+	// Re-fetch content text from database (payload is IDs-only).
+	if dbPool == nil {
+		slog.Warn("task:content:generate_embedding: no database, skipping")
+		return nil
+	}
+
+	var title, body string
+	if err := dbPool.Reader.QueryRow(ctx, `
+		SELECT COALESCE(title, ''), COALESCE(body, '')
+		FROM contents
+		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+	`, contentID, tenantID).Scan(&title, &body); err != nil {
+		slog.Error("task:content:generate_embedding: content not found",
+			"content_id", payload.ContentID, "error", err)
+		return nil
+	}
+
+	text := title
+	if body != "" {
+		if text != "" {
+			text += "\n\n"
+		}
+		text += body
+	}
+
+	if text == "" {
 		slog.Warn("task:content:generate_embedding: empty text, skipping",
 			"content_id", payload.ContentID)
 		return nil
 	}
 
-	return contentEmbedder.EmbedContent(ctx, contentID.Bytes, tenantID.Bytes, payload.Text)
+	return contentEmbedder.EmbedContent(ctx, contentID.Bytes, tenantID.Bytes, text)
 }
 
 // HandleReviewAggregateRecalc recalculates the aggregate rating for a reviewable entity.
 func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:content:recalc_review_aggregate", "payload", t.Payload())
+	slog.Info("task:content:recalc_review_aggregate")
 
 	queries, err := requireDB()
 	if err != nil {
@@ -1156,7 +1282,7 @@ func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
 
 // HandleTicketSendStatusUpdate sends a status update email when a ticket's status changes.
 func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:ticket:send_status_update", "payload", t.Payload())
+	slog.Info("task:ticket:send_status_update")
 
 	queries, err := requireDB()
 	if err != nil {
@@ -1167,13 +1293,11 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		TicketID  string `json:"ticket_id"`
 		TenantID  string `json:"tenant_id"`
-		UserID    string `json:"user_id"`
-		Email     string `json:"email"`
-		NewStatus string `json:"new_status"`
 		OldStatus string `json:"old_status"`
+		NewStatus string `json:"new_status"`
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:ticket:send_status_update: invalid payload", "error", err)
 		return err
 	}
@@ -1198,10 +1322,16 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
+	if ticket.SubmitterEmail == nil || *ticket.SubmitterEmail == "" {
+		slog.Warn("task:ticket:send_status_update: no submitter email, skipping",
+			"ticket_id", payload.TicketID)
+		return nil
+	}
+
 	body := fmt.Sprintf("Your ticket \"%s\" status has been updated from %s to %s.",
 		ticket.Subject, payload.OldStatus, payload.NewStatus)
 
-	if err := sendEmail(payload.Email, "Ticket Status Update - "+ticket.Subject, body, false); err != nil {
+	if err := sendEmail(*ticket.SubmitterEmail, "Ticket Status Update - "+ticket.Subject, body, false); err != nil {
 		slog.Error("task:ticket:send_status_update: email failed",
 			"ticket_id", payload.TicketID, "error", err)
 		return err
@@ -1215,7 +1345,7 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 
 // HandleLearningUpdateTrackCompletion recalculates a user's progress in a learning track.
 func HandleLearningUpdateTrackCompletion(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:learning:update_track_completion", "payload", t.Payload())
+	slog.Info("task:learning:update_track_completion")
 
 	if learningProcessor == nil {
 		slog.Warn("task:learning:update_track_completion: no learning processor registered, skipping")
@@ -1250,7 +1380,7 @@ func HandleLearningUpdateTrackCompletion(ctx context.Context, t *asynq.Task) err
 
 // HandleVideoProcessing processes uploaded video files for transcoding and thumbnail generation.
 func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:content:process_video", "payload", t.Payload())
+	slog.Info("task:content:process_video")
 
 	var payload struct {
 		MediaID   string `json:"media_id"`
@@ -1346,189 +1476,102 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 
 // HandleWalletProcessActivityEvent processes a wallet activity event and updates the ledger.
 func HandleWalletProcessActivityEvent(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:wallet:process_activity_event", "payload", t.Payload())
+	slog.Info("task:wallet:process_activity_event")
 
-	queries, err := requireDB()
-	if err != nil {
-		slog.Warn("task:wallet:process_activity_event: no database, skipping", "error", err)
+	if walletProcessor == nil {
+		slog.Warn("task:wallet:process_activity_event: no processor registered, skipping")
 		return nil
 	}
 
-	var payload struct {
-		EventID     string `json:"event_id"`
-		TenantID    string `json:"tenant_id"`
-		UserID      string `json:"user_id"`
-		ActivityKey string `json:"activity_key"`
-	}
-
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:wallet:process_activity_event: invalid payload", "error", err)
-		return err
-	}
-
-	tenantID, err := scanUUID(payload.TenantID)
-	if err != nil {
-		return fmt.Errorf("task:wallet:process_activity_event: %w", err)
-	}
-
-	userID, err := scanUUID(payload.UserID)
-	if err != nil {
-		return fmt.Errorf("task:wallet:process_activity_event: %w", err)
-	}
-
-	eventID, err := scanUUID(payload.EventID)
-	if err != nil {
-		return fmt.Errorf("task:wallet:process_activity_event: %w", err)
-	}
-
-	// Look up the activity point rule.
-	rule, err := queries.GetActivityRuleByKey(ctx, gen.GetActivityRuleByKeyParams{
-		TenantID:    tenantID,
-		ActivityKey: payload.ActivityKey,
-	})
-	if err != nil {
-		slog.Error("task:wallet:process_activity_event: rule not found",
-			"activity_key", payload.ActivityKey, "error", err)
-		return err
-	}
-
-	// Check if rule is enabled.
-	if rule.IsEnabled != nil && !*rule.IsEnabled {
-		slog.Info("task:wallet:process_activity_event: rule disabled",
-			"activity_key", payload.ActivityKey)
-		return nil
-	}
-
-	// Check daily cap.
-	if rule.CapPerDay != nil {
-		todayCount, err := queries.CountUserActivityToday(ctx, gen.CountUserActivityTodayParams{
-			TenantID:    tenantID,
-			UserID:      userID,
-			ActivityKey: payload.ActivityKey,
-		})
-		if err != nil {
-			slog.Error("task:wallet:process_activity_event: failed to count daily activity",
-				"error", err)
-			return err
-		}
-
-		if todayCount >= int64(*rule.CapPerDay) {
-			slog.Info("task:wallet:process_activity_event: daily cap reached",
-				"activity_key", payload.ActivityKey, "count", todayCount, "cap", *rule.CapPerDay)
-			return nil
-		}
-	}
-
-	// Check weekly cap.
-	if rule.CapPerWeek != nil {
-		weekCount, err := queries.CountUserActivityThisWeek(ctx, gen.CountUserActivityThisWeekParams{
-			TenantID:    tenantID,
-			UserID:      userID,
-			ActivityKey: payload.ActivityKey,
-		})
-		if err != nil {
-			slog.Error("task:wallet:process_activity_event: failed to count weekly activity",
-				"error", err)
-			return err
-		}
-
-		if weekCount >= int64(*rule.CapPerWeek) {
-			slog.Info("task:wallet:process_activity_event: weekly cap reached",
-				"activity_key", payload.ActivityKey, "count", weekCount, "cap", *rule.CapPerWeek)
-			return nil
-		}
-	}
-
-	// Get current balance.
-	currentBalance, err := queries.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
-		UserID:     userID,
-		LedgerType: "points",
-	})
-	if err != nil {
-		currentBalance = 0
-	}
-
-	newBalance := currentBalance + int64(rule.PointValue)
-	source := "activity"
-	reason := "Activity: " + payload.ActivityKey
-
-	// Insert the ledger entry.
-	refStr := eventID.String()
-	if _, err := queries.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         tenantID,
-		UserID:           userID,
-		LedgerType:       "points",
-		Operation:        "credit",
-		Amount:           int64(rule.PointValue),
-		ResultingBalance: newBalance,
-		Source:           &source,
-		ActorUserID:      userID,
-		Reference:        &refStr,
-		IdempotencyKey:   &payload.EventID,
-		Reason:           &reason,
-	}); err != nil {
-		slog.Error("task:wallet:process_activity_event: failed to insert ledger entry",
-			"error", err)
-		return err
-	}
-
-	// Mark the event as processed.
-	if err := queries.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
-		ID:       eventID,
-		TenantID: tenantID,
-	}); err != nil {
-		slog.Error("task:wallet:process_activity_event: failed to mark event processed",
-			"error", err)
-		return err
-	}
-
-	slog.Info("task:wallet:process_activity_event: points credited",
-		"user_id", payload.UserID,
-		"activity_key", payload.ActivityKey,
-		"points", rule.PointValue,
-		"new_balance", newBalance)
-
-	return nil
+	return walletProcessor.ProcessActivityEventTask(ctx, t.Payload())
 }
 
 // HandleNewsletterSend sends a newsletter campaign to all subscribers.
-func HandleNewsletterSend(_ context.Context, t *asynq.Task) error {
-	slog.Info("task:newsletter:send", "payload", t.Payload())
+func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:newsletter:send")
 
-	var payload struct {
-		NewsletterID string   `json:"newsletter_id"`
-		TenantID     string   `json:"tenant_id"`
-		Subject      string   `json:"subject"`
-		HTMLBody     string   `json:"html_body"`
-		Recipients   []string `json:"recipients"`
+	if dbPool == nil {
+		slog.Warn("task:newsletter:send: no database, skipping")
+		return nil
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:newsletter:send: invalid payload", "error", err)
+	var payload struct {
+		NewsletterID string `json:"newsletter_id"`
+		TenantID     string `json:"tenant_id"`
+	}
+
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		return err
+	}
+
+	// Re-fetch campaign content from DB (payload = IDs only).
+	var subject, htmlBody string
+	err := dbPool.Reader.QueryRow(ctx,
+		`SELECT subject, html FROM newsletter_campaigns WHERE id = $1 AND tenant_id = $2`,
+		payload.NewsletterID, payload.TenantID,
+	).Scan(&subject, &htmlBody)
+	if err != nil {
+		return fmt.Errorf("task:newsletter:send: fetch campaign %s: %w", payload.NewsletterID, err)
+	}
+
+	// Upsert pending send state rows for all active subscribers.
+	_, err = dbPool.Writer.Exec(ctx, `
+		INSERT INTO newsletter_send_state (campaign_id, recipient, status)
+		SELECT $1, ns.email, 'pending'
+		FROM newsletter_subscribers ns
+		WHERE ns.tenant_id = $2 AND ns.status = 'active'
+		ON CONFLICT (campaign_id, recipient) DO NOTHING
+	`, payload.NewsletterID, payload.TenantID)
+	if err != nil {
+		return fmt.Errorf("task:newsletter:send: upsert send state: %w", err)
+	}
+
+	// Query only pending recipients.
+	rows, err := dbPool.Reader.Query(ctx,
+		`SELECT recipient FROM newsletter_send_state WHERE campaign_id = $1 AND status = 'pending'`,
+		payload.NewsletterID)
+	if err != nil {
+		return fmt.Errorf("task:newsletter:send: query pending: %w", err)
+	}
+	defer rows.Close()
+
+	type pendingRecipient struct {
+		email string
+	}
+	var pending []pendingRecipient
+	for rows.Next() {
+		var r pendingRecipient
+		if err := rows.Scan(&r.email); err != nil {
+			slog.Error("task:newsletter:send: scan error", "error", err)
+			continue
+		}
+		pending = append(pending, r)
+	}
+	if err := rows.Err(); err != nil {
 		return err
 	}
 
 	sent := 0
 	failed := 0
 
-	for _, recipient := range payload.Recipients {
-		if err := sendEmail(recipient, payload.Subject, payload.HTMLBody, true); err != nil {
-			slog.Error("task:newsletter:send: email failed",
-				"recipient", recipient, "error", err)
-
+	for _, r := range pending {
+		if err := sendEmail(r.email, subject, htmlBody, true); err != nil {
+			slog.Error("task:newsletter:send: email failed", "error", err)
+			_, _ = dbPool.Writer.Exec(ctx,
+				`UPDATE newsletter_send_state SET status = 'failed', error = $3 WHERE campaign_id = $1 AND recipient = $2`,
+				payload.NewsletterID, r.email, err.Error())
 			failed++
-
 			continue
 		}
-
+		_, _ = dbPool.Writer.Exec(ctx,
+			`UPDATE newsletter_send_state SET status = 'sent', sent_at = now() WHERE campaign_id = $1 AND recipient = $2`,
+			payload.NewsletterID, r.email)
 		sent++
 	}
 
 	slog.Info("task:newsletter:send: batch complete",
 		"newsletter_id", payload.NewsletterID,
-		"sent", sent, "failed", failed,
-		"total", len(payload.Recipients))
+		"sent", sent, "failed", failed, "total", len(pending))
 
 	return nil
 }
@@ -1539,7 +1582,7 @@ func HandleNewsletterSend(_ context.Context, t *asynq.Task) error {
 
 // HandleDigestEmail sends a digest email summarizing recent activity to a user.
 func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:email:send_digest", "payload", t.Payload())
+	slog.Info("task:email:send_digest")
 
 	if dbPool == nil {
 		slog.Warn("task:email:send_digest: no database, skipping")
@@ -1633,7 +1676,7 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 
 // HandleSitemapGenerate regenerates the XML sitemap for the tenant.
 func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:sitemap:generate", "payload", t.Payload())
+	slog.Info("task:sitemap:generate")
 
 	if dbPool == nil {
 		slog.Warn("task:sitemap:generate: no database, skipping")
@@ -1708,7 +1751,7 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 
 // HandleRSSRegenerate regenerates the RSS feed for published content.
 func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:rss_regenerate", "payload", t.Payload())
+	slog.Info("task:rss_regenerate")
 
 	if dbPool == nil {
 		slog.Warn("task:rss_regenerate: no database, skipping")
@@ -1791,7 +1834,7 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 
 // HandleDataExport generates a GDPR data export archive for a user.
 func HandleDataExport(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:data:export_user_data", "payload", t.Payload())
+	slog.Info("task:data:export_user_data")
 
 	if gdprProcessor == nil {
 		slog.Warn("task:data:export_user_data: no GDPR processor registered, skipping")
@@ -1824,7 +1867,7 @@ func HandleDataExport(ctx context.Context, t *asynq.Task) error {
 
 // HandleAccountDeletionCleanup performs the final cleanup after an account deletion request.
 func HandleAccountDeletionCleanup(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:account:deletion_cleanup", "payload", t.Payload())
+	slog.Info("task:account:deletion_cleanup")
 
 	if gdprProcessor == nil {
 		slog.Warn("task:account:deletion_cleanup: no GDPR processor registered, skipping")
@@ -1857,7 +1900,7 @@ func HandleAccountDeletionCleanup(ctx context.Context, t *asynq.Task) error {
 
 // HandleAdEventIngest ingests an ad impression or click event for analytics.
 func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:ad:ingest_event_batch", "payload", t.Payload())
+	slog.Info("task:ad:ingest_event_batch")
 
 	queries, err := requireDB()
 	if err != nil {
@@ -1912,7 +1955,7 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 
 // HandleMaintenanceUpdateVelocityScores recalculates spam velocity scores for recent content.
 func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:maintenance:update_velocity_scores", "payload", t.Payload())
+	slog.Info("task:maintenance:update_velocity_scores")
 
 	if dbPool == nil {
 		slog.Warn("task:maintenance:update_velocity_scores: no database, skipping")
@@ -1963,7 +2006,7 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 
 // HandleMaintenanceCheckSLABreaches checks for tickets that have breached their SLA deadlines.
 func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:maintenance:check_sla_breaches", "payload", t.Payload())
+	slog.Info("task:maintenance:check_sla_breaches")
 
 	if dbPool == nil {
 		slog.Warn("task:maintenance:check_sla_breaches: no database, skipping")
@@ -2031,7 +2074,7 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 
 // HandleMaintenanceUpdateGeoIPDB downloads and updates the GeoIP database.
 func HandleMaintenanceUpdateGeoIPDB(_ context.Context, t *asynq.Task) error {
-	slog.Info("task:maintenance:update_geoip_db", "payload", t.Payload())
+	slog.Info("task:maintenance:update_geoip_db")
 
 	if geoipUpdater == nil {
 		slog.Warn("task:maintenance:update_geoip_db: updater not registered, skipping")
@@ -2050,7 +2093,7 @@ func HandleMaintenanceUpdateGeoIPDB(_ context.Context, t *asynq.Task) error {
 
 // HandleSpaceAutoPopulate auto-populates a space with recommended content based on its tags.
 func HandleSpaceAutoPopulate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:space:auto_populate", "payload", t.Payload())
+	slog.Info("task:space:auto_populate")
 
 	if spaceAutoPopulateProcessor == nil {
 		slog.Warn("task:space:auto_populate: no space auto-populate processor registered, skipping")
@@ -2081,7 +2124,7 @@ func HandleSpaceAutoPopulate(ctx context.Context, t *asynq.Task) error {
 
 // HandleAnalyticsRefreshViews refreshes the materialized analytics view counts.
 func HandleAnalyticsRefreshViews(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:analytics:refresh_views", "payload", t.Payload())
+	slog.Info("task:analytics:refresh_views")
 
 	if analyticsProcessor == nil {
 		slog.Warn("task:analytics:refresh_views: no analytics processor registered, skipping")
@@ -2093,7 +2136,7 @@ func HandleAnalyticsRefreshViews(ctx context.Context, t *asynq.Task) error {
 
 // HandleSecurityScan runs a periodic security scan on uploaded media.
 func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:security:scan", "payload", t.Payload())
+	slog.Info("task:security:scan")
 
 	var payload struct {
 		TenantID string `json:"tenant_id"`
@@ -2156,7 +2199,7 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 
 // HandleMaintenanceRegenerateLLMsTxt regenerates the llms.txt file for the tenant.
 func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:maintenance:regenerate_llms_txt", "payload", t.Payload())
+	slog.Info("task:maintenance:regenerate_llms_txt")
 
 	if dbPool == nil {
 		slog.Warn("task:maintenance:regenerate_llms_txt: no database, skipping")
@@ -2227,7 +2270,7 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 
 // HandleLearningIssueCertificate issues a completion certificate for a learning track.
 func HandleLearningIssueCertificate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:learning:issue_certificate", "payload", t.Payload())
+	slog.Info("task:learning:issue_certificate")
 
 	if learningProcessor == nil {
 		slog.Warn("task:learning:issue_certificate: no learning processor registered, skipping")
@@ -2262,7 +2305,7 @@ func HandleLearningIssueCertificate(ctx context.Context, t *asynq.Task) error {
 
 // HandleDBManualVacuum runs a manual VACUUM on high-churn database tables.
 func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:db:manual_vacuum", "payload", t.Payload())
+	slog.Info("task:db:manual_vacuum")
 
 	if dbPool == nil {
 		slog.Warn("task:db:manual_vacuum: no database, skipping")
@@ -2304,7 +2347,7 @@ func HandleDBManualVacuum(ctx context.Context, t *asynq.Task) error {
 
 // HandleNewsletterDigest compiles and sends a weekly newsletter digest.
 func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:newsletter:digest", "payload", t.Payload())
+	slog.Info("task:newsletter:digest")
 
 	if dbPool == nil {
 		slog.Warn("task:newsletter:digest: no database, skipping")
@@ -2364,7 +2407,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 
 // HandleComputeTrending recomputes trending snapshots for all tenants.
 func HandleComputeTrending(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:maintenance:compute_trending", "payload", t.Payload())
+	slog.Info("task:maintenance:compute_trending")
 
 	if trendingProcessor == nil {
 		slog.Warn("task:maintenance:compute_trending: no trending processor registered, skipping")
@@ -2376,7 +2419,7 @@ func HandleComputeTrending(ctx context.Context, t *asynq.Task) error {
 
 // HandleComputeSuggestions recomputes suggestion data freshness.
 func HandleComputeSuggestions(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:maintenance:compute_suggestions", "payload", t.Payload())
+	slog.Info("task:maintenance:compute_suggestions")
 
 	if trendingProcessor == nil {
 		slog.Warn("task:maintenance:compute_suggestions: no trending processor registered, skipping")
@@ -2392,7 +2435,7 @@ func HandleComputeSuggestions(ctx context.Context, t *asynq.Task) error {
 
 // HandlePushDelivery delivers a push notification to a user's registered device.
 func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:push:deliver", "payload", t.Payload())
+	slog.Info("task:push:deliver")
 
 	if pushDelivery == nil {
 		slog.Warn("task:push:deliver: no push delivery registered, skipping")
@@ -2433,7 +2476,7 @@ func HandlePushDelivery(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		slog.Error("task:push:deliver: failed to query subscriptions",
 			"user_id", payload.UserID, "error", err)
-		return nil // non-fatal: subscriptions may not exist yet
+		return fmt.Errorf("task:push:deliver: query subscriptions: %w", err)
 	}
 	defer rows.Close()
 
@@ -2526,7 +2569,7 @@ func RegisterPushDelivery(d interface {
 // HandleDMNotifyRequest enqueues a push notification for a new DM request.
 // Payload: { recipient_id, tenant_id, sender_username, conversation_id }
 func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:dm:notify_request", "payload", t.Payload())
+	slog.Info("task:dm:notify_request")
 
 	var payload struct {
 		RecipientID    string `json:"recipient_id"`
@@ -2569,7 +2612,7 @@ func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
 // when the conversation is not currently open. Payload:
 // { recipient_id, tenant_id, sender_username, conversation_id, body_preview }
 func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:dm:notify_message", "payload", t.Payload())
+	slog.Info("task:dm:notify_message")
 
 	var payload struct {
 		RecipientID    string `json:"recipient_id"`
@@ -2625,11 +2668,11 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 		return nil
 	}
 
-	// Find draft content ready to publish.
+	// Find scheduled content ready to publish.
 	rows, err := dbPool.Reader.Query(ctx, `
 		SELECT id, tenant_id
 		FROM contents
-		WHERE status = 'draft'
+		WHERE status = 'scheduled'
 		  AND publish_at IS NOT NULL
 		  AND publish_at <= now()
 		ORDER BY publish_at ASC
@@ -2677,7 +2720,8 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 			    updated_at = now()
 			WHERE id = $1
 			  AND tenant_id = $2
-			  AND status = 'draft'
+			  AND status = 'scheduled'
+			  AND publish_at <= now()
 		`, pc.id, pc.tenantID)
 		if err != nil {
 			slog.Error("task:content:publish_sweep: failed to publish",
@@ -2693,67 +2737,6 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 
 	slog.Info("task:content:publish_sweep: sweep complete",
 		"published", published, "total", len(pending))
-
-	return nil
-}
-
-// HandleVelocityScoreRecalc recalculates velocity scores for recently
-// published content. The formula is:
-//
-// HandleVelocityScoreRecalc recalculates velocity scores for spam detection.
-func HandleVelocityScoreRecalc(ctx context.Context, _ *asynq.Task) error {
-	slog.Info("task:maintenance:recalc_velocity_scores: starting recalculation")
-
-	if dbPool == nil {
-		slog.Warn("task:maintenance:recalc_velocity_scores: no database, skipping")
-		return nil
-	}
-
-	// Ensure every published content from the last 30 days has an engagement row.
-	_, err := dbPool.Writer.Exec(ctx, `
-		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count)
-		SELECT c.id, 0, 0, 0, 0, 0
-		FROM contents c
-		LEFT JOIN content_engagement ce ON ce.content_id = c.id
-		WHERE c.status = 'published'
-		  AND c.created_at >= now() - INTERVAL '30 days'
-		  AND ce.content_id IS NULL
-		ON CONFLICT (content_id) DO NOTHING
-	`)
-	if err != nil {
-		slog.Error("task:maintenance:recalc_velocity_scores: failed to ensure engagement rows", "error", err)
-		return err
-	}
-
-	// Recalculate velocity scores.
-	result, err := dbPool.Writer.Exec(ctx, `
-		UPDATE content_engagement ce
-		SET velocity_score = CASE
-		      WHEN c.published_at IS NOT NULL
-		           AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
-		      THEN GREATEST(0,
-		           (ce.views * 1.0 +
-		            ce.comments_count * 5.0 +
-		            ce.votes_score * 10.0 +
-		            ce.bookmarks_count * 3.0 +
-		            ce.shares_count * 8.0) /
-		           (EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0))
-		      ELSE 0
-		    END,
-		    last_calculated_at = now(),
-		    updated_at = now()
-		FROM contents c
-		WHERE ce.content_id = c.id
-		  AND c.status = 'published'
-		  AND c.created_at >= now() - INTERVAL '30 days'
-	`)
-	if err != nil {
-		slog.Error("task:maintenance:recalc_velocity_scores: recalculation failed", "error", err)
-		return err
-	}
-
-	rowsAffected := result.RowsAffected()
-	slog.Info("task:maintenance:recalc_velocity_scores: complete", "updated", rowsAffected)
 
 	return nil
 }
@@ -3055,7 +3038,7 @@ func HandleMaintenancePrunePushTokens(ctx context.Context, _ *asynq.Task) error 
 // HandleModerationAutoHide checks if a reported entity has reached the
 // auto-hide threshold and archives it. Enqueued after each report is created.
 func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:moderation:auto_hide", "payload", t.Payload())
+	slog.Info("task:moderation:auto_hide")
 
 	if dbPool == nil {
 		slog.Warn("task:moderation:auto_hide: no database, skipping")
@@ -3190,34 +3173,59 @@ func HandleDMCleanupDeclinedRequests(ctx context.Context, _ *asynq.Task) error {
 }
 
 // HandleCouponTrackEvents flushes coupon_events to aggregate counters.
+// Recounts total_clicks and total_copies from the events table into the
+// coupons table. The coupon_events table is append-only so a full recount
+// is safe and idempotent.
 func HandleCouponTrackEvents(ctx context.Context, t *asynq.Task) error {
 	slog.Info("coupon:track_events — flushing coupon event counters")
 	_, err := requireDB()
 	if err != nil {
 		return err
 	}
-	// Aggregate coupon usage counts from events table
+
+	// Update total_clicks from click events.
 	result, err := dbPool.Writer.Exec(ctx, `
-		UPDATE discount_codes dc
-		SET uses_count = (
+		UPDATE coupons c
+		SET total_clicks = (
 			SELECT COUNT(*)::int
 			FROM coupon_events ce
-			WHERE ce.coupon_code = dc.code
-			  AND ce.created_at > dc.updated_at
-		)
+			WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
+		),
+		updated_at = now()
 		WHERE EXISTS (
 			SELECT 1 FROM coupon_events ce
-			WHERE ce.coupon_code = dc.code
-			  AND ce.created_at > dc.updated_at
+			WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
 		)
 	`)
 	if err != nil {
-		slog.Error("coupon:track_events failed", "error", err)
+		slog.Error("coupon:track_events: failed to update click counts", "error", err)
 		return err
 	}
-	rows := result.RowsAffected()
-	if rows > 0 {
-		slog.Info("coupon:track_events — flushed coupon event counters", "count", rows)
+	clickRows := result.RowsAffected()
+
+	// Update total_copies from copy events.
+	result, err = dbPool.Writer.Exec(ctx, `
+		UPDATE coupons c
+		SET total_copies = (
+			SELECT COUNT(*)::int
+			FROM coupon_events ce
+			WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
+		),
+		updated_at = now()
+		WHERE EXISTS (
+			SELECT 1 FROM coupon_events ce
+			WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
+		)
+	`)
+	if err != nil {
+		slog.Error("coupon:track_events: failed to update copy counts", "error", err)
+		return err
+	}
+	copyRows := result.RowsAffected()
+
+	total := clickRows + copyRows
+	if total > 0 {
+		slog.Info("coupon:track_events — flushed counters", "click_updates", clickRows, "copy_updates", copyRows)
 	}
 	return nil
 }
@@ -3342,17 +3350,22 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		LinkCode  string  `json:"link_code"`
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("affiliate:credit_commission: invalid payload", "error", err)
 		return err
 	}
 
-	_, err := requireDB()
+	if payload.LinkCode == "" {
+		slog.Info("affiliate:credit_commission: no affiliate link, skipping")
+		return nil
+	}
+
+	queries, err := requireDB()
 	if err != nil {
 		return err
 	}
 
-	// Look up the affiliate link and member to determine commission rate
+	// Look up the affiliate link and member to determine commission rate.
 	var commissionRate int
 	var memberUserID pgtype.UUID
 	err = dbPool.Reader.QueryRow(ctx, `
@@ -3360,7 +3373,7 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		FROM affiliate_program_members apm
 		JOIN user_affiliate_links ual ON ual.user_id = apm.user_id
 		JOIN affiliate_program_settings aps ON aps.tenant_id = apm.tenant_id
-		WHERE ual.link_code = $1 AND apm.status = 'active' AND ual.is_active = true
+		WHERE ual.code = $1 AND apm.status = 'active' AND ual.is_active = true
 	`, payload.LinkCode).Scan(&memberUserID, &commissionRate)
 	if err != nil {
 		slog.Warn("affiliate:credit_commission: link not found or inactive", "link_code", payload.LinkCode, "error", err)
@@ -3372,7 +3385,7 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	// Calculate commission (percentage of payment amount)
+	// Calculate commission (percentage of payment amount).
 	commission := int64(float64(payload.Amount) * float64(commissionRate) / 100.0)
 	if commission <= 0 {
 		return nil
@@ -3383,14 +3396,52 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("affiliate:credit_commission: %w", err)
 	}
 
-	// Credit the affiliate member's wallet
-	_, err = dbPool.Writer.Exec(ctx, `
-		INSERT INTO wallet_transactions (tenant_id, user_id, amount, transaction_type, reference_type, reference_id, description, created_at)
-		SELECT apm.tenant_id, apm.user_id, $1, 'credit', 'affiliate_commission', $2, 'Affiliate commission', now()
-		FROM affiliate_program_members apm
-		WHERE apm.user_id = $3 AND apm.status = 'active'
-	`, commission, paymentID, memberUserID)
+	// Resolve tenant_id from the affiliate member.
+	var memberTenantID pgtype.UUID
+	if err := dbPool.Reader.QueryRow(ctx, `
+		SELECT tenant_id FROM affiliate_program_members
+		WHERE user_id = $1 AND status = 'active'
+	`, memberUserID).Scan(&memberTenantID); err != nil {
+		slog.Warn("affiliate:credit_commission: member tenant not found", "error", err)
+		return nil
+	}
+
+	// Credit via wallet ledger with idempotency key.
+	source := "affiliate_commission"
+	refStr := paymentID.String()
+	idempotencyKey := fmt.Sprintf("commission:%s", payload.PaymentID)
+	reason := "Affiliate commission"
+
+	// Get current balance.
+	currentBalance, err := queries.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+		TenantID:   memberTenantID,
+		UserID:     memberUserID,
+		LedgerType: "credits",
+	})
 	if err != nil {
+		currentBalance = 0
+	}
+
+	newBalance := currentBalance + commission
+
+	if _, err := queries.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+		TenantID:         memberTenantID,
+		UserID:           memberUserID,
+		LedgerType:       "credits",
+		Operation:        "credit",
+		Amount:           commission,
+		ResultingBalance: newBalance,
+		Source:           &source,
+		ActorUserID:      memberUserID,
+		Reference:        &refStr,
+		IdempotencyKey:   &idempotencyKey,
+		Reason:           &reason,
+	}); err != nil {
+		// Unique violation means idempotency key already exists — treat as success.
+		if strings.Contains(err.Error(), "duplicate key") {
+			slog.Info("affiliate:credit_commission: already credited (idempotent)", "payment_id", payload.PaymentID)
+			return nil
+		}
 		slog.Error("affiliate:credit_commission: failed to credit wallet", "error", err)
 		return err
 	}
