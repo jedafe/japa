@@ -2020,7 +2020,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public coupon routes
 			r.Get("/coupons", couponHandlers.ListPublicCoupons)
 			r.Get("/coupons/{id}", couponHandlers.GetCoupon)
-			r.Post("/coupons/{id}/click", couponHandlers.RecordCouponClick)
+			r.With(mw.RateLimit(vkClient.Redis(), "moderate")).Post("/coupons/{id}/click", couponHandlers.RecordCouponClick)
 
 			// Render helpers (internal — called by Go renderer, AUDIT-BE-022).
 			// Gated by InternalGuard: only service-to-service calls or
@@ -2120,15 +2120,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/docs/nav", docsHandlers.ListDocNav)
 			r.Get("/docs/search", docsHandlers.SearchDocPages)
 
-			// Admin: manage documentation pages
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
-				Get("/admin/docs/{audience}", docsHandlers.ListAllDocPages)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
-				Post("/admin/docs", docsHandlers.CreateDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
-				Patch("/admin/docs/{id}", docsHandlers.UpdateDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
-				Delete("/admin/docs/{id}", docsHandlers.DeleteDocPage)
 			// Admin docs page list/detail (P5.6 — Task 3, catalog paths)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
 				Get("/admin/docs/pages", docsHandlers.ListAllDocPages)
