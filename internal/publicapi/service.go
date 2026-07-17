@@ -337,6 +337,11 @@ func (s *Service) SuspendAPIKey(ctx context.Context, keyID pgtype.UUID) error {
 	return s.store.setStatus(ctx, keyID, "suspended")
 }
 
+// UnsuspendAPIKey sets an API key status back to active. 
+func (s *Service) UnsuspendAPIKey(ctx context.Context, keyID pgtype.UUID) error {
+	return s.store.setStatus(ctx, keyID, "active")
+}
+
 // ---------------------------------------------------------------------------
 // IP Allowlist CRUD
 // ---------------------------------------------------------------------------

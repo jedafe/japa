@@ -78,11 +78,12 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	_, _ = scheduler.Register("*/30 * * * *", scheduledTask(TypeMaintenanceCheckExpiredBans))
 	_, _ = scheduler.Register("*/30 * * * *", scheduledTask(TypeMaintenanceCheckExpiredBoosts))
 
-	// Hourly: trending, llms.txt, analytics views, RSS.
+	// Hourly: trending, llms.txt, analytics views, RSS, GDPR retention sweep.
 	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeComputeTrending))
 	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeMaintenanceRegenerateLLMsTxt))
 	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeAnalyticsRefreshViews))
 	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeRSSRegenerate))
+	_, _ = scheduler.Register("0 * * * *", scheduledTask(TypeGdprRetentionSweep))
 
 	// 6-hourly: user/space suggestions.
 	_, _ = scheduler.Register("0 */6 * * *", scheduledTask(TypeComputeSuggestions))

@@ -30,21 +30,22 @@ func (d *ValkeySessionDeleter) DeleteSessions(ctx context.Context, userID string
 	patterns := []string{
 		"jc:perm:" + userID,
 		"jc:ban:" + userID,
-		"jc:bruteforce:*:" + userID, // brute-force tracks
 		"jc:impersonate:" + userID,
 	}
 	for _, key := range patterns {
-		// Delete directly if it's a fixed key.
 		if err := d.rdb.Del(ctx, key).Err(); err != nil {
 			slog.Warn("gdpr: failed to delete valkey key during session cleanup",
 				"key", key, "error", err)
 		}
 	}
 
+	// Bruteforce keys are keyed by LoginIdentifier(email, ip), not userID, so
+	// a userID-prefixed Del is a no-op. Bruteforce keys have short TTLs (~15 min),
+	// so they expire naturally. 
+
 	// Wildcard patterns requiring SCAN — space unread counters and rate limits.
 	wildcardPatterns := []string{
 		"jc:space_unread:" + userID + ":*",
-		"jc:editor_lock:*:" + userID,
 	}
 	for _, pattern := range wildcardPatterns {
 		if err := d.scanAndDelete(ctx, pattern); err != nil {
@@ -53,6 +54,40 @@ func (d *ValkeySessionDeleter) DeleteSessions(ctx context.Context, userID string
 		}
 	}
 
+	// Editor lock keys are keyed by {content_type}:{content_id} with the user
+	// as the *value*, not part of the key name. SCAN for all locks and delete
+	// those held by this user. 
+	if err := d.scanAndDeleteByValue(ctx, "jc:editor_lock:*", userID); err != nil {
+		slog.Warn("gdpr: failed to delete editor lock keys during session cleanup",
+			"user_id", userID, "error", err)
+	}
+
+	return nil
+}
+
+// scanAndDeleteByValue scans keys matching the pattern, reads their values,
+// and deletes those whose value equals the given userID.
+func (d *ValkeySessionDeleter) scanAndDeleteByValue(ctx context.Context, pattern, userID string) error {
+	var cursor uint64
+	for {
+		keys, nextCursor, err := d.rdb.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return fmt.Errorf("scanning valkey keys (%s): %w", pattern, err)
+		}
+		for _, key := range keys {
+			val, err := d.rdb.Get(ctx, key).Result()
+			if err != nil {
+				continue
+			}
+			if val == userID {
+				d.rdb.Del(ctx, key)
+			}
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
 	return nil
 }
 

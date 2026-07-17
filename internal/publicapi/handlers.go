@@ -296,6 +296,30 @@ func (h *Handlers) SuspendKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// UnsuspendKey re-activates a suspended API key (admin action).
+// DELETE /api/v1/admin/api-keys/:id/suspend. 
+func (h *Handlers) UnsuspendKey(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	keyID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		return
+	}
+
+	if err := h.Service.UnsuspendAPIKey(r.Context(), keyID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{"status": "active"},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // IP Allowlist Handlers
 // ---------------------------------------------------------------------------

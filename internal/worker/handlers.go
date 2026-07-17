@@ -274,6 +274,68 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// HandleGdprRetentionSweep sweeps for GDPR deletion requests in retention_wait
+// whose retention period has elapsed, and triggers hard delete for each.
+// 
+func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("task:gdpr:retention_sweep: starting sweep")
+
+	if dbPool == nil {
+		slog.Warn("task:gdpr:retention_sweep: no database, skipping")
+		return nil
+	}
+
+	if gdprProcessor == nil {
+		slog.Warn("task:gdpr:retention_sweep: no GDPR processor, skipping")
+		return nil
+	}
+
+	rows, err := dbPool.Reader.Query(ctx, `
+		SELECT r.id, r.tenant_id
+		FROM account_deletion_requests r
+		JOIN system_settings s ON s.tenant_id = r.tenant_id AND s.key = 'gdpr.retention_days'
+		WHERE r.status = 'retention_wait'
+		  AND r.created_at + ((s.value->>0)::int || ' days')::interval <= now()
+		ORDER BY r.created_at ASC
+		LIMIT 100
+	`)
+	if err != nil {
+		slog.Error("task:gdpr:retention_sweep: query failed", "error", err)
+		return err
+	}
+	defer rows.Close()
+
+	var requestIDs [][16]byte
+	for rows.Next() {
+		var id, tenantID pgtype.UUID
+		if err := rows.Scan(&id, &tenantID); err != nil {
+			slog.Error("task:gdpr:retention_sweep: scan error", "error", err)
+			continue
+		}
+		requestIDs = append(requestIDs, id.Bytes)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	if len(requestIDs) == 0 {
+		return nil
+	}
+
+	completed := 0
+	for _, reqID := range requestIDs {
+		if err := gdprProcessor.ProcessAccountDeletion(ctx, reqID); err != nil {
+			errpkg.CaptureException(fmt.Errorf("gdpr retention sweep deletion failed: %w", err))
+			continue
+		}
+		completed++
+	}
+
+	slog.Info("task:gdpr:retention_sweep: sweep complete",
+		"completed", completed, "total", len(requestIDs))
+	return nil
+}
+
 // HandleTicketSendConfirmation sends a confirmation email when a new ticket is created.
 func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:ticket:send_confirmation", "payload", t.Payload())
@@ -3228,6 +3290,44 @@ func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("affiliate:record_click — recorded", "link_id", payload.LinkID)
+	return nil
+}
+
+// HandleRedirectRecordHit increments hit_count/last_hit_at for a redirect rule.
+// Moved off the request path (was a per-request goroutine in redirects.Service).
+func HandleRedirectRecordHit(ctx context.Context, t *asynq.Task) error {
+	var payload struct {
+		RedirectID string `json:"redirect_id"`
+		TenantID   string `json:"tenant_id"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("redirect:record_hit: invalid payload", "error", err)
+		return err
+	}
+
+	q, err := requireDB()
+	if err != nil {
+		return err
+	}
+
+	redirectID, err := scanUUID(payload.RedirectID)
+	if err != nil {
+		return fmt.Errorf("redirect:record_hit: %w", err)
+	}
+
+	tenantID, err := scanUUID(payload.TenantID)
+	if err != nil {
+		return fmt.Errorf("redirect:record_hit: %w", err)
+	}
+
+	if err := q.RecordRedirectHit(ctx, gen.RecordRedirectHitParams{
+		ID: redirectID, TenantID: tenantID,
+	}); err != nil {
+		slog.Error("redirect:record_hit failed", "redirect_id", payload.RedirectID, "error", err)
+		return err
+	}
+
 	return nil
 }
 
