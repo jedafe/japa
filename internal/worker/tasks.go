@@ -54,7 +54,6 @@ const (
 	TypeMaintenanceUpdateVelocityScores = "maintenance:update_velocity_scores"
 	TypeMaintenanceCheckSLABreaches     = "maintenance:check_sla_breaches"
 	TypeMaintenanceUpdateGeoIPDB        = "maintenance:update_geoip_db"
-	TypeSpaceAutoPopulate               = "space:auto_populate"
 	TypeAnalyticsRefreshViews           = "analytics:refresh_views"
 	TypeSecurityScan                    = "security:scan"
 	TypeMaintenanceRegenerateLLMsTxt    = "maintenance:regenerate_llms_txt"
@@ -129,7 +128,6 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeMaintenanceUpdateVelocityScores, HandleMaintenanceUpdateVelocityScores)
 	mux.HandleFunc(TypeMaintenanceCheckSLABreaches, HandleMaintenanceCheckSLABreaches)
 	mux.HandleFunc(TypeMaintenanceUpdateGeoIPDB, HandleMaintenanceUpdateGeoIPDB)
-	mux.HandleFunc(TypeSpaceAutoPopulate, HandleSpaceAutoPopulate)
 	mux.HandleFunc(TypeAnalyticsRefreshViews, HandleAnalyticsRefreshViews)
 	mux.HandleFunc(TypeSecurityScan, HandleSecurityScan)
 	mux.HandleFunc(TypeMaintenanceRegenerateLLMsTxt, HandleMaintenanceRegenerateLLMsTxt)

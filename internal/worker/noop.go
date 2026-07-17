@@ -63,14 +63,6 @@ func (noopLearningProcessor) IssueCertificate(_ context.Context, userID, trackID
 	return nil
 }
 
-// noopSpaceAutoPopulateProcessor is a no-op SpaceAutoPopulateProcessor that logs and returns nil.
-type noopSpaceAutoPopulateProcessor struct{}
-
-func (noopSpaceAutoPopulateProcessor) AutoPopulateSpace(_ context.Context, spaceID, _ string) error {
-	slog.Debug("worker: noop space auto-populate processor", "space_id", spaceID)
-	return nil
-}
-
 // RegisterNoopProcessors registers no-op implementations for every
 // processor interface that hasn't already been registered. Call this
 // at startup after all real processors have been registered, so
@@ -98,9 +90,5 @@ func RegisterNoopProcessors() {
 
 	if learningProcessor == nil {
 		RegisterLearningProcessor(noopLearningProcessor{})
-	}
-
-	if spaceAutoPopulateProcessor == nil {
-		RegisterSpaceAutoPopulateProcessor(noopSpaceAutoPopulateProcessor{})
 	}
 }
