@@ -485,6 +485,9 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enqueue async auto-population (Wikipedia summary, flag image, etc.).
+	h.Service.EnqueueAutoPopulate(r.Context(), space.ID, tenantID)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
 

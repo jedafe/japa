@@ -12,6 +12,11 @@
 package spaces
 
 import (
+	"context"
+	"encoding/json"
+	"log/slog"
+
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -124,9 +129,35 @@ func DefaultPermAxes() SpacePermAxes {
 // Reads go through the reader pool; writes go through the writer pool.
 // This follows the same pattern as the existing db.DB struct.
 type Service struct {
-	read  *gen.Queries
-	write *gen.Queries
-	db    *db.DB
+	read     *gen.Queries
+	write    *gen.Queries
+	db       *db.DB
+	enqueuer spaceEnqueuer
+}
+
+// spaceEnqueuer is the subset of worker.Enqueuer that spaces needs.
+type spaceEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// SetEnqueuer injects the Asynq enqueuer for async space tasks.
+func (s *Service) SetEnqueuer(e spaceEnqueuer) {
+	s.enqueuer = e
+}
+
+// EnqueueAutoPopulate enqueues the space:auto_populate task if an enqueuer
+// is wired. Best-effort — logs errors but never fails the caller.
+func (s *Service) EnqueueAutoPopulate(ctx context.Context, spaceID, tenantID pgtype.UUID) {
+	if s.enqueuer == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"space_id":  spaceID.String(),
+		"tenant_id": tenantID.String(),
+	})
+	if err := s.enqueuer.Enqueue("space:auto_populate", payload); err != nil {
+		slog.Warn("spaces: failed to enqueue auto_populate", "space_id", spaceID.String(), "error", err)
+	}
 }
 
 // NewService creates a Service backed by the given database pool.
