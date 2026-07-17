@@ -288,6 +288,36 @@ func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams)
 	return space, nil
 }
 
+// UpdateSpaceWikiContent updates only the wiki_content field of a space.
+func (s *Service) UpdateSpaceWikiContent(ctx context.Context, spaceID, tenantID pgtype.UUID, wikiContent []byte) (gen.Space, error) {
+	// Load current space to preserve all other fields.
+	space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{ID: spaceID, TenantID: tenantID})
+	if err != nil {
+		return gen.Space{}, fmt.Errorf("getting space for wiki update: %w", err)
+	}
+
+	space.WikiContent = wikiContent
+	updated, err := s.write.UpdateSpace(ctx, gen.UpdateSpaceParams{
+		Name:           space.Name,
+		Description:    space.Description,
+		WikiContent:    wikiContent,
+		GeoCode:        space.GeoCode,
+		Visibility:     space.Visibility,
+		PostingPerm:    space.PostingPerm,
+		ReplyingPerm:   space.ReplyingPerm,
+		CommentingPerm: space.CommentingPerm,
+		JoiningPerm:    space.JoiningPerm,
+		Status:         space.Status,
+		ID:             spaceID,
+		TenantID:       tenantID,
+	})
+	if err != nil {
+		return gen.Space{}, fmt.Errorf("updating wiki content: %w", err)
+	}
+
+	return updated, nil
+}
+
 // DeleteSpace deletes a space, scoped to the tenant.
 func (s *Service) DeleteSpace(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteSpace(ctx, gen.DeleteSpaceParams{

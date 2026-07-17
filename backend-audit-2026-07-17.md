@@ -35,7 +35,7 @@
 ## Low
 
 16. **125 seeded permission nodes are never middleware-checked** **Already Fixed** — removed 10 dead control.* nodes via 000142 (control panel gates on control.panel.access only). Remaining 118 dead nodes are either feature-flag keys (consumed by features.Gate) or admin-configurable menu permission_node values.
-17. **`space:auto_populate` is registered but never enqueued** — scaffolded feature (handler wired, logic stub-only). Not dead code — intentionally deferred for future implementation.
+17. **`space:auto_populate` is registered but never enqueued** **Already Fixed** — fully implemented: real Asynq enqueuer wired, task enqueued on space creation, Wikipedia summary fetched for geo spaces (country/state/city).
 18. **sqlc-only rule:** ~30 files still use raw pgx calls — deferred consolidation.
 19. `GET /api/v1/coupons/{id}/click` is public on the loose tier. **Already Fixed** — added moderate rate limit.
 20. `GetLatestBalance` orders by `created_at` only — same-timestamp ties can return wrong row. **Already Fixed**
