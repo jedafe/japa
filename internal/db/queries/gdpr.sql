@@ -47,6 +47,41 @@ ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- =====================
+-- GDPR Data Export Queries
+-- =====================
+
+-- name: GdprExportUserContent :many
+SELECT id, title, slug, content_type, status, created_at
+FROM contents
+WHERE author_id = @user_id AND tenant_id = @tenant_id
+ORDER BY created_at DESC;
+
+-- name: GdprExportUserComments :many
+SELECT id, content_id, body, parent_id, created_at
+FROM comments
+WHERE author_user_id = @user_id AND tenant_id = @tenant_id
+ORDER BY created_at DESC;
+
+-- name: GdprExportUserSpaces :many
+SELECT s.id, s.name, s.slug, s.status, sm.role, sm.joined_at
+FROM space_members sm
+JOIN spaces s ON s.id = sm.space_id
+WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id
+ORDER BY sm.joined_at DESC;
+
+-- name: GdprExportUserPayments :many
+SELECT id, provider, amount, currency, status, purpose_type, created_at
+FROM payments
+WHERE user_id = @user_id AND tenant_id = @tenant_id
+ORDER BY created_at DESC;
+
+-- name: GdprExportUserNotifications :many
+SELECT id, notification_type, title, body, read_at, created_at
+FROM notifications
+WHERE recipient_id = @user_id AND tenant_id = @tenant_id
+ORDER BY created_at DESC;
+
+-- =====================
 -- Data Export Requests
 -- =====================
 

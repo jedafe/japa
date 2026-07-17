@@ -173,6 +173,251 @@ func (q *Queries) DeleteUserTokens(ctx context.Context, arg DeleteUserTokensPara
 	return err
 }
 
+const gdprExportUserComments = `-- name: GdprExportUserComments :many
+SELECT id, content_id, body, parent_id, created_at
+FROM comments
+WHERE author_user_id = $1 AND tenant_id = $2
+ORDER BY created_at DESC
+`
+
+type GdprExportUserCommentsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GdprExportUserCommentsRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	ContentID pgtype.UUID        `json:"content_id"`
+	Body      string             `json:"body"`
+	ParentID  pgtype.UUID        `json:"parent_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GdprExportUserComments(ctx context.Context, arg GdprExportUserCommentsParams) ([]GdprExportUserCommentsRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserComments, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GdprExportUserCommentsRow
+	for rows.Next() {
+		var i GdprExportUserCommentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContentID,
+			&i.Body,
+			&i.ParentID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const gdprExportUserContent = `-- name: GdprExportUserContent :many
+
+SELECT id, title, slug, content_type, status, created_at
+FROM contents
+WHERE author_id = $1 AND tenant_id = $2
+ORDER BY created_at DESC
+`
+
+type GdprExportUserContentParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GdprExportUserContentRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	ContentType string             `json:"content_type"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+// =====================
+// GDPR Data Export Queries
+// =====================
+func (q *Queries) GdprExportUserContent(ctx context.Context, arg GdprExportUserContentParams) ([]GdprExportUserContentRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserContent, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GdprExportUserContentRow
+	for rows.Next() {
+		var i GdprExportUserContentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.ContentType,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const gdprExportUserNotifications = `-- name: GdprExportUserNotifications :many
+SELECT id, notification_type, title, body, read_at, created_at
+FROM notifications
+WHERE recipient_id = $1 AND tenant_id = $2
+ORDER BY created_at DESC
+`
+
+type GdprExportUserNotificationsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GdprExportUserNotificationsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	NotificationType string             `json:"notification_type"`
+	Title            string             `json:"title"`
+	Body             *string            `json:"body"`
+	ReadAt           pgtype.Timestamptz `json:"read_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GdprExportUserNotifications(ctx context.Context, arg GdprExportUserNotificationsParams) ([]GdprExportUserNotificationsRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserNotifications, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GdprExportUserNotificationsRow
+	for rows.Next() {
+		var i GdprExportUserNotificationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.NotificationType,
+			&i.Title,
+			&i.Body,
+			&i.ReadAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const gdprExportUserPayments = `-- name: GdprExportUserPayments :many
+SELECT id, provider, amount, currency, status, purpose_type, created_at
+FROM payments
+WHERE user_id = $1 AND tenant_id = $2
+ORDER BY created_at DESC
+`
+
+type GdprExportUserPaymentsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GdprExportUserPaymentsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Provider    string             `json:"provider"`
+	Amount      int64              `json:"amount"`
+	Currency    string             `json:"currency"`
+	Status      string             `json:"status"`
+	PurposeType string             `json:"purpose_type"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GdprExportUserPayments(ctx context.Context, arg GdprExportUserPaymentsParams) ([]GdprExportUserPaymentsRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserPayments, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GdprExportUserPaymentsRow
+	for rows.Next() {
+		var i GdprExportUserPaymentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Provider,
+			&i.Amount,
+			&i.Currency,
+			&i.Status,
+			&i.PurposeType,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const gdprExportUserSpaces = `-- name: GdprExportUserSpaces :many
+SELECT s.id, s.name, s.slug, s.status, sm.role, sm.joined_at
+FROM space_members sm
+JOIN spaces s ON s.id = sm.space_id
+WHERE sm.user_id = $1 AND sm.tenant_id = $2
+ORDER BY sm.joined_at DESC
+`
+
+type GdprExportUserSpacesParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GdprExportUserSpacesRow struct {
+	ID       pgtype.UUID        `json:"id"`
+	Name     string             `json:"name"`
+	Slug     string             `json:"slug"`
+	Status   string             `json:"status"`
+	Role     string             `json:"role"`
+	JoinedAt pgtype.Timestamptz `json:"joined_at"`
+}
+
+func (q *Queries) GdprExportUserSpaces(ctx context.Context, arg GdprExportUserSpacesParams) ([]GdprExportUserSpacesRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserSpaces, arg.UserID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GdprExportUserSpacesRow
+	for rows.Next() {
+		var i GdprExportUserSpacesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Status,
+			&i.Role,
+			&i.JoinedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAccountDeletionRequest = `-- name: GetAccountDeletionRequest :one
 SELECT id, tenant_id, user_id, status, reason, completed_at, created_at
 FROM account_deletion_requests

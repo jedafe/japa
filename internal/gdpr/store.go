@@ -47,6 +47,44 @@ func (s *Store) getUserConsents(ctx context.Context, userID pgtype.UUID, consent
 	return rows, nil
 }
 
+// ---------------------------------------------------------------------------
+// GDPR Data Export Queries
+// ---------------------------------------------------------------------------
+
+func (s *Store) gdprExportUserContent(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserContentRow, error) {
+	return s.read.GdprExportUserContent(ctx, gen.GdprExportUserContentParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+func (s *Store) gdprExportUserComments(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserCommentsRow, error) {
+	return s.read.GdprExportUserComments(ctx, gen.GdprExportUserCommentsParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+func (s *Store) gdprExportUserSpaces(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserSpacesRow, error) {
+	return s.read.GdprExportUserSpaces(ctx, gen.GdprExportUserSpacesParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+func (s *Store) gdprExportUserPayments(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserPaymentsRow, error) {
+	return s.read.GdprExportUserPayments(ctx, gen.GdprExportUserPaymentsParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
+
+func (s *Store) gdprExportUserNotifications(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserNotificationsRow, error) {
+	return s.read.GdprExportUserNotifications(ctx, gen.GdprExportUserNotificationsParams{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+}
 func (s *Store) hasConsent(ctx context.Context, userID pgtype.UUID, consentType string) (bool, error) {
 	granted, err := s.read.HasConsent(ctx, gen.HasConsentParams{
 		UserID:      userID,
