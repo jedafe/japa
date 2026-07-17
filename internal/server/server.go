@@ -227,6 +227,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spaceUnread := spaces.NewUnreadCounter(vkClient)
 	spaceHandlers := spaces.NewHandlers(spaceService, spaceUnread, contentService)
 
+	// Register space auto-populate processor for the worker's space:auto_populate task.
+	spaceAutoPopulateAdapter := spaces.NewProcessorAdapter(spaceService)
+	worker.RegisterSpaceAutoPopulateProcessor(spaceAutoPopulateAdapter)
+
 	// Geo HTTP handlers — /api/v1/geo/*. The hierarchy endpoints reuse
 	// spaceService (countries/states/cities are seeded as spaces).
 	geoHandlers := geoip.NewHandlers(geoipReader, spaceService)
