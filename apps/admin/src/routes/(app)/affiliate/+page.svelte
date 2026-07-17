@@ -94,7 +94,7 @@
 			label: '',
 			class: 'w-24',
 			render: (_: any, row: any) => `
-				<button onclick="window.__deleteProvider('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+				<button onclick="window.__deleteProvider('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
 			`
 		}
 	];
@@ -136,9 +136,9 @@
 			class: 'w-24',
 			render: (_: any, row: any) => {
 				if (row.status === 'active') {
-					return `<button onclick="window.__updateMemberStatus('${row.user_id}', 'suspended')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Suspend</button>`;
+					return `<button onclick="window.__updateMemberStatus('${row.user_id}', 'suspended')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.suspend")}</button>`;
 				}
-				return `<button onclick="window.__updateMemberStatus('${row.user_id}', 'active')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-50">Activate</button>`;
+				return `<button onclick="window.__updateMemberStatus('${row.user_id}', 'active')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-50">${t("common.activate")}</button>`;
 			}
 		}
 	];

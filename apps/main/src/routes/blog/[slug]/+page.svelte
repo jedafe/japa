@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { ArrowLeft, Clock, Edit, Eye, MessageCircle, Send, Share2, ThumbsUp, ThumbsDown, Trash2 } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import { isFeatureEnabled } from '$lib/stores/features.svelte';
@@ -72,9 +73,9 @@
 {#if !isFeatureEnabled('feature.blog')}
 	<main class="mx-auto max-w-2xl px-6 py-16">
 		<div class="text-center">
-			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Blog is not available</h1>
-			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
-			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('blog.slug.blog_is_not_available')}</h1>
+			<p class="mt-2" style="color: var(--color-muted)">{t('blog.slug.this_feature_is_currently_disabled')}</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">{t('blog.slug.go_home')}</a>
 		</div>
 	</main>
 {:else}

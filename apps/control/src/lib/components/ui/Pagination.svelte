@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n';
 	import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-svelte';
 
 	let {
@@ -25,7 +26,7 @@
 		<span>{totalItems} item{totalItems !== 1 ? 's' : ''}</span>
 
 		<div class="flex items-center gap-1.5">
-			<span class="text-xs">Per page:</span>
+			<span class="text-xs">{t('lib.components.ui.Pagination.svelte.per_page')}</span>
 			<select
 				class="border-border-input bg-background text-foreground h-7 rounded-lg border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-foreground/20"
 				value={pageSize}

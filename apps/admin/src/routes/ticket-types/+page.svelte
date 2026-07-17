@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { Select } from '$lib/components/ui/select';
 	import { ticketTypesApi } from '$lib/api';
@@ -138,8 +139,8 @@
 	<title>Ticket Types — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">Ticket Types</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage ticket type categories and their default priorities</p>
+<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('ticket-types.ticket_types')}</h1>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('ticket-types.manage_ticket_type_categories_and_their_')}</p>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -158,17 +159,17 @@
 </div>
 
 {#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('ticket-types.loading')}</p>
 {:else}
 	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 		<table class="w-full text-sm">
 			<thead>
 				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Name</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Slug</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Description</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Active</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Priority</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ticket-types.name')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ticket-types.slug')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ticket-types.description')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ticket-types.active')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ticket-types.priority')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
 				</tr>
 			</thead>
@@ -211,7 +212,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">No ticket types configured</td>
+						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">{t('ticket-types.no_ticket_types_configured')}</td>
 					</tr>
 				{/each}
 			</tbody>
@@ -231,19 +232,19 @@
 <Modal bind:open={showModal} title={editingId ? 'Edit Ticket Type' : 'Add Ticket Type'} onConfirm={submit} confirmLabel={saving ? 'Saving...' : (editingId ? 'Update' : 'Create')}>
 	<div class="space-y-3">
 		<div>
-			<label for="tt-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Name</label>
+			<label for="tt-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('ticket-types.name')}</label>
 			<input id="tt-name" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="Bug Report" bind:value={form.name} oninput={() => { if (!editingId) form.slug = slugify(form.name); }} />
 		</div>
 		<div>
-			<label for="tt-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Slug</label>
+			<label for="tt-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('ticket-types.slug')}</label>
 			<input id="tt-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="bug-report" bind:value={form.slug} />
 		</div>
 		<div>
-			<label for="tt-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Description</label>
+			<label for="tt-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('ticket-types.description')}</label>
 			<textarea id="tt-desc" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="2" bind:value={form.description}></textarea>
 		</div>
 		<div>
-			<label for="tt-priority" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Default Priority</label>
+			<label for="tt-priority" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('ticket-types.default_priority')}</label>
 			<Select
 				options={priorities.map(p => ({ value: p, label: p }))}
 				bind:value={form.default_priority}
@@ -251,12 +252,12 @@
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="tt-active" type="checkbox" bind:checked={form.is_active} />
-			<label for="tt-active" class="text-sm">Active</label>
+			<label for="tt-active" class="text-sm">{t('ticket-types.active')}</label>
 		</div>
 	</div>
 </Modal>
 
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteConfirm} title="Confirm Delete" onConfirm={executeDelete} confirmLabel="Delete">
-	<p class="text-sm" style="color: var(--color-muted)">Are you sure you want to delete this ticket type? This action cannot be undone.</p>
+	<p class="text-sm" style="color: var(--color-muted)">{t('ticket-types.are_you_sure_you_want_to_delete_this_tic')}</p>
 </Modal>

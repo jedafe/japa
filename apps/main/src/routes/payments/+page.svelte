@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import {
 		CreditCard,
 		Receipt,
@@ -353,37 +354,37 @@
 			{:else if paymentDetail}
 				<div class="mt-4 space-y-3">
 					<div class="flex justify-between text-sm">
-						<span style="color: var(--color-muted)">Amount</span>
+						<span style="color: var(--color-muted)">{t('payments.amount')}</span>
 						<span class="font-semibold" style="color: var(--color-foreground)">
 							{formatAmount(paymentDetail.amount, paymentDetail.currency)}
 						</span>
 					</div>
 					<div class="flex justify-between text-sm">
-						<span style="color: var(--color-muted)">Status</span>
+						<span style="color: var(--color-muted)">{t('payments.status')}</span>
 						<span class="capitalize font-medium" style="color: {statusColor(paymentDetail.status)}">
 							{paymentDetail.status}
 						</span>
 					</div>
 					<div class="flex justify-between text-sm">
-						<span style="color: var(--color-muted)">Provider</span>
+						<span style="color: var(--color-muted)">{t('payments.provider')}</span>
 						<span class="capitalize" style="color: var(--color-foreground)">
 							{paymentDetail.provider}
 						</span>
 					</div>
 					<div class="flex justify-between text-sm">
-						<span style="color: var(--color-muted)">Purpose</span>
+						<span style="color: var(--color-muted)">{t('payments.purpose')}</span>
 						<span class="capitalize" style="color: var(--color-foreground)">
 							{paymentDetail.purpose?.replace(/_/g, ' ') ?? '—'}
 						</span>
 					</div>
 					<div class="flex justify-between text-sm">
-						<span style="color: var(--color-muted)">Reference</span>
+						<span style="color: var(--color-muted)">{t('payments.reference')}</span>
 						<span class="font-mono text-xs" style="color: var(--color-foreground)">
 							{paymentDetail.reference}
 						</span>
 					</div>
 					<div class="flex justify-between text-sm">
-						<span style="color: var(--color-muted)">Date</span>
+						<span style="color: var(--color-muted)">{t('payments.date')}</span>
 						<span style="color: var(--color-foreground)">
 							{formatDate(paymentDetail.created_at)}
 						</span>

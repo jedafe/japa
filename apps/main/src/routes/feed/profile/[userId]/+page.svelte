@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { User } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type FeedItem } from '$lib/api';
@@ -110,7 +111,7 @@
 		{#if hasMore}
 			<div id="feed-sentinel" class="flex justify-center py-8">
 				{#if loadingMore}
-					<p class="text-sm" style="color: var(--color-muted)">Loading more...</p>
+					<p class="text-sm" style="color: var(--color-muted)">{t('feed.profile.userId.loading_more')}</p>
 				{:else}
 					<button
 						onclick={loadMore}

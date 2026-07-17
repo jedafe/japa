@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { locale } from '$lib/stores/i18n.svelte';
 	import { Languages } from 'lucide-svelte';
 	import { goto } from '$app/navigation';

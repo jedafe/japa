@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { ArrowLeft, Shield, Download, Trash2, Loader2, CheckCircle2 } from 'lucide-svelte';
 	import { api, getToken, type ConsentCategory } from '$lib/api';
 	import { onMount } from 'svelte';
@@ -114,7 +115,7 @@
 		Back to Settings
 	</a>
 
-	<h1 class="mb-2 text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">Privacy & Data</h1>
+	<h1 class="mb-2 text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{t('settings.privacy.privacy_data')}</h1>
 	<p class="mb-6 text-sm" style="color: var(--color-muted)">
 		Control how your data is used and manage your privacy preferences.
 	</p>
@@ -262,7 +263,7 @@
 					</div>
 				{/if}
 				<p class="text-sm" style="color: var(--color-danger)">
-					Type <strong>DELETE</strong> to confirm:
+					Type <strong>{t('settings.privacy.delete')}</strong> to confirm:
 				</p>
 				<input
 					type="text"

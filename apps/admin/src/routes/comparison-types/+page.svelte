@@ -274,7 +274,7 @@
 													{/each}
 												</div>
 											{:else}
-												<p class="text-xs" style="color: var(--color-muted)">No dimensions defined</p>
+												<p class="text-xs" style="color: var(--color-muted)">{t('comparison-types.no_dimensions_defined')}</p>
 											{/if}
 										</div>
 

@@ -156,7 +156,7 @@
 				<table class="w-full text-sm">
 					<thead>
 						<tr style="border-bottom: 1px solid var(--color-border)">
-							<th class="px-4 py-2 text-left font-medium text-xs" style="color: var(--color-muted)">User ID</th>
+							<th class="px-4 py-2 text-left font-medium text-xs" style="color: var(--color-muted)">{t('learn.user_id')}</th>
 							<th class="px-4 py-2 text-left font-medium text-xs" style="color: var(--color-muted)">{t('learn.enrolled_at')}</th>
 						</tr>
 					</thead>

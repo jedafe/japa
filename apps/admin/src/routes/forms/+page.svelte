@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -95,9 +96,9 @@
 			class: "w-32",
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-1">
-					<button onclick="window.__formsView('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">View</button>
+					<button onclick="window.__formsView('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.view")}</button>
 					<button onclick="window.__formsSubmissions('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50">Data</button>
-					<button onclick="window.__formsDelete('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Delete</button>
+					<button onclick="window.__formsDelete('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
 				</div>
 			`
 		}
@@ -205,7 +206,7 @@
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
-				<p class="py-8 text-center text-sm text-gray-500">Loading forms...</p>
+				<p class="py-8 text-center text-sm text-gray-500">{t('forms.loading_forms')}</p>
 			{:else}
 				<DataTable
 					columns={columns}
@@ -221,19 +222,19 @@
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">Total Forms</p>
+				<p class="text-sm text-gray-500">{t('forms.total_forms')}</p>
 				<p class="text-2xl font-bold text-gray-900">{forms.length}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">Active Forms</p>
+				<p class="text-sm text-gray-500">{t('forms.active_forms')}</p>
 				<p class="text-2xl font-bold text-gray-900">{forms.filter((f) => f.is_active).length}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">Total Submissions</p>
+				<p class="text-sm text-gray-500">{t('forms.total_submissions')}</p>
 				<p class="text-2xl font-bold text-gray-900">{forms.reduce((sum, f) => sum + (f.submission_count ?? 0), 0).toLocaleString()}</p>
 			</CardContent>
 		</Card>
@@ -251,7 +252,7 @@
 		</div>
 	{/if}
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showDeleteModal = false)}>Cancel</Button>
+		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('forms.cancel')}</Button>
 		<Button variant="destructive" onclick={deleteForm} disabled={deleting}>
 			{#if deleting}
 				Deleting...

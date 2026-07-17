@@ -260,30 +260,30 @@
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Name</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tags.name')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Slug</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tags.slug')}</p>
 					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.slug}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Posts</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tags.posts')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.post_count ?? 0).toLocaleString()}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Followers</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tags.followers')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.follower_count ?? 0).toLocaleString()}</p>
 				</div>
 				<div class="col-span-2">
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Created</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('tags.created')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
 				</div>
 			</div>
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('tags.close')}</Button>
 	</div>
 </Modal>
 

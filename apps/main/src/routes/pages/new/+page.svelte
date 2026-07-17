@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import PageBuilder from '$lib/page-builder/PageBuilder.svelte';
 	import type { BlockInstance } from '$lib/page-builder/types';
 	import { api } from '$lib/api';
@@ -43,7 +44,7 @@
 			<a href="/" class="rounded-md p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10">
 				<ArrowLeft class="h-5 w-5" style="color: var(--color-muted)" />
 			</a>
-			<h1 class="text-xl font-bold" style="color: var(--color-foreground)">New Page</h1>
+			<h1 class="text-xl font-bold" style="color: var(--color-foreground)">{t('pages.new.new_page')}</h1>
 		</div>
 		<button
 			class="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
@@ -69,7 +70,7 @@
 
 	<div class="mb-6 grid gap-4 sm:grid-cols-2">
 		<div>
-			<label for="page-title" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">Title</label>
+			<label for="page-title" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('pages.new.title')}</label>
 			<input
 				id="page-title"
 				type="text"
@@ -80,7 +81,7 @@
 			/>
 		</div>
 		<div>
-			<label for="page-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">Slug</label>
+			<label for="page-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('pages.new.slug')}</label>
 			<input
 				id="page-slug"
 				type="text"

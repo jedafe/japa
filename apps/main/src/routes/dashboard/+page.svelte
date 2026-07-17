@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import {
 		BarChart3,
 		Users,
@@ -185,7 +186,7 @@
 		<!-- Top Content Table -->
 		{#if dashboard?.top_content?.length}
 			<section class="mt-8">
-				<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">Top Content</h2>
+				<h2 class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('dashboard.top_content')}</h2>
 				<div
 					class="overflow-hidden rounded-xl border"
 					style="border-color: var(--color-border); background: var(--color-surface)"
@@ -193,11 +194,11 @@
 					<table class="w-full text-left text-sm" style="color: var(--color-foreground)">
 						<thead>
 							<tr style="border-bottom: 1px solid var(--color-border)">
-								<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">Content</th>
-								<th class="px-4 py-3 font-medium text-right" style="color: var(--color-muted)">Views</th>
-								<th class="px-4 py-3 font-medium text-right" style="color: var(--color-muted)">Reactions</th>
-								<th class="px-4 py-3 font-medium text-right" style="color: var(--color-muted)">Comments</th>
-								<th class="px-4 py-3 font-medium text-right" style="color: var(--color-muted)">Unique Viewers</th>
+								<th class="px-4 py-3 font-medium" style="color: var(--color-muted)">{t('dashboard.content')}</th>
+								<th class="px-4 py-3 font-medium text-right" style="color: var(--color-muted)">{t('dashboard.views')}</th>
+								<th class="px-4 py-3 font-medium text-right" style="color: var(--color-muted)">{t('dashboard.reactions')}</th>
+								<th class="px-4 py-3 font-medium text-right" style="color: var(--color-muted)">{t('dashboard.comments')}</th>
+								<th class="px-4 py-3 font-medium text-right" style="color: var(--color-muted)">{t('dashboard.unique_viewers')}</th>
 							</tr>
 						</thead>
 						<tbody>

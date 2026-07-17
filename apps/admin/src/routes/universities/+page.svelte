@@ -118,7 +118,7 @@
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('universities.title', 'Universities')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage university registrations and verification</p>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('universities.manage_university_registrations_and_veri')}</p>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -144,8 +144,8 @@
 			<thead>
 				<tr style="border-color: var(--color-border)">
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.name', 'Name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Slug</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Status</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.slug')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.status')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.students', 'Members')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('universities.created', 'Created')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
@@ -216,7 +216,7 @@
 			/>
 		</div>
 		<div>
-			<label for="uni-domain" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Domain / Slug</label>
+			<label for="uni-domain" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('universities.domain_slug')}</label>
 			<input
 				id="uni-domain"
 				type="text"

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2 } from 'lucide-svelte';
 	import { api, type ReactionType, type ContentReaction } from '$lib/api';
 

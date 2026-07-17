@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n';
 	import {
 		ChevronLeft,
 		ChevronRight,
@@ -305,7 +306,7 @@
 			<div class="text-muted-foreground flex items-center gap-3 text-sm">
 				<span>{totalRows} item{totalRows !== 1 ? 's' : ''}</span>
 				<div class="flex items-center gap-1.5">
-					<span class="text-xs">Per page:</span>
+					<span class="text-xs">{t('lib.components.DataTable.svelte.per_page')}</span>
 					<select
 						class="border-border-input bg-background text-foreground h-7 rounded-lg border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-foreground/20"
 						value={pageSize}

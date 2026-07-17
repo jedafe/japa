@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { DragDropProvider } from '@dnd-kit/svelte';
 	import { isSortableOperation } from '@dnd-kit/svelte/sortable';
 	import type { DragEndEvent } from '@dnd-kit/abstract';

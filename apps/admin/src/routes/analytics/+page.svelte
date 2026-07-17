@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -182,7 +183,7 @@
 		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 			<Card>
 				<CardHeader>
-					<h3 class="text-sm font-medium" style="color: var(--color-muted)">User Growth</h3>
+					<h3 class="text-sm font-medium" style="color: var(--color-muted)">{t('analytics.user_growth')}</h3>
 				</CardHeader>
 				<CardContent>
 					{#if loading}
@@ -202,7 +203,7 @@
 						</div>
 					{:else}
 						<div class="flex h-64 items-center justify-center">
-							<p class="text-sm" style="color: var(--color-muted)">No data available</p>
+							<p class="text-sm" style="color: var(--color-muted)">{t('analytics.no_data_available')}</p>
 						</div>
 					{/if}
 				</CardContent>
@@ -210,7 +211,7 @@
 			
 			<Card>
 				<CardHeader>
-					<h3 class="text-sm font-medium" style="color: var(--color-muted)">Content Activity</h3>
+					<h3 class="text-sm font-medium" style="color: var(--color-muted)">{t('analytics.content_activity')}</h3>
 				</CardHeader>
 				<CardContent>
 					{#if loading}
@@ -230,7 +231,7 @@
 						</div>
 					{:else}
 						<div class="flex h-64 items-center justify-center">
-							<p class="text-sm" style="color: var(--color-muted)">No data available</p>
+							<p class="text-sm" style="color: var(--color-muted)">{t('analytics.no_data_available')}</p>
 						</div>
 					{/if}
 				</CardContent>
@@ -241,7 +242,7 @@
 	{#if activeTab === "security"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">Security Scans</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.security_scans')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
@@ -257,7 +258,7 @@
 	{#if activeTab === "users"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">User Analytics</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.user_analytics')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
@@ -276,7 +277,7 @@
 	{#if activeTab === "content"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">Content Analytics</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.content_analytics')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
@@ -295,7 +296,7 @@
 	{#if activeTab === "spaces"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">Space Analytics</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.space_analytics')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
@@ -314,7 +315,7 @@
 	{#if activeTab === "revenue"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">Revenue Analytics</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.revenue_analytics')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
@@ -333,7 +334,7 @@
 	{#if activeTab === "search"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">Search Analytics</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.search_analytics')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
@@ -357,7 +358,7 @@
 	size="sm"
 >
 	<div class="flex justify-end gap-3">
-		<Button variant="outline" onclick={() => flushModalOpen = false}>Cancel</Button>
+		<Button variant="outline" onclick={() => flushModalOpen = false}>{t('analytics.cancel')}</Button>
 		<Button variant="destructive" onclick={handleFlushCache} disabled={flushing}>
 			{#if flushing}
 				<RefreshCw class="h-4 w-4 mr-2 animate-spin" />

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Loader2, Plus, X } from 'lucide-svelte';
 	import { api } from '$lib/api';
@@ -68,7 +69,7 @@
 	</a>
 
 	<div class="rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-surface);">
-		<h1 class="text-xl font-bold" style="color: var(--color-foreground)">Create professional profile</h1>
+		<h1 class="text-xl font-bold" style="color: var(--color-foreground)">{t('professional.new.create_professional_profile')}</h1>
 		<p class="mt-1 text-sm" style="color: var(--color-muted)">
 			Showcase your skills and relocation journey.
 		</p>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { MapPin, Star, Users, ExternalLink } from 'lucide-svelte';
 
 	let {
@@ -66,7 +67,7 @@
 
 		{#if university.country_ranking}
 			<div class="rounded-lg p-3 text-center" style="background-color: var(--color-background)">
-				<div class="text-sm" style="color: var(--color-muted)">Country Rank</div>
+				<div class="text-sm" style="color: var(--color-muted)">{t('lib.universities.UniversityHeader.svelte.country_rank')}</div>
 				<div class="mt-1 text-xl font-bold" style="color: var(--color-foreground)">
 					#{university.country_ranking}
 				</div>
@@ -75,7 +76,7 @@
 
 		{#if university.rating}
 			<div class="rounded-lg p-3 text-center" style="background-color: var(--color-background)">
-				<div class="text-sm" style="color: var(--color-muted)">Rating</div>
+				<div class="text-sm" style="color: var(--color-muted)">{t('lib.universities.UniversityHeader.svelte.rating')}</div>
 				<div class="mt-1 text-xl font-bold" style="color: var(--color-foreground)">
 					{university.rating.toFixed(1)}
 					<span class="text-sm font-normal" style="color: var(--color-muted)">

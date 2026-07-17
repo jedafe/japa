@@ -64,7 +64,7 @@
 			style="background: color-mix(in srgb, var(--color-primary) 8%, transparent); color: var(--color-muted)"
 		>
 			<MapPin class="h-4 w-4" style="color: var(--color-primary)" />
-			<span>Detected you're browsing from <strong style="color: var(--color-foreground)">{detectedCountry}</strong></span>
+			<span>{t('lib.onboarding.StepDestination.svelte.detected_you_re_browsing_from')}<strong style="color: var(--color-foreground)">{detectedCountry}</strong></span>
 		</div>
 	{/if}
 

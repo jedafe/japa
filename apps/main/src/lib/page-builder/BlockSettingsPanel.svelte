@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { X, Check } from 'lucide-svelte';
 	import {
 		Layout,

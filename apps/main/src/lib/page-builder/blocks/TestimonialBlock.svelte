@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	interface Props {
 		quote?: string;
 		author?: string;

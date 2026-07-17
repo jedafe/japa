@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import PostCreateLayout from '$lib/create/PostCreateLayout.svelte';

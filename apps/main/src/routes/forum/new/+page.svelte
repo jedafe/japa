@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Loader2, Send } from 'lucide-svelte';
 	import { api, getToken } from '$lib/api';
@@ -81,9 +82,9 @@
 {#if !isFeatureEnabled('feature.forum')}
 	<main class="mx-auto max-w-2xl px-6 py-16">
 		<div class="text-center">
-			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Forum is not available</h1>
-			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
-			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('forum.new.forum_is_not_available')}</h1>
+			<p class="mt-2" style="color: var(--color-muted)">{t('forum.new.this_feature_is_currently_disabled')}</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">{t('forum.new.go_home')}</a>
 		</div>
 	</main>
 {:else}
@@ -170,7 +171,7 @@
 				class="w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors"
 				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 			>
-				<option value="">No space</option>
+				<option value="">{t('forum.new.no_space')}</option>
 				{#each spaces as space}
 					<option value={space.id}>{space.name}</option>
 				{/each}
@@ -184,7 +185,7 @@
 				class="mb-1.5 block text-sm font-medium"
 				style="color: var(--color-foreground)"
 			>
-				Tags <span class="font-normal" style="color: var(--color-muted)">(up to 5)</span>
+				Tags <span class="font-normal" style="color: var(--color-muted)">{t('forum.new.up_to_5')}</span>
 			</label>
 			<div class="flex gap-2">
 				<input

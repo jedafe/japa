@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -106,8 +107,8 @@
 			class: "w-24",
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-1">
-					<button onclick="window.__newsletterEditSubscriber('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Edit</button>
-					<button onclick="window.__newsletterDeleteSubscriber('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">Remove</button>
+					<button onclick="window.__newsletterEditSubscriber('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.edit")}</button>
+					<button onclick="window.__newsletterDeleteSubscriber('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.remove")}</button>
 				</div>
 			`
 		}
@@ -164,8 +165,8 @@
 			class: "w-24",
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-1">
-					<button onclick="window.__newsletterViewCampaign('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">View</button>
-					${row.status === "draft" ? `<button onclick="window.__newsletterSendCampaign('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50">Send</button>` : ""}
+					<button onclick="window.__newsletterViewCampaign('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.view")}</button>
+					${row.status === "draft" ? `<button onclick="window.__newsletterSendCampaign('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50">${t("common.send")}</button>` : ""}
 				</div>
 			`
 		}
@@ -323,7 +324,7 @@
 		<Card>
 			<CardContent class="p-0">
 				{#if loading}
-					<p class="py-8 text-center text-sm text-gray-500">Loading subscribers...</p>
+					<p class="py-8 text-center text-sm text-gray-500">{t('newsletter.loading_subscribers')}</p>
 				{:else}
 					<DataTable
 						columns={subscriberColumns}
@@ -341,7 +342,7 @@
 		<Card>
 			<CardContent class="p-0">
 				{#if loading}
-					<p class="py-8 text-center text-sm text-gray-500">Loading campaigns...</p>
+					<p class="py-8 text-center text-sm text-gray-500">{t('newsletter.loading_campaigns')}</p>
 				{:else}
 					<DataTable
 						columns={campaignColumns}
@@ -358,19 +359,19 @@
 		<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
 			<Card>
 				<CardContent class="p-6">
-					<p class="text-sm font-medium text-gray-500">Total Subscribers</p>
+					<p class="text-sm font-medium text-gray-500">{t('newsletter.total_subscribers')}</p>
 					<p class="text-2xl font-bold text-gray-900">{stats.subscribers}</p>
 				</CardContent>
 			</Card>
 			<Card>
 				<CardContent class="p-6">
-					<p class="text-sm font-medium text-gray-500">Avg Open Rate</p>
+					<p class="text-sm font-medium text-gray-500">{t('newsletter.avg_open_rate')}</p>
 					<p class="text-2xl font-bold text-gray-900">{stats.avgOpenRate}%</p>
 				</CardContent>
 			</Card>
 			<Card>
 				<CardContent class="p-6">
-					<p class="text-sm font-medium text-gray-500">Avg Click Rate</p>
+					<p class="text-sm font-medium text-gray-500">{t('newsletter.avg_click_rate')}</p>
 					<p class="text-2xl font-bold text-gray-900">{stats.avgClickRate}%</p>
 				</CardContent>
 			</Card>
@@ -378,11 +379,11 @@
 
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold text-gray-900">Campaign Performance</h3>
+				<h3 class="text-lg font-semibold text-gray-900">{t('newsletter.campaign_performance')}</h3>
 			</CardHeader>
 			<CardContent>
 				<div class="flex h-64 items-center justify-center rounded-lg bg-gray-50">
-					<p class="text-gray-500">Analytics chart placeholder — integrate with chart library</p>
+					<p class="text-gray-500">{t('newsletter.analytics_chart_placeholder_integrate_wi')}</p>
 				</div>
 			</CardContent>
 		</Card>
@@ -393,7 +394,7 @@
 <Modal bind:open={showCreateModal} title="Create Campaign" description="Compose a new newsletter campaign" size="lg">
 	<div class="space-y-4">
 		<div>
-			<label for="campaign-name" class="mb-1 block text-sm font-medium text-gray-900">Campaign Name</label>
+			<label for="campaign-name" class="mb-1 block text-sm font-medium text-gray-900">{t('newsletter.campaign_name')}</label>
 			<input
 				id="campaign-name"
 				type="text"
@@ -403,7 +404,7 @@
 			/>
 		</div>
 		<div>
-			<label for="campaign-subject" class="mb-1 block text-sm font-medium text-gray-900">Subject Line</label>
+			<label for="campaign-subject" class="mb-1 block text-sm font-medium text-gray-900">{t('newsletter.subject_line')}</label>
 			<input
 				id="campaign-subject"
 				type="text"
@@ -413,17 +414,17 @@
 			/>
 		</div>
 		<div>
-			<label for="campaign-html" class="mb-1 block text-sm font-medium text-gray-900">Content (HTML)</label>
+			<label for="campaign-html" class="mb-1 block text-sm font-medium text-gray-900">{t('newsletter.content_html')}</label>
 			<textarea
 				id="campaign-html"
 				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
 				rows="8"
-				placeholder="<h1>Hello!</h1><p>Your newsletter content here...</p>"
+				placeholder="<h1>{t('newsletter.hello')}</h1><p>{t('newsletter.your_newsletter_content_here')}</p>"
 				bind:value={newCampaign.html}
 			></textarea>
 		</div>
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => (showCreateModal = false)}>Cancel</Button>
+			<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('newsletter.cancel')}</Button>
 			<Button onclick={createCampaign} disabled={creating || !newCampaign.name || !newCampaign.subject}>
 				{#if creating}
 					Creating...
@@ -445,7 +446,7 @@
 		</div>
 	{/if}
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showDeleteModal = false)}>Cancel</Button>
+		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('newsletter.cancel')}</Button>
 		<Button variant="destructive" onclick={deleteSubscriber} disabled={deleting}>
 			{#if deleting}
 				Removing...

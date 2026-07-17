@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { PUBLIC_JC_ENV } from '$env/static/public';
 	import { user, clearUser } from '$lib/stores/auth.svelte';
 	import { apiFetch } from '$lib/api/client';
@@ -55,7 +56,7 @@
 		>
 			<Menu class="h-5 w-5" />
 		</button>
-		<a href="/" class="text-sm font-semibold" style="color: var(--color-foreground)">JapaConnect Admin</a>
+		<a href="/" class="text-sm font-semibold" style="color: var(--color-foreground)">{t('lib.components.layout.TopBar.svelte.japaconnect_admin')}</a>
 		{#if PUBLIC_JC_ENV === 'production'}
 			<span class="rounded bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
 				PRODUCTION
@@ -82,7 +83,7 @@
 			{#if showNotifications}
 				<div class="absolute right-0 top-full z-50 mt-1 w-80 rounded-md border shadow-lg" style="border-color: var(--color-border); background-color: var(--color-surface)">
 					<div class="flex items-center justify-between border-b px-3 py-2" style="border-color: var(--color-border)">
-						<span class="text-sm font-medium" style="color: var(--color-foreground)">Notifications</span>
+						<span class="text-sm font-medium" style="color: var(--color-foreground)">{t('lib.components.layout.TopBar.svelte.notifications')}</span>
 						<button
 							type="button"
 							class="text-xs hover:underline"
@@ -94,7 +95,7 @@
 					</div>
 					<div class="max-h-64 overflow-y-auto">
 						{#if getNotifications().length === 0}
-							<p class="px-3 py-4 text-center text-sm" style="color: var(--color-muted)">No notifications</p>
+							<p class="px-3 py-4 text-center text-sm" style="color: var(--color-muted)">{t('lib.components.layout.TopBar.svelte.no_notifications')}</p>
 						{:else}
 							{#each getNotifications() as notif}
 								<button

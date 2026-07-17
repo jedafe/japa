@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { ArrowLeft, Send, Loader2 } from 'lucide-svelte';
 	import { api, type DMMessage, type DMConversation } from '$lib/api';
@@ -195,9 +196,9 @@
 {#if !isFeatureEnabled('feature.dm')}
 	<main class="mx-auto max-w-2xl px-6 py-16">
 		<div class="text-center">
-			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">Messages is not available</h1>
-			<p class="mt-2" style="color: var(--color-muted)">This feature is currently disabled.</p>
-			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">Go home</a>
+			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">{t('messages.channelId.messages_is_not_available')}</h1>
+			<p class="mt-2" style="color: var(--color-muted)">{t('messages.channelId.this_feature_is_currently_disabled')}</p>
+			<a href="/" class="mt-4 inline-block" style="color: var(--color-primary)">{t('messages.channelId.go_home')}</a>
 		</div>
 	</main>
 {:else}
@@ -237,7 +238,7 @@
 			</div>
 		{:else if messages.length === 0}
 			<div class="py-12 text-center">
-				<p class="text-sm" style="color: var(--color-muted)">No messages yet. Say hello!</p>
+				<p class="text-sm" style="color: var(--color-muted)">{t('messages.channelId.no_messages_yet_say_hello')}</p>
 			</div>
 		{:else}
 			{#if hasMore}

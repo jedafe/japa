@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
   import PageHeader from "$lib/components/layout/page-header.svelte";
@@ -267,8 +268,8 @@
 <!-- Impersonation Banner -->
 {#if impersonating}
   <div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 10%, transparent)">
-    <span style="color: var(--color-warning)">Impersonating <strong>{impersonatingUsername}</strong></span>
-    <a href="/users" class="rounded-md border px-3 py-1 text-xs font-medium" style="border-color: var(--color-warning); color: var(--color-warning)">Back to Users</a>
+    <span style="color: var(--color-warning)">{t('users.userId.impersonating')}<strong>{impersonatingUsername}</strong></span>
+    <a href="/users" class="rounded-md border px-3 py-1 text-xs font-medium" style="border-color: var(--color-warning); color: var(--color-warning)">{t('users.userId.back_to_users')}</a>
   </div>
 {/if}
 
@@ -289,7 +290,7 @@
 {/if}
 
 {#if loading}
-  <p class="py-8 text-center text-sm" style="color: var(--color-muted)">Loading...</p>
+  <p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.loading')}</p>
 {:else if user}
   <!-- User Header -->
   <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -361,27 +362,27 @@
         <div class="space-y-4">
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
-              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Username</p>
+              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.userId.username')}</p>
               <p class="mt-1 text-sm font-medium">{user.username}</p>
             </div>
             <div>
-              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Email</p>
+              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.userId.email')}</p>
               <p class="mt-1 text-sm font-medium">{user.email}</p>
             </div>
             <div>
-              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.userId.status')}</p>
               <p class="mt-1 text-sm font-medium">{user.status}</p>
             </div>
             <div>
-              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Created</p>
+              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.userId.created')}</p>
               <p class="mt-1 text-sm font-medium">{user.created_at}</p>
             </div>
             <div>
-              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Last Login</p>
+              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.userId.last_login')}</p>
               <p class="mt-1 text-sm font-medium">{user.last_login_at ?? "—"}</p>
             </div>
             <div>
-              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Groups</p>
+              <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.userId.groups')}</p>
               <div class="mt-1 flex flex-wrap gap-1">
                 {#each user.groups as g}
                   <Badge variant="secondary">{g}</Badge>
@@ -397,9 +398,9 @@
             <table class="w-full text-sm">
               <thead>
                 <tr>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">Type</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">Content</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">Date</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.type')}</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.content')}</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.date')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -416,7 +417,7 @@
             </table>
           </div>
         {:else}
-          <p class="py-4 text-center text-sm" style="color: var(--color-muted)">No activity yet</p>
+          <p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.no_activity_yet')}</p>
         {/if}
 
       {:else if activeTab === "ai"}
@@ -425,9 +426,9 @@
             <table class="w-full text-sm">
               <thead>
                 <tr>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">Type</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">Content</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">Created</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.type')}</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.content')}</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.created')}</th>
                   <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)"></th>
                 </tr>
               </thead>
@@ -452,7 +453,7 @@
             </table>
           </div>
         {:else}
-          <p class="py-4 text-center text-sm" style="color: var(--color-muted)">No AI context entries</p>
+          <p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.no_ai_context_entries')}</p>
         {/if}
 
       {:else if activeTab === "sessions"}
@@ -461,9 +462,9 @@
             <table class="w-full text-sm">
               <thead>
                 <tr>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">IP Address</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">Device</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">Started</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.ip_address')}</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.device')}</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.started')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -478,7 +479,7 @@
             </table>
           </div>
         {:else}
-          <p class="py-4 text-center text-sm" style="color: var(--color-muted)">No sessions yet</p>
+          <p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.no_sessions_yet')}</p>
         {/if}
       {/if}
     </CardContent>
@@ -487,44 +488,44 @@
 
 <!-- Ban Confirm Modal -->
 <Modal bind:open={showBanConfirm} title="Ban User" size="sm">
-  <p class="text-sm" style="color: var(--color-muted)">Are you sure you want to ban this user? They will not be able to access the platform.</p>
+  <p class="text-sm" style="color: var(--color-muted)">{t('users.userId.are_you_sure_you_want_to_ban_this_user_t')}</p>
   <div class="mt-6 flex justify-end gap-3">
-    <Button variant="outline" onclick={() => (showBanConfirm = false)}>Cancel</Button>
-    <Button variant="destructive" onclick={handleBan}>Ban User</Button>
+    <Button variant="outline" onclick={() => (showBanConfirm = false)}>{t('users.userId.cancel')}</Button>
+    <Button variant="destructive" onclick={handleBan}>{t('users.userId.ban_user')}</Button>
   </div>
 </Modal>
 
 <!-- Unban Confirm Modal -->
 <Modal bind:open={showUnbanConfirm} title="Unban User" size="sm">
-  <p class="text-sm" style="color: var(--color-muted)">Are you sure you want to unban this user? They will regain access to the platform.</p>
+  <p class="text-sm" style="color: var(--color-muted)">{t('users.userId.are_you_sure_you_want_to_unban_this_user')}</p>
   <div class="mt-6 flex justify-end gap-3">
-    <Button variant="outline" onclick={() => (showUnbanConfirm = false)}>Cancel</Button>
-    <Button variant="default" onclick={handleUnban}>Unban User</Button>
+    <Button variant="outline" onclick={() => (showUnbanConfirm = false)}>{t('users.userId.cancel')}</Button>
+    <Button variant="default" onclick={handleUnban}>{t('users.userId.unban_user')}</Button>
   </div>
 </Modal>
 
 <!-- Suspend Confirm Modal -->
 <Modal bind:open={showSuspendConfirm} title="Suspend User" size="sm">
-  <p class="text-sm" style="color: var(--color-muted)">Are you sure you want to suspend this user? Their account will be temporarily disabled.</p>
+  <p class="text-sm" style="color: var(--color-muted)">{t('users.userId.are_you_sure_you_want_to_suspend_this_us')}</p>
   <div class="mt-6 flex justify-end gap-3">
-    <Button variant="outline" onclick={() => (showSuspendConfirm = false)}>Cancel</Button>
-    <Button variant="destructive" onclick={handleSuspend}>Suspend User</Button>
+    <Button variant="outline" onclick={() => (showSuspendConfirm = false)}>{t('users.userId.cancel')}</Button>
+    <Button variant="destructive" onclick={handleSuspend}>{t('users.userId.suspend_user')}</Button>
   </div>
 </Modal>
 
 <!-- Delete Confirm Modal -->
 <Modal bind:open={showDeleteConfirm} title="Delete User" size="sm">
-  <p class="text-sm" style="color: var(--color-muted)">Are you sure you want to delete this user? This action cannot be undone.</p>
+  <p class="text-sm" style="color: var(--color-muted)">{t('users.userId.are_you_sure_you_want_to_delete_this_use')}</p>
   <div class="mt-6 flex justify-end gap-3">
-    <Button variant="outline" onclick={() => (showDeleteConfirm = false)}>Cancel</Button>
-    <Button variant="destructive" onclick={handleDelete}>Delete User</Button>
+    <Button variant="outline" onclick={() => (showDeleteConfirm = false)}>{t('users.userId.cancel')}</Button>
+    <Button variant="destructive" onclick={handleDelete}>{t('users.userId.delete_user')}</Button>
   </div>
 </Modal>
 
 <!-- Warning Modal -->
 <Modal bind:open={showWarningModal} title="Send Warning" size="sm">
   <div>
-    <label for="warning-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Reason for warning</label>
+    <label for="warning-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.reason_for_warning')}</label>
     <textarea
       id="warning-reason"
       rows="3"
@@ -535,8 +536,8 @@
     ></textarea>
   </div>
   <div class="mt-6 flex justify-end gap-3">
-    <Button variant="outline" onclick={() => (showWarningModal = false)}>Cancel</Button>
-    <Button variant="default" onclick={handleWarning} disabled={!warningReason.trim()}>Send Warning</Button>
+    <Button variant="outline" onclick={() => (showWarningModal = false)}>{t('users.userId.cancel')}</Button>
+    <Button variant="default" onclick={handleWarning} disabled={!warningReason.trim()}>{t('users.userId.send_warning')}</Button>
   </div>
 </Modal>
 
@@ -551,7 +552,7 @@
     {/each}
   </div>
   <div class="mt-6 flex justify-end gap-3">
-    <Button variant="outline" onclick={() => (showGroupModal = false)}>Cancel</Button>
-    <Button variant="default" onclick={handleGroupChange}>Save Changes</Button>
+    <Button variant="outline" onclick={() => (showGroupModal = false)}>{t('users.userId.cancel')}</Button>
+    <Button variant="default" onclick={handleGroupChange}>{t('users.userId.save_changes')}</Button>
   </div>
 </Modal>

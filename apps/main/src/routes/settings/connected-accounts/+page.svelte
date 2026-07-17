@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { ArrowLeft, Loader2, CheckCircle2, Link2, Unlink } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
@@ -109,7 +110,7 @@
 		Back to Settings
 	</a>
 
-	<h1 class="mb-2 text-2xl font-bold" style="color: var(--color-foreground)">Connected Accounts</h1>
+	<h1 class="mb-2 text-2xl font-bold" style="color: var(--color-foreground)">{t('settings.connected-accounts.connected_accounts')}</h1>
 	<p class="mb-6 text-sm" style="color: var(--color-muted)">
 		Connect your social accounts for easier sign-in and profile enrichment.
 	</p>

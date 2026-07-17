@@ -44,8 +44,8 @@
 </svelte:head>
 
 <div class="mx-auto max-w-4xl py-12">
-	<h1 class="mb-2 text-3xl font-bold tracking-tight">Coupons</h1>
-	<p class="mb-6 text-sm" style="color: var(--color-muted)">Browse available coupons and discounts.</p>
+	<h1 class="mb-2 text-3xl font-bold tracking-tight">{t('coupons.coupons')}</h1>
+	<p class="mb-6 text-sm" style="color: var(--color-muted)">{t('coupons.browse_available_coupons_and_discounts')}</p>
 
 	{#if error}
 		<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -75,7 +75,7 @@
 	{#if loading}
 		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 	{:else if coupons.length === 0}
-		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No coupons available.</p>
+		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('coupons.no_coupons_available')}</p>
 	{:else}
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each coupons as coupon (coupon.id)}

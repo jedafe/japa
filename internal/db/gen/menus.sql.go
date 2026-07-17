@@ -11,6 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const bulkUpdateMenuItemSortOrder = `-- name: BulkUpdateMenuItemSortOrder :exec
+UPDATE menu_items
+SET sort_order = u.sort_order, updated_at = now()
+FROM (
+    SELECT unnest($2::uuid[]) AS id, unnest($3::int[]) AS sort_order
+) AS u
+WHERE menu_items.id = u.id AND menu_items.tenant_id = $1
+`
+
+type BulkUpdateMenuItemSortOrderParams struct {
+	TenantID   pgtype.UUID   `json:"tenant_id"`
+	Ids        []pgtype.UUID `json:"ids"`
+	SortOrders []int32       `json:"sort_orders"`
+}
+
+func (q *Queries) BulkUpdateMenuItemSortOrder(ctx context.Context, arg BulkUpdateMenuItemSortOrderParams) error {
+	_, err := q.db.Exec(ctx, bulkUpdateMenuItemSortOrder, arg.TenantID, arg.Ids, arg.SortOrders)
+	return err
+}
+
 const countMenus = `-- name: CountMenus :one
 SELECT COUNT(*)::int AS count
 FROM menus
@@ -480,21 +500,4 @@ func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) 
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const updateMenuItemSortOrder = `-- name: UpdateMenuItemSortOrder :exec
-UPDATE menu_items
-SET sort_order = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3
-`
-
-type UpdateMenuItemSortOrderParams struct {
-	SortOrder int32       `json:"sort_order"`
-	ID        pgtype.UUID `json:"id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) UpdateMenuItemSortOrder(ctx context.Context, arg UpdateMenuItemSortOrderParams) error {
-	_, err := q.db.Exec(ctx, updateMenuItemSortOrder, arg.SortOrder, arg.ID, arg.TenantID)
-	return err
 }

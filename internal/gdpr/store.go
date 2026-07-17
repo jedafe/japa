@@ -208,37 +208,9 @@ func (s *Store) deleteUserTokens(ctx context.Context, p gen.DeleteUserTokensPara
 	return nil
 }
 
-func (s *Store) hardDeleteUser(ctx context.Context, p gen.HardDeleteUserParams) error {
-	if err := s.write.HardDeleteUser(ctx, p); err != nil {
-		return fmt.Errorf("hard deleting user: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Store) reassignContentAuthor(ctx context.Context, p gen.ReassignContentAuthorParams) error {
-	if err := s.write.ReassignContentAuthor(ctx, p); err != nil {
-		return fmt.Errorf("reassigning content author: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Store) nullifyPaymentUserRefs(ctx context.Context, p gen.NullifyPaymentUserRefsParams) error {
-	if err := s.write.NullifyPaymentUserRefs(ctx, p); err != nil {
-		return fmt.Errorf("nullifying payment user refs: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Store) nullifyTicketSubmitter(ctx context.Context, p gen.NullifyTicketSubmitterParams) error {
-	if err := s.write.NullifyTicketSubmitter(ctx, p); err != nil {
-		return fmt.Errorf("nullifying ticket submitter: %w", err)
-	}
-
-	return nil
-}
+// The hard-delete mutations (ReassignContentAuthor, NullifyPaymentUserRefs,
+// NullifyTicketSubmitter, HardDeleteUser) run via db.WithTx in the service so
+// they share one transaction — see Service.hardDeleteUser.
 
 // ---------------------------------------------------------------------------
 // Audit Logs

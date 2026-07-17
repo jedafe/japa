@@ -103,7 +103,7 @@
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('organisations.title', 'Organisations')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">Manage organizations, verification status, and claim requests</p>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('organisations.manage_organizations_verification_status')}</p>
 
 {#if errorMessage}
 	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">

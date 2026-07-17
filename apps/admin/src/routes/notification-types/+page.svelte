@@ -133,13 +133,13 @@
 						<td class="px-4 py-3">
 							<div class="flex gap-1">
 								{#if ntype.default_channels?.email}
-									<span class="rounded px-1.5 py-0.5 text-xs bg-blue-500/15 text-blue-700 dark:text-blue-400">Email</span>
+									<span class="rounded px-1.5 py-0.5 text-xs bg-blue-500/15 text-blue-700 dark:text-blue-400">{t('notification-types.email')}</span>
 								{/if}
 								{#if ntype.default_channels?.push}
-									<span class="rounded px-1.5 py-0.5 text-xs bg-purple-500/15 text-purple-700 dark:text-purple-400">Push</span>
+									<span class="rounded px-1.5 py-0.5 text-xs bg-purple-500/15 text-purple-700 dark:text-purple-400">{t('notification-types.push')}</span>
 								{/if}
 								{#if ntype.default_channels?.in_app}
-									<span class="rounded px-1.5 py-0.5 text-xs bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">In-App</span>
+									<span class="rounded px-1.5 py-0.5 text-xs bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">{t('notification-types.in_app')}</span>
 								{/if}
 							</div>
 						</td>

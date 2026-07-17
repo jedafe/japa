@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { enhance } from '$app/forms';
 	import { PUBLIC_JC_SITE_URL } from '$env/static/public';
 	import { GraduationCap, Mail, Lock } from 'lucide-svelte';
@@ -23,7 +24,7 @@
 				<GraduationCap class="h-6 w-6" style="color: var(--color-primary)" />
 			</div>
 			<div>
-				<h1 class="text-xl font-bold" style="color: var(--color-foreground)">Sign in</h1>
+				<h1 class="text-xl font-bold" style="color: var(--color-foreground)">{t('login.sign_in')}</h1>
 				<p class="text-sm" style="color: var(--color-muted)">
 					Welcome to JapaConnect Learn
 				</p>

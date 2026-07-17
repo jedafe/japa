@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import { Input, Badge } from '$lib/components/ui';
 
@@ -66,7 +67,7 @@
 </svelte:head>
 
 <div class="max-w-4xl">
-	<h1 class="mb-2 text-3xl font-bold tracking-tight">API Reference</h1>
+	<h1 class="mb-2 text-3xl font-bold tracking-tight">{t('api.api_reference')}</h1>
 	<p class="mb-6 text-sm" style="color: var(--color-muted)">
 		{#if data.spec?.info}
 			{data.spec.info.title ?? 'JapaConnect API'} v{data.spec.info.version ?? ''}
@@ -95,7 +96,7 @@
 
 	{#if data.error}
 		<div class="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-			<p class="font-medium">Could not load OpenAPI spec</p>
+			<p class="font-medium">{t('api.could_not_load_openapi_spec')}</p>
 			<p class="mt-1">{data.error}. Showing static endpoint reference.</p>
 		</div>
 	{/if}
@@ -113,7 +114,7 @@
 			style="border-color: var(--color-border); background-color: var(--color-surface)"
 			bind:value={selectedTag}
 		>
-			<option value="">All Categories</option>
+			<option value="">{t('api.all_categories')}</option>
 			{#each tags as tag}
 				<option value={tag}>{tag}</option>
 			{/each}
@@ -142,15 +143,15 @@
 									<p class="mb-3 text-sm" style="color: var(--color-muted)">{ep.description}</p>
 								{/if}
 								{#if ep.parameters.length > 0}
-									<h4 class="mb-2 text-xs font-semibold uppercase" style="color: var(--color-muted)">Parameters</h4>
+									<h4 class="mb-2 text-xs font-semibold uppercase" style="color: var(--color-muted)">{t('api.parameters')}</h4>
 									<div class="mb-3 overflow-x-auto rounded border" style="border-color: var(--color-border)">
 										<table class="w-full text-xs">
 											<thead>
 												<tr style="border-color: var(--color-border)">
-													<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Name</th>
+													<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('api.name')}</th>
 													<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">In</th>
-													<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Required</th>
-													<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">Description</th>
+													<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('api.required')}</th>
+													<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('api.description')}</th>
 												</tr>
 											</thead>
 											<tbody>
@@ -167,7 +168,7 @@
 									</div>
 								{/if}
 								<p class="text-xs" style="color: var(--color-muted)">
-									Requires authentication via session cookie or <code class="rounded bg-gray-100 px-1 dark:bg-gray-800">Authorization: Bearer &lt;token&gt;</code> header.
+									Requires authentication via session cookie or <code class="rounded bg-gray-100 px-1 dark:bg-gray-800">{t('api.authorization_bearer_lt_token_gt')}</code> header.
 								</p>
 							</div>
 						</details>
@@ -177,37 +178,37 @@
 		{/each}
 
 		{#if filteredEndpoints.length === 0}
-			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">No endpoints match your search.</p>
+			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('api.no_endpoints_match_your_search')}</p>
 		{/if}
 	{:else}
 		<div class="space-y-6">
 			<section>
-				<h2 class="mb-3 text-lg font-semibold">Authentication</h2>
+				<h2 class="mb-3 text-lg font-semibold">{t('api.authentication')}</h2>
 				<div class="rounded-lg border p-4 text-sm" style="border-color: var(--color-border)">
-					<p class="mb-2">All endpoints require authentication unless marked <code class="rounded bg-gray-100 px-1 text-xs dark:bg-gray-800">[public]</code>.</p>
-					<p class="mb-1 font-medium">Session-based:</p>
-					<p class="mb-3 text-xs" style="color: var(--color-muted)">Login via <code>POST /auth/login</code> sets an httpOnly session cookie.</p>
-					<p class="mb-1 font-medium">API Key:</p>
-					<p class="text-xs" style="color: var(--color-muted)"><code>Authorization: Bearer &lt;api_key&gt;</code> header. Manage keys at <a href="/api-keys" class="underline" style="color: var(--color-primary)">/api-keys</a>.</p>
+					<p class="mb-2">{t('api.all_endpoints_require_authentication_unl')}<code class="rounded bg-gray-100 px-1 text-xs dark:bg-gray-800">[public]</code>.</p>
+					<p class="mb-1 font-medium">{t('api.session_based')}</p>
+					<p class="mb-3 text-xs" style="color: var(--color-muted)">{t('api.login_via')}<code>POST /auth/login</code>{t('api.sets_an_httponly_session_cookie')}</p>
+					<p class="mb-1 font-medium">{t('api.api_key')}</p>
+					<p class="text-xs" style="color: var(--color-muted)"><code>{t('api.authorization_bearer_lt_api_key_gt')}</code>{t('api.header_manage_keys_at')}<a href="/api-keys" class="underline" style="color: var(--color-primary)">/api-keys</a>.</p>
 				</div>
 			</section>
 
 			<section>
-				<h2 class="mb-3 text-lg font-semibold">Base URL</h2>
+				<h2 class="mb-3 text-lg font-semibold">{t('api.base_url')}</h2>
 				<div class="rounded-lg border p-4 text-sm" style="border-color: var(--color-border)">
 					<code class="text-xs">{PUBLIC_JC_API_URL}/api/v1</code>
 				</div>
 			</section>
 
 			<section>
-				<h2 class="mb-3 text-lg font-semibold">Rate Limits</h2>
+				<h2 class="mb-3 text-lg font-semibold">{t('api.rate_limits')}</h2>
 				<div class="rounded-lg border p-4 text-sm" style="border-color: var(--color-border)">
-					<p>Standard: 100 requests/minute per IP. Authenticated: 300 requests/minute per user.</p>
+					<p>{t('api.standard_100_requests_minute_per_ip_auth')}</p>
 				</div>
 			</section>
 
 			<section>
-				<h2 class="mb-3 text-lg font-semibold">Error Format</h2>
+				<h2 class="mb-3 text-lg font-semibold">{t('api.error_format')}</h2>
 				<div class="rounded-lg border p-4 text-sm" style="border-color: var(--color-border)">
 					<pre class="text-xs">{"{ \"error\": { \"code\": \"not_found\", \"message\": \"...\", \"status\": 404 }"}</pre>
 				</div>

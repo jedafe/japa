@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { ArrowLeft, Loader2, Plus } from 'lucide-svelte';
@@ -65,7 +66,7 @@
 	</a>
 
 	<div class="rounded-xl border p-6" style="border-color: var(--color-border); background: var(--color-surface);">
-		<h1 class="text-xl font-bold" style="color: var(--color-foreground)">Create a space</h1>
+		<h1 class="text-xl font-bold" style="color: var(--color-foreground)">{t('spaces.new.create_a_space')}</h1>
 		<p class="mt-1 text-sm" style="color: var(--color-muted)">
 			Build a community around a shared topic.
 		</p>

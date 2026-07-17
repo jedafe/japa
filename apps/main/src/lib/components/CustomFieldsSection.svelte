@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
 	import { api, type CustomField, type CustomFieldGroup } from '$lib/api';
 
@@ -143,7 +144,7 @@
 										}}
 									>
 										{#if field.field_type === 'select'}
-											<option value="">Select…</option>
+											<option value="">{t('lib.components.CustomFieldsSection.svelte.select')}</option>
 										{/if}
 										{#each field.options ?? [] as option}
 											<option value={option}

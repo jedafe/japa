@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Edit, Plus, Trash2, X } from 'lucide-svelte';
@@ -129,7 +130,7 @@
 	</a>
 
 	{#if !comparison}
-		<p style="color: var(--color-muted)">Comparison not found.</p>
+		<p style="color: var(--color-muted)">{t('comparisons.slug.id.comparison_not_found')}</p>
 	{:else}
 		<header class="mb-8 flex items-start justify-between gap-4">
 			<div class="flex-1">
@@ -144,7 +145,7 @@
 						<button type="submit" disabled={saving} class="rounded-lg px-3 py-2 text-sm font-medium text-white" style="background: var(--color-primary)">
 							{saving ? 'Saving...' : 'Save'}
 						</button>
-						<button type="button" onclick={() => { editing = false; editTitle = comparison.title; }} class="rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border)">Cancel</button>
+						<button type="button" onclick={() => { editing = false; editTitle = comparison.title; }} class="rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border)">{t('comparisons.slug.id.cancel')}</button>
 					</form>
 				{:else}
 					<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{comparison.title}</h1>
@@ -202,14 +203,14 @@
 		<!-- Matrix Table -->
 		{#if items.length === 0}
 			<div class="rounded-xl border p-8 text-center" style="border-color: var(--color-border)">
-				<p style="color: var(--color-muted)">No items to compare yet. Add items and dimensions above.</p>
+				<p style="color: var(--color-muted)">{t('comparisons.slug.id.no_items_to_compare_yet_add_items_and_di')}</p>
 			</div>
 		{:else}
 			<div class="overflow-x-auto rounded-xl border" style="border-color: var(--color-border)">
 				<table class="w-full text-sm">
 					<thead>
 						<tr style="background-color: var(--color-surface)">
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">Dimension</th>
+							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">{t('comparisons.slug.id.dimension')}</th>
 							{#each items as item (item.id)}
 								<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted)">
 									<div class="flex items-center gap-1.5">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Bell, Mail, Smartphone, Users, MessageCircle, AtSign, Send, Loader2, Check } from 'lucide-svelte';
 	import { enhance } from '$app/forms';
 	import { api } from '$lib/api';
@@ -109,9 +110,9 @@
 <main class="mx-auto max-w-3xl px-4 py-8">
 	<header class="mb-8">
 		<div class="flex items-center gap-2 text-xs" style="color: var(--color-muted)">
-			<a href="/settings" class="hover:underline">Settings</a>
+			<a href="/settings" class="hover:underline">{t('settings.notifications.settings')}</a>
 			<span>/</span>
-			<span>Notifications</span>
+			<span>{t('settings.notifications.notifications')}</span>
 		</div>
 		<h1 class="mt-2 text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">
 			Notification Preferences

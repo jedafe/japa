@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { MapPin, Users, Star, ExternalLink } from 'lucide-svelte';
 	import { imgproxy } from '$lib/utils/imgproxy';
 
@@ -62,13 +63,13 @@
 				{#if university.world_ranking}
 					<div class="flex items-center gap-1.5">
 						<Star class="h-4 w-4" style="color: var(--color-warning)" />
-						<span style="color: var(--color-muted)">World:</span>
+						<span style="color: var(--color-muted)">{t('lib.universities.UniversityCard.svelte.world')}</span>
 						<span class="font-semibold">#{university.world_ranking}</span>
 					</div>
 				{/if}
 				{#if university.country_ranking}
 					<div class="flex items-center gap-1.5">
-						<span style="color: var(--color-muted)">Country:</span>
+						<span style="color: var(--color-muted)">{t('lib.universities.UniversityCard.svelte.country')}</span>
 						<span class="font-semibold">#{university.country_ranking}</span>
 					</div>
 				{/if}

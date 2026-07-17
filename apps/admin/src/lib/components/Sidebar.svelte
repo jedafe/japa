@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import {
 		LayoutDashboard,
 		Users,
@@ -138,7 +139,7 @@
 	class:-translate-x-full={!open}
 >
 	<div class="flex h-14 items-center border-b px-4" style="border-color: var(--color-border)">
-		<span class="text-sm font-bold tracking-wide uppercase" style="color: var(--color-primary)">Admin</span>
+		<span class="text-sm font-bold tracking-wide uppercase" style="color: var(--color-primary)">{t('lib.components.Sidebar.svelte.admin')}</span>
 	</div>
 	
 	<!-- Search input -->
@@ -170,7 +171,7 @@
 		{/each}
 	</nav>
 	<div class="border-t p-3" style="border-color: var(--color-border)">
-		<p class="text-xs" style="color: var(--color-muted)">JapaConnect Admin</p>
+		<p class="text-xs" style="color: var(--color-muted)">{t('lib.components.Sidebar.svelte.japaconnect_admin')}</p>
 	</div>
 </aside>
 

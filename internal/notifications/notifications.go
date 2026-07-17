@@ -47,20 +47,19 @@ const MaxPageSize = 100
 // Service provides notification operations with reader/writer pool separation.
 type Service struct {
 	store     *Store
-	db        *db.DB
 	client    *asynq.Client
 	push      *PushDelivery
 	pushStore *PushStore
 }
 
 // NewService creates a Service backed by the given database pool.
+// All data access goes through the store, so the raw pool is not retained.
 func NewService(database *db.DB) *Service {
 	return &Service{
 		store: &Store{
 			read:  gen.New(database.Reader),
 			write: gen.New(database.Writer),
 		},
-		db:        database,
 		push:      NewPushDelivery(),
 		pushStore: NewPushStore(database.Reader, database.Writer),
 	}

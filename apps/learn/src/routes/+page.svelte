@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import type { Track } from '$lib/api';
 	import { GraduationCap, BookOpen, Clock, ArrowRight, Layers } from 'lucide-svelte';
 
@@ -37,7 +38,7 @@
 				<GraduationCap class="h-7 w-7 text-white" />
 			</div>
 			<div>
-				<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">Learn & Grow</h1>
+				<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{t('root.learn_grow')}</h1>
 				<p class="mt-1 max-w-2xl text-sm leading-relaxed sm:text-base" style="color: var(--color-muted)">
 					Structured learning tracks for your journey abroad. From first steps to advanced pathways, guided by community experts.
 				</p>
@@ -49,7 +50,7 @@
 	<section class="mt-8">
 		<div class="flex items-center gap-2">
 			<Layers class="h-5 w-5" style="color: var(--color-primary)" />
-			<h2 class="text-xl font-semibold tracking-tight">Learning Tracks</h2>
+			<h2 class="text-xl font-semibold tracking-tight">{t('root.learning_tracks')}</h2>
 		</div>
 
 	{#if tracks.length === 0}
@@ -60,8 +61,8 @@
 				>
 					<GraduationCap class="h-8 w-8" style="color: var(--color-muted)" />
 				</div>
-				<p class="mt-4 text-lg font-semibold" style="color: var(--color-foreground)">No tracks available yet</p>
-				<p class="mt-1 text-sm" style="color: var(--color-muted)">Check back soon for new learning content.</p>
+				<p class="mt-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('root.no_tracks_available_yet')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('root.check_back_soon_for_new_learning_content')}</p>
 			</div>
 		{:else}
 			<div class="mt-6 grid gap-4 sm:grid-cols-2">

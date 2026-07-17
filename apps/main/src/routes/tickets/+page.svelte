@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Headphones, Plus, ChevronRight, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api, type Ticket } from '$lib/api';
@@ -114,7 +115,7 @@
 <main class="mx-auto max-w-4xl px-4 py-8">
 	<header class="mb-8 flex items-start justify-between">
 		<div>
-			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">My Tickets</h1>
+			<h1 class="text-2xl font-bold sm:text-3xl" style="color: var(--color-foreground)">{t('tickets.my_tickets')}</h1>
 			<p class="mt-2 text-sm" style="color: var(--color-muted)">
 				Get help from our support team.
 			</p>
