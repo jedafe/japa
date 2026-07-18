@@ -138,6 +138,235 @@ func (q *Queries) GetFeedItemCount(ctx context.Context, userID pgtype.UUID) (int
 	return count, err
 }
 
+const getFollowedEntityIDsByType = `-- name: GetFollowedEntityIDsByType :many
+SELECT entity_id
+FROM follows
+WHERE tenant_id = $1
+  AND follower_id = $2
+  AND entity_type = $3
+`
+
+type GetFollowedEntityIDsByTypeParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	FollowerID pgtype.UUID `json:"follower_id"`
+	EntityType string      `json:"entity_type"`
+}
+
+// Lean ID-only lookup of everything a user follows of one entity type.
+func (q *Queries) GetFollowedEntityIDsByType(ctx context.Context, arg GetFollowedEntityIDsByTypeParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getFollowedEntityIDsByType, arg.TenantID, arg.FollowerID, arg.EntityType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var entity_id pgtype.UUID
+		if err := rows.Scan(&entity_id); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getForYouCandidates = `-- name: GetForYouCandidates :many
+WITH affinity AS (
+    SELECT c.id
+    FROM contents c
+    WHERE c.tenant_id = $5
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND c.created_at >= $6
+      AND c.author_id <> $7
+      AND (
+            c.author_id = ANY(COALESCE($1::uuid[], ARRAY[]::uuid[]))
+         OR c.space_id  = ANY(COALESCE($2::uuid[], ARRAY[]::uuid[]))
+         OR EXISTS (
+              SELECT 1 FROM content_tags ct
+              WHERE ct.content_id = c.id AND ct.tag_id = ANY(COALESCE($3::uuid[], ARRAY[]::uuid[]))
+         )
+      )
+    ORDER BY c.created_at DESC
+    LIMIT $8
+),
+velocity AS (
+    SELECT c.id
+    FROM contents c
+    JOIN content_scores cs ON cs.content_id = c.id
+    WHERE c.tenant_id = $5
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND c.created_at >= $6
+      AND c.author_id <> $7
+    ORDER BY cs.velocity_score DESC
+    LIMIT $9
+),
+candidate_ids AS (
+    SELECT id FROM affinity
+    UNION
+    SELECT id FROM velocity
+)
+SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
+       c.created_at, c.view_count, c.comment_count,
+       cs.vote_score, cs.velocity_score, cs.bookmark_count,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       LEFT(c.body, 200) AS excerpt,
+       c.read_time_minutes,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path   AS cover_storage_path,
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+       (c.author_id = ANY(COALESCE($1::uuid[], ARRAY[]::uuid[])))            AS is_author_followed,
+       (c.space_id  = ANY(COALESCE($2::uuid[], ARRAY[]::uuid[])))             AS is_space_followed,
+       COUNT(DISTINCT t.id) FILTER (
+           WHERE t.id = ANY(COALESCE($3::uuid[], ARRAY[]::uuid[]))
+       )::int                                              AS followed_tag_overlap
+FROM contents c
+JOIN candidate_ids ci ON ci.id = c.id
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN users u  ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+         u.username, up.display_name, up.avatar_url,
+         m.storage_bucket, m.storage_path
+LIMIT $4
+`
+
+type GetForYouCandidatesParams struct {
+	AuthorIds       []pgtype.UUID      `json:"author_ids"`
+	SpaceIds        []pgtype.UUID      `json:"space_ids"`
+	TagIds          []pgtype.UUID      `json:"tag_ids"`
+	CandidateCap    int32              `json:"candidate_cap"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	WindowStart     pgtype.Timestamptz `json:"window_start"`
+	ExcludeAuthorID pgtype.UUID        `json:"exclude_author_id"`
+	AffinityLimit   int32              `json:"affinity_limit"`
+	VelocityLimit   int32              `json:"velocity_limit"`
+}
+
+type GetForYouCandidatesRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	ContentType        string             `json:"content_type"`
+	AuthorID           pgtype.UUID        `json:"author_id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ViewCount          int32              `json:"view_count"`
+	CommentCount       int32              `json:"comment_count"`
+	VoteScore          *int32             `json:"vote_score"`
+	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount      *int32             `json:"bookmark_count"`
+	AuthorName         string             `json:"author_name"`
+	AuthorAvatarUrl    string             `json:"author_avatar_url"`
+	Excerpt            string             `json:"excerpt"`
+	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	CoverStorageBucket *string            `json:"cover_storage_bucket"`
+	CoverStoragePath   *string            `json:"cover_storage_path"`
+	Tags               interface{}        `json:"tags"`
+	IsAuthorFollowed   bool               `json:"is_author_followed"`
+	IsSpaceFollowed    bool               `json:"is_space_followed"`
+	FollowedTagOverlap int32              `json:"followed_tag_overlap"`
+}
+
+// Bounded personalized candidate pool = UNION of (a) recent content from
+// followed authors/spaces/tags and (b) top recent content by velocity.
+// Emits per-row affinity flags for Go-side ranking. Excludes own posts.
+// Array params are COALESCEd to empty arrays so `= ANY(NULL)` never nullifies
+// the affinity predicate when a user follows nothing of a given type.
+func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidatesParams) ([]GetForYouCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, getForYouCandidates,
+		arg.AuthorIds,
+		arg.SpaceIds,
+		arg.TagIds,
+		arg.CandidateCap,
+		arg.TenantID,
+		arg.WindowStart,
+		arg.ExcludeAuthorID,
+		arg.AffinityLimit,
+		arg.VelocityLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetForYouCandidatesRow
+	for rows.Next() {
+		var i GetForYouCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.ContentType,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.CreatedAt,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.VoteScore,
+			&i.VelocityScore,
+			&i.BookmarkCount,
+			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.Excerpt,
+			&i.ReadTimeMinutes,
+			&i.CoverStorageBucket,
+			&i.CoverStoragePath,
+			&i.Tags,
+			&i.IsAuthorFollowed,
+			&i.IsSpaceFollowed,
+			&i.FollowedTagOverlap,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMemberSpaceIDs = `-- name: GetMemberSpaceIDs :many
+SELECT space_id
+FROM space_members
+WHERE tenant_id = $1
+  AND user_id = $2
+`
+
+type GetMemberSpaceIDsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Space IDs the user is a member of (affinity signal, distinct from follows).
+func (q *Queries) GetMemberSpaceIDs(ctx context.Context, arg GetMemberSpaceIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getMemberSpaceIDs, arg.TenantID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var space_id pgtype.UUID
+		if err := rows.Scan(&space_id); err != nil {
+			return nil, err
+		}
+		items = append(items, space_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPrimaryFeed = `-- name: GetPrimaryFeed :many
 SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
        c.title, c.slug, c.author_id, c.created_at AS content_created_at,
