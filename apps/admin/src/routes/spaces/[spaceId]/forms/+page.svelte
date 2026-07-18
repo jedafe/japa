@@ -81,17 +81,17 @@
 			</thead>
 			<tbody>
 				{#each forms as form}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
+					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3 font-medium">{form.name}</td>
 						<td class="px-4 py-3 text-xs max-w-xs truncate" style="color: var(--color-muted)">{form.description || '—'}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-white/10">{form.submission_count}</span>
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-surface/10">{form.submission_count}</span>
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{form.created_at}</td>
 						<td class="px-4 py-3">
 							<a
 								href="/spaces/{spaceId}/forms/{form.id}"
-								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 								style="color: var(--color-info)"
 							>
 								View

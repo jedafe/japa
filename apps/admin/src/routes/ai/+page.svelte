@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { aiApi, aiAdminApi, type HitlReview, type GenerateResult } from '$lib/api';
+	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type GenerateResult } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -34,11 +34,19 @@
 	]);
 
 	// Tab navigation (usage is in-memory only, generate/tools follow URL)
-	let displayTab = $state<'generate' | 'tools' | 'usage'>('generate');
+	let displayTab = $state<'generate' | 'tools' | 'usage' | 'models'>('generate');
 	let activeTab = $derived.by(() => {
 		const path = pageState.url.pathname;
-		if (path === '/ai') return displayTab === 'usage' ? 'usage' : 'generate';
-		if (path.startsWith('/ai/tools')) return displayTab === 'usage' ? 'usage' : 'tools';
+		if (path === '/ai') {
+			if (displayTab === 'usage') return 'usage';
+			if (displayTab === 'models') return 'models';
+			return 'generate';
+		}
+		if (path.startsWith('/ai/tools')) {
+			if (displayTab === 'usage') return 'usage';
+			if (displayTab === 'models') return 'models';
+			return 'tools';
+		}
 		return displayTab;
 	});
 
@@ -298,6 +306,23 @@
 		}
 	}
 
+	// Models tab (read-only from /admin/ai/models)
+	let aiModels = $state<{ id: string; name: string; label: string; is_active: boolean }[]>([]);
+	let modelsLoading = $state(false);
+	async function loadModels() {
+		modelsLoading = true;
+		try {
+			const res = await aiModelsAdminApi.list();
+			if (res.ok) {
+				aiModels = (res.data as { id: string; name: string; label: string; is_active: boolean }[]) ?? [];
+			}
+		} catch {
+			// silent
+		} finally {
+			modelsLoading = false;
+		}
+	}
+
 	$effect(() => {
 		(async () => {
 			try {
@@ -361,6 +386,14 @@
 		<Activity class="h-4 w-4" />
 		{t('ai.usage.title')}
 	</button>
+	<button
+		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+		onclick={() => { displayTab = 'models'; loadModels(); }}
+		style={activeTab === 'models' ? 'background-color: var(--color-primary); color: white' : ''}
+	>
+		<Settings class="h-4 w-4" />
+		{t('ai.models.title', 'Models')}
+	</button>
 </div>
 
 <!-- ═══ Section A: AI Content Generator ═══ -->
@@ -423,7 +456,7 @@
 					<div class="mb-3 flex items-center justify-between">
 						<h3 class="text-sm font-semibold">{t('ai.result')}</h3>
 						<button
-							class="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+							class="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 							style="border-color: var(--color-border)"
 							onclick={copyResult}
 						>
@@ -540,7 +573,7 @@
 								<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(review.created_at).toLocaleDateString()}</td>
 								<td class="px-4 py-3">
 									<button
-										class="rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-white/10"
+										class="rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-surface/10"
 										style="color: var(--color-info)"
 										onclick={() => openReview(review)}
 									>
@@ -557,8 +590,8 @@
 			<div class="mt-3 flex items-center justify-between">
 				<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
 				<div class="flex gap-1">
-					<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => changePage(-1)}>&larr;</button>
-					<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => changePage(1)}>&rarr;</button>
+					<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => changePage(-1)}>&larr;</button>
+					<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => changePage(1)}>&rarr;</button>
 				</div>
 		</div>
 	{/if}
@@ -600,14 +633,14 @@
 								<td class="px-4 py-3 font-medium">{tool.name}</td>
 								<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{tool.description || '—'}</td>
 								<td class="px-4 py-3">
-									<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {tool.is_enabled ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+									<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {tool.is_enabled ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
 										{tool.is_enabled ? t('ai.tools.enabled') : t('ai.tools.disabled')}
 									</span>
 								</td>
 								<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(tool.created_at).toLocaleDateString()}</td>
 								<td class="px-4 py-3 text-right">
 									<button
-										class="flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										class="flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 										style="color: var(--color-primary)"
 										onclick={() => openEditTool(tool)}
 									>
@@ -707,7 +740,7 @@
 								<td class="px-4 py-3 text-right">{tu.invocations.toLocaleString()}</td>
 								<td class="px-4 py-3 text-right">{tu.avg_latency_ms.toFixed(0)}ms</td>
 								<td class="px-4 py-3 text-right">
-									<span class={tu.errors > 0 ? 'text-red-600 dark:text-red-400' : ''}>{tu.errors}</span>
+									<span class={tu.errors > 0 ? 'text-red-600 dark:text-danger' : ''}>{tu.errors}</span>
 								</td>
 							</tr>
 						{:else}
@@ -724,11 +757,53 @@
 	</section>
 {/if}
 
+<!-- ═══ Section D: AI Models (read-only) ═══ -->
+{#if activeTab === 'models'}
+	<section class="mb-8">
+		{#if modelsLoading}
+			<div class="flex items-center justify-center py-12">
+				<Loader2 class="h-6 w-6 animate-spin" style="color: var(--color-muted)" />
+			</div>
+		{:else if aiModels.length === 0}
+			<div class="py-12 text-center text-sm" style="color: var(--color-muted)">
+				{t('ai.models.empty', 'No AI models configured')}
+			</div>
+		{:else}
+			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
+				<table class="w-full text-sm">
+					<thead>
+						<tr style="border-bottom: 1px solid var(--color-border)">
+							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.models.name', 'Name')}</th>
+							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.models.id', 'ID')}</th>
+							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.models.status', 'Status')}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each aiModels as m (m.id)}
+							<tr class="border-t" style="border-color: var(--color-border)">
+								<td class="px-4 py-3 font-medium">{m.label || m.name}</td>
+								<td class="px-4 py-3 font-mono text-xs">{m.id}</td>
+								<td class="px-4 py-3">
+									{#if m.is_active}
+										<span class="inline-block rounded-full bg-success/15 px-2 py-0.5 text-xs text-success dark:text-success">{t('common.active', 'Active')}</span>
+									{:else}
+										<span class="inline-block rounded-full bg-muted/15 px-2 py-0.5 text-xs text-muted dark:text-muted">{t('common.inactive', 'Inactive')}</span>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
+{/if}
+
 <!-- ═══ Review Modal ═══ -->
 <Modal bind:open={showReviewModal} title={t('ai.review_title')}>
 	{#if selectedReview}
 		{#if actionMessage}
-			<div class="mb-3 rounded-md border px-3 py-2 text-sm {actionMessageType === 'success' ? 'border-success-200 bg-success-50 text-success-700' : 'border-danger-200 bg-danger-50 text-danger-700'}">
+			<div class="mb-3 rounded-md border px-3 py-2 text-sm {actionMessageType === 'success' ? 'border-success bg-success-50 text-success-700' : 'border-danger bg-danger-50 text-danger-700'}">
 				{actionMessage}
 			</div>
 		{/if}
@@ -741,21 +816,21 @@
 				<span class="inline-block rounded-full bg-info-100 px-2 py-0.5 text-info-700">
 					{selectedReview.source}
 				</span>
-				<span class="text-gray-500">
+				<span class="text-muted">
 					{new Date(selectedReview.created_at).toLocaleString()}
 				</span>
 			</div>
 
-			<div class="max-h-64 overflow-y-auto rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+			<div class="max-h-64 overflow-y-auto rounded-md bg-surface p-3 text-sm text-foreground-alt">
 				{selectedReview.content}
 			</div>
 
 			{#if showRejectInput}
 				<div>
-					<label for="reject-reason" class="mb-1 block text-sm font-medium text-gray-700">{t('ai.reject_reason')}</label>
+					<label for="reject-reason" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.reject_reason')}</label>
 					<textarea
 						id="reject-reason"
-						class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+						class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 						rows="3"
 						placeholder={t('ai.reject_reason_placeholder')}
 						bind:value={rejectReason}
@@ -805,19 +880,19 @@
 <Modal bind:open={showToolModal} title={t('ai.tools.configure')} size="lg">
 	<div class="space-y-4">
 		<div>
-			<label for="tool-name" class="mb-1 block text-sm font-medium text-gray-700">{t('ai.tools.name')}</label>
-			<input id="tool-name" type="text" bind:value={toolName} class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" />
+			<label for="tool-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.tools.name')}</label>
+			<input id="tool-name" type="text" bind:value={toolName} class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
 		</div>
 		<div>
-			<label for="tool-desc" class="mb-1 block text-sm font-medium text-gray-700">{t('ai.tools.description')}</label>
-			<textarea id="tool-desc" bind:value={toolDescription} rows="3" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"></textarea>
+			<label for="tool-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.tools.description')}</label>
+			<textarea id="tool-desc" bind:value={toolDescription} rows="3" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"></textarea>
 		</div>
 		<div class="flex items-center gap-3">
 			<label class="relative inline-flex cursor-pointer items-center">
 				<input type="checkbox" bind:checked={toolEnabled} class="peer sr-only" />
-				<div class="peer h-5 w-9 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all peer-checked:bg-primary-600 peer-checked:after:translate-x-full peer-checked:after:border-white dark:bg-gray-700"></div>
+				<div class="peer h-5 w-9 rounded-full bg-surface after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border after:bg-surface after:transition-all peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white dark:bg-gray-700"></div>
 			</label>
-			<span class="text-sm font-medium text-gray-700">{t('ai.tools.enabled')}</span>
+			<span class="text-sm font-medium text-foreground-alt">{t('ai.tools.enabled')}</span>
 		</div>
 	</div>
 	<div class="flex justify-end gap-3 pt-4">

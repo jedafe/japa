@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { adsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
@@ -49,16 +50,36 @@
 	let errorMessage = $state('');
 	let activeTab = $state('campaigns');
 
+	const canManageAds = $derived(hasPermission('ads.manage'));
+
 	// Stats modal
 	let showStatsModal = $state(false);
 	let statsCampaign = $state<Campaign | null>(null);
 	let stats = $state<CampaignStats | null>(null);
 	let statsLoading = $state(false);
 
+	// End campaign confirm
+	let showEndCampaignConfirm = $state(false);
+	let endCampaignTarget = $state<Campaign | null>(null);
+
+	// End boost confirm
+	let showEndBoostConfirm = $state(false);
+	let endBoostTarget = $state<ActiveBoost | null>(null);
+
 	const tabs = $derived([
 		{ value: 'campaigns', label: 'Campaigns', icon: BarChart3, count: campaigns.length },
 		{ value: 'boosts', label: 'Boosts', icon: Zap, count: activeBoosts.length }
 	]);
+
+	const statusBadge = (value: string) => {
+		const classes: Record<string, string> = {
+			active: 'bg-success/15 text-success border-success',
+			paused: 'bg-warning/15 text-warning border-warning',
+			completed: 'bg-surface text-foreground border',
+			draft: 'bg-info-100 text-info-800 border-info-200'
+		};
+		return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
+	};
 
 	const campaignColumns = [
 		{
@@ -67,8 +88,8 @@
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
-					<a href="/ads/${row.id}" class="font-medium text-gray-900 hover:underline">${row.name}</a>
-					<p class="text-xs text-gray-500">${row.start_date} &mdash; ${row.end_date ?? 'ongoing'}</p>
+					<a href="/ads/${row.id}" class="font-medium text-foreground hover:underline">${row.name}</a>
+					<p class="text-xs text-muted">${row.start_date} &mdash; ${row.end_date ?? 'ongoing'}</p>
 				</div>
 			`
 		},
@@ -76,15 +97,7 @@
 			key: 'status',
 			label: 'Status',
 			sortable: true,
-			render: (value: string) => {
-				const classes: Record<string, string> = {
-					active: 'bg-success-100 text-success-800 border-success-200',
-					paused: 'bg-warning-100 text-warning-800 border-warning-200',
-					completed: 'bg-gray-100 text-gray-800 border-gray-200',
-					draft: 'bg-info-100 text-info-800 border-info-200'
-				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-gray-100 text-gray-800 border-gray-200'}">${value}</span>`;
-			}
+			render: (value: string) => statusBadge(value)
 		},
 		{
 			key: 'impressions',
@@ -113,15 +126,7 @@
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			render: (_: any, row: any) => {
-				let actions = `<button onclick="window.__viewStats('${row.id}')" class="inline-flex items-center justify-center rounded-md px-2 py-1.5 text-sm font-medium text-info-700 hover:bg-info-50" title="Stats"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg></button>`;
-				if (row.status !== 'completed') {
-					actions += `<button onclick="window.__toggleCampaign('${row.id}')" class="inline-flex items-center justify-center rounded-md px-2 py-1.5 text-sm font-medium ${row.status === 'active' ? 'text-warning-700 hover:bg-warning-50' : 'text-success-700 hover:bg-success-50'}" title="${row.status === 'active' ? 'Pause' : 'Resume'}">${row.status === 'active' ? '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>' : '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'}</button>`;
-					actions += `<button onclick="window.__endCampaign('${row.id}')" class="inline-flex items-center justify-center rounded-md px-2 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50" title="End"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg></button>`;
-				}
-				actions += `<a href="/ads/${row.id}" class="inline-flex items-center justify-center rounded-md px-2 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100" title="View"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg></a>`;
-				return `<div class="flex items-center gap-1">${actions}</div>`;
-			}
+			component: CampaignActionsCell
 		}
 	];
 
@@ -135,17 +140,17 @@
 		{
 			key: 'space_id',
 			label: 'Space',
-			render: (value: string) => `<span class="font-mono text-xs text-gray-500">${(value ?? '').slice(0, 12)}</span>`
+			render: (value: string) => `<span class="font-mono text-xs text-muted">${(value ?? '').slice(0, 12)}</span>`
 		},
 		{
 			key: 'organization_id',
 			label: 'Organization',
-			render: (value: string) => `<span class="font-mono text-xs text-gray-500">${(value ?? '').slice(0, 12)}</span>`
+			render: (value: string) => `<span class="font-mono text-xs text-muted">${(value ?? '').slice(0, 12)}</span>`
 		},
 		{
 			key: 'start_date',
 			label: 'Period',
-			render: (_: any, row: any) => `<span class="text-xs text-gray-500">${row.start_date} — ${row.end_date}</span>`
+			render: (_: any, row: any) => `<span class="text-xs text-muted">${row.start_date} — ${row.end_date}</span>`
 		},
 		{
 			key: 'status',
@@ -153,22 +158,17 @@
 			sortable: true,
 			render: (value: string) => {
 				const classes: Record<string, string> = {
-					active: 'bg-success-100 text-success-800 border-success-200',
-					completed: 'bg-gray-100 text-gray-800 border-gray-200'
+					active: 'bg-success/15 text-success border-success',
+					completed: 'bg-surface text-foreground border'
 				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-gray-100 text-gray-800 border-gray-200'}">${value}</span>`;
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
 			}
 		},
 		{
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			render: (_: any, row: any) => {
-				if (row.status === 'active') {
-					return `<button onclick="window.__endBoost('${row.id}')" class="inline-flex items-center justify-center rounded-md px-2 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50" title="End Boost"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg></button>`;
-				}
-				return '';
-			}
+			component: BoostActionsCell
 		}
 	];
 
@@ -217,12 +217,11 @@
 	}
 
 	async function endCampaign(campaignId: string) {
-		const campaign = campaigns.find((c) => c.id === campaignId);
-		if (!campaign) return;
 		try {
-			const result = await adsAdminApi.endCampaign(campaign.id);
+			const result = await adsAdminApi.endCampaign(campaignId);
 			if (result.ok) {
-				campaign.status = 'completed';
+				const campaign = campaigns.find((c) => c.id === campaignId);
+				if (campaign) campaign.status = 'completed';
 				campaigns = campaigns;
 			}
 		} catch {
@@ -260,18 +259,32 @@
 		}
 	}
 
+	function confirmEndCampaign(campaign: Campaign) {
+		endCampaignTarget = campaign;
+		showEndCampaignConfirm = true;
+	}
+
+	function confirmEndBoost(boost: ActiveBoost) {
+		endBoostTarget = boost;
+		showEndBoostConfirm = true;
+	}
+
+	async function executeEndCampaign() {
+		if (!endCampaignTarget) return;
+		await endCampaign(endCampaignTarget.id);
+		showEndCampaignConfirm = false;
+		endCampaignTarget = null;
+	}
+
+	async function executeEndBoost() {
+		if (!endBoostTarget) return;
+		await endBoost(endBoostTarget.id);
+		showEndBoostConfirm = false;
+		endBoostTarget = null;
+	}
+
 	$effect(() => {
 		load();
-		(window as any).__toggleCampaign = toggleCampaign;
-		(window as any).__endCampaign = endCampaign;
-		(window as any).__endBoost = endBoost;
-		(window as any).__viewStats = viewStats;
-		return () => {
-			delete (window as any).__toggleCampaign;
-			delete (window as any).__endCampaign;
-			delete (window as any).__endBoost;
-			delete (window as any).__viewStats;
-		};
 	});
 </script>
 
@@ -289,7 +302,7 @@
 
 <div class="space-y-6">
 	{#if errorMessage}
-		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
 			{errorMessage}
 		</div>
 	{/if}
@@ -297,7 +310,7 @@
 	<Tabs {tabs} bind:value={activeTab} />
 
 	{#if loading}
-		<p class="py-8 text-center text-sm text-gray-500">{t('common.loading')}</p>
+		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else if activeTab === 'campaigns'}
 		<Card>
 			<CardContent class="p-0">
@@ -326,51 +339,51 @@
 <!-- Stats Modal -->
 <Modal bind:open={showStatsModal} title={statsCampaign ? `${t('ads.stats')}: ${statsCampaign.name}` : t('ads.stats')}>
 	{#if statsLoading}
-		<p class="py-8 text-center text-sm text-gray-500">{t('common.loading')}</p>
+		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else if stats}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-3">
-				<div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-					<p class="text-xs text-gray-500">{t('ads.impressions')}</p>
-					<p class="text-lg font-bold text-gray-900">{stats.impressions.toLocaleString()}</p>
+				<div class="rounded-lg border border bg-surface p-3">
+					<p class="text-xs text-muted">{t('ads.impressions')}</p>
+					<p class="text-lg font-bold text-foreground">{stats.impressions.toLocaleString()}</p>
 				</div>
-				<div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-					<p class="text-xs text-gray-500">{t('ads.clicks')}</p>
-					<p class="text-lg font-bold text-gray-900">{stats.clicks.toLocaleString()}</p>
+				<div class="rounded-lg border border bg-surface p-3">
+					<p class="text-xs text-muted">{t('ads.clicks')}</p>
+					<p class="text-lg font-bold text-foreground">{stats.clicks.toLocaleString()}</p>
 				</div>
-				<div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-					<p class="text-xs text-gray-500">{t('ads.conversions')}</p>
-					<p class="text-lg font-bold text-gray-900">{stats.conversions.toLocaleString()}</p>
+				<div class="rounded-lg border border bg-surface p-3">
+					<p class="text-xs text-muted">{t('ads.conversions')}</p>
+					<p class="text-lg font-bold text-foreground">{stats.conversions.toLocaleString()}</p>
 				</div>
-				<div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-					<p class="text-xs text-gray-500">{t('ads.spend')}</p>
-					<p class="text-lg font-bold text-gray-900">${stats.spend.toLocaleString()}</p>
+				<div class="rounded-lg border border bg-surface p-3">
+					<p class="text-xs text-muted">{t('ads.spend')}</p>
+					<p class="text-lg font-bold text-foreground">${stats.spend.toLocaleString()}</p>
 				</div>
-				<div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-					<p class="text-xs text-gray-500">{t('ads.ctr')}</p>
-					<p class="text-lg font-bold text-gray-900">{stats.ctr.toFixed(2)}%</p>
+				<div class="rounded-lg border border bg-surface p-3">
+					<p class="text-xs text-muted">{t('ads.ctr')}</p>
+					<p class="text-lg font-bold text-foreground">{stats.ctr.toFixed(2)}%</p>
 				</div>
-				<div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-					<p class="text-xs text-gray-500">{t('ads.cpc')}</p>
-					<p class="text-lg font-bold text-gray-900">${stats.cpc.toFixed(2)}</p>
+				<div class="rounded-lg border border bg-surface p-3">
+					<p class="text-xs text-muted">{t('ads.cpc')}</p>
+					<p class="text-lg font-bold text-foreground">${stats.cpc.toFixed(2)}</p>
 				</div>
 			</div>
 			{#if stats.daily_stats?.length}
 				<div>
-					<h3 class="mb-2 text-sm font-medium text-gray-900">{t('ads.daily_breakdown')}</h3>
-					<div class="max-h-48 overflow-y-auto rounded-lg border border-gray-200">
+					<h3 class="mb-2 text-sm font-medium text-foreground">{t('ads.daily_breakdown')}</h3>
+					<div class="max-h-48 overflow-y-auto rounded-lg border border">
 						<table class="w-full text-xs">
 							<thead>
-								<tr class="border-b border-gray-200 bg-gray-50">
-									<th class="px-3 py-2 text-left text-gray-500">{t('ads.date')}</th>
-									<th class="px-3 py-2 text-right text-gray-500">{t('ads.impressions')}</th>
-									<th class="px-3 py-2 text-right text-gray-500">{t('ads.clicks')}</th>
-									<th class="px-3 py-2 text-right text-gray-500">{t('ads.spend')}</th>
+								<tr class="border-b border bg-surface">
+									<th class="px-3 py-2 text-left text-muted">{t('ads.date')}</th>
+									<th class="px-3 py-2 text-right text-muted">{t('ads.impressions')}</th>
+									<th class="px-3 py-2 text-right text-muted">{t('ads.clicks')}</th>
+									<th class="px-3 py-2 text-right text-muted">{t('ads.spend')}</th>
 								</tr>
 							</thead>
 							<tbody>
 								{#each stats.daily_stats as day}
-									<tr class="border-b border-gray-200 last:border-0">
+									<tr class="border-b border last:border-0">
 										<td class="px-3 py-2">{day.date}</td>
 										<td class="px-3 py-2 text-right">{day.impressions.toLocaleString()}</td>
 										<td class="px-3 py-2 text-right">{day.clicks.toLocaleString()}</td>
@@ -384,9 +397,65 @@
 			{/if}
 		</div>
 	{:else}
-		<p class="py-8 text-center text-sm text-gray-500">{t('common.no_data')}</p>
+		<p class="py-8 text-center text-sm text-muted">{t('common.no_data')}</p>
 	{/if}
 	<div class="flex justify-end pt-4">
 		<Button variant="outline" onclick={() => showStatsModal = false}>{t('common.close')}</Button>
 	</div>
 </Modal>
+
+<!-- End Campaign Confirm -->
+<Modal bind:open={showEndCampaignConfirm} title={t('common.confirmDelete', 'Confirm End')}>
+	{#if endCampaignTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('ads.end_confirm', 'End campaign')} <strong>{endCampaignTarget.name}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t('common.cannotUndo', 'This action cannot be undone.')}</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showEndCampaignConfirm = false}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={executeEndCampaign}>{t('ads.end', 'End')}</Button>
+	</div>
+</Modal>
+
+<!-- End Boost Confirm -->
+<Modal bind:open={showEndBoostConfirm} title={t('common.confirmDelete', 'Confirm End')}>
+	{#if endBoostTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('ads.end_boost_confirm', 'End boost')} <strong>{endBoostTarget.boost_type}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t('common.cannotUndo', 'This action cannot be undone.')}</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showEndBoostConfirm = false}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={executeEndBoost}>{t('ads.end', 'End')}</Button>
+	</div>
+</Modal>
+
+<!-- CampaignActionsCell component -->
+{#snippet CampaignActionsCell(row: Campaign)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => viewStats(row.id)} title={t('ads.stats')}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageAds && row.status !== 'completed'}
+			<Button variant="ghost" size="sm" onclick={() => toggleCampaign(row.id)} style={row.status === 'active' ? 'color: var(--color-warning)' : 'color: var(--color-success)'}>
+				{#if row.status === 'active'}<Pause class="h-3.5 w-3.5" />{:else}<Play class="h-3.5 w-3.5" />{/if}
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => confirmEndCampaign(row)} style="color: var(--color-danger)">
+				<StopCircle class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}
+
+<!-- BoostActionsCell component -->
+{#snippet BoostActionsCell(row: ActiveBoost)}
+	<div class="flex items-center gap-1">
+		{#if canManageAds && row.status === 'active'}
+			<Button variant="ghost" size="sm" onclick={() => confirmEndBoost(row)} style="color: var(--color-danger)" title={t('ads.end')}>
+				<StopCircle class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api, gdprAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { RefreshCw, Trash2 } from 'lucide-svelte';
 
 	type DeletionRequest = {
@@ -15,6 +16,8 @@
 	let requests = $state<DeletionRequest[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+
+	const canManageDeletions = $derived(hasPermission('gdpr.deletions.view'));
 
 	async function load() {
 		loading = true;
@@ -88,14 +91,14 @@
 						<td class="px-4 py-3 font-mono text-xs">{req.user_id}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{req.reason || '—'}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {req.status === 'executed' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : req.status === 'pending' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {req.status === 'executed' ? 'bg-success/15 text-success dark:text-success' : req.status === 'pending' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-muted/15 text-muted dark:text-muted'}">
 								{req.status}
 							</span>
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(req.requested_at).toLocaleString()}</td>
 						<td class="px-4 py-3 text-right">
-							{#if req.status === 'pending'}
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => executeDeletion(req.id)}>
+							{#if req.status === 'pending' && canManageDeletions}
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => executeDeletion(req.id)}>
 									{t('gdpr.execute')}
 								</button>
 							{/if}

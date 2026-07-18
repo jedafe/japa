@@ -5,9 +5,6 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n';
 	import { Database, RefreshCw } from 'lucide-svelte';
-	import type { PageData } from './$types';
-
-	let { data = {} as PageData } = $props();
 
 	interface CacheNamespace {
 		prefix: string;
@@ -26,7 +23,7 @@
 	let messageType = $state<'success' | 'error' | ''>('');
 	let showFlushConfirm = $state(false);
 	let activeTab = $state('stats');
-	let stats = $state<CacheStats | null>(data.stats ?? null);
+	let stats = $state<CacheStats | null>(null);
 	let loadingStats = $state(false);
 
 	$effect(() => {

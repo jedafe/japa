@@ -2,8 +2,7 @@
 	import { beforeNavigate } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import SearchInput from '$lib/components/ui/SearchInput.svelte';
-	import { Tabs, Switch, Tooltip, Label, Select } from 'bits-ui';
+	import { Switch, Tooltip, Label, Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { SystemSetting } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n';
@@ -29,12 +28,9 @@
 		Bell,
 		FolderOpen
 	} from 'lucide-svelte';
-	import type { PageData } from './$types';
 
-	let { data = {} as PageData } = $props();
-
-	let originalSettings = $state<SystemSetting[]>(data.settings ?? []);
-	let currentSettings = $state<SystemSetting[]>(structuredClone(originalSettings));
+	let originalSettings = $state<SystemSetting[]>([]);
+	let currentSettings = $state<SystemSetting[]>([]);
 	let isDirty = $derived(
 		JSON.stringify(currentSettings) !== JSON.stringify(originalSettings)
 	);
@@ -45,8 +41,7 @@
 	);
 
 	let isSaving = $state(false);
-	let filter = $state('');
-	let activeTab = $state('all');
+	let activeCategory = $state('all');
 	let message = $state('');
 	let messageType = $state<'success' | 'error' | ''>('');
 	let confirmResetSetting = $state<SystemSetting | null>(null);
@@ -65,7 +60,36 @@
 		security: Shield,
 		email: Mail,
 		cors: Globe,
-		content: Sliders
+		content: Sliders,
+		auth: Shield,
+		spaces: Globe,
+		moderation: Shield,
+		wallet: CreditCard,
+		api: Server,
+		ads: Sliders,
+		ai: Cpu
+	};
+
+	const categoryNames: Record<string, string> = {
+		auth: 'Authentication',
+		feed: 'Feed & Content',
+		content: 'Feed & Content',
+		spaces: 'Spaces',
+		moderation: 'Moderation',
+		security: 'Security',
+		wallet: 'Wallet',
+		api: 'API Rate Limits',
+		cors: 'CORS',
+		ads: 'Ads',
+		ai: 'AI',
+		general: 'General',
+		advanced: 'Advanced',
+		appearance: 'Appearance',
+		media: 'Media',
+		i18n: 'Languages',
+		payment: 'Payment',
+		notification: 'Notifications',
+		email: 'Email'
 	};
 
 	const selectOptions: Record<string, { value: string; label: string }[]> = $derived(
@@ -199,15 +223,19 @@
 			(s, i) => s.value !== originalSettings[i]?.value
 		);
 		let failed = 0;
-		for (const setting of changed) {
-			const result = await api(`/control/system-settings/${setting.key}`, {
-				method: 'PATCH',
-				body: { value: setting.value }
-			});
+		const results = await Promise.all(
+			changed.map((setting) =>
+				api(`/control/system-settings/${setting.key}`, {
+					method: 'PATCH',
+					body: { value: setting.value }
+				})
+			)
+		);
+		for (const result of results) {
 			if (!result.ok) failed++;
 		}
 		if (failed === 0) {
-			originalSettings = structuredClone(currentSettings);
+			originalSettings = JSON.parse(JSON.stringify(currentSettings));
 			message = t('settings.save_all_success', `${changed.length} setting(s) saved successfully.`);
 			messageType = 'success';
 		} else {
@@ -218,7 +246,7 @@
 	}
 
 	function resetAll() {
-		currentSettings = structuredClone(originalSettings);
+		currentSettings = JSON.parse(JSON.stringify(originalSettings));
 		confirmResetAllOpen = false;
 		message = t('settings.reset_all_success', 'All changes reverted.');
 		messageType = 'success';
@@ -251,8 +279,8 @@
 		message = '';
 		const result = await api<SystemSetting[]>('/control/system-settings');
 		if (result.ok) {
-			originalSettings = result.data;
-			currentSettings = structuredClone(result.data);
+			originalSettings = JSON.parse(JSON.stringify(result.data));
+			currentSettings = JSON.parse(JSON.stringify(result.data));
 		}
 		isSaving = false;
 	}
@@ -266,13 +294,12 @@
 		}
 	});
 
+	load();
+
 	let categories = $derived(
 		[
 			...new Set(
-				currentSettings.map((s) => {
-					const ns = s.namespace ?? 'unknown';
-					return ns.split('.')[0] ?? ns;
-				})
+				currentSettings.map((s) => getSettingCategory(s))
 			)
 		].sort()
 	);
@@ -280,25 +307,17 @@
 	let categoryItems = $derived(
 		categories.map((cat) => ({
 			category: cat,
-			count: currentSettings.filter((s) => {
-				const ns = s.namespace ?? 'unknown';
-				return (ns.split('.')[0] ?? ns) === cat;
-			}).length
+			count: currentSettings.filter((s) => getSettingCategory(s) === cat).length
 		}))
 	);
 
 	let filtered = $derived(
 		currentSettings.filter((s) => {
-			const matchesFilter = filter
-				? (s.key ?? '').toLowerCase().includes(filter.toLowerCase()) ||
-					(s.namespace ?? '').toLowerCase().includes(filter.toLowerCase()) ||
-					(s.description ?? '').toLowerCase().includes(filter.toLowerCase())
-				: true;
 			const matchesCategory =
-				activeTab === 'all'
+				activeCategory === 'all'
 					? true
-					: (s.namespace ?? 'unknown').split('.')[0] === activeTab;
-			return matchesFilter && matchesCategory;
+					: getSettingCategory(s) === activeCategory;
+			return matchesCategory;
 		})
 	);
 
@@ -306,7 +325,7 @@
 		Object.entries(
 			filtered.reduce(
 				(acc, s) => {
-					const ns = s.namespace ?? 'unknown';
+					const ns = getSettingCategory(s);
 					(acc[ns] ??= []).push(s);
 					return acc;
 				},
@@ -324,6 +343,7 @@
 	}
 
 	function formatNamespace(ns: string): string {
+		if (categoryNames[ns]) return categoryNames[ns];
 		return (ns ?? '')
 			.replace(/_/g, ' ')
 			.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -343,460 +363,547 @@
 		return 'text';
 	}
 
-	function typeBadgeClass(setting: SystemSetting): string {
-		const type = getSettingComponentType(setting);
-		switch (type) {
-			case 'switch':
-				return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20';
-			case 'select':
-			case 'multi-select':
-				return 'bg-amber-500/10 text-amber-600 border-amber-500/20';
-			case 'textarea':
-				return 'bg-purple-500/10 text-purple-600 border-purple-500/20';
-			case 'number':
-				return 'bg-blue-500/10 text-blue-600 border-blue-500/20';
-			default:
-				return 'bg-muted text-muted-foreground border-border';
-		}
-	}
-
-	function typeLabel(setting: SystemSetting): string {
-		const type = getSettingComponentType(setting);
-		switch (type) {
-			case 'switch':
-				return 'bool';
-			case 'select':
-				return 'enum';
-			case 'multi-select':
-				return 'array';
-			case 'textarea':
-				return 'text';
-			case 'number':
-				return setting.type === 'float' ? 'float' : 'int';
-			default:
-				return 'string';
-		}
-	}
-
 	function getCategoryIcon(cat: string): typeof Settings {
 		return categoryIcons[cat] ?? Settings;
 	}
 
+	function getSettingCategory(setting: SystemSetting): string {
+		return (setting.key ?? '').split('.')[0] || 'general';
+	}
+
 	const inputClasses =
-		'border-border-input bg-background text-foreground rounded-lg border px-3 py-2 text-sm transition-all hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus disabled:opacity-50';
+		'border-border-input bg-background text-foreground rounded-lg border px-3 py-1.5 text-sm transition-all hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus disabled:opacity-50';
 	const selectTriggerClasses =
-		'border-border-input bg-background text-foreground flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-all hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus w-56';
+		'border-border-input bg-background text-foreground flex items-center justify-between rounded-lg border px-3 py-1.5 text-sm transition-all hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus w-44';
 	const selectContentClasses =
 		'border-border-input bg-background shadow-popover z-50 rounded-xl border p-1';
 	const selectItemClasses =
 		'data-highlighted:bg-accent rounded-lg flex h-9 cursor-pointer items-center px-3 text-sm outline-none';
+
+	const sensitiveKeys = new Set([
+		'email.smtp_password',
+		'email.smtp_username',
+		'payment.secret_key',
+		'payment.publishable_key',
+		'media.storage.access_key',
+		'media.storage.secret_key',
+		'security.jwt_secret',
+		'security.encryption_key',
+		'oauth.client_secret',
+		'oauth.google_client_secret',
+		'oauth.github_client_secret'
+	]);
+
+	function isSensitiveKey(key: string): boolean {
+		return sensitiveKeys.has(key) || key.includes('secret') || key.includes('password') || key.includes('token') || key.includes('api_key');
+	}
+
+	let revealedKeys = $state<Set<string>>(new Set());
+
+	function toggleReveal(key: string) {
+		const next = new Set(revealedKeys);
+		if (next.has(key)) {
+			next.delete(key);
+		} else {
+			next.add(key);
+		}
+		revealedKeys = next;
+	}
+
+	function getMaskedValue(value: string): string {
+		if (!value) return '';
+		return '•'.repeat(Math.min(value.length, 16));
+	}
 </script>
 
-<PageHeader
-	title={t('settings.title', 'Settings')}
-	description={t('settings.description', 'Platform configuration by category')}
-/>
-
-{#if message}
-	<div
-		class="mb-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm {messageType ===
-		'success'
-			? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'
-			: 'border-destructive/30 bg-destructive/10 text-destructive'}"
-	>
-		{#if messageType === 'success'}
-			<Check class="size-4" />
-		{/if}
-		{message}
-	</div>
-{/if}
-
-{#if isDirty}
-	<div
-		class="border-amber-500/30 bg-amber-500/5 mb-4 flex items-center gap-3 rounded-xl border px-4 py-3"
-	>
-		<AlertTriangle class="text-amber-500 size-4 flex-shrink-0" />
-		<span class="text-foreground text-sm font-medium">
-			{t('settings.unsaved_changes', `You have ${dirtyCount} unsaved change(s).`)}
-		</span>
-		<div class="flex-1"></div>
-		<button
-			class="border-border-input bg-background hover:bg-muted text-foreground flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-			onclick={() => {
-				confirmResetAllOpen = true;
-			}}
-			disabled={isSaving}
-		>
-			<Undo2 class="size-3" />
-			{t('settings.reset_all', 'Reset All')}
-		</button>
-		<button
-			class="bg-accent text-accent-foreground hover:bg-accent/90 flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
-			onclick={saveAll}
-			disabled={isSaving || !isDirty}
-		>
-			{#if isSaving}
-				<Loader2 class="size-3 animate-spin" />
-			{:else}
-				<Save class="size-3" />
-			{/if}
-			{t('settings.save_all', 'Save All')}
-			{#if dirtyCount > 0}
-				<span class="bg-accent-foreground/20 rounded-full px-1.5 py-0.5 text-[10px] font-bold">
-					{dirtyCount}
-				</span>
-			{/if}
-		</button>
-	</div>
-{/if}
-
-<div class="mb-4 flex items-center gap-3">
-	<SearchInput
-		bind:value={filter}
-		placeholder={t('settings.filter_placeholder', 'Filter settings...')}
-		class="w-72"
-	/>
-	<button
-		class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-2 text-sm font-medium transition-colors"
-		onclick={load}
-		disabled={isSaving}
-	>
-		<RefreshCw class="size-4 {isSaving ? 'animate-spin' : ''}" />
-		{t('common.refresh', 'Refresh')}
-	</button>
-	<div class="flex-1"></div>
-	<span class="text-muted-foreground text-xs">
-		{filtered.length} {t('settings.of', 'of')} {currentSettings.length} {t('settings.settings', 'settings')}
-	</span>
-</div>
-
-{#if isSaving && currentSettings.length === 0}
-	<div class="space-y-4">
-		{#each Array(4) as _}
-			<div class="border-border-card bg-background-alt h-48 animate-pulse rounded-xl border"></div>
-		{/each}
-	</div>
-{:else}
-	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List class="bg-muted mb-5 inline-flex flex-wrap gap-1 rounded-9px p-1">
-			<Tabs.Trigger
-				value="all"
-				class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
-			>
-				{t('settings.all', 'All')} ({currentSettings.length})
-			</Tabs.Trigger>
-			{#each categoryItems as { category, count }}
-				<Tabs.Trigger
-					value={category}
-					class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
+<div class="flex h-full gap-6">
+	<!-- Sidebar Navigation -->
+	<nav class="hidden w-56 shrink-0 md:block">
+		<div class="sticky top-4">
+			<h2 class="text-foreground mb-4 text-sm font-semibold">
+				{t('settings.title', 'Settings')}
+			</h2>
+			<div class="space-y-0.5">
+				<button
+					class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors {activeCategory === 'all'
+						? 'bg-accent text-foreground font-medium'
+						: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+					onclick={() => (activeCategory = 'all')}
 				>
-					{formatNamespace(category)} ({count})
-				</Tabs.Trigger>
-			{/each}
-		</Tabs.List>
+					<Settings class="size-4 shrink-0" />
+					<span class="flex-1 text-left">{t('settings.all', 'All')}</span>
+					<span class="text-muted-foreground text-xs">{currentSettings.length}</span>
+				</button>
+				{#each categoryItems as { category, count }}
+					{@const Icon = getCategoryIcon(category)}
+					<button
+						class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors {activeCategory === category
+							? 'bg-accent text-foreground font-medium'
+							: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+						onclick={() => (activeCategory = category)}
+					>
+						<Icon class="size-4 shrink-0" />
+						<span class="flex-1 text-left">{formatNamespace(category)}</span>
+						<span class="text-muted-foreground text-xs">{count}</span>
+					</button>
+				{/each}
+			</div>
+		</div>
+	</nav>
 
-		<Tabs.Content value={activeTab} class="mt-0">
-			{#if filtered.length === 0}
-				<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
-					<Settings class="text-muted-foreground mx-auto mb-3 size-8" />
-					<p class="text-muted-foreground text-sm">
-						{t('settings.no_results', 'No settings match your filters.')}
-					</p>
-				</div>
-			{:else}
-				<div class="space-y-5">
-					{#each grouped as [namespace, items]}
-						{@const catKey = namespace.split('.')[0] ?? namespace}
-						{@const CatIcon = getCategoryIcon(catKey)}
-						{@const hasDirtyItems = items.some((s) => isSettingDirty(s.key))}
-						<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
-							<div class="border-border-card flex items-center justify-between border-b px-5 py-3.5">
-								<div class="flex items-center gap-2.5">
-									<div class="bg-accent flex size-8 items-center justify-center rounded-lg">
-										<CatIcon class="text-accent-foreground size-4" />
-									</div>
-									<div>
-										<h3 class="text-foreground text-sm font-semibold">
-											{formatNamespace(namespace)}
-										</h3>
-										<p class="text-muted-foreground text-xs">
-											{items.length} {items.length === 1 ? 'setting' : 'settings'}
-										</p>
-									</div>
-								</div>
+	<!-- Main Content -->
+	<div class="min-w-0 flex-1">
+		<!-- Mobile category selector -->
+		<div class="mb-4 md:hidden">
+			<select
+				class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm"
+				bind:value={activeCategory}
+			>
+				<option value="all">{t('settings.all', 'All')} ({currentSettings.length})</option>
+				{#each categoryItems as { category, count }}
+					<option value={category}>{formatNamespace(category)} ({count})</option>
+				{/each}
+			</select>
+		</div>
+
+		<!-- Page Header -->
+		<div class="mb-4 flex items-center justify-between">
+			<div>
+				<h1 class="text-foreground text-lg font-semibold">
+					{activeCategory === 'all'
+						? t('settings.all_settings', 'All Settings')
+						: formatNamespace(activeCategory)}
+				</h1>
+				<p class="text-muted-foreground text-xs">
+					{filtered.length} {t('settings.of', 'of')} {currentSettings.length} {t('settings.settings', 'settings')}
+				</p>
+			</div>
+			<button
+				class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+				onclick={load}
+				disabled={isSaving}
+			>
+				<RefreshCw class="size-3 {isSaving ? 'animate-spin' : ''}" />
+				{t('common.refresh', 'Refresh')}
+			</button>
+		</div>
+
+		<!-- Message banner -->
+		{#if message}
+			<div
+				class="mb-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm {messageType ===
+				'success'
+					? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'
+					: 'border-destructive/30 bg-destructive/10 text-destructive'}"
+			>
+				{#if messageType === 'success'}
+					<Check class="size-4" />
+				{/if}
+				{message}
+			</div>
+		{/if}
+
+		<!-- Unsaved changes banner -->
+		{#if isDirty}
+			<div
+				class="border-amber-500/30 bg-amber-500/5 mb-4 flex items-center gap-3 rounded-xl border px-4 py-3"
+			>
+				<AlertTriangle class="text-amber-500 size-4 shrink-0" />
+				<span class="text-foreground text-sm font-medium">
+					{t('settings.unsaved_changes', `You have ${dirtyCount} unsaved change(s).`)}
+				</span>
+				<div class="flex-1"></div>
+				<button
+					class="border-border-input bg-background hover:bg-muted text-foreground flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+					onclick={() => { confirmResetAllOpen = true; }}
+					disabled={isSaving}
+				>
+					<Undo2 class="size-3" />
+					{t('settings.reset_all', 'Reset All')}
+				</button>
+				<button
+					class="bg-accent text-accent-foreground hover:bg-accent/90 flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+					onclick={saveAll}
+					disabled={isSaving || !isDirty}
+				>
+					{#if isSaving}
+						<Loader2 class="size-3 animate-spin" />
+					{:else}
+						<Save class="size-3" />
+					{/if}
+					{t('settings.save_all', 'Save All')}
+					{#if dirtyCount > 0}
+						<span class="bg-accent-foreground/20 rounded-full px-1.5 py-0.5 text-[10px] font-bold">
+							{dirtyCount}
+						</span>
+					{/if}
+				</button>
+			</div>
+		{/if}
+
+		<!-- Settings content -->
+		{#if isSaving && currentSettings.length === 0}
+			<div class="space-y-4">
+				{#each Array(3) as _}
+					<div class="border-border-card bg-background-alt h-32 animate-pulse rounded-xl border"></div>
+				{/each}
+			</div>
+		{:else if filtered.length === 0}
+			<div class="border-border-card bg-background-alt rounded-xl border p-12 text-center">
+				<Settings class="text-muted-foreground mx-auto mb-3 size-8" />
+				<p class="text-muted-foreground text-sm">
+					{t('settings.no_results', 'No settings match your filters.')}
+				</p>
+			</div>
+		{:else if activeCategory !== 'all'}
+			<!-- Single category: flat list of settings -->
+			<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
+				<div class="divide-border-card divide-y">
+					{#each filtered as setting (setting.key)}
+						{@const componentType = getSettingComponentType(setting)}
+						{@const dirty = isSettingDirty(setting.key)}
+						<div class="flex items-center gap-4 px-5 py-3.5 transition-colors {dirty ? 'bg-amber-500/5' : 'hover:bg-muted/30'}">
+							<!-- Label + description -->
+							<div class="min-w-0 flex-1">
 								<div class="flex items-center gap-2">
-									{#if hasDirtyItems}
-										<span
-											class="bg-amber-500/10 text-amber-600 border-amber-500/20 rounded-full border px-2 py-0.5 text-[10px] font-medium"
-										>
-											{items.filter((s) => isSettingDirty(s.key)).length} modified
+									<Label.Root for="setting-{setting.key}" class="text-foreground text-sm font-medium">
+										{formatSettingKey(setting.key)}
+									</Label.Root>
+									{#if dirty}
+										<span class="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
+											unsaved
 										</span>
 									{/if}
 								</div>
+								{#if setting.description}
+									<p class="text-muted-foreground mt-0.5 text-xs">{setting.description}</p>
+								{/if}
+								{#if dirty}
+									<p class="mt-0.5 text-[10px] text-amber-600/70">
+										Original: {isSensitiveKey(setting.key) ? getMaskedValue(getOriginalValue(setting.key)) : getOriginalValue(setting.key)}
+									</p>
+								{/if}
 							</div>
 
-							<div class="divide-border-card divide-y">
-								{#each items as setting (setting.key)}
-									{@const componentType = getSettingComponentType(setting)}
-									{@const dirty = isSettingDirty(setting.key)}
-									<div
-										class="group px-5 py-4 transition-colors {dirty
-											? 'bg-amber-500/5'
-											: 'hover:bg-muted/30'}"
-									>
-										<div class="flex items-start gap-4">
-											<div class="min-w-0 flex-1">
-												<div class="flex items-center gap-2">
-													<Label.Root
-														for="setting-{setting.key}"
-														class="text-foreground text-sm font-medium"
-													>
-														{formatSettingKey(setting.key)}
-													</Label.Root>
-													<span
-														class="{typeBadgeClass(setting)} rounded-full border px-2 py-0.5 text-[10px] font-medium"
-													>
-														{typeLabel(setting)}
-													</span>
-													{#if componentType === 'select' || componentType === 'multi-select'}
-														<span
-															class="bg-accent text-accent-foreground rounded-full border px-2 py-0.5 text-[10px] font-medium"
-														>
-															dropdown
-														</span>
-													{:else if componentType === 'textarea'}
-														<span
-															class="bg-amber-500/10 text-amber-600 border-amber-500/20 rounded-full border px-2 py-0.5 text-[10px] font-medium"
-														>
-															multiline
-														</span>
-													{/if}
-													{#if dirty}
-														<span
-															class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600"
-														>
-															unsaved
-														</span>
-													{/if}
-												</div>
-												{#if setting.description}
-													<p class="text-muted-foreground mt-0.5 text-xs">
-														{setting.description}
-													</p>
-												{/if}
-												{#if dirty}
-													<p class="mt-1 text-[10px] text-amber-600/70">
-														Original: {getOriginalValue(setting.key)}
-													</p>
-												{/if}
-											</div>
-											<div class="flex items-center gap-3">
-												{#if componentType === 'switch'}
-													{@const isTrue =
-														isBoolValue(setting.value) &&
-														setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() ===
-															'true'}
-													<div class="flex items-center gap-2">
-														<Switch.Root
-															id="setting-{setting.key}"
-															checked={isTrue}
-															onCheckedChange={(checked) =>
-																updateSetting(setting.key, checked ? 'true' : 'false')}
-															class="bg-muted data-[state=checked]:bg-emerald-500 peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full px-[3px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-														>
-															<Switch.Thumb
-																class="bg-background pointer-events-none block size-5 shrink-0 rounded-full shadow-lg transition-transform data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0"
-															/>
-														</Switch.Root>
-														<span class="text-muted-foreground w-10 text-center text-xs">
-															{isTrue ? 'On' : 'Off'}
-														</span>
-													</div>
-
-												{:else if componentType === 'select'}
-													<Select.Root
-														type="single"
-														value={getSelectValue(getDisplayValue(setting))}
-														onValueChange={(v) => {
-															if (v !== undefined) updateSetting(setting.key, v);
-														}}
-													>
-														<Select.Trigger
-															class={selectTriggerClasses}
-															id="setting-{setting.key}"
-														>
-															<Select.Value placeholder="Select..." />
-															<ChevronDown class="text-muted-foreground size-4" />
-														</Select.Trigger>
-														<Select.Portal>
-															<Select.Content class={selectContentClasses}>
-																<Select.Viewport class="p-1">
-																	{#each selectOptions[setting.key] ?? [] as option}
-																		<Select.Item
-																			class={selectItemClasses}
-																			value={option.value}
-																			label={option.label}
-																		>
-																			{#snippet children({ selected })}
-																				{option.label}
-																				{#if selected}<span class="ml-auto">✓</span>{/if}
-																			{/snippet}
-																		</Select.Item>
-																	{/each}
-																</Select.Viewport>
-															</Select.Content>
-														</Select.Portal>
-													</Select.Root>
-
-												{:else if componentType === 'multi-select'}
-													{@const selectedValues = getMultiSelectValues(
-														getDisplayValue(setting)
-													)}
-													<div class="w-64">
-														<div class="mb-1.5 flex flex-wrap gap-1">
-															{#each selectedValues as val}
-																{@const optionLabel =
-																	(multiSelectOptions[setting.key] ?? []).find(
-																		(o) => o.value === val
-																	)?.label ?? val}
-																<span
-																	class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs"
-																>
-																	{optionLabel}
-																	<button
-																		class="hover:text-destructive ml-0.5"
-																		onclick={() =>
-																			updateSetting(
-																				setting.key,
-																				selectedValues
-																					.filter((v) => v !== val)
-																					.join(',')
-																			)}
-																	>
-																		×
-																	</button>
-																</span>
-															{/each}
-														</div>
-														<Select.Root
-															type="single"
-															value=""
-															onValueChange={(v) => {
-																if (v && !selectedValues.includes(v)) {
-																	updateSetting(
-																		setting.key,
-																		[...selectedValues, v].join(',')
-																	);
-																}
-															}}
-														>
-															<Select.Trigger
-																class="{selectTriggerClasses} w-full"
-																id="setting-{setting.key}"
-															>
-																<Select.Value placeholder="Add language..." />
-																<ChevronDown class="text-muted-foreground size-4" />
-															</Select.Trigger>
-															<Select.Portal>
-																<Select.Content class={selectContentClasses}>
-																	<Select.Viewport class="p-1">
-																		{#each (multiSelectOptions[setting.key] ?? []).filter((o) => !selectedValues.includes(o.value)) as option}
-																			<Select.Item
-																				class={selectItemClasses}
-																				value={option.value}
-																				label={option.label}
-																			>
-																				{option.label}
-																			</Select.Item>
-																		{/each}
-																	</Select.Viewport>
-																</Select.Content>
-															</Select.Portal>
-														</Select.Root>
-													</div>
-
-												{:else if componentType === 'textarea'}
-													<textarea
-														id="setting-{setting.key}"
-														rows={3}
-														value={getDisplayValue(setting)}
-														onchange={(e) => {
-															const target = e.currentTarget as HTMLTextAreaElement;
-															const val = target.value.trim();
-															if ((val === '' || val === '[]') && setting.value?.startsWith('[')) {
-																updateSetting(setting.key, '[]');
-															} else {
-																updateSetting(setting.key, val);
-															}
-														}}
-														class="{inputClasses} w-72 resize-y font-mono text-xs"
-													></textarea>
-
-												{:else if componentType === 'number'}
-													<input
-														id="setting-{setting.key}"
-														type="number"
-														value={getDisplayValue(setting)}
-														onchange={(e) => {
-															const target = e.currentTarget as HTMLInputElement;
-															updateSetting(setting.key, target.value);
-														}}
-														step={setting.type === 'float' ? '0.01' : '1'}
-														class="{inputClasses} w-32"
-													/>
-
-												{:else}
-													<input
-														id="setting-{setting.key}"
-														type="text"
-														value={getDisplayValue(setting)}
-														onchange={(e) => {
-															const target = e.currentTarget as HTMLInputElement;
-															updateSetting(setting.key, target.value);
-														}}
-														class="{inputClasses} w-56"
-													/>
-												{/if}
-												<Tooltip.Root>
-													<Tooltip.Trigger>
-														<button
-															class="text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg p-1.5 transition-colors"
-															onclick={() => {
-																confirmResetSetting = setting;
-																resetModalOpen = true;
-															}}
-														>
-															<RotateCcw class="size-4" />
-														</button>
-													</Tooltip.Trigger>
-													<Tooltip.Portal>
-														<Tooltip.Content
-															side="top"
-															sideOffset={4}
-															class="border-dark-10 bg-background shadow-popover z-50 w-[240px] rounded-xl border p-3 text-xs"
-														>
-															<p class="font-medium">Reset to default</p>
-															<p class="text-muted-foreground mt-1">
-																Current: <span class="font-medium">{setting.value}</span>
-															</p>
-															<p class="text-muted-foreground">
-																Default: <span class="font-medium">{setting.default_value}</span>
-															</p>
-														</Tooltip.Content>
-													</Tooltip.Portal>
-												</Tooltip.Root>
-											</div>
-										</div>
+							<!-- Control -->
+							<div class="flex items-center gap-2">
+								{#if componentType === 'switch'}
+									{@const isTrue =
+										isBoolValue(setting.value) &&
+										setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
+									<div class="flex items-center gap-2">
+										<span class="text-muted-foreground w-8 text-right text-xs">
+											{isTrue ? 'On' : 'Off'}
+										</span>
+										<Switch.Root
+											id="setting-{setting.key}"
+											checked={isTrue}
+											onCheckedChange={(checked) =>
+												updateSetting(setting.key, checked ? 'true' : 'false')}
+											class="bg-muted data-[state=checked]:bg-emerald-500 peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[2px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+										>
+											<Switch.Thumb
+												class="bg-background pointer-events-none block size-4 shrink-0 rounded-full shadow-lg transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"
+											/>
+										</Switch.Root>
 									</div>
-								{/each}
+
+								{:else if componentType === 'select'}
+									<Select.Root
+										type="single"
+										value={getSelectValue(getDisplayValue(setting))}
+										onValueChange={(v) => {
+											if (v !== undefined) updateSetting(setting.key, v);
+										}}
+									>
+										<Select.Trigger class={selectTriggerClasses} id="setting-{setting.key}">
+											<Select.Value placeholder="Select..." />
+											<ChevronDown class="text-muted-foreground size-3.5" />
+										</Select.Trigger>
+										<Select.Portal>
+											<Select.Content class={selectContentClasses}>
+												<Select.Viewport class="p-1">
+													{#each selectOptions[setting.key] ?? [] as option}
+														<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
+															{#snippet children({ selected })}
+																{option.label}
+																{#if selected}<span class="ml-auto">✓</span>{/if}
+															{/snippet}
+														</Select.Item>
+													{/each}
+												</Select.Viewport>
+											</Select.Content>
+										</Select.Portal>
+									</Select.Root>
+
+								{:else if componentType === 'multi-select'}
+									{@const selectedValues = getMultiSelectValues(getDisplayValue(setting))}
+									<div class="w-56">
+										<div class="mb-1 flex flex-wrap gap-1">
+											{#each selectedValues as val}
+												{@const optionLabel = (multiSelectOptions[setting.key] ?? []).find((o) => o.value === val)?.label ?? val}
+												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+													{optionLabel}
+													<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, selectedValues.filter((v) => v !== val).join(','))}>×</button>
+												</span>
+											{/each}
+										</div>
+										<Select.Root type="single" value="" onValueChange={(v) => {
+											if (v && !selectedValues.includes(v)) {
+												updateSetting(setting.key, [...selectedValues, v].join(','));
+											}
+										}}>
+											<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
+												<Select.Value placeholder="Add..." />
+												<ChevronDown class="text-muted-foreground size-3.5" />
+											</Select.Trigger>
+											<Select.Portal>
+												<Select.Content class={selectContentClasses}>
+													<Select.Viewport class="p-1">
+														{#each (multiSelectOptions[setting.key] ?? []).filter((o) => !selectedValues.includes(o.value)) as option}
+															<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
+																{option.label}
+															</Select.Item>
+														{/each}
+													</Select.Viewport>
+												</Select.Content>
+											</Select.Portal>
+										</Select.Root>
+									</div>
+
+								{:else if componentType === 'textarea'}
+									<textarea
+										id="setting-{setting.key}"
+										rows={2}
+										value={getDisplayValue(setting)}
+										onchange={(e) => {
+											const target = e.currentTarget as HTMLTextAreaElement;
+											const val = target.value.trim();
+											if ((val === '' || val === '[]') && setting.value?.startsWith('[')) {
+												updateSetting(setting.key, '[]');
+											} else {
+												updateSetting(setting.key, val);
+											}
+										}}
+										class="{inputClasses} w-64 resize-y font-mono text-xs"
+									></textarea>
+
+								{:else if componentType === 'number'}
+									<input
+										id="setting-{setting.key}"
+										type="number"
+										value={getDisplayValue(setting)}
+										onchange={(e) => {
+											const target = e.currentTarget as HTMLInputElement;
+											updateSetting(setting.key, target.value);
+										}}
+										step={setting.type === 'float' ? '0.01' : '1'}
+										class="{inputClasses} w-28"
+									/>
+
+								{:else if isSensitiveKey(setting.key)}
+									<div class="flex items-center gap-1">
+										<input
+											id="setting-{setting.key}"
+											type={revealedKeys.has(setting.key) ? 'text' : 'password'}
+											value={getDisplayValue(setting)}
+											onchange={(e) => {
+												const target = e.currentTarget as HTMLInputElement;
+												updateSetting(setting.key, target.value);
+											}}
+											class="{inputClasses} w-44 font-mono text-xs"
+										/>
+										<button
+											type="button"
+											class="text-muted-foreground hover:text-foreground rounded p-1 transition-colors"
+											onclick={() => toggleReveal(setting.key)}
+											aria-label={revealedKeys.has(setting.key) ? 'Hide value' : 'Reveal value'}
+										>
+											{revealedKeys.has(setting.key) ? '🙈' : '👁'}
+										</button>
+									</div>
+
+								{:else}
+									<input
+										id="setting-{setting.key}"
+										type="text"
+										value={getDisplayValue(setting)}
+										onchange={(e) => {
+											const target = e.currentTarget as HTMLInputElement;
+											updateSetting(setting.key, target.value);
+										}}
+										class="{inputClasses} w-44"
+									/>
+								{/if}
+
+								<!-- Reset button -->
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										<button
+											class="text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg p-1 transition-colors"
+											onclick={() => {
+												confirmResetSetting = setting;
+												resetModalOpen = true;
+											}}
+										>
+											<RotateCcw class="size-3.5" />
+										</button>
+									</Tooltip.Trigger>
+									<Tooltip.Portal>
+										<Tooltip.Content
+											side="top"
+											sideOffset={4}
+											class="border-dark-10 bg-background shadow-popover z-50 w-[220px] rounded-xl border p-3 text-xs"
+										>
+											<p class="font-medium">Reset to default</p>
+											<p class="text-muted-foreground mt-1">
+												Current: <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.value) : setting.value}</span>
+											</p>
+											<p class="text-muted-foreground">
+												Default: <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.default_value) : setting.default_value}</span>
+											</p>
+										</Tooltip.Content>
+									</Tooltip.Portal>
+								</Tooltip.Root>
 							</div>
 						</div>
 					{/each}
 				</div>
-			{/if}
-		</Tabs.Content>
-	</Tabs.Root>
-{/if}
+			</div>
+		{:else}
+			<!-- All categories: grouped by category -->
+			<div class="space-y-6">
+				{#each categoryItems as { category, count }}
+					{@const CatIcon = getCategoryIcon(category)}
+					{@const catSettings = currentSettings.filter((s) => getSettingCategory(s) === category)}
+					{@const hasDirtyItems = catSettings.some((s) => isSettingDirty(s.key))}
+					<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
+						<!-- Category header -->
+						<div class="border-border-card flex items-center justify-between border-b px-5 py-3">
+							<div class="flex items-center gap-2.5">
+								<div class="bg-accent flex size-7 items-center justify-center rounded-lg">
+									<CatIcon class="text-accent-foreground size-3.5" />
+								</div>
+								<div>
+									<h3 class="text-foreground text-sm font-semibold">
+										{formatNamespace(category)}
+									</h3>
+									<p class="text-muted-foreground text-[11px]">
+										{count} {count === 1 ? 'setting' : 'settings'}
+									</p>
+								</div>
+							</div>
+							{#if hasDirtyItems}
+								<span class="bg-amber-500/10 text-amber-600 rounded-full px-2 py-0.5 text-[10px] font-medium">
+									{catSettings.filter((s) => isSettingDirty(s.key)).length} modified
+								</span>
+							{/if}
+							<button
+								class="text-muted-foreground hover:text-foreground text-xs font-medium transition-colors"
+								onclick={() => (activeCategory = category)}
+							>
+								View all →
+							</button>
+						</div>
+
+						<!-- Settings rows -->
+						<div class="divide-border-card divide-y">
+							{#each catSettings.slice(0, 5) as setting (setting.key)}
+								{@const componentType = getSettingComponentType(setting)}
+								{@const dirty = isSettingDirty(setting.key)}
+								<div class="flex items-center gap-4 px-5 py-3 transition-colors {dirty ? 'bg-amber-500/5' : 'hover:bg-muted/30'}">
+									<div class="min-w-0 flex-1">
+										<div class="flex items-center gap-2">
+											<Label.Root for="setting-{setting.key}" class="text-foreground text-sm font-medium">
+												{formatSettingKey(setting.key)}
+											</Label.Root>
+											{#if dirty}
+												<span class="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
+													unsaved
+												</span>
+											{/if}
+										</div>
+										{#if setting.description}
+											<p class="text-muted-foreground mt-0.5 text-xs">{setting.description}</p>
+										{/if}
+									</div>
+									<div class="flex items-center gap-2">
+										{#if componentType === 'switch'}
+											{@const isTrue = isBoolValue(setting.value) && setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
+											<div class="flex items-center gap-2">
+												<span class="text-muted-foreground w-8 text-right text-xs">{isTrue ? 'On' : 'Off'}</span>
+												<Switch.Root
+													id="setting-{setting.key}"
+													checked={isTrue}
+													onCheckedChange={(checked) => updateSetting(setting.key, checked ? 'true' : 'false')}
+													class="bg-muted data-[state=checked]:bg-emerald-500 peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[2px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+												>
+													<Switch.Thumb class="bg-background pointer-events-none block size-4 shrink-0 rounded-full shadow-lg transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0" />
+												</Switch.Root>
+											</div>
+										{:else if componentType === 'select'}
+											<Select.Root type="single" value={getSelectValue(getDisplayValue(setting))} onValueChange={(v) => { if (v !== undefined) updateSetting(setting.key, v); }}>
+												<Select.Trigger class={selectTriggerClasses} id="setting-{setting.key}">
+													<Select.Value placeholder="Select..." />
+													<ChevronDown class="text-muted-foreground size-3.5" />
+												</Select.Trigger>
+												<Select.Portal>
+													<Select.Content class={selectContentClasses}>
+														<Select.Viewport class="p-1">
+															{#each selectOptions[setting.key] ?? [] as option}
+																<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
+																	{#snippet children({ selected })}
+																		{option.label}
+																		{#if selected}<span class="ml-auto">✓</span>{/if}
+																	{/snippet}
+																</Select.Item>
+															{/each}
+														</Select.Viewport>
+													</Select.Content>
+												</Select.Portal>
+											</Select.Root>
+										{:else if isSensitiveKey(setting.key)}
+											<div class="flex items-center gap-1">
+												<input id="setting-{setting.key}" type={revealedKeys.has(setting.key) ? 'text' : 'password'} value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} class="{inputClasses} w-44 font-mono text-xs" />
+												<button type="button" class="text-muted-foreground hover:text-foreground rounded p-1 transition-colors" onclick={() => toggleReveal(setting.key)} aria-label={revealedKeys.has(setting.key) ? 'Hide' : 'Reveal'}>
+													{revealedKeys.has(setting.key) ? '🙈' : '👁'}
+												</button>
+											</div>
+										{:else}
+											<input id="setting-{setting.key}" type="text" value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} class="{inputClasses} w-44" />
+										{/if}
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<button class="text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg p-1 transition-colors" onclick={() => { confirmResetSetting = setting; resetModalOpen = true; }}>
+													<RotateCcw class="size-3.5" />
+												</button>
+											</Tooltip.Trigger>
+											<Tooltip.Portal>
+												<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 w-[220px] rounded-xl border p-3 text-xs">
+													<p class="font-medium">Reset to default</p>
+													<p class="text-muted-foreground mt-1">Current: <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.value) : setting.value}</span></p>
+													<p class="text-muted-foreground">Default: <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.default_value) : setting.default_value}</span></p>
+												</Tooltip.Content>
+											</Tooltip.Portal>
+										</Tooltip.Root>
+									</div>
+								</div>
+							{/each}
+							{#if catSettings.length > 5}
+								<button
+									class="text-accent-foreground hover:bg-muted/50 w-full px-5 py-2.5 text-left text-xs font-medium transition-colors"
+									onclick={() => (activeCategory = category)}
+								>
+									View all {catSettings.length} settings →
+								</button>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
+</div>
 
 <ConfirmModal
 	bind:open={resetModalOpen}

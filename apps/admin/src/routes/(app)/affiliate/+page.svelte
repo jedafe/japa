@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { api } from '$lib/api';
+	import { api, affiliateProvidersAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
@@ -55,6 +56,16 @@
 	let newProvider = $state({ name: '', base_url: '', commission_rate: 0 });
 	let saving = $state(false);
 
+	const canManageAffiliate = $derived(hasPermission('affiliate.manage'));
+
+	// Delete provider confirm
+	let showDeleteProviderConfirm = $state(false);
+	let deleteProviderTarget = $state<AffiliateProvider | null>(null);
+
+	// Member status confirm
+	let showMemberStatusConfirm = $state(false);
+	let memberStatusTarget = $state<{ member: AffiliateMember; status: string } | null>(null);
+
 	const tabs = [
 		{ value: 'providers', label: 'Providers', icon: Link2 },
 		{ value: 'members', label: 'Members', icon: Users },
@@ -67,12 +78,12 @@
 			key: 'name',
 			label: 'Name',
 			sortable: true,
-			render: (value: string) => `<span class="font-medium text-gray-900">${value}</span>`
+			render: (value: string) => `<span class="font-medium text-foreground">${value}</span>`
 		},
 		{
 			key: 'base_url',
 			label: 'Base URL',
-			render: (value: string) => `<span class="font-mono text-xs text-gray-500">${value}</span>`
+			render: (value: string) => `<span class="font-mono text-xs text-muted">${value}</span>`
 		},
 		{
 			key: 'commission_rate',
@@ -84,18 +95,14 @@
 			key: 'is_active',
 			label: 'Status',
 			render: (_: any, row: any) => {
-				const variant = row.is_active ? 'success' : 'secondary';
-				const label = row.is_active ? 'Active' : 'Inactive';
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_active ? 'bg-success-100 text-success-800 border-success-200' : 'bg-gray-100 text-gray-800 border-gray-200'}">${label}</span>`;
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_active ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${row.is_active ? 'Active' : 'Inactive'}</span>`;
 			}
 		},
 		{
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			render: (_: any, row: any) => `
-				<button onclick="window.__deleteProvider('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
-			`
+			component: ProviderActionsCell
 		}
 	];
 
@@ -104,18 +111,18 @@
 			key: 'username',
 			label: 'Username',
 			sortable: true,
-			render: (value: string) => `<span class="font-medium text-gray-900">${value}</span>`
+			render: (value: string) => `<span class="font-medium text-foreground">${value}</span>`
 		},
 		{
 			key: 'status',
 			label: 'Status',
 			render: (value: string) => {
 				const classes: Record<string, string> = {
-					active: 'bg-success-100 text-success-800 border-success-200',
-					suspended: 'bg-danger-100 text-danger-800 border-danger-200',
-					pending: 'bg-warning-100 text-warning-800 border-warning-200'
+					active: 'bg-success/15 text-success border-success',
+					suspended: 'bg-danger/15 text-danger border-danger',
+					pending: 'bg-warning/15 text-warning border-warning'
 				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-gray-100 text-gray-800 border-gray-200'}">${value}</span>`;
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
 			}
 		},
 		{
@@ -134,12 +141,7 @@
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			render: (_: any, row: any) => {
-				if (row.status === 'active') {
-					return `<button onclick="window.__updateMemberStatus('${row.user_id}', 'suspended')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.suspend")}</button>`;
-				}
-				return `<button onclick="window.__updateMemberStatus('${row.user_id}', 'active')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-50">${t("common.activate")}</button>`;
-			}
+			component: MemberActionsCell
 		}
 	];
 
@@ -154,12 +156,12 @@
 			key: 'code',
 			label: 'Code',
 			sortable: true,
-			render: (value: string) => `<span class="font-mono text-xs font-medium text-gray-900">${value}</span>`
+			render: (value: string) => `<span class="font-mono text-xs font-medium text-foreground">${value}</span>`
 		},
 		{
 			key: 'url',
 			label: 'URL',
-			render: (value: string) => `<span class="text-xs text-gray-500 truncate max-w-[200px] block">${value}</span>`
+			render: (value: string) => `<span class="text-xs text-muted truncate max-w-[200px] block">${value}</span>`
 		},
 		{
 			key: 'clicks',
@@ -183,12 +185,6 @@
 
 	$effect(() => {
 		load();
-		(window as any).__deleteProvider = deleteProvider;
-		(window as any).__updateMemberStatus = updateMemberStatus;
-		return () => {
-			delete (window as any).__deleteProvider;
-			delete (window as any).__updateMemberStatus;
-		};
 	});
 
 	async function load() {
@@ -196,9 +192,9 @@
 		error = '';
 		try {
 			if (activeTab === 'providers') {
-				const result = await api<AffiliateProvider[]>('/admin/affiliate-providers');
+				const result = await affiliateProvidersAdminApi.list();
 				if (result.ok) {
-					providers = result.data ?? [];
+					providers = (Array.isArray(result.data) ? result.data : (result.data as any)?.items ?? []) as AffiliateProvider[];
 				} else {
 					error = result.error;
 				}
@@ -235,7 +231,7 @@
 		if (!newProvider.name || !newProvider.base_url) return;
 		saving = true;
 		try {
-			await api('/admin/affiliate-providers', { method: 'POST', body: newProvider });
+			await affiliateProvidersAdminApi.create(newProvider);
 			showCreateModal = false;
 			newProvider = { name: '', base_url: '', commission_rate: 0 };
 			load();
@@ -248,7 +244,7 @@
 
 	async function deleteProvider(id: string) {
 		try {
-			await api(`/admin/affiliate-providers/${id}`, { method: 'DELETE' });
+			await affiliateProvidersAdminApi.delete(id);
 			providers = providers.filter((p) => p.id !== id);
 		} catch {
 			error = t('common.error');
@@ -281,10 +277,28 @@
 		}
 	}
 
-	// Expose functions for DataTable inline actions
-	if (typeof window !== 'undefined') {
-		(window as any).__deleteProvider = deleteProvider;
-		(window as any).__updateMemberStatus = updateMemberStatus;
+	function confirmDeleteProvider(provider: AffiliateProvider) {
+		deleteProviderTarget = provider;
+		showDeleteProviderConfirm = true;
+	}
+
+	async function executeDeleteProvider() {
+		if (!deleteProviderTarget) return;
+		await deleteProvider(deleteProviderTarget.id);
+		showDeleteProviderConfirm = false;
+		deleteProviderTarget = null;
+	}
+
+	function confirmMemberStatus(member: AffiliateMember, status: string) {
+		memberStatusTarget = { member, status };
+		showMemberStatusConfirm = true;
+	}
+
+	async function executeMemberStatus() {
+		if (!memberStatusTarget) return;
+		await updateMemberStatus(memberStatusTarget.member.user_id, memberStatusTarget.status);
+		showMemberStatusConfirm = false;
+		memberStatusTarget = null;
 	}
 </script>
 
@@ -296,13 +310,13 @@
 	title={t('affiliate.title')}
 	description={t('affiliate.description')}
 	actions={[
-		{ label: t('affiliate.add_provider'), icon: Plus, onclick: () => showCreateModal = true }
+		...(canManageAffiliate ? [{ label: t('affiliate.add_provider'), icon: Plus, onclick: () => showCreateModal = true }] : [])
 	]}
 />
 
 <div class="space-y-6">
 	{#if error}
-		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
 			{error}
 		</div>
 	{/if}
@@ -310,7 +324,7 @@
 	<Tabs {tabs} bind:value={activeTab} />
 
 	{#if loading}
-		<p class="py-8 text-center text-sm text-gray-500">{t('common.loading')}</p>
+		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else if activeTab === 'providers'}
 		<Card>
 			<CardContent class="p-0">
@@ -347,10 +361,10 @@
 	{:else if activeTab === 'rates'}
 		<Card>
 			<CardContent class="p-6">
-				<h3 class="mb-4 text-lg font-semibold text-gray-900">{t('affiliate.commission_rates')}</h3>
+				<h3 class="mb-4 text-lg font-semibold text-foreground">{t('affiliate.commission_rates')}</h3>
 				<div class="mx-auto max-w-lg space-y-4">
 					<div>
-						<label for="rate-content" class="mb-1 block text-sm font-medium text-gray-700">{t('affiliate.content_creation')}</label>
+						<label for="rate-content" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.content_creation')}</label>
 						<div class="flex items-center gap-2">
 							<input
 								id="rate-content"
@@ -358,14 +372,14 @@
 								min="0"
 								max="100"
 								step="0.1"
-								class="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+								class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={rates.content_creation}
 							/>
-							<span class="text-sm text-gray-500">%</span>
+							<span class="text-sm text-muted">%</span>
 						</div>
 					</div>
 					<div>
-						<label for="rate-signup" class="mb-1 block text-sm font-medium text-gray-700">{t('affiliate.referral_signup')}</label>
+						<label for="rate-signup" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.referral_signup')}</label>
 						<div class="flex items-center gap-2">
 							<input
 								id="rate-signup"
@@ -373,14 +387,14 @@
 								min="0"
 								max="100"
 								step="0.1"
-								class="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+								class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={rates.referral_signup}
 							/>
-							<span class="text-sm text-gray-500">%</span>
+							<span class="text-sm text-muted">%</span>
 						</div>
 					</div>
 					<div>
-						<label for="rate-purchase" class="mb-1 block text-sm font-medium text-gray-700">{t('affiliate.referral_purchase')}</label>
+						<label for="rate-purchase" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.referral_purchase')}</label>
 						<div class="flex items-center gap-2">
 							<input
 								id="rate-purchase"
@@ -388,10 +402,10 @@
 								min="0"
 								max="100"
 								step="0.1"
-								class="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+								class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={rates.referral_purchase}
 							/>
-							<span class="text-sm text-gray-500">%</span>
+							<span class="text-sm text-muted">%</span>
 						</div>
 					</div>
 					<Button onclick={saveRates} disabled={saving}>
@@ -407,26 +421,26 @@
 <Modal bind:open={showCreateModal} title={t('affiliate.add_provider')}>
 	<div class="space-y-4">
 		<div>
-			<label for="provider-name" class="mb-1 block text-sm font-medium text-gray-700">{t('affiliate.name')}</label>
+			<label for="provider-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.name')}</label>
 			<input
 				id="provider-name"
 				type="text"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				bind:value={newProvider.name}
 			/>
 		</div>
 		<div>
-			<label for="provider-url" class="mb-1 block text-sm font-medium text-gray-700">{t('affiliate.base_url')}</label>
+			<label for="provider-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.base_url')}</label>
 			<input
 				id="provider-url"
 				type="url"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="https://example.com"
 				bind:value={newProvider.base_url}
 			/>
 		</div>
 		<div>
-			<label for="provider-rate" class="mb-1 block text-sm font-medium text-gray-700">{t('affiliate.commission_rate')}</label>
+			<label for="provider-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.commission_rate')}</label>
 			<div class="flex items-center gap-2">
 				<input
 					id="provider-rate"
@@ -434,10 +448,10 @@
 					min="0"
 					max="100"
 					step="0.1"
-					class="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={newProvider.commission_rate}
 				/>
-				<span class="text-sm text-gray-500">%</span>
+				<span class="text-sm text-muted">%</span>
 			</div>
 		</div>
 		<div class="flex justify-end gap-2 pt-2">
@@ -448,3 +462,52 @@
 		</div>
 	</div>
 </Modal>
+
+<!-- Delete Provider Confirm -->
+<Modal bind:open={showDeleteProviderConfirm} title={t('common.confirmDelete', 'Confirm Delete')}>
+	{#if deleteProviderTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('affiliate.delete_provider_confirm', 'Delete provider')} <strong>{deleteProviderTarget.name}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t('common.cannotUndo', 'This action cannot be undone.')}</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showDeleteProviderConfirm = false}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={executeDeleteProvider}>{t('common.delete', 'Delete')}</Button>
+	</div>
+</Modal>
+
+<!-- Member Status Confirm -->
+<Modal bind:open={showMemberStatusConfirm} title={t('common.confirmDelete', 'Confirm Change')}>
+	{#if memberStatusTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('affiliate.change_member_status_confirm', 'Change status of')} <strong>{memberStatusTarget.member.username}</strong> {t('affiliate.to', 'to')} <strong>{memberStatusTarget.status}</strong>?
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showMemberStatusConfirm = false}>{t('common.cancel', 'Cancel')}</Button>
+		<Button onclick={executeMemberStatus}>{t('common.confirm', 'Confirm')}</Button>
+	</div>
+</Modal>
+
+<!-- ProviderActionsCell component -->
+{#snippet ProviderActionsCell(row: AffiliateProvider)}
+	<div class="flex items-center gap-1">
+		{#if canManageAffiliate}
+			<Button variant="ghost" size="sm" onclick={() => confirmDeleteProvider(row)} style="color: var(--color-danger)" title={t('common.delete')}>
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}
+
+<!-- MemberActionsCell component -->
+{#snippet MemberActionsCell(row: AffiliateMember)}
+	<div class="flex items-center gap-1">
+		{#if canManageAffiliate}
+			<Button variant="ghost" size="sm" onclick={() => confirmMemberStatus(row, row.status === 'active' ? 'suspended' : 'active')} style={row.status === 'active' ? 'color: var(--color-danger)' : 'color: var(--color-success)'} title={row.status === 'active' ? t('common.suspend') : t('common.activate')}>
+				{row.status === 'active' ? t('common.suspend') : t('common.activate')}
+			</Button>
+		{/if}
+	</div>
+{/snippet}

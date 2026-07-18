@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -96,7 +97,7 @@
 	async function deleteForm() {
 		try {
 			await api(`/forms/${formId}`, { method: 'DELETE' });
-			window.location.href = `/spaces/${spaceId}/forms`;
+			await goto(`/spaces/${spaceId}/forms`);
 		} catch {
 			errorMessage = t('space_forms.delete_error');
 		}
@@ -127,13 +128,13 @@
 	<div class="flex items-center gap-2">
 		<a
 			href="/spaces/{spaceId}/forms"
-			class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+			class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 			style="border-color: var(--color-border)"
 		>
 			&larr; {t('common.back')}
 		</a>
 		<button
-			class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+			class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 			style="border-color: var(--color-border); color: var(--color-danger)"
 			onclick={() => (showDelete = true)}
 		>
@@ -219,7 +220,7 @@
 						<div class="flex items-center justify-between rounded-md border px-4 py-3" style="border-color: var(--color-border); background-color: var(--color-background)">
 							<div>
 								<span class="text-sm font-medium">{field.label}</span>
-								<span class="ml-2 inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-white/10">{field.type}</span>
+								<span class="ml-2 inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-surface/10">{field.type}</span>
 								{#if field.required}
 									<span class="ml-1 text-xs" style="color: var(--color-danger)">{t('space_forms.required_indicator')}</span>
 								{/if}
@@ -254,7 +255,7 @@
 				</thead>
 				<tbody>
 					{#each submissions as sub}
-						<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
+						<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
 							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{sub.created_at}</td>
 							{#each form?.fields ?? [] as field}
 								<td class="px-4 py-3 text-xs">{formatFieldValue(sub.data[field.label])}</td>

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
-import { Tooltip } from 'bits-ui';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({

@@ -6,7 +6,6 @@
 	import type { DbHealth } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import type { PageData } from './$types';
 	import { Tabs, Tooltip } from 'bits-ui';
 	import {
 		Database,
@@ -19,13 +18,11 @@
 		Scissors
 	} from 'lucide-svelte';
 
-	let { data = {} as PageData } = $props();
+	let {} = $props();
 
-	// svelte-ignore state_referenced_locally
-	let dbHealth = $state<DbHealth | null>(data.dbHealth ?? null);
-	let loading = $state(false);
-	// svelte-ignore state_referenced_locally
-	let apiAvailable = $state(data.dbHealth !== null || data.error === null);
+	let dbHealth = $state<DbHealth | null>(null);
+	let loading = $state(true);
+	let apiAvailable = $state(true);
 	let lastRefresh = $state(new Date());
 	let secondsAgo = $state(0);
 	let refreshing = $state(false);
@@ -37,23 +34,9 @@
 	async function refresh() {
 		refreshing = true;
 		try {
-			const result = await api<{ status: string; error?: string; latency_ms?: number }>('/control/health/db');
+			const result = await api<DbHealth>('/control/health/db');
 			if (result.ok) {
-				const raw = result.data;
-				dbHealth = {
-					connected: raw.status === 'ok',
-					version: '',
-					latency_ms: raw.latency_ms ?? 0,
-					size_bytes: 0,
-					table_count: 0,
-					index_count: 0,
-					avg_query_time_ms: 0,
-					tables: [],
-					slow_queries: [],
-					indexes_unused: [],
-					connection_pool: undefined,
-					replication: undefined
-				};
+				dbHealth = result.data;
 				apiAvailable = true;
 				lastRefresh = new Date();
 				secondsAgo = 0;
@@ -143,6 +126,8 @@
 	}
 
 	$effect(() => {
+		refresh();
+
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
 				refresh();
@@ -150,12 +135,20 @@
 		}, 60_000);
 
 		const tickInterval = setInterval(() => {
-			secondsAgo = Math.floor((Date.now() - lastRefresh.getTime()) / 1000);
+			if (document.visibilityState === 'visible') {
+				secondsAgo = Math.floor((Date.now() - lastRefresh.getTime()) / 1000);
+			}
 		}, 1000);
+
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') refresh();
+		};
+		document.addEventListener('visibilitychange', onVisible);
 
 		return () => {
 			clearInterval(interval);
 			clearInterval(tickInterval);
+			document.removeEventListener('visibilitychange', onVisible);
 		};
 	});
 </script>

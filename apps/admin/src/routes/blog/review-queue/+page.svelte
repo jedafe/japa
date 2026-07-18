@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { blogAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+
+	const canManage = $derived(hasPermission('blog.review.manage'));
 	import { CheckCircle, XCircle, RefreshCw, ExternalLink } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
 
@@ -94,20 +97,20 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold">{t('blog.review-queue.blog_review_queue')}</h1>
-		<button class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700" onclick={refresh}>
+		<button class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-surface dark:hover:bg-surface" onclick={refresh}>
 			<RefreshCw class="h-4 w-4" />
 			Refresh
 		</button>
 	</div>
 
 	{#if errorMessage}
-		<div class="rounded-md bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">{errorMessage}</div>
+		<div class="rounded-md bg-danger p-4 text-sm text-danger dark:bg-danger/20 dark:text-danger">{errorMessage}</div>
 	{/if}
 
 	{#if loading}
-		<div class="py-12 text-center text-sm text-gray-500">{t('blog.review-queue.loading')}</div>
+		<div class="py-12 text-center text-sm text-muted">{t('blog.review-queue.loading')}</div>
 	{:else if items.length === 0}
-		<div class="rounded-md border p-8 text-center text-sm text-gray-500" style="border-color: var(--color-border)">
+		<div class="rounded-md border p-8 text-center text-sm text-muted" style="border-color: var(--color-border)">
 			No posts pending review.
 		</div>
 	{:else}
@@ -118,20 +121,21 @@
 						<div class="min-w-0 flex-1">
 							<div class="flex items-center gap-2">
 								<h3 class="font-semibold">{item.title}</h3>
-								<a href="/blog/{item.slug}" target="_blank" class="text-gray-400 hover:text-gray-600">
+								<a href="/blog/{item.slug}" target="_blank" class="text-muted hover:text-foreground-alt">
 									<ExternalLink class="h-3.5 w-3.5" />
 								</a>
 							</div>
-							<p class="mt-1 text-xs text-gray-500">
+							<p class="mt-1 text-xs text-muted">
 								By {item.author_name} — submitted {new Date(item.submitted_at).toLocaleDateString()}
 							</p>
 							{#if item.excerpt}
-								<p class="mt-2 text-sm text-gray-600 line-clamp-2 dark:text-gray-400">{item.excerpt}</p>
+								<p class="mt-2 text-sm text-foreground-alt line-clamp-2 dark:text-muted">{item.excerpt}</p>
 							{/if}
 						</div>
 						<div class="flex items-center gap-2">
+							{#if canManage}
 							<button
-								class="flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+								class="flex items-center gap-1 rounded-md bg-success px-3 py-1.5 text-sm font-medium text-white hover:bg-success disabled:opacity-50"
 								onclick={() => approve(item.id)}
 								disabled={acting}
 							>
@@ -139,13 +143,14 @@
 								Approve
 							</button>
 							<button
-								class="flex items-center gap-1 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+								class="flex items-center gap-1 rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-white hover:bg-danger disabled:opacity-50"
 								onclick={() => openReject(item)}
 								disabled={acting}
 							>
 								<XCircle class="h-4 w-4" />
 								Reject
 							</button>
+							{/if}
 						</div>
 					</div>
 				</div>
@@ -156,7 +161,7 @@
 
 <Modal bind:open={showRejectModal} title="Reject Post" onConfirm={confirmReject} confirmLabel="Reject">
 	<div class="space-y-4">
-		<p class="text-sm text-gray-600 dark:text-gray-400">
+		<p class="text-sm text-foreground-alt dark:text-muted">
 			Are you sure you want to reject "{rejectItem?.title}"?
 		</p>
 		<div>

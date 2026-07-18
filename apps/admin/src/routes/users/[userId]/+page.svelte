@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
   import { page } from "$app/state";
-  import { goto } from "$app/navigation";
+  import { goto, invalidateAll } from "$app/navigation";
   import PageHeader from "$lib/components/layout/page-header.svelte";
   import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
   import { Tabs } from "$lib/components/ui/tabs";
@@ -9,7 +9,7 @@
   import { Button } from "$lib/components/ui/button";
   import { Modal } from "$lib/components/ui/modal";
   import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play } from "lucide-svelte";
-  import { userManagementApi, impersonationApi } from "$lib/api";
+   import { userManagementApi, impersonationApi, usersWarningsAdminApi } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
 
   type UserDetail = {
@@ -36,21 +36,29 @@
     created_at: string;
   };
 
-  type Session = {
-    id: string;
-    ip_address: string;
-    device: string;
-    started_at: string;
-  };
+   type Session = {
+     id: string;
+     ip_address: string;
+     device: string;
+     started_at: string;
+   };
 
-  let { data } = $props();
+   type Warning = {
+     id: string;
+     reason: string;
+     created_at: string;
+     expires_at?: string;
+   };
 
-  let user = $state<UserDetail | null>(null);
-  let activities = $state<Activity[]>([]);
-  let aiEntries = $state<AiContextEntry[]>([]);
-  let sessions = $state<Session[]>([]);
-  let loading = $state(true);
-  let activeTab = $state("overview");
+   let { data } = $props();
+
+   let user = $state<UserDetail | null>(null);
+   let activities = $state<Activity[]>([]);
+   let aiEntries = $state<AiContextEntry[]>([]);
+   let sessions = $state<Session[]>([]);
+   let warnings = $state<Warning[]>([]);
+   let loading = $state(true);
+   let activeTab = $state("overview");
 
   // Modal states
   let showBanConfirm = $state(false);
@@ -77,12 +85,13 @@
   const canImpersonate = $derived(hasPermission('admin.impersonate'));
   const canDeleteAiContext = $derived(hasPermission('ai.context.admin_delete_entry'));
 
-  const tabs = [
-    { value: "overview", label: "Overview", icon: Users },
-    { value: "activity", label: "Activity", icon: Users },
-    { value: "ai", label: "AI Context", icon: Users },
-    { value: "sessions", label: "Sessions", icon: Users }
-  ];
+   const tabs = [
+     { value: "overview", label: "Overview", icon: Users },
+     { value: "activity", label: "Activity", icon: Users },
+     { value: "ai", label: "AI Context", icon: Users },
+     { value: "sessions", label: "Sessions", icon: Users },
+     { value: "warnings", label: "Warnings", icon: AlertTriangle }
+   ];
 
   async function loadUser() {
     if (!userId) return;
@@ -128,11 +137,21 @@
     }
   }
 
+  async function loadWarnings() {
+    try {
+      const result = await usersWarningsAdminApi.list(userId);
+      if (result.ok) warnings = (result.data as Warning[]) ?? [];
+    } catch {
+      /* ignore */
+    }
+  }
+
   function switchTab(tab: string) {
     activeTab = tab;
     if (tab === "activity") loadActivity();
     else if (tab === "ai") loadAiContext();
     else if (tab === "sessions") loadSessions();
+    else if (tab === "warnings") loadWarnings();
   }
 
   function flash(msg: string, isError = false) {
@@ -235,7 +254,8 @@
     if (!user) return;
     const result = await impersonationApi.start(user.id);
     if (result.ok) {
-      window.location.href = "/";
+      await invalidateAll();
+      goto("/", { invalidateAll: true });
     } else flash("Failed to start impersonation", true);
   }
 
@@ -480,6 +500,31 @@
           </div>
         {:else}
           <p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.no_sessions_yet')}</p>
+        {/if}
+      {:else if activeTab === "warnings"}
+        {#if warnings.length > 0}
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.reason')}</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.issued')}</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.expires')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each warnings as w}
+                  <tr class="border-t" style="border-color: var(--color-border)">
+                    <td class="px-3 py-2">{w.reason}</td>
+                    <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{w.created_at}</td>
+                    <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{w.expires_at ?? t('users.userId.never', 'Never')}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {:else}
+          <p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.no_warnings_yet')}</p>
         {/if}
       {/if}
     </CardContent>

@@ -3,6 +3,9 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+
+	const canManage = $derived(hasPermission('admin.moderation'));
 
 	type Report = {
 		id: string;
@@ -102,9 +105,9 @@
 
 	function statusBadge(status: string) {
 		switch (status) {
-			case 'pending': return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
-			case 'reviewed': return 'bg-blue-500/15 text-blue-700 dark:text-blue-400';
-			default: return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
+			case 'pending': return 'bg-warning/15 text-warning dark:text-warning';
+			case 'reviewed': return 'bg-blue-500/15 text-info dark:text-blue-400';
+			default: return 'bg-muted/15 text-muted dark:text-muted';
 		}
 	}
 
@@ -170,7 +173,7 @@
 			<tbody>
 				{#each reports as report}
 					<tr
-						class="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
+						class="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]"
 						style="border-color: var(--color-border)"
 						onclick={() => toggleExpand(report.id)}
 					>
@@ -189,24 +192,24 @@
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{report.created_at}</td>
 						<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
-							{#if report.status === 'pending'}
+							{#if canManage && report.status === 'pending'}
 								<div class="flex items-center gap-1">
 									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 										style="color: var(--color-muted)"
 										onclick={() => openAction(report, 'dismiss')}
 									>
 										Dismiss
 									</button>
 									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 										style="color: var(--color-warning)"
 										onclick={() => openAction(report, 'warn')}
 									>
 										Warn
 									</button>
 									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 										style="color: var(--color-danger)"
 										onclick={() => openAction(report, 'remove')}
 									>
@@ -243,7 +246,7 @@
 										{report.content_preview}
 									</div>
 								{/if}
-								{#if report.status === 'pending'}
+								{#if canManage && report.status === 'pending'}
 									<div class="mt-3 flex gap-2">
 										<button
 											class="rounded-md px-3 py-1.5 text-xs font-medium"
@@ -292,8 +295,8 @@
 	<div class="mt-3 flex items-center justify-between">
 		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
 		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
 		</div>
 	</div>
 {/if}

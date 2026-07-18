@@ -120,6 +120,18 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Affiliate link expiry — daily.
 	schedule("0 4 * * *", TypeAffiliateExpireCheck, 24*time.Hour)
 
+	// Daily digest emails — 08:00 UTC.
+	schedule("0 8 * * *", TypeDigestEmail, 24*time.Hour)
+
+	// Weekly newsletter digest — Monday 09:00 UTC.
+	schedule("0 9 * * 1", TypeNewsletterDigest, 7*24*time.Hour)
+
+	// Daily sitemap generation — 02:00 UTC.
+	schedule("0 2 * * *", TypeSitemapGenerate, 24*time.Hour)
+
+	// Weekly GeoIP database update — Sunday 03:00 UTC.
+	schedule("0 3 * * 0", TypeMaintenanceUpdateGeoIPDB, 7*24*time.Hour)
+
 	return scheduler
 }
 

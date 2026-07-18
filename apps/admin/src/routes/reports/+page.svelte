@@ -77,7 +77,7 @@
 			label: t("reports.status", "Status"),
 			sortable: true,
 			render: (v: string) => {
-				const colors = v === "ready" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : v === "generating" ? "bg-blue-500/15 text-blue-700 dark:text-blue-400" : "bg-red-500/15 text-red-700 dark:text-red-400";
+				const colors = v === "ready" ? "bg-success/15 text-success dark:text-success" : v === "generating" ? "bg-blue-500/15 text-info dark:text-blue-400" : "bg-danger/15 text-danger dark:text-danger";
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
 			}
 		},

@@ -1,6 +1,6 @@
 ---
 name: jc-learn-debug
-description: Use when reviewing or debugging JapaConnect Learn app code (apps/learn, SSR). Diagnoses SSR/CSR progress boundary leaks, TipTap rendering, video player browser APIs, Mark Complete races, and LayerChart issues.
+description: [Learn app, learn.japaconnect.com] Unified shell adapted for Learn (ADR-060), lesson-player exception, LayerChart 2.0.1. Use when reviewing or debugging JapaConnect Learn app code (apps/learn, SSR). Diagnoses SSR/CSR progress boundary leaks, TipTap rendering, video player browser APIs, Mark Complete races, and LayerChart issues.
 ---
 
 # JapaConnect Learn — Review & Debugging Skill
@@ -39,3 +39,10 @@ Apply `jc-main-debug` §§1–3, 5–7 (SSR/hydration, Runes, Bits UI, Tailwind,
 
 ## Output Protocol
 1. Root cause · 2. Broken code · 3. Fixed code · 4. Secondary findings
+
+## App Shell & LayerChart (ADR-060 / ADR-059)
+- Learn uses the unified shell (ADR-058) adapted per ADR-060: collapsible left nav (learning-oriented, state via `ui.nav_collapsed` server-side — not localStorage), center, right sidebar (continue/streak/up-next). Flag surfaces built as a top-nav or standalone layout.
+- Lesson player is Learn's reading exception: collapsed nav + `CurriculumRail` (borderless, part of the content — not a second nav) + lesson-meta panel. Flag two-sidebar-looking rails.
+- `TrackCard` is one variant-driven card — flag per-level/type card forks.
+- Charts: pinned `layerchart@2.0.1`, colors via CSS vars, fixed height, Gate-verified data, per-chart skeleton — flag unpinned/`@next` or hardcoded chart colors.
+- Enforce the SSR/CSR boundary: user progress/enrollment must be CSR, never in `+page.server.ts`.

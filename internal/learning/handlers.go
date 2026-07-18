@@ -10,22 +10,82 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
+
+// TaskEnqueueClient is the interface for enqueueing background tasks.
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
 
 // Handlers exposes HTTP endpoints for the learning platform. Each handler
 // reads tenant context from the request, parses input, delegates to the
 // store, and writes a JSON response. Guard clauses at the top of every
 // handler keep the happy path un-indented.
 type Handlers struct {
-	store *Store
+	store       *Store
+	AsynqClient TaskEnqueueClient
 }
 
 // NewHandlers creates a learning handler bound to the provided store.
 func NewHandlers(store *Store) *Handlers {
 	return &Handlers{store: store}
+}
+
+// enqueueTrackCompletionUpdate enqueues an async track completion update task.
+// Fire-and-forget: errors are logged but never propagated.
+func (h *Handlers) enqueueTrackCompletionUpdate(userID, trackID, tenantID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"user_id":   userID.String(),
+		"track_id":  trackID.String(),
+		"tenant_id": tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("learning: failed to marshal track completion payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeLearningUpdateTrackCompletion, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeLearningUpdateTrackCompletion)),
+	); err != nil {
+		slog.Warn("learning: failed to enqueue track completion task",
+			"user_id", userID.String(), "track_id", trackID.String(), "error", err)
+	}
+}
+
+// enqueueIssueCertificate enqueues an async certificate issuance task.
+// Fire-and-forget: errors are logged but never propagated.
+func (h *Handlers) enqueueIssueCertificate(userID, trackID, tenantID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"user_id":   userID.String(),
+		"track_id":  trackID.String(),
+		"tenant_id": tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("learning: failed to marshal issue certificate payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeLearningIssueCertificate, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeLearningIssueCertificate)),
+	); err != nil {
+		slog.Warn("learning: failed to enqueue issue certificate task",
+			"user_id", userID.String(), "track_id", trackID.String(), "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -657,6 +717,9 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.maybeIssueCertificate(r.Context(), t.ID, user.UserID, lesson.ModuleID)
+
+	// Enqueue async track completion update — fire-and-forget.
+	h.enqueueTrackCompletionUpdate(user.UserID, lesson.ModuleID, t.ID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": progress})
 }

@@ -97,7 +97,7 @@
 			>
 				{creating ? t('bots.creating') : t('bots.create_bot')}
 			</button>
-			<a href="/bots" class="rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10" style="color: var(--color-muted)">
+			<a href="/bots" class="rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-muted)">
 				{t('common.cancel')}
 			</a>
 		</div>

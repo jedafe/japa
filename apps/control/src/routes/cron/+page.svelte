@@ -6,22 +6,25 @@
 	import { Dialog, Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n';
-	import { Play, Pause, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
+	import { escapeHtml } from '$lib/utils';
+	import { Play, Pause, PlayCircle, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
-	import type { PageData } from './$types';
 
-	let { data = {} as PageData } = $props();
+	let {} = $props();
 
 	interface CronJob {
 		id: string;
 		type: string;
 		spec: string;
+		source: 'system' | 'custom';
+		paused: boolean;
+		payload?: string;
 		next_run_at: string | null;
 		prev_run_at: string | null;
 	}
 
-	let jobs = $state<CronJob[]>(data.jobs ?? []);
-	let loading = $state(false);
+	let jobs = $state<CronJob[]>([]);
+	let loading = $state(true);
 	let message = $state('');
 	let messageType = $state<'success' | 'error' | 'info'>('info');
 	let filterStatus = $state('all');
@@ -47,37 +50,40 @@
 
 	const columns: DataTableColumn[] = [
 		{
-			key: 'id',
-			label: t('cron.job', 'Job'),
-			sortable: true,
-			render: (val, row) => `<span class="font-medium">${val ?? '—'}</span>`
-		},
-		{
 			key: 'type',
 			label: t('cron.type', 'Type'),
 			sortable: true,
 			render: (val) =>
-				`<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 font-mono text-xs">${val ?? '—'}</span>`
+				`<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 font-mono text-xs">${escapeHtml(val) || '—'}</span>`
 		},
 		{
 			key: 'spec',
 			label: t('cron.schedule', 'Schedule'),
 			sortable: true,
-			render: (val) => `<span class="font-mono text-xs">${val ?? '—'}</span>`
+			render: (val) => `<span class="font-mono text-xs">${escapeHtml(val) || '—'}</span>`
+		},
+		{
+			key: 'source',
+			label: t('cron.source', 'Source'),
+			sortable: true,
+			render: (val) =>
+				val === 'system'
+					? `<span class="text-muted-foreground text-xs">System</span>`
+					: `<span class="text-accent-foreground text-xs font-medium">Custom</span>`
 		},
 		{
 			key: 'prev_run_at',
 			label: t('cron.last_run', 'Last Run'),
 			sortable: true,
 			render: (val) =>
-				`<span class="text-muted-foreground text-xs">${val ? new Date(val as string).toLocaleString() : '—'}</span>`
+				`<span class="text-muted-foreground text-xs">${val ? escapeHtml(new Date(val as string).toLocaleString()) : '—'}</span>`
 		},
 		{
 			key: 'next_run_at',
 			label: t('cron.next_run', 'Next Run'),
 			sortable: true,
 			render: (val) =>
-				`<span class="text-muted-foreground text-xs">${val ? new Date(val as string).toLocaleString() : '—'}</span>`
+				`<span class="text-muted-foreground text-xs">${val ? escapeHtml(new Date(val as string).toLocaleString()) : '—'}</span>`
 		}
 	];
 
@@ -111,10 +117,29 @@
 		})();
 	}
 
+	function unpauseJob(job: CronJob) {
+		void (async () => {
+			message = '';
+			const result = await api(`/control/cron/jobs/${job.id}/unpause`, { method: 'POST' });
+			if (result.ok) {
+				message = t('cron.unpause_success', 'Job resumed successfully.');
+				messageType = 'success';
+				await load();
+			} else {
+				message = result.error || t('cron.unpause_error', 'Failed to resume job.');
+				messageType = 'error';
+			}
+		})();
+	}
+
 	function openEditModal(job?: CronJob) {
 		if (job) {
 			editingJob = job;
-			editForm = { type: job.type, spec: job.spec, payload: '{}' };
+			editForm = {
+				type: job.type,
+				spec: job.spec,
+				payload: job.payload || '{}'
+			};
 		} else {
 			editingJob = null;
 			editForm = { type: '', spec: '', payload: '{}' };
@@ -128,13 +153,26 @@
 		editForm = { type: '', spec: '', payload: '{}' };
 	}
 
+	let formValid = $derived(editForm.type.trim() !== '' && editForm.spec.trim() !== '');
+
 	async function submitJob() {
+		if (!formValid) return;
+		// Validate payload JSON
+		try {
+			JSON.parse(editForm.payload);
+		} catch {
+			message = t('cron.invalid_payload', 'Payload must be valid JSON.');
+			messageType = 'error';
+			return;
+		}
+
 		saving = true;
 		message = '';
+		const body = { type: editForm.type.trim(), spec: editForm.spec.trim(), payload: editForm.payload };
 		if (editingJob) {
 			const result = await api(`/control/cron/jobs/${editingJob.id}`, {
 				method: 'PATCH',
-				body: { type: editForm.type, spec: editForm.spec, payload: editForm.payload }
+				body
 			});
 			if (result.ok) {
 				message = t('cron.update_success', 'Job updated successfully.');
@@ -148,7 +186,7 @@
 		} else {
 			const result = await api<CronJob>('/control/cron/jobs', {
 				method: 'POST',
-				body: { type: editForm.type, spec: editForm.spec, payload: editForm.payload }
+				body
 			});
 			if (result.ok) {
 				message = t('cron.create_success', 'Job created successfully.');
@@ -171,9 +209,11 @@
 	async function handleDelete() {
 		if (!deletingJob) return;
 		message = '';
-		const result = await api(`/control/cron/jobs/${deletingJob.id}`, { method: 'DELETE' });
+		const result = await api<{ id: string; status: string }>(`/control/cron/jobs/${deletingJob.id}`, { method: 'DELETE' });
 		if (result.ok) {
-			message = t('cron.delete_success', 'Job deleted successfully.');
+			message = result.data.status === 'paused'
+				? t('cron.delete_system_note', 'System job paused (cannot be deleted).')
+				: t('cron.delete_success', 'Job deleted successfully.');
 			messageType = 'success';
 			await load();
 		} else {
@@ -187,18 +227,31 @@
 	async function load() {
 		loading = true;
 		message = '';
-		const result = await api<CronJob[]>('/control/cron/jobs');
-		if (result.ok) {
-			jobs = result.data;
+		try {
+			const result = await api<CronJob[]>('/control/cron/jobs');
+			if (result.ok) {
+				jobs = result.data;
+			} else {
+				message = result.error || t('cron.load_error', 'Failed to load cron jobs.');
+				messageType = 'error';
+			}
+		} catch {
+			message = t('cron.load_error', 'Failed to load cron jobs.');
+			messageType = 'error';
+		} finally {
+			loading = false;
 		}
-		loading = false;
 	}
+
+	$effect(() => {
+		load();
+	});
 
 	let filteredJobs = $derived(
 		filterStatus !== 'all'
 			? jobs.filter((j) => {
-					if (filterStatus === 'active') return true;
-					if (filterStatus === 'paused') return false;
+					if (filterStatus === 'active') return !j.paused;
+					if (filterStatus === 'paused') return j.paused;
 					return true;
 				})
 			: jobs
@@ -229,7 +282,7 @@
 		return sortedJobs.slice(start, start + pageSize);
 	});
 
-	let rowActions: DataTableRowAction[] = [
+	const rowActions: DataTableRowAction[] = [
 		{
 			label: t('cron.run_now', 'Run now'),
 			icon: Play,
@@ -238,12 +291,20 @@
 		{
 			label: t('cron.edit', 'Edit'),
 			icon: Pencil,
-			onClick: (row) => openEditModal(row as unknown as CronJob)
+			onClick: (row) => openEditModal(row as unknown as CronJob),
+			disabled: (row) => (row as unknown as CronJob).source !== 'custom'
 		},
 		{
 			label: t('cron.pause', 'Pause'),
 			icon: Pause,
-			onClick: (row) => pauseJob(row as unknown as CronJob)
+			onClick: (row) => pauseJob(row as unknown as CronJob),
+			disabled: (row) => (row as unknown as CronJob).paused
+		},
+		{
+			label: t('cron.resume', 'Resume'),
+			icon: PlayCircle,
+			onClick: (row) => unpauseJob(row as unknown as CronJob),
+			disabled: (row) => !(row as unknown as CronJob).paused
 		},
 		{
 			label: t('cron.delete', 'Delete'),
@@ -343,10 +404,11 @@
 			</Dialog.Title>
 			<div class="mt-4 space-y-4">
 				<div>
-					<label class="text-foreground mb-1 block text-sm font-medium">
+					<label for="cron-type" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.job_type', 'Job Type')}
 					</label>
 					<input
+						id="cron-type"
 						type="text"
 						bind:value={editForm.type}
 						class="border-border-input bg-background text-foreground w-full rounded-5px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
@@ -354,10 +416,11 @@
 					/>
 				</div>
 				<div>
-					<label class="text-foreground mb-1 block text-sm font-medium">
+					<label for="cron-spec" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.schedule', 'Schedule')}
 					</label>
 					<input
+						id="cron-spec"
 						type="text"
 						bind:value={editForm.spec}
 						class="border-border-input bg-background text-foreground w-full rounded-5px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
@@ -368,10 +431,11 @@
 					</p>
 				</div>
 				<div>
-					<label class="text-foreground mb-1 block text-sm font-medium">
+					<label for="cron-payload" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.payload', 'Payload')} (JSON)
 					</label>
 					<textarea
+						id="cron-payload"
 						bind:value={editForm.payload}
 						rows="4"
 						class="border-border-input bg-background text-foreground w-full rounded-5px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
@@ -389,7 +453,7 @@
 				<button
 					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
 					onclick={submitJob}
-					disabled={saving}
+					disabled={saving || !formValid}
 				>
 					{saving
 						? t('common.saving', 'Saving...')
@@ -406,7 +470,9 @@
 	bind:open={deleteModalOpen}
 	title={t('cron.delete_job', 'Delete Job')}
 	consequence={deletingJob
-		? t('cron.delete_confirm', 'This will permanently delete the cron job. This action cannot be undone.')
+		? deletingJob.source === 'system'
+			? t('cron.delete_system_confirm', 'System jobs cannot be deleted. The job will be paused instead.')
+			: t('cron.delete_confirm', 'This will permanently delete the cron job. This action cannot be undone.')
 		: ''}
 	confirmText="DELETE"
 	onConfirm={handleDelete}

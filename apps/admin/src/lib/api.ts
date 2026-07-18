@@ -195,6 +195,10 @@ export const professionalAdminApi = {
 	getType: (id: string) => api<ProfileTypeDetail>(`/profiles/types/${id}`),
 	createType: (body: { name: string; slug: string; description: string }) =>
 		api<ProfileType>('/profiles/types', { method: 'POST', body }),
+	updateType: (id: string, body: { name?: string; slug?: string; description?: string }) =>
+		api<ProfileType>(`/profiles/types/${id}`, { method: 'PATCH', body }),
+	deleteType: (id: string) =>
+		api<{ deleted: boolean }>(`/profiles/types/${id}`, { method: 'DELETE' }),
 	listMembers: (profileId: string) =>
 		api<ProfileMember[]>(`/profiles/${profileId}/members`),
 	addMember: (profileId: string, body: { user_id: string; role: string }) =>
@@ -409,10 +413,16 @@ export const tagsAdminApi = {
 		api(`/admin/tags/${id}`, { method: 'DELETE' }),
 	addModerator: (id: string, body: { user_id: string }) =>
 		api(`/admin/tags/${id}/moderators`, { method: 'POST', body }),
+	getModerators: (id: string) =>
+		api<unknown>(`/admin/tags/${id}/moderators`),
 };
 
 export const organisationsAdminApi = {
 	list: (params?: string) => api<unknown>(`/organizations${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/organizations/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/organizations', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) => api<unknown>(`/organizations/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/organizations/${id}`, { method: 'DELETE' }),
 	verify: (id: string, body: { verified: boolean }) =>
 		api(`/admin/organizations/${id}/verify`, { method: 'POST', body }),
 	unverify: (id: string) =>
@@ -808,7 +818,89 @@ export const affiliateLinksAdminApi = {
 		api<unknown>(`/admin/affiliate-links${params ? `?${params}` : ''}`),
 };
 
+export const affiliateProvidersAdminApi = {
+	list: (params?: string) =>
+		api<unknown>(`/admin/affiliate-providers${params ? `?${params}` : ''}`),
+	get: (id: string) =>
+		api<unknown>(`/admin/affiliate-providers/${id}`),
+	create: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/affiliate-providers', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/affiliate-providers/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api<{ deleted: boolean }>(`/admin/affiliate-providers/${id}`, { method: 'DELETE' }),
+};
+
 export const auditLogsAdminApi = {
 	list: (params?: string) =>
 		api<unknown>(`/admin/audit-logs${params ? `?${params}` : ''}`),
+};
+
+export const menusAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/menus${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/menus/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/menus', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/menus/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/menus/${id}`, { method: 'DELETE' }),
+	addItem: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/menus/${id}/items`, { method: 'POST', body }),
+	updateItem: (id: string, itemId: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/menus/${id}/items/${itemId}`, { method: 'PATCH', body }),
+	deleteItem: (id: string, itemId: string) =>
+		api<{ deleted: boolean }>(`/admin/menus/${id}/items/${itemId}`, { method: 'DELETE' }),
+	reorderItems: (id: string, body: { item_ids: string[] }) =>
+		api<unknown>(`/admin/menus/${id}/items/reorder`, { method: 'POST', body }),
+};
+
+export const emailTemplatesAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/email-templates${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/email-templates/${id}`),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/email-templates/${id}`, { method: 'PATCH', body }),
+	reset: (id: string) => api<unknown>(`/admin/email-templates/${id}/reset`, { method: 'POST', body: {} }),
+	test: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/email-templates/${id}/test`, { method: 'POST', body }),
+};
+
+export const redirectsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/redirects${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/redirects/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/redirects', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/redirects/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/redirects/${id}`, { method: 'DELETE' }),
+	bulkDelete: (body: { ids: string[] }) =>
+		api<unknown>('/admin/redirects/bulk', { method: 'POST', body }),
+};
+
+export const gdprAdminApiExtendedV2 = {
+	listConsents: (params?: string) => api<unknown>(`/admin/consents${params ? `?${params}` : ''}`),
+};
+
+export const aiModelsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/ai/models${params ? `?${params}` : ''}`),
+};
+
+export const spacesModeratorsAdminApi = {
+	add: (id: string, body: { user_id: string }) =>
+		api<unknown>(`/admin/spaces/${id}/moderators`, { method: 'POST', body }),
+	remove: (id: string, moderatorId: string) =>
+		api<{ removed: boolean }>(`/admin/spaces/${id}/moderators/${moderatorId}`, { method: 'DELETE' }),
+};
+
+export const tagsModeratorsAdminApi = {
+	add: (id: string, body: { user_id: string }) =>
+		api<unknown>(`/admin/tags/${id}/moderators`, { method: 'POST', body }),
+	remove: (id: string, userId: string) =>
+		api<{ removed: boolean }>(`/admin/tags/${id}/moderators/${userId}`, { method: 'DELETE' }),
+};
+
+export const profilesAdminApiV2 = {
+	unverify: (id: string) =>
+		api<unknown>(`/admin/profiles/${id}/verify`, { method: 'DELETE' }),
+};
+
+export const usersWarningsAdminApi = {
+	list: (id: string) => api<unknown>(`/admin/users/${id}/warnings`),
 };

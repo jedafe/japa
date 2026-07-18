@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { api } from "$lib/api";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
@@ -10,7 +11,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Select } from "$lib/components/ui/select";
-	import { Download, Plus, RefreshCw, Clock, CheckCircle, XCircle, FileDown } from "lucide-svelte";
+	import { Download, Plus, RefreshCw, Clock, CheckCircle, XCircle, FileDown, Eye, Trash2 } from "lucide-svelte";
 
 	type DataExport = {
 		id: string;
@@ -35,6 +36,11 @@
 	let saving = $state(false);
 	let errorMessage = $state("");
 	let successMessage = $state("");
+
+	let showViewModal = $state(false);
+	let viewTarget = $state<DataExport | null>(null);
+
+	const canManageExports = $derived(hasPermission("data-exports.manage"));
 
 	let form = $state({
 		name: "",
@@ -98,8 +104,8 @@
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
-					<p class="font-medium text-gray-900">${row.name}</p>
-					<p class="text-xs text-gray-500">${row.type} · ${row.format.toUpperCase()}</p>
+					<p class="font-medium text-foreground">${row.name}</p>
+					<p class="text-xs text-muted">${row.type} · ${row.format.toUpperCase()}</p>
 				</div>
 			`
 		},
@@ -111,12 +117,12 @@
 				const variant = statusVariant(value);
 				const cls =
 					variant === "success"
-						? "bg-success-100 text-success-800 border-success-200"
+						? "bg-success/15 text-success border-success"
 						: variant === "destructive"
-							? "bg-danger-100 text-danger-800 border-danger-200"
+							? "bg-danger/15 text-danger border-danger"
 							: variant === "warning"
-								? "bg-warning-100 text-warning-800 border-warning-200"
-								: "bg-gray-100 text-gray-800 border-gray-200";
+								? "bg-warning/15 text-warning border-warning"
+								: "bg-surface text-foreground border";
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${value.charAt(0).toUpperCase() + value.slice(1)}</span>`;
 			}
 		},
@@ -124,39 +130,25 @@
 			key: "fileSize",
 			label: "Size",
 			sortable: true,
-			render: (value: number | null) => `<span class="text-sm text-gray-600">${formatFileSize(value)}</span>`
+			render: (value: number | null) => `<span class="text-sm text-foreground-alt">${formatFileSize(value)}</span>`
 		},
 		{
 			key: "createdAt",
 			label: "Created",
 			sortable: true,
-			render: (value: string) => `<span class="text-sm text-gray-600">${new Date(value).toLocaleString()}</span>`
+			render: (value: string) => `<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>`
 		},
 		{
 			key: "completedAt",
 			label: "Completed",
 			sortable: true,
-			render: (value: string | null) => value ? `<span class="text-sm text-gray-600">${new Date(value).toLocaleString()}</span>` : `<span class="text-sm text-gray-400">—</span>`
+			render: (value: string | null) => value ? `<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>` : `<span class="text-sm text-muted">—</span>`
 		},
 		{
 			key: "actions",
 			label: "",
 			class: "w-24",
-			render: (_: any, row: any) => {
-				if (row.status === "completed" && row.fileUrl) {
-					return `
-						<div class="flex items-center gap-1">
-							<a href="${row.fileUrl}" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50">Download</a>
-							<button onclick="window.__deleteExport('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
-						</div>
-					`;
-				}
-				return `
-					<div class="flex items-center gap-1">
-						<button onclick="window.__deleteExport('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
-					</div>
-				`;
-			}
+			component: ExportActionsCell
 		}
 	];
 
@@ -193,6 +185,11 @@
 		saving = false;
 	}
 
+	function openView(ex: DataExport) {
+		viewTarget = ex;
+		showViewModal = true;
+	}
+
 	function openDeleteConfirm(id: string) {
 		deletingId = id;
 		deleteConfirmOpen = true;
@@ -220,13 +217,6 @@
 	$effect(() => {
 		loadExports();
 	});
-
-	$effect(() => {
-		(window as any).__deleteExport = openDeleteConfirm;
-		return () => {
-			delete (window as any).__deleteExport;
-		};
-	});
 </script>
 
 <svelte:head>
@@ -244,12 +234,12 @@
 
 <div class="space-y-6">
 	{#if errorMessage}
-		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
 			{errorMessage}
 		</div>
 	{/if}
 	{#if successMessage}
-		<div class="rounded-lg border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-700">
+		<div class="rounded-lg border border-success bg-success-50 px-4 py-3 text-sm text-success-700">
 			{successMessage}
 		</div>
 	{/if}
@@ -260,8 +250,8 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-gray-500">{t('app.data-exports.total_exports')}</p>
-						<p class="text-2xl font-bold text-gray-900">{exports.length}</p>
+						<p class="text-sm font-medium text-muted">{t('app.data-exports.total_exports')}</p>
+						<p class="text-2xl font-bold text-foreground">{exports.length}</p>
 					</div>
 					<div class="rounded-lg bg-primary-100 p-3">
 						<Download class="h-6 w-6 text-primary-600" />
@@ -273,12 +263,12 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-gray-500">{t('app.data-exports.in_progress')}</p>
+						<p class="text-sm font-medium text-muted">{t('app.data-exports.in_progress')}</p>
 						<p class="text-2xl font-bold text-warning-600">
 							{exports.filter((e) => e.status === "pending" || e.status === "processing").length}
 						</p>
 					</div>
-					<div class="rounded-lg bg-warning-100 p-3">
+					<div class="rounded-lg bg-warning/15 p-3">
 						<Clock class="h-6 w-6 text-warning-600" />
 					</div>
 				</div>
@@ -288,10 +278,10 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-gray-500">{t('app.data-exports.completed')}</p>
+						<p class="text-sm font-medium text-muted">{t('app.data-exports.completed')}</p>
 						<p class="text-2xl font-bold text-success-600">{exports.filter((e) => e.status === "completed").length}</p>
 					</div>
-					<div class="rounded-lg bg-success-100 p-3">
+					<div class="rounded-lg bg-success/15 p-3">
 						<CheckCircle class="h-6 w-6 text-success-600" />
 					</div>
 				</div>
@@ -301,10 +291,10 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-gray-500">{t('app.data-exports.failed')}</p>
+						<p class="text-sm font-medium text-muted">{t('app.data-exports.failed')}</p>
 						<p class="text-2xl font-bold text-danger-600">{exports.filter((e) => e.status === "failed").length}</p>
 					</div>
-					<div class="rounded-lg bg-danger-100 p-3">
+					<div class="rounded-lg bg-danger/15 p-3">
 						<XCircle class="h-6 w-6 text-danger-600" />
 					</div>
 				</div>
@@ -328,7 +318,7 @@
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
-				<p class="py-8 text-center text-sm text-gray-500">{t('app.data-exports.loading')}</p>
+				<p class="py-8 text-center text-sm text-muted">{t('app.data-exports.loading')}</p>
 			{:else}
 				<DataTable
 					columns={exportColumns}
@@ -345,22 +335,22 @@
 <Modal bind:open={createModalOpen} title="New Data Export" description="Queue a new data export job">
 	<div class="space-y-4">
 		<div>
-			<label for="export-name" class="mb-1 block text-sm font-medium text-gray-700">{t('app.data-exports.export_name')}</label>
+			<label for="export-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data-exports.export_name')}</label>
 			<input
 				id="export-name"
 				type="text"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="e.g., Users Q1 2024"
 				bind:value={form.name}
 			/>
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="export-type" class="mb-1 block text-sm font-medium text-gray-700">{t('app.data-exports.data_type')}</label>
+				<label for="export-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data-exports.data_type')}</label>
 				<Select bind:value={form.type} options={exportTypes} />
 			</div>
 			<div>
-				<label for="export-format" class="mb-1 block text-sm font-medium text-gray-700">{t('app.data-exports.format')}</label>
+				<label for="export-format" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data-exports.format')}</label>
 				<Select bind:value={form.format} options={formatOptions} />
 			</div>
 		</div>
@@ -369,9 +359,9 @@
 				id="export-metadata"
 				type="checkbox"
 				bind:checked={form.includeMetadata}
-				class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+				class="h-4 w-4 rounded border text-primary-600 focus:ring-primary"
 			/>
-			<label for="export-metadata" class="text-sm font-medium text-gray-700">{t('app.data-exports.include_metadata_timestamps_ids')}</label>
+			<label for="export-metadata" class="text-sm font-medium text-foreground-alt">{t('app.data-exports.include_metadata_timestamps_ids')}</label>
 		</div>
 		<div class="flex justify-end gap-3 pt-2">
 			<Button variant="outline" onclick={() => { createModalOpen = false; resetForm(); }}>{t('app.data-exports.cancel')}</Button>
@@ -382,10 +372,50 @@
 	</div>
 </Modal>
 
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title="Export Details">
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Name</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Type</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type} · {viewTarget.format.toUpperCase()}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Size</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatFileSize(viewTarget.fileSize)}</p>
+				</div>
+				<div class="col-span-2">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Created</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.createdAt).toLocaleString()}</p>
+				</div>
+				{#if viewTarget.status === "completed" && viewTarget.fileUrl}
+					<div class="col-span-2">
+						<a href={viewTarget.fileUrl} class="inline-flex items-center gap-1 text-sm font-medium" style="color: var(--color-primary)" download>
+							<Download class="h-3.5 w-3.5" /> Download file
+						</a>
+					</div>
+				{/if}
+			</div>
+		</div>
+		<div class="mt-6 flex justify-end">
+			<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+		</div>
+	{/if}
+</Modal>
+
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={deleteConfirmOpen} title="Confirm Delete" description="This action cannot be undone">
 	<div class="space-y-4">
-		<p class="text-sm text-gray-600">
+		<p class="text-sm text-foreground-alt">
 			Are you sure you want to delete this export? The downloaded file will no longer be available.
 		</p>
 		<div class="flex justify-end gap-3">
@@ -396,3 +426,16 @@
 		</div>
 	</div>
 </Modal>
+
+{#snippet ExportActionsCell(row: DataExport)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageExports}
+			<Button variant="ghost" size="sm" onclick={() => openDeleteConfirm(row.id)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

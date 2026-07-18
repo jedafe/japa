@@ -14,6 +14,27 @@ export interface ApiResult<T> {
 	status: number;
 }
 
+let refreshPromise: Promise<boolean> | null = null;
+
+async function attemptRefresh(): Promise<boolean> {
+	if (refreshPromise) return refreshPromise;
+	refreshPromise = (async () => {
+		try {
+			const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/auth/refresh`, {
+				method: 'POST',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+			});
+			return res.ok;
+		} catch {
+			return false;
+		} finally {
+			refreshPromise = null;
+		}
+	})();
+	return refreshPromise;
+}
+
 export async function apiFetch<T>(
 	path: string,
 	options: RequestInit = {},
@@ -33,11 +54,20 @@ export async function apiFetch<T>(
 		});
 
 		if (res.status === 401) {
-			// In development mode with mock token, don't redirect to login
-			const isDev = typeof window !== 'undefined' &&
-				(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-			if (!isDev && typeof window !== 'undefined') {
-				window.location.href = '/login';
+			const refreshed = await attemptRefresh();
+			if (refreshed) {
+				const retryRes = await fetcher(url, {
+					...options,
+					credentials: 'include',
+					headers: {
+						'Content-Type': 'application/json',
+						...options.headers,
+					},
+				});
+				if (retryRes.ok) {
+					const body = await retryRes.json();
+					return { data: (body as ApiOk<T>).data, error: null, status: retryRes.status };
+				}
 			}
 			return { data: null, error: { code: 'unauthorized', message: 'Session expired', status: 401 }, status: 401 };
 		}

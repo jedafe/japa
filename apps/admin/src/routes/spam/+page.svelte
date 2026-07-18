@@ -7,9 +7,10 @@
 	import { Select } from "$lib/components/ui/select";
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw, Plus, Trash2, Ban, MessageSquareOff, Users } from "lucide-svelte";
+	import { RefreshCw, Plus, Trash2, Ban, MessageSquareOff, Users, Eye } from "lucide-svelte";
 	import { spamApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type IpBlock = {
 		id: string;
@@ -39,6 +40,12 @@
 	let error = $state("");
 	let success = $state("");
 
+	// View modal
+	let showViewModal = $state(false);
+	let viewTarget = $state<{ kind: string; row: any } | null>(null);
+
+	const canManageSpam = $derived(hasPermission("spam.manage"));
+
 	// IP Blocks
 	let ipBlocks = $state<IpBlock[]>([]);
 	let showIpModal = $state(false);
@@ -67,12 +74,7 @@
 		{ key: "block_type", label: t("spam.block_type", "Type"), sortable: true },
 		{ key: "reason", label: t("spam.reason", "Reason"), render: (v: string) => v || "—" },
 		{ key: "expires_at", label: t("spam.expires", "Expires"), render: (v: string) => v || t("spam.never", "Never") },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24",
-			render: (_: any, row: IpBlock) => `
-				<button onclick="window.__spamDeleteIp('${row.id}')" class="inline-flex items-center justify-center rounded-md p-1.5 text-danger-700 hover:bg-danger-50 transition-colors" title="${t("common.delete", "Delete")}">
-					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-				</button>`
-		}
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", component: IpActionsCell }
 	];
 
 	const cwColumns = [
@@ -80,14 +82,14 @@
 		{ key: "action", label: t("spam.action", "Action"), sortable: true },
 		{ key: "replacement", label: t("spam.replacement", "Replacement"), render: (v: string) => v || "—" },
 		{ key: "created_at", label: t("common.created", "Created"), render: (v: string) => v ? new Date(v).toLocaleDateString() : "—" },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24" }
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", component: CwActionsCell }
 	];
 
 	const ubColumns = [
 		{ key: "blocker_id", label: t("spam.blocker", "Blocker") },
 		{ key: "blocked_id", label: t("spam.blocked", "Blocked") },
 		{ key: "created_at", label: t("common.created", "Created"), render: (v: string) => v ? new Date(v).toLocaleDateString() : "—" },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24" }
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", component: UbActionsCell }
 	];
 
 	async function loadIpBlocks() {
@@ -189,6 +191,11 @@
 		}
 	}
 
+	function openView(kind: string, row: any) {
+		viewTarget = { kind, row };
+		showViewModal = true;
+	}
+
 	function confirmDelete(type: string, id: string, secondaryId?: string) {
 		deleteTarget = { type, id, secondaryId };
 		showDeleteConfirm = true;
@@ -259,9 +266,11 @@
 {#if activeTab === "ip-blocks"}
 	<div class="mb-4 flex items-center justify-between">
 		<p class="text-sm" style="color: var(--color-muted)">{ipBlocks.length} {t("spam.ip_blocks_count", "IP blocks configured")}</p>
-		<Button onclick={() => { ipForm = { cidr: "", block_type: "permanent", reason: "", expires_at: "" }; showIpModal = true; }}>
-			<Plus class="mr-2 h-4 w-4" /> {t("spam.add_ip_block", "Add IP Block")}
-		</Button>
+		{#if canManageSpam}
+			<Button onclick={() => { ipForm = { cidr: "", block_type: "permanent", reason: "", expires_at: "" }; showIpModal = true; }}>
+				<Plus class="mr-2 h-4 w-4" /> {t("spam.add_ip_block", "Add IP Block")}
+			</Button>
+		{/if}
 	</div>
 	<Card>
 		<CardContent>
@@ -278,9 +287,11 @@
 {#if activeTab === "censored-words"}
 	<div class="mb-4 flex items-center justify-between">
 		<p class="text-sm" style="color: var(--color-muted)">{censoredWords.length} {t("spam.patterns_count", "patterns configured")}</p>
-		<Button onclick={() => { cwForm = { pattern: "", action: "block", replacement: "" }; showCwModal = true; }}>
-			<Plus class="mr-2 h-4 w-4" /> {t("spam.add_pattern", "Add Pattern")}
-		</Button>
+	{#if canManageSpam}
+			<Button onclick={() => { cwForm = { pattern: "", action: "block", replacement: "" }; showCwModal = true; }}>
+				<Plus class="mr-2 h-4 w-4" /> {t("spam.add_pattern", "Add Pattern")}
+			</Button>
+		{/if}
 	</div>
 	<Card>
 		<CardContent>
@@ -310,20 +321,20 @@
 <Modal bind:open={showIpModal} title={t("spam.add_ip_block", "Add IP Block")}>
 	<div class="space-y-4">
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.cidr", "IP / CIDR")}</label>
-			<input type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="192.168.1.0/24" bind:value={ipForm.cidr} />
+			<label for="ip-cidr" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.cidr", "IP / CIDR")}</label>
+			<input id="ip-cidr" type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="192.168.1.0/24" bind:value={ipForm.cidr} />
 		</div>
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.block_type", "Block Type")}</label>
+			<label for="ip-block-type" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.block_type", "Block Type")}</label>
 			<Select options={[{ value: "permanent", label: t("spam.permanent", "Permanent") }, { value: "temporary", label: t("spam.temporary", "Temporary") }]} bind:value={ipForm.block_type} />
 		</div>
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.reason", "Reason")}</label>
-			<input type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("spam.reason_placeholder", "Spam source")} bind:value={ipForm.reason} />
+			<label for="ip-reason" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.reason", "Reason")}</label>
+			<input id="ip-reason" type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("spam.reason_placeholder", "Spam source")} bind:value={ipForm.reason} />
 		</div>
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.expires", "Expires At")} ({t("common.optional", "optional")})</label>
-			<input type="datetime-local" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={ipForm.expires_at} />
+			<label for="ip-expires" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.expires", "Expires At")} ({t("common.optional", "optional")})</label>
+			<input id="ip-expires" type="datetime-local" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={ipForm.expires_at} />
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
@@ -336,16 +347,16 @@
 <Modal bind:open={showCwModal} title={t("spam.add_pattern", "Add Censored Pattern")}>
 	<div class="space-y-4">
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.pattern", "Pattern")}</label>
-			<input type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("spam.pattern_placeholder", "badword")} bind:value={cwForm.pattern} />
+			<label for="cw-pattern" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.pattern", "Pattern")}</label>
+			<input id="cw-pattern" type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("spam.pattern_placeholder", "badword")} bind:value={cwForm.pattern} />
 		</div>
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.action", "Action")}</label>
-			<Select options={[{ value: "block", label: t("spam.action_block", "Block") }, { value: "replace", label: t("spam.action_replace", "Replace") }, { value: "flag", label: t("spam.action_flag", "Flag") }]} bind:value={cwForm.action} />
+			<label for="cw-action" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.action", "Action")}</label>
+			<Select id="cw-action" options={[{ value: "block", label: t("spam.action_block", "Block") }, { value: "replace", label: t("spam.action_replace", "Replace") }, { value: "flag", label: t("spam.action_flag", "Flag") }]} bind:value={cwForm.action} />
 		</div>
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.replacement", "Replacement")} ({t("common.optional", "optional")})</label>
-			<input type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="***" bind:value={cwForm.replacement} />
+			<label for="cw-replacement" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.replacement", "Replacement")} ({t("common.optional", "optional")})</label>
+			<input id="cw-replacement" type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="***" bind:value={cwForm.replacement} />
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
@@ -367,4 +378,60 @@
 		<Button variant="destructive" onclick={executeDelete}>{t("common.delete", "Delete")}</Button>
 	</div>
 </Modal>
-dal>
+
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t("common.details", "Details")} size="sm">
+	{#if viewTarget}
+		<div class="space-y-4">
+			{#each Object.entries(viewTarget.row) as [k, v]}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{k}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{v === null || v === undefined || v === "" ? "—" : String(v)}</p>
+				</div>
+			{/each}
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t("common.close", "Close")}</Button>
+	</div>
+</Modal>
+
+<!-- Action Cells -->
+{#snippet IpActionsCell(row: IpBlock)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView("ip-block", row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageSpam}
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete("ip-block", row.id)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet CwActionsCell(row: CensoredWord)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView("censored-word", row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageSpam}
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete("censored-word", row.id)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet UbActionsCell(row: UserBlock)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView("user-block", row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageSpam}
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete("user-block", row.blocker_id, row.blocked_id)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

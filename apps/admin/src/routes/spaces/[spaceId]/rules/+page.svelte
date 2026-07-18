@@ -172,20 +172,20 @@
 			</thead>
 			<tbody>
 				{#each rules as rule, i}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
+					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{i + 1}</td>
 						<td class="px-4 py-3 font-medium">{rule.title}</td>
 						<td class="px-4 py-3 text-xs max-w-xs truncate" style="color: var(--color-muted)">{rule.description || '—'}</td>
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-1">
 								<button
-									class="rounded p-0.5 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30"
+									class="rounded p-0.5 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-30"
 									disabled={i === 0}
 									onclick={() => moveUp(rule, i)}
 									aria-label="Move up"
 								>&#9650;</button>
 								<button
-									class="rounded p-0.5 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-30"
+									class="rounded p-0.5 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-30"
 									disabled={i === rules.length - 1}
 									onclick={() => moveDown(rule, i)}
 									aria-label="Move down"
@@ -195,14 +195,14 @@
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-1">
 								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 									style="color: var(--color-info)"
 									onclick={() => openEdit(rule)}
 								>
 								{t('common.edit')}
 							</button>
 							<button
-								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 								style="color: var(--color-danger)"
 								onclick={() => confirmDelete(rule)}
 							>

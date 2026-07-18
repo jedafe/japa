@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { api, userManagementApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+
+	const canManage = $derived(hasPermission('admin.broadcast'));
 	import { Select } from '$lib/components/ui/select';
 	import Modal from '$lib/components/Modal.svelte';
+	import { Button } from '$lib/components/ui/button';
 
 	type Broadcast = {
 		id: string;
@@ -30,6 +34,10 @@
 	let scopes = $state([
 		{ value: 'all', label: t('broadcast.audiences.all') }
 	]);
+
+	// Delete confirmation
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<Broadcast | null>(null);
 
 	$effect(() => {
 		(async () => {
@@ -93,13 +101,21 @@
 		}
 	}
 
-	async function deleteBroadcast(id: string) {
-		if (!confirm(t('broadcast.confirm_delete'))) return;
+	function confirmDelete(bc: Broadcast) {
+		deleteTarget = bc;
+		showDeleteConfirm = true;
+	}
+
+	async function executeDelete() {
+		if (!deleteTarget) return;
 		try {
-			await api(`/admin/broadcasts/${id}`, { method: 'DELETE' });
-			broadcasts = broadcasts.filter((b) => b.id !== id);
+			await api(`/admin/broadcasts/${deleteTarget.id}`, { method: 'DELETE' });
+			broadcasts = broadcasts.filter((b) => b.id !== deleteTarget!.id);
 		} catch {
 			error = t('common.error');
+		} finally {
+			showDeleteConfirm = false;
+			deleteTarget = null;
 		}
 	}
 </script>
@@ -180,14 +196,14 @@
 			</div>
 
 			<div class="flex items-center gap-3 pt-2">
-				<button
+				{#if canManage}<button
 					class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
 					style="background-color: var(--color-primary)"
 					disabled={sending || !title || !message}
 					onclick={sendBroadcast}
 				>
 					{sending ? t('broadcast.sending') : scheduledAt ? t('broadcast.schedule_btn') : t('broadcast.send_now')}
-				</button>
+				</button>{/if}
 				{#if resultMsg}
 					<span class="text-sm font-medium" style="color: {resultType === 'success' ? 'var(--color-success)' : 'var(--color-danger)'}">{resultMsg}</span>
 				{/if}
@@ -217,12 +233,9 @@
 							<td class="px-4 py-3">{bc.recipient_count}</td>
 							<td class="px-4 py-3">{new Date(bc.sent_at).toLocaleDateString()}</td>
 							<td class="px-4 py-3 text-right">
-								<button
-									class="text-xs text-red-500 hover:text-red-700"
-									onclick={() => deleteBroadcast(bc.id)}
-								>
+								{#if canManage}<Button variant="ghost" size="sm" onclick={() => confirmDelete(bc)} style="color: var(--color-danger)">
 									{t('common.delete')}
-								</button>
+								</Button>{/if}
 							</td>
 						</tr>
 					{:else}
@@ -237,3 +250,17 @@
 		</div>
 	{/if}
 {/if}
+
+<!-- Delete Confirmation -->
+<Modal bind:open={showDeleteConfirm} title={t('common.confirmDelete', 'Confirm Delete')}>
+	{#if deleteTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('broadcast.confirm_delete', 'Delete broadcast')} <strong>{deleteTarget.title}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t('common.cannotUndo', 'This action cannot be undone.')}</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={executeDelete}>{t('common.delete', 'Delete')}</Button>
+	</div>
+</Modal>

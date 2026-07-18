@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api, fieldGroupsAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, Pencil, Trash2, Shield } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
 
@@ -47,6 +48,29 @@
 	let permissions = $state<FieldPermission[]>([]);
 	let permissionsLoading = $state(false);
 	let savingPermission = $state(false);
+
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<FieldGroup | null>(null);
+
+	const canManageFields = $derived(hasPermission('custom_fields.manage'));
+
+	function confirmDelete(group: FieldGroup) {
+		deleteTarget = group;
+		showDeleteConfirm = true;
+	}
+
+	async function executeDelete() {
+		if (!deleteTarget) return;
+		errorMessage = '';
+		try {
+			await api(`/admin/field-groups/${deleteTarget.id}`, { method: 'DELETE' });
+			groups = groups.filter((g) => g.id !== deleteTarget!.id);
+			showDeleteConfirm = false;
+			deleteTarget = null;
+		} catch {
+			errorMessage = t('common.error');
+		}
+	}
 
 	async function load() {
 		loading = true;
@@ -120,16 +144,6 @@
 			errorMessage = t('common.error');
 		} finally {
 			saving = false;
-		}
-	}
-
-	async function deleteGroup(id: string) {
-		errorMessage = '';
-		try {
-			await api(`/admin/field-groups/${id}`, { method: 'DELETE' });
-			groups = groups.filter((g) => g.id !== id);
-		} catch {
-			errorMessage = t('common.error');
 		}
 	}
 
@@ -242,15 +256,17 @@
 							<td class="px-4 py-3 text-xs">{group.field_count}</td>
 							<td class="px-4 py-3 text-right">
 								<div class="flex items-center justify-end gap-1">
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => openPermissions(group)} title={t('fieldGroups.permissions')}>
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openPermissions(group)} title={t('fieldGroups.permissions')}>
 										<Shield class="h-3 w-3" style="color: var(--color-primary)" />
 									</button>
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => openEdit(group)}>
-										<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
-									</button>
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => deleteGroup(group.id)}>
-										<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-									</button>
+									{#if canManageFields}
+										<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(group)}>
+											<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
+										</button>
+										<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => confirmDelete(group)}>
+											<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
+										</button>
+									{/if}
 								</div>
 							</td>
 						</tr>
@@ -339,4 +355,11 @@
 			<input id="fg-entity" type="text" bind:value={entityType} required class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
 		</div>
 	</div>
+</Modal>
+
+<!-- Delete Confirmation -->
+<Modal bind:open={showDeleteConfirm} title={t('fieldGroups.confirm_delete')} confirmLabel={t('common.delete')} onConfirm={executeDelete}>
+	<p class="text-sm" style="color: var(--color-muted)">
+		{t('fieldGroups.delete_confirm')} <strong>{deleteTarget?.name}</strong>?
+	</p>
 </Modal>

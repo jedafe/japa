@@ -1,8 +1,18 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
   import type { Component, Snippet } from "svelte";
+  import { Button } from "$lib/components/ui/button";
+
+  function sanitizeHtml(html: string): string {
+    return html.replace(
+      /<(?!\/?(span|b|i|strong|em|code)\b)[^>]*>/gi,
+      ''
+    ).replace(/\son\w+="[^"]*"/gi, '').replace(/\son\w+='[^']*'/gi, '');
+  }
 
   type Column = {
     key: string;
@@ -11,34 +21,58 @@
     class?: string;
     render?: (value: any, row: any) => string;
     component?: Component<any> | ((...args: any[]) => any);
+    componentProps?: Record<string, any>;
   };
 
-  let {
-    columns,
-    data = [],
-    selectable = false,
-    selectedIds = $bindable(new Set<string>()),
-    onrowclick,
-    emptyMessage = "No data available",
-    class: className,
-    showPagination = true,
-    loading = false,
-    pageSize
-  }: {
-    columns: Column[];
-    data?: any[];
-    selectable?: boolean;
-    selectedIds?: Set<string>;
-    onrowclick?: (row: any) => void;
-    emptyMessage?: string;
-    class?: ClassValue;
-    showPagination?: boolean;
-    loading?: boolean;
-    pageSize?: number;
-  } = $props();
+   let {
+     columns,
+     data = [],
+     selectable = false,
+     selectedIds = $bindable(new Set<string>()),
+     onrowclick,
+     emptyMessage = "No data available",
+     class: className,
+     showPagination = true,
+     loading = false,
+     pageSize,
+     bulkActions,
+     urlSync = false,
+     defaultBulkActions = false,
+     onbulkclear,
+     onsortchange
+   }: {
+     columns: Column[];
+     data?: any[];
+     selectable?: boolean;
+     selectedIds?: Set<string>;
+     onrowclick?: (row: any) => void;
+     emptyMessage?: string;
+     class?: ClassValue;
+     showPagination?: boolean;
+     loading?: boolean;
+     pageSize?: number;
+     bulkActions?: Snippet;
+     urlSync?: boolean;
+     defaultBulkActions?: boolean;
+     onbulkclear?: () => void;
+     onsortchange?: (sort: { key: string | null; dir: "asc" | "desc" }) => void;
+   } = $props();
 
+   // Bulk actions can be provided either as a `bulkActions` snippet prop or as a
+   // child `{#snippet bulkActions()}`. Normalise to a renderable snippet.
+   const bulkActionsSnippet = $derived(bulkActions);
+
+  // URL-driven sort (opt-in). Reads initial ?sort=/?dir= and writes back via goto.
+  const urlParams = $derived(page.url.searchParams);
   let sortColumn = $state<string | null>(null);
   let sortDirection = $state<"asc" | "desc">("asc");
+
+  $effect(() => {
+    if (urlSync) {
+      sortColumn = urlParams.get("sort") ?? null;
+      sortDirection = (urlParams.get("dir") as "asc" | "desc") ?? "asc";
+    }
+  });
 
   let sortedData = $derived.by(() => {
     let sorted = [...data];
@@ -62,6 +96,18 @@
       sortColumn = column;
       sortDirection = "asc";
     }
+    onsortchange?.({ key: sortColumn, dir: sortDirection });
+    if (urlSync) {
+      const params = new URLSearchParams(page.url.searchParams.toString());
+      if (sortColumn) {
+        params.set("sort", sortColumn);
+        params.set("dir", sortDirection);
+      } else {
+        params.delete("sort");
+        params.delete("dir");
+      }
+      goto(`?${params.toString()}`, { keepFocus: true, noScroll: true });
+    }
   }
 
   function toggleRow(row: any) {
@@ -80,6 +126,11 @@
     } else {
       selectedIds = new Set(sortedData.map(r => r.id));
     }
+  }
+
+  function clearSelection() {
+    selectedIds = new Set();
+    onbulkclear?.();
   }
 </script>
 
@@ -155,9 +206,9 @@
             {#each columns as column}
               <td class="p-4 align-middle" style="border-color: var(--color-border)">
                 {#if column.component}
-                  <column.component value={row[column.key]} {row} />
+                  <column.component value={row[column.key]} {row} {...column.componentProps ?? {}} />
                 {:else if column.render}
-                  {@html column.render(row[column.key], row)}
+                  {@html sanitizeHtml(column.render(row[column.key], row))}
                 {:else}
                   {row[column.key] ?? "—"}
                 {/if}
@@ -176,4 +227,13 @@
       </tbody>
     </table>
   </div>
+  {#if selectable && selectedIds.size > 0 && (bulkActionsSnippet || defaultBulkActions)}
+    <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg p-3" style="background: color-mix(in srgb, var(--color-primary) 12%, transparent)">
+      <span class="text-sm font-medium" style="color: var(--color-foreground)">{selectedIds.size} selected</span>
+      {#if bulkActionsSnippet}
+        {@render bulkActionsSnippet()}
+      {/if}
+      <Button variant="ghost" size="sm" onclick={clearSelection} style="margin-left: auto">{t('common.clear', 'Clear')}</Button>
+    </div>
+  {/if}
 </div>

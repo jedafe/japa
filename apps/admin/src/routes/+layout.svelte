@@ -12,6 +12,7 @@
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import '../app.css';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 
 	let { children } = $props();
@@ -38,9 +39,11 @@
 				}
 			} else {
 				clearUser();
+				if (!isAuthPage) goto('/login');
 			}
 		} catch {
 			clearUser();
+			if (!isAuthPage) goto('/login');
 		} finally {
 			loading = false;
 		}
@@ -59,8 +62,60 @@
 		'/ai': 'admin.ai.view',
 		'/blog': 'blog.review.manage',
 		'/feature-flags': 'admin.feature_flags.view',
-		'/gdpr': 'admin.moderation.view',
-		'/moderation/alerts': 'admin.moderation.view'
+		'/gdpr': 'gdpr.deletions.view',
+		'/moderation/alerts': 'moderation.alerts.manage',
+		'/spaces': 'spaces.admin',
+		'/tags': 'tags.manage',
+		'/universities': 'admin.settings',
+		'/organisations': 'organizations.manage',
+		'/profiles': 'professional.manage',
+		'/reactions': 'content.reaction_types.manage',
+		'/media': 'media.view_all',
+		'/tickets': 'tickets.admin',
+		'/ticket-types': 'tickets.type.manage',
+		'/bots': 'bots.admin',
+		'/broadcasts': 'admin.broadcast',
+		'/broadcast': 'admin.broadcast',
+		'/webhooks': 'webhooks.manage',
+		'/menus': 'menus.manage',
+		'/redirects': 'redirects.manage',
+		'/email-templates': 'email.templates.manage',
+		'/spam': 'spam.ip_block.manage',
+		'/newsletter': 'newsletter.admin',
+		'/comparisons': 'comparison.type.create',
+		'/comparison-types': 'comparison.type.create',
+		'/coupons': 'coupons.manage',
+		'/discount-codes': 'payments.discount_codes.manage',
+		'/referral': 'referral.admin',
+		'/mentorship': 'mentorship.admin',
+		'/learning': 'learning.admin.manage',
+		'/reviews': 'reviews.moderate',
+		'/notifications': 'notifications.manage',
+		'/notification-types': 'notifications.manage',
+		'/forms': 'forms.create',
+		'/custom-fields': 'custom_fields.group.view',
+		'/widgets': 'pagebuilder.blocks.manage',
+		'/jsonld-templates': 'content.jsonld.manage',
+		'/page-builder': 'pagebuilder.blocks.manage',
+		'/page-templates': 'pagebuilder.templates.manage',
+		'/translations': 'i18n.manage',
+		'/search': 'search.analytics.view',
+		'/professional-types': 'professional.manage',
+		'/space-types': 'space_types.create',
+		'/ads': 'ad.campaign.manage',
+		'/data-exports': 'gdpr.data_exports.view',
+		'/i18n': 'i18n.manage',
+		'/wallet': 'wallet.admin',
+		'/affiliate': 'affiliate.admin.view',
+		'/docs': 'docs.manage',
+		'/deletions': 'gdpr.deletions.view',
+		'/moderation-queue': 'admin.moderation.view',
+		'/moderation/content': 'moderation.content.review',
+		'/moderation/reports': 'reports.review',
+		'/moderation/appeals': 'moderation.appeal.review',
+		'/gdpr/audit-logs': 'gdpr.audit_logs.view',
+		'/gdpr/consents': 'gdpr.consents.view',
+		'/blog/review-queue': 'blog.review.manage'
 	};
 
 	let requiredPermission = $derived.by(() => {

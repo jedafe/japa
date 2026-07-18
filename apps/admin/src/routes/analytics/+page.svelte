@@ -24,13 +24,13 @@
 	let error = $state("");
 	
 	// Analytics data
-	let overview = $state<any>(null);
-	let security = $state<any>(null);
-	let userAnalytics = $state<any>(null);
-	let contentAnalytics = $state<any>(null);
-	let spaceAnalytics = $state<any>(null);
-	let revenueAnalytics = $state<any>(null);
-	let searchAnalytics = $state<any>(null);
+	let overview = $state<Record<string, unknown> | null>(null);
+	let security = $state<{ scans?: Array<Record<string, unknown>> } | null>(null);
+	let userAnalytics = $state<Array<Record<string, unknown>> | null>(null);
+	let contentAnalytics = $state<Array<Record<string, unknown>> | null>(null);
+	let spaceAnalytics = $state<Array<Record<string, unknown>> | null>(null);
+	let revenueAnalytics = $state<Array<Record<string, unknown>> | null>(null);
+	let searchAnalytics = $state<Array<Record<string, unknown>> | null>(null);
 	
 	async function loadAnalytics() {
 		loading = true;
@@ -46,13 +46,13 @@
 				analyticsAdminApi.getSearch()
 			]);
 			
-			overview = overviewRes.status === 'fulfilled' && overviewRes.value.ok ? overviewRes.value.data : null;
-			security = securityRes.status === 'fulfilled' && securityRes.value.ok ? securityRes.value.data : null;
-			userAnalytics = usersRes.status === 'fulfilled' && usersRes.value.ok ? usersRes.value.data : null;
-			contentAnalytics = contentRes.status === 'fulfilled' && contentRes.value.ok ? contentRes.value.data : null;
-			spaceAnalytics = spacesRes.status === 'fulfilled' && spacesRes.value.ok ? spacesRes.value.data : null;
-			revenueAnalytics = revenueRes.status === 'fulfilled' && revenueRes.value.ok ? revenueRes.value.data : null;
-			searchAnalytics = searchRes.status === 'fulfilled' && searchRes.value.ok ? searchRes.value.data : null;
+			overview = overviewRes.status === 'fulfilled' && overviewRes.value.ok ? (overviewRes.value.data as Record<string, unknown>) : null;
+			security = securityRes.status === 'fulfilled' && securityRes.value.ok ? (securityRes.value.data as { scans?: Array<Record<string, unknown>> }) : null;
+			userAnalytics = usersRes.status === 'fulfilled' && usersRes.value.ok ? (usersRes.value.data as Array<Record<string, unknown>>) : null;
+			contentAnalytics = contentRes.status === 'fulfilled' && contentRes.value.ok ? (contentRes.value.data as Array<Record<string, unknown>>) : null;
+			spaceAnalytics = spacesRes.status === 'fulfilled' && spacesRes.value.ok ? (spacesRes.value.data as Array<Record<string, unknown>>) : null;
+			revenueAnalytics = revenueRes.status === 'fulfilled' && revenueRes.value.ok ? (revenueRes.value.data as Array<Record<string, unknown>>) : null;
+			searchAnalytics = searchRes.status === 'fulfilled' && searchRes.value.ok ? (searchRes.value.data as Array<Record<string, unknown>>) : null;
 		} catch (e) {
 			error = e instanceof Error ? e.message : "Failed to load analytics";
 		} finally {
@@ -77,43 +77,43 @@
 	const overviewCards = $derived([
 		{ 
 			label: "Total Users", 
-			value: overview?.totalUsers ?? 0, 
-			change: overview?.usersChange ?? 0, 
+			value: (overview?.totalUsers as number) ?? 0, 
+			change: (overview?.usersChange as number) ?? 0, 
 			icon: Users, 
 			color: "primary" 
 		},
 		{ 
 			label: "Active Users", 
-			value: overview?.activeUsers ?? 0, 
-			change: overview?.activeChange ?? 0, 
+			value: (overview?.activeUsers as number) ?? 0, 
+			change: (overview?.activeChange as number) ?? 0, 
 			icon: Users, 
 			color: "success" 
 		},
 		{ 
 			label: "New Signups", 
-			value: overview?.newSignups ?? 0, 
-			change: overview?.signupChange ?? 0, 
+			value: (overview?.newSignups as number) ?? 0, 
+			change: (overview?.signupChange as number) ?? 0, 
 			icon: UserPlus, 
 			color: "info" 
 		},
 		{ 
 			label: "Total Spaces", 
-			value: overview?.totalSpaces ?? 0, 
-			change: overview?.spacesChange ?? 0, 
+			value: (overview?.totalSpaces as number) ?? 0, 
+			change: (overview?.spacesChange as number) ?? 0, 
 			icon: Eye, 
 			color: "warning" 
 		},
 		{ 
 			label: "Total Posts", 
-			value: overview?.totalPosts ?? 0, 
-			change: overview?.postsChange ?? 0, 
+			value: (overview?.totalPosts as number) ?? 0, 
+			change: (overview?.postsChange as number) ?? 0, 
 			icon: MessageSquare, 
 			color: "primary" 
 		},
 		{ 
 			label: "Revenue", 
-			value: `$${(overview?.revenue ?? 0).toLocaleString()}`, 
-			change: overview?.revenueChange ?? 0, 
+			value: `$${((overview?.revenue as number) ?? 0).toLocaleString()}`, 
+			change: (overview?.revenueChange as number) ?? 0, 
 			icon: DollarSign, 
 			color: "success" 
 		}
@@ -127,7 +127,7 @@
 			label: "Status", 
 			sortable: true,
 			render: (value: string) => {
-				const colors = value === 'passed' ? 'bg-success-100 text-success-800' : 'bg-danger-100 text-danger-800';
+				const colors = value === 'passed' ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger';
 				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${colors}">${value}</span>`;
 			}
 		},
@@ -146,8 +146,8 @@
 			await analyticsAdminApi.flushCache({ targets: "all" });
 			flushModalOpen = false;
 			goto("", { invalidateAll: true });
-		} catch (error) {
-			console.error("Failed to flush cache:", error);
+		} catch {
+			error = "Failed to flush cache";
 		} finally {
 			flushing = false;
 		}
@@ -155,7 +155,6 @@
 	
 	function handleExport() {
 		// TODO: Implement analytics export
-		console.log("Export analytics");
 	}
 </script>
 
@@ -188,10 +187,10 @@
 				<CardContent>
 					{#if loading}
 						<div class="h-64 animate-pulse rounded-lg" style="background: var(--color-surface)"></div>
-					{:else if (overview?.userGrowth ?? []).length > 0}
+					{:else if ((overview?.userGrowth as Array<{ date: string; count: number }>) ?? []).length > 0}
 						<div class="h-64">
 							<LineChart
-								data={(overview?.userGrowth ?? []).map((d: { date: string; count: number }) => ({ date: new Date(d.date), count: d.count }))}
+								data={((overview?.userGrowth as Array<{ date: string; count: number }>) ?? []).map((d) => ({ date: new Date(d.date), count: d.count }))}
 								x="date"
 								y="count"
 								props={{
@@ -216,10 +215,10 @@
 				<CardContent>
 					{#if loading}
 						<div class="h-64 animate-pulse rounded-lg" style="background: var(--color-surface)"></div>
-					{:else if (overview?.contentActivity ?? []).length > 0}
+					{:else if ((overview?.contentActivity as Array<{ date: string; count: number }>) ?? []).length > 0}
 						<div class="h-64">
 							<AreaChart
-								data={(overview?.contentActivity ?? []).map((d: { date: string; count: number }) => ({ date: new Date(d.date), count: d.count }))}
+								data={((overview?.contentActivity as Array<{ date: string; count: number }>) ?? []).map((d) => ({ date: new Date(d.date), count: d.count }))}
 								x="date"
 								y="count"
 								props={{

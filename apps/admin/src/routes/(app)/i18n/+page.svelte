@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { api, i18nAdminApiExtended } from '$lib/api';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
@@ -10,7 +11,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Select } from '$lib/components/ui/select';
-	import { Globe, Plus, Download, RefreshCw, FileText } from 'lucide-svelte';
+	import { Globe, Plus, Download, RefreshCw, FileText, Eye, Pencil, Trash2 } from 'lucide-svelte';
 
 	type Language = {
 		code: string;
@@ -43,6 +44,12 @@
 	let successMessage = $state('');
 	let creatingLocale = $state(false);
 
+	let showViewModal = $state(false);
+	let viewLanguage = $state<Language | null>(null);
+	let viewString = $state<TranslationEntry | null>(null);
+
+	const canManageI18n = $derived(hasPermission("i18n.manage"));
+
 	let form = $state({ code: '', name: '', flag: '' });
 
 	let tabs = $derived([
@@ -55,7 +62,7 @@
 			key: 'code',
 			label: 'Code',
 			sortable: true,
-			render: (value: string) => `<span class="font-mono text-sm text-gray-900">${value}</span>`
+			render: (value: string) => `<span class="font-mono text-sm text-foreground">${value}</span>`
 		},
 		{
 			key: 'name',
@@ -64,7 +71,7 @@
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-2">
 					<span class="text-lg">${row.flag || '🌐'}</span>
-					<span class="font-medium text-gray-900">${row.name}</span>
+					<span class="font-medium text-foreground">${row.name}</span>
 				</div>
 			`
 		},
@@ -78,8 +85,8 @@
 					status === 'default'
 						? 'bg-primary-100 text-primary-800 border-primary-200'
 						: status === 'enabled'
-							? 'bg-success-100 text-success-800 border-success-200'
-							: 'bg-gray-100 text-gray-800 border-gray-200';
+							? 'bg-success/15 text-success border-success'
+							: 'bg-surface text-foreground border';
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${status}</span>`;
 			}
 		},
@@ -87,11 +94,7 @@
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__deleteLanguage('${row.code}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
-				</div>
-			`
+			component: LanguageActionsCell
 		}
 	];
 
@@ -100,25 +103,20 @@
 			key: 'key',
 			label: 'Key',
 			sortable: true,
-			render: (value: string) => `<span class="font-mono text-sm text-gray-900">${value}</span>`
+			render: (value: string) => `<span class="font-mono text-sm text-foreground">${value}</span>`
 		},
 		{
 			key: 'value',
 			label: 'Value',
 			render: (_: any, row: any) => `
-				<div class="max-w-md truncate text-sm text-gray-700">${row.value || '—'}</div>
+				<div class="max-w-md truncate text-sm text-foreground-alt">${row.value || '—'}</div>
 			`
 		},
 		{
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__editTranslation('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.edit")}</button>
-					<button onclick="window.__deleteTranslation('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
-				</div>
-			`
+			component: TranslationActionsCell
 		}
 	];
 
@@ -147,6 +145,16 @@
 		loading = true;
 		await Promise.all([loadLanguages(), loadTranslations()]);
 		loading = false;
+	}
+
+	function openLanguageView(lang: Language) {
+		viewLanguage = lang;
+		showViewModal = true;
+	}
+
+	function openStringView(entry: TranslationEntry) {
+		viewString = entry;
+		showViewModal = true;
 	}
 
 	async function submitLanguage() {
@@ -230,26 +238,6 @@
 	$effect(() => {
 		loadData();
 	});
-
-	$effect(() => {
-		(window as any).__editTranslation = (id: string) => {
-			const entry = translations.find((tr) => tr.id === id);
-			if (entry) openEditModal(entry);
-		};
-		(window as any).__deleteTranslation = (id: string) => {
-			openDeleteConfirm(id);
-		};
-		(window as any).__deleteLanguage = (code: string) => {
-			// Deleting a locale is not supported by the backend; languages are derived
-			// from existing translation rows. Admins remove a locale by clearing its strings.
-			errorMessage = 'Language removal is managed by deleting its translation strings.';
-		};
-		return () => {
-			delete (window as any).__editTranslation;
-			delete (window as any).__deleteTranslation;
-			delete (window as any).__deleteLanguage;
-		};
-	});
 </script>
 
 <svelte:head>
@@ -267,12 +255,12 @@
 
 <div class="space-y-6">
 	{#if errorMessage}
-		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
 			{errorMessage}
 		</div>
 	{/if}
 	{#if successMessage}
-		<div class="rounded-lg border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-700">
+		<div class="rounded-lg border border-success bg-success-50 px-4 py-3 text-sm text-success-700">
 			{successMessage}
 		</div>
 	{/if}
@@ -283,7 +271,7 @@
 		<Card>
 			<CardContent class="p-0">
 				{#if loading}
-					<p class="py-8 text-center text-sm text-gray-500">Loading...</p>
+					<p class="py-8 text-center text-sm text-muted">Loading...</p>
 				{:else}
 					<DataTable
 						columns={languageColumns}
@@ -298,7 +286,7 @@
 
 	{#if activeTab === 'translations'}
 		<div class="mb-4 flex items-center gap-3">
-			<label for="locale-select" class="text-sm font-medium text-gray-700">Language</label>
+			<label for="locale-select" class="text-sm font-medium text-foreground-alt">Language</label>
 			<Select
 				options={languages.map((l) => ({ value: l.code, label: l.name }))}
 				value={selectedLocale}
@@ -312,7 +300,7 @@
 		<Card>
 			<CardContent class="p-0">
 				{#if loading}
-					<p class="py-8 text-center text-sm text-gray-500">Loading...</p>
+					<p class="py-8 text-center text-sm text-muted">Loading...</p>
 				{:else}
 					<DataTable
 						columns={translationColumns}
@@ -330,36 +318,36 @@
 <Modal bind:open={createModalOpen} title={t('app.i18n.add_language')} description={t('app.i18n.add_language_desc')}>
 	<div class="space-y-4">
 		<div>
-			<label for="lang-code" class="mb-1 block text-sm font-medium text-gray-700">Language Code</label>
+			<label for="lang-code" class="mb-1 block text-sm font-medium text-foreground-alt">Language Code</label>
 			<input
 				id="lang-code"
 				type="text"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="e.g., es"
 				bind:value={form.code}
 			/>
 		</div>
 		<div>
-			<label for="lang-name" class="mb-1 block text-sm font-medium text-gray-700">Language Name</label>
+			<label for="lang-name" class="mb-1 block text-sm font-medium text-foreground-alt">Language Name</label>
 			<input
 				id="lang-name"
 				type="text"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="e.g., Spanish"
 				bind:value={form.name}
 			/>
 		</div>
 		<div>
-			<label for="lang-flag" class="mb-1 block text-sm font-medium text-gray-700">Flag Emoji (optional)</label>
+			<label for="lang-flag" class="mb-1 block text-sm font-medium text-foreground-alt">Flag Emoji (optional)</label>
 			<input
 				id="lang-flag"
 				type="text"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="e.g., 🇪🇸"
 				bind:value={form.flag}
 			/>
 		</div>
-		<p class="text-xs text-gray-500">{t('app.i18n.add_language_note')}</p>
+		<p class="text-xs text-muted">{t('app.i18n.add_language_note')}</p>
 		<div class="flex justify-end gap-3 pt-2">
 			<Button variant="outline" onclick={() => (createModalOpen = false)}>${t("common.cancel")}</Button>
 			<Button onclick={submitLanguage} disabled={creatingLocale || !form.code.trim() || !form.name.trim()}>
@@ -374,15 +362,15 @@
 	{#if editingString}
 		<div class="space-y-4">
 			<div>
-				<label class="mb-1 block text-sm font-medium text-gray-700">Key</label>
-				<p class="rounded-lg bg-gray-50 px-3 py-2 font-mono text-xs text-gray-600">{editingString.key}</p>
+				<label for="edit-key" class="mb-1 block text-sm font-medium text-foreground-alt">Key</label>
+				<p id="edit-key" class="rounded-lg bg-surface px-3 py-2 font-mono text-xs text-foreground-alt">{editingString.key}</p>
 			</div>
 			<div>
-				<label for="edit-value" class="mb-1 block text-sm font-medium text-gray-700">Value ({editingString.locale})</label>
+				<label for="edit-value" class="mb-1 block text-sm font-medium text-foreground-alt">Value ({editingString.locale})</label>
 				<textarea
 					id="edit-value"
 					rows="4"
-					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={editingString.value}
 				></textarea>
 			</div>
@@ -397,7 +385,7 @@
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={deleteConfirmOpen} title={t('common.confirmDelete')} description={t('app.i18n.delete_confirm_desc')}>
 	<div class="space-y-4">
-		<p class="text-sm text-gray-600">
+		<p class="text-sm text-foreground-alt">
 			{t('app.i18n.delete_confirm_body')}
 		</p>
 		<div class="flex justify-end gap-3">
@@ -408,3 +396,70 @@
 		</div>
 	</div>
 </Modal>
+
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t('common.details', 'Details')}>
+	{#if viewLanguage}
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.i18n.code', 'Code')}</p>
+					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewLanguage.code}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.i18n.language', 'Language')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewLanguage.flag || '🌐'} {viewLanguage.name}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.i18n.status', 'Status')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewLanguage.isDefault ? 'Default' : viewLanguage.isEnabled ? 'Enabled' : 'Disabled'}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.i18n.strings', 'Strings')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewLanguage.completion ?? 0).toLocaleString()}</p>
+				</div>
+			</div>
+		</div>
+		<div class="mt-6 flex justify-end">
+			<Button variant="outline" onclick={() => (showViewModal = false)}>${t('common.close', 'Close')}</Button>
+		</div>
+	{:else if viewString}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.i18n.key', 'Key')}</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewString.key}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.i18n.value', 'Value')} ({viewString.locale})</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewString.value || '—'}</p>
+			</div>
+		</div>
+		<div class="mt-6 flex justify-end">
+			<Button variant="outline" onclick={() => (showViewModal = false)}>${t('common.close', 'Close')}</Button>
+		</div>
+	{/if}
+</Modal>
+
+{#snippet LanguageActionsCell(row: Language)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openLanguageView(row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+	</div>
+{/snippet}
+
+{#snippet TranslationActionsCell(row: TranslationEntry)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openStringView(row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageI18n}
+			<Button variant="ghost" size="sm" onclick={() => openEditModal(row)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => openDeleteConfirm(row.id)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

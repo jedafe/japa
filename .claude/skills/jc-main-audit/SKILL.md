@@ -1,6 +1,6 @@
 ---
 name: jc-main-audit
-description: Use when performing a comprehensive quality audit of the JapaConnect Main App (apps/web) before merge or release. Covers Rule 16, Svelte 5, Bits UI, LayerChart, SSR/SEO, security, accessibility, and i18n compliance.
+description: Use when performing a comprehensive quality audit of the JapaConnect Main App (apps/web) before merge or release. Covers Rule 16, Svelte 5, Bits UI, app-shell/layout compliance (ADR-058), LayerChart 2.0.1, SSR/SEO, security, accessibility, and i18n compliance.
 ---
 
 # JapaConnect Main App — Audit Skill
@@ -21,11 +21,16 @@ Flag every hardcoded array rendered to UI (nav, countries, tags, groups, post ty
 All dropdowns/modals/selects/tooltips/accordions/tabs are Bits UI primitives · no manual `role`/`aria-*` on primitives · `<Dialog.Content>` inside `<Dialog.Portal>`.
 
 ## E. LayerChart Compliance
-- Every chart on analytics/dashboard pages uses LayerChart — flag any Chart.js, raw D3 DOM, canvas, or hand-rolled SVG charts
-- Chart colors exclusively `var(--color-*)` (verify dark-mode rendering)
-- Fixed-height container wraps every `<Chart>`
-- Chart data from API, dates converted to `Date` objects
-- Skeleton state present per chart
+- Every chart on analytics/dashboard pages uses LayerChart, pinned `layerchart@2.0.1` — flag any Chart.js, raw D3 DOM, canvas, hand-rolled SVG, or unpinned/`@next` version
+- Chart colors exclusively `var(--chart-*)`/`var(--color-*)` (verify dark-mode rendering)
+- Fixed-height container wraps every chart; per-chart skeleton present; data from API with dates converted to `Date`
+
+## E2. App Shell & Layout Compliance (ADR-058)
+- Every surface renders inside `AppShell` (three-column shell) — flag any top-nav-bar or bespoke layout that isn't one of the three exceptions (blog/CPT single, `/create`, guest homepage)
+- `FeedCard` is one variant-driven component (type pill + props) — flag per-content-type card forks
+- Nav-collapse persisted via `ui.nav_collapsed` (not localStorage); account dropdown on the right-sidebar avatar; Space switcher in the left nav
+- Blog/CPT single: transparent `ReactionRail` + `CreatorCard` (not the search/avatar bar). `/create`: tabbed `[ Guide | Settings/SEO ]` with dynamic Guide. Guest `/`: Page Builder landing; authenticated `/`: Primary timeline
+- Discover uses existing `/suggestions/*` (no invented backend route)
 
 ## F. SSR & SEO
 Indexable routes render content in server HTML · `<svelte:head>` with title/description on every indexable route · JSON-LD: Article (blog), QAPage (solved threads), Person/Organization (profiles) · images lazy · `data-sveltekit-preload-data="hover"` on body.
@@ -51,6 +56,7 @@ List hardcoded strings not in `$t()` · flag keys in `en.json` missing from `fr.
 | Rule 16 | ✅/❌ |
 | Svelte 5 Runes | ✅/❌ |
 | Bits UI | ✅/❌ |
+| App Shell / Layout (ADR-058) | ✅/❌ |
 | LayerChart | ✅/❌ |
 | SSR/SEO | ✅/❌ |
 | Security | ✅/❌ |

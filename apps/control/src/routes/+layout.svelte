@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
 	import { t, translations, initLocale, loadTranslations } from '$lib/stores/i18n';
 	import { setToken } from '$lib/api';
@@ -29,39 +30,87 @@
 		Clock: async () => ({ default: (await import('lucide-svelte/icons/clock')).default }),
 	};
 
-	let { children, data } = $props();
+	let { children } = $props();
 
 	let sidebarOpen = $state(false);
 	let userPermissions = $state<string[]>([]);
+	let authChecked = $state(false);
+	let authInflight = false;
 
 	const currentPath = $derived(page.url.pathname);
 	const isAuthPage = $derived(currentPath === '/login' || currentPath.startsWith('/logout'));
 
-	// Initialize i18n with server-provided translations, or fetch client-side
 	$effect(() => {
-		const locale = data.locale ?? 'en';
-		if (data.translations && Object.keys(data.translations).length > 0) {
-			initLocale(locale, data.translations);
-		} else {
-			loadTranslations(locale);
-		}
+		loadTranslations('en');
 	});
 
 	$effect(() => {
-		if (data.user) {
-			setUser(data.user);
-			const perms = data.user.permissions ?? [];
-			setPermissions(perms);
-			userPermissions = perms;
+		if (isAuthPage) {
+			authChecked = true;
+			authInflight = false;
+			return;
+		}
+		if (authInflight) return;
+		const storedToken = typeof window !== 'undefined' ? localStorage.getItem('jc_token') : null;
+		if (storedToken) {
+			setToken(storedToken);
+			authChecked = false;
+			authInflight = true;
+			initAuth(storedToken);
 		} else {
+			goto('/login');
+		}
+	});
+
+	async function initAuth(token: string) {
+		try {
+			const { api } = await import('$lib/api');
+			const result = await api<{ id: string; email: string; username: string; display_name: string; user_group_name: string; avatar_url: string | null; user_group_id: string; theme_preference: string; timezone: string; is_verified: boolean; created_at: string; permissions: string[] }>('/api/v1/me');
+			if (result.ok) {
+				const userData = result.data;
+				if (userData.user_group_name !== 'super_admin') {
+					localStorage.removeItem('jc_token');
+					setToken(null);
+					clearUser();
+					if (!isAuthPage) goto('/login');
+					authChecked = true;
+					return;
+				}
+				if (userData.user_group_name === 'super_admin') {
+					userData.permissions = ['*'];
+				}
+				setUser({
+					id: userData.id,
+					email: userData.email,
+					username: userData.username,
+					display_name: userData.display_name,
+					user_group_name: userData.user_group_name,
+					avatar_url: userData.avatar_url,
+					user_group_id: userData.user_group_id,
+					theme_preference: (userData.theme_preference as 'light' | 'dark' | 'system') ?? 'dark',
+					timezone: userData.timezone ?? 'UTC',
+					is_verified: userData.is_verified,
+					created_at: userData.created_at,
+					permissions: userData.permissions ?? [],
+				});
+				const perms = userData.permissions ?? [];
+				setPermissions(perms);
+				userPermissions = perms;
+			} else {
+				localStorage.removeItem('jc_token');
+				setToken(null);
+				clearUser();
+				if (!isAuthPage) goto('/login');
+			}
+		} catch {
+			localStorage.removeItem('jc_token');
+			setToken(null);
 			clearUser();
-			userPermissions = [];
+			if (!isAuthPage) goto('/login');
 		}
-	});
-
-	$effect(() => {
-		setToken(data.token ?? null);
-	});
+		authChecked = true;
+		authInflight = false;
+	}
 
 	interface NavItem {
 		label: string;
@@ -104,7 +153,6 @@
 	};
 
 	const nav = $derived.by(() => {
-		// Read translations store to establish reactive dependency
 		const tr = $translations;
 		return navConfig.map((cfg) => ({
 			...cfg,
@@ -131,9 +179,8 @@
 		)?.permission
 	);
 
-	const userPerms = $derived(data.user?.permissions ?? []);
 	const canAccess = $derived(
-		!pagePermission || userPerms.includes(pagePermission) || userPerms.includes('*')
+		!pagePermission || userPermissions.includes(pagePermission) || userPermissions.includes('*')
 	);
 </script>
 
@@ -145,6 +192,10 @@
 {#if isAuthPage}
 	<main class="bg-background text-foreground flex min-h-screen items-center justify-center">
 		{@render children()}
+	</main>
+{:else if !authChecked}
+	<main class="bg-background text-foreground flex min-h-screen items-center justify-center">
+		<p class="text-muted-foreground text-sm">Loading...</p>
 	</main>
 {:else}
 	<div class="bg-background text-foreground flex h-screen overflow-hidden">
