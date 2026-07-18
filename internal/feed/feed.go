@@ -5,6 +5,8 @@
 package feed
 
 import (
+	"github.com/valkey-io/valkey-go/valkeycompat"
+
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -32,6 +34,7 @@ type Service struct {
 	store    *Store
 	db       *db.DB
 	enqueuer feedEnqueuer
+	vk       valkeycompat.Cmdable
 }
 
 // feedEnqueuer is the subset of worker.Enqueuer that feed needs.
@@ -39,14 +42,17 @@ type feedEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
-// NewService creates a Service backed by the given database pool.
-func NewService(database *db.DB) *Service {
+// NewService creates a Service backed by the given database pool and Valkey
+// client. The Valkey client caches the ranked For-You feed (may be nil, in
+// which case ranking runs on every request).
+func NewService(database *db.DB, vk valkeycompat.Cmdable) *Service {
 	return &Service{
 		store: &Store{
 			read:  gen.New(database.Reader),
 			write: gen.New(database.Writer),
 		},
 		db: database,
+		vk: vk,
 	}
 }
 
