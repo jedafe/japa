@@ -24,7 +24,8 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<ProfileType | null>(null);
 
-	const canManageTypes = $derived(hasPermission('professional_types.manage'));
+	// Backend gates /profiles/types create/edit/delete on professional_profile.type.create
+	const canManageTypes = $derived(hasPermission('professional_profile.type.create'));
 
 	let expandedId = $state<string | null>(null);
 	let detailFields = $state<Array<{ name: string; field_type: string; required: boolean }>>([]);

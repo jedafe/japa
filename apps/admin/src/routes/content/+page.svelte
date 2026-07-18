@@ -24,6 +24,8 @@
 		removed_at?: string;
 		views?: number;
 		url?: string;
+		slug?: string;
+		body?: string;
 	};
 
 	let items = $state<ContentItem[]>([]);
@@ -49,7 +51,18 @@
 	let showRestoreModal = $state(false);
 	let restoreTarget = $state<ContentItem | null>(null);
 
-	const canManageContent = $derived(hasPermission("content.manage"));
+	// Edit modal (PATCH /admin/content/{id})
+	let showEditModal = $state(false);
+	let editTarget = $state<ContentItem | null>(null);
+	let editTitle = $state("");
+	let editSlug = $state("");
+	let editStatus = $state("");
+	let editBody = $state("");
+
+	// Backend gates content mutations on content.delete (list/restore/delete)
+	const canManageContent = $derived(hasPermission("content.delete"));
+	// PATCH /admin/content/{id} is gated on content.edit
+	const canEditContent = $derived(hasPermission("content.edit"));
 
 	let selectedIds = $state<Set<string>>(new Set());
 
@@ -200,6 +213,32 @@
 		}
 	}
 
+	function openEdit(item: ContentItem) {
+		editTarget = item;
+		editTitle = item.title ?? "";
+		editSlug = item.slug ?? "";
+		editStatus = item.status ?? "draft";
+		editBody = item.body ?? "";
+		showEditModal = true;
+	}
+
+	async function confirmEdit() {
+		if (!editTarget) return;
+		const body: Record<string, unknown> = {};
+		if (editTitle.trim()) body.title = editTitle.trim();
+		if (editSlug.trim()) body.slug = editSlug.trim();
+		if (editStatus) body.status = editStatus;
+		if (editBody.trim()) body.body = editBody.trim();
+		const result = await contentAdminApi.update(editTarget.id, body);
+		if (result.ok) {
+			showEditModal = false;
+			success = t("content.updated", "Content updated successfully");
+			loadItems();
+		} else {
+			error = result.error ?? t("common.error", "Failed to update content");
+		}
+	}
+
 	let bulkRemoving = $state(false);
 	async function bulkRemove() {
 		const ids = Array.from(selectedIds);
@@ -251,7 +290,7 @@
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={items} pageSize={items.length} selectable bind:selectedIds>
+			<DataTable {columns} data={items} pageSize={10} selectable bind:selectedIds>
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkRemove} disabled={bulkRemoving}>
 						<Trash2 class="mr-1 h-3.5 w-3.5" />
@@ -327,12 +366,50 @@
 	</div>
 </Modal>
 
+<!-- Edit Modal -->
+<Modal bind:open={showEditModal} title={t("content.edit_title", "Edit Content")}>
+	{#if editTarget}
+		<div class="space-y-4">
+			<div>
+				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="edit-title">{t("content.title", "Title")}</label>
+				<input id="edit-title" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editTitle} />
+			</div>
+			<div>
+				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="edit-slug">{t("content.slug", "Slug")}</label>
+				<input id="edit-slug" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editSlug} />
+			</div>
+			<div>
+				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="edit-status">{t("common.status", "Status")}</label>
+				<select id="edit-status" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editStatus}>
+					<option value="published">{t("content.status.published", "Published")}</option>
+					<option value="draft">{t("content.status.draft", "Draft")}</option>
+					<option value="removed">{t("content.status.removed", "Removed")}</option>
+					<option value="archived">{t("content.status.archived", "Archived")}</option>
+				</select>
+			</div>
+			<div>
+				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="edit-body">{t("content.body", "Body")}</label>
+				<textarea id="edit-body" class="mt-1 w-full rounded-lg border p-3 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="6" bind:value={editBody}></textarea>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showEditModal = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="default" onclick={confirmEdit}>{t("common.save", "Save")}</Button>
+	</div>
+</Modal>
+
 <!-- ContentActionsCell -->
 {#snippet ContentActionsCell(row: ContentItem)}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
+		{#if canEditContent}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
 		{#if canManageContent}
 			{#if row.status === "removed" || !!row.removed_at}
 				<Button variant="ghost" size="sm" onclick={() => openRestore(row)} style="color: var(--color-success)">

@@ -8,7 +8,7 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
-	import { FileText, Plus, Eye, BarChart3, RefreshCw, Trash2 } from "lucide-svelte";
+	import { FileText, Plus, Eye, BarChart3, RefreshCw, Trash2, Pencil } from "lucide-svelte";
 	import { api } from "$lib/api";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
@@ -41,7 +41,16 @@
 	let showViewModal = $state(false);
 	let viewTarget = $state<Form | null>(null);
 
-	const canManageForms = $derived(hasPermission("forms.manage"));
+	// Edit modal
+	let showEditModal = $state(false);
+	let editTarget = $state<Form | null>(null);
+	let editTitle = $state("");
+	let editDescription = $state("");
+	let editIsActive = $state(true);
+	let savingEdit = $state(false);
+
+	// Backend gates form mutations on forms.create/edit/delete
+	const canManageForms = $derived(hasPermission("forms.create"));
 
 	const tabs = [
 		{ value: "all", label: "All Forms", icon: FileText },
@@ -138,6 +147,33 @@
 		showDeleteModal = true;
 	}
 
+	function openEdit(form: Form) {
+		editTarget = form;
+		editTitle = form.title;
+		editDescription = "";
+		editIsActive = form.is_active;
+		showEditModal = true;
+	}
+
+	async function saveEdit() {
+		if (!editTarget || !editTitle.trim()) return;
+		savingEdit = true;
+		try {
+			const result = await api(`/forms/${editTarget.id}`, {
+				method: "PATCH",
+				body: { name: editTitle.trim(), description: editDescription.trim() || undefined, status: editIsActive ? "active" : "inactive" }
+			});
+			if (result.ok) {
+				showEditModal = false;
+				loadForms();
+			}
+		} catch {
+			// API not available
+		} finally {
+			savingEdit = false;
+		}
+	}
+
 	async function deleteForm() {
 		if (!deleteTarget) return;
 		deleting = true;
@@ -231,6 +267,42 @@
 	</div>
 </div>
 
+<!-- Edit Modal -->
+<Modal bind:open={showEditModal} title="Edit Form" size="sm">
+	{#if editTarget}
+		<div class="space-y-4">
+			<div>
+				<label for="form-edit-title" class="mb-1 block text-sm font-medium text-foreground-alt">Title</label>
+				<input
+					id="form-edit-title"
+					type="text"
+					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+					bind:value={editTitle}
+				/>
+			</div>
+			<div>
+				<label for="form-edit-desc" class="mb-1 block text-sm font-medium text-foreground-alt">Description</label>
+				<textarea
+					id="form-edit-desc"
+					rows="3"
+					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+					bind:value={editDescription}
+				></textarea>
+			</div>
+			<div class="flex items-center gap-2">
+				<input id="form-edit-active" type="checkbox" bind:checked={editIsActive} class="rounded" />
+				<label for="form-edit-active" class="text-sm text-foreground-alt">Active</label>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end gap-3">
+		<Button variant="outline" onclick={() => (showEditModal = false)}>Cancel</Button>
+		<Button onclick={saveEdit} disabled={savingEdit || !editTitle.trim()}>
+			{savingEdit ? "Saving..." : "Save Changes"}
+		</Button>
+	</div>
+</Modal>
+
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={showDeleteModal} title="Delete Form" description="This action cannot be undone. All submissions will be lost." size="sm">
 	{#if deleteTarget}
@@ -297,6 +369,9 @@
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
 		{#if canManageForms}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
 			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 				<Trash2 class="h-3.5 w-3.5" />
 			</Button>

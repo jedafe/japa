@@ -88,6 +88,11 @@ UPDATE organizations SET verified = false, updated_at = now() WHERE id = $1;
 -- name: ListModerationAppeals :many
 SELECT id, user_id, entity_type, entity_id, reason, status, created_at
 FROM moderation_appeals
+WHERE (sqlc.narg(search)::text IS NULL OR (
+        entity_id::text ILIKE '%' || sqlc.narg(search) || '%'
+     OR reason ILIKE '%' || sqlc.narg(search) || '%'
+     OR entity_type ILIKE '%' || sqlc.narg(search) || '%'
+  ))
 ORDER BY created_at DESC
 LIMIT 50;
 

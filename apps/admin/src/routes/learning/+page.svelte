@@ -70,7 +70,7 @@
 	let publishTarget = $state<{ id: string; title: string } | null>(null);
 	let publishing = $state(false);
 
-	const canManageLearning = $derived(hasPermission("learning.manage"));
+	const canManageLearning = $derived(hasPermission("learning.admin.manage"));
 
 	const tabs = $derived([
 		{ value: "tracks", label: "Tracks", icon: GraduationCap, count: tracks.length },

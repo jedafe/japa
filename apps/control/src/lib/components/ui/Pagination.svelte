@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n';
+	import { Select } from 'bits-ui';
 	import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-svelte';
 
 	let {
@@ -27,18 +28,37 @@
 
 		<div class="flex items-center gap-1.5">
 			<span class="text-xs">{t('lib.components.ui.Pagination.svelte.per_page')}</span>
-			<select
-				class="border-border-input bg-background text-foreground h-7 rounded-lg border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-foreground/20"
-				value={pageSize}
-				onchange={(e) => {
-					pageSize = Number((e.target as HTMLSelectElement).value);
-					page = 0;
+			<Select.Root
+				type="single"
+				value={String(pageSize)}
+				onValueChange={(v) => {
+					if (v !== undefined) {
+						pageSize = Number(v);
+						page = 0;
+					}
 				}}
 			>
-				{#each pageSizeOptions as opt}
-					<option value={opt}>{opt}</option>
-				{/each}
-			</select>
+				<Select.Trigger
+					class="border-border-input bg-background text-foreground h-7 rounded-lg border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-foreground/20"
+				>
+					<Select.Value />
+				</Select.Trigger>
+				<Select.Portal>
+					<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-lg border">
+						<Select.Viewport class="p-1">
+							{#each pageSizeOptions as opt}
+								<Select.Item
+									class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none"
+									value={String(opt)}
+									label={String(opt)}
+								>
+									{opt}
+								</Select.Item>
+							{/each}
+						</Select.Viewport>
+					</Select.Content>
+				</Select.Portal>
+			</Select.Root>
 		</div>
 	</div>
 

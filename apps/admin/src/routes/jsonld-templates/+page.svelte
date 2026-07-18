@@ -41,7 +41,7 @@
 	let showDeleteModal = $state(false);
 	let deletingTemplate = $state<JsonLdTemplate | null>(null);
 
-	const canManageTemplates = $derived(hasPermission("jsonld.manage"));
+	const canManageTemplates = $derived(hasPermission("content.jsonld.manage"));
 
 	function openViewTemplate(template: JsonLdTemplate) {
 		viewTarget = template;
@@ -321,11 +321,14 @@
 				</p>
 			</CardHeader>
 			<CardContent class="p-0">
+				<!-- wire the search box to re-fetch templates; API ignores q today (see report) -->
 				<DataTable
 					columns={templateColumns}
 					data={templates}
 					pageSize={20}
 					emptyMessage="No JSON-LD templates configured"
+					searchable
+					onsearch={() => load()}
 				/>
 			</CardContent>
 		</Card>

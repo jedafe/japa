@@ -37,12 +37,12 @@ type ListMenusResponse struct {
 	TotalPages int32      `json:"total_pages"`
 }
 
-func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) (*ListMenusResponse, error) {
-	menus, err := s.store.listMenus(ctx, tenantID, limit, offset)
+func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, q pgtype.Text, limit, offset int32) (*ListMenusResponse, error) {
+	menus, err := s.store.listMenus(ctx, tenantID, q, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing menus: %w", err)
 	}
-	total, err := s.store.countMenus(ctx, tenantID)
+	total, err := s.store.countMenus(ctx, tenantID, q)
 	if err != nil {
 		return nil, fmt.Errorf("counting menus: %w", err)
 	}

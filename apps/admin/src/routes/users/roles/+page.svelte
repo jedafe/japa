@@ -4,7 +4,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 
-	const canManage = $derived(hasPermission('admin.users.view'));
+	const canManage = $derived(hasPermission('admin.rbac.manage'));
 
 	type Role = {
 		id: string;

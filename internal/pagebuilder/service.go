@@ -24,9 +24,9 @@ func NewService(database *db.DB) *Service {
 // Block operations
 // ---------------------------------------------------------------------------
 
-// ListBlocks returns all blocks for a tenant.
-func (s *Service) ListBlocks(ctx context.Context, tenantID pgtype.UUID) ([]Block, error) {
-	return s.store.ListBlocks(ctx, tenantID)
+// ListBlocks returns all blocks for a tenant, optionally filtered by q.
+func (s *Service) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string) ([]Block, error) {
+	return s.store.ListBlocks(ctx, tenantID, q)
 }
 
 // GetBlock returns a single block by ID, scoped to the tenant.
@@ -122,9 +122,9 @@ func (s *Service) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) 
 // Theme operations
 // ---------------------------------------------------------------------------
 
-// ListThemes returns all themes for a tenant.
-func (s *Service) ListThemes(ctx context.Context, tenantID pgtype.UUID) ([]Theme, error) {
-	return s.store.ListThemes(ctx, tenantID)
+// ListThemes returns all themes for a tenant, optionally filtered by q.
+func (s *Service) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string) ([]Theme, error) {
+	return s.store.ListThemes(ctx, tenantID, q)
 }
 
 // GetTheme returns a single theme by ID, scoped to the tenant.
@@ -168,9 +168,9 @@ func (s *Service) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID)
 // Page operations
 // ---------------------------------------------------------------------------
 
-// ListPages returns all pages for a tenant.
-func (s *Service) ListPages(ctx context.Context, tenantID pgtype.UUID) ([]Page, error) {
-	return s.store.ListPages(ctx, tenantID)
+// ListPages returns all pages for a tenant, optionally filtered by q.
+func (s *Service) ListPages(ctx context.Context, tenantID pgtype.UUID, q string) ([]Page, error) {
+	return s.store.ListPages(ctx, tenantID, q)
 }
 
 // GetPage returns a single page by ID, scoped to the tenant.

@@ -179,7 +179,7 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var status, entityType *string
+	var status, entityType, q *string
 	if s := r.URL.Query().Get("status"); s != "" {
 		status = &s
 	}
@@ -188,16 +188,43 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 		entityType = &et
 	}
 
-	limit := parsePageSize(r)
-	offset := parsePageOffset(r)
+	if s := r.URL.Query().Get("q"); s != "" {
+		q = &s
+	}
 
-	allReports, err := h.service.ListReports(r.Context(), tenantID, status, entityType, limit, offset)
+	// Frontend sends a 0-indexed `page`; derive the absolute offset.
+	page := int32(0)
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.ParseInt(p, 10, 32); err == nil && v >= 0 {
+			page = int32(v)
+		}
+	}
+	limit := parsePageSize(r)
+	offset := page * limit
+
+	allReports, err := h.service.ListReports(r.Context(), tenantID, status, entityType, q, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list reports")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": allReports})
+	total, err := h.service.CountReports(r.Context(), tenantID, status, q)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count reports")
+		return
+	}
+	totalPages := int32(0)
+	if limit > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"items":       allReports,
+			"page":        page,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // GetReport handles GET /api/v1/admin/reports/{id}.
@@ -223,6 +250,8 @@ func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateReport handles PATCH /api/v1/admin/reports/{id}.
+// It records the report resolution and, for warn/ban actions, also fires the
+// matching user-moderation side effect (warn the reporter / ban the reported user).
 func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -241,8 +270,8 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Status         string  `json:"status"`
-		ResolutionNote *string `json:"resolution_note"`
+		Action string `json:"action"` // "dismiss", "warn", "ban", "remove"
+		Reason string `json:"reason"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -250,13 +279,55 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := h.service.UpdateReportStatus(r.Context(), id, tenantID, reviewer.UserID, input.Status, input.ResolutionNote)
+	if input.Action == "" {
+		writeError(w, http.StatusBadRequest, "missing_action", "action is required")
+		return
+	}
+
+	// Load the report so we can resolve warn/ban targets.
+	report, err := h.service.GetReport(r.Context(), id, tenantID)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": report})
+	status := "actioned"
+	if input.Action == "dismiss" {
+		status = "dismissed"
+	}
+	var note *string
+	if input.Reason != "" {
+		note = &input.Reason
+	}
+
+	updated, err := h.service.UpdateReportStatus(r.Context(), id, tenantID, reviewer.UserID, status, note)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	// Fire the user-moderation side effects for warn/ban actions.
+	switch input.Action {
+	case "warn":
+		// "Warn Reporter": warn the user who filed the report.
+		if report.ReporterUserID.Valid {
+			if e := h.service.WarnUser(r.Context(), report.ReporterUserID, input.Reason); e != nil {
+				slog.Warn("reports: warn side-effect failed", "id", id.String(), "error", e)
+			}
+		}
+	case "ban":
+		// "Ban Target": ban the reported user (content author / reported account).
+		target, found, e := h.service.ResolveTargetUser(r.Context(), report.EntityType, report.EntityID)
+		if e != nil {
+			slog.Warn("reports: resolve ban target failed", "id", id.String(), "error", e)
+		} else if found {
+			if e2 := h.service.BanUser(r.Context(), target, input.Reason); e2 != nil {
+				slog.Warn("reports: ban side-effect failed", "id", id.String(), "error", e2)
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
 // writeServiceError maps Service sentinel errors to HTTP status codes.

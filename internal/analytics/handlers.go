@@ -10,6 +10,7 @@ package analytics
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -216,15 +217,59 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	days := parseDays(r, 30)
+	from, to, err := resolveWindow(r, 30)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		return
+	}
 
-	dashboard, err := h.Service.GetAdminDashboardData(r.Context(), tenantID, days)
+	dashboard, err := h.Service.GetAdminDashboardData(r.Context(), tenantID, from, to)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": dashboard})
+}
+
+// resolveWindow determines the analytics [from, to] window for a request.
+//
+// When both `from` and `to` are supplied as RFC3339 timestamps they take
+// precedence. When only `from` is supplied the window is left-open (to == nil).
+// When `from` is absent it falls back to the historical days/period behavior,
+// deriving the start as now minus parseDays(defaultDays) with an open end.
+func resolveWindow(r *http.Request, defaultDays int) (time.Time, *time.Time, error) {
+	fromRaw := r.URL.Query().Get("from")
+	toRaw := r.URL.Query().Get("to")
+
+	var to *time.Time
+
+	if toRaw != "" {
+		parsed, err := time.Parse(time.RFC3339, toRaw)
+		if err != nil {
+			return time.Time{}, nil, fmt.Errorf("parsing to: %w", err)
+		}
+
+		to = &parsed
+	}
+
+	if fromRaw != "" {
+		from, err := time.Parse(time.RFC3339, fromRaw)
+		if err != nil {
+			return time.Time{}, nil, fmt.Errorf("parsing from: %w", err)
+		}
+
+		if to != nil && to.Before(from) {
+			return time.Time{}, nil, fmt.Errorf("to must not be before from")
+		}
+
+		return from, to, nil
+	}
+
+	days := parseDays(r, defaultDays)
+	from := time.Now().AddDate(0, 0, -int(days))
+
+	return from, to, nil
 }
 
 // ListEvents handles GET /api/v1/admin/analytics/events.

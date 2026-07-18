@@ -116,7 +116,8 @@ func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
-	result, err := h.Service.ListMenus(r.Context(), tenantID, limit, offset)
+	q := pgtype.Text{String: r.URL.Query().Get("q"), Valid: true}
+	result, err := h.Service.ListMenus(r.Context(), tenantID, q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
