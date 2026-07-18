@@ -208,3 +208,46 @@ func (s *Store) getFeedItemCount(ctx context.Context, userID pgtype.UUID) (int32
 
 	return count, nil
 }
+
+// getFollowedEntityIDs returns the IDs of all entities of one type the user follows.
+func (s *Store) getFollowedEntityIDs(
+	ctx context.Context, tenantID, followerID pgtype.UUID, entityType string,
+) ([]pgtype.UUID, error) {
+	ids, err := s.read.GetFollowedEntityIDsByType(ctx, gen.GetFollowedEntityIDsByTypeParams{
+		TenantID:   tenantID,
+		FollowerID: followerID,
+		EntityType: entityType,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting followed %s ids: %w", entityType, err)
+	}
+
+	return ids, nil
+}
+
+// getMemberSpaceIDs returns the IDs of spaces the user is a member of.
+func (s *Store) getMemberSpaceIDs(
+	ctx context.Context, tenantID, userID pgtype.UUID,
+) ([]pgtype.UUID, error) {
+	ids, err := s.read.GetMemberSpaceIDs(ctx, gen.GetMemberSpaceIDsParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting member space ids: %w", err)
+	}
+
+	return ids, nil
+}
+
+// getForYouCandidates runs the bounded personalized candidate query.
+func (s *Store) getForYouCandidates(
+	ctx context.Context, params gen.GetForYouCandidatesParams,
+) ([]gen.GetForYouCandidatesRow, error) {
+	rows, err := s.read.GetForYouCandidates(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("getting for-you candidates: %w", err)
+	}
+
+	return rows, nil
+}
