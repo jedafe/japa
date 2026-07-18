@@ -152,7 +152,7 @@
 			sortable: true,
 			render: (v) => {
 				const on = v === true || v === 'true';
-				const cls = on ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground';
+				const cls = on ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground';
 				return `<span class="${cls} rounded-full px-2 py-0.5 text-xs font-medium">${
 					on ? t('feature_flags.enabled', 'enabled') : t('feature_flags.disabled', 'disabled')
 				}</span>`;

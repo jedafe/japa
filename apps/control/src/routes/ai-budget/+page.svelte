@@ -64,7 +64,7 @@
 			<div class="bg-muted mt-3 h-3 w-full rounded-full">
 				<div
 					class="h-full rounded-full transition-all"
-					class:bg-green-500={budgetPercent() < 60}
+					class:bg-emerald-500={budgetPercent() < 60}
 					class:bg-tertiary={budgetPercent() >= 60 && budgetPercent() < 80}
 					class:bg-destructive={budgetPercent() >= 80}
 					style="width: {Math.min(budgetPercent(), 100)}%"
@@ -101,13 +101,13 @@
 					</div>
 					<div class="flex items-center justify-between">
 						<span class="text-muted-foreground text-sm">{t('ai_budget.remaining')}</span>
-						<span class="font-mono text-sm font-medium" class:text-destructive={budget.month_to_date_cost >= budget.budget_threshold_usd} class:text-green-500={budget.month_to_date_cost < budget.budget_threshold_usd}>
+						<span class="font-mono text-sm font-medium" class:text-destructive={budget.month_to_date_cost >= budget.budget_threshold_usd} class:text-emerald-500={budget.month_to_date_cost < budget.budget_threshold_usd}>
 							{formatCost(Math.max(0, budget.budget_threshold_usd - budget.month_to_date_cost))}
 						</span>
 					</div>
 					<div class="flex items-center justify-between">
 						<span class="text-muted-foreground text-sm">{t('ai_budget.alert_status')}</span>
-						<span class="rounded-full px-2 py-0.5 text-xs font-medium {budget.alert_triggered ? 'bg-destructive/15 text-destructive' : 'bg-green-500/15 text-green-600'}">
+						<span class="rounded-full px-2 py-0.5 text-xs font-medium {budget.alert_triggered ? 'bg-destructive/15 text-destructive' : 'bg-emerald-500/15 text-emerald-600'}">
 							{budget.alert_triggered ? t('ai_budget.alert_triggered') : t('ai_budget.within_budget')}
 						</span>
 					</div>

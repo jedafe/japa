@@ -197,7 +197,7 @@
 			sortable: true,
 			render: (v) => {
 				const s = escapeHtml(v);
-				const cls = s === 'active' ? 'bg-green-500/12 text-green-600' : s === 'suspended' ? 'bg-tertiary/12 text-tertiary' : '';
+				const cls = s === 'active' ? 'bg-emerald-500/12 text-emerald-600' : s === 'suspended' ? 'bg-tertiary/12 text-tertiary' : '';
 				return `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${s}</span>`;
 			}
 		},
