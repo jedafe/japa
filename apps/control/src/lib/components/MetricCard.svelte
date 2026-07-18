@@ -18,7 +18,7 @@
 	{#if subtitle}
 		<p class="text-muted-foreground mt-1 flex items-center gap-1 text-xs font-medium">
 			{#if trend === 'up'}
-				<span class="text-green-500">&#8593;</span>
+				<span class="text-emerald-500">&#8593;</span>
 			{:else if trend === 'down'}
 				<span class="text-destructive">&#8595;</span>
 			{/if}

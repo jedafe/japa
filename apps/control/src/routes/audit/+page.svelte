@@ -82,7 +82,7 @@
 					action === 'delete'
 						? 'bg-destructive/10 text-destructive'
 						: action === 'create'
-							? 'bg-green-500/10 text-green-600'
+							? 'bg-emerald-500/10 text-emerald-600'
 							: 'bg-accent text-accent-foreground';
 				return `<span class="${color} rounded-full px-2 py-0.5 text-xs font-medium">${action}</span>`;
 			}

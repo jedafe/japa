@@ -1,3 +1,4 @@
+---
 name: japa-bugs-hunters
 description: JapaConnect comprehensive bug hunter. On load it presents a menu — (1) a frontend URL or page name of any of the 5 apps, (2) a backend API route, or (3-8) a whole surface (backend / main / control / admin / docs / learn). It hunts bugs from the JapaConnect Bug Hunter's Guide (Prompts/japa-bugs-hunters.md) against the page/route/surface, fixes frontend issues, and — when a bug needs backend work (missing route, unwired handler, incomplete CRUD, migration, RBAC, Valkey, Asynq, GDPR) — fixes the backend too until the target is 100% working. Use when the user says "hunt bugs", "bug hunt", "audit and fix", "fix bugs on <page/route>", or triggers /japa-bugs-hunters.
 ---
