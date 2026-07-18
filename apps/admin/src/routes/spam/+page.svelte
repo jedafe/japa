@@ -44,7 +44,8 @@
 	let showViewModal = $state(false);
 	let viewTarget = $state<{ kind: string; row: any } | null>(null);
 
-	const canManageSpam = $derived(hasPermission("spam.manage"));
+	// Backend gates spam mutations on moderation.spam
+	const canManageSpam = $derived(hasPermission("moderation.spam"));
 
 	// IP Blocks
 	let ipBlocks = $state<IpBlock[]>([]);
@@ -277,7 +278,7 @@
 			{#if loading}
 				<TableSkeleton rows={5} columns={ipColumns.length} />
 			{:else}
-				<DataTable columns={ipColumns} data={ipBlocks} pageSize={ipBlocks.length} />
+				<DataTable columns={ipColumns} data={ipBlocks} pageSize={10} />
 			{/if}
 		</CardContent>
 	</Card>
@@ -298,7 +299,7 @@
 			{#if loading}
 				<TableSkeleton rows={5} columns={cwColumns.length} />
 			{:else}
-				<DataTable columns={cwColumns} data={censoredWords} pageSize={censoredWords.length} />
+				<DataTable columns={cwColumns} data={censoredWords} pageSize={10} />
 			{/if}
 		</CardContent>
 	</Card>
@@ -311,7 +312,7 @@
 			{#if loading}
 				<TableSkeleton rows={5} columns={ubColumns.length} />
 			{:else}
-				<DataTable columns={ubColumns} data={userBlocks} pageSize={userBlocks.length} />
+				<DataTable columns={ubColumns} data={userBlocks} pageSize={10} />
 			{/if}
 		</CardContent>
 	</Card>

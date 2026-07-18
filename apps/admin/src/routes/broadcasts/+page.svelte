@@ -123,6 +123,17 @@
 		if (activeTab !== "all") {
 			result = result.filter((b) => b.status === activeTab);
 		}
+		// Apply the FilterBar audience filter (previously a no-op).
+		if (filters.audience) {
+			result = result.filter((b) => b.target_audience === filters.audience);
+		}
+		// Apply the FilterBar free-text search (previously a no-op).
+		if (filters.search) {
+			const q = filters.search.toLowerCase();
+			result = result.filter(
+				(b) => b.title.toLowerCase().includes(q) || (b.body ?? "").toLowerCase().includes(q)
+			);
+		}
 		return result;
 	});
 

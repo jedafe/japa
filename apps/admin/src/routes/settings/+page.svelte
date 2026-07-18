@@ -198,6 +198,7 @@
 											placeholder={setting.masked ? '••••••••' : ''}
 											class="h-10 w-full rounded-lg border px-3 py-2 text-sm"
 											style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+											disabled={!canManage}
 											oninput={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLInputElement).value)}
 										/>
 									{:else if setting.type === 'number'}
@@ -207,6 +208,7 @@
 											value={setting.value != null ? String(setting.value) : ''}
 											class="h-10 w-full rounded-lg border px-3 py-2 text-sm"
 											style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+											disabled={!canManage}
 											oninput={(e) => updateSettingValue(category.key, setting.key, Number((e.target as HTMLInputElement).value))}
 										/>
 									{:else if setting.type === 'toggle'}
@@ -214,6 +216,7 @@
 											<Switch.Root
 												checked={toggleStates[toggleId]}
 												onCheckedChange={(v: boolean) => toggleSetting(category.key, setting.key)}
+												disabled={!canManage}
 												class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 {toggleStates[toggleId] ? 'bg-primary' : 'bg-surface'}"
 												style="--ring-color: var(--color-primary); --ring-offset-color: var(--color-surface)"
 												aria-label={setting.label}
@@ -230,6 +233,7 @@
 										<Select
 											options={(setting.options ?? []).map((opt: string) => ({ value: opt, label: opt }))}
 											value={String(setting.value ?? '')}
+											disabled={!canManage}
 											onchange={(val: string) => updateSettingValue(category.key, setting.key, val)}
 										/>
 									{/if}

@@ -107,7 +107,7 @@ func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blocks, err := h.Service.ListBlocks(r.Context(), tenantID)
+	blocks, err := h.Service.ListBlocks(r.Context(), tenantID, r.URL.Query().Get("q"))
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -333,7 +333,7 @@ func (h *Handlers) ListThemes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	themes, err := h.Service.ListThemes(r.Context(), tenantID)
+	themes, err := h.Service.ListThemes(r.Context(), tenantID, r.URL.Query().Get("q"))
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -467,7 +467,7 @@ func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pages, err := h.Service.ListPages(r.Context(), tenantID)
+	pages, err := h.Service.ListPages(r.Context(), tenantID, r.URL.Query().Get("q"))
 	if err != nil {
 		handleServiceError(w, err)
 		return

@@ -94,7 +94,7 @@
 			label: t("common.status", "Status"),
 			sortable: true,
 			render: (v: string) => {
-				const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : "bg-blue-500/15 text-info dark:text-blue-400";
+				const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : "bg-info/15 text-info dark:text-info";
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
 			}
 		},

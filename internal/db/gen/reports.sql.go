@@ -204,14 +204,20 @@ FROM content_reports
 WHERE tenant_id = $1
   AND ($2::text IS NULL OR status = $2)
   AND ($3::text IS NULL OR entity_type = $3)
+  AND ($4::text IS NULL OR (
+        entity_id::text ILIKE '%' || $4 || '%'
+     OR entity_type ILIKE '%' || $4 || '%'
+     OR reporter_user_id::text ILIKE '%' || $4 || '%'
+  ))
 ORDER BY created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListReportsParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     *string     `json:"status"`
 	EntityType *string     `json:"entity_type"`
+	Q          *string     `json:"q"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -221,6 +227,7 @@ func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]Con
 		arg.TenantID,
 		arg.Status,
 		arg.EntityType,
+		arg.Q,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

@@ -375,6 +375,11 @@ const listModerationAppeals = `-- name: ListModerationAppeals :many
 
 SELECT id, user_id, entity_type, entity_id, reason, status, created_at
 FROM moderation_appeals
+WHERE ($1::text IS NULL OR (
+        entity_id::text ILIKE '%' || $1 || '%'
+     OR reason ILIKE '%' || $1 || '%'
+     OR entity_type ILIKE '%' || $1 || '%'
+  ))
 ORDER BY created_at DESC
 LIMIT 50
 `
@@ -392,8 +397,8 @@ type ListModerationAppealsRow struct {
 // =====================
 // Appeals
 // =====================
-func (q *Queries) ListModerationAppeals(ctx context.Context) ([]ListModerationAppealsRow, error) {
-	rows, err := q.db.Query(ctx, listModerationAppeals)
+func (q *Queries) ListModerationAppeals(ctx context.Context, search *string) ([]ListModerationAppealsRow, error) {
+	rows, err := q.db.Query(ctx, listModerationAppeals, search)
 	if err != nil {
 		return nil, err
 	}

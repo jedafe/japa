@@ -157,6 +157,35 @@ func (q *Queries) CreateDataExportRequest(ctx context.Context, arg CreateDataExp
 	return i, err
 }
 
+const deleteConsent = `-- name: DeleteConsent :one
+DELETE FROM consent_records
+WHERE id = $1 AND tenant_id = $2
+RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
+    ip_address, user_agent, created_at
+`
+
+type DeleteConsentParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteConsent(ctx context.Context, arg DeleteConsentParams) (ConsentRecord, error) {
+	row := q.db.QueryRow(ctx, deleteConsent, arg.ID, arg.TenantID)
+	var i ConsentRecord
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.ConsentType,
+		&i.Granted,
+		&i.PolicyVersion,
+		&i.IpAddress,
+		&i.UserAgent,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteUserTokens = `-- name: DeleteUserTokens :exec
 UPDATE refresh_tokens
 SET revoked_at = now(), updated_at = now()
@@ -594,8 +623,9 @@ WHERE tenant_id = $1
   AND ($4 IS NULL OR target_type = $4)
   AND ($5 IS NULL OR created_at >= $5)
   AND ($6 IS NULL OR created_at <= $6)
+  AND ($7::text = '' OR action_type ILIKE '%' || $7 || '%' OR target_type ILIKE '%' || $7 || '%' OR target_id::text ILIKE '%' || $7 || '%' OR actor_user_id::text ILIKE '%' || $7 || '%')
 ORDER BY created_at DESC
-LIMIT $8 OFFSET $7
+LIMIT $9 OFFSET $8
 `
 
 type ListAuditLogsParams struct {
@@ -605,6 +635,7 @@ type ListAuditLogsParams struct {
 	TargetType  interface{} `json:"target_type"`
 	StartDate   interface{} `json:"start_date"`
 	EndDate     interface{} `json:"end_date"`
+	Q           string      `json:"q"`
 	PageOffset  int32       `json:"page_offset"`
 	PageLimit   int32       `json:"page_limit"`
 }
@@ -617,6 +648,7 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 		arg.TargetType,
 		arg.StartDate,
 		arg.EndDate,
+		arg.Q,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -655,13 +687,15 @@ SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
 FROM consent_records
 WHERE tenant_id = $1
   AND ($2 = '' OR consent_type = $2)
+  AND ($3::text = '' OR consent_type ILIKE '%' || $3 || '%' OR ip_address ILIKE '%' || $3 || '%')
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListConsentsByTenantParams struct {
 	TenantID    pgtype.UUID `json:"tenant_id"`
 	ConsentType interface{} `json:"consent_type"`
+	Q           string      `json:"q"`
 	PageOffset  int32       `json:"page_offset"`
 	PageLimit   int32       `json:"page_limit"`
 }
@@ -670,6 +704,7 @@ func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTe
 	rows, err := q.db.Query(ctx, listConsentsByTenant,
 		arg.TenantID,
 		arg.ConsentType,
+		arg.Q,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

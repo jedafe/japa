@@ -5,7 +5,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 
-	const canManage = $derived(hasPermission('admin.moderation'));
+	const canManage = $derived(hasPermission('reports.review'));
 
 	type Appeal = {
 		id: string;
@@ -24,6 +24,7 @@
 	let totalPages = $state(1);
 	let loading = $state(true);
 	let filterStatus = $state('');
+	let searchQuery = $state(''); // FilterBar search term, forwarded to the appeals API
 	let errorMessage = $state('');
 
 	// Expandable detail
@@ -45,6 +46,7 @@
 		errorMessage = '';
 		const params = new URLSearchParams({ page: String(page) });
 		if (filterStatus) params.set('status', filterStatus);
+		if (searchQuery) params.set('q', searchQuery); // forward the search term to the API
 		try {
 			const result = await api<{ items: Appeal[]; page: number; total_pages: number }>(`/admin/appeals?${params}`);
 			if (result.ok) {
@@ -61,6 +63,8 @@
 	}
 
 	function handleFilter(values: Record<string, string>) {
+		// Capture the FilterBar search term so the previously-dead box now drives the query.
+		searchQuery = values.search ?? '';
 		filterStatus = values.status ?? '';
 		page = 0;
 		load();
@@ -117,7 +121,7 @@
 		switch (action) {
 			case 'ban': return 'bg-danger/15 text-danger dark:text-danger';
 			case 'suspend': return 'bg-warning/15 text-warning dark:text-warning';
-			case 'remove_content': return 'bg-orange-500/15 text-orange-700 dark:text-orange-400';
+			case 'remove_content': return 'bg-warning/15 text-warning dark:text-warning';
 			default: return 'bg-muted/15 text-muted dark:text-muted';
 		}
 	}

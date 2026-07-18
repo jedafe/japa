@@ -48,7 +48,8 @@
 	let showViewModal = $state(false);
 	let viewTarget = $state<Program | null>(null);
 
-	const canManageMentorship = $derived(hasPermission("mentorship.manage"));
+	// Backend gates mentorship mutations on mentorship.admin
+	const canManageMentorship = $derived(hasPermission("mentorship.admin"));
 
 	const tabs = [
 		{ value: "all", label: "All Programs", icon: Users },

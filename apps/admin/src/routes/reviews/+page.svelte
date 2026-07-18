@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { api, reviewsAdminApiExtended } from '$lib/api';
+	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { RefreshCw, Eye } from 'lucide-svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { RefreshCw, Eye, Shield, Trash2 } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
 
 	type Review = {
@@ -20,9 +21,75 @@
 	let showViewModal = $state(false);
 	let viewTarget = $state<Review | null>(null);
 
+	// Moderate
+	let showModerateModal = $state(false);
+	let moderateTarget = $state<Review | null>(null);
+	let moderateStatus = $state<'approved' | 'rejected' | 'pending'>('approved');
+	let moderateSaving = $state(false);
+
+	// Delete
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<Review | null>(null);
+	let deleteSaving = $state(false);
+
+	// Backend gates PATCH /admin/reviews/{id} on reviews.moderate
+	const canModerate = $derived(hasPermission('reviews.moderate'));
+	// Backend gates DELETE /reviews/{id} on reviews.delete_own
+	const canDelete = $derived(hasPermission('reviews.delete_own'));
+
 	function openView(review: Review) {
 		viewTarget = review;
 		showViewModal = true;
+	}
+
+	function openModerate(review: Review) {
+		moderateTarget = review;
+		moderateStatus = (review.status as 'approved' | 'rejected' | 'pending') ?? 'approved';
+		showModerateModal = true;
+	}
+
+	function confirmDelete(review: Review) {
+		deleteTarget = review;
+		showDeleteConfirm = true;
+	}
+
+	async function saveModeration() {
+		if (!moderateTarget) return;
+		moderateSaving = true;
+		try {
+			const result = await api(`/admin/reviews/${moderateTarget.id}`, {
+				method: 'PATCH',
+				body: JSON.stringify({ status: moderateStatus })
+			});
+			if (result.ok) {
+				showModerateModal = false;
+				await load();
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			moderateSaving = false;
+		}
+	}
+
+	async function deleteReview() {
+		if (!deleteTarget) return;
+		deleteSaving = true;
+		try {
+			const result = await api(`/reviews/${deleteTarget.id}`, { method: 'DELETE' });
+			if (result.ok) {
+				showDeleteConfirm = false;
+				await load();
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			deleteSaving = false;
+		}
 	}
 
 	async function load() {
@@ -95,9 +162,23 @@
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(review.created_at).toLocaleDateString()}</td>
 						<td class="px-4 py-3">
-							<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-muted)" onclick={() => openView(review)}>
-								{t('common.view', 'View')}
-							</button>
+							<div class="flex items-center gap-1">
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-muted)" onclick={() => openView(review)}>
+									{t('common.view', 'View')}
+								</button>
+								{#if canModerate}
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-primary)" onclick={() => openModerate(review)}>
+										<Shield class="inline h-3 w-3" />
+										{t('reviews.moderate', 'Moderate')}
+									</button>
+								{/if}
+								{#if canDelete}
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-danger)" onclick={() => confirmDelete(review)}>
+										<Trash2 class="inline h-3 w-3" />
+										{t('common.delete', 'Delete')}
+									</button>
+								{/if}
+							</div>
 						</td>
 					</tr>
 				{:else}
@@ -141,5 +222,39 @@
 	{/if}
 	<div class="mt-6 flex justify-end">
 		<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</button>
+	</div>
+</Modal>
+
+<Modal bind:open={showModerateModal} title={t('reviews.moderate', 'Moderate Review')}>
+	{#if moderateTarget}
+		<div class="space-y-4">
+			<p class="text-sm" style="color: var(--color-muted)">{t('reviews.moderate_help', 'Set the moderation status for this review.')}</p>
+			<div>
+				<label for="moderateStatus" class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.status', 'Status')}</label>
+				<select id="moderateStatus" bind:value={moderateStatus} class="mt-1 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)">
+					<option value="approved">{t('reviews.status_approved', 'Approved')}</option>
+					<option value="pending">{t('reviews.status_pending', 'Pending')}</option>
+					<option value="rejected">{t('reviews.status_rejected', 'Rejected')}</option>
+				</select>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showModerateModal = false)}>{t('common.cancel', 'Cancel')}</button>
+		<button class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50" style="background-color: var(--color-primary)" onclick={saveModeration} disabled={moderateSaving}>
+			{moderateSaving ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
+		</button>
+	</div>
+</Modal>
+
+<Modal bind:open={showDeleteConfirm} title={t('reviews.delete_title', 'Delete Review')}>
+	{#if deleteTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">{t('reviews.delete_confirm', 'Are you sure you want to delete this review? This action cannot be undone.')}</p>
+	{/if}
+	<div class="mt-6 flex justify-end gap-2">
+		<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showDeleteConfirm = false)}>{t('common.cancel', 'Cancel')}</button>
+		<button class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50" style="background-color: var(--color-danger)" onclick={deleteReview} disabled={deleteSaving}>
+			{deleteSaving ? t('common.deleting', 'Deleting…') : t('common.delete', 'Delete')}
+		</button>
 	</div>
 </Modal>

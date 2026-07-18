@@ -215,7 +215,7 @@
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={endpoints} pageSize={endpoints.length} />
+			<DataTable {columns} data={endpoints} pageSize={10} />
 		{/if}
 	</CardContent>
 </Card>

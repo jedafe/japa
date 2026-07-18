@@ -51,6 +51,9 @@
 			return;
 		}
 		if (authInflight) return;
+		// H4: read the persisted JWT back on app load. The backend does not issue
+		// an httpOnly session cookie, so localStorage is the only way to re-establish
+		// the session across reloads. (See login/+page.svelte for the residual XSS risk.)
 		const storedToken = typeof window !== 'undefined' ? localStorage.getItem('jc_token') : null;
 		if (storedToken) {
 			setToken(storedToken);
@@ -137,19 +140,19 @@
 	];
 
 	const navKeyMap: Record<string, { label: string; tooltip: string }> = {
-		'/': { label: 'nav.dashboard', tooltip: 'System health overview' },
-		'/queue': { label: 'nav.queue', tooltip: 'Background job queue stats' },
-		'/dlq': { label: 'nav.dlq', tooltip: 'Failed job retry management' },
-		'/db': { label: 'nav.db_health', tooltip: 'PostgreSQL health & metrics' },
-		'/audit': { label: 'nav.audit', tooltip: 'Security audit log trail' },
-		'/security': { label: 'nav.security', tooltip: 'Scan findings & IP blocks' },
-		'/api-keys': { label: 'nav.api_keys', tooltip: 'Developer API key management' },
-		'/cache': { label: 'nav.cache', tooltip: 'Cache stats & flush controls' },
-		'/settings': { label: 'nav.settings', tooltip: 'System configuration' },
-		'/feature-flags': { label: 'nav.feature_flags', tooltip: 'Feature flag toggles' },
-		'/tenants': { label: 'nav.tenants', tooltip: 'Tenant organization management' },
-		'/ai-budget': { label: 'nav.ai_budget', tooltip: 'AI cost monitoring & limits' },
-		'/cron': { label: 'nav.cron', tooltip: 'Scheduled task management' },
+		'/': { label: 'nav.dashboard', tooltip: 'nav.dashboard_tooltip' },
+		'/queue': { label: 'nav.queue', tooltip: 'nav.queue_tooltip' },
+		'/dlq': { label: 'nav.dlq', tooltip: 'nav.dlq_tooltip' },
+		'/db': { label: 'nav.db_health', tooltip: 'nav.db_tooltip' },
+		'/audit': { label: 'nav.audit', tooltip: 'nav.audit_tooltip' },
+		'/security': { label: 'nav.security', tooltip: 'nav.security_tooltip' },
+		'/api-keys': { label: 'nav.api_keys', tooltip: 'nav.api_keys_tooltip' },
+		'/cache': { label: 'nav.cache', tooltip: 'nav.cache_tooltip' },
+		'/settings': { label: 'nav.settings', tooltip: 'nav.settings_tooltip' },
+		'/feature-flags': { label: 'nav.feature_flags', tooltip: 'nav.feature_flags_tooltip' },
+		'/tenants': { label: 'nav.tenants', tooltip: 'nav.tenants_tooltip' },
+		'/ai-budget': { label: 'nav.ai_budget', tooltip: 'nav.ai_budget_tooltip' },
+		'/cron': { label: 'nav.cron', tooltip: 'nav.cron_tooltip' },
 	};
 
 	const nav = $derived.by(() => {
@@ -157,7 +160,7 @@
 		return navConfig.map((cfg) => ({
 			...cfg,
 			label: tr[navKeyMap[cfg.href].label] ?? navKeyMap[cfg.href].label,
-			tooltip: navKeyMap[cfg.href].tooltip,
+			tooltip: tr[navKeyMap[cfg.href].tooltip] ?? navKeyMap[cfg.href].tooltip,
 		}));
 	});
 

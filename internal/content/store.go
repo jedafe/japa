@@ -125,14 +125,16 @@ func (s *Service) GetContentBySlug(ctx context.Context, slug string, tenantID pg
 }
 
 // ListContents returns a page of content for the given tenant, newest first.
-// Pass a zero-value CursorCreatedAt for the first page.
-func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTenantRow, error) {
+// Pass a zero-value CursorCreatedAt for the first page. When q is non-empty,
+// results are filtered by case-insensitive match on title, slug, or body.
+func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, q string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	contents, err := s.read.ListContentsByTenant(ctx, gen.ListContentsByTenantParams{
 		TenantID:        tenantID,
+		Q:               q,
 		CursorCreatedAt: cursor,
 		PageLimit:       limit,
 	})
@@ -576,9 +578,13 @@ func (s *Service) GetJSONLDTemplate(ctx context.Context, tenantID pgtype.UUID, c
 	return tmpl, nil
 }
 
-// ListJSONLDTemplates returns all JSON-LD templates for a tenant.
-func (s *Service) ListJSONLDTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.ContentTypeJsonldTemplate, error) {
-	templates, err := s.read.ListJSONLDTemplates(ctx, tenantID)
+// ListJSONLDTemplates returns all JSON-LD templates for a tenant, optionally
+// filtered by q (matches content_type or template body).
+func (s *Service) ListJSONLDTemplates(ctx context.Context, tenantID pgtype.UUID, q pgtype.Text) ([]gen.ContentTypeJsonldTemplate, error) {
+	templates, err := s.read.ListJSONLDTemplates(ctx, gen.ListJSONLDTemplatesParams{
+		TenantID: tenantID,
+		Q:        q.String,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing JSON-LD templates: %w", err)
 	}

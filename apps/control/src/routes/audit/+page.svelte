@@ -1,11 +1,13 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
+	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n';
 	import { escapeHtml } from '$lib/utils';
-	import type { AuditLogEntry, PaginatedResponse, DataTableColumn } from '$lib/api/types';
+	import type { AuditLogEntry, PaginatedResponse, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
+	import { Trash2 } from 'lucide-svelte';
 
 	let entries = $state<AuditLogEntry[]>([]);
 	let page = $state(0);
@@ -13,6 +15,11 @@
 	let totalRows = $state(0);
 	let loading = $state(true);
 	let apiAvailable = $state(true);
+	let message = $state('');
+	let deleteModalOpen = $state(false);
+	let pendingDeleteId = $state<string | null>(null);
+	let clearModalOpen = $state(false);
+	let pendingBulkIds = $state<string[]>([]);
 
 	let sortKey = $state('timestamp');
 	let sortDirection = $state<'asc' | 'desc'>('desc');
@@ -97,6 +104,57 @@
 		}
 	];
 
+	// H3: Clear/Delete actions for the (readonly) audit log. NOTE: the
+	// /control audit catalog currently exposes only GET /control/audit-logs
+	// (no delete/clear route). These wire to the most plausible endpoints;
+	// they will surface a graceful error until the backend adds them.
+	const rowActions: DataTableRowAction[] = [
+		{
+			label: t('audit.clear_entry', 'Clear'),
+			icon: Trash2,
+			variant: 'destructive',
+			onClick: (row) => {
+				pendingDeleteId = (row as unknown as AuditLogEntry).id;
+				deleteModalOpen = true;
+			}
+		}
+	];
+
+	const bulkActions: DataTableBulkAction[] = [
+		{
+			label: t('audit.clear_selected', 'Clear Selected'),
+			icon: Trash2,
+			variant: 'destructive',
+			onClick: (ids) => {
+				pendingBulkIds = ids;
+				clearModalOpen = true;
+			}
+		}
+	];
+
+	async function deleteEntry(id: string) {
+		const result = await api(`/control/audit-logs/${id}`, { method: 'DELETE' });
+		if (result.ok) {
+			message = '';
+			load();
+		} else {
+			message = result.error || t('audit.clear_error', 'Failed to clear audit entry.');
+		}
+	}
+
+	async function clearSelected(ids: string[]) {
+		const result = await api('/control/audit-logs/clear', {
+			method: 'POST',
+			body: { ids }
+		});
+		if (result.ok) {
+			message = '';
+			load();
+		} else {
+			message = result.error || t('audit.clear_error', 'Failed to clear audit entry.');
+		}
+	}
+
 	function buildQuery() {
 		const params = new URLSearchParams({
 			page: String(page),
@@ -180,6 +238,12 @@
 	</div>
 {/if}
 
+{#if message}
+	<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-lg border px-4 py-3 text-sm">
+		{message}
+	</div>
+{/if}
+
 <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
 	<input
 		type="text"
@@ -254,6 +318,36 @@
 	bind:pageSize
 	bind:sortKey
 	bind:sortDirection
-	selectable={false}
+	rowActions={rowActions}
+	bulkActions={bulkActions}
+	selectable={true}
 	emptyMessage={t('audit.empty', 'No audit entries found')}
+/>
+
+<ConfirmModal
+	bind:open={deleteModalOpen}
+	title={t('audit.clear_title', 'Clear Audit Entry')}
+	consequence={t('audit.clear_confirm', 'Permanently clear this audit log entry? This cannot be undone.')}
+	confirmText={t('audit.clear_confirm_text', 'CLEAR')}
+	onConfirm={() => {
+		if (pendingDeleteId) deleteEntry(pendingDeleteId);
+		pendingDeleteId = null;
+	}}
+	onCancel={() => {
+		pendingDeleteId = null;
+	}}
+/>
+
+<ConfirmModal
+	bind:open={clearModalOpen}
+	title={t('audit.clear_all_title', 'Clear Selected Audit Entries')}
+	consequence={t('audit.clear_all_confirm', 'Permanently clear {count} selected audit log entries? This cannot be undone.').replace('{count}', String(pendingBulkIds.length))}
+	confirmText={t('audit.clear_all_confirm_text', 'CLEAR SELECTED')}
+	onConfirm={() => {
+		clearSelected(pendingBulkIds);
+		pendingBulkIds = [];
+	}}
+	onCancel={() => {
+		pendingBulkIds = [];
+	}}
 />

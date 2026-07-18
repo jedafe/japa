@@ -458,6 +458,8 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	q := r.URL.Query().Get("q")
+
 	contentType := r.URL.Query().Get("type")
 	spaceIDStr := r.URL.Query().Get("space_id")
 
@@ -476,7 +478,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	} else if contentType != "" {
 		contents, err = h.Service.ListContentsByType(r.Context(), tenantID, contentType, cursor, limit)
 	} else {
-		contents, err = h.Service.ListContents(r.Context(), tenantID, cursor, limit)
+		contents, err = h.Service.ListContents(r.Context(), tenantID, q, cursor, limit)
 	}
 
 	if err != nil {
@@ -985,7 +987,8 @@ func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	templates, err := h.Service.ListJSONLDTemplates(r.Context(), tenantID)
+	q := r.URL.Query().Get("q")
+	templates, err := h.Service.ListJSONLDTemplates(r.Context(), tenantID, pgtype.Text{String: q, Valid: true})
 	if err != nil {
 		handleServiceError(w, err)
 		return

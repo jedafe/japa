@@ -30,7 +30,8 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<ComparisonType | null>(null);
 
-	const canManageComparisons = $derived(hasPermission('comparisons.manage'));
+	// Backend gates comparison-type mutations on comparison.type.create/edit/delete
+	const canManageComparisons = $derived(hasPermission('comparison.type.create'));
 
 	function openView(ct: ComparisonType) {
 		viewTarget = ct;

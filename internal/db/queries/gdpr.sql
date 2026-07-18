@@ -43,8 +43,15 @@ SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
 FROM consent_records
 WHERE tenant_id = @tenant_id
   AND (@consent_type = '' OR consent_type = @consent_type)
+  AND (@q::text = '' OR consent_type ILIKE '%' || @q || '%' OR ip_address ILIKE '%' || @q || '%')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: DeleteConsent :one
+DELETE FROM consent_records
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
+    ip_address, user_agent, created_at;
 
 -- =====================
 -- GDPR Data Export Queries
@@ -220,5 +227,6 @@ WHERE tenant_id = @tenant_id
   AND (sqlc.narg(target_type) IS NULL OR target_type = @target_type)
   AND (sqlc.narg(start_date) IS NULL OR created_at >= @start_date)
   AND (sqlc.narg(end_date) IS NULL OR created_at <= @end_date)
+  AND (@q::text = '' OR action_type ILIKE '%' || @q || '%' OR target_type ILIKE '%' || @q || '%' OR target_id::text ILIKE '%' || @q || '%' OR actor_user_id::text ILIKE '%' || @q || '%')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;

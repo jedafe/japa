@@ -8,6 +8,7 @@
 package gdpr
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -391,7 +393,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
 
-	logs, err := h.Service.ListAuditLogs(r.Context(), tenantID, actorUserID, actionType, targetType, startDate, endDate, limit, offset)
+	logs, err := h.Service.ListAuditLogsWithQuery(r.Context(), tenantID, actorUserID, actionType, targetType, r.URL.Query().Get("q"), startDate, endDate, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -411,13 +413,35 @@ func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) 
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
 
-	records, err := h.Service.ListConsentsByTenant(r.Context(), tenantID, consentType, limit, offset)
+	records, err := h.Service.ListConsentsByTenantWithQuery(r.Context(), tenantID, consentType, r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": records})
+}
+
+// DeleteConsent handles DELETE /api/v1/admin/consents/{id}.
+func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid consent ID")
+		return
+	}
+
+	record, err := h.Service.DeleteConsent(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": record})
 }
 
 // ListPendingDataExports handles GET /api/v1/admin/data-exports.
@@ -454,6 +478,62 @@ func (h *Handlers) ListPendingDeletions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": requests})
+}
+
+// ---------------------------------------------------------------------------
+// Service glue (same package) — threads GDPR search/filter params through to
+// the Store without touching service.go.
+// ---------------------------------------------------------------------------
+
+// DeleteConsent deletes a single consent record by ID (RBAC: gdpr.consents.delete).
+func (s *Service) DeleteConsent(ctx context.Context, id, tenantID pgtype.UUID) (gen.ConsentRecord, error) {
+	return s.store.deleteConsent(ctx, id, tenantID)
+}
+
+// ListConsentsByTenantWithQuery lists consent records with an optional `q` filter.
+func (s *Service) ListConsentsByTenantWithQuery(ctx context.Context, tenantID pgtype.UUID, consentType, q string, limit, offset int32) ([]gen.ConsentRecord, error) {
+	return s.store.listConsentsByTenantFiltered(ctx, tenantID, consentType, q, limit, offset)
+}
+
+// ListAuditLogsWithQuery lists audit logs with an optional `q` filter.
+func (s *Service) ListAuditLogsWithQuery(ctx context.Context, tenantID, actorUserID pgtype.UUID, actionType, targetType, q string, startDate, endDate *time.Time, limit, offset int32) ([]gen.AuditLog, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	var startDateTZ, endDateTZ pgtype.Timestamptz
+	if startDate != nil {
+		startDateTZ = pgtype.Timestamptz{Time: *startDate, Valid: true}
+	}
+
+	if endDate != nil {
+		endDateTZ = pgtype.Timestamptz{Time: *endDate, Valid: true}
+	}
+
+	var targetTypePtr *string
+	if targetType != "" {
+		targetTypePtr = &targetType
+	}
+
+	zeroUUID := pgtype.UUID{}
+	_ = zeroUUID.Scan("00000000-0000-0000-0000-000000000000")
+
+	actorFilter := zeroUUID
+	if actorUserID.Valid {
+		actorFilter = actorUserID
+	}
+
+	return s.store.listAuditLogs(ctx, gen.ListAuditLogsParams{
+		TenantID:    tenantID,
+		ActorUserID: actorFilter,
+		ActionType:  actionType,
+		TargetType:  targetTypePtr,
+		StartDate:   startDateTZ,
+		EndDate:     endDateTZ,
+		Q:           q,
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
 }
 
 // ---------------------------------------------------------------------------

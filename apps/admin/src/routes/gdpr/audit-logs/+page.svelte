@@ -6,6 +6,7 @@
 	import { RefreshCw } from "lucide-svelte";
 	import { auditLogsAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
+	import { page } from "$app/state";
 
 	type AuditLogEntry = {
 		id: string;
@@ -21,6 +22,7 @@
 	let logs = $state<AuditLogEntry[]>([]);
 	let loading = $state(true);
 	let error = $state("");
+	let searchQuery = $state(""); // bound to the DataTable search box; forwarded to the API
 
 	const columns = [
 		{ key: "created_at", label: t("gdpr.timestamp", "Timestamp"), sortable: true,
@@ -37,7 +39,7 @@
 		loading = true;
 		error = "";
 		try {
-			const result = await auditLogsAdminApi.list();
+			const result = await auditLogsAdminApi.list(searchQuery ? `q=${encodeURIComponent(searchQuery)}` : undefined);
 			if (result.ok) {
 				logs = (result.data as AuditLogEntry[]) ?? [];
 			} else {
@@ -50,6 +52,8 @@
 		}
 	}
 
+	// Restore the in-progress query from the URL so the table matches the search box on reload.
+	searchQuery = page.url.searchParams.get("q") ?? "";
 	loadLogs();
 </script>
 
@@ -80,7 +84,7 @@
 				{t("gdpr.no_logs", "No audit logs found")}
 			</div>
 		{:else}
-			<DataTable {columns} data={logs} pageSize={20} />
+			<DataTable {columns} data={logs} pageSize={20} searchable onsearch={(q) => { searchQuery = q; loadLogs(); }} />
 		{/if}
 	</CardContent>
 </Card>

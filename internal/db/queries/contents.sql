@@ -48,6 +48,7 @@ FROM contents
 WHERE tenant_id = @tenant_id
   AND deleted_at IS NULL
   AND auto_hidden = false
+  AND (@q::text IS NULL OR title ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%' OR body ILIKE '%' || @q || '%')
   AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
@@ -196,6 +197,7 @@ WHERE tenant_id = @tenant_id AND content_type = @content_type AND is_active = tr
 SELECT id, tenant_id, content_type, template, is_active, created_at, updated_at
 FROM content_type_jsonld_templates
 WHERE tenant_id = @tenant_id
+  AND (@q::text = '' OR content_type ILIKE '%' || @q || '%' OR template::text ILIKE '%' || @q || '%')
 ORDER BY created_at ASC, id ASC;
 
 -- name: UpsertJSONLDTemplate :one

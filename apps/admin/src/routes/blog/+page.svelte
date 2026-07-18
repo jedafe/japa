@@ -46,7 +46,8 @@
   let showDeleteConfirm = $state(false);
   let deleteTarget = $state<BlogPost | null>(null);
 
-  const canManageBlog = $derived(hasPermission("blog.manage"));
+  // Backend gates blog mutations on content.create
+  const canManageBlog = $derived(hasPermission("content.create"));
 
   const tabs = [
     { value: "all", label: "All Posts" },
@@ -83,7 +84,7 @@
         const colors: Record<string, string> = {
           published: "bg-success/15 text-success dark:text-success",
           draft: "bg-warning/15 text-warning dark:text-warning",
-          review: "bg-blue-500/15 text-info dark:text-blue-400",
+          review: "bg-info/15 text-info dark:text-info",
           archived: "bg-muted/15 text-muted dark:text-muted"
         };
         return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors[value] || colors.draft}">${value || "draft"}</span>`;

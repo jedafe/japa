@@ -25,6 +25,9 @@
 	let pages = $state<Page[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+
+	// Search term wired into the pages load
+	let searchTerm = $state('');
 	let showCreateModal = $state(false);
 	let newPage = $state({ title: '', slug: '' });
 	let creating = $state(false);
@@ -38,6 +41,14 @@
 	let seoIssues = $state<string[]>([]);
 	let seoLoading = $state(false);
 
+	// Debounced search handler that refetches the pages list
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	function onSearchInput(e: Event) {
+		searchTerm = (e.currentTarget as HTMLInputElement).value;
+		if (searchTimer) clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => load(), 300);
+	}
+
 	$effect(() => {
 		load();
 	});
@@ -46,7 +57,10 @@
 		loading = true;
 		error = '';
 		try {
-			const result = await api<Page[]>('/admin/pages');
+			const params = new URLSearchParams();
+			if (searchTerm.trim()) params.set('q', searchTerm.trim());
+			const qs = params.toString();
+			const result = await api<Page[]>(`/admin/pages${qs ? `?${qs}` : ''}`);
 			if (result.ok) {
 				pages = result.data ?? [];
 			} else {
@@ -173,20 +187,31 @@
 	<title>{t('page_builder.pages_title')} — JapaConnect Admin</title>
 </svelte:head>
 
-<div class="mb-6 flex items-center justify-between">
+<div class="mb-6 flex items-center justify-between gap-2">
 	<div>
 		<h1 class="text-2xl font-bold tracking-tight">{t('page_builder.pages_title')}</h1>
 		<p class="text-sm" style="color: var(--color-muted)">{t('page_builder.pages_description')}</p>
 	</div>
-	{#if canManagePages}
-	<button
-		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-		style="background-color: var(--color-primary)"
-		onclick={() => { showCreateModal = true; }}
-	>
-		{t('page_builder.create_page')}
-	</button>
-	{/if}
+	<div class="flex items-center gap-2">
+		<!-- Debounced search input wired to the pages load -->
+		<input
+			type="search"
+			placeholder={t('common.search')}
+			oninput={onSearchInput}
+			aria-label={t('common.search')}
+			class="w-full max-w-xs rounded-lg border p-2 text-sm outline-none focus:ring-2"
+			style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+		/>
+		{#if canManagePages}
+		<button
+			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
+			style="background-color: var(--color-primary)"
+			onclick={() => { showCreateModal = true; }}
+		>
+			{t('page_builder.create_page')}
+		</button>
+		{/if}
+	</div>
 </div>
 
 {#if error}
@@ -223,14 +248,14 @@
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-2">
 								<button
-									class="text-xs text-blue-500 hover:text-info"
+									class="text-xs text-info hover:text-info"
 									onclick={() => validateSeo(page.id)}
 								>
 									SEO
 								</button>
 							{#if canManagePages}
 							<button
-								class="text-xs text-violet-500 hover:text-violet-700"
+								class="text-xs text-info hover:text-info"
 								onclick={() => openSaveAsTemplate(page.id, page.title)}
 							>
 								{t('page_builder.save_as_template')}

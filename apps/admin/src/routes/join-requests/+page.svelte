@@ -17,13 +17,19 @@
 	let loading = $state(true);
 	let errorMessage = $state('');
 
+	// Search term wired into the join-requests load
+	let searchTerm = $state('');
+
 	const canModerateJoins = $derived(hasPermission('spaces.moderate'));
 
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<JoinRequest[]>('/admin/join-requests');
+			const params = new URLSearchParams();
+			if (searchTerm.trim()) params.set('q', searchTerm.trim());
+			const qs = params.toString();
+			const result = await api<JoinRequest[]>(`/admin/join-requests${qs ? `?${qs}` : ''}`);
 			if (result.ok) {
 				requests = result.data ?? [];
 			} else {
@@ -56,6 +62,14 @@
 		}
 	}
 
+	// Debounced search handler that refetches the join-requests list
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	function onSearchInput(e: Event) {
+		searchTerm = (e.currentTarget as HTMLInputElement).value;
+		if (searchTimer) clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => load(), 300);
+	}
+
 	$effect(() => {
 		load();
 	});
@@ -74,7 +88,16 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
+<div class="mb-4 flex items-center justify-between gap-2">
+	<!-- Debounced search input wired to the join-requests load -->
+	<input
+		type="search"
+		placeholder={t('common.search')}
+		oninput={onSearchInput}
+		aria-label={t('common.search')}
+		class="w-full max-w-xs rounded-lg border p-2 text-sm outline-none focus:ring-2"
+		style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+	/>
 	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
 		<RefreshCw class="h-3 w-3" />
 		{t('common.refresh')}

@@ -62,3 +62,12 @@ test-results/
 
 # Python bytecode
 __pycache__/
+
+# Editor / tooling personal configs (not project work)
+.obsidian/
+.claudian/
+.commandcode/
+.mimocode/
+.opencode/
+Untitled.md
+Prompts/* (Copy).md

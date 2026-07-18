@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { RefreshCw, CheckCircle, Eye } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
 
@@ -19,6 +20,9 @@
 
 	let showViewModal = $state(false);
 	let viewTarget = $state<Profile | null>(null);
+
+	// Backend gates POST/DELETE /admin/profiles/{id}/verify on admin.moderation
+	const canModerate = $derived(hasPermission('admin.moderation'));
 
 	function openView(profile: Profile) {
 		viewTarget = profile;
@@ -112,20 +116,20 @@
 						</td>
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-2">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-muted)" onclick={() => openView(profile)}>
-									<Eye class="h-3 w-3 inline mr-1" />
-									{t('common.view')}
-								</button>
-								{#if !profile.is_verified}
+							<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-muted)" onclick={() => openView(profile)}>
+								<Eye class="h-3 w-3 inline mr-1" />
+								{t('common.view')}
+							</button>
+							{#if canModerate && !profile.is_verified}
 									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => verifyProfile(profile.id)}>
 										<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
 										{t('profiles.verify')}
 									</button>
-								{:else}
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => unverifyProfile(profile.id)} style="color: var(--color-danger)">
-										{t('profiles.unverify')}
-									</button>
-								{/if}
+							{:else if canModerate}
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => unverifyProfile(profile.id)} style="color: var(--color-danger)">
+									{t('profiles.unverify')}
+								</button>
+							{/if}
 							</div>
 						</td>
 					</tr>

@@ -216,12 +216,70 @@
 		return originalSettings.find((s) => s.key === key)?.value ?? '';
 	}
 
+	// validateSettingValue checks a single changed setting's value against its
+	// declared type before it is sent to the backend. Returns a localized error
+	// message (with the setting key interpolated) or null when valid.
+	function validateSettingValue(setting: SystemSetting): string | null {
+		const raw = setting.value ?? '';
+		const key = setting.key;
+		switch (setting.type) {
+			case 'int':
+			case 'float': {
+				const trimmed = raw.trim();
+				if (trimmed === '' || Number.isNaN(Number(trimmed))) {
+					return t('settings.validation_number', '"{key}" must be a valid number.').replace('{key}', key);
+				}
+				const num = Number(trimmed);
+				if (setting.type === 'int' && !Number.isInteger(num)) {
+					return t('settings.validation_integer', '"{key}" must be a whole number.').replace('{key}', key);
+				}
+				const min = (setting as unknown as Record<string, unknown>).min;
+				const max = (setting as unknown as Record<string, unknown>).max;
+				if (typeof min === 'number' && num < min) {
+					return t('settings.validation_number', '"{key}" must be ≥ {min}.').replace('{key}', key).replace('{min}', String(min));
+				}
+				if (typeof max === 'number' && num > max) {
+					return t('settings.validation_number', '"{key}" must be ≤ {max}.').replace('{key}', key).replace('{max}', String(max));
+				}
+				return null;
+			}
+			case 'bool': {
+				const unquoted = raw.replace(/^"(.*)"$/, '$1').toLowerCase();
+				if (unquoted !== 'true' && unquoted !== 'false') {
+					return t('settings.validation_bool', '"{key}" must be true or false.').replace('{key}', key);
+				}
+				return null;
+			}
+			default: {
+				const trimmed = raw.trim();
+				if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+					try {
+						JSON.parse(trimmed);
+					} catch {
+						return t('settings.validation_json', '"{key}" is not valid JSON.').replace('{key}', key);
+					}
+				}
+				return null;
+			}
+		}
+	}
+
 	async function saveAll() {
 		isSaving = true;
 		message = '';
 		const changed = currentSettings.filter(
 			(s, i) => s.value !== originalSettings[i]?.value
 		);
+		// Validate every changed value before sending a single request.
+		for (const setting of changed) {
+			const error = validateSettingValue(setting);
+			if (error) {
+				message = error;
+				messageType = 'error';
+				isSaving = false;
+				return;
+			}
+		}
 		let failed = 0;
 		const results = await Promise.all(
 			changed.map((setting) =>
@@ -455,15 +513,41 @@
 	<div class="min-w-0 flex-1">
 		<!-- Mobile category selector -->
 		<div class="mb-4 md:hidden">
-			<select
-				class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm"
-				bind:value={activeCategory}
+			<Select.Root
+				type="single"
+				value={activeCategory}
+				onValueChange={(v) => {
+					if (v !== undefined) activeCategory = v;
+				}}
 			>
-				<option value="all">{t('settings.all', 'All')} ({currentSettings.length})</option>
-				{#each categoryItems as { category, count }}
-					<option value={category}>{formatNamespace(category)} ({count})</option>
-				{/each}
-			</select>
+				<Select.Trigger
+					class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm"
+				>
+					<Select.Value placeholder={t('settings.all', 'All')} />
+				</Select.Trigger>
+				<Select.Portal>
+					<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
+						<Select.Viewport class="p-1">
+							<Select.Item
+								class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none"
+								value="all"
+								label={t('settings.all', 'All')}
+							>
+								{t('settings.all', 'All')} ({currentSettings.length})
+							</Select.Item>
+							{#each categoryItems as { category, count }}
+								<Select.Item
+									class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none"
+									value={category}
+									label={formatNamespace(category)}
+								>
+									{formatNamespace(category)} ({count})
+								</Select.Item>
+							{/each}
+						</Select.Viewport>
+					</Select.Content>
+				</Select.Portal>
+			</Select.Root>
 		</div>
 
 		<!-- Page Header -->
@@ -580,7 +664,7 @@
 								{/if}
 								{#if dirty}
 									<p class="mt-0.5 text-[10px] text-amber-600/70">
-										Original: {isSensitiveKey(setting.key) ? getMaskedValue(getOriginalValue(setting.key)) : getOriginalValue(setting.key)}
+										{t('settings.original_value', 'Original:')} {isSensitiveKey(setting.key) ? getMaskedValue(getOriginalValue(setting.key)) : getOriginalValue(setting.key)}
 									</p>
 								{/if}
 							</div>

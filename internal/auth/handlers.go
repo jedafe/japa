@@ -18,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/email"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/csrf"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
@@ -35,7 +36,8 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 	Settings     SettingsReader   // Hot-reloadable system settings for auth token TTLs
 	SiteName     string           // Brand name for email templates (e.g. "JapaConnect")
 	SupportURL   string           // Support page URL for email footers
-	CookieDomain string           // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
+	CookieDomain  string // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
+	SecureCookies bool   // When true, session/CSRF cookies are marked Secure (production / TLS)
 }
 
 // Querier is the interface for database operations needed by auth handlers.
@@ -340,6 +342,10 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	})
+
+	// Issue the double-submit CSRF cookie so the SPA can include it as the
+	// X-CSRF-Token header on subsequent mutating requests (audit finding C1).
+	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{

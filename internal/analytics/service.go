@@ -229,53 +229,68 @@ type AdminDashboard struct {
 	SpaceStats         []gen.MvDailySpaceStat            `json:"space_stats"`
 }
 
-// GetAdminDashboardData returns the admin analytics dashboard data.
-func (s *Service) GetAdminDashboardData(ctx context.Context, tenantID pgtype.UUID, days int32) (AdminDashboard, error) {
-	start := time.Now().AddDate(0, 0, -int(days))
+// GetAdminDashboardData returns the admin analytics dashboard data for the
+// window [from, to]. When to is nil the window is left-open (up to now),
+// preserving the historical days-based behavior.
+func (s *Service) GetAdminDashboardData(ctx context.Context, tenantID pgtype.UUID, from time.Time, to *time.Time) (AdminDashboard, error) {
+	start := from
 	startTZ := pgtype.Timestamptz{Time: start, Valid: true}
 	startDate := pgtype.Date{Time: start, Valid: true}
 
-	dau, err := s.store.GetDailyActiveUsers(ctx, tenantID, &startTZ, nil)
+	var (
+		endTime *time.Time
+		endTZ   *pgtype.Timestamptz
+		endDate *pgtype.Date
+	)
+
+	if to != nil {
+		end := *to
+		endTime = &end
+		endTZ = &pgtype.Timestamptz{Time: end, Valid: true}
+		endDate = &pgtype.Date{Time: end, Valid: true}
+	}
+
+	dau, err := s.store.GetDailyActiveUsers(ctx, tenantID, &startTZ, endTZ)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching DAU: %w", err)
 	}
 
-	mau, err := s.store.GetMonthlyActiveUsers(ctx, tenantID, &startTZ, nil)
+	mau, err := s.store.GetMonthlyActiveUsers(ctx, tenantID, &startTZ, endTZ)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching MAU: %w", err)
 	}
 
-	eventCounts, err := s.store.GetEventCountsByType(ctx, tenantID, &start, nil)
+	eventCounts, err := s.store.GetEventCountsByType(ctx, tenantID, &start, endTime)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching event counts: %w", err)
 	}
 
-	contentVolume, err := s.store.GetContentVolumeOverTime(ctx, tenantID, &startTZ, nil)
+	contentVolume, err := s.store.GetContentVolumeOverTime(ctx, tenantID, &startTZ, endTZ)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching content volume: %w", err)
 	}
 
-	userGrowth, err := s.store.GetUserGrowthOverTime(ctx, tenantID, &startDate, nil)
+	userGrowth, err := s.store.GetUserGrowthOverTime(ctx, tenantID, &startDate, endDate)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching user growth: %w", err)
 	}
 
-	traffic, err := s.store.GetTrafficSources(ctx, tenantID, &startTZ, nil, 20)
+	traffic, err := s.store.GetTrafficSources(ctx, tenantID, &startTZ, endTZ, 20)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching traffic sources: %w", err)
 	}
 
-	topContent, err := s.store.GetTopContentByViews(ctx, tenantID, &startDate, nil, 20)
+	topContent, err := s.store.GetTopContentByViews(ctx, tenantID, &startDate, endDate, 20)
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching top content: %w", err)
 	}
 
-	contentStats, err := s.store.GetDailyContentStats(ctx, tenantID, &startDate, nil, pgtype.UUID{})
+	contentStats, err := s.store.GetDailyContentStats(ctx, tenantID, &startDate, endDate, pgtype.UUID{})
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching content stats: %w", err)
 	}
 
-	spaceStats, err := s.store.GetDailySpaceStats(ctx, tenantID, &startDate, nil, pgtype.UUID{})
+	spaceStats, err := s.store.GetDailySpaceStats(ctx, tenantID, &startDate, endDate, pgtype.UUID{})
 	if err != nil {
 		return AdminDashboard{}, fmt.Errorf("fetching space stats: %w", err)
 	}

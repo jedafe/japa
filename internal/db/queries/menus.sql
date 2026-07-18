@@ -8,13 +8,15 @@
 SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
 FROM menus
 WHERE tenant_id = @tenant_id
+  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%')
 ORDER BY created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountMenus :one
 SELECT COUNT(*)::int AS count
 FROM menus
-WHERE tenant_id = @tenant_id;
+WHERE tenant_id = @tenant_id
+  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%');
 
 -- name: GetMenuByID :one
 SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at

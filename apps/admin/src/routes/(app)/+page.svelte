@@ -7,6 +7,8 @@
 	import { CardSkeleton } from '$lib/components/ui/skeleton';
 	import { analyticsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { Users, TrendingUp, Shield, RefreshCw, Zap } from 'lucide-svelte';
 	import { LineChart, AreaChart } from 'layerchart';
 	import { curveMonotoneX } from 'd3-shape';
@@ -50,7 +52,10 @@
 	let loading = $state(true);
 	let error = $state('');
 	let activeTab = $state('overview');
-	let period = $state('7d');
+	// Range controls are sourced from the URL so they survive navigation
+	let period = $state(page.url.searchParams.get('period') ?? '7d');
+	let from = $state(page.url.searchParams.get('from') ?? '');
+	let to = $state(page.url.searchParams.get('to') ?? '');
 
 	const periods = [
 		{ value: '24h', label: '24 Hours' },
@@ -87,10 +92,11 @@
 		loading = true;
 		error = '';
 		try {
-			const [overviewResult, usersResult] = await Promise.all([
-				analyticsAdminApi.getOverview(`period=${period}`),
-				analyticsAdminApi.getUsers()
-			]);
+		const [overviewResult, usersResult] = await Promise.all([
+			// Prefer an explicit date range; fall back to the period selector
+			analyticsAdminApi.getOverview([from && `from=${from}`, to && `to=${to}`].filter(Boolean).join('&') || `period=${period}`),
+			analyticsAdminApi.getUsers()
+		]);
 
 			if (overviewResult.ok && overviewResult.data) {
 				overview = overviewResult.data as OverviewData;
@@ -109,11 +115,29 @@
 	}
 
 	function setPeriod(p: string) {
-		period = p;
-		load();
+		// Selecting a period clears any explicit date range via the URL
+		const url = new URL(page.url);
+		url.searchParams.set('period', p);
+		url.searchParams.delete('from');
+		url.searchParams.delete('to');
+		goto(url, { keepFocus: true, noScroll: true });
+	}
+
+	// Push the chosen date range to the URL (?from=&to=) so it drives the fetch
+	function applyRange() {
+		const url = new URL(page.url);
+		if (from) url.searchParams.set('from', from);
+		else url.searchParams.delete('from');
+		if (to) url.searchParams.set('to', to);
+		else url.searchParams.delete('to');
+		goto(url, { keepFocus: true, noScroll: true });
 	}
 
 	$effect(() => {
+		// Re-sync controls from the URL and reload whenever the range changes
+		from = page.url.searchParams.get('from') ?? '';
+		to = page.url.searchParams.get('to') ?? '';
+		period = page.url.searchParams.get('period') ?? '7d';
 		load();
 	});
 </script>
@@ -144,18 +168,44 @@
 	</div>
 {/if}
 
-<!-- Period Selector -->
-<div class="mb-6 flex items-center gap-2">
-	<span class="text-sm" style="color: var(--color-muted)">{t('common.period', 'Period')}:</span>
-	{#each periods as p}
-		<Button
-			variant={period === p.value ? 'default' : 'ghost'}
-			size="sm"
-			onclick={() => setPeriod(p.value)}
-		>
-			{p.label}
-		</Button>
-	{/each}
+<!-- Period + date-range controls -->
+<div class="mb-6 flex flex-wrap items-end gap-4">
+	<div class="flex items-center gap-2">
+		<span class="text-sm" style="color: var(--color-muted)">{t('common.period', 'Period')}:</span>
+		{#each periods as p}
+			<Button
+				variant={period === p.value ? 'default' : 'ghost'}
+				size="sm"
+				onclick={() => setPeriod(p.value)}
+			>
+				{p.label}
+			</Button>
+		{/each}
+	</div>
+	<!-- Date-range picker that writes ?from=&to= to the URL and refetches -->
+	<div class="flex flex-wrap items-end gap-2">
+		<div>
+			<label for="range-from" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.from', 'From')}</label>
+			<input
+				id="range-from"
+				type="date"
+				bind:value={from}
+				class="rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+			/>
+		</div>
+		<div>
+			<label for="range-to" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.to', 'To')}</label>
+			<input
+				id="range-to"
+				type="date"
+				bind:value={to}
+				class="rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+			/>
+		</div>
+		<Button variant="outline" size="sm" onclick={applyRange}>{t('common.apply', 'Apply')}</Button>
+	</div>
 </div>
 
 {#if loading}
@@ -209,14 +259,15 @@
 					<CardContent>
 						{#if userGrowthData.length > 0}
 							<div class="h-64">
-								<LineChart
-									data={userGrowthData}
-									x="date"
-									y="count"
-									props={{
-										spline: { curve: curveMonotoneX, strokeWidth: 2 }
-									}}
-								/>
+							<LineChart
+								data={userGrowthData}
+								x="date"
+								y="count"
+								props={{
+									// Use the design-system color instead of the LayerChart default
+									spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--color-primary)' }
+								}}
+							/>
 							</div>
 						{:else}
 							<div class="flex h-64 items-center justify-center">

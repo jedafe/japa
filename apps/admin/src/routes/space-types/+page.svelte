@@ -27,7 +27,8 @@
 	let showViewModal = $state(false);
 	let viewTarget = $state<SpaceType | null>(null);
 
-	const canManageSpaceTypes = $derived(hasPermission('space_types.manage'));
+	// Backend gates space-type mutations on space_types.create/edit/delete
+	const canManageSpaceTypes = $derived(hasPermission('space_types.create'));
 
 	async function openView(item: SpaceType) {
 		viewTarget = item;
@@ -184,7 +185,7 @@
 						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{item.slug}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.description || '—'}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {item.is_university ? 'bg-purple-500/15 text-purple-700 dark:text-purple-400' : 'bg-muted/15 text-muted dark:text-muted'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs {item.is_university ? 'bg-info/15 text-info dark:text-info' : 'bg-muted/15 text-muted dark:text-muted'}">
 								{item.is_university ? 'Yes' : 'No'}
 							</span>
 						</td>

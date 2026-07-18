@@ -1066,13 +1066,15 @@ FROM contents
 WHERE tenant_id = $1
   AND deleted_at IS NULL
   AND auto_hidden = false
-  AND (created_at < $2 OR ($2 IS NULL))
+  AND ($2::text IS NULL OR title ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR body ILIKE '%' || $2 || '%')
+  AND (created_at < $3 OR ($3 IS NULL))
 ORDER BY created_at DESC, id DESC
-LIMIT $3
+LIMIT $4
 `
 
 type ListContentsByTenantParams struct {
 	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Q               string             `json:"q"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
 	PageLimit       int32              `json:"page_limit"`
 }
@@ -1109,7 +1111,12 @@ type ListContentsByTenantRow struct {
 }
 
 func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTenantParams) ([]ListContentsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listContentsByTenant, arg.TenantID, arg.CursorCreatedAt, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listContentsByTenant,
+		arg.TenantID,
+		arg.Q,
+		arg.CursorCreatedAt,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1268,11 +1275,17 @@ const listJSONLDTemplates = `-- name: ListJSONLDTemplates :many
 SELECT id, tenant_id, content_type, template, is_active, created_at, updated_at
 FROM content_type_jsonld_templates
 WHERE tenant_id = $1
+  AND ($2::text = '' OR content_type ILIKE '%' || $2 || '%' OR template::text ILIKE '%' || $2 || '%')
 ORDER BY created_at ASC, id ASC
 `
 
-func (q *Queries) ListJSONLDTemplates(ctx context.Context, tenantID pgtype.UUID) ([]ContentTypeJsonldTemplate, error) {
-	rows, err := q.db.Query(ctx, listJSONLDTemplates, tenantID)
+type ListJSONLDTemplatesParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Q        string      `json:"q"`
+}
+
+func (q *Queries) ListJSONLDTemplates(ctx context.Context, arg ListJSONLDTemplatesParams) ([]ContentTypeJsonldTemplate, error) {
+	rows, err := q.db.Query(ctx, listJSONLDTemplates, arg.TenantID, arg.Q)
 	if err != nil {
 		return nil, err
 	}

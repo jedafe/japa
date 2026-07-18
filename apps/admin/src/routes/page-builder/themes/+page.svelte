@@ -23,6 +23,9 @@
 	let error = $state("");
 	let success = $state("");
 
+	// Search term wired into the themes load via the DataTable search box
+	let searchTerm = $state("");
+
 	// Modal
 	let showModal = $state(false);
 	let modalMode = $state<"create" | "edit">("create");
@@ -75,7 +78,10 @@
 		loading = true;
 		error = "";
 		try {
-			const result = await pageBuilderAdminApiExtended.listThemes();
+			const params = new URLSearchParams();
+			if (searchTerm.trim()) params.set("q", searchTerm.trim());
+			const qs = params.toString();
+			const result = await pageBuilderAdminApiExtended.listThemes(qs);
 			if (result.ok) {
 				themes = (result.data as PageTheme[]) ?? [];
 			} else {
@@ -181,7 +187,7 @@
 				{t("themes.empty", "No themes found")}
 			</div>
 		{:else}
-			<DataTable {columns} data={themes} pageSize={themes.length} />
+			<DataTable {columns} data={themes} pageSize={10} searchable onsearch={(q) => { searchTerm = q; loadThemes(); }} />
 		{/if}
 	</CardContent>
 </Card>

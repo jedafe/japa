@@ -30,7 +30,7 @@ func NewStore(database *db.DB) *Store {
 // ---------------------------------------------------------------------------
 
 // ListBlocks returns all blocks for a tenant, ordered by name.
-func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID) ([]Block, error) {
+func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string) ([]Block, error) {
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, tenant_id, name, slug, category, component,
 		       COALESCE(default_config, '{}'::jsonb),
@@ -38,8 +38,9 @@ func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID) ([]Block, 
 		       preview_image, is_system, is_enabled, created_at, updated_at
 		FROM pagebuilder_blocks
 		WHERE tenant_id = $1
+		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR category ILIKE '%' || $2 || '%')
 		ORDER BY name
-	`, tenantID)
+	`, tenantID, q)
 	if err != nil {
 		return nil, fmt.Errorf("listing blocks: %w", err)
 	}
@@ -311,7 +312,7 @@ func (s *Store) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) er
 // ---------------------------------------------------------------------------
 
 // ListThemes returns all themes for a tenant, ordered by name.
-func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID) ([]Theme, error) {
+func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string) ([]Theme, error) {
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, tenant_id, name, slug, description,
 		       COALESCE(colors, '{}'::jsonb),
@@ -320,8 +321,9 @@ func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID) ([]Theme, 
 		       is_default, created_at, updated_at
 		FROM pagebuilder_themes
 		WHERE tenant_id = $1
+		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
 		ORDER BY name
-	`, tenantID)
+	`, tenantID, q)
 	if err != nil {
 		return nil, fmt.Errorf("listing themes: %w", err)
 	}
@@ -506,7 +508,7 @@ func (s *Store) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID) e
 // ---------------------------------------------------------------------------
 
 // ListPages returns all pages for a tenant, ordered by created_at DESC.
-func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID) ([]Page, error) {
+func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, q string) ([]Page, error) {
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, tenant_id, title, slug, description, template_id, theme_id,
 		       COALESCE(blocks, '[]'::jsonb),
@@ -514,8 +516,9 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID) ([]Page, er
 		       status, published_at, created_by, created_at, updated_at
 		FROM pages
 		WHERE tenant_id = $1
+		  AND ($2 = '' OR title ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
 		ORDER BY created_at DESC
-	`, tenantID)
+	`, tenantID, q)
 	if err != nil {
 		return nil, fmt.Errorf("listing pages: %w", err)
 	}

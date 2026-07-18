@@ -52,7 +52,8 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<FieldGroup | null>(null);
 
-	const canManageFields = $derived(hasPermission('custom_fields.manage'));
+	// Backend gates field-group mutations on custom_fields.group.create/edit/delete
+	const canManageFields = $derived(hasPermission('custom_fields.group.create'));
 
 	function confirmDelete(group: FieldGroup) {
 		deleteTarget = group;

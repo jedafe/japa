@@ -7,6 +7,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Select } from '$lib/components/ui/select';
 	import { page as pageState } from '$app/state';
+	import { Switch } from 'bits-ui';
 
 	const canGenerate = $derived(hasPermission('ai.context.generate'));
 	const canReviewHitl = $derived(hasPermission('ai.context.review'));
@@ -565,7 +566,7 @@
 							<tr class="border-t" style="border-color: var(--color-border)">
 								<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{truncate(review.content, 80)}</td>
 								<td class="px-4 py-3">
-									<span class="inline-block rounded-full bg-purple-500/15 px-2 py-0.5 text-xs text-purple-700 dark:text-purple-400">
+									<span class="inline-block rounded-full bg-info/15 px-2 py-0.5 text-xs text-info dark:text-info">
 										{review.content_type}
 									</span>
 								</td>
@@ -740,7 +741,7 @@
 								<td class="px-4 py-3 text-right">{tu.invocations.toLocaleString()}</td>
 								<td class="px-4 py-3 text-right">{tu.avg_latency_ms.toFixed(0)}ms</td>
 								<td class="px-4 py-3 text-right">
-									<span class={tu.errors > 0 ? 'text-red-600 dark:text-danger' : ''}>{tu.errors}</span>
+									<span class={tu.errors > 0 ? 'text-danger dark:text-danger' : ''}>{tu.errors}</span>
 								</td>
 							</tr>
 						{:else}
@@ -810,7 +811,7 @@
 
 		<div class="space-y-3">
 			<div class="flex flex-wrap gap-2 text-xs">
-				<span class="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-purple-700 dark:text-purple-400">
+				<span class="inline-block rounded-full bg-info/15 px-2 py-0.5 text-info dark:text-info">
 					{selectedReview.content_type}
 				</span>
 				<span class="inline-block rounded-full bg-info-100 px-2 py-0.5 text-info-700">
@@ -888,10 +889,17 @@
 			<textarea id="tool-desc" bind:value={toolDescription} rows="3" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"></textarea>
 		</div>
 		<div class="flex items-center gap-3">
-			<label class="relative inline-flex cursor-pointer items-center">
-				<input type="checkbox" bind:checked={toolEnabled} class="peer sr-only" />
-				<div class="peer h-5 w-9 rounded-full bg-surface after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border after:bg-surface after:transition-all peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white dark:bg-gray-700"></div>
-			</label>
+			<Switch.Root
+				checked={toolEnabled}
+				onCheckedChange={(v: boolean) => (toolEnabled = v)}
+				class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 {toolEnabled ? 'bg-primary' : 'bg-surface'}"
+				style="--ring-color: var(--color-primary); --ring-offset-color: var(--color-surface)"
+				aria-label={t('ai.tools.enabled')}
+			>
+				<Switch.Thumb
+					class="inline-block h-4 w-4 transform rounded-full bg-surface shadow-sm transition-transform {toolEnabled ? 'translate-x-6' : 'translate-x-1'}"
+				/>
+			</Switch.Root>
 			<span class="text-sm font-medium text-foreground-alt">{t('ai.tools.enabled')}</span>
 		</div>
 	</div>

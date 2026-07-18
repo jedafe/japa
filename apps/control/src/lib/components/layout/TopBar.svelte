@@ -16,6 +16,10 @@
 			<span class="bg-destructive rounded-5px px-2 py-0.5 text-xs font-bold text-white">
 				PRODUCTION
 			</span>
+		{:else if PUBLIC_JC_ENV === 'staging'}
+			<span class="bg-amber-500 rounded-5px px-2 py-0.5 text-xs font-bold text-black">
+				{t('topbar.staging', 'STAGING')}
+			</span>
 		{/if}
 	</div>
 

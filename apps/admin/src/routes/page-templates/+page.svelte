@@ -5,7 +5,7 @@
 	import { Plus, Pencil, Trash2 } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
 
-	const canManage = $derived(hasPermission('admin.settings'));
+	const canManage = $derived(hasPermission('pagebuilder.templates.manage'));
 
 	type PageTemplate = {
 		id: string;
@@ -20,6 +20,9 @@
 	let templates = $state<PageTemplate[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+
+	// Search term wired into the page-templates load
+	let searchTerm = $state('');
 
 	let showCreateModal = $state(false);
 	let showEditModal = $state(false);
@@ -37,7 +40,10 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<PageTemplate[]>('/admin/page-templates');
+			const params = new URLSearchParams();
+			if (searchTerm.trim()) params.set('q', searchTerm.trim());
+			const qs = params.toString();
+			const result = await api<PageTemplate[]>(`/admin/page-templates${qs ? `?${qs}` : ''}`);
 			if (result.ok) {
 				templates = result.data ?? [];
 			} else {
@@ -48,6 +54,14 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	// Debounced search handler that refetches the page-templates list
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	function onSearchInput(e: Event) {
+		searchTerm = (e.currentTarget as HTMLInputElement).value;
+		if (searchTimer) clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => load(), 300);
 	}
 
 	function openCreate() {
@@ -140,7 +154,16 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
+<div class="mb-4 flex items-center justify-between gap-2">
+	<!-- Debounced search input wired to the page-templates load -->
+	<input
+		type="search"
+		placeholder={t('common.search')}
+		oninput={onSearchInput}
+		aria-label={t('common.search')}
+		class="w-full max-w-xs rounded-lg border p-2 text-sm outline-none focus:ring-2"
+		style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+	/>
 	{#if canManage}<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
 		<Plus class="h-3 w-3" />
 		{t('pageTemplates.create')}

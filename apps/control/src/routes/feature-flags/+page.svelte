@@ -1,11 +1,13 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import DataTable from '$lib/components/DataTable.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Switch, Select, Tooltip, Tabs } from 'bits-ui';
+	import { Select, Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
-	import type { FeatureFlag } from '$lib/api/types';
+	import type { FeatureFlag, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n';
-	import { Flag, RefreshCw } from 'lucide-svelte';
+	import { escapeHtml } from '$lib/utils';
+	import { Flag, RefreshCw, Check, X } from 'lucide-svelte';
 
 	let {} = $props();
 
@@ -32,6 +34,10 @@
 
 	let confirmDisableOpen = $state(false);
 	let pendingDisableFlag = $state<FeatureFlag | null>(null);
+	let page = $state(0);
+	let pageSize = $state(10);
+	let confirmBulkDisableOpen = $state(false);
+	let pendingBulkDisable = $state<string[] | null>(null);
 
 	async function load() {
 		loading = true;
@@ -115,6 +121,98 @@
 	let displayedFlags = $derived(
 		activeTab === 'all' ? filtered : activeTab === 'enabled' ? filteredEnabled : filteredDisabled
 	);
+
+	// M1: shared DataTable spec — columns, per-row actions, bulk actions.
+	const columns: DataTableColumn[] = [
+		{
+			key: 'key',
+			label: t('feature_flags.col_key', 'Key'),
+			sortable: true,
+			render: (v) => `<span class="font-mono text-xs">${escapeHtml(String(v ?? ''))}</span>`
+		},
+		{
+			key: 'description',
+			label: t('feature_flags.col_description', 'Description'),
+			render: (v) => `<span class="text-muted-foreground text-xs">${escapeHtml(String(v ?? ''))}</span>`
+		},
+		{
+			key: 'allowed_groups',
+			label: t('feature_flags.col_groups', 'Groups'),
+			render: (v) => {
+				const groups = (Array.isArray(v) ? v : []) as string[];
+				if (groups.length === 0) return '<span class="text-muted-foreground text-xs">—</span>';
+				return groups
+					.map((g) => `<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 text-[10px] mr-1">${escapeHtml(g)}</span>`)
+					.join('');
+			}
+		},
+		{
+			key: 'enabled',
+			label: t('feature_flags.col_status', 'Status'),
+			sortable: true,
+			render: (v) => {
+				const on = v === true || v === 'true';
+				const cls = on ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground';
+				return `<span class="${cls} rounded-full px-2 py-0.5 text-xs font-medium">${
+					on ? t('feature_flags.enabled', 'enabled') : t('feature_flags.disabled', 'disabled')
+				}</span>`;
+			}
+		}
+	];
+
+	const rowActions: DataTableRowAction[] = [
+		{
+			label: t('feature_flags.enable', 'Enable'),
+			icon: Check,
+			onClick: (row) => handleFlagToggle(row as unknown as FeatureFlag, true),
+			disabled: (row) => (row as unknown as FeatureFlag).enabled || toggling === (row as unknown as FeatureFlag).key
+		},
+		{
+			label: t('feature_flags.disable', 'Disable'),
+			icon: X,
+			variant: 'destructive',
+			onClick: (row) => handleFlagToggle(row as unknown as FeatureFlag, false),
+			disabled: (row) => !(row as unknown as FeatureFlag).enabled || toggling === (row as unknown as FeatureFlag).key
+		}
+	];
+
+	const bulkActions: DataTableBulkAction[] = [
+		{
+			label: t('feature_flags.enable_selected', 'Enable Selected'),
+			icon: Check,
+			onClick: (ids) => enableSelected(ids)
+		},
+		{
+			label: t('feature_flags.disable_selected', 'Disable Selected'),
+			icon: X,
+			variant: 'destructive',
+			onClick: (ids) => {
+				pendingBulkDisable = ids;
+				confirmBulkDisableOpen = true;
+			}
+		}
+	];
+
+	async function enableSelected(ids: string[]) {
+		for (const f of flags) {
+			if (ids.includes(f.key) && !f.enabled) {
+				await toggleFlag(f.key, true);
+			}
+		}
+		load();
+	}
+
+	async function confirmBulkDisable() {
+		if (pendingBulkDisable) {
+			for (const id of pendingBulkDisable) {
+				const f = flags.find((x) => x.key === id);
+				if (f && f.enabled) await toggleFlag(id, false);
+			}
+		}
+		pendingBulkDisable = null;
+		load();
+	}
+
 </script>
 
 <PageHeader title={t('feature_flags.title', 'Feature Flags')} description={t('feature_flags.description', 'Toggle feature flags across the platform')} />
@@ -182,55 +280,33 @@
 		</Tabs.List>
 
 		<Tabs.Content value={activeTab} class="mt-0">
-			{#if displayedFlags.length === 0}
-				<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
-					<Flag class="text-muted-foreground mx-auto size-8" />
-					<p class="text-muted-foreground mt-3 text-sm">{filter ? t('feature_flags.no_match', 'No flags match your filter.') : t('feature_flags.no_flags', 'No feature flags configured.')}</p>
-				</div>
-			{:else}
-				<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
-					<div class="divide-border-card divide-y">
-						{#each displayedFlags as flag (flag.key)}
-							<div class="flex items-center gap-4 px-4 py-3">
-								<div class="min-w-0 flex-1">
-									<div class="flex items-center gap-2">
-										<p class="text-foreground font-mono text-sm font-medium">{flag.key}</p>
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<span class="text-muted-foreground cursor-help text-xs">{'\u2139'}</span>
-											</Tooltip.Trigger>
-											<Tooltip.Portal>
-												<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 w-[280px] rounded-input border p-3 text-xs">
-													{flag.description}
-												</Tooltip.Content>
-											</Tooltip.Portal>
-										</Tooltip.Root>
-									</div>
-									<p class="text-muted-foreground truncate text-xs">{flag.description}</p>
-								</div>
-								<div class="flex items-center gap-2">
-									<div class="flex flex-wrap gap-1">
-										{#each flag.allowed_groups as group}
-											<span class="{flag.enabled ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'} rounded-5px px-1.5 py-0.5 text-[10px]">{group}</span>
-										{/each}
-									</div>
-									<Switch.Root
-										checked={flag.enabled}
-										onCheckedChange={(checked) => handleFlagToggle(flag, checked)}
-										disabled={toggling === flag.key}
-										class="bg-muted data-[state=checked]:bg-foreground peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[3px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-									>
-										<Switch.Thumb class="bg-background pointer-events-none block size-4 shrink-0 rounded-full transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0" />
-									</Switch.Root>
-								</div>
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/if}
+			<DataTable
+				{columns}
+				rows={displayedFlags}
+				totalRows={displayedFlags.length}
+				{loading}
+				bind:page
+				bind:pageSize
+				rowActions={rowActions}
+				bulkActions={bulkActions}
+				selectable={true}
+				getRowId={(row) => (row as FeatureFlag).key}
+				emptyMessage={filter ? t('feature_flags.no_match', 'No flags match your filter.') : t('feature_flags.no_flags', 'No feature flags configured.')}
+			/>
 		</Tabs.Content>
 	</Tabs.Root>
 {/if}
+
+<ConfirmModal
+	bind:open={confirmBulkDisableOpen}
+	title={t('feature_flags.disable_title', 'Disable Feature Flag')}
+	consequence={pendingBulkDisable && pendingBulkDisable.length > 0
+		? t('feature_flags.disable_confirm', 'Are you sure you want to disable "{key}"? This may affect users who depend on this feature.').replace('{key}', `${pendingBulkDisable.length} selected flags`)
+		: ''}
+	confirmText={t('feature_flags.disable_text', 'DISABLE')}
+	onConfirm={confirmBulkDisable}
+	onCancel={() => { confirmBulkDisableOpen = false; pendingBulkDisable = null; }}
+/>
 
 <ConfirmModal
 	bind:open={confirmDisableOpen}

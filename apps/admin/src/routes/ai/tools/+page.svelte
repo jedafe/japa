@@ -139,7 +139,7 @@
 						</td>
 						<td class="px-4 py-3 text-right">
 							<button
-								class="text-xs text-blue-500 hover:text-info"
+								class="text-xs text-info hover:text-info"
 								onclick={() => editTool(tool)}
 							>
 								{t('common.edit')}

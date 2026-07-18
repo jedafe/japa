@@ -662,7 +662,12 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 
 // ListAppeals handles GET /admin/appeals.
 func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.Queries.ListModerationAppeals(r.Context())
+	var search *string
+	if s := r.URL.Query().Get("q"); s != "" {
+		search = &s
+	}
+
+	rows, err := h.Queries.ListModerationAppeals(r.Context(), search)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list appeals")
 		return
