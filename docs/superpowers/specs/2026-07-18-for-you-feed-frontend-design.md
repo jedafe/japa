@@ -22,6 +22,9 @@ This spec turns that placeholder into a real, personalized, multi-tab feed and f
 | F2 | Pagination | **Infinite scroll** — `IntersectionObserver` sentinel client-fetches the next `page_offset` and appends. |
 | F3 | Card style | **Honor all 4** `feed.card_style` variants (`reddit`/`compact`/`grid`/`magazine`) in one `FeedCard`, selected by the real backend setting. |
 | F4 | Card richness | **Media-rich** — the `magazine` variant carries avatar, relative time, reading time, tags, cover image; other variants share the same data with lighter layout. |
+| F5 | Container treatment | `reddit`/`compact` = **edge-to-edge divide-y rows** (match existing placeholder); `grid`/`magazine` = **bordered rounded cards**. |
+| F6 | Vote / bookmark controls | **Display-only counts** in v1 — no interactive mutations (deferred to a separate interactions unit, §7). |
+| F7 | Type badge | **Quiet neutral** — one surface-subtle badge for all content types; no per-type color. |
 
 **Rule 16 clean:** every rendered field and the card style come from real backend data. No fabricated ordering, no dead admin control.
 
@@ -110,7 +113,41 @@ lib/feed/
    - `loadMore()` guards on `loading || atEnd`, then `api.get<FeedItem[]>(feedPath(tab, sort, pageSize, items.length))`, appends results, and sets `atEnd = (returned.length < pageSize)`.
    - Observer is created in an `$effect` and disconnected on teardown and on `atEnd`.
 
-5. **`FeedCard.svelte`** — `{#if style === 'magazine'}` large hero image + full meta; `{:else if style === 'grid'}` image-top compact card; `{:else if style === 'compact'}` dense single-line; `{:else}` `reddit` default (thumbnail + text). All variants share: type badge, title, author, relative time (when parseable), and the metric row (votes / comments / views / bookmarks). Cover image is lazy-loaded (`loading="lazy"`) and only rendered when `cover_image_url` is present and the variant uses it.
+5. **`FeedCard.svelte`** — switches layout on `style` (`magazine` / `grid` / `compact` / else `reddit`). Full per-variant visual specification is **§3A** (locked).
+
+---
+
+## 3A. Card visual specification (locked 2026-07-19)
+
+Interactive reference mockup (real tokens, theme-aware, light/dark toggle): artifact `e9dbc3d3-06aa-46e3-bb34-6c0840103611` (source `feed-card-variants.html`). Fonts there are approximated (Inter→system sans, Lora→Georgia); production uses the real faces. Cover images there are gradient placeholders for `cover_image_url`.
+
+**Tokens (from `app.css` — consume, never redefine):** zinc neutral surfaces; `--color-primary` `#3b49df` (light) / `#5865f2` (dark); `--radius-card` 12px; Inter (`--font-sans`) everywhere **except** the magazine headline, which uses `--font-serif` (Lora). Theme is driven by `[data-theme]`, never Tailwind `dark:`.
+
+**Shared elements (identical `FeedItem` data across all four):**
+- **Type badge** — quiet neutral for *every* content type: `--color-surface-subtle` bg, `--color-text-subtle` text, 1px `--color-border`, uppercase ~10.5px / +0.05em tracking, radius 5px. No per-type color.
+- **Metric row** — muted, ~12.5px, `tabular-nums`, gap 16px; lucide icons at 14px for `vote_score` (arrow-up), `comment_count` (message-square), `view_count` (eye), `bookmark_count` (bookmark). **Display-only in v1.**
+- **Vote indicator** (reddit/compact) — **display-only**: up-chevron + net `vote_score`, muted, non-interactive. Rail is voting-ready structurally but wires nothing in v1 (mutations are §7 out-of-scope).
+- **Avatar** — `author_avatar_url` when present; else initials on a solid fill; circular.
+- **Tags** — `--color-primary`, ~12px, `#tag` form, wrap.
+- **Relative time** — from `time.ts`; **omitted entirely** when unparseable (never renders "Invalid Date").
+- **Cover image** — `loading="lazy"`; rendered only when `cover_image_url` is present *and* the variant uses it.
+
+**Container treatment (locked):**
+
+| Variant | Container |
+|---------|-----------|
+| `reddit` (default) | **Edge-to-edge divide-y rows** — no card wrapper, no side borders; matches the existing placeholder + ADR-058 X.com shell. |
+| `compact` | Edge-to-edge divide-y rows (densest). |
+| `grid` | Bordered rounded cards (`--radius-card`, `--color-surface`, 1px `--color-border`) in a 2-col grid; 1-col below ~560px. |
+| `magazine` | Bordered rounded cards, single column, stacked with ~14px gap. |
+
+**Per-variant layout:**
+- **`reddit`** — row = `[vote rail ~28px] · [body] · [thumbnail 84px]`. Body: meta line (`badge · space · author · time`), ~15.5px/600 title, 1-line-clamped excerpt trailing `· Nm read`, foot row (tags left / metrics right). Thumbnail only when `cover_image_url`. Row hover → `surface-subtle`.
+- **`compact`** — one line: `[▲ score ~44px] · [title, ellipsis, flex-1] · [space · time] · [comments · views]`. No excerpt, no image. `space · time` hides below ~560px.
+- **`grid`** — cover (16:9), then body: badge, 2-line-clamped ~15px/600 title, meta (`avatar · author · time`) pinned to the card bottom, metric row. Hover → border `--color-muted`.
+- **`magazine`** — header (`~34px avatar` + author / `space · time · Nm read`), 16:9 hero (rounded, bordered), badge, **serif headline ~25px/500 Lora with `text-wrap: balance`**, 2-line ~15px excerpt, foot (tags / metrics). The only variant that leaves Inter — the app's "this is a read" typographic signature.
+
+**No-image behavior:** reddit/compact omit the thumbnail; grid/magazine render without the cover block (content moves up) — **no gray placeholder box** in production.
 
 ---
 
