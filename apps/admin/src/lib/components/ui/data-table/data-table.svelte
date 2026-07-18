@@ -35,28 +35,44 @@
      showPagination = true,
      loading = false,
      pageSize,
-     bulkActions,
-     urlSync = false,
-     defaultBulkActions = false,
-     onbulkclear,
-     onsortchange
-   }: {
-     columns: Column[];
-     data?: any[];
-     selectable?: boolean;
-     selectedIds?: Set<string>;
-     onrowclick?: (row: any) => void;
-     emptyMessage?: string;
-     class?: ClassValue;
-     showPagination?: boolean;
-     loading?: boolean;
-     pageSize?: number;
-     bulkActions?: Snippet;
-     urlSync?: boolean;
-     defaultBulkActions?: boolean;
-     onbulkclear?: () => void;
-     onsortchange?: (sort: { key: string | null; dir: "asc" | "desc" }) => void;
-   } = $props();
+      bulkActions,
+      urlSync = false,
+      defaultBulkActions = false,
+      onbulkclear,
+      onsortchange,
+      // Optional URL-persisted search box (opt-in via `searchable`).
+      searchable = false,
+      searchPlaceholder = t("common.search", "Search"),
+      searchParam = "q",
+      onsearch,
+      // Optional URL-persisted single filter value (opt-in via `filterParam`).
+      filterParam = "",
+      filterValue = $bindable(""),
+      onfilterchange
+    }: {
+      columns: Column[];
+      data?: any[];
+      selectable?: boolean;
+      selectedIds?: Set<string>;
+      onrowclick?: (row: any) => void;
+      emptyMessage?: string;
+      class?: ClassValue;
+      showPagination?: boolean;
+      loading?: boolean;
+      pageSize?: number;
+      bulkActions?: Snippet;
+      urlSync?: boolean;
+      defaultBulkActions?: boolean;
+      onbulkclear?: () => void;
+      onsortchange?: (sort: { key: string | null; dir: "asc" | "desc" }) => void;
+      searchable?: boolean;
+      searchPlaceholder?: string;
+      searchParam?: string;
+      onsearch?: (q: string) => void;
+      filterParam?: string;
+      filterValue?: string;
+      onfilterchange?: (v: string) => void;
+    } = $props();
 
    // Bulk actions can be provided either as a `bulkActions` snippet prop or as a
    // child `{#snippet bulkActions()}`. Normalise to a renderable snippet.
@@ -128,13 +144,88 @@
     }
   }
 
-  function clearSelection() {
-    selectedIds = new Set();
-    onbulkclear?.();
-  }
-</script>
+   function clearSelection() {
+     selectedIds = new Set();
+     onbulkclear?.();
+   }
+
+   // Optional debounced search box — writes `?{searchParam}=` to the URL.
+   let searchInput = $state("");
+   let searchSeeded = false;
+   let searchTimer: ReturnType<typeof setTimeout> | undefined;
+   $effect(() => {
+     // Seed the search box from the URL once so a reload restores the query.
+     if (searchable && !searchSeeded) {
+       searchInput = page.url.searchParams.get(searchParam) ?? "";
+       searchSeeded = true;
+     }
+   });
+   function handleSearchInput(e: Event) {
+     searchInput = (e.currentTarget as HTMLInputElement).value;
+     if (searchTimer) clearTimeout(searchTimer);
+     searchTimer = setTimeout(applySearch, 300); // debounce URL writes + refetch
+   }
+   function applySearch() {
+     const q = searchInput.trim();
+     const params = new URLSearchParams(page.url.searchParams.toString());
+     if (q) params.set(searchParam, q); else params.delete(searchParam);
+     goto(`?${params.toString()}`, { keepFocus: true, noScroll: true });
+     onsearch?.(q);
+   }
+   function clearSearch() {
+     searchInput = "";
+     if (searchTimer) clearTimeout(searchTimer);
+     applySearch();
+   }
+
+   // Optional URL-persisted filter value — seeded from and written to `?{filterParam}=`.
+   let filterSeeded = false;
+   $effect(() => {
+     if (filterParam && !filterSeeded) {
+       const v = page.url.searchParams.get(filterParam) ?? "";
+       if (v) filterValue = v;
+       filterSeeded = true;
+     }
+   });
+   let filterPersistReady = false;
+   $effect(() => {
+     // Persist filterValue to the URL on change (opt-in); skip the initial pass.
+     if (!filterParam) return;
+     const v = filterValue; // track reactivity
+     if (!filterPersistReady) { filterPersistReady = true; return; }
+     const params = new URLSearchParams(page.url.searchParams.toString());
+     if (v) params.set(filterParam, v); else params.delete(filterParam);
+     goto(`?${params.toString()}`, { keepFocus: true, noScroll: true });
+     onfilterchange?.(v);
+   });
+ </script>
 
 <div class={clsx("w-full", className)} aria-live="polite" aria-busy={loading}>
+  {#if searchable}
+    <!-- Optional debounced search box that persists the query to the URL. -->
+    <div class="relative mb-3">
+      <input
+        type="search"
+        placeholder={searchPlaceholder}
+        bind:value={searchInput}
+        oninput={handleSearchInput}
+        aria-label={searchPlaceholder}
+        class="w-full rounded-lg border p-2 pr-10 text-sm outline-none focus:ring-2"
+        style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+      />
+      {#if searchInput}
+        <button
+          type="button"
+          onclick={clearSearch}
+          aria-label={t("common.clearSelection", "Clear search")}
+          class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1"
+          style="color: var(--color-muted)"
+        >
+          ✕
+        </button>
+      {/if}
+    </div>
+  {/if}
   <div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
     <table class="w-full caption-bottom text-sm">
       <thead>

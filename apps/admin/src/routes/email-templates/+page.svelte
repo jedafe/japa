@@ -42,7 +42,7 @@
 	let testEmail = $state("");
 	let testing = $state(false);
 
-	const canManageTemplates = $derived(hasPermission("email-templates.manage"));
+	const canManageTemplates = $derived(hasPermission("email.templates.manage"));
 
 	const columns = [
 		{ key: "name", label: t("email_templates.name", "Name"), sortable: true },
@@ -183,7 +183,7 @@
 				{t("email_templates.empty", "No email templates found")}
 			</div>
 		{:else}
-			<DataTable {columns} data={templates} pageSize={templates.length} />
+			<DataTable {columns} data={templates} pageSize={10} />
 		{/if}
 	</CardContent>
 </Card>

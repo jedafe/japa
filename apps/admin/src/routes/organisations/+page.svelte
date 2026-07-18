@@ -51,7 +51,8 @@
 	let formSlug = $state("");
 	let formDescription = $state("");
 
-	const canManage = $derived(hasPermission("organizations.manage"));
+	// Backend gates organisation mutations on organisations.manage
+	const canManage = $derived(hasPermission("organisations.manage"));
 
 	const filterDefs = [
 		{
@@ -74,7 +75,7 @@
 			label: t("organisations.verified", "Verified"),
 			sortable: true,
 			render: (v: boolean) => {
-				const cls = v ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "bg-slate-500/15 text-slate-700 dark:text-slate-400";
+				const cls = v ? "bg-success/15 text-success dark:text-success" : "bg-muted/15 text-muted dark:text-muted";
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v ? "Yes" : "No"}</span>`;
 			}
 		},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -1231,6 +1232,114 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		logs = []auditLog{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": logs})
+}
+
+// auditLogDefaultRetentionDays is the fallback retention window for an
+// unscoped (no-body) bulk clear. Logs older than this are purged; everything
+// newer is preserved unless an explicit `confirm: true` is supplied. A
+// production deployment may override this via system_settings
+// `audit.logs.retention_days`.
+const auditLogDefaultRetentionDays = 365
+
+// DeleteAuditLog handles DELETE /api/v1/control/audit-logs/{id}.
+// Hard-deletes a single audit log entry by id. The control panel audit log is
+// a full cross-tenant super-admin view (see ListAuditLogs), so the lookup is
+// not tenant-scoped. Returns 404 when the row does not exist.
+func (h *Handlers) DeleteAuditLog(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid audit log ID")
+		return
+	}
+
+	tag, err := h.DB.Writer.Exec(r.Context(),
+		`DELETE FROM audit_logs WHERE id = $1`, id)
+	if err != nil {
+		slog.Error("control: delete audit log", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete audit log")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "not_found", "Audit log not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"id": id.String(), "status": "deleted"},
+	})
+}
+
+// AuditLogClearInput is the optional JSON body for POST /api/v1/control/audit-logs/clear.
+// A missing body triggers a retention-based purge of logs older than
+// auditLogDefaultRetentionDays. A `before` timestamp scopes the purge to logs
+// created strictly before it; `action_type` further narrows by action. A full
+// clear with no scope requires `confirm: true` to guard against accidental wipes.
+type AuditLogClearInput struct {
+	Before     *string `json:"before"`
+	ActionType *string `json:"action_type"`
+	Confirm    bool    `json:"confirm"`
+}
+
+// ClearAuditLogs handles POST /api/v1/control/audit-logs/clear.
+// Bulk-deletes audit log entries. GDPR-safe by default: a no-body request
+// purges only logs beyond the retention window. Scoped purges (`before` /
+// `action_type`) are allowed without confirmation; an unscoped full clear
+// requires an explicit `confirm: true` in the request body.
+func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
+	var input AuditLogClearInput
+	if body, _ := io.ReadAll(r.Body); len(body) > 0 {
+		if err := json.Unmarshal(body, &input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+			return
+		}
+	}
+
+	// Build the scoped WHERE clause (audit_logs is cross-tenant here).
+	var where string
+	var args []any
+
+	switch {
+	case input.Before != nil && *input.Before != "":
+		ts, err := time.Parse(time.RFC3339, *input.Before)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_before", "before must be an RFC3339 timestamp")
+			return
+		}
+		where = "created_at < $1"
+		args = []any{ts}
+		if input.ActionType != nil && *input.ActionType != "" {
+			where += " AND action_type = $2"
+			args = append(args, *input.ActionType)
+		}
+	case input.ActionType != nil && *input.ActionType != "":
+		where = "action_type = $1"
+		args = []any{*input.ActionType}
+	default:
+		// No scope: retention-based purge by default; full clear only with confirm.
+		if input.Confirm {
+			where = "" // clear everything
+		} else {
+			cutoff := time.Now().AddDate(0, 0, -auditLogDefaultRetentionDays)
+			where = "created_at < $1"
+			args = []any{cutoff}
+		}
+	}
+
+	query := "DELETE FROM audit_logs"
+	if where != "" {
+		query += " WHERE " + where
+	}
+
+	tag, err := h.DB.Writer.Exec(r.Context(), query, args...)
+	if err != nil {
+		slog.Error("control: clear audit logs", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to clear audit logs")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"cleared": tag.RowsAffected()},
+	})
 }
 
 // ---------------------------------------------------------------------------

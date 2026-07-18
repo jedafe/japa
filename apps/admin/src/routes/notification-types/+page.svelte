@@ -21,7 +21,8 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<NotificationType | null>(null);
 
-	const canManageNotificationTypes = $derived(hasPermission('notification_types.manage'));
+	// Backend gates notification-type mutations on notifications.manage
+	const canManageNotificationTypes = $derived(hasPermission('notifications.manage'));
 
 	function confirmDelete(ntype: NotificationType) {
 		deleteTarget = ntype;
@@ -148,10 +149,10 @@
 						<td class="px-4 py-3">
 							<div class="flex gap-1">
 								{#if ntype.default_channels?.email}
-									<span class="rounded px-1.5 py-0.5 text-xs bg-blue-500/15 text-info dark:text-blue-400">{t('notification-types.email')}</span>
+									<span class="rounded px-1.5 py-0.5 text-xs bg-info/15 text-info dark:text-info">{t('notification-types.email')}</span>
 								{/if}
 								{#if ntype.default_channels?.push}
-									<span class="rounded px-1.5 py-0.5 text-xs bg-purple-500/15 text-purple-700 dark:text-purple-400">{t('notification-types.push')}</span>
+									<span class="rounded px-1.5 py-0.5 text-xs bg-info/15 text-info dark:text-info">{t('notification-types.push')}</span>
 								{/if}
 								{#if ntype.default_channels?.in_app}
 									<span class="rounded px-1.5 py-0.5 text-xs bg-success/15 text-success dark:text-success">{t('notification-types.in_app')}</span>
@@ -162,7 +163,7 @@
 							<div class="flex items-center justify-end gap-2">
 								{#if canManageNotificationTypes}
 									<button
-										class="text-xs text-blue-500 hover:text-info"
+										class="text-xs text-info hover:text-info"
 										onclick={() => openEdit(ntype)}
 									>
 										{t('common.edit')}

@@ -64,6 +64,7 @@
   let deleteTargetId = $state("");
   let deleteTargetName = $state("");
 
+  // Backend gates media mutations on media.manage
   const canManageMedia = $derived(hasPermission("media.manage"));
 
   function openView(item: MediaItem) {

@@ -40,7 +40,8 @@
 	let showViewModal = $state(false);
 	let viewBot = $state<Bot | null>(null);
 
-	const canManageBots = $derived(hasPermission("bots.manage"));
+	// Backend gates bot mutations on bots.admin
+	const canManageBots = $derived(hasPermission("bots.admin"));
 
 	const botColumns = [
 		{

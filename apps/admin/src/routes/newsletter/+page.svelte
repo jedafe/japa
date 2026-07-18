@@ -175,7 +175,12 @@
 	async function loadSubscribers() {
 		loading = true;
 		try {
-			const result = await api<Subscriber[]>("/admin/newsletter/subscribers");
+			// Pass the FilterBar search/status through to the subscribers query.
+			const params = new URLSearchParams();
+			if (filters.search) params.set("search", filters.search);
+			if (filters.status) params.set("status", filters.status);
+			const query = params.toString();
+			const result = await api<Subscriber[]>(`/admin/newsletter/subscribers${query ? `?${query}` : ""}`);
 			if (result.ok) {
 				subscribers = result.data ?? [];
 				stats.subscribers = subscribers.length;
@@ -209,6 +214,8 @@
 
 	function handleFilter(values: Record<string, string>) {
 		filters = values;
+		// Previously a no-op — now refetch subscribers with the applied filters.
+		loadSubscribers();
 	}
 
 	async function createCampaign() {

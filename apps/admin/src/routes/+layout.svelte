@@ -112,7 +112,7 @@
 		'/moderation-queue': 'admin.moderation.view',
 		'/moderation/content': 'moderation.content.review',
 		'/moderation/reports': 'reports.review',
-		'/moderation/appeals': 'moderation.appeal.review',
+		'/moderation/appeals': 'reports.review',
 		'/gdpr/audit-logs': 'gdpr.audit_logs.view',
 		'/gdpr/consents': 'gdpr.consents.view',
 		'/blog/review-queue': 'blog.review.manage'

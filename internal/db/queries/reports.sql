@@ -28,6 +28,11 @@ FROM content_reports
 WHERE tenant_id = @tenant_id
   AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
   AND (sqlc.narg(entity_type)::text IS NULL OR entity_type = sqlc.narg(entity_type))
+  AND (sqlc.narg(q)::text IS NULL OR (
+        entity_id::text ILIKE '%' || sqlc.narg(q) || '%'
+     OR entity_type ILIKE '%' || sqlc.narg(q) || '%'
+     OR reporter_user_id::text ILIKE '%' || sqlc.narg(q) || '%'
+  ))
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 

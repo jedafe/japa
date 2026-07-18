@@ -1256,6 +1256,15 @@ type NewsletterListSubscriber struct {
 	SubscriberID pgtype.UUID `json:"subscriber_id"`
 }
 
+type NewsletterSendState struct {
+	CampaignID pgtype.UUID        `json:"campaign_id"`
+	Recipient  string             `json:"recipient"`
+	Status     string             `json:"status"`
+	SentAt     pgtype.Timestamptz `json:"sent_at"`
+	Error      *string            `json:"error"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type NewsletterSubscriber struct {
 	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`

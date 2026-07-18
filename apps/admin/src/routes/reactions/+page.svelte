@@ -33,7 +33,8 @@
 	let showViewModal = $state(false);
 	let viewTarget = $state<ReactionType | null>(null);
 
-	const canManageReactions = $derived(hasPermission('reactions.manage'));
+	// Backend gates reaction-type mutations on content.reaction_types.manage
+	const canManageReactions = $derived(hasPermission('content.reaction_types.manage'));
 
 	function openView(reaction: ReactionType) {
 		viewTarget = reaction;

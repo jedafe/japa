@@ -24,6 +24,7 @@
 	let loading = $state(true);
 	let filterType = $state('');
 	let filterStatus = $state('');
+	let searchQuery = $state(''); // FilterBar search term, forwarded to the content API
 	let errorMessage = $state('');
 
 	// Expandable detail
@@ -46,6 +47,7 @@
 		const params = new URLSearchParams({ page: String(page) });
 		if (filterType) params.set('type', filterType);
 		if (filterStatus) params.set('status', filterStatus);
+		if (searchQuery) params.set('q', searchQuery); // forward the search term to the API
 		try {
 			const result = await contentAdminApi.list(params.toString());
 			if (result.ok) {
@@ -63,6 +65,8 @@
 	}
 
 	function handleFilter(values: Record<string, string>) {
+		// Capture the FilterBar search term so the previously-dead box now drives the query.
+		searchQuery = values.search ?? '';
 		filterType = values.type ?? '';
 		filterStatus = values.status ?? '';
 		page = 0;
@@ -101,10 +105,10 @@
 
 	function typeBadge(type: string) {
 		switch (type) {
-			case 'post': return 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-400';
-			case 'comment': return 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-400';
-			case 'blog': return 'bg-rose-500/15 text-rose-700 dark:text-rose-400';
-			case 'forum': return 'bg-orange-500/15 text-orange-700 dark:text-orange-400';
+			case 'post': return 'bg-info/15 text-info dark:text-info';
+			case 'comment': return 'bg-info/15 text-info dark:text-info';
+			case 'blog': return 'bg-danger/15 text-danger dark:text-danger';
+			case 'forum': return 'bg-warning/15 text-warning dark:text-warning';
 			default: return 'bg-muted/15 text-muted dark:text-muted';
 		}
 	}
@@ -168,7 +172,7 @@
 						<td class="px-4 py-3">
 							<p class="font-medium">{item.title}</p>
 							{#if item.is_featured}
-								<span class="inline-block rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs text-yellow-700 dark:text-yellow-400">{t('moderation.content.featured')}</span>
+								<span class="inline-block rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning dark:text-warning">{t('moderation.content.featured')}</span>
 							{/if}
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.author}</td>

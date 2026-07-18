@@ -15,6 +15,8 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/rbac"
+	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Valid entity_type and reason values, matching the migration's CHECK constraints.
@@ -75,14 +77,18 @@ type Service struct {
 	read     *gen.Queries
 	write    *gen.Queries
 	settings *config.Settings
+	db       *db.DB
+	valkey   valkeycompat.Cmdable
 }
 
 // NewService creates a Service backed by the given database.
-func NewService(database *db.DB, settings *config.Settings) *Service {
+func NewService(database *db.DB, settings *config.Settings, vk valkeycompat.Cmdable) *Service {
 	return &Service{
 		read:     gen.New(database.Reader),
 		write:    gen.New(database.Writer),
 		settings: settings,
+		db:       database,
+		valkey:   vk,
 	}
 }
 
@@ -177,13 +183,37 @@ func (s *Service) ListMyReports(ctx context.Context, tenantID, reporterUserID pg
 	return reports, nil
 }
 
+// CountReports returns the total number of reports for the tenant (respecting
+// an optional status filter) so callers can paginate.
+func (s *Service) CountReports(ctx context.Context, tenantID pgtype.UUID, status, q *string) (int32, error) {
+	var total int32
+	query := `SELECT COUNT(*)::int FROM content_reports WHERE tenant_id = $1`
+	args := []any{tenantID}
+	if status != nil {
+		args = append(args, *status)
+		query += fmt.Sprintf(` AND status = $%d`, len(args))
+	}
+	if q != nil && *q != "" {
+		args = append(args, *q)
+		p := fmt.Sprintf("$%d", len(args))
+		query += ` AND (entity_id::text ILIKE '%' || ` + p + ` || '%'` +
+			` OR entity_type ILIKE '%' || ` + p + ` || '%'` +
+			` OR reporter_user_id::text ILIKE '%' || ` + p + ` || '%')`
+	}
+	if err := s.db.Reader.QueryRow(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("counting reports: %w", err)
+	}
+	return total, nil
+}
+
 // ListReports returns all reports for the tenant (admin), optionally
 // filtered by status and/or entity_type.
-func (s *Service) ListReports(ctx context.Context, tenantID pgtype.UUID, status, entityType *string, limit, offset int32) ([]gen.ContentReport, error) {
+func (s *Service) ListReports(ctx context.Context, tenantID pgtype.UUID, status, entityType, q *string, limit, offset int32) ([]gen.ContentReport, error) {
 	reports, err := s.read.ListReports(ctx, gen.ListReportsParams{
 		TenantID:   tenantID,
 		Status:     status,
 		EntityType: entityType,
+		Q:          q,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -230,4 +260,62 @@ func (s *Service) UpdateReportStatus(ctx context.Context, id, tenantID, reviewed
 	}
 
 	return report, nil
+}
+
+// ResolveTargetUser returns the user account that a report's action should
+// target: for entity_type 'user' it is the reported user; for content/comment/
+// message it is the author/sender; spaces and unknown types resolve to none.
+func (s *Service) ResolveTargetUser(ctx context.Context, entityType string, entityID pgtype.UUID) (pgtype.UUID, bool, error) {
+	var userID pgtype.UUID
+	if entityType == EntityTypeUser {
+		return entityID, true, nil
+	}
+
+	var query string
+	switch entityType {
+	case EntityTypeContent:
+		query = `SELECT author_id FROM contents WHERE id = $1`
+	case EntityTypeComment:
+		query = `SELECT author_id FROM comments WHERE id = $1`
+	case EntityTypeMessage:
+		query = `SELECT sender_id FROM dm_messages WHERE id = $1`
+	default:
+		return userID, false, nil
+	}
+
+	var raw [16]byte
+	if err := s.db.Reader.QueryRow(ctx, query, entityID).Scan(&raw); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return userID, false, nil
+		}
+		return userID, false, fmt.Errorf("resolving report target user: %w", err)
+	}
+	userID.Bytes = raw
+	userID.Valid = true
+	return userID, true, nil
+}
+
+// WarnUser records a moderation warning against the given user (reporter side-effect).
+func (s *Service) WarnUser(ctx context.Context, userID pgtype.UUID, reason string) error {
+	return s.write.CreateUserWarning(ctx, gen.CreateUserWarningParams{
+		UserID: userID,
+		Reason:  &reason,
+	})
+}
+
+// BanUser bans the given user and invalidates caches so the ban takes effect
+// immediately (Rule 6), mirroring the admin user-moderation handler.
+func (s *Service) BanUser(ctx context.Context, userID pgtype.UUID, reason string) error {
+	if err := s.write.CreateUserBan(ctx, gen.CreateUserBanParams{
+		UserID: userID,
+		Reason:  &reason,
+		Column3: 0,
+	}); err != nil {
+		return err
+	}
+	if s.valkey != nil {
+		_ = rbac.InvalidatePermCache(ctx, s.valkey, userID)
+		_ = s.valkey.Del(ctx, "jc:ban:"+userID.String()).Err()
+	}
+	return nil
 }

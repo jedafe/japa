@@ -14,10 +14,39 @@ export function setToken(token: string | null) {
 	jwtToken = token;
 }
 
+// readCookie returns the value of a document cookie by name, or null if absent.
+// Used for the double-submit CSRF token (the backend issues a non-HttpOnly
+// `csrf_token` cookie that the SPA echoes back as the X-CSRF-Token header).
+function readCookie(name: string): string | null {
+	if (typeof document === 'undefined') return null;
+	const match = document.cookie
+		.split(';')
+		.map((c) => c.trim())
+		.find((c) => c.startsWith(`${name}=`));
+	return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
+}
+
+// isMutating reports whether an HTTP method changes server state and therefore
+// must carry a CSRF token.
+function isMutating(method: string): boolean {
+	const m = method.toUpperCase();
+	return m === 'POST' || m === 'PATCH' || m === 'PUT' || m === 'DELETE';
+}
+
 export async function api<T>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
 	const headers: Record<string, string> = {};
 	if (jwtToken) {
 		headers['Authorization'] = `Bearer ${jwtToken}`;
+	}
+
+	// Double-submit CSRF: attach the token cookie value as the X-CSRF-Token
+	// header on mutating requests (backend enforces this on /control/* routes).
+	const method = opts.method ?? 'GET';
+	if (isMutating(method)) {
+		const csrf = readCookie('csrf_token');
+		if (csrf) {
+			headers['X-CSRF-Token'] = csrf;
+		}
 	}
 
 	const result = await apiFetch<T>(path, {

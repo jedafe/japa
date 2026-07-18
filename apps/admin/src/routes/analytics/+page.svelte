@@ -22,6 +22,9 @@
 	let flushing = $state(false);
 	let loading = $state(true);
 	let error = $state("");
+	// Date-range state sourced from the URL so it drives the analytics fetch
+	let from = $state(page.url.searchParams.get("from") ?? "");
+	let to = $state(page.url.searchParams.get("to") ?? "");
 	
 	// Analytics data
 	let overview = $state<Record<string, unknown> | null>(null);
@@ -36,9 +39,10 @@
 		loading = true;
 		error = "";
 		try {
-			const [overviewRes, securityRes, usersRes, contentRes, spacesRes, revenueRes, searchRes] = await Promise.allSettled([
-				analyticsAdminApi.getOverview(),
-				analyticsAdminApi.getSecurity(),
+		const [overviewRes, securityRes, usersRes, contentRes, spacesRes, revenueRes, searchRes] = await Promise.allSettled([
+			// Pass the ?from=&to= range when set; otherwise fetch the default window
+			analyticsAdminApi.getOverview([from && `from=${from}`, to && `to=${to}`].filter(Boolean).join("&") || undefined),
+			analyticsAdminApi.getSecurity(),
 				analyticsAdminApi.getUsers(),
 				analyticsAdminApi.getContent(),
 				analyticsAdminApi.getSpaces(),
@@ -60,7 +64,20 @@
 		}
 	}
 	
+	// Push the chosen date range to the URL (?from=&to=) to drive the reload
+	function applyRange() {
+		const url = new URL(page.url);
+		if (from) url.searchParams.set("from", from);
+		else url.searchParams.delete("from");
+		if (to) url.searchParams.set("to", to);
+		else url.searchParams.delete("to");
+		goto(url, { keepFocus: true, noScroll: true });
+	}
+
 	$effect(() => {
+		// Re-sync controls from the URL and reload whenever the range changes
+		from = page.url.searchParams.get("from") ?? "";
+		to = page.url.searchParams.get("to") ?? "";
 		loadAnalytics();
 	});
 	
@@ -168,6 +185,31 @@
 />
 
 <div class="space-y-6">
+	<!-- Date-range picker that writes ?from=&to= to the URL and refetches -->
+	<div class="flex flex-wrap items-end gap-2">
+		<div>
+			<label for="analytics-from" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.from', 'From')}</label>
+			<input
+				id="analytics-from"
+				type="date"
+				bind:value={from}
+				class="rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+			/>
+		</div>
+		<div>
+			<label for="analytics-to" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.to', 'To')}</label>
+			<input
+				id="analytics-to"
+				type="date"
+				bind:value={to}
+				class="rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+			/>
+		</div>
+		<Button variant="outline" size="sm" onclick={applyRange}>{t('common.apply', 'Apply')}</Button>
+	</div>
+
 	<Tabs {tabs} bind:value={activeTab} />
 	
 	{#if activeTab === "overview"}

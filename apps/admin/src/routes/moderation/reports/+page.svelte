@@ -5,7 +5,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 
-	const canManage = $derived(hasPermission('admin.moderation'));
+	const canManage = $derived(hasPermission('reports.review'));
 
 	type Report = {
 		id: string;
@@ -25,6 +25,7 @@
 	let totalPages = $state(1);
 	let loading = $state(true);
 	let filterStatus = $state('');
+	let searchQuery = $state(''); // FilterBar search term, forwarded to the reports API
 	let errorMessage = $state('');
 
 	// Expandable detail
@@ -38,7 +39,7 @@
 	let acting = $state(false);
 
 	const filterDefs = [
-		{ key: 'status', label: t('moderation.status'), type: 'select' as const, options: ['pending', 'reviewed', 'dismissed'] }
+		{ key: 'status', label: t('moderation.status'), type: 'select' as const, options: ['pending', 'reviewing', 'actioned', 'dismissed'] }
 	];
 
 	async function load() {
@@ -46,6 +47,7 @@
 		errorMessage = '';
 		const params = new URLSearchParams({ page: String(page) });
 		if (filterStatus) params.set('status', filterStatus);
+		if (searchQuery) params.set('q', searchQuery); // forward the search term to the API
 		try {
 			const result = await api<{ items: Report[]; page: number; total_pages: number }>(`/admin/reports?${params}`);
 			if (result.ok) {
@@ -62,6 +64,8 @@
 	}
 
 	function handleFilter(values: Record<string, string>) {
+		// Capture the FilterBar search term so the previously-dead box now drives the query.
+		searchQuery = values.search ?? '';
 		filterStatus = values.status ?? '';
 		page = 0;
 		load();
@@ -83,6 +87,8 @@
 		acting = true;
 		errorMessage = '';
 		try {
+			// Send the raw action; the backend maps it to a report status and
+			// fires the matching user-moderation side effect (warn/ban).
 			const body = { action: actionType, ...(actionReason.trim() ? { reason: actionReason.trim() } : {}) };
 			const result = await api(`/admin/reports/${actionReport.id}`, { method: 'PATCH', body });
 			if (result.ok) {
@@ -106,7 +112,9 @@
 	function statusBadge(status: string) {
 		switch (status) {
 			case 'pending': return 'bg-warning/15 text-warning dark:text-warning';
-			case 'reviewed': return 'bg-blue-500/15 text-info dark:text-blue-400';
+			case 'reviewing': return 'bg-info/15 text-info dark:text-info';
+			case 'actioned': return 'bg-success/15 text-success dark:text-success';
+			case 'dismissed': return 'bg-muted/15 text-muted dark:text-muted';
 			default: return 'bg-muted/15 text-muted dark:text-muted';
 		}
 	}

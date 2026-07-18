@@ -6,7 +6,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 
-	const canManage = $derived(hasPermission('admin.moderation'));
+	const canManage = $derived(hasPermission('moderation.alerts.manage'));
 
 	type ModerationAlert = {
 		id: string;

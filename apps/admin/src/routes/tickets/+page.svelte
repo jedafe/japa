@@ -49,7 +49,8 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<TicketItem | null>(null);
 
-	const canManageTickets = $derived(hasPermission("admin.tickets.manage"));
+	// Backend gates ticket mutations on tickets.admin
+	const canManageTickets = $derived(hasPermission("tickets.admin"));
 
 	const statusTabs = [
 		{ value: "", label: t("tickets.all", "All"), icon: Ticket },
@@ -298,7 +299,7 @@
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={tickets} pageSize={tickets.length} selectable bind:selectedIds>
+			<DataTable {columns} data={tickets} pageSize={10} selectable bind:selectedIds>
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
 						<Trash2 class="mr-1 h-3.5 w-3.5" />

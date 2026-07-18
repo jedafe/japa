@@ -198,12 +198,15 @@
 				{t("redirects.empty", "No redirects found")}
 			</div>
 		{:else}
+			<!-- wire the search box to re-fetch redirects; API ignores q today (see report) -->
 			<DataTable
 				{columns}
 				data={redirects}
-				pageSize={redirects.length}
+				pageSize={10}
 				selectable
 				bind:selectedIds={bulkDeleteIds}
+				searchable
+				onsearch={() => loadRedirects()}
 			/>
 		{/if}
 	</CardContent>

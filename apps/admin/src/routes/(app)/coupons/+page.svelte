@@ -203,7 +203,7 @@
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={coupons} pageSize={coupons.length} selectable />
+			<DataTable {columns} data={coupons} pageSize={10} selectable />
 		{/if}
 	</CardContent>
 </Card>

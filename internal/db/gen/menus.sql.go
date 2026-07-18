@@ -35,10 +35,16 @@ const countMenus = `-- name: CountMenus :one
 SELECT COUNT(*)::int AS count
 FROM menus
 WHERE tenant_id = $1
+  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
 `
 
-func (q *Queries) CountMenus(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countMenus, tenantID)
+type CountMenusParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Q        string      `json:"q"`
+}
+
+func (q *Queries) CountMenus(ctx context.Context, arg CountMenusParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countMenus, arg.TenantID, arg.Q)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -354,12 +360,14 @@ const listMenus = `-- name: ListMenus :many
 SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
 FROM menus
 WHERE tenant_id = $1
+  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
 ORDER BY created_at ASC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListMenusParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
+	Q          string      `json:"q"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -369,7 +377,12 @@ type ListMenusParams struct {
 // Menus CRUD
 // =====================
 func (q *Queries) ListMenus(ctx context.Context, arg ListMenusParams) ([]Menu, error) {
-	rows, err := q.db.Query(ctx, listMenus, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listMenus,
+		arg.TenantID,
+		arg.Q,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

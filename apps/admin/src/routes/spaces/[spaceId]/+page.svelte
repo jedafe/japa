@@ -194,7 +194,7 @@
 				{t("spaces.no_moderators", "No moderators assigned")}
 			</div>
 		{:else}
-			<DataTable {columns} data={moderators} pageSize={moderators.length} />
+			<DataTable {columns} data={moderators} pageSize={10} />
 		{/if}
 	</CardContent>
 </Card>

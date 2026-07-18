@@ -508,15 +508,46 @@
 					<label for="create-tier" class="text-foreground block text-sm font-medium">
 						{t('api_keys.rate_limit_tier')}
 					</label>
-					<select
-						id="create-tier"
-						bind:value={createForm.rate_limit_tier}
-						class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+					<Select.Root
+						type="single"
+						value={createForm.rate_limit_tier}
+						onValueChange={(v) => {
+							if (v !== undefined) createForm.rate_limit_tier = v;
+						}}
 					>
-						<option value="standard">{t('api_keys.tier_standard')}</option>
-						<option value="premium">{t('api_keys.tier_premium')}</option>
-						<option value="unlimited">{t('api_keys.tier_unlimited')}</option>
-					</select>
+						<Select.Trigger
+							class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+						>
+							<Select.Value placeholder={t('api_keys.tier')} />
+						</Select.Trigger>
+						<Select.Portal>
+							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
+								<Select.Viewport class="p-1">
+									<Select.Item
+										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+										value="standard"
+										label={t('api_keys.tier_standard')}
+									>
+										{t('api_keys.tier_standard')}
+									</Select.Item>
+									<Select.Item
+										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+										value="premium"
+										label={t('api_keys.tier_premium')}
+									>
+										{t('api_keys.tier_premium')}
+									</Select.Item>
+									<Select.Item
+										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+										value="unlimited"
+										label={t('api_keys.tier_unlimited')}
+									>
+										{t('api_keys.tier_unlimited')}
+									</Select.Item>
+								</Select.Viewport>
+							</Select.Content>
+						</Select.Portal>
+					</Select.Root>
 				</div>
 
 				<div>

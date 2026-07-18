@@ -505,6 +505,8 @@ export const contentAdminApi = {
 	get: (id: string) => api<unknown>(`/admin/content/${id}`),
 	remove: (id: string, body?: { reason?: string }) => api<unknown>(`/admin/content/${id}/remove`, { method: 'POST', body: body ?? {} }),
 	restore: (id: string) => api<unknown>(`/admin/content/${id}/restore`, { method: 'POST', body: {} }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/content/${id}`, { method: 'PATCH', body }),
 };
 
 export const mediaAdminApi = {
@@ -876,6 +878,7 @@ export const redirectsAdminApi = {
 
 export const gdprAdminApiExtendedV2 = {
 	listConsents: (params?: string) => api<unknown>(`/admin/consents${params ? `?${params}` : ''}`),
+	deleteConsent: (id: string) => api<unknown>(`/admin/consents/${id}`, { method: 'DELETE' }),
 };
 
 export const aiModelsAdminApi = {

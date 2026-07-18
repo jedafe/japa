@@ -26,6 +26,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/control"
 	"github.com/jedafe/japa/internal/coupons"
+	"github.com/jedafe/japa/internal/csrf"
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -154,8 +155,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		BruteForce:  bruteForce,
 		Policy:      auth.DefaultPasswordPolicy(),
 		VKClient:    vkClient,
-		SiteName:    cfg.SiteName,
-		SupportURL:  cfg.SiteURL + "/support",
+		SiteName:      cfg.SiteName,
+		SupportURL:    cfg.SiteURL + "/support",
+		CookieDomain:  cfg.CookieDomain,
+		SecureCookies: cfg.IsProduction(),
 	}
 
 	// TOTP 2FA handlers — uses the same auth store for TOTP credential storage.
@@ -263,7 +266,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	settingsService := config.NewSettings(database, vkClient.Redis())
 
 	// Content Reports & Flagging subsystem (Section 51).
-	reportsService := reports.NewService(database, settingsService)
+	reportsService := reports.NewService(database, settingsService, vkClient.Redis())
 	reportsHandlers := reports.NewHandlers(reportsService)
 	reportsHandlers.SetEnqueuer(taskEnqueuer)
 
@@ -1681,6 +1684,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/reports/{id}", reportsHandlers.UpdateReport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.consents.view")).
 				Get("/admin/consents", gdprHandlers.ListConsentsByTenant)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.consents.delete")).
+				Delete("/admin/consents/{id}", gdprHandlers.DeleteConsent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
 				Get("/admin/data-exports", gdprHandlers.ListPendingDataExports)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.deletions.view")).
@@ -1789,11 +1794,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/tags", publicAPIHandlers.ListTags)
 				r.Get("/users/{id}", publicAPIHandlers.GetUserByID)
 				r.Get("/search", publicAPIHandlers.SearchContent)
-				r.Get("/me", publicAPIHandlers.GetMyProfile)
-			})
+			r.With(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/me", publicAPIHandlers.GetMyProfile)
+		})
 
 				// User Profile & Preferences routes (catalog: /me, /me/profile)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me", usersHandlers.GetMyProfile)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/me", usersHandlers.GetMyProfile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/profile", usersHandlers.UpdateMyProfile)
 			// NOTE (§6.3 dedupe): /me/preferences overlaps /me/notification-preferences;
 			// kept as a documented extra pending confirmation of distinct semantics.
@@ -2528,6 +2533,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 23: Content admin moderation
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/content", contentHandlers.ListContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit")).
+				Patch("/admin/content/{id}", contentHandlers.UpdateContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
 				Get("/admin/content/{id}/remove", adminHandlers.RemoveContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete")).
@@ -2650,6 +2657,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Use(tenant.Middleware(tenantStore))
 		r.Use(auth.RequireAuth(kr, vkClient.Redis()))
 		r.Use(rbac.RequirePermission(rbacResolver, "control.panel.access"))
+		// Audit finding C1: enforce double-submit CSRF on all mutating /control/* requests.
+		r.Use(csrf.Middleware([]string{"/api/v1/control/"}))
+		// Audit finding M1: (re)issue the csrf_token cookie for control-panel
+		// requests so the SPA always has a valid double-submit token available.
+		r.Use(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction()))
 
 		r.Route("/control", func(r chi.Router) {
 			// Tenants
@@ -2720,6 +2732,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Audit Log (full cross-tenant view)
 			r.Get("/audit-logs", controlHandlers.ListAuditLogs)
+			r.Delete("/audit-logs/{id}", controlHandlers.DeleteAuditLog)
+			r.Post("/audit-logs/clear", controlHandlers.ClearAuditLogs)
 
 			// Deployments
 			r.Get("/deployments", controlHandlers.ListDeployments)

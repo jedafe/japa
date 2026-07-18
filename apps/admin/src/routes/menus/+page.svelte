@@ -316,7 +316,8 @@
 					{t("menus.empty", "No menus found")}
 				</div>
 			{:else}
-				<DataTable columns={menuColumns} data={menus} pageSize={menus.length} />
+				<!-- wire the search box to re-fetch menus; API ignores q today (see report) -->
+				<DataTable columns={menuColumns} data={menus} pageSize={10} searchable onsearch={() => loadMenus()} />
 			{/if}
 		</CardContent>
 	</Card>

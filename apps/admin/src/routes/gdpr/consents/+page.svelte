@@ -5,9 +5,11 @@
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import { RefreshCw, Eye } from "lucide-svelte";
+	import { RefreshCw, Eye, Trash2 } from "lucide-svelte";
 	import { gdprAdminApiExtendedV2 } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { page } from "$app/state";
 
 	type Consent = {
 		id: string;
@@ -22,6 +24,12 @@
 	let consents = $state<Consent[]>([]);
 	let loading = $state(true);
 	let error = $state("");
+	let success = $state("");
+	let searchQuery = $state(""); // bound to the DataTable search box; forwarded to the API
+
+	const canDeleteConsent = $derived(hasPermission("gdpr.consents.delete"));
+	let showDeleteModal = $state(false);
+	let deleteTarget = $state<Consent | null>(null);
 
 	let showViewModal = $state(false);
 	let viewTarget = $state<Consent | null>(null);
@@ -29,6 +37,23 @@
 	function openView(consent: Consent) {
 		viewTarget = consent;
 		showViewModal = true;
+	}
+
+	function openDelete(consent: Consent) {
+		deleteTarget = consent;
+		showDeleteModal = true;
+	}
+
+	async function confirmDelete() {
+		if (!deleteTarget) return;
+		const result = await gdprAdminApiExtendedV2.deleteConsent(deleteTarget.id);
+		if (result.ok) {
+			showDeleteModal = false;
+			success = t("gdpr.consent_deleted", "Consent deleted successfully");
+			loadConsents();
+		} else {
+			error = result.error ?? t("common.error", "Failed to delete consent");
+		}
 	}
 
 	const columns = [
@@ -51,7 +76,7 @@
 		loading = true;
 		error = "";
 		try {
-			const result = await gdprAdminApiExtendedV2.listConsents();
+			const result = await gdprAdminApiExtendedV2.listConsents(searchQuery ? `q=${encodeURIComponent(searchQuery)}` : undefined);
 			if (result.ok) {
 				consents = (result.data as Consent[]) ?? [];
 			} else {
@@ -64,6 +89,8 @@
 		}
 	}
 
+	// Restore the in-progress query from the URL so the table matches the search box on reload.
+	searchQuery = page.url.searchParams.get("q") ?? "";
 	loadConsents();
 </script>
 
@@ -82,8 +109,14 @@
 {#if error}
 	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
 		{error}
-	</div>
-{/if}
+		</div>
+	{/if}
+
+	{#if success}
+		<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)">
+			{success}
+		</div>
+	{/if}
 
 <Card>
 	<CardContent>
@@ -94,7 +127,7 @@
 				{t("gdpr.no_consents", "No consent records found")}
 			</div>
 		{:else}
-			<DataTable {columns} data={consents} pageSize={20} />
+			<DataTable {columns} data={consents} pageSize={20} searchable onsearch={(q) => { searchQuery = q; loadConsents(); }} />
 		{/if}
 	</CardContent>
 </Card>
@@ -138,11 +171,29 @@
 	</div>
 </Modal>
 
+<!-- Delete Modal -->
+<Modal bind:open={showDeleteModal} title={t("gdpr.consent_delete_title", "Delete Consent")}>
+	{#if deleteTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t("gdpr.consent_delete_confirm", "Permanently delete this consent record?")}
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={confirmDelete}>{t("common.delete", "Delete")}</Button>
+	</div>
+</Modal>
+
 <!-- ConsentActionsCell component -->
 {#snippet ConsentActionsCell(row: Consent)}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
+		{#if canDeleteConsent}
+			<Button variant="ghost" size="sm" onclick={() => openDelete(row)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
 	</div>
 {/snippet}

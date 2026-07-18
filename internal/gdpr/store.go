@@ -113,6 +113,7 @@ func (s *Store) listConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, 
 	rows, err := s.read.ListConsentsByTenant(ctx, gen.ListConsentsByTenantParams{
 		TenantID:    tenantID,
 		ConsentType: consentType,
+		Q:           "",
 		PageLimit:   limit,
 		PageOffset:  offset,
 	})
@@ -121,6 +122,41 @@ func (s *Store) listConsentsByTenant(ctx context.Context, tenantID pgtype.UUID, 
 	}
 
 	return rows, nil
+}
+
+func (s *Store) listConsentsByTenantFiltered(ctx context.Context, tenantID pgtype.UUID, consentType, q string, limit, offset int32) ([]gen.ConsentRecord, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.ListConsentsByTenant(ctx, gen.ListConsentsByTenantParams{
+		TenantID:    tenantID,
+		ConsentType: consentType,
+		Q:           q,
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing consents by tenant: %w", err)
+	}
+
+	return rows, nil
+}
+
+func (s *Store) deleteConsent(ctx context.Context, id, tenantID pgtype.UUID) (gen.ConsentRecord, error) {
+	row, err := s.write.DeleteConsent(ctx, gen.DeleteConsentParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.ConsentRecord{}, fmt.Errorf("deleting consent: %w", err)
+	}
+
+	return row, nil
+}
+
+// qPtr returns a pointer to s. An empty string yields a pointer to "" so the
+// generated SQL filter `@q::text = ''` matches and the list returns all rows
+// when no search term is supplied.
+func qPtr(s string) *string {
+	return &s
 }
 
 // ---------------------------------------------------------------------------

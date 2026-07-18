@@ -11,7 +11,7 @@
 		Ellipsis,
 		Inbox
 	} from 'lucide-svelte';
-	import { DropdownMenu } from 'bits-ui';
+	import { DropdownMenu, Select } from 'bits-ui';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 
 	let {
@@ -103,12 +103,6 @@
 		if (tableRef) {
 			tableRef.scrollIntoView({ behavior: 'smooth', block: 'start' });
 		}
-	}
-
-	function handlePageSizeChange(e: Event) {
-		const val = Number((e.target as HTMLSelectElement).value);
-		pageSize = val;
-		page = 0;
 	}
 
 	function getNestedValue(row: unknown, key: string): unknown {
@@ -307,15 +301,37 @@
 				<span>{totalRows} item{totalRows !== 1 ? 's' : ''}</span>
 				<div class="flex items-center gap-1.5">
 					<span class="text-xs">{t('lib.components.DataTable.svelte.per_page')}</span>
-					<select
-						class="border-border-input bg-background text-foreground h-7 rounded-lg border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-foreground/20"
-						value={pageSize}
-						onchange={handlePageSizeChange}
+					<Select.Root
+						type="single"
+						value={String(pageSize)}
+						onValueChange={(v) => {
+							if (v !== undefined) {
+								pageSize = Number(v);
+								page = 0;
+							}
+						}}
 					>
-						{#each [10, 25, 50, 100] as opt}
-							<option value={opt}>{opt}</option>
-						{/each}
-					</select>
+						<Select.Trigger
+							class="border-border-input bg-background text-foreground h-7 rounded-lg border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-foreground/20"
+						>
+							<Select.Value />
+						</Select.Trigger>
+						<Select.Portal>
+							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-lg border">
+								<Select.Viewport class="p-1">
+									{#each [10, 25, 50, 100] as opt}
+										<Select.Item
+											class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none"
+											value={String(opt)}
+											label={String(opt)}
+										>
+											{opt}
+										</Select.Item>
+									{/each}
+								</Select.Viewport>
+							</Select.Content>
+						</Select.Portal>
+					</Select.Root>
 				</div>
 			</div>
 
