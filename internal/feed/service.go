@@ -533,23 +533,19 @@ func (s *Service) GetForYouFeed(
 
 	key := forYouCacheKey(tenantID, userID, sortMode)
 
-	// 1. Cache hit → slice and return.
-	if s.vk != nil {
-		if data, err := s.vk.Get(ctx, key).Bytes(); err == nil && len(data) > 0 {
-			var ranked []FeedItem
-			if json.Unmarshal(data, &ranked) == nil {
-				return pageSlice(ranked, offset, limit), nil
-			}
-		}
+	// Cache hit → slice and return.
+	if ranked, ok := s.readForYouCache(ctx, key); ok {
+		return pageSlice(ranked, offset, limit), nil
 	}
 
-	// 2. Miss → load affinity, fetch candidates.
+	// Miss → load affinity, fetch the bounded candidate pool.
 	authorIDs, spaceIDs, tagIDs, err := s.loadAffinity(ctx, tenantID, userID)
 	if err != nil {
 		return nil, err
 	}
 
 	var windowStart pgtype.Timestamptz
+
 	_ = windowStart.Scan(time.Now().Add(-forYouWindowDays * 24 * time.Hour))
 
 	rows, err := s.store.getForYouCandidates(ctx, gen.GetForYouCandidatesParams{
@@ -567,7 +563,7 @@ func (s *Service) GetForYouFeed(
 		return nil, err
 	}
 
-	// 3. Score + rank in pure Go.
+	// Score + rank in pure Go, then cache the ranked list (best-effort).
 	cands := make([]Candidate, len(rows))
 	for i, r := range rows {
 		cands[i] = candidateFromRow(r)
@@ -578,12 +574,42 @@ func (s *Service) GetForYouFeed(
 		ranked = append(ranked, c.Item)
 	}
 
-	// 4. Cache the ranked list (best-effort).
-	if s.vk != nil {
-		if data, marshalErr := json.Marshal(ranked); marshalErr == nil {
-			_ = s.vk.Set(ctx, key, data, forYouCacheTTL).Err()
-		}
-	}
+	s.writeForYouCache(ctx, key, ranked)
 
 	return pageSlice(ranked, offset, limit), nil
+}
+
+// readForYouCache returns the cached ranked feed and whether the lookup hit.
+func (s *Service) readForYouCache(ctx context.Context, key string) ([]FeedItem, bool) {
+	if s.vk == nil {
+		return nil, false
+	}
+
+	data, err := s.vk.Get(ctx, key).Bytes()
+	if err != nil || len(data) == 0 {
+		return nil, false
+	}
+
+	var ranked []FeedItem
+
+	if err := json.Unmarshal(data, &ranked); err != nil {
+		return nil, false
+	}
+
+	return ranked, true
+}
+
+// writeForYouCache stores the ranked feed for forYouCacheTTL. Best-effort:
+// cache write failures never fail the request.
+func (s *Service) writeForYouCache(ctx context.Context, key string, ranked []FeedItem) {
+	if s.vk == nil {
+		return
+	}
+
+	data, err := json.Marshal(ranked)
+	if err != nil {
+		return
+	}
+
+	_ = s.vk.Set(ctx, key, data, forYouCacheTTL).Err()
 }
