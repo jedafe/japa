@@ -22,8 +22,8 @@ This spec turns that placeholder into a real, personalized, multi-tab feed and f
 | F2 | Pagination | **Infinite scroll** — `IntersectionObserver` sentinel client-fetches the next `page_offset` and appends. |
 | F3 | Card style | **Honor all 4** `feed.card_style` variants (`reddit`/`compact`/`grid`/`magazine`) in one `FeedCard`, selected by the real backend setting. |
 | F4 | Card richness | **Media-rich** — the `magazine` variant carries avatar, relative time, reading time, tags, cover image; other variants share the same data with lighter layout. |
-| F5 | Container treatment | `reddit`/`compact` = **edge-to-edge divide-y rows** (match existing placeholder); `grid`/`magazine` = **bordered rounded cards**. |
-| F6 | Vote / bookmark controls | **Display-only counts** in v1 — no interactive mutations (deferred to a separate interactions unit, §7). |
+| F5 | Container treatment | **Bordered rounded surfaces for all four** (`--color-surface`, 1px `--color-border`, `--radius-card`): `reddit`/`compact`/`magazine` are bordered feed surfaces with hairline row dividers; `grid` is individual 2-up cards. *(Supersedes an earlier edge-to-edge/placeholder preference after reviewing the rendered mockup.)* |
+| F6 | Vote / bookmark controls | `reddit` shows a **visible up/down vote rail**; `compact` shows up-chevron + `vote_score`. The vote arrows are the community affordance but the mutation is wired in the later interactions unit (§7), so they are inert in v1. Bookmark/comment/view stay display-only counts. |
 | F7 | Type badge | **Quiet neutral** — one surface-subtle badge for all content types; no per-type color. |
 
 **Rule 16 clean:** every rendered field and the card style come from real backend data. No fabricated ordering, no dead admin control.
@@ -126,7 +126,7 @@ Interactive reference mockup (real tokens, theme-aware, light/dark toggle): arti
 **Shared elements (identical `FeedItem` data across all four):**
 - **Type badge** — quiet neutral for *every* content type: `--color-surface-subtle` bg, `--color-text-subtle` text, 1px `--color-border`, uppercase ~10.5px / +0.05em tracking, radius 5px. No per-type color.
 - **Metric row** — muted, ~12.5px, `tabular-nums`, gap 16px; lucide icons at 14px for `vote_score` (arrow-up), `comment_count` (message-square), `view_count` (eye), `bookmark_count` (bookmark). **Display-only in v1.**
-- **Vote indicator** (reddit/compact) — **display-only**: up-chevron + net `vote_score`, muted, non-interactive. Rail is voting-ready structurally but wires nothing in v1 (mutations are §7 out-of-scope).
+- **Vote control** — `reddit`: a vertical **up/down rail** (arrow-up · `vote_score` · arrow-down) is **visible** in v1; `compact`: up-chevron + `vote_score`. The arrows render as the community-vote affordance, but the mutation is wired in the later interactions unit (§7), so they are inert in v1. `grid`/`magazine` show `vote_score` in the metric row (no rail).
 - **Avatar** — `author_avatar_url` when present; else initials on a solid fill; circular.
 - **Tags** — `--color-primary`, ~12px, `#tag` form, wrap.
 - **Relative time** — from `time.ts`; **omitted entirely** when unparseable (never renders "Invalid Date").
@@ -136,13 +136,13 @@ Interactive reference mockup (real tokens, theme-aware, light/dark toggle): arti
 
 | Variant | Container |
 |---------|-----------|
-| `reddit` (default) | **Edge-to-edge divide-y rows** — no card wrapper, no side borders; matches the existing placeholder + ADR-058 X.com shell. |
-| `compact` | Edge-to-edge divide-y rows (densest). |
-| `grid` | Bordered rounded cards (`--radius-card`, `--color-surface`, 1px `--color-border`) in a 2-col grid; 1-col below ~560px. |
-| `magazine` | Bordered rounded cards, single column, stacked with ~14px gap. |
+| `reddit` (default) | **Bordered feed surface** (`--color-surface`, 1px `--color-border`, `--radius-card`) with hairline dividers between rows. |
+| `compact` | Bordered feed surface with hairline dividers between one-line rows. |
+| `grid` | Individual bordered rounded cards in a 2-col grid; 1-col below ~560px. |
+| `magazine` | Bordered feed surface, single column, hairline dividers between posts. |
 
 **Per-variant layout:**
-- **`reddit`** — row = `[vote rail ~28px] · [body] · [thumbnail 84px]`. Body: meta line (`badge · space · author · time`), ~15.5px/600 title, 1-line-clamped excerpt trailing `· Nm read`, foot row (tags left / metrics right). Thumbnail only when `cover_image_url`. Row hover → `surface-subtle`.
+- **`reddit`** — row = `[up/down vote rail ~30px] · [body] · [thumbnail 84px]`. Body: meta line (`badge · space · author · time`), ~15.5px/600 title, 1-line-clamped excerpt trailing `· Nm read`, foot row (tags left / metrics right). Thumbnail only when `cover_image_url`. Row hover → `surface-subtle`.
 - **`compact`** — one line: `[▲ score ~44px] · [title, ellipsis, flex-1] · [space · time] · [comments · views]`. No excerpt, no image. `space · time` hides below ~560px.
 - **`grid`** — cover (16:9), then body: badge, 2-line-clamped ~15px/600 title, meta (`avatar · author · time`) pinned to the card bottom, metric row. Hover → border `--color-muted`.
 - **`magazine`** — header (`~34px avatar` + author / `space · time · Nm read`), 16:9 hero (rounded, bordered), badge, **serif headline ~25px/500 Lora with `text-wrap: balance`**, 2-line ~15px excerpt, foot (tags / metrics). The only variant that leaves Inter — the app's "this is a read" typographic signature.
