@@ -102,7 +102,7 @@
 			label: t("spaces.status", "Status"),
 			sortable: true,
 			render: (v: string) => {
-				const colors = v === "active" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : v === "suspended" ? "bg-red-500/15 text-red-700 dark:text-red-400" : "bg-slate-500/15 text-slate-700 dark:text-slate-400";
+				const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "suspended" ? "bg-danger/15 text-danger dark:text-danger" : "bg-muted/15 text-muted dark:text-muted";
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${colors}">${v}</span>`;
 			}
 		},
@@ -443,6 +443,9 @@
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openView(space)}>
 			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		<Button variant="ghost" size="sm" onclick={() => goto(`/spaces/${space.id}`)} style="color: var(--color-primary)">
+			{t("spaces.manage", "Manage")}
 		</Button>
 		{#if canManageSpaces}
 			<Button variant="ghost" size="sm" onclick={() => openEdit(space)}>

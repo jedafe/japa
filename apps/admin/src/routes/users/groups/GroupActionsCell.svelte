@@ -9,7 +9,7 @@
 	import type { Component } from 'svelte';
 	import type { UserGroup } from '$lib/api';
 
-	let { value, row }: { value: unknown; row: UserGroup } = $props();
+	let { value, row, onchange }: { value: unknown; row: UserGroup; onchange?: () => void } = $props();
 
 	let showEditModal = $state(false);
 	let editName = $state('');
@@ -19,7 +19,7 @@
 	let editSaving = $state(false);
 	let showDeleteConfirm = $state(false);
 
-	const canManage = hasPermission('users.manage');
+	const canManage = hasPermission('admin.rbac.manage');
 
 	function openEditModal() {
 		editName = row.name;
@@ -46,7 +46,7 @@
 		editSaving = false;
 		if (result.ok) {
 			showEditModal = false;
-			window.location.reload();
+			onchange?.();
 		} else {
 			editError = result.error ?? t('users.groups.save_error', 'Failed to save');
 		}
@@ -55,7 +55,7 @@
 	async function handleDelete() {
 		showDeleteConfirm = false;
 		const result = await userManagementApi.deleteGroup(row.id);
-		if (result.ok) window.location.reload();
+		if (result.ok) onchange?.();
 	}
 </script>
 

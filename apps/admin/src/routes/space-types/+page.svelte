@@ -2,6 +2,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { spaceTypesApi } from '$lib/api';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	type SpaceType = {
 		id: string;
@@ -23,6 +24,15 @@
 	let saving = $state(false);
 	let showDeleteConfirm = $state(false);
 	let deleteTargetId = $state<string | null>(null);
+	let showViewModal = $state(false);
+	let viewTarget = $state<SpaceType | null>(null);
+
+	const canManageSpaceTypes = $derived(hasPermission('space_types.manage'));
+
+	async function openView(item: SpaceType) {
+		viewTarget = item;
+		showViewModal = true;
+	}
 
 	let form = $state({
 		name: '',
@@ -141,13 +151,15 @@
 {/if}
 
 <div class="mb-4 flex justify-end">
-	<button
-		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-		style="background-color: var(--color-primary)"
-		onclick={openCreate}
-	>
-		Add Space Type
-	</button>
+	{#if canManageSpaceTypes}
+		<button
+			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
+			style="background-color: var(--color-primary)"
+			onclick={openCreate}
+		>
+			Add Space Type
+		</button>
+	{/if}
 </div>
 
 {#if loading}
@@ -167,12 +179,12 @@
 			</thead>
 			<tbody>
 				{#each spaceTypes as item}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
+					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3 font-medium">{item.name}</td>
 						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{item.slug}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.description || '—'}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {item.is_university ? 'bg-purple-500/15 text-purple-700 dark:text-purple-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs {item.is_university ? 'bg-purple-500/15 text-purple-700 dark:text-purple-400' : 'bg-muted/15 text-muted dark:text-muted'}">
 								{item.is_university ? 'Yes' : 'No'}
 							</span>
 						</td>
@@ -180,19 +192,28 @@
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-2">
 								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-info)"
-									onclick={() => openEdit(item)}
+									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+									style="color: var(--color-muted)"
+									onclick={() => openView(item)}
 								>
-									Edit
+									View
 								</button>
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete(item.id)}
-								>
-									Delete
-								</button>
+								{#if canManageSpaceTypes}
+									<button
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+										style="color: var(--color-info)"
+										onclick={() => openEdit(item)}
+									>
+										Edit
+									</button>
+									<button
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+										style="color: var(--color-danger)"
+										onclick={() => confirmDelete(item.id)}
+									>
+										Delete
+									</button>
+								{/if}
 							</div>
 						</td>
 					</tr>
@@ -208,11 +229,44 @@
 	<div class="mt-3 flex items-center justify-between">
 		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
 		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
 		</div>
 	</div>
 {/if}
+
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title="Space Type Details">
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Name</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Slug</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.slug}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Description</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.description || '—'}</p>
+			</div>
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">University</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.is_university ? 'Yes' : 'No'}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Icon</p>
+					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.icon || '—'}</p>
+				</div>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showViewModal = false)}>Close</button>
+	</div>
+</Modal>
 
 <!-- Create/Edit Modal -->
 <Modal bind:open={showModal} title={editingId ? 'Edit Space Type' : 'Add Space Type'} onConfirm={submit} confirmLabel={saving ? 'Saving...' : (editingId ? 'Update' : 'Create')}>

@@ -80,7 +80,7 @@
 						<td class="px-4 py-3 text-xs">{d.content_type}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{d.reason || '—'}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {d.hard_deleted ? 'bg-red-500/15 text-red-700 dark:text-red-400' : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {d.hard_deleted ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">
 								{d.hard_deleted ? t('deletions.yes') : t('deletions.no')}
 							</span>
 						</td>

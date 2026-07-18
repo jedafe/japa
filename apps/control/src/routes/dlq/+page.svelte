@@ -8,10 +8,11 @@
 	import { api } from '$lib/api';
 	import type { DlqEntry, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n';
+	import { escapeHtml } from '$lib/utils';
 	import { RefreshCw, RotateCw, Trash2 } from 'lucide-svelte';
 
 	let entries = $state<DlqEntry[]>([]);
-	let loading = $state(false);
+	let loading = $state(true);
 	let filter = $state('');
 	let retrying = $state<string | null>(null);
 	let deleting = $state<string | null>(null);
@@ -52,16 +53,6 @@
 		}
 	}
 
-	function escapeHtml(str: unknown): string {
-		if (str == null) return '';
-		return String(str)
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;')
-			.replace(/'/g, '&#39;');
-	}
-
 	function showSuccess(msg: string) {
 		successMessage = msg;
 		errorMessage = '';
@@ -76,14 +67,19 @@
 
 	async function load(signal?: AbortSignal) {
 		loading = true;
-		const result = await api<DlqEntry[]>('/control/queue/dlq', { signal });
-		if (result.ok) {
-			entries = result.data;
-			showSuccess(t('dlq.loaded'));
-		} else {
-			showError(t('dlq.load_error'));
+		try {
+			const result = await api<DlqEntry[]>('/control/queue/dlq', { signal });
+			if (signal?.aborted) return;
+			if (result.ok) {
+				entries = result.data;
+			} else {
+				showError(t('dlq.load_error'));
+			}
+		} catch {
+			if (!signal?.aborted) showError(t('dlq.load_error'));
+		} finally {
+			if (!signal?.aborted) loading = false;
 		}
-		loading = false;
 	}
 
 	async function retryTask(taskId: string) {

@@ -11,6 +11,7 @@
   import { TableSkeleton } from "$lib/components/ui/skeleton";
   import { FileText, Plus, Download, RefreshCw, Eye, Pencil, Trash2, ExternalLink } from "lucide-svelte";
   import { api, blogAdminApi } from "$lib/api";
+  import { hasPermission } from "$lib/stores/permissions.svelte";
 
   type BlogPost = {
     id: string;
@@ -42,6 +43,10 @@
   let rejectTarget = $state<BlogPost | null>(null);
   let rejectReason = $state("");
   let acting = $state(false);
+  let showDeleteConfirm = $state(false);
+  let deleteTarget = $state<BlogPost | null>(null);
+
+  const canManageBlog = $derived(hasPermission("blog.manage"));
 
   const tabs = [
     { value: "all", label: "All Posts" },
@@ -76,10 +81,10 @@
       sortable: true,
       render: (value: string) => {
         const colors: Record<string, string> = {
-          published: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-          draft: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-          review: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
-          archived: "bg-slate-500/15 text-slate-700 dark:text-slate-400"
+          published: "bg-success/15 text-success dark:text-success",
+          draft: "bg-warning/15 text-warning dark:text-warning",
+          review: "bg-blue-500/15 text-info dark:text-blue-400",
+          archived: "bg-muted/15 text-muted dark:text-muted"
         };
         return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors[value] || colors.draft}">${value || "draft"}</span>`;
       }
@@ -182,11 +187,18 @@
     }
   }
 
-  async function deletePost(post: BlogPost) {
+  function confirmDelete(post: BlogPost) {
+    deleteTarget = post;
+    showDeleteConfirm = true;
+  }
+
+  async function executeDelete() {
+    if (!deleteTarget) return;
     acting = true;
     try {
-      const result = await api(`/admin/blog/${post.id}`, { method: "DELETE" });
+      const result = await api(`/admin/blog/${deleteTarget.id}`, { method: "DELETE" });
       if (result.ok) {
+        showDeleteConfirm = false;
         loadPosts();
       } else {
         error = result.error;
@@ -201,6 +213,23 @@
   function openExternal(post: BlogPost) {
     if (post.url) {
       window.open(post.url, "_blank");
+    }
+  }
+
+  let bulkDeleting = $state(false);
+  async function bulkDelete() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    bulkDeleting = true;
+    error = "";
+    try {
+      await Promise.all(ids.map((id) => api(`/admin/blog/${id}`, { method: "DELETE" })));
+      selectedIds = new Set();
+      loadPosts();
+    } catch {
+      error = "Failed to delete selected posts";
+    } finally {
+      bulkDeleting = false;
     }
   }
 
@@ -271,7 +300,14 @@
             selectable
             bind:selectedIds
             emptyMessage="No blog posts found"
-          />
+          >
+            {#snippet bulkActions()}
+              <Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
+                <Trash2 class="mr-1 h-3.5 w-3.5" />
+                {bulkDeleting ? "Deleting..." : `Delete Selected (${selectedIds.size})`}
+              </Button>
+            {/snippet}
+          </DataTable>
         </div>
       {/if}
     </CardContent>
@@ -369,6 +405,21 @@
   </div>
 </Modal>
 
+<!-- Delete Confirmation -->
+<Modal bind:open={showDeleteConfirm} title="Delete Post">
+  <div class="space-y-4">
+    <p class="text-sm" style="color: var(--color-foreground)">
+      Are you sure you want to delete "{deleteTarget?.title}"? This action cannot be undone.
+    </p>
+  </div>
+  <div class="mt-4 flex justify-end gap-2">
+    <Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('blog.cancel')}</Button>
+    <Button variant="destructive" onclick={executeDelete} disabled={acting}>
+      {acting ? "Deleting..." : "Delete"}
+    </Button>
+  </div>
+</Modal>
+
 <!-- BlogActionsCell component -->
 {#snippet BlogActionsCell(post: BlogPost)}
   <div class="flex items-center gap-1">
@@ -385,6 +436,10 @@
     {/if}
     {#if post.status === "review"}
       <Button variant="ghost" size="sm" onclick={() => openReject(post)} style="color: var(--color-danger)">
+        <Trash2 class="h-3.5 w-3.5" />
+      </Button>
+    {:else if canManageBlog}
+      <Button variant="ghost" size="sm" onclick={() => confirmDelete(post)} style="color: var(--color-danger)">
         <Trash2 class="h-3.5 w-3.5" />
       </Button>
     {/if}

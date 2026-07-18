@@ -1,6 +1,6 @@
 ---
 name: jc-docs-debug
-description: Use when reviewing or debugging JapaConnect Docs app code (apps/docs, SSR). Diagnoses IntersectionObserver and keydown listener leaks, Cmd+K search issues, code block highlighting, and responsive three-column collapse.
+description: [Docs app, docs.japaconnect.com] Unified shell adapted for Docs (ADR-060) — nav-tree left nav, TOC right sidebar, playground full-width exception. Use when reviewing or debugging JapaConnect Docs app code (apps/docs, SSR). Diagnoses IntersectionObserver and keydown listener leaks, Cmd+K search issues, code block highlighting, and responsive three-column collapse.
 ---
 
 # JapaConnect Docs — Review & Debugging Skill
@@ -35,3 +35,10 @@ Apply `jc-main-debug` §§1–3, 5–7 (SSR/hydration, Runes, Bits UI, Tailwind,
 
 ## Output Protocol
 1. Root cause · 2. Broken code · 3. Fixed code · 4. Secondary findings
+
+## App Shell & Docs Drift (ADR-060)
+- Docs uses the unified shell (ADR-058) adapted per ADR-060: the **left nav IS the audience-gated doc nav tree** (from `GET /api/v1/docs/nav`), collapsible (`ui.nav_collapsed` server-side, not localStorage); the **right sidebar IS the in-page TOC** + "was this helpful?" — flag social-widget sidebars or a hardcoded nav tree.
+- API reference adds a right code-sample pane; the API Playground is the full-width tool exception — flag a playground crammed into the three-column shell.
+- Audience gating is server-side only (403 → `/docs/access-denied`) — flag any client-side permission hiding.
+- ⌘K search + TOC observers must clean up in `$effect` return.
+- Any usage-stat charts use pinned `layerchart@2.0.1`, CSS-var colors, fixed height.

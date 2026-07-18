@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { api, pageTemplatesAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, Pencil, Trash2 } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
+
+	const canManage = $derived(hasPermission('admin.settings'));
 
 	type PageTemplate = {
 		id: string;
@@ -138,10 +141,10 @@
 {/if}
 
 <div class="mb-4 flex justify-end">
-	<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
+	{#if canManage}<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
 		<Plus class="h-3 w-3" />
 		{t('pageTemplates.create')}
-	</button>
+	</button>{/if}
 </div>
 
 {#if loading}
@@ -165,19 +168,21 @@
 						<td class="px-4 py-3 text-xs font-mono" style="color: var(--color-muted)">{tpl.slug}</td>
 						<td class="px-4 py-3 text-xs">{tpl.block_count}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {tpl.is_active ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {tpl.is_active ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
 								{tpl.is_active ? t('pageTemplates.active') : t('pageTemplates.inactive')}
 							</span>
 						</td>
 						<td class="px-4 py-3 text-right">
+							{#if canManage}
 							<div class="flex items-center justify-end gap-1">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => openEdit(tpl)}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(tpl)}>
 									<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
 								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => deleteTemplate(tpl.id)}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => deleteTemplate(tpl.id)}>
 									<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
 								</button>
 							</div>
+							{/if}
 						</td>
 					</tr>
 				{:else}

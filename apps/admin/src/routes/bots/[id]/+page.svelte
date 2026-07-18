@@ -153,7 +153,7 @@
 					{saving ? t('common.saving') : t('bots.save_changes')}
 				</button>
 				<button
-					class="rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+					class="rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 					style="color: var(--color-danger)"
 					onclick={async () => {
 						if (!bot) return;

@@ -1,6 +1,6 @@
 ---
 name: jc-main-debug
-description: Use when reviewing or debugging code in the JapaConnect Main App (apps/web, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, LayerChart rendering issues, and Rule 16 violations.
+description: Use when reviewing or debugging code in the JapaConnect Main App (apps/web, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), LayerChart rendering issues, and Rule 16 violations.
 ---
 
 # JapaConnect Main App — Review & Debugging Skill
@@ -35,12 +35,21 @@ If the bug involves data not loading: verify the endpoint actually exists (`curl
 
 ## 4. LayerChart Issues
 - Chart rendered without fixed-height container → collapses to 0px
-- Hardcoded hex colors in chart classes → breaks dark mode; must use `var(--color-*)`
+- Hardcoded hex colors in chart classes → breaks dark mode; must use `var(--chart-*)`/`var(--color-*)`
 - Chart data hardcoded → Rule 16 violation
-- `scaleTime`/`scaleLinear` not imported from `d3-scale`
-- Date strings from API not converted to `Date` objects before passing to `<Chart x="date" xScale={scaleTime()}>`
+- Wrong version: must be pinned `layerchart@2.0.1` (Svelte 5). Low-level `<Chart>` needs scales from `d3-scale`; high-level `AreaChart`/`LineChart`/`BarChart` do not (d3-scale is bundled)
+- Date strings from API not converted to `Date` objects before passing to a time axis
 - Missing skeleton state while chart data loads
 - `<Tooltip.Root>` (LayerChart's) confused with Bits UI `<Tooltip.Root>` — check import source
+
+## 4b. App Shell & Layout Drift (ADR-058)
+- A surface built as a standalone layout or with a top-nav bar instead of rendering inside `AppShell` (three-column shell) — flag unless it is one of the three exceptions (blog/CPT single, `/create`, guest homepage)
+- `FeedCard` forked per content type (separate components / large `{#if content_type}` layout branches) instead of one variant-driven component with a type pill
+- Left-nav collapse state read/written to `localStorage` instead of `ui.nav_collapsed` via `PATCH /api/v1/me/account`
+- Account dropdown placed in the left nav (should anchor to the right-sidebar avatar); Space switcher moved out of the left nav
+- Blog/CPT single: `ReactionRail` boxed/bordered so it looks like a second nav (must be transparent, part of the article); search/avatar bar shown instead of `CreatorCard`
+- `/create`: right panel is a plain settings drawer instead of the tabbed `[ Guide | Settings/SEO ]`; missing dynamic field-focus Guide
+- Guest `/` rendering the app shell instead of the Page Builder landing (or authenticated `/` not showing the Primary timeline)
 
 ## 5. Rule 16 Violations
 - Hardcoded arrays for nav, tags, spaces, countries, post types, chart data

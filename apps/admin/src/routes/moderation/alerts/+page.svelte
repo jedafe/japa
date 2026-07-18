@@ -4,6 +4,9 @@
 	import { Select } from '$lib/components/ui/select';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+
+	const canManage = $derived(hasPermission('admin.moderation'));
 
 	type ModerationAlert = {
 		id: string;
@@ -171,18 +174,18 @@
 						</div>
 					</div>
 					<div class="flex gap-1">
-						{#if alert.status === 'open'}
+						{#if canManage && alert.status === 'open'}
 							<button
-								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 								style="color: var(--color-warning)"
 								onclick={() => acknowledgeAlert(alert.id)}
 							>
 								Acknowledge
 							</button>
 						{/if}
-						{#if alert.status !== 'resolved'}
+						{#if canManage && alert.status !== 'resolved'}
 							<button
-								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 								style="color: var(--color-success)"
 								onclick={() => resolveAlert(alert.id)}
 							>

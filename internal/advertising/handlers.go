@@ -17,23 +17,58 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 const defaultPageSize int32 = 20
 
+// TaskEnqueueClient is the interface for enqueueing background tasks.
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
+
 // Handlers holds dependencies for advertising HTTP handlers.
 type Handlers struct {
-	Service *Service
+	Service     *Service
+	AsynqClient TaskEnqueueClient
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// enqueueAdEventIngest enqueues an async ad event ingestion task.
+// Fire-and-forget: errors are logged but never propagated.
+func (h *Handlers) enqueueAdEventIngest(tenantID, campaignID, userID pgtype.UUID, eventType string) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"tenant_id":   tenantID.String(),
+		"campaign_id": campaignID.String(),
+		"user_id":     userID.String(),
+		"event_type":  eventType,
+	})
+	if err != nil {
+		slog.Warn("ads: failed to marshal event ingest payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeAdEventIngest, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeAdEventIngest)),
+	); err != nil {
+		slog.Warn("ads: failed to enqueue event ingest task",
+			"campaign_id", campaignID.String(), "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +493,18 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Enqueue async ad event batch ingestion for background processing — fire-and-forget.
+	for _, e := range events {
+		var campaignID, userID pgtype.UUID
+		if err := campaignID.Scan(e.CampaignID); err != nil {
+			continue
+		}
+		if e.UserID != "" {
+			_ = userID.Scan(e.UserID)
+		}
+		h.enqueueAdEventIngest(tenantID, campaignID, userID, e.EventType)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{

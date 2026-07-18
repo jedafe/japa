@@ -160,13 +160,13 @@
 <p class="mb-6 text-sm" style="color: var(--color-muted)">{t('custom_fields.edit_description')}</p>
 
 {#if error}
-	<div class="mb-4 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+	<div class="mb-4 rounded-md border border-red-300 bg-danger px-4 py-3 text-sm text-danger dark:border-red-800 dark:bg-red-950 dark:text-danger">
 		{error}
 	</div>
 {/if}
 
 {#if success}
-	<div class="mb-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400">
+	<div class="mb-4 rounded-md border border-success bg-success px-4 py-3 text-sm text-success dark:dark:border-success dark:dark:bg-success dark:text-success">
 		{success}
 	</div>
 {/if}
@@ -251,7 +251,7 @@
 					/>
 					<button
 						type="button"
-						class="rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+						class="rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 						style="border-color: var(--color-border)"
 						onclick={addOption}
 					>
@@ -261,7 +261,7 @@
 				{#if options.length > 0}
 					<div class="mt-2 flex flex-wrap gap-2">
 						{#each options as opt}
-							<span class="inline-flex items-center gap-1 rounded-full bg-black/5 px-3 py-1 text-xs dark:bg-white/10">
+							<span class="inline-flex items-center gap-1 rounded-full bg-black/5 px-3 py-1 text-xs dark:bg-surface/10">
 								{opt.label}
 								<button type="button" class="ml-0.5 text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white" onclick={() => removeOption(opt)}>&times;</button>
 							</span>
@@ -283,14 +283,14 @@
 			</button>
 			<a
 				href="/custom-fields"
-				class="rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+				class="rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 				style="border-color: var(--color-border)"
 			>
 				{t('common.cancel')}
 			</a>
 			<div class="flex-1"></div>
 			<button
-				class="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+				class="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger disabled:opacity-50 dark:border-red-800 dark:text-danger dark:hover:bg-red-950"
 				disabled={deleting}
 				onclick={deleteField}
 			>

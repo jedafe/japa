@@ -16,20 +16,55 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
+
+// TaskEnqueueClient is the interface for enqueueing background tasks.
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
 
 // Handlers holds dependencies for translation HTTP handlers.
 type Handlers struct {
-	Service *Service
+	Service     *Service
+	AsynqClient TaskEnqueueClient
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// enqueueTranslatePack enqueues an async AI translation task for a language pack.
+// Fire-and-forget: errors are logged but never propagated.
+func (h *Handlers) enqueueTranslatePack(packID, sourceLang, targetLang string, tenantID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"pack_id":     packID,
+		"source_lang": sourceLang,
+		"target_lang": targetLang,
+		"tenant_id":   tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("i18n: failed to marshal translate pack payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeLanguagePackAITranslate, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeLanguagePackAITranslate)),
+	); err != nil {
+		slog.Warn("i18n: failed to enqueue translate pack task",
+			"pack_id", packID, "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

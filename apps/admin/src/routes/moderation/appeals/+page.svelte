@@ -3,6 +3,9 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+
+	const canManage = $derived(hasPermission('admin.moderation'));
 
 	type Appeal = {
 		id: string;
@@ -103,19 +106,19 @@
 
 	function statusBadge(status: string) {
 		switch (status) {
-			case 'pending': return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
-			case 'approved': return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
-			case 'denied': return 'bg-red-500/15 text-red-700 dark:text-red-400';
-			default: return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
+			case 'pending': return 'bg-warning/15 text-warning dark:text-warning';
+			case 'approved': return 'bg-success/15 text-success dark:text-success';
+			case 'denied': return 'bg-danger/15 text-danger dark:text-danger';
+			default: return 'bg-muted/15 text-muted dark:text-muted';
 		}
 	}
 
 	function actionBadgeColor(action: string) {
 		switch (action) {
-			case 'ban': return 'bg-red-500/15 text-red-700 dark:text-red-400';
-			case 'suspend': return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
+			case 'ban': return 'bg-danger/15 text-danger dark:text-danger';
+			case 'suspend': return 'bg-warning/15 text-warning dark:text-warning';
 			case 'remove_content': return 'bg-orange-500/15 text-orange-700 dark:text-orange-400';
-			default: return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
+			default: return 'bg-muted/15 text-muted dark:text-muted';
 		}
 	}
 
@@ -161,7 +164,7 @@
 			<tbody>
 				{#each appeals as appeal}
 					<tr
-						class="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
+						class="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]"
 						style="border-color: var(--color-border)"
 						onclick={() => toggleExpand(appeal.id)}
 					>
@@ -182,17 +185,17 @@
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{appeal.created_at}</td>
 						<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
-							{#if appeal.status === 'pending'}
+							{#if canManage && appeal.status === 'pending'}
 								<div class="flex items-center gap-1">
 									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 										style="color: var(--color-success)"
 										onclick={() => openAction(appeal, 'approve')}
 									>
 										{t('moderation.approve')}
 									</button>
 									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 										style="color: var(--color-danger)"
 										onclick={() => openAction(appeal, 'deny')}
 									>
@@ -223,7 +226,7 @@
 								{#if appeal.reviewed_at}
 									<p class="mt-3 text-xs" style="color: var(--color-muted)">Reviewed at: {appeal.reviewed_at}</p>
 								{/if}
-								{#if appeal.status === 'pending'}
+								{#if canManage && appeal.status === 'pending'}
 									<div class="mt-3 flex gap-2">
 										<button
 											class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
@@ -258,8 +261,8 @@
 	<div class="mt-3 flex items-center justify-between">
 		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
 		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
 		</div>
 	</div>
 {/if}

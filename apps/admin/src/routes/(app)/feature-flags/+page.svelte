@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { api } from "$lib/api";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
@@ -10,7 +11,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Select } from "$lib/components/ui/select";
-	import { Zap, Plus, RefreshCw, ToggleLeft, ToggleRight } from "lucide-svelte";
+	import { Zap, Plus, RefreshCw, ToggleLeft, ToggleRight, Eye, Pencil, Trash2 } from "lucide-svelte";
 
 	type FeatureFlag = {
 		id: string;
@@ -36,6 +37,11 @@
 	let saving = $state(false);
 	let errorMessage = $state("");
 	let successMessage = $state("");
+
+	let showViewModal = $state(false);
+	let viewTarget = $state<FeatureFlag | null>(null);
+
+	const canManageFlags = $derived(hasPermission("feature-flags.manage"));
 
 	let form = $state({
 		name: "",
@@ -66,15 +72,15 @@
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
-					<p class="font-medium text-gray-900">${row.name}</p>
-					<p class="font-mono text-xs text-gray-500">${row.key}</p>
+					<p class="font-medium text-foreground">${row.name}</p>
+					<p class="font-mono text-xs text-muted">${row.key}</p>
 				</div>
 			`
 		},
 		{
 			key: "description",
 			label: "Description",
-			render: (value: string) => `<span class="text-sm text-gray-500">${value || "—"}</span>`
+			render: (value: string) => `<span class="text-sm text-muted">${value || "—"}</span>`
 		},
 		{
 			key: "environment",
@@ -83,9 +89,9 @@
 			render: (value: string) => {
 				const cls =
 					value === "production"
-						? "bg-danger-100 text-danger-800 border-danger-200"
+						? "bg-danger/15 text-danger border-danger"
 						: value === "staging"
-							? "bg-warning-100 text-warning-800 border-warning-200"
+							? "bg-warning/15 text-warning border-warning"
 							: "bg-info-100 text-info-800 border-info-200";
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${value}</span>`;
 			}
@@ -96,10 +102,10 @@
 			sortable: true,
 			render: (value: number) => `
 				<div class="flex items-center gap-2">
-					<div class="h-2 w-16 rounded-full bg-gray-200">
-						<div class="h-2 rounded-full bg-primary-600" style="width: ${value}%"></div>
+					<div class="h-2 w-16 rounded-full bg-surface">
+						<div class="h-2 rounded-full bg-primary" style="width: ${value}%"></div>
 					</div>
-					<span class="text-sm text-gray-600">${value}%</span>
+					<span class="text-sm text-foreground-alt">${value}%</span>
 				</div>
 			`
 		},
@@ -109,8 +115,8 @@
 			sortable: true,
 			render: (value: boolean) => {
 				const cls = value
-					? "bg-success-100 text-success-800 border-success-200"
-					: "bg-gray-100 text-gray-800 border-gray-200";
+					? "bg-success/15 text-success border-success"
+					: "bg-surface text-foreground border";
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${value ? "Enabled" : "Disabled"}</span>`;
 			}
 		},
@@ -118,12 +124,7 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__editFlag('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.edit")}</button>
-					<button onclick="window.__deleteFlag('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
-				</div>
-			`
+			component: FlagActionsCell
 		}
 	];
 
@@ -134,6 +135,11 @@
 			flags = Array.isArray(result.data) ? result.data : [];
 		}
 		loading = false;
+	}
+
+	function openView(flag: FeatureFlag) {
+		viewTarget = flag;
+		showViewModal = true;
 	}
 
 	async function submitFlag() {
@@ -241,15 +247,6 @@
 	$effect(() => {
 		loadFlags();
 	});
-
-	$effect(() => {
-		(window as any).__editFlag = openEditModal;
-		(window as any).__deleteFlag = openDeleteConfirm;
-		return () => {
-			delete (window as any).__editFlag;
-			delete (window as any).__deleteFlag;
-		};
-	});
 </script>
 
 <svelte:head>
@@ -267,12 +264,12 @@
 
 <div class="space-y-6">
 	{#if errorMessage}
-		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
 			{errorMessage}
 		</div>
 	{/if}
 	{#if successMessage}
-		<div class="rounded-lg border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-700">
+		<div class="rounded-lg border border-success bg-success-50 px-4 py-3 text-sm text-success-700">
 			{successMessage}
 		</div>
 	{/if}
@@ -283,8 +280,8 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-gray-500">{t('app.feature-flags.total_flags')}</p>
-						<p class="text-2xl font-bold text-gray-900">{flags.length}</p>
+						<p class="text-sm font-medium text-muted">{t('app.feature-flags.total_flags')}</p>
+						<p class="text-2xl font-bold text-foreground">{flags.length}</p>
 					</div>
 					<div class="rounded-lg bg-primary-100 p-3">
 						<Zap class="h-6 w-6 text-primary-600" />
@@ -296,10 +293,10 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-gray-500">{t('app.feature-flags.enabled')}</p>
+						<p class="text-sm font-medium text-muted">{t('app.feature-flags.enabled')}</p>
 						<p class="text-2xl font-bold text-success-600">{flags.filter((f) => f.isEnabled).length}</p>
 					</div>
-					<div class="rounded-lg bg-success-100 p-3">
+					<div class="rounded-lg bg-success/15 p-3">
 						<ToggleRight class="h-6 w-6 text-success-600" />
 					</div>
 				</div>
@@ -309,11 +306,11 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-gray-500">{t('app.feature-flags.disabled')}</p>
-						<p class="text-2xl font-bold text-gray-400">{flags.filter((f) => !f.isEnabled).length}</p>
+						<p class="text-sm font-medium text-muted">{t('app.feature-flags.disabled')}</p>
+						<p class="text-2xl font-bold text-muted">{flags.filter((f) => !f.isEnabled).length}</p>
 					</div>
-					<div class="rounded-lg bg-gray-100 p-3">
-						<ToggleLeft class="h-6 w-6 text-gray-400" />
+					<div class="rounded-lg bg-surface p-3">
+						<ToggleLeft class="h-6 w-6 text-muted" />
 					</div>
 				</div>
 			</CardContent>
@@ -340,7 +337,7 @@
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
-				<p class="py-8 text-center text-sm text-gray-500">{t('app.feature-flags.loading')}</p>
+				<p class="py-8 text-center text-sm text-muted">{t('app.feature-flags.loading')}</p>
 			{:else}
 				<DataTable
 					columns={flagColumns}
@@ -357,30 +354,30 @@
 <Modal bind:open={createModalOpen} title="Create Feature Flag" description="Add a new feature flag to control feature rollouts">
 	<div class="space-y-4">
 		<div>
-			<label for="flag-name" class="mb-1 block text-sm font-medium text-gray-700">{t('app.feature-flags.name')}</label>
+			<label for="flag-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.name')}</label>
 			<input
 				id="flag-name"
 				type="text"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="e.g., New Dashboard"
 				bind:value={form.name}
 			/>
 		</div>
 		<div>
-			<label for="flag-key" class="mb-1 block text-sm font-medium text-gray-700">Key</label>
+			<label for="flag-key" class="mb-1 block text-sm font-medium text-foreground-alt">Key</label>
 			<input
 				id="flag-key"
 				type="text"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-mono placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="e.g., new_dashboard"
 				bind:value={form.key}
 			/>
 		</div>
 		<div>
-			<label for="flag-desc" class="mb-1 block text-sm font-medium text-gray-700">{t('app.feature-flags.description')}</label>
+			<label for="flag-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.description')}</label>
 			<textarea
 				id="flag-desc"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="What does this flag control?"
 				rows="2"
 				bind:value={form.description}
@@ -388,7 +385,7 @@
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="flag-env" class="mb-1 block text-sm font-medium text-gray-700">{t('app.feature-flags.environment')}</label>
+				<label for="flag-env" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.environment')}</label>
 				<Select
 					bind:value={form.environment}
 					options={[
@@ -399,13 +396,13 @@
 				/>
 			</div>
 			<div>
-				<label for="flag-rollout" class="mb-1 block text-sm font-medium text-gray-700">{t('app.feature-flags.rollout')}</label>
+				<label for="flag-rollout" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.rollout')}</label>
 				<input
 					id="flag-rollout"
 					type="number"
 					min="0"
 					max="100"
-					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={form.rolloutPercentage}
 				/>
 			</div>
@@ -423,30 +420,30 @@
 <Modal bind:open={editModalOpen} title="Edit Feature Flag" description="Update feature flag configuration">
 	<div class="space-y-4">
 		<div>
-			<label for="edit-flag-key" class="mb-1 block text-sm font-medium text-gray-700">Key</label>
+			<label for="edit-flag-key" class="mb-1 block text-sm font-medium text-foreground-alt">Key</label>
 			<input
 				id="edit-flag-key"
 				type="text"
-				class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-mono text-gray-500"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm font-mono text-muted"
 				value={editingFlag?.key}
 				disabled
 			/>
 		</div>
 		<div>
-			<label for="edit-flag-name" class="mb-1 block text-sm font-medium text-gray-700">{t('app.feature-flags.name')}</label>
+			<label for="edit-flag-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.name')}</label>
 			<input
 				id="edit-flag-name"
 				type="text"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="e.g., New Dashboard"
 				bind:value={form.name}
 			/>
 		</div>
 		<div>
-			<label for="edit-flag-desc" class="mb-1 block text-sm font-medium text-gray-700">{t('app.feature-flags.description')}</label>
+			<label for="edit-flag-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.description')}</label>
 			<textarea
 				id="edit-flag-desc"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="What does this flag control?"
 				rows="2"
 				bind:value={form.description}
@@ -454,7 +451,7 @@
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="edit-flag-env" class="mb-1 block text-sm font-medium text-gray-700">{t('app.feature-flags.environment')}</label>
+				<label for="edit-flag-env" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.environment')}</label>
 				<Select
 					bind:value={form.environment}
 					options={[
@@ -465,13 +462,13 @@
 				/>
 			</div>
 			<div>
-				<label for="edit-flag-rollout" class="mb-1 block text-sm font-medium text-gray-700">{t('app.feature-flags.rollout')}</label>
+				<label for="edit-flag-rollout" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.rollout')}</label>
 				<input
 					id="edit-flag-rollout"
 					type="number"
 					min="0"
 					max="100"
-					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={form.rolloutPercentage}
 				/>
 			</div>
@@ -485,10 +482,47 @@
 	</div>
 </Modal>
 
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title="Feature Flag Details">
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Name</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Key</p>
+					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.key}</p>
+				</div>
+				<div class="col-span-2">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Description</p>
+					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.description || "—"}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Environment</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.environment}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Rollout</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.rolloutPercentage}%</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.isEnabled ? "Enabled" : "Disabled"}</p>
+				</div>
+			</div>
+		</div>
+		<div class="mt-6 flex justify-end">
+			<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+		</div>
+	{/if}
+</Modal>
+
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={deleteConfirmOpen} title="Confirm Delete" description="This action cannot be undone">
 	<div class="space-y-4">
-		<p class="text-sm text-gray-600">
+		<p class="text-sm text-foreground-alt">
 			Are you sure you want to delete this feature flag? All configuration and rollout data will be permanently removed.
 		</p>
 		<div class="flex justify-end gap-3">
@@ -499,3 +533,19 @@
 		</div>
 	</div>
 </Modal>
+
+{#snippet FlagActionsCell(row: FeatureFlag)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageFlags}
+			<Button variant="ghost" size="sm" onclick={() => openEditModal(row.id)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => openDeleteConfirm(row.id)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

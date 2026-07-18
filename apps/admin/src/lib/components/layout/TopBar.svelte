@@ -5,6 +5,7 @@
 	import { apiFetch } from '$lib/api/client';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { getNotifications, getUnreadCount, markRead, markAllRead } from '$lib/stores/notifications.svelte';
+	import { goto, invalidateAll } from '$app/navigation';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import { Bell, Sun, Moon, Check, Menu } from 'lucide-svelte';
 
@@ -39,7 +40,7 @@
 		// real server endpoint capable of clearing the cookie).
 		await apiFetch('/auth/logout', { method: 'POST' }).catch(() => {});
 		clearUser();
-		window.location.href = '/login';
+		await goto('/login', { invalidateAll: true });
 	}
 </script>
 
@@ -103,7 +104,7 @@
 									class="w-full px-3 py-2 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.05] {notif.read ? 'opacity-60' : ''}"
 									onclick={() => {
 										markRead(notif.id);
-										if (notif.link) window.location.href = notif.link;
+										if (notif.link) goto(notif.link);
 									}}
 								>
 									<p class="text-sm font-medium" style="color: var(--color-foreground)">{notif.title}</p>

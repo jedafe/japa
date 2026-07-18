@@ -94,7 +94,7 @@
 						<td class="px-4 py-3 font-mono text-xs">{req.user_id}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{req.message || '—'}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {req.status === 'approved' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : req.status === 'rejected' ? 'bg-red-500/15 text-red-700 dark:text-red-400' : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {req.status === 'approved' ? 'bg-success/15 text-success dark:text-success' : req.status === 'rejected' ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">
 								{req.status}
 							</span>
 						</td>
@@ -102,11 +102,11 @@
 						<td class="px-4 py-3 text-right">
 							{#if req.status === 'pending'}
 								<div class="flex items-center justify-end gap-1">
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => updateRequest(req.id, 'approved')}>
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => updateRequest(req.id, 'approved')}>
 										<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
 										{t('joinRequests.approve')}
 									</button>
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => updateRequest(req.id, 'rejected')}>
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => updateRequest(req.id, 'rejected')}>
 										<XCircle class="h-3 w-3 inline mr-1" style="color: var(--color-danger)" />
 										{t('joinRequests.reject')}
 									</button>

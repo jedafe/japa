@@ -1,6 +1,6 @@
 ---
 name: jc-docs-audit
-description: Use when performing a comprehensive quality audit of the JapaConnect Docs app (apps/docs) before merge or release. Verifies observer/listener cleanup, API-driven sidebar, search modal composition, code blocks, SEO structured data, and standard compliance.
+description: [Docs app, docs.japaconnect.com] Unified shell adapted for Docs (ADR-060) — nav-tree left nav, TOC right sidebar, playground full-width exception. Use when performing a comprehensive quality audit of the JapaConnect Docs app (apps/docs) before merge or release. Verifies observer/listener cleanup, API-driven sidebar, search modal composition, code blocks, SEO structured data, and standard compliance.
 ---
 
 # JapaConnect Docs — Audit Skill
@@ -42,3 +42,10 @@ Apply `jc-main-audit` §§B (Rule 16), D (Bits UI), B(runes), G (security/{@html
 
 ## Report Format
 Same structure as `jc-main-audit` with categories: Memory leaks · API routes/sidebar · Search modal · Code blocks · On-This-Page · Responsive · SEO · Bits UI · Svelte 5 · A11y.
+
+## App Shell & Docs Drift (ADR-060)
+- Docs uses the unified shell (ADR-058) adapted per ADR-060: the **left nav IS the audience-gated doc nav tree** (from `GET /api/v1/docs/nav`), collapsible (`ui.nav_collapsed` server-side, not localStorage); the **right sidebar IS the in-page TOC** + "was this helpful?" — flag social-widget sidebars or a hardcoded nav tree.
+- API reference adds a right code-sample pane; the API Playground is the full-width tool exception — flag a playground crammed into the three-column shell.
+- Audience gating is server-side only (403 → `/docs/access-denied`) — flag any client-side permission hiding.
+- ⌘K search + TOC observers must clean up in `$effect` return.
+- Any usage-stat charts use pinned `layerchart@2.0.1`, CSS-var colors, fixed height.

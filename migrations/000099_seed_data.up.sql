@@ -75,6 +75,11 @@ INSERT INTO system_settings (tenant_id, key, value) VALUES
     -- GDPR
     ('00000000-0000-0000-0000-000000000001', 'gdpr.deletion_grace_days', '"30"'),
     ('00000000-0000-0000-0000-000000000001', 'gdpr.export_expiry_days', '"7"'),
+    ('00000000-0000-0000-0000-000000000001', 'gdpr.hard_delete_enabled', '"false"'),
+    ('00000000-0000-0000-0000-000000000001', 'gdpr.retention_days', '"0"'),
+    ('00000000-0000-0000-0000-000000000001', 'gdpr.deleted_user_placeholder_uuid', '""'),
+    -- CORS
+    ('00000000-0000-0000-0000-000000000001', 'cors.allowed_origins', '"*"'),
     -- Affiliate Program
     ('00000000-0000-0000-0000-000000000001', 'affiliate.min_account_days', '"30"'),
     ('00000000-0000-0000-0000-000000000001', 'affiliate.attribution_window_days', '"30"'),

@@ -113,21 +113,21 @@
 						<td class="px-4 py-3 text-xs font-mono" style="color: var(--color-muted)">{track.slug}</td>
 						<td class="px-4 py-3 text-xs">{track.enrollment_count}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {track.is_published ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {track.is_published ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">
 								{track.is_published ? t('learn.published') : t('learn.draft')}
 							</span>
 						</td>
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-1">
 								{#if !track.is_published}
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => publishTrack(track)}>
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => publishTrack(track)}>
 										{t('learn.publish')}
 									</button>
 								{/if}
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => viewEnrollments(track)}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => viewEnrollments(track)}>
 									<Eye class="h-3 w-3" style="color: var(--color-info)" />
 								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => deleteTrack(track.id)}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => deleteTrack(track.id)}>
 									<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
 								</button>
 							</div>

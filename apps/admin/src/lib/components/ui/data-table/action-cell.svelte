@@ -19,9 +19,9 @@
   } = $props();
 
   const variantClasses: Record<string, string> = {
-    default: "text-gray-700 hover:bg-gray-100",
-    destructive: "text-danger-700 hover:bg-danger-50",
-    ghost: "text-gray-600 hover:bg-gray-100"
+    default: "text-foreground hover:bg-surface",
+    destructive: "text-danger hover:bg-danger/15",
+    ghost: "text-foreground-alt hover:bg-surface"
   };
 </script>
 

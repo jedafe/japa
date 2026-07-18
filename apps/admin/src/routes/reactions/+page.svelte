@@ -2,6 +2,8 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Eye } from 'lucide-svelte';
 
 	type ReactionType = {
 		key: string;
@@ -27,6 +29,16 @@
 	// Delete modal
 	let showDeleteModal = $state(false);
 	let deleteTarget = $state<ReactionType | null>(null);
+
+	let showViewModal = $state(false);
+	let viewTarget = $state<ReactionType | null>(null);
+
+	const canManageReactions = $derived(hasPermission('reactions.manage'));
+
+	function openView(reaction: ReactionType) {
+		viewTarget = reaction;
+		showViewModal = true;
+	}
 
 	async function load() {
 		loading = true;
@@ -128,13 +140,15 @@
 <p class="mb-4 text-sm" style="color: var(--color-muted)">{t('reactions.manage_reaction_types_used_across_the_pl')}</p>
 
 <div class="mb-4 flex justify-end">
-	<button
-		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-		style="background-color: var(--color-primary)"
-		onclick={openCreate}
-	>
-		{t('reactions.create')}
-	</button>
+	{#if canManageReactions}
+		<button
+			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
+			style="background-color: var(--color-primary)"
+			onclick={openCreate}
+		>
+			{t('reactions.create')}
+		</button>
+	{/if}
 </div>
 
 {#if loading}
@@ -152,30 +166,39 @@
 			</thead>
 			<tbody>
 				{#each reactions as reaction}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
+					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
 					<td class="px-4 py-3 text-2xl">{reaction.emoji}</td>
 					<td class="px-4 py-3 font-medium">{reaction.label}</td>
 					<td class="px-4 py-3">
-						<span class="inline-block rounded-full px-2 py-0.5 text-xs {reaction.enabled ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+						<span class="inline-block rounded-full px-2 py-0.5 text-xs {reaction.enabled ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
 							{reaction.enabled ? 'Active' : 'Inactive'}
 						</span>
 					</td>
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-1">
 								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-info)"
-									onclick={() => openEdit(reaction)}
+									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+									style="color: var(--color-muted)"
+									onclick={() => openView(reaction)}
 								>
-									{t('common.edit')}
+									{t('common.view')}
 								</button>
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete(reaction)}
-								>
-									{t('common.delete')}
-								</button>
+								{#if canManageReactions}
+									<button
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+										style="color: var(--color-info)"
+										onclick={() => openEdit(reaction)}
+									>
+										{t('common.edit')}
+									</button>
+									<button
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+										style="color: var(--color-danger)"
+										onclick={() => confirmDelete(reaction)}
+									>
+										{t('common.delete')}
+									</button>
+								{/if}
 							</div>
 						</td>
 					</tr>
@@ -193,11 +216,38 @@
 	<div class="mt-3 flex items-center justify-between">
 		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
 		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
 		</div>
 	</div>
 {/if}
+
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t('reactions.view')}>
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reactions.emoji')}</p>
+				<p class="mt-1 text-2xl" style="color: var(--color-foreground)">{viewTarget.emoji}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reactions.name')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.label}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Key</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.key}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reactions.active')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.enabled ? t('reactions.active') : t('reactions.inactive')}</p>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showViewModal = false)}>{t('common.close')}</button>
+	</div>
+</Modal>
 
 <!-- Create/Edit Modal -->
 <Modal

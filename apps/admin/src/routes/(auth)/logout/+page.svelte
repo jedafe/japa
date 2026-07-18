@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
-	import { onMount } from 'svelte';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { clearUser } from '$lib/stores/auth.svelte';
 
-	onMount(async () => {
+	(async () => {
 		try {
-			// Call logout endpoint
 			await fetch('/api/v1/auth/logout', {
 				method: 'POST',
 				credentials: 'include'
@@ -13,16 +12,11 @@
 		} catch {
 			// Ignore errors
 		}
-		
-		// Clear client state
+
 		clearUser();
-		
-		// Clear cookie by setting it to expire
 		document.cookie = 'jc_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-		
-		// Redirect to login
-		window.location.href = '/login';
-	});
+		await goto('/login', { invalidateAll: true });
+	})();
 </script>
 
 <svelte:head>

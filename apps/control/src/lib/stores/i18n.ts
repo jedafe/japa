@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { browser } from '$app/environment';
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { apiFetch } from '$lib/api/client';
 
 type Locale = string;
 
@@ -37,10 +37,8 @@ export async function loadTranslations(localeCode: string): Promise<Record<strin
 		return loaded[localeCode];
 	}
 	try {
-		const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/i18n/packs/${localeCode}`);
-		if (!res.ok) throw new Error(`HTTP ${res.status}`);
-		const body = await res.json();
-		const data = body?.data ?? body ?? {};
+		const result = await apiFetch<Record<string, string>>(`/api/v1/i18n/packs/${localeCode}`);
+		const data = result.data ?? {};
 		loaded[localeCode] = data;
 		translations.set(data);
 		return data;

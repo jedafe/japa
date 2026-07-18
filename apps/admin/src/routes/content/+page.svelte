@@ -8,7 +8,7 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw, Eye, RotateCcw, Trash2 } from "lucide-svelte";
+	import { RefreshCw, Eye, RotateCcw, Trash2, Pencil } from "lucide-svelte";
 	import { contentAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -36,6 +36,10 @@
 	let searchQuery = $state("");
 	let filterValues = $state<Record<string, string>>({});
 
+	// View modal
+	let showViewModal = $state(false);
+	let viewTarget = $state<ContentItem | null>(null);
+
 	// Remove modal
 	let showRemoveModal = $state(false);
 	let removeTarget = $state<ContentItem | null>(null);
@@ -44,6 +48,15 @@
 	// Restore modal
 	let showRestoreModal = $state(false);
 	let restoreTarget = $state<ContentItem | null>(null);
+
+	const canManageContent = $derived(hasPermission("content.manage"));
+
+	let selectedIds = $state<Set<string>>(new Set());
+
+	function openView(item: ContentItem) {
+		viewTarget = item;
+		showViewModal = true;
+	}
 
 	const filterDefs = [
 		{
@@ -107,15 +120,7 @@
 			render: (v: string) => new Date(v).toLocaleDateString()
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			render: (_: any, row: ContentItem) => {
-				const isRemoved = row.status === "removed" || !!row.removed_at;
-				if (isRemoved) {
-					return `<button onclick="window.__contentRestore('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-50">${t("content.restore", "Restore")}</button>`;
-				}
-				return `<div class="flex items-center gap-1">
-					<button onclick="window.__contentRemove('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("content.remove", "Remove")}</button>
-				</div>`;
-			}
+			component: ContentActionsCell
 		}
 	];
 
@@ -195,6 +200,24 @@
 		}
 	}
 
+	let bulkRemoving = $state(false);
+	async function bulkRemove() {
+		const ids = Array.from(selectedIds);
+		if (ids.length === 0) return;
+		bulkRemoving = true;
+		error = "";
+		try {
+			await Promise.all(ids.map((id) => contentAdminApi.remove(id)));
+			selectedIds = new Set();
+			success = t("content.removed", "Content removed successfully");
+			loadItems();
+		} catch {
+			error = t("common.error", "Failed to remove content");
+		} finally {
+			bulkRemoving = false;
+		}
+	}
+
 </script>
 
 <svelte:head>
@@ -228,7 +251,14 @@
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={items} pageSize={items.length} selectable />
+			<DataTable {columns} data={items} pageSize={items.length} selectable bind:selectedIds>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkRemove} disabled={bulkRemoving}>
+						<Trash2 class="mr-1 h-3.5 w-3.5" />
+						{bulkRemoving ? t("common.removing", "Removing...") : `${t("content.remove_selected", "Remove Selected")} (${selectedIds.size})`}
+					</Button>
+				{/snippet}
+			</DataTable>
 			<Pagination bind:page={currentPage} totalPages={Math.ceil(totalItems / pageSize)} {totalItems} bind:pageSize />
 		{/if}
 	</CardContent>
@@ -254,15 +284,65 @@
 	</div>
 </Modal>
 
-<!-- Restore Modal -->
-<Modal bind:open={showRestoreModal} title={t("content.restore_title", "Restore Content")}>
-	{#if restoreTarget}
-		<p class="text-sm" style="color: var(--color-foreground)">
-			{t("content.restore_confirm", "Restore this content?")} <strong>{restoreTarget.title || "Untitled"}</strong>
-		</p>
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t("content.details", "Content Details")} size="lg">
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.title", "Title")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.title || "Untitled"}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.type", "Type")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.content_type}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.author", "Author")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.author_name}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.status", "Status")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.views", "Views")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.views ?? 0).toLocaleString()}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.created", "Created")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
+				</div>
+				{#if viewTarget.url}
+					<div class="col-span-2">
+						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">URL</p>
+						<a class="mt-1 block break-all text-sm font-mono" style="color: var(--color-primary)" href={viewTarget.url} target="_blank" rel="noreferrer">{viewTarget.url}</a>
+					</div>
+				{/if}
+			</div>
+		</div>
 	{/if}
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => showRestoreModal = false}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={confirmRestore}>{t("content.restore", "Restore")}</Button>
+	<div class="mt-6 flex justify-end">
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t("common.close", "Close")}</Button>
 	</div>
 </Modal>
+
+<!-- ContentActionsCell -->
+{#snippet ContentActionsCell(row: ContentItem)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageContent}
+			{#if row.status === "removed" || !!row.removed_at}
+				<Button variant="ghost" size="sm" onclick={() => openRestore(row)} style="color: var(--color-success)">
+					<RotateCcw class="h-3.5 w-3.5" />
+				</Button>
+			{:else}
+				<Button variant="ghost" size="sm" onclick={() => openRemove(row)} style="color: var(--color-danger)">
+					<Trash2 class="h-3.5 w-3.5" />
+				</Button>
+			{/if}
+		{/if}
+	</div>
+{/snippet}

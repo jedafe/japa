@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
-	import { page } from "$app/state";
-	import { goto } from "$app/navigation";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
@@ -10,8 +8,10 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
-	import { Users, Plus, Pencil, Trash2, UserCheck } from "lucide-svelte";
+	import { Users, Plus, Pencil, Trash2, UserCheck, Eye } from "lucide-svelte";
+	import { Switch } from "bits-ui";
 	import { api } from "$lib/api";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type Program = {
 		id: string;
@@ -44,6 +44,12 @@
 	let deleteTarget = $state<Program | null>(null);
 	let deleting = $state(false);
 
+	// View modal
+	let showViewModal = $state(false);
+	let viewTarget = $state<Program | null>(null);
+
+	const canManageMentorship = $derived(hasPermission("mentorship.manage"));
+
 	const tabs = [
 		{ value: "all", label: "All Programs", icon: Users },
 		{ value: "active", label: "Active", icon: UserCheck },
@@ -57,8 +63,8 @@
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
-					<p class="font-medium text-gray-900">${row.name}</p>
-					${row.description ? `<p class="text-sm text-gray-500 line-clamp-1">${row.description}</p>` : ""}
+					<p class="font-medium text-foreground">${row.name}</p>
+					${row.description ? `<p class="text-sm text-muted line-clamp-1">${row.description}</p>` : ""}
 				</div>
 			`
 		},
@@ -78,7 +84,7 @@
 			key: "match_count",
 			label: "Matches",
 			sortable: true,
-			render: (value: number) => `<span class="text-sm text-gray-700">${value ?? "—"}</span>`
+			render: (value: number) => `<span class="text-sm text-foreground-alt">${value ?? "—"}</span>`
 		},
 		{
 			key: "is_active",
@@ -86,7 +92,7 @@
 			sortable: true,
 			render: (value: boolean) => {
 				const variant = value ? "success" : "secondary";
-				const classes = value ? "bg-success-100 text-success-800 border-success-200" : "bg-gray-100 text-gray-800 border-gray-200";
+				const classes = value ? "bg-success/15 text-success border-success" : "bg-surface text-foreground border";
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes}">${value ? "Active" : "Inactive"}</span>`;
 			}
 		},
@@ -100,12 +106,7 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__mentorshipEdit('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.edit")}</button>
-					<button onclick="window.__mentorshipDelete('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
-				</div>
-			`
+			component: ProgramActionsCell
 		}
 	];
 
@@ -132,6 +133,11 @@
 
 	function handleFilter(values: Record<string, string>) {
 		filters = values;
+	}
+
+	function openView(program: Program) {
+		viewTarget = program;
+		showViewModal = true;
 	}
 
 	function openCreate() {
@@ -201,18 +207,6 @@
 		}
 	}
 
-	// Expose window functions for DataTable inline actions
-	$effect(() => {
-		(window as any).__mentorshipEdit = (id: string) => {
-			const program = programs.find((p) => p.id === id);
-			if (program) openEdit(program);
-		};
-		(window as any).__mentorshipDelete = (id: string) => {
-			const program = programs.find((p) => p.id === id);
-			if (program) confirmDelete(program);
-		};
-	});
-
 	let initialized = false;
 	$effect(() => {
 		if (!initialized) {
@@ -230,7 +224,7 @@
 	title="Mentorship"
 	description="Manage mentorship programs and matching"
 	actions={[
-		{ label: "New Program", icon: Plus, onclick: openCreate }
+		...(canManageMentorship ? [{ label: "New Program", icon: Plus, onclick: openCreate }] : [])
 	]}
 />
 
@@ -248,7 +242,7 @@
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
-				<p class="py-8 text-center text-sm text-gray-500">{t('mentorship.loading_programs')}</p>
+				<p class="py-8 text-center text-sm text-muted">{t('mentorship.loading_programs')}</p>
 			{:else}
 				<DataTable
 					columns={columns}
@@ -264,26 +258,26 @@
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">{t('mentorship.total_programs')}</p>
-				<p class="text-2xl font-bold text-gray-900">{programs.length}</p>
+				<p class="text-sm text-muted">{t('mentorship.total_programs')}</p>
+				<p class="text-2xl font-bold text-foreground">{programs.length}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">{t('mentorship.active_programs')}</p>
-				<p class="text-2xl font-bold text-gray-900">{programs.filter((p) => p.is_active).length}</p>
+				<p class="text-sm text-muted">{t('mentorship.active_programs')}</p>
+				<p class="text-2xl font-bold text-foreground">{programs.filter((p) => p.is_active).length}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">{t('mentorship.total_mentors')}</p>
-				<p class="text-2xl font-bold text-gray-900">{programs.reduce((sum, p) => sum + (p.mentor_count ?? 0), 0)}</p>
+				<p class="text-sm text-muted">{t('mentorship.total_mentors')}</p>
+				<p class="text-2xl font-bold text-foreground">{programs.reduce((sum, p) => sum + (p.mentor_count ?? 0), 0)}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-gray-500">{t('mentorship.total_mentees')}</p>
-				<p class="text-2xl font-bold text-gray-900">{programs.reduce((sum, p) => sum + (p.mentee_count ?? 0), 0)}</p>
+				<p class="text-sm text-muted">{t('mentorship.total_mentees')}</p>
+				<p class="text-2xl font-bold text-foreground">{programs.reduce((sum, p) => sum + (p.mentee_count ?? 0), 0)}</p>
 			</CardContent>
 		</Card>
 	</div>
@@ -298,37 +292,38 @@
 >
 	<div class="space-y-4">
 		<div>
-			<label for="mp-name" class="mb-1 block text-sm font-medium text-gray-900">{t('mentorship.program_name')}</label>
+			<label for="mp-name" class="mb-1 block text-sm font-medium text-foreground">{t('mentorship.program_name')}</label>
 			<input
 				id="mp-name"
 				type="text"
-				class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="e.g. Career Growth Mentorship"
 				bind:value={name}
 			/>
 		</div>
 		<div>
-			<label for="mp-desc" class="mb-1 block text-sm font-medium text-gray-900">{t('mentorship.description_2')}</label>
+			<label for="mp-desc" class="mb-1 block text-sm font-medium text-foreground">{t('mentorship.description_2')}</label>
 			<textarea
 				id="mp-desc"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				rows="3"
 				placeholder="What is this program about?"
 				bind:value={description}
 			></textarea>
 		</div>
 		<div class="flex items-center gap-3">
-			<button
-				type="button"
-				role="switch"
-				aria-checked={isActive}
+			<Switch.Root
+				checked={isActive}
+				onCheckedChange={(v: boolean) => (isActive = v)}
+				class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 {isActive ? "bg-primary" : "bg-surface"}"
+				style="--ring-color: var(--color-primary); --ring-offset-color: var(--color-surface)"
 				aria-label="Active status"
-				onclick={() => (isActive = !isActive)}
-				class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {isActive ? "bg-primary-600" : "bg-gray-200"}"
 			>
-				<span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform {isActive ? "translate-x-6" : "translate-x-1"}"></span>
-			</button>
-			<span class="text-sm text-gray-700">{isActive ? "Active" : "Inactive"}</span>
+				<Switch.Thumb
+					class="inline-block h-4 w-4 transform rounded-full bg-surface shadow-sm transition-transform {isActive ? "translate-x-6" : "translate-x-1"}"
+				/>
+			</Switch.Root>
+			<span class="text-sm text-foreground-alt">{isActive ? "Active" : "Inactive"}</span>
 		</div>
 	</div>
 
@@ -367,3 +362,55 @@
 		</Button>
 	</div>
 </Modal>
+
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title="Program Details" size="sm">
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">Name</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.name}</p>
+			</div>
+			{#if viewTarget.description}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider text-muted">Description</p>
+					<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.description}</p>
+				</div>
+			{/if}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">Status</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.is_active ? "Active" : "Inactive"}</p>
+			</div>
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider text-muted">Mentors</p>
+					<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.mentor_count ?? 0}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider text-muted">Mentees</p>
+					<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.mentee_count ?? 0}</p>
+				</div>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('mentorship.cancel')}</Button>
+	</div>
+</Modal>
+
+<!-- Action Cell -->
+{#snippet ProgramActionsCell(row: Program)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageMentorship}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

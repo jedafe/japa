@@ -175,17 +175,17 @@
 			</thead>
 			<tbody>
 				{#each ticketTypes as item}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
+					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3 font-medium">{item.name}</td>
 						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{item.slug}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.description || '—'}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {item.is_active ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs {item.is_active ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
 								{item.is_active ? 'Active' : 'Inactive'}
 							</span>
 						</td>
 						<td class="px-4 py-3">
-							<span class="text-xs font-medium {item.default_priority === 'urgent' ? 'text-red-600 dark:text-red-400' : item.default_priority === 'high' ? 'text-amber-600 dark:text-amber-400' : ''}">
+							<span class="text-xs font-medium {item.default_priority === 'urgent' ? 'text-danger dark:text-danger' : item.default_priority === 'high' ? 'text-warning dark:text-warning' : ''}">
 								{item.default_priority}
 							</span>
 						</td>
@@ -193,14 +193,14 @@
 							<div class="flex items-center gap-2">
 								{#if canManageTickets}
 									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 										style="color: var(--color-info)"
 										onclick={() => openEdit(item)}
 									>
 										Edit
 									</button>
 									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 										style="color: var(--color-danger)"
 										onclick={() => confirmDelete(item.id)}
 									>
@@ -222,8 +222,8 @@
 	<div class="mt-3 flex items-center justify-between">
 		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
 		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
 		</div>
 	</div>
 {/if}

@@ -8,16 +8,16 @@
 	import type { Component } from 'svelte';
 	import type { Tenant, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n';
+	import { escapeHtml } from '$lib/utils';
 	import { Pencil, Ban, CheckCircle, Trash2, Plus, X, RefreshCw } from 'lucide-svelte';
-	import type { PageData } from './$types';
 
-	let { data = {} as PageData } = $props();
+	let {} = $props();
 
-	let tenants = $state<Tenant[]>(data.tenants ?? []);
-	let loading = $state(false);
+	let tenants = $state<Tenant[]>([]);
+	let loading = $state(true);
 	let filter = $state('');
 	let filterStatus = $state('all');
-	let errorMessage = $state(data.error ?? '');
+	let errorMessage = $state('');
 	let saving = $state(false);
 
 	let page = $state(0);
@@ -61,6 +61,10 @@
 		}
 		loading = false;
 	}
+
+	$effect(() => {
+		load();
+	});
 
 	function autoSlug(name: string): string {
 		return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -186,13 +190,13 @@
 	const columns: DataTableColumn[] = [
 		{ key: 'name', label: t('tenants.name'), sortable: true, class: 'font-medium' },
 		{ key: 'slug', label: t('tenants.slug'), sortable: true, class: 'font-mono text-xs' },
-		{ key: 'domain', label: t('tenants.domain'), render: (v) => (v as string) ?? '\u2014', class: 'text-muted-foreground text-xs' },
+		{ key: 'domain', label: t('tenants.domain'), render: (v) => v ? escapeHtml(v) : '\u2014', class: 'text-muted-foreground text-xs' },
 		{
 			key: 'status',
 			label: t('tenants.status'),
 			sortable: true,
 			render: (v) => {
-				const s = v as string;
+				const s = escapeHtml(v);
 				const cls = s === 'active' ? 'bg-green-500/12 text-green-600' : s === 'suspended' ? 'bg-tertiary/12 text-tertiary' : '';
 				return `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${s}</span>`;
 			}
@@ -201,7 +205,7 @@
 			key: 'created_at',
 			label: t('tenants.created'),
 			sortable: true,
-			render: (v) => new Date(v as string).toLocaleDateString(),
+			render: (v) => `<span>${escapeHtml(new Date(v as string).toLocaleDateString())}</span>`,
 			class: 'text-muted-foreground text-xs'
 		}
 	];

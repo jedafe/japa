@@ -1,10 +1,11 @@
 package control
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +13,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/meilisearch/meilisearch-go"
+	"github.com/valkey-io/valkey-go/valkeycompat"
+
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
@@ -20,8 +24,8 @@ import (
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/worker"
-	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // Handlers holds dependencies for control panel HTTP handlers.
@@ -36,6 +40,8 @@ type Handlers struct {
 	RBAC             *rbac.RBAC
 	Settings         *config.Settings
 	Valkey           valkeycompat.Cmdable
+	MeiliSearch      meilisearch.ServiceManager
+	WSHub            *websocket.Hub
 	StartTime        time.Time
 }
 
@@ -74,6 +80,16 @@ func (h *Handlers) SetSettings(s *config.Settings) {
 // SetValkey injects the Valkey client for cache stats.
 func (h *Handlers) SetValkey(v valkeycompat.Cmdable) {
 	h.Valkey = v
+}
+
+// SetMeiliSearch injects the Meilisearch client for health checks.
+func (h *Handlers) SetMeiliSearch(m meilisearch.ServiceManager) {
+	h.MeiliSearch = m
+}
+
+// SetWSHub injects the WebSocket hub for health checks.
+func (h *Handlers) SetWSHub(hub *websocket.Hub) {
+	h.WSHub = hub
 }
 
 // ---------------------------------------------------------------------------
@@ -390,30 +406,288 @@ func (h *Handlers) SetFeatureFlag(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	type serviceStatus struct {
+		Name      string `json:"name"`
+		Status    string `json:"status"`
+		LatencyMs int64  `json:"latency_ms"`
+		Message   string `json:"message,omitempty"`
+	}
+
+	checkService := func(name string, fn func(context.Context) error) serviceStatus {
+		start := time.Now()
+		err := fn(ctx)
+		latency := time.Since(start).Milliseconds()
+		if err != nil {
+			return serviceStatus{Name: name, Status: "down", LatencyMs: latency, Message: err.Error()}
+		}
+		return serviceStatus{Name: name, Status: "healthy", LatencyMs: latency}
+	}
+
+	infrastructure := []serviceStatus{
+		checkService("PostgreSQL", func(ctx context.Context) error {
+			return h.DB.Ping(ctx)
+		}),
+	}
+
+	if h.Valkey != nil {
+		infrastructure = append(infrastructure, checkService("Valkey", func(ctx context.Context) error {
+			_, err := h.Valkey.Ping(ctx).Result()
+			return err
+		}))
+	}
+
+	application := []serviceStatus{
+		checkService("API Server", func(_ context.Context) error {
+			return nil
+		}),
+	}
+
+	if h.MeiliSearch != nil {
+		application = append(application, checkService("Meilisearch", func(ctx context.Context) error {
+			_, err := h.MeiliSearch.HealthWithContext(ctx)
+			return err
+		}))
+	}
+
+	background := []serviceStatus{}
+
+	if h.Inspector != nil {
+		background = append(background, checkService("Asynq Workers", func(ctx context.Context) error {
+			info, err := h.Inspector.GetQueueInfo("default")
+			if err != nil {
+				return err
+			}
+			if info.Size < 0 {
+				return nil
+			}
+			return nil
+		}))
+		background = append(background, checkService("Asynq Scheduler", func(ctx context.Context) error {
+			_, err := h.Inspector.SchedulerEntries()
+			return err
+		}))
+	}
+
+	realtime := []serviceStatus{
+		checkService("WebSocket Hub", func(_ context.Context) error {
+			if h.WSHub == nil {
+				return nil
+			}
+			_ = h.WSHub.GetOnlineUsers()
+			return nil
+		}),
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"status":     "ok",
-			"uptime_sec": int(time.Since(h.StartTime).Seconds()),
-			"go_version": runtime.Version(),
-			"goroutines": runtime.NumGoroutine(),
+			"infrastructure": infrastructure,
+			"application":    application,
+			"background":     background,
+			"realtime":       realtime,
 		},
 	})
 }
 
 func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
-	if err := h.DB.Reader.Ping(r.Context()); err != nil {
+	ctx := r.Context()
+
+	// Measure latency with ping.
+	start := time.Now()
+	if err := h.DB.Reader.Ping(ctx); err != nil {
 		slog.Error("control: db health check", "error", err)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"data": map[string]any{"status": "unhealthy", "error": err.Error()},
 		})
 		return
 	}
+	latency := time.Since(start).Milliseconds()
+
+	// Database version.
+	var version string
+	_ = h.DB.Reader.QueryRow(ctx, `SELECT version()`).Scan(&version)
+
+	// Database size.
+	var sizeBytes int64
+	_ = h.DB.Reader.QueryRow(ctx, `SELECT pg_database_size(current_database())`).Scan(&sizeBytes)
+
+	// Table count and index count.
+	var tableCount, indexCount int
+	_ = h.DB.Reader.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE')::int,
+			(SELECT count(*) FROM pg_indexes WHERE schemaname = 'public')::int
+	`).Scan(&tableCount, &indexCount)
+
+	// Table details.
+	type tableInfo struct {
+		Name       string  `json:"name"`
+		RowCount   int64   `json:"row_count"`
+		SizeBytes  int64   `json:"size_bytes"`
+		IndexCount int     `json:"index_count"`
+		LastVacuum *string `json:"last_vacuum"`
+	}
+	var tables []tableInfo
+	rows, err := h.DB.Reader.Query(ctx, `
+		SELECT
+			t.tablename,
+			COALESCE(c.reltuples::bigint, 0),
+			pg_table_size(c.oid),
+			(SELECT count(*) FROM pg_indexes WHERE tablename = t.tablename AND schemaname = 'public')::int,
+			(SELECT max(last_vacuum)::text FROM pg_stat_user_tables WHERE relname = t.tablename)
+		FROM pg_tables t
+		LEFT JOIN pg_class c ON c.relname = t.tablename
+		WHERE t.schemaname = 'public'
+		ORDER BY pg_table_size(c.oid) DESC
+	`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var ti tableInfo
+			if err := rows.Scan(&ti.Name, &ti.RowCount, &ti.SizeBytes, &ti.IndexCount, &ti.LastVacuum); err == nil {
+				tables = append(tables, ti)
+			}
+		}
+	}
+	if tables == nil {
+		tables = []tableInfo{}
+	}
+
+	// Unused indexes.
+	type unusedIndex struct {
+		Name      string `json:"name"`
+		TableName string `json:"table_name"`
+		Scans     int64  `json:"scans"`
+	}
+	var indexesUnused []unusedIndex
+	irows, err := h.DB.Reader.Query(ctx, `
+		SELECT indexrelname, relname, idx_scan
+		FROM pg_stat_user_indexes
+		WHERE idx_scan = 0 AND schemaname = 'public'
+		ORDER BY pg_relation_size(indexrelid) DESC
+	`)
+	if err == nil {
+		defer irows.Close()
+		for irows.Next() {
+			var ui unusedIndex
+			if err := irows.Scan(&ui.Name, &ui.TableName, &ui.Scans); err == nil {
+				indexesUnused = append(indexesUnused, ui)
+			}
+		}
+	}
+	if indexesUnused == nil {
+		indexesUnused = []unusedIndex{}
+	}
+
+	// Connection pool stats.
+	var activeConns, idleConns, waitingConns, maxConns int
+	_ = h.DB.Reader.QueryRow(ctx, `
+		SELECT
+			COALESCE((SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND datname = current_database()), 0),
+			COALESCE((SELECT count(*) FROM pg_stat_activity WHERE state = 'idle' AND datname = current_database()), 0),
+			COALESCE((SELECT count(*) FROM pg_stat_activity WHERE wait_event_type IS NOT NULL AND datname = current_database()), 0),
+			COALESCE((SELECT setting::int FROM pg_settings WHERE name = 'max_connections'), 0)
+	`).Scan(&activeConns, &idleConns, &waitingConns, &maxConns)
+
+	// Replication.
+	type replicationInfo struct {
+		State       string  `json:"state"`
+		LagSeconds  float64 `json:"lag_seconds"`
+	}
+	var repl *replicationInfo
+	var isRecovery bool
+	var replLag float64
+	err = h.DB.Reader.QueryRow(ctx, `
+		SELECT
+			pg_is_in_recovery(),
+			COALESCE(EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))::float, 0)
+	`).Scan(&isRecovery, &replLag)
+	if err == nil {
+		state := "primary"
+		if isRecovery {
+			state = "standby"
+		}
+		repl = &replicationInfo{State: state, LagSeconds: replLag}
+	}
+
+	// Slow queries (active queries running > 1s).
+	type slowQuery struct {
+		PID          int    `json:"pid"`
+		Duration     int64  `json:"duration"`
+		DurationMs   int64  `json:"duration_ms"`
+		State        string `json:"state"`
+		QueryPreview string `json:"query_preview"`
+		Query        string `json:"query"`
+		Timestamp    string `json:"timestamp"`
+	}
+	var slowQueries []slowQuery
+	srows, err := h.DB.Reader.Query(ctx, `
+		SELECT
+			pid,
+			EXTRACT(EPOCH FROM (now() - query_start))::bigint,
+			EXTRACT(EPOCH FROM (now() - query_start))::bigint * 1000,
+			COALESCE(state, 'unknown'),
+			LEFT(query, 100),
+			query,
+			query_start::text
+		FROM pg_stat_activity
+		WHERE state = 'active'
+			AND query NOT LIKE '%pg_stat_activity%'
+			AND now() - query_start > interval '1 second'
+		ORDER BY query_start ASC
+		LIMIT 20
+	`)
+	if err == nil {
+		defer srows.Close()
+		for srows.Next() {
+			var sq slowQuery
+			if err := srows.Scan(&sq.PID, &sq.Duration, &sq.DurationMs, &sq.State, &sq.QueryPreview, &sq.Query, &sq.Timestamp); err == nil {
+				slowQueries = append(slowQueries, sq)
+			}
+		}
+	}
+	if slowQueries == nil {
+		slowQueries = []slowQuery{}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"status": "ok"},
+		"data": map[string]any{
+			"connected":        true,
+			"version":          version,
+			"latency_ms":       latency,
+			"size_bytes":       sizeBytes,
+			"table_count":      tableCount,
+			"index_count":      indexCount,
+			"avg_query_time_ms": 0,
+			"tables":           tables,
+			"slow_queries":     slowQueries,
+			"indexes_unused":   indexesUnused,
+			"connection_pool": map[string]any{
+				"active":  activeConns,
+				"idle":    idleConns,
+				"waiting": waitingConns,
+				"max":     maxConns,
+			},
+			"replication": repl,
+		},
 	})
 }
 
 func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
+	// Enqueue async vacuum task via Asynq for background processing.
+	if h.Client != nil {
+		task := asynq.NewTask(worker.TypeDBManualVacuum, nil)
+		if _, err := h.Client.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeDBManualVacuum))); err != nil {
+			slog.Error("control: failed to enqueue db vacuum task", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue vacuum task")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "enqueued"}})
+		return
+	}
+
+	// Fallback: run inline if no Asynq client.
 	_, err := h.DB.Writer.Exec(r.Context(), `VACUUM`)
 	if err != nil {
 		slog.Error("control: db vacuum", "error", err)
@@ -431,78 +705,64 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
-				"message": "Queue stats require Asynq inspector integration",
+				"queues":               []any{},
+				"total_pending":        0,
+				"total_active":         0,
+				"total_completed_24h":  0,
+				"total_failed_24h":     0,
+				"dlq_count":            0,
 			},
 		})
 		return
 	}
-	worker.HandleQueueStats(h.Inspector)(w, r)
-}
 
-// ListCronJobs handles GET /api/v1/control/cron/jobs.
-// Returns the periodic scheduler entries (cron jobs) registered with Asynq.
-func (h *Handlers) ListCronJobs(w http.ResponseWriter, r *http.Request) {
-	if h.Inspector == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
-		return
+	type queueInfo struct {
+		Name         string  `json:"name"`
+		Pending      int     `json:"pending"`
+		Active       int     `json:"active"`
+		Completed24H int     `json:"completed_24h"`
+		Failed24H    int     `json:"failed_24h"`
+		LatencyMs    float64 `json:"latency_ms"`
 	}
 
-	entries, err := h.Inspector.SchedulerEntries()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "scheduler_error", "Failed to load cron jobs")
-		return
-	}
+	var queues []queueInfo
+	var totalPending, totalActive, totalCompleted, totalFailed, dlqDepth int
 
-	jobs := make([]map[string]any, 0, len(entries))
-	for _, e := range entries {
-		taskType := ""
-		if e.Task != nil {
-			taskType = e.Task.Type()
-		}
-		jobs = append(jobs, map[string]any{
-			"id":          e.ID,
-			"spec":        e.Spec,
-			"type":        taskType,
-			"next_run_at": e.Next.Format(time.RFC3339),
-			"prev_run_at": e.Prev.Format(time.RFC3339),
-		})
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"data": jobs})
-}
-
-// TriggerCronJob handles POST /api/v1/control/cron/jobs/{id}/trigger.
-// Enqueues the scheduler entry's task immediately (one-off run).
-func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
-	if h.Client == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_client", "Asynq client not available")
-		return
-	}
-	if h.Inspector == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Asynq inspector not available")
-		return
-	}
-
-	id := chi.URLParam(r, "id")
-	entries, err := h.Inspector.SchedulerEntries()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "scheduler_error", "Failed to load cron jobs")
-		return
-	}
-
-	for _, e := range entries {
-		if e.ID != id || e.Task == nil {
+	for _, queueName := range []string{worker.QueueCritical, worker.QueueDefault, worker.QueueLow} {
+		qi, err := h.Inspector.GetQueueInfo(queueName)
+		if err != nil {
+			slog.Warn("queue stats: failed to get queue info", "queue", queueName, "error", err)
 			continue
 		}
-		if _, err := h.Client.Enqueue(e.Task, asynq.Queue(worker.QueueForTask(e.Task.Type()))); err != nil {
-			writeError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": e.ID, "status": "enqueued"}})
-		return
+		queues = append(queues, queueInfo{
+			Name:         queueName,
+			Pending:      qi.Pending,
+			Active:       qi.Active,
+			Completed24H: qi.Completed,
+			Failed24H:    qi.Failed,
+			LatencyMs:    qi.Latency.Seconds() * 1000,
+		})
+		totalPending += qi.Pending
+		totalActive += qi.Active
+		totalCompleted += qi.Completed
+		totalFailed += qi.Failed
+		dlqDepth += qi.Archived
 	}
 
-	writeError(w, http.StatusNotFound, "not_found", "Cron job not found")
+	if queues == nil {
+		queues = []queueInfo{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"queues":               queues,
+			"total_pending":        totalPending,
+			"total_active":         totalActive,
+			"total_completed_24h":  totalCompleted,
+			"total_failed_24h":     totalFailed,
+			"dlq_count":            dlqDepth,
+		},
+	})
 }
 
 func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
@@ -514,21 +774,21 @@ func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 	var tasks []map[string]any
 
 	for _, queueName := range []string{"critical", "default", "low"} {
-		entries, err := h.Inspector.ListRetryTasks(queueName)
+		entries, err := h.Inspector.ListArchivedTasks(queueName)
 		if err != nil {
 			slog.Warn("dlq: list tasks failed", "queue", queueName, "error", err)
 			continue
 		}
 		for _, entry := range entries {
 			tasks = append(tasks, map[string]any{
-				"id":          entry.ID,
-				"type":        entry.Type,
-				"queue":       queueName,
-				"payload":     string(entry.Payload),
-				"error":       entry.LastErr,
-				"retries":     entry.Retried,
-				"max_retries": entry.MaxRetry,
-				"last_failed": entry.LastFailedAt.Format(time.RFC3339),
+				"task_id":      entry.ID,
+				"task_type":    entry.Type,
+				"queue":        queueName,
+				"payload":      string(entry.Payload),
+				"error_message": entry.LastErr,
+				"retry_count":  entry.Retried,
+				"max_retries":  entry.MaxRetry,
+				"failed_at":    entry.LastFailedAt.Format(time.RFC3339),
 			})
 		}
 	}
@@ -583,7 +843,7 @@ func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 	totalDiscarded := 0
 
 	for _, queueName := range []string{"critical", "default", "low"} {
-		entries, err := h.Inspector.ListRetryTasks(queueName)
+		entries, err := h.Inspector.ListArchivedTasks(queueName)
 		if err != nil {
 			continue
 		}
@@ -744,6 +1004,89 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": blocks})
 }
 
+func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 0 {
+		page = 0
+	}
+	limit := 20
+	offset := int32(page * limit)
+
+	severity := r.URL.Query().Get("severity")
+
+	var results []map[string]any
+	var total int64
+
+	countErr := h.DB.Reader.QueryRow(r.Context(),
+		`SELECT count(*) FROM security_scan_results WHERE tenant_id = $1 AND ($2::text = '' OR severity = $2)`,
+		tenantID, severity,
+	).Scan(&total)
+	if countErr != nil {
+		slog.Warn("control: count security scan results", "error", countErr)
+	}
+
+	rows, err := h.DB.Reader.Query(r.Context(),
+		`SELECT id, scan_type, severity, finding, meta, resolved_at, created_at
+		 FROM security_scan_results
+		 WHERE tenant_id = $1 AND ($2::text = '' OR severity = $2)
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT $3 OFFSET $4`,
+		tenantID, severity, int32(limit), offset,
+	)
+	if err != nil {
+		slog.Error("control: list security scan results", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list security scan results")
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id pgtype.UUID
+		var scanType, sev, finding string
+		var meta []byte
+		var resolvedAt pgtype.Timestamptz
+		var createdAt pgtype.Timestamptz
+		if err := rows.Scan(&id, &scanType, &sev, &finding, &meta, &resolvedAt, &createdAt); err != nil {
+			slog.Error("control: scan result row", "error", err)
+			continue
+		}
+		results = append(results, map[string]any{
+			"id":          id.String(),
+			"severity":    sev,
+			"title":       finding,
+			"description": finding,
+			"scan_type":   scanType,
+			"meta":        string(meta),
+			"resolved":    resolvedAt.Valid,
+			"created_at":  createdAt.Time.Format(time.RFC3339),
+		})
+	}
+	if results == nil {
+		results = []map[string]any{}
+	}
+
+	totalPages := int(total) / limit
+	if int(total)%limit > 0 {
+		totalPages++
+	}
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"results":     results,
+			"page":        page,
+			"total_pages": totalPages,
+		},
+	})
+}
+
 func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -823,15 +1166,51 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	type auditLog struct {
-		ID        pgtype.UUID `json:"id"`
-		UserID    pgtype.UUID `json:"user_id"`
-		Action    string      `json:"action"`
-		Resource  string      `json:"resource"`
-		CreatedAt time.Time   `json:"created_at"`
+		ID          pgtype.UUID  `json:"id"`
+		ActorUserID *pgtype.UUID `json:"actor_user_id"`
+		ActionType  string       `json:"action_type"`
+		TargetType  *string      `json:"target_type"`
+		TargetID    *pgtype.UUID `json:"target_id"`
+		CreatedAt   time.Time    `json:"created_at"`
 	}
-	rows, err := h.DB.Reader.Query(r.Context(),
-		`SELECT id, user_id, action, resource_type, created_at FROM audit_logs ORDER BY created_at DESC LIMIT 100`,
-	)
+
+	page := 0
+	perPage := 25
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v >= 0 {
+			page = v
+		}
+	}
+	if pp := r.URL.Query().Get("per_page"); pp != "" {
+		if v, err := strconv.Atoi(pp); err == nil && v > 0 && v <= 100 {
+			perPage = v
+		}
+	}
+	offset := page * perPage
+
+	sortBy := "created_at"
+	sortDir := "DESC"
+	if sb := r.URL.Query().Get("sort_by"); sb != "" {
+		switch sb {
+		case "timestamp", "created_at":
+			sortBy = "created_at"
+		case "action", "action_type":
+			sortBy = "action_type"
+		default:
+			sortBy = "created_at"
+		}
+	}
+	if sd := r.URL.Query().Get("sort_dir"); sd != "" {
+		sd = strings.ToUpper(sd)
+		if sd == "ASC" || sd == "DESC" {
+			sortDir = sd
+		}
+	}
+
+	query := `SELECT id, actor_user_id, action_type, target_type, target_id, created_at
+		FROM audit_logs ORDER BY ` + sortBy + ` ` + sortDir + ` LIMIT $1 OFFSET $2`
+
+	rows, err := h.DB.Reader.Query(r.Context(), query, perPage, offset)
 	if err != nil {
 		slog.Error("control: list audit logs", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list audit logs")
@@ -842,11 +1221,14 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	var logs []auditLog
 	for rows.Next() {
 		var l auditLog
-		if err := rows.Scan(&l.ID, &l.UserID, &l.Action, &l.Resource, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.ActorUserID, &l.ActionType, &l.TargetType, &l.TargetID, &l.CreatedAt); err != nil {
 			slog.Error("control: scan audit log", "error", err)
 			continue
 		}
 		logs = append(logs, l)
+	}
+	if logs == nil {
+		logs = []auditLog{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": logs})
 }
@@ -896,8 +1278,360 @@ func (h *Handlers) GetAPIKeyAnalytics(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Cron / Scheduler CRUD (custom entries stored in Valkey, synced by worker)
 // ---------------------------------------------------------------------------
+
+const (
+	cronCustomKey = "jc:cron:custom" // HASH  entryID → JSON{type,spec,payload,paused}
+	cronPausedKey = "jc:cron:paused" // SET  entryIDs paused by admin (system entries)
+)
+
+// cronCustomEntry is the JSON shape stored per custom cron job in Valkey.
+type cronCustomEntry struct {
+	Type    string `json:"type"`
+	Spec    string `json:"spec"`
+	Payload string `json:"payload,omitempty"`
+	Paused  bool   `json:"paused,omitempty"`
+}
+
+// ListCronJobs handles GET /api/v1/control/cron/jobs.
+// Merges system scheduler entries (Asynq) with admin-created custom entries (Valkey).
+func (h *Handlers) ListCronJobs(w http.ResponseWriter, r *http.Request) {
+	jobs := make([]map[string]any, 0)
+	systemTypes := make(map[string]struct{}) // track system task types for dedup
+
+	// 1. System entries from Asynq Scheduler
+	if h.Inspector != nil {
+		entries, err := h.Inspector.SchedulerEntries()
+		if err == nil {
+			// Fetch paused set so we can flag system entries
+			var pausedSet map[string]struct{}
+			if h.Valkey != nil {
+				if members, err := h.Valkey.SMembers(r.Context(), cronPausedKey).Result(); err == nil {
+					pausedSet = make(map[string]struct{}, len(members))
+					for _, m := range members {
+						pausedSet[m] = struct{}{}
+					}
+				}
+			}
+			for _, e := range entries {
+				taskType := ""
+				if e.Task != nil {
+					taskType = e.Task.Type()
+				}
+				systemTypes[taskType] = struct{}{}
+				_, paused := pausedSet[e.ID]
+				jobs = append(jobs, map[string]any{
+					"id":          e.ID,
+					"spec":        e.Spec,
+					"type":        taskType,
+					"source":      "system",
+					"paused":      paused,
+					"next_run_at": e.Next.Format(time.RFC3339),
+					"prev_run_at": e.Prev.Format(time.RFC3339),
+				})
+			}
+		} else {
+			slog.Warn("control: list cron system entries", "error", err)
+		}
+	}
+
+	// 2. Custom entries from Valkey (skip if type already covered by a system entry)
+	if h.Valkey != nil {
+		fields, err := h.Valkey.HGetAll(r.Context(), cronCustomKey).Result()
+		if err == nil {
+			for id, raw := range fields {
+				var ce cronCustomEntry
+				if json.Unmarshal([]byte(raw), &ce) != nil {
+					continue
+				}
+				if _, exists := systemTypes[ce.Type]; exists {
+					continue // system entry already present
+				}
+				jobs = append(jobs, map[string]any{
+					"id":          id,
+					"spec":        ce.Spec,
+					"type":        ce.Type,
+					"payload":     ce.Payload,
+					"source":      "custom",
+					"paused":      ce.Paused,
+					"next_run_at": nil,
+					"prev_run_at": nil,
+				})
+			}
+		} else {
+			slog.Warn("control: list cron custom entries", "error", err)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": jobs})
+}
+
+// CreateCronJob handles POST /api/v1/control/cron/jobs.
+// Creates a custom cron entry stored in Valkey. The worker process picks it up.
+func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
+	if h.Valkey == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		return
+	}
+	var input struct {
+		Type    string `json:"type"`
+		Spec    string `json:"spec"`
+		Payload string `json:"payload"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Type == "" || input.Spec == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "type and spec are required")
+		return
+	}
+
+	// Generate a unique ID for the custom entry
+	id := fmt.Sprintf("custom_%d", time.Now().UnixNano())
+	entry := cronCustomEntry{Type: input.Type, Spec: input.Spec, Payload: input.Payload}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
+		return
+	}
+	if err := h.Valkey.HSet(r.Context(), cronCustomKey, id, string(data)).Err(); err != nil {
+		slog.Error("control: create cron job", "error", err)
+		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to save cron job")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"data": map[string]any{"id": id, "type": entry.Type, "spec": entry.Spec},
+	})
+}
+
+// UpdateCronJob handles PATCH /api/v1/control/cron/jobs/{id}.
+// Updates a custom cron entry in Valkey.
+func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
+	if h.Valkey == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		return
+	}
+
+	// Only custom entries can be edited
+	raw, err := h.Valkey.HGet(r.Context(), cronCustomKey, id).Result()
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "Cron job not found (only custom jobs can be edited)")
+		return
+	}
+	var existing cronCustomEntry
+	if json.Unmarshal([]byte(raw), &existing) != nil {
+		writeError(w, http.StatusInternalServerError, "decode_error", "Failed to read existing entry")
+		return
+	}
+
+	var input struct {
+		Type    *string `json:"type"`
+		Spec    *string `json:"spec"`
+		Payload *string `json:"payload"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Type != nil {
+		existing.Type = *input.Type
+	}
+	if input.Spec != nil {
+		existing.Spec = *input.Spec
+	}
+	if input.Payload != nil {
+		existing.Payload = *input.Payload
+	}
+	if existing.Type == "" || existing.Spec == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "type and spec cannot be empty")
+		return
+	}
+
+	data, err := json.Marshal(existing)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
+		return
+	}
+	if err := h.Valkey.HSet(r.Context(), cronCustomKey, id, string(data)).Err(); err != nil {
+		slog.Error("control: update cron job", "error", err)
+		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to update cron job")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"id": id, "type": existing.Type, "spec": existing.Spec},
+	})
+}
+
+// DeleteCronJob handles DELETE /api/v1/control/cron/jobs/{id}.
+// Deletes a custom cron entry from Valkey or pauses a system entry (soft-delete).
+func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
+	if h.Valkey == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		return
+	}
+
+	// Try custom entry first
+	deleted, err := h.Valkey.HDel(r.Context(), cronCustomKey, id).Result()
+	if err != nil {
+		slog.Error("control: delete cron job", "error", err)
+		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to delete cron job")
+		return
+	}
+	if deleted > 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "deleted"}})
+		return
+	}
+
+	// For system entries, we can't truly delete (managed by code).
+	// Instead, mark as paused so it won't run.
+	if err := h.Valkey.SAdd(r.Context(), cronPausedKey, id).Err(); err != nil {
+		slog.Error("control: pause system cron job", "error", err)
+		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause system cron job")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"id": id, "status": "paused", "note": "System jobs cannot be deleted; entry has been paused instead."},
+	})
+}
+
+// PauseCronJob handles POST /api/v1/control/cron/jobs/{id}/pause.
+func (h *Handlers) PauseCronJob(w http.ResponseWriter, r *http.Request) {
+	if h.Valkey == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		return
+	}
+
+	// Check if it's a custom entry
+	if raw, err := h.Valkey.HGet(r.Context(), cronCustomKey, id).Result(); err == nil {
+		var ce cronCustomEntry
+		if json.Unmarshal([]byte(raw), &ce) == nil {
+			ce.Paused = true
+			data, _ := json.Marshal(ce)
+			if err := h.Valkey.HSet(r.Context(), cronCustomKey, id, string(data)).Err(); err != nil {
+				slog.Error("control: pause custom cron job", "error", err)
+				writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "paused"}})
+			return
+		}
+	}
+
+	// System entry — add to paused set
+	if err := h.Valkey.SAdd(r.Context(), cronPausedKey, id).Err(); err != nil {
+		slog.Error("control: pause system cron job", "error", err)
+		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "paused"}})
+}
+
+// UnpauseCronJob handles POST /api/v1/control/cron/jobs/{id}/unpause.
+func (h *Handlers) UnpauseCronJob(w http.ResponseWriter, r *http.Request) {
+	if h.Valkey == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		return
+	}
+
+	// Check if it's a custom entry
+	if raw, err := h.Valkey.HGet(r.Context(), cronCustomKey, id).Result(); err == nil {
+		var ce cronCustomEntry
+		if json.Unmarshal([]byte(raw), &ce) == nil {
+			ce.Paused = false
+			data, _ := json.Marshal(ce)
+			if err := h.Valkey.HSet(r.Context(), cronCustomKey, id, string(data)).Err(); err != nil {
+				slog.Error("control: unpause custom cron job", "error", err)
+				writeError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "active"}})
+			return
+		}
+	}
+
+	// System entry — remove from paused set
+	if err := h.Valkey.SRem(r.Context(), cronPausedKey, id).Err(); err != nil {
+		slog.Error("control: unpause system cron job", "error", err)
+		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "active"}})
+}
+
+// TriggerCronJob handles POST /api/v1/control/cron/jobs/{id}/trigger.
+// Enqueues the scheduler entry's task immediately (one-off run).
+func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
+	if h.Client == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_client", "Asynq client not available")
+		return
+	}
+	if h.Inspector == nil {
+		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Asynq inspector not available")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	entries, err := h.Inspector.SchedulerEntries()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "scheduler_error", "Failed to load cron jobs")
+		return
+	}
+
+	for _, e := range entries {
+		if e.ID != id || e.Task == nil {
+			continue
+		}
+		if _, err := h.Client.Enqueue(e.Task, asynq.Queue(worker.QueueForTask(e.Task.Type()))); err != nil {
+			writeError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": e.ID, "status": "enqueued"}})
+		return
+	}
+
+	// Check custom entries — trigger by re-enqueuing via Asynq client
+	if h.Valkey != nil {
+		if raw, err := h.Valkey.HGet(r.Context(), cronCustomKey, id).Result(); err == nil {
+			var ce cronCustomEntry
+			if json.Unmarshal([]byte(raw), &ce) == nil && ce.Type != "" {
+				task := asynq.NewTask(ce.Type, []byte(ce.Payload))
+				if _, err := h.Client.Enqueue(task, asynq.Queue(worker.QueueForTask(ce.Type))); err != nil {
+					writeError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "enqueued"}})
+				return
+			}
+		}
+	}
+
+	writeError(w, http.StatusNotFound, "not_found", "Cron job not found")
+}
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

@@ -194,14 +194,14 @@
 			</thead>
 			<tbody>
 				{#each docs as doc}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
+					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3 font-medium">{doc.title}</td>
 						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{doc.slug}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-white/10">{doc.audience}</span>
+							<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">{doc.audience}</span>
 						</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {doc.status === 'published' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs {doc.status === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">
 								{doc.status}
 							</span>
 						</td>
@@ -209,21 +209,21 @@
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-2">
 								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 									style="color: var(--color-info)"
 									onclick={() => openEdit(doc)}
 								>
 									Edit
 								</button>
 								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 									style="color: {doc.status === 'published' ? 'var(--color-warning)' : 'var(--color-success)'}"
 									onclick={() => togglePublish(doc)}
 								>
 									{doc.status === 'published' ? 'Unpublish' : 'Publish'}
 								</button>
 								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 									style="color: var(--color-danger)"
 									onclick={() => confirmDelete(doc.id)}
 								>
@@ -244,8 +244,8 @@
 	<div class="mt-3 flex items-center justify-between">
 		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
 		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
 		</div>
 	</div>
 {/if}
@@ -285,7 +285,7 @@
 			</div>
 			<div class="mt-6 flex justify-end gap-2">
 				<button
-					class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+					class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 					style="border-color: var(--color-border)"
 					onclick={() => (showModal = false)}
 				>

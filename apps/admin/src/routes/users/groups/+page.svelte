@@ -8,6 +8,7 @@
 	import { Plus, RefreshCw } from 'lucide-svelte';
 	import { userManagementApi, permissionsApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import type { UserGroup } from '$lib/api';
 	import GroupActionsCell from './GroupActionsCell.svelte';
 
@@ -27,6 +28,8 @@
 
 	let allPermissions = $state<string[]>([]);
 	let permSearch = $state('');
+
+	const canManageGroups = $derived(hasPermission('admin.rbac.manage'));
 
 	const filteredPermissions = $derived(
 		permSearch
@@ -102,7 +105,8 @@
 			key: 'actions',
 			label: t('common.actions', 'Actions'),
 			class: 'w-24',
-			component: GroupActionsCell
+			component: GroupActionsCell,
+			componentProps: { onchange: load }
 		}
 	];
 
@@ -121,7 +125,7 @@
 	title={t('users.groups.title', 'User Groups')}
 	description={t('users.groups.description', 'Manage user groups and their permissions')}
 	actions={[
-		{ label: t('users.groups.create', 'Create Group'), icon: Plus, onclick: openCreate },
+		...(canManageGroups ? [{ label: t('users.groups.create', 'Create Group'), icon: Plus, onclick: openCreate }] : []),
 		{ label: t('common.refresh', 'Refresh'), icon: RefreshCw, variant: 'ghost', onclick: load }
 	]}
 />

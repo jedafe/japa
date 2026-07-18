@@ -47,13 +47,13 @@
 			key: 'referrer_username',
 			label: 'Referrer',
 			sortable: true,
-			render: (value: string) => `<span class="font-medium text-gray-900">${value}</span>`
+			render: (value: string) => `<span class="font-medium text-foreground">${value}</span>`
 		},
 		{
 			key: 'referred_username',
 			label: 'Referred',
 			sortable: true,
-			render: (value: string) => `<span class="text-gray-700">${value}</span>`
+			render: (value: string) => `<span class="text-foreground-alt">${value}</span>`
 		},
 		{
 			key: 'status',
@@ -61,11 +61,11 @@
 			sortable: true,
 			render: (value: string) => {
 				const classes: Record<string, string> = {
-					completed: 'bg-success-100 text-success-800 border-success-200',
-					pending: 'bg-warning-100 text-warning-800 border-warning-200',
-					cancelled: 'bg-danger-100 text-danger-800 border-danger-200'
+					completed: 'bg-success/15 text-success border-success',
+					pending: 'bg-warning/15 text-warning border-warning',
+					cancelled: 'bg-danger/15 text-danger border-danger'
 				};
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-gray-100 text-gray-800 border-gray-200'}">${value}</span>`;
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
 			}
 		},
 		{
@@ -75,7 +75,7 @@
 				if (row.reward_granted) {
 					return '<span class="text-sm font-medium text-success-600">Granted</span>';
 				}
-				return '<span class="text-sm text-gray-400">Pending</span>';
+				return '<span class="text-sm text-muted">Pending</span>';
 			}
 		},
 		{
@@ -138,7 +138,7 @@
 
 <div class="space-y-6">
 	{#if error}
-		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
 			{error}
 		</div>
 	{/if}
@@ -146,25 +146,25 @@
 	<Tabs {tabs} bind:value={activeTab} />
 
 	{#if loading}
-		<p class="py-8 text-center text-sm text-gray-500">{t('common.loading')}</p>
+		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else if activeTab === 'program'}
 		<!-- Program Settings -->
 		{#if program}
 			<Card>
 				<CardContent class="p-6">
-					<h3 class="mb-4 text-lg font-semibold text-gray-900">{t('referral.program_settings')}</h3>
+					<h3 class="mb-4 text-lg font-semibold text-foreground">{t('referral.program_settings')}</h3>
 					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 						<div>
-							<label for="prog-name" class="mb-1 block text-sm font-medium text-gray-700">{t('referral.name')}</label>
+							<label for="prog-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.name')}</label>
 							<input
 								id="prog-name"
 								type="text"
-								class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+								class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={program.name}
 							/>
 						</div>
 						<div>
-						<label for="prog-reward-type" class="mb-1 block text-sm font-medium text-gray-700">{t('referral.reward_type')}</label>
+						<label for="prog-reward-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.reward_type')}</label>
 						<Select
 							options={[
 								{ value: 'credits', label: t('referral.credits') },
@@ -175,12 +175,12 @@
 						/>
 						</div>
 						<div>
-							<label for="prog-reward-value" class="mb-1 block text-sm font-medium text-gray-700">{t('referral.reward_value')}</label>
+							<label for="prog-reward-value" class="mb-1 block text-sm font-medium text-foreground-alt">{t('referral.reward_value')}</label>
 							<input
 								id="prog-reward-value"
 								type="number"
 								min="0"
-								class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+								class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 								bind:value={program.reward_value}
 							/>
 						</div>
@@ -189,9 +189,9 @@
 								<input
 									type="checkbox"
 									bind:checked={program.is_active}
-									class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+									class="h-4 w-4 rounded border text-primary-600 focus:ring-primary"
 								/>
-								<span class="text-sm font-medium text-gray-700">{t('referral.active')}</span>
+								<span class="text-sm font-medium text-foreground-alt">{t('referral.active')}</span>
 							</label>
 						</div>
 					</div>

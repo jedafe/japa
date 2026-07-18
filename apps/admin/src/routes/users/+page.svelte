@@ -10,7 +10,7 @@
 	import { RefreshCw, Eye, Pencil, Trash2, Ban, Play, UserPlus } from "lucide-svelte";
 	import { userManagementApi, impersonationApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
-	import { goto } from "$app/navigation";
+	import { goto, invalidateAll } from "$app/navigation";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type User = {
@@ -94,7 +94,7 @@
 			label: t("common.status", "Status"),
 			sortable: true,
 			render: (v: string) => {
-				const colors = v === "active" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : v === "banned" ? "bg-red-500/15 text-red-700 dark:text-red-400" : v === "suspended" ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "bg-blue-500/15 text-blue-700 dark:text-blue-400";
+				const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : "bg-blue-500/15 text-info dark:text-blue-400";
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
 			}
 		},
@@ -227,9 +227,9 @@
 		acting = true;
 		try {
 			const result = await impersonationApi.start(user.id);
-			if (result.ok) {
-				window.location.reload();
-			} else {
+		if (result.ok) {
+			await invalidateAll();
+		} else {
 				error = result.error;
 			}
 		} catch {
@@ -265,7 +265,7 @@
 
 	async function endImpersonation() {
 		const result = await impersonationApi.end();
-		if (result.ok) window.location.reload();
+		if (result.ok) await invalidateAll();
 	}
 
 	$effect(() => {

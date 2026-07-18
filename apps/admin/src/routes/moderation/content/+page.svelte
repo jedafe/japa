@@ -105,16 +105,16 @@
 			case 'comment': return 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-400';
 			case 'blog': return 'bg-rose-500/15 text-rose-700 dark:text-rose-400';
 			case 'forum': return 'bg-orange-500/15 text-orange-700 dark:text-orange-400';
-			default: return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
+			default: return 'bg-muted/15 text-muted dark:text-muted';
 		}
 	}
 
 	function statusBadge(status: string) {
 		switch (status) {
-			case 'published': return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
-			case 'draft': return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
-			case 'flagged': return 'bg-red-500/15 text-red-700 dark:text-red-400';
-			default: return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
+			case 'published': return 'bg-success/15 text-success dark:text-success';
+			case 'draft': return 'bg-muted/15 text-muted dark:text-muted';
+			case 'flagged': return 'bg-danger/15 text-danger dark:text-danger';
+			default: return 'bg-warning/15 text-warning dark:text-warning';
 		}
 	}
 
@@ -161,7 +161,7 @@
 			<tbody>
 				{#each items as item}
 					<tr
-						class="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
+						class="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]"
 						style="border-color: var(--color-border)"
 						onclick={() => toggleExpand(item.id)}
 					>
@@ -184,7 +184,7 @@
 						</td>
 						<td class="px-4 py-3">
 							{#if item.reports_count > 0}
-								<span class="inline-block rounded-full bg-red-500/15 px-2 py-0.5 text-xs text-red-700 dark:text-red-400">
+								<span class="inline-block rounded-full bg-danger/15 px-2 py-0.5 text-xs text-danger dark:text-danger">
 									{item.reports_count}
 								</span>
 							{:else}
@@ -196,7 +196,7 @@
 							<div class="flex items-center gap-1">
 								{#if canModerateContent}
 									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 										style="color: var(--color-danger)"
 										onclick={() => confirmDelete(item)}
 									>
@@ -258,8 +258,8 @@
 	<div class="mt-3 flex items-center justify-between">
 		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
 		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
+			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
 		</div>
 	</div>
 {/if}

@@ -10,8 +10,9 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
-	import { BookOpen, Plus, GraduationCap, Layers, FileText, Trash2 } from "lucide-svelte";
+	import { BookOpen, Plus, GraduationCap, Layers, FileText, Trash2, Eye, Send } from "lucide-svelte";
 	import { api } from "$lib/api";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type Track = {
 		id: string;
@@ -64,6 +65,13 @@
 	let deleteTarget = $state<{ type: string; id: string; title: string } | null>(null);
 	let deleting = $state(false);
 
+	// Publish confirmation
+	let showPublishModal = $state(false);
+	let publishTarget = $state<{ id: string; title: string } | null>(null);
+	let publishing = $state(false);
+
+	const canManageLearning = $derived(hasPermission("learning.manage"));
+
 	const tabs = $derived([
 		{ value: "tracks", label: "Tracks", icon: GraduationCap, count: tracks.length },
 		{ value: "modules", label: "Modules", icon: Layers, count: modules.length },
@@ -77,8 +85,8 @@
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
-					<p class="font-medium text-gray-900">${row.title}</p>
-					<p class="text-sm text-gray-500 line-clamp-1">${row.description || "No description"}</p>
+					<p class="font-medium text-foreground">${row.title}</p>
+					<p class="text-sm text-muted line-clamp-1">${row.description || "No description"}</p>
 				</div>
 			`
 		},
@@ -101,9 +109,9 @@
 			render: (value: string) => {
 				const variant = value === "published" ? "success" : value === "draft" ? "warning" : "secondary";
 				const classes: Record<string, string> = {
-					success: "bg-success-100 text-success-800 border-success-200",
-					warning: "bg-warning-100 text-warning-800 border-warning-200",
-					secondary: "bg-gray-100 text-gray-800 border-gray-200"
+					success: "bg-success/15 text-success border-success",
+					warning: "bg-warning/15 text-warning border-warning",
+					secondary: "bg-surface text-foreground border"
 				};
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[variant]}">${value}</span>`;
 			}
@@ -112,12 +120,7 @@
 			key: "actions",
 			label: "",
 			class: "w-32",
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-1">
-					${row.status === "draft" ? `<button onclick="window.__learningPublish('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-success-700 hover:bg-success-50">${t("common.publish")}</button>` : ""}
-					<button onclick="window.__learningDelete('track', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
-				</div>
-			`
+			component: TrackActionsCell
 		}
 	];
 
@@ -128,8 +131,8 @@
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
-					<p class="font-medium text-gray-900">${row.title}</p>
-					${row.track_title ? `<p class="text-sm text-gray-500">${row.track_title}</p>` : ""}
+					<p class="font-medium text-foreground">${row.title}</p>
+					${row.track_title ? `<p class="text-sm text-muted">${row.track_title}</p>` : ""}
 				</div>
 			`
 		},
@@ -143,17 +146,13 @@
 			key: "sort_order",
 			label: "Order",
 			sortable: true,
-			render: (value: number) => `<span class="text-sm text-gray-700">${value}</span>`
+			render: (value: number) => `<span class="text-sm text-foreground-alt">${value}</span>`
 		},
 		{
 			key: "actions",
 			label: "",
 			class: "w-24",
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__learningDelete('module', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
-				</div>
-			`
+			component: ModuleActionsCell
 		}
 	];
 
@@ -164,8 +163,8 @@
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
-					<p class="font-medium text-gray-900">${row.title}</p>
-					${row.module_title ? `<p class="text-sm text-gray-500">${row.module_title}</p>` : ""}
+					<p class="font-medium text-foreground">${row.title}</p>
+					${row.module_title ? `<p class="text-sm text-muted">${row.module_title}</p>` : ""}
 				</div>
 			`
 		},
@@ -173,23 +172,19 @@
 			key: "duration_minutes",
 			label: "Duration",
 			sortable: true,
-			render: (value: number) => `<span class="text-sm text-gray-700">${value ? `${value} min` : "—"}</span>`
+			render: (value: number) => `<span class="text-sm text-foreground-alt">${value ? `${value} min` : "—"}</span>`
 		},
 		{
 			key: "sort_order",
 			label: "Order",
 			sortable: true,
-			render: (value: number) => `<span class="text-sm text-gray-700">${value}</span>`
+			render: (value: number) => `<span class="text-sm text-foreground-alt">${value}</span>`
 		},
 		{
 			key: "actions",
 			label: "",
 			class: "w-24",
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__learningDelete('lesson', '${row.id}', '${row.title}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete")}</button>
-				</div>
-			`
+			component: LessonActionsCell
 		}
 	];
 
@@ -287,12 +282,20 @@
 	}
 
 	async function publishTrack(id: string) {
+		publishing = true;
 		try {
 			await api(`/admin/learn/tracks/${id}/publish`, { method: "POST" });
 			await refresh();
 		} catch {
 			error = "Failed to publish track";
+		} finally {
+			publishing = false;
 		}
+	}
+
+	function openPublish(id: string, title: string) {
+		publishTarget = { id, title };
+		showPublishModal = true;
 	}
 
 	function confirmDelete(type: string, id: string, title: string) {
@@ -318,21 +321,6 @@
 		}
 	}
 
-	// Expose window functions for DataTable inline actions
-	$effect(() => {
-		(window as any).__learningPublish = (id: string) => {
-			publishTrack(id);
-		};
-		(window as any).__learningDelete = (type: string, id: string, title: string) => {
-			confirmDelete(type, id, title);
-		};
-		
-		return () => {
-			delete (window as any).__learningPublish;
-			delete (window as any).__learningDelete;
-		};
-	});
-
 	$effect(() => {
 		refresh();
 	});
@@ -346,13 +334,13 @@
 	title="Learning Management"
 	description="Create and manage courses, modules, and lessons"
 	actions={[
-		{ label: `New ${activeTab === "tracks" ? "Track" : activeTab === "modules" ? "Module" : "Lesson"}`, icon: Plus, onclick: openCreate }
+		...(canManageLearning ? [{ label: `New ${activeTab === "tracks" ? "Track" : activeTab === "modules" ? "Module" : "Lesson"}`, icon: Plus, onclick: openCreate }] : [])
 	]}
 />
 
 <div class="space-y-6">
 	{#if error}
-		<div class="rounded-lg border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+		<div class="rounded-lg border border-danger bg-danger-50 p-4 text-sm text-danger-700">
 			{error}
 		</div>
 	{/if}
@@ -372,7 +360,7 @@
 			{#if loading}
 				<div class="space-y-3 p-4">
 					{#each Array(5) as _}
-						<div class="h-14 animate-pulse rounded-lg bg-gray-100"></div>
+						<div class="h-14 animate-pulse rounded-lg bg-surface"></div>
 					{/each}
 				</div>
 			{:else}
@@ -397,20 +385,20 @@
 	{#if activeTab === "tracks"}
 		<div class="space-y-4">
 			<div>
-				<label for="track-title" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.title')}</label>
+				<label for="track-title" class="mb-1 block text-sm font-medium text-foreground">{t('learning.title')}</label>
 				<input
 					id="track-title"
 					type="text"
-					class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					placeholder="e.g. JavaScript Fundamentals"
 					bind:value={newTrack.title}
 				/>
 			</div>
 			<div>
-				<label for="track-description" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.description')}</label>
+				<label for="track-description" class="mb-1 block text-sm font-medium text-foreground">{t('learning.description')}</label>
 				<textarea
 					id="track-description"
-					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					rows="3"
 					placeholder="What will students learn?"
 					bind:value={newTrack.description}
@@ -420,21 +408,21 @@
 	{:else if activeTab === "modules"}
 		<div class="space-y-4">
 			<div>
-				<label for="module-track-id" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.track_id')}</label>
+				<label for="module-track-id" class="mb-1 block text-sm font-medium text-foreground">{t('learning.track_id')}</label>
 				<input
 					id="module-track-id"
 					type="text"
-					class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					placeholder="Parent track ID"
 					bind:value={newModule.track_id}
 				/>
 			</div>
 			<div>
-				<label for="module-title" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.title')}</label>
+				<label for="module-title" class="mb-1 block text-sm font-medium text-foreground">{t('learning.title')}</label>
 				<input
 					id="module-title"
 					type="text"
-					class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					placeholder="e.g. Variables and Types"
 					bind:value={newModule.title}
 				/>
@@ -443,30 +431,30 @@
 	{:else}
 		<div class="space-y-4">
 			<div>
-				<label for="lesson-module-id" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.module_id')}</label>
+				<label for="lesson-module-id" class="mb-1 block text-sm font-medium text-foreground">{t('learning.module_id')}</label>
 				<input
 					id="lesson-module-id"
 					type="text"
-					class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					placeholder="Parent module ID"
 					bind:value={newLesson.module_id}
 				/>
 			</div>
 			<div>
-				<label for="lesson-title" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.title')}</label>
+				<label for="lesson-title" class="mb-1 block text-sm font-medium text-foreground">{t('learning.title')}</label>
 				<input
 					id="lesson-title"
 					type="text"
-					class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					placeholder="e.g. Introduction to Closures"
 					bind:value={newLesson.title}
 				/>
 			</div>
 			<div>
-				<label for="lesson-body" class="mb-1 block text-sm font-medium text-gray-900">{t('learning.content_markdown')}</label>
+				<label for="lesson-body" class="mb-1 block text-sm font-medium text-foreground">{t('learning.content_markdown')}</label>
 				<textarea
 					id="lesson-body"
-					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					rows="8"
 					placeholder="Lesson content in Markdown..."
 					bind:value={newLesson.body}
@@ -510,3 +498,60 @@
 		</Button>
 	</div>
 </Modal>
+
+<!-- Publish Confirm Modal -->
+<Modal bind:open={showPublishModal} title="Publish Track" description="This will make the track visible to learners." size="sm">
+	{#if publishTarget}
+		<div class="rounded-lg bg-success-50 p-4">
+			<p class="text-sm text-success-700">
+				Publish <strong>{publishTarget.title}</strong>?
+			</p>
+		</div>
+	{/if}
+	<div class="flex justify-end gap-3 pt-4">
+		<Button variant="outline" onclick={() => (showPublishModal = false)}>{t('learning.cancel')}</Button>
+		<Button onclick={async () => { if (publishTarget) { await publishTrack(publishTarget.id); showPublishModal = false; publishTarget = null; }}} disabled={publishing}>
+			{#if publishing}
+				Publishing...
+			{:else}
+				Publish
+			{/if}
+		</Button>
+	</div>
+</Modal>
+
+<!-- Action Cells -->
+{#snippet TrackActionsCell(row: any)}
+	<div class="flex items-center gap-1">
+		{#if canManageLearning && row.status === "draft"}
+			<Button variant="ghost" size="sm" onclick={() => openPublish(row.id, row.title)} style="color: var(--color-success)">
+				<Send class="h-3.5 w-3.5" /> Publish
+			</Button>
+		{/if}
+		{#if canManageLearning}
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete("track", row.id, row.title)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet ModuleActionsCell(row: any)}
+	<div class="flex items-center gap-1">
+		{#if canManageLearning}
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete("module", row.id, row.title)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet LessonActionsCell(row: any)}
+	<div class="flex items-center gap-1">
+		{#if canManageLearning}
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete("lesson", row.id, row.title)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

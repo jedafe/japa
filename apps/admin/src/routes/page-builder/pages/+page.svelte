@@ -1,7 +1,17 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { Button } from '$lib/components/ui/button';
+
+	// RBAC: mutations require pages.manage; publishing additionally requires pages.publish
+	const canManagePages = $derived(hasPermission('pages.manage'));
+	const canPublishPages = $derived(hasPermission('pages.publish'));
+
+	// Delete confirmation
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<Page | null>(null);
 
 	type Page = {
 		id: string;
@@ -87,13 +97,21 @@
 		}
 	}
 
-	async function deletePage(id: string) {
-		if (!confirm(t('page_builder.confirm_delete'))) return;
+	function confirmDelete(page: Page) {
+		deleteTarget = page;
+		showDeleteConfirm = true;
+	}
+
+	async function executeDelete() {
+		if (!deleteTarget) return;
 		try {
-			await api(`/admin/pages/${id}`, { method: 'DELETE' });
+			await api(`/admin/pages/${deleteTarget.id}`, { method: 'DELETE' });
 			load();
 		} catch {
 			error = t('common.error');
+		} finally {
+			showDeleteConfirm = false;
+			deleteTarget = null;
 		}
 	}
 
@@ -143,10 +161,10 @@
 
 	function statusBadge(status: string) {
 		switch (status) {
-			case 'published': return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
-			case 'draft': return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
-			case 'archived': return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
-			default: return 'bg-slate-500/15 text-slate-700 dark:text-slate-400';
+			case 'published': return 'bg-success/15 text-success dark:text-success';
+			case 'draft': return 'bg-muted/15 text-muted dark:text-muted';
+			case 'archived': return 'bg-warning/15 text-warning dark:text-warning';
+			default: return 'bg-muted/15 text-muted dark:text-muted';
 		}
 	}
 </script>
@@ -160,6 +178,7 @@
 		<h1 class="text-2xl font-bold tracking-tight">{t('page_builder.pages_title')}</h1>
 		<p class="text-sm" style="color: var(--color-muted)">{t('page_builder.pages_description')}</p>
 	</div>
+	{#if canManagePages}
 	<button
 		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
 		style="background-color: var(--color-primary)"
@@ -167,6 +186,7 @@
 	>
 		{t('page_builder.create_page')}
 	</button>
+	{/if}
 </div>
 
 {#if error}
@@ -203,39 +223,40 @@
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-2">
 								<button
-									class="text-xs text-blue-500 hover:text-blue-700"
+									class="text-xs text-blue-500 hover:text-info"
 									onclick={() => validateSeo(page.id)}
 								>
 									SEO
 								</button>
+							{#if canManagePages}
+							<button
+								class="text-xs text-violet-500 hover:text-violet-700"
+								onclick={() => openSaveAsTemplate(page.id, page.title)}
+							>
+								{t('page_builder.save_as_template')}
+							</button>
+							{/if}
+							{#if page.status !== 'published' && canPublishPages}
 								<button
-									class="text-xs text-violet-500 hover:text-violet-700"
-									onclick={() => openSaveAsTemplate(page.id, page.title)}
+									class="text-xs text-success hover:text-success"
+									onclick={() => publishPage(page.id)}
 								>
-									{t('page_builder.save_as_template')}
+									{t('page_builder.publish')}
 								</button>
-								{#if page.status !== 'published'}
-									<button
-										class="text-xs text-emerald-500 hover:text-emerald-700"
-										onclick={() => publishPage(page.id)}
-									>
-										{t('page_builder.publish')}
-									</button>
-								{/if}
-								{#if page.status === 'published'}
-									<button
-										class="text-xs text-amber-500 hover:text-amber-700"
-										onclick={() => archivePage(page.id)}
-									>
-										{t('page_builder.archive')}
-									</button>
-								{/if}
+							{/if}
+							{#if page.status === 'published' && canManagePages}
 								<button
-									class="text-xs text-red-500 hover:text-red-700"
-									onclick={() => deletePage(page.id)}
+									class="text-xs text-warning hover:text-warning"
+									onclick={() => archivePage(page.id)}
 								>
-									{t('common.delete')}
+									{t('page_builder.archive')}
 								</button>
+							{/if}
+							{#if canManagePages}
+							<Button variant="ghost" size="sm" onclick={() => confirmDelete(page)} style="color: var(--color-danger)">
+								{t('common.delete')}
+							</Button>
+							{/if}
 							</div>
 						</td>
 					</tr>
@@ -335,13 +356,13 @@
 		{#if seoLoading}
 			<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 		{:else if seoIssues.length === 0}
-			<div class="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+			<div class="rounded-md border border-success bg-success p-4 text-sm text-success dark:dark:border-success dark:dark:bg-success dark:dark:text-success">
 				No SEO issues found.
 			</div>
 		{:else}
 			<ul class="space-y-2">
 				{#each seoIssues as issue}
-					<li class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+					<li class="rounded-md border border-warning bg-warning px-3 py-2 text-sm text-warning dark:border-warning dark:bg-warning dark:dark:text-warning">
 						{issue}
 					</li>
 				{/each}
@@ -349,3 +370,17 @@
 		{/if}
 	</Modal>
 {/if}
+
+<!-- Delete Confirmation -->
+<Modal bind:open={showDeleteConfirm} title={t('common.confirmDelete', 'Confirm Delete')}>
+	{#if deleteTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('page_builder.confirm_delete', 'Delete page')} <strong>{deleteTarget.title}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t('common.cannotUndo', 'This action cannot be undone.')}</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={executeDelete}>{t('common.delete', 'Delete')}</Button>
+	</div>
+</Modal>

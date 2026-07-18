@@ -8,7 +8,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Select } from '$lib/components/ui/select';
 	import { Modal } from '$lib/components/ui/modal';
-	import { FileJson, Plus, RefreshCw, Pencil, Trash2, Download, Upload } from 'lucide-svelte';
+	import { FileJson, Plus, RefreshCw, Pencil, Trash2, Download, Upload, Eye } from 'lucide-svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	type JsonLdTemplate = {
 		id: string;
@@ -32,9 +33,20 @@
 	let saving = $state(false);
 	let jsonError = $state('');
 
+	// View modal
+	let showViewModal = $state(false);
+	let viewTarget = $state<JsonLdTemplate | null>(null);
+
 	// Delete confirmation
 	let showDeleteModal = $state(false);
 	let deletingTemplate = $state<JsonLdTemplate | null>(null);
+
+	const canManageTemplates = $derived(hasPermission("jsonld.manage"));
+
+	function openViewTemplate(template: JsonLdTemplate) {
+		viewTarget = template;
+		showViewModal = true;
+	}
 
 	const templateColumns = [
 		{
@@ -43,12 +55,12 @@
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-3">
-					<div class="h-10 w-10 rounded-lg bg-warning-100 flex items-center justify-center">
+					<div class="h-10 w-10 rounded-lg bg-warning/15 flex items-center justify-center">
 						<svg class="h-5 w-5 text-warning-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
 					</div>
 					<div>
-						<p class="font-medium text-gray-900">${row.name}</p>
-						<p class="text-sm text-gray-500">${row.type}</p>
+						<p class="font-medium text-foreground">${row.name}</p>
+						<p class="text-sm text-muted">${row.type}</p>
 					</div>
 				</div>
 			`
@@ -57,34 +69,25 @@
 			key: 'type',
 			label: 'Schema Type',
 			sortable: true,
-			render: (value: string) => `<span class="font-mono text-sm text-gray-900">${value}</span>`
+			render: (value: string) => `<span class="font-mono text-sm text-foreground">${value}</span>`
 		},
 		{
 			key: 'is_active',
 			label: 'Status',
 			sortable: true,
-			render: (value: boolean) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${value ? 'bg-success-100 text-success-800 border-success-200' : 'bg-gray-100 text-gray-800 border-gray-200'}">${value ? 'Active' : 'Inactive'}</span>`
+			render: (value: boolean) => `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${value ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${value ? 'Active' : 'Inactive'}</span>`
 		},
 		{
 			key: 'updated_at',
 			label: 'Last Updated',
 			sortable: true,
-			render: (value: string) => `<span class="text-sm text-gray-500">${new Date(value).toLocaleDateString()}</span>`
+			render: (value: string) => `<span class="text-sm text-muted">${new Date(value).toLocaleDateString()}</span>`
 		},
 		{
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__editTemplate('${row.id}')" class="inline-flex items-center justify-center rounded-md px-2 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100" title="Edit">
-						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-					</button>
-					<button onclick="window.__deleteTemplate('${row.id}')" class="inline-flex items-center justify-center rounded-md px-2 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50" title="Delete">
-						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-					</button>
-				</div>
-			`
+			component: TemplateActionsCell
 		}
 	];
 
@@ -274,15 +277,9 @@
 		input.click();
 	}
 
-	// Expose functions for DataTable inline actions
-	if (typeof window !== 'undefined') {
-		(window as any).__editTemplate = openEditTemplate;
-		(window as any).__deleteTemplate = confirmDelete;
-	}
-
-	$effect(() => {
-		load();
-	});
+  $effect(() => {
+    load();
+  });
 </script>
 
 <svelte:head>
@@ -302,24 +299,24 @@
 
 <div class="space-y-6">
 	{#if error}
-		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
 			{error}
 		</div>
 	{/if}
 
 	{#if success}
-		<div class="rounded-lg border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-700">
+		<div class="rounded-lg border border-success bg-success-50 px-4 py-3 text-sm text-success-700">
 			{success}
 		</div>
 	{/if}
 
 	{#if loading}
-		<p class="py-8 text-center text-sm text-gray-500">{t('common.loading')}</p>
+		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold text-gray-900">{t('jsonld-templates.templates')}</h3>
-				<p class="text-sm text-gray-500">
+				<h3 class="text-lg font-semibold text-foreground">{t('jsonld-templates.templates')}</h3>
+				<p class="text-sm text-muted">
 					{templates.length} template{templates.length !== 1 ? 's' : ''} configured
 				</p>
 			</CardHeader>
@@ -335,16 +332,16 @@
 
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold text-gray-900">{t('jsonld-templates.preview')}</h3>
-				<p class="text-sm text-gray-500">{t('jsonld-templates.example_json_ld_output_for_search_engine')}</p>
+				<h3 class="text-lg font-semibold text-foreground">{t('jsonld-templates.preview')}</h3>
+				<p class="text-sm text-muted">{t('jsonld-templates.example_json_ld_output_for_search_engine')}</p>
 			</CardHeader>
 			<CardContent>
 				{#if templates.length > 0}
-					<div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
-						<pre class="overflow-x-auto text-xs text-gray-700"><code>{JSON.stringify(templates[0]?.content || {}, null, 2)}</code></pre>
+					<div class="rounded-lg border border bg-surface p-4">
+						<pre class="overflow-x-auto text-xs text-foreground-alt"><code>{JSON.stringify(templates[0]?.content || {}, null, 2)}</code></pre>
 					</div>
 				{:else}
-					<p class="text-sm text-gray-500">{t('jsonld-templates.no_templates_to_preview')}</p>
+					<p class="text-sm text-muted">{t('jsonld-templates.no_templates_to_preview')}</p>
 				{/if}
 			</CardContent>
 		</Card>
@@ -356,17 +353,17 @@
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="template-name" class="mb-1 block text-sm font-medium text-gray-700">{t('jsonld-templates.name')}</label>
+				<label for="template-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('jsonld-templates.name')}</label>
 				<input
 					id="template-name"
 					type="text"
-					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={templateForm.name}
 					placeholder="e.g., Article Template"
 				/>
 			</div>
 			<div>
-			<label for="template-type" class="mb-1 block text-sm font-medium text-gray-700">{t('jsonld-templates.schema_type')}</label>
+			<label for="template-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('jsonld-templates.schema_type')}</label>
 			<Select
 				options={[
 					{ value: 'Article', label: 'Article' },
@@ -385,7 +382,7 @@
 			</div>
 		</div>
 		<div>
-			<label for="template-content" class="mb-1 block text-sm font-medium text-gray-700">
+			<label for="template-content" class="mb-1 block text-sm font-medium text-foreground-alt">
 				JSON-LD Content
 				{#if jsonError}
 					<span class="text-danger-600 ml-2">({jsonError})</span>
@@ -393,7 +390,7 @@
 			</label>
 			<textarea
 				id="template-content"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-xs placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {jsonError ? 'border-danger-300' : ''}"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 font-mono text-xs placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 {jsonError ? 'border-danger-300' : ''}"
 				rows="20"
 				spellcheck="false"
 				value={templateForm.content}
@@ -410,9 +407,42 @@
 	</div>
 </Modal>
 
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title="Template Details" size="lg">
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Name</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Schema Type</p>
+					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.type}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.is_active ? 'Active' : 'Inactive'}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Last Updated</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.updated_at).toLocaleDateString()}</p>
+				</div>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Content</p>
+				<pre class="mt-1 overflow-x-auto rounded-lg border p-3 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"><code>{JSON.stringify(viewTarget.content, null, 2)}</code></pre>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('jsonld-templates.close')}</Button>
+	</div>
+</Modal>
+
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={showDeleteModal} title="Delete Template" size="sm">
-	<p class="text-sm text-gray-600">
+	<p class="text-sm text-foreground-alt">
 		Are you sure you want to delete <strong>{deletingTemplate?.name}</strong>? This action cannot be undone.
 	</p>
 	<div class="flex justify-end gap-3 pt-4">
@@ -420,3 +450,20 @@
 		<Button variant="destructive" onclick={deleteTemplate}>{t('jsonld-templates.delete')}</Button>
 	</div>
 </Modal>
+
+<!-- TemplateActionsCell -->
+{#snippet TemplateActionsCell(row: JsonLdTemplate)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openViewTemplate(row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageTemplates}
+			<Button variant="ghost" size="sm" onclick={() => openEditTemplate(row.id)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row.id)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

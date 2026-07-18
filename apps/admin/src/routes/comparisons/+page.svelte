@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { api, comparisonsAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { Plus, Pencil, Trash2 } from 'lucide-svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { Plus, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
 
 	type ComparisonType = {
@@ -23,6 +24,39 @@
 	let saving = $state(false);
 
 	let modalOpen = $state(false);
+
+	let showViewModal = $state(false);
+	let viewTarget = $state<ComparisonType | null>(null);
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<ComparisonType | null>(null);
+
+	const canManageComparisons = $derived(hasPermission('comparisons.manage'));
+
+	function openView(ct: ComparisonType) {
+		viewTarget = ct;
+		showViewModal = true;
+	}
+
+	function confirmDelete(ct: ComparisonType) {
+		deleteTarget = ct;
+		showDeleteConfirm = true;
+	}
+
+	async function executeDelete() {
+		if (!deleteTarget) return;
+		errorMessage = '';
+		try {
+			const result = await api(`/admin/comparison-types/${deleteTarget.id}`, { method: 'DELETE' });
+			if (result.ok) {
+				showDeleteConfirm = false;
+				types = types.filter((t) => t.id !== deleteTarget!.id);
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error');
+		}
+	}
 
 	let name = $state('');
 	let slug = $state('');
@@ -108,20 +142,6 @@
 		}
 	}
 
-	async function deleteType(id: string) {
-		errorMessage = '';
-		try {
-			const result = await api(`/admin/comparison-types/${id}`, { method: 'DELETE' });
-			if (result.ok) {
-				types = types.filter((t) => t.id !== id);
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		}
-	}
-
 	$effect(() => {
 		load();
 	});
@@ -141,10 +161,12 @@
 {/if}
 
 <div class="mb-4 flex justify-end">
-	<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
-		<Plus class="h-3 w-3" />
-		{t('comparisons.create_type')}
-	</button>
+	{#if canManageComparisons}
+		<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
+			<Plus class="h-3 w-3" />
+			{t('comparisons.create_type')}
+		</button>
+	{/if}
 </div>
 
 {#if loading}
@@ -166,18 +188,23 @@
 						<td class="px-4 py-3 font-medium">{ct.name}</td>
 						<td class="px-4 py-3 text-xs font-mono" style="color: var(--color-muted)">{ct.slug}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {ct.is_public ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {ct.is_public ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
 								{ct.is_public ? t('comparisons.public') : t('comparisons.private')}
 							</span>
 						</td>
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-1">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => openEdit(ct)}>
-									<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openView(ct)}>
+									<Eye class="h-3 w-3" style="color: var(--color-muted)" />
 								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => deleteType(ct.id)}>
-									<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-								</button>
+								{#if canManageComparisons}
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(ct)}>
+										<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
+									</button>
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => confirmDelete(ct)}>
+										<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
+									</button>
+								{/if}
 							</div>
 						</td>
 					</tr>
@@ -192,6 +219,40 @@
 		</table>
 	</div>
 {/if}
+
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t('comparisons.view_type')}>
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.name')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.slug')}</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.slug}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.description')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.description || '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('comparisons.visibility')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.is_public ? t('comparisons.public') : t('comparisons.private')}</p>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showViewModal = false)}>{t('common.close')}</button>
+	</div>
+</Modal>
+
+<!-- Delete Confirmation -->
+<Modal bind:open={showDeleteConfirm} title={t('common.confirm')} confirmLabel={t('common.delete')} onConfirm={executeDelete}>
+	<p class="text-sm" style="color: var(--color-muted)">
+		{t('comparisons.delete_confirm')} <strong>{deleteTarget?.name}</strong>?
+	</p>
+</Modal>
 
 <!-- Create/Edit Modal -->
 <Modal bind:open={modalOpen} title={editingType ? t('comparisons.edit_type') : t('comparisons.create_type')} onConfirm={editingType ? updateType : createType} confirmLabel={saving ? t('common.saving') : editingType ? t('common.save') : t('common.create')}>

@@ -5,9 +5,10 @@
 	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
+	import { Modal } from "$lib/components/ui/modal";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw, Eye, Ticket, Clock, CheckCircle, AlertCircle } from "lucide-svelte";
+	import { RefreshCw, Eye, Pencil, Trash2, Ticket, Clock, CheckCircle, AlertCircle } from "lucide-svelte";
 	import { ticketsAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -22,15 +23,33 @@
 		created_at: string;
 	};
 
-	let tickets = $state<TicketItem[]>([]);
-	let currentPage = $state(0);
-	let totalItems = $state(0);
-	let pageSize = $state(25);
-	let loading = $state(true);
-	let error = $state("");
-	let searchQuery = $state("");
-	let filterValues = $state<Record<string, string>>({});
-	let statusFilter = $state("");
+ 	let tickets = $state<TicketItem[]>([]);
+ 	let currentPage = $state(0);
+ 	let totalItems = $state(0);
+ 	let pageSize = $state(25);
+ 	let loading = $state(true);
+ 	let error = $state("");
+ 	let searchQuery = $state("");
+ 	let filterValues = $state<Record<string, string>>({});
+ 	let statusFilter = $state("");
+ 	let selectedIds = $state<Set<string>>(new Set());
+
+	// View modal
+	let showViewModal = $state(false);
+	let viewTarget = $state<TicketItem | null>(null);
+	let loadingView = $state(false);
+
+	// Edit modal
+	let showEditModal = $state(false);
+	let editingTicket = $state<TicketItem | null>(null);
+	let editForm = $state({ subject: "", status: "", priority: "", assignee: "" });
+	let savingEdit = $state(false);
+
+	// Delete modal
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<TicketItem | null>(null);
+
+	const canManageTickets = $derived(hasPermission("admin.tickets.manage"));
 
 	const statusTabs = [
 		{ value: "", label: t("tickets.all", "All"), icon: Ticket },
@@ -94,11 +113,96 @@
 			sortable: true,
 			render: (v: string) => new Date(v).toLocaleDateString()
 		},
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			render: (_: any, row: TicketItem) => `
-				<a href="/tickets/${row.id}" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.view", "View")}</a>`
-		}
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32", component: TicketActionsCell }
 	];
+
+	async function openView(ticket: TicketItem) {
+		viewTarget = ticket;
+		showViewModal = true;
+		loadingView = true;
+		try {
+			const result = await ticketsAdminApi.get(ticket.id);
+			if (result.ok) viewTarget = (result.data as TicketItem) ?? ticket;
+		} catch {
+			viewTarget = ticket;
+		} finally {
+			loadingView = false;
+		}
+	}
+
+	function openEdit(ticket: TicketItem) {
+		editingTicket = ticket;
+		editForm = {
+			subject: ticket.subject,
+			status: ticket.status,
+			priority: ticket.priority,
+			assignee: ticket.assignee ?? ""
+		};
+		showEditModal = true;
+	}
+
+	async function submitEdit() {
+		if (!editingTicket) return;
+		savingEdit = true;
+		error = "";
+		try {
+			const result = await ticketsAdminApi.update(editingTicket.id, {
+				subject: editForm.subject,
+				status: editForm.status,
+				priority: editForm.priority,
+				assignee: editForm.assignee
+			});
+			if (result.ok) {
+				showEditModal = false;
+				loadTickets();
+			} else {
+				error = result.error ?? t("common.error", "Failed to update ticket");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to update ticket");
+		} finally {
+			savingEdit = false;
+		}
+	}
+
+	function confirmDelete(ticket: TicketItem) {
+		deleteTarget = ticket;
+		showDeleteConfirm = true;
+	}
+
+	async function executeDelete() {
+		if (!deleteTarget) return;
+		error = "";
+		try {
+			const result = await ticketsAdminApi.delete(deleteTarget.id);
+			if (result.ok) {
+				showDeleteConfirm = false;
+				deleteTarget = null;
+				loadTickets();
+			} else {
+				error = result.error ?? t("common.error", "Failed to delete ticket");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to delete ticket");
+		}
+	}
+
+	let bulkDeleting = $state(false);
+	async function bulkDelete() {
+		const ids = Array.from(selectedIds);
+		if (ids.length === 0) return;
+		bulkDeleting = true;
+		error = "";
+		try {
+			await Promise.all(ids.map((id) => ticketsAdminApi.delete(id)));
+			selectedIds = new Set();
+			loadTickets();
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to delete tickets");
+		} finally {
+			bulkDeleting = false;
+		}
+	}
 
 	async function loadTickets() {
 		loading = true;
@@ -194,8 +298,115 @@
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={tickets} pageSize={tickets.length} selectable />
+			<DataTable {columns} data={tickets} pageSize={tickets.length} selectable bind:selectedIds>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
+						<Trash2 class="mr-1 h-3.5 w-3.5" />
+						{bulkDeleting ? t("common.deleting", "Deleting...") : `${t("tickets.delete_selected", "Delete Selected")} (${selectedIds.size})`}
+					</Button>
+				{/snippet}
+			</DataTable>
 			<Pagination bind:page={currentPage} totalPages={Math.ceil(totalItems / pageSize)} {totalItems} bind:pageSize />
 		{/if}
 	</CardContent>
 </Card>
+
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t("tickets.details", "Ticket Details")} size="sm">
+	{#if loadingView}
+		<p class="text-sm" style="color: var(--color-muted)">{t("common.loading", "Loading...")}</p>
+	{:else if viewTarget}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.subject", "Subject")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.subject}</p>
+			</div>
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.type", "Type")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.priority", "Priority")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.priority}</p>
+				</div>
+			</div>
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.status", "Status")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.assignee", "Assignee")}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.assignee || "—"}</p>
+				</div>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.created", "Created")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t("common.close", "Close")}</Button>
+	</div>
+</Modal>
+
+<!-- Edit Modal -->
+<Modal bind:open={showEditModal} title={t("tickets.edit", "Edit Ticket")}>
+	<div class="space-y-4">
+		<div>
+			<label for="tk-subject" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.subject", "Subject")}</label>
+			<input id="tk-subject" type="text" bind:value={editForm.subject} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+		</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<label for="tk-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
+				<input id="tk-status" type="text" bind:value={editForm.status} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+			</div>
+			<div>
+				<label for="tk-priority" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.priority", "Priority")}</label>
+				<input id="tk-priority" type="text" bind:value={editForm.priority} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+			</div>
+		</div>
+		<div>
+			<label for="tk-assignee" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.assignee", "Assignee")}</label>
+			<input id="tk-assignee" type="text" bind:value={editForm.assignee} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+		</div>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showEditModal = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button onclick={submitEdit} disabled={savingEdit}>{savingEdit ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
+	</div>
+</Modal>
+
+<!-- Delete Confirmation -->
+<Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")}>
+	{#if deleteTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t("tickets.delete_confirm", "Delete ticket")} <strong>{deleteTarget.subject}</strong>?
+		</p>
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{t("common.cannotUndo", "This action cannot be undone.")}</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={executeDelete}>{t("common.delete", "Delete")}</Button>
+	</div>
+</Modal>
+
+<!-- TicketActionsCell -->
+{#snippet TicketActionsCell(row: TicketItem)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if canManageTickets}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

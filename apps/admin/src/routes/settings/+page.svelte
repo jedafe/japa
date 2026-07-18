@@ -5,7 +5,11 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Select } from '$lib/components/ui/select';
 	import { RefreshCw, Save, Check } from 'lucide-svelte';
+	import { Switch } from "bits-ui";
 	import { settingsAdminApi } from '$lib/api';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+
+	const canManage = $derived(hasPermission('admin.settings'));
 
 	let saving = $state(false);
 	let savedCategory = $state('');
@@ -207,18 +211,17 @@
 										/>
 									{:else if setting.type === 'toggle'}
 										<div class="flex items-center gap-3">
-											<button
-												type="button"
-												role="switch"
-												aria-checked={toggleStates[toggleId]}
+											<Switch.Root
+												checked={toggleStates[toggleId]}
+												onCheckedChange={(v: boolean) => toggleSetting(category.key, setting.key)}
+												class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 {toggleStates[toggleId] ? 'bg-primary' : 'bg-surface'}"
+												style="--ring-color: var(--color-primary); --ring-offset-color: var(--color-surface)"
 												aria-label={setting.label}
-												onclick={() => toggleSetting(category.key, setting.key)}
-												class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 {toggleStates[toggleId] ? 'bg-primary-600' : 'bg-gray-200'}"
 											>
-												<span
-													class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform {toggleStates[toggleId] ? 'translate-x-6' : 'translate-x-1'}"
-												></span>
-											</button>
+												<Switch.Thumb
+													class="inline-block h-4 w-4 transform rounded-full bg-surface shadow-sm transition-transform {toggleStates[toggleId] ? 'translate-x-6' : 'translate-x-1'}"
+												/>
+											</Switch.Root>
 											<span class="text-sm" style="color: var(--color-muted)">
 												{toggleStates[toggleId] ? 'Enabled' : 'Disabled'}
 											</span>
@@ -243,7 +246,7 @@
 							</div>
 						{/if}
 
-						<Button disabled={saving} variant="outline" size="sm" onclick={() => saveCategory(category.key)}>
+						{#if canManage}<Button disabled={saving} variant="outline" size="sm" onclick={() => saveCategory(category.key)}>
 							{#if saving}
 								<RefreshCw class="h-4 w-4 animate-spin" />
 								Saving...
@@ -251,7 +254,7 @@
 								<Save class="h-4 w-4" />
 								Save {category.label}
 							{/if}
-						</Button>
+						</Button>{/if}
 					</div>
 				</CardContent>
 			</Card>

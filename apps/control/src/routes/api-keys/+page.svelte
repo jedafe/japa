@@ -7,7 +7,7 @@
 	import { Key, Plus, Copy, Check } from 'lucide-svelte';
 	import { Dialog, Tabs, Select } from 'bits-ui';
 	import { t } from '$lib/stores/i18n';
-	import type { PageData } from './$types';
+	import { escapeHtml } from '$lib/utils';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 
 	interface AdminApiKey {
@@ -25,14 +25,30 @@
 		allowed_ips?: string[];
 	}
 
-	let { data = {} as PageData } = $props();
+	let {} = $props();
 
-	let keys = $state<AdminApiKey[]>(data.keys ?? []);
-	let loading = $state(false);
+	let keys = $state<AdminApiKey[]>([]);
+	let loading = $state(true);
 	let filter = $state('');
 	let filterTier = $state('all');
 	let activeTab = $state('active');
-	let errorMessage = $state(data.error ?? '');
+	let errorMessage = $state('');
+
+	$effect(() => {
+		load();
+	});
+
+	async function load() {
+		loading = true;
+		errorMessage = '';
+		const result = await api<AdminApiKey[]>('/control/api-keys');
+		if (result.ok) {
+			keys = Array.isArray(result.data) ? result.data : [];
+		} else {
+			errorMessage = result.error;
+		}
+		loading = false;
+	}
 
 	let confirmOpen = $state(false);
 	let confirmAction = $state<{ type: 'revoke' | 'suspend'; key: AdminApiKey } | null>(null);
@@ -128,20 +144,20 @@
 			label: t('api_keys.name'),
 			sortable: true,
 			render: (_val: unknown, row: Record<string, unknown>) =>
-				`<span class="font-medium">${String(row.name)}</span>`
+				`<span class="font-medium">${escapeHtml(row.name)}</span>`
 		},
 		{
 			key: 'key_prefix',
 			label: t('api_keys.prefix'),
 			render: (val: unknown) =>
-				`<span class="font-mono text-xs text-muted-foreground">${String(val)}...</span>`
+				`<span class="font-mono text-xs text-muted-foreground">${escapeHtml(val)}...</span>`
 		},
 		{
 			key: 'user_id',
 			label: t('api_keys.user'),
 			render: (val: unknown) =>
 				val
-					? `<span class="text-muted-foreground text-xs">${String(val).slice(0, 8)}...</span>`
+					? `<span class="text-muted-foreground text-xs">${escapeHtml(String(val).slice(0, 8))}...</span>`
 					: `<span class="text-muted-foreground text-xs">${t('api_keys.system')}</span>`
 		},
 		{
@@ -149,14 +165,14 @@
 			label: t('api_keys.tier'),
 			sortable: true,
 			render: (val: unknown) =>
-				`<span class="bg-accent text-accent-foreground rounded-5px px-1.5 py-0.5 text-xs">${String(val)}</span>`
+				`<span class="bg-accent text-accent-foreground rounded-5px px-1.5 py-0.5 text-xs">${escapeHtml(val)}</span>`
 		},
 		{
 			key: 'status',
 			label: t('api_keys.status'),
 			sortable: true,
 			render: (val: unknown, row: Record<string, unknown>) => {
-				const status = String(val);
+				const status = escapeHtml(val);
 				return `<span class="${statusBg(status)} ${statusColor(status)} rounded-full px-2 py-0.5 text-xs font-medium">${status}</span>`;
 			}
 		},
@@ -166,7 +182,7 @@
 			sortable: true,
 			class: 'text-right',
 			render: (val: unknown) =>
-				`<span class="font-mono text-xs">${formatNumber(Number(val))}</span>`
+				`<span class="font-mono text-xs">${escapeHtml(formatNumber(Number(val)))}</span>`
 		}
 	];
 
@@ -534,7 +550,7 @@
 	</Dialog.Portal>
 </Dialog.Root>
 
-<Dialog.Root bind:open={oneTimeKeyModalOpen}>
+<Dialog.Root bind:open={oneTimeKeyModalOpen} onOpenChange={(isOpen) => { if (!isOpen) { setTimeout(() => { oneTimeKeyValue = ''; }, 300); } }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
 		<Dialog.Content

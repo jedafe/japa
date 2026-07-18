@@ -209,10 +209,10 @@
 			</thead>
 			<tbody>
 				{#each types as item}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style="border-color: var(--color-border)">
+					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
 						<td class="px-4 py-3">
 							<button
-								class="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10"
+								class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10"
 								onclick={() => toggleExpand(item.id)}
 								aria-label="Expand details"
 							>
@@ -227,7 +227,7 @@
 						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{item.slug}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.description || '—'}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {item.is_public ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs {item.is_public ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
 								{item.is_public ? t('common.yes') : t('common.no')}
 							</span>
 						</td>
@@ -235,14 +235,14 @@
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-2">
 								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 									style="color: var(--color-info)"
 									onclick={() => openEdit(item)}
 								>
 									{t('common.edit')}
 								</button>
 								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10"
+									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 									style="color: var(--color-danger)"
 									onclick={() => confirmDelete(item.id)}
 								>

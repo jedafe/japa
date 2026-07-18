@@ -7,26 +7,62 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
+
+// TaskEnqueueClient is the interface for enqueueing background tasks.
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
 
 // Handlers provides HTTP handlers for the affiliate program.
 type Handlers struct {
-	Service *Service
+	Service     *Service
+	AsynqClient TaskEnqueueClient
 }
 
 // NewHandlers creates a Handlers backed by the given service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// enqueueRecordClick enqueues an async affiliate click recording task.
+// Fire-and-forget: errors are logged but never propagated.
+func (h *Handlers) enqueueRecordClick(tenantID, linkID pgtype.UUID, userID string, ipHash string) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"tenant_id": tenantID.String(),
+		"link_id":   linkID.String(),
+		"user_id":   userID,
+		"ip_hash":   ipHash,
+	})
+	if err != nil {
+		slog.Warn("affiliate: failed to marshal record click payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeAffiliateRecordClick, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeAffiliateRecordClick)),
+	); err != nil {
+		slog.Warn("affiliate: failed to enqueue record click task",
+			"link_id", linkID.String(), "error", err)
+	}
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -315,6 +351,9 @@ func (h *Handlers) Redirect(w http.ResponseWriter, r *http.Request) {
 			TenantID:    tenantID,
 		})
 	}()
+
+	// Enqueue async affiliate click recording task — fire-and-forget.
+	h.enqueueRecordClick(tenantID, link.ID, "", ipHash)
 
 	http.Redirect(w, r, link.DestinationUrl, http.StatusFound)
 }
