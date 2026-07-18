@@ -216,3 +216,88 @@ DELETE FROM feeds WHERE user_id = @user_id;
 
 -- name: GetFeedItemCount :one
 SELECT COUNT(*)::int AS count FROM feeds WHERE user_id = @user_id;
+
+-- name: GetFollowedEntityIDsByType :many
+-- Lean ID-only lookup of everything a user follows of one entity type.
+SELECT entity_id
+FROM follows
+WHERE tenant_id = @tenant_id
+  AND follower_id = @follower_id
+  AND entity_type = @entity_type;
+
+-- name: GetMemberSpaceIDs :many
+-- Space IDs the user is a member of (affinity signal, distinct from follows).
+SELECT space_id
+FROM space_members
+WHERE tenant_id = @tenant_id
+  AND user_id = @user_id;
+
+-- name: GetForYouCandidates :many
+-- Bounded personalized candidate pool = UNION of (a) recent content from
+-- followed authors/spaces/tags and (b) top recent content by velocity.
+-- Emits per-row affinity flags for Go-side ranking. Excludes own posts.
+-- Array params are COALESCEd to empty arrays so `= ANY(NULL)` never nullifies
+-- the affinity predicate when a user follows nothing of a given type.
+WITH affinity AS (
+    SELECT c.id
+    FROM contents c
+    WHERE c.tenant_id = @tenant_id
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND c.created_at >= @window_start
+      AND c.author_id <> @exclude_author_id
+      AND (
+            c.author_id = ANY(COALESCE(@author_ids::uuid[], ARRAY[]::uuid[]))
+         OR c.space_id  = ANY(COALESCE(@space_ids::uuid[], ARRAY[]::uuid[]))
+         OR EXISTS (
+              SELECT 1 FROM content_tags ct
+              WHERE ct.content_id = c.id AND ct.tag_id = ANY(COALESCE(@tag_ids::uuid[], ARRAY[]::uuid[]))
+         )
+      )
+    ORDER BY c.created_at DESC
+    LIMIT @affinity_limit
+),
+velocity AS (
+    SELECT c.id
+    FROM contents c
+    JOIN content_scores cs ON cs.content_id = c.id
+    WHERE c.tenant_id = @tenant_id
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND c.created_at >= @window_start
+      AND c.author_id <> @exclude_author_id
+    ORDER BY cs.velocity_score DESC
+    LIMIT @velocity_limit
+),
+candidate_ids AS (
+    SELECT id FROM affinity
+    UNION
+    SELECT id FROM velocity
+)
+SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
+       c.created_at, c.view_count, c.comment_count,
+       cs.vote_score, cs.velocity_score, cs.bookmark_count,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       LEFT(c.body, 200) AS excerpt,
+       c.read_time_minutes,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path   AS cover_storage_path,
+       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+       (c.author_id = ANY(COALESCE(@author_ids::uuid[], ARRAY[]::uuid[])))            AS is_author_followed,
+       (c.space_id  = ANY(COALESCE(@space_ids::uuid[], ARRAY[]::uuid[])))             AS is_space_followed,
+       COUNT(DISTINCT t.id) FILTER (
+           WHERE t.id = ANY(COALESCE(@tag_ids::uuid[], ARRAY[]::uuid[]))
+       )::int                                              AS followed_tag_overlap
+FROM contents c
+JOIN candidate_ids ci ON ci.id = c.id
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN users u  ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN media m ON m.id = c.header_image_id AND m.deleted_at IS NULL
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+         u.username, up.display_name, up.avatar_url,
+         m.storage_bucket, m.storage_path
+LIMIT @candidate_cap;
