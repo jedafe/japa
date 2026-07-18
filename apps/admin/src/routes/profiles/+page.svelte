@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { RefreshCw, CheckCircle } from 'lucide-svelte';
+	import { RefreshCw, CheckCircle, Eye } from 'lucide-svelte';
+	import Modal from '$lib/components/Modal.svelte';
 
 	type Profile = {
 		id: string;
@@ -15,6 +16,14 @@
 	let profiles = $state<Profile[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+
+	let showViewModal = $state(false);
+	let viewTarget = $state<Profile | null>(null);
+
+	function openView(profile: Profile) {
+		viewTarget = profile;
+		showViewModal = true;
+	}
 
 	async function load() {
 		loading = true;
@@ -37,6 +46,16 @@
 		errorMessage = '';
 		try {
 			await api(`/admin/profiles/${id}/verify`, { method: 'POST', body: {} });
+			load();
+		} catch {
+			errorMessage = t('common.error');
+		}
+	}
+
+	async function unverifyProfile(id: string) {
+		errorMessage = '';
+		try {
+			await api(`/admin/profiles/${id}/verify`, { method: 'DELETE' });
 			load();
 		} catch {
 			errorMessage = t('common.error');
@@ -87,17 +106,27 @@
 						<td class="px-4 py-3 font-medium">{profile.display_name}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{profile.professional_type}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {profile.is_verified ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {profile.is_verified ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">
 								{profile.is_verified ? t('profiles.verified') : t('profiles.unverified')}
 							</span>
 						</td>
 						<td class="px-4 py-3 text-right">
-							{#if !profile.is_verified}
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => verifyProfile(profile.id)}>
-									<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
-									{t('profiles.verify')}
+							<div class="flex items-center justify-end gap-2">
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-muted)" onclick={() => openView(profile)}>
+									<Eye class="h-3 w-3 inline mr-1" />
+									{t('common.view')}
 								</button>
-							{/if}
+								{#if !profile.is_verified}
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => verifyProfile(profile.id)}>
+										<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
+										{t('profiles.verify')}
+									</button>
+								{:else}
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => unverifyProfile(profile.id)} style="color: var(--color-danger)">
+										{t('profiles.unverify')}
+									</button>
+								{/if}
+							</div>
 						</td>
 					</tr>
 				{:else}
@@ -111,3 +140,31 @@
 		</table>
 	</div>
 {/if}
+
+<Modal bind:open={showViewModal} title={t('profiles.details', 'Profile Details')}>
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('profiles.name', 'Name')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.display_name}</p>
+			</div>
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('profiles.type', 'Type')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.professional_type}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('profiles.verification', 'Verification')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.is_verified ? t('profiles.verified') : t('profiles.unverified')}</p>
+				</div>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('profiles.created', 'Created')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</button>
+	</div>
+</Modal>

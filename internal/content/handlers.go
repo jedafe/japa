@@ -194,6 +194,85 @@ func (h *Handlers) enqueueSearchIndex(contentID, tenantID pgtype.UUID, operation
 	}
 }
 
+// enqueueModerationScan enqueues an async content moderation scan task.
+// Fire-and-forget: errors are logged but never propagated to the caller.
+func (h *Handlers) enqueueModerationScan(entityType string, entityID, tenantID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"entity_type": entityType,
+		"entity_id":   entityID.String(),
+		"tenant_id":   tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("content: failed to marshal moderation scan payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeModerationScan, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeModerationScan)),
+	); err != nil {
+		slog.Warn("content: failed to enqueue moderation scan task",
+			"entity_id", entityID.String(), "error", err)
+	}
+}
+
+// enqueueLinkPreview enqueues an async link preview fetch task for a URL
+// found in a content block. Fire-and-forget.
+func (h *Handlers) enqueueLinkPreview(url, blockID string, tenantID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"url":       url,
+		"block_id":  blockID,
+		"tenant_id": tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("content: failed to marshal link preview payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeLinkPreviewFetch, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeLinkPreviewFetch)),
+	); err != nil {
+		slog.Warn("content: failed to enqueue link preview task",
+			"url", url, "error", err)
+	}
+}
+
+// enqueueEngagementUpdate enqueues an async engagement count update task.
+// Fire-and-forget.
+func (h *Handlers) enqueueEngagementUpdate(entityType string, entityID pgtype.UUID, engagementType string, delta int) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"entity_type":     entityType,
+		"entity_id":       entityID.String(),
+		"engagement_type": engagementType,
+		"delta":           delta,
+	})
+	if err != nil {
+		slog.Warn("content: failed to marshal engagement update payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeEngagementCountUpdate, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeEngagementCountUpdate)),
+	); err != nil {
+		slog.Warn("content: failed to enqueue engagement update task",
+			"entity_id", entityID.String(), "error", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Content CRUD Handlers
 // ---------------------------------------------------------------------------
@@ -320,6 +399,9 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue search index sync — fire-and-forget.
 	h.enqueueSearchIndex(content.ID, tenantID, "index")
+
+	// Enqueue moderation scan — fire-and-forget.
+	h.enqueueModerationScan("content", content.ID, tenantID)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": content})
 }
@@ -491,6 +573,9 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// Enqueue search index sync — fire-and-forget.
 	h.enqueueSearchIndex(id, tenantID, "index")
 
+	// Enqueue moderation scan — fire-and-forget.
+	h.enqueueModerationScan("content", id, tenantID)
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
@@ -636,6 +721,9 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Enqueue async engagement count update — fire-and-forget.
+	h.enqueueEngagementUpdate("content", id, "view", 1)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"recorded": true}})
 }
@@ -1145,12 +1233,11 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enqueue async engagement count update — fire-and-forget.
+	h.enqueueEngagementUpdate("content", contentID, "share", 1)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": share})
 }
-
-// ---------------------------------------------------------------------------
-// Related Content Handler (Task 12.13)
-// ---------------------------------------------------------------------------
 
 // GetRelatedContent handles GET /api/v1/content/{id}/related.
 func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {

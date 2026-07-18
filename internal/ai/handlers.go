@@ -25,17 +25,51 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/honcho"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
+
+// TaskEnqueueClient is the interface for enqueueing background tasks.
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
 
 // Handlers holds dependencies for AI HTTP handlers.
 type Handlers struct {
-	Dispatcher *Dispatcher
-	Store      *Store
-	Honcho     *honcho.Client
+	Dispatcher  *Dispatcher
+	Store       *Store
+	Honcho      *honcho.Client
+	AsynqClient TaskEnqueueClient
+}
+
+// enqueueAIProcessTask enqueues an async AI processing task.
+// Fire-and-forget: errors are logged but never propagated.
+func (h *Handlers) enqueueAIProcessTask(taskType, prompt, modelID, requestID string) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"task_type":  taskType,
+		"prompt":     prompt,
+		"model_id":   modelID,
+		"request_id": requestID,
+	})
+	if err != nil {
+		slog.Warn("ai: failed to marshal process task payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeAITaskProcessing, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeAITaskProcessing)),
+	); err != nil {
+		slog.Warn("ai: failed to enqueue process task", "task_type", taskType, "error", err)
+	}
 }
 
 // NewHandlers creates Handlers with the given dependencies.
@@ -180,6 +214,9 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// Enqueue async AI process task for background logging/analytics — fire-and-forget.
+	h.enqueueAIProcessTask(input.Category, input.Prompt, "", "")
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": resp,

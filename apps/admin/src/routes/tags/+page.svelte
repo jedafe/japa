@@ -7,10 +7,12 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Plus, Pencil, Trash2, RefreshCw, Eye } from "lucide-svelte";
-	import { tagsAdminApi } from "$lib/api";
+	import { Plus, Pencil, Trash2, RefreshCw, Eye, Shield } from "lucide-svelte";
+	import { tagsAdminApi, tagsModeratorsAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { page } from "$app/state";
+	import { goto } from "$app/navigation";
 
 	type Tag = {
 		id: string;
@@ -19,6 +21,12 @@
 		post_count: number;
 		follower_count: number;
 		created_at: string;
+	};
+
+	type TagModerator = {
+		user_id: string;
+		username: string;
+		added_at: string;
 	};
 
 	let tags = $state<Tag[]>([]);
@@ -80,7 +88,20 @@
 				page: String(currentPage),
 				limit: String(pageSize)
 			});
-			if (searchQuery) params.set("q", searchQuery);
+			const urlQ = page.url.searchParams.get("q") ?? "";
+			const urlFilter = page.url.searchParams.get("filter") ?? "";
+			if (urlQ) {
+				searchQuery = urlQ;
+				params.set("q", urlQ);
+			} else if (searchQuery) {
+				params.set("q", searchQuery);
+			}
+			if (urlFilter) {
+				filterValues = { post_count: urlFilter };
+				params.set("filter", urlFilter);
+			} else if (filterValues.post_count) {
+				params.set("filter", filterValues.post_count);
+			}
 
 			const result = await tagsAdminApi.list(params.toString());
 			if (result.ok) {
@@ -98,16 +119,25 @@
 		}
 	}
 
+	function syncUrl() {
+		const params = new URLSearchParams(page.url.searchParams.toString());
+		if (searchQuery) params.set("q", searchQuery); else params.delete("q");
+		if (filterValues.post_count) params.set("filter", filterValues.post_count); else params.delete("filter");
+		goto(`?${params.toString()}`, { keepFocus: true, noScroll: true });
+	}
+
 	function handleSearch(values: Record<string, string>) {
 		searchQuery = values.search ?? "";
-		filterValues = values;
+		filterValues = values.filter ? { post_count: values.filter } : {};
 		currentPage = 0;
+		syncUrl();
 	}
 
 	function handleClear() {
 		searchQuery = "";
 		filterValues = {};
 		currentPage = 0;
+		syncUrl();
 	}
 
 	function openView(tag: Tag) {
@@ -180,6 +210,68 @@
 		}
 	}
 
+	// Tag moderators
+	let showModeratorsModal = $state(false);
+	let moderatorTag = $state<Tag | null>(null);
+	let tagModerators = $state<TagModerator[]>([]);
+	let loadingModerators = $state(false);
+	let newModeratorUsername = $state("");
+	let addingModerator = $state(false);
+	let removeModeratorTarget = $state<TagModerator | null>(null);
+	let showRemoveModeratorConfirm = $state(false);
+
+	async function openModerators(tag: Tag) {
+		moderatorTag = tag;
+		showModeratorsModal = true;
+		loadingModerators = true;
+		newModeratorUsername = "";
+		try {
+			const result = await tagsAdminApi.getModerators(tag.id);
+			if (result.ok) {
+				tagModerators = (result.data as TagModerator[]) ?? [];
+			} else {
+				tagModerators = [];
+			}
+		} catch {
+			tagModerators = [];
+		} finally {
+			loadingModerators = false;
+		}
+	}
+
+	async function addTagModerator() {
+		if (!moderatorTag || !newModeratorUsername.trim()) return;
+		addingModerator = true;
+		error = "";
+		try {
+			const result = await tagsModeratorsAdminApi.add(moderatorTag.id, { user_id: newModeratorUsername.trim() });
+			if (result.ok) {
+				newModeratorUsername = "";
+				success = t("tags.moderator_added", "Moderator added");
+				await openModerators(moderatorTag);
+			} else {
+				error = result.error ?? t("common.error", "Failed to add moderator");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to add moderator");
+		} finally {
+			addingModerator = false;
+		}
+	}
+
+	async function confirmRemoveModerator() {
+		if (!moderatorTag || !removeModeratorTarget) return;
+		const result = await tagsModeratorsAdminApi.remove(moderatorTag.id, removeModeratorTarget.user_id);
+		if (result.ok) {
+			showRemoveModeratorConfirm = false;
+			removeModeratorTarget = null;
+			success = t("tags.moderator_removed", "Moderator removed");
+			await openModerators(moderatorTag);
+		} else {
+			error = result.error ?? t("common.error", "Failed to remove moderator");
+		}
+	}
+
 	$effect(() => {
 		void currentPage;
 		void pageSize;
@@ -242,6 +334,7 @@
 					data={tags}
 					selectable={canManageTags}
 					bind:selectedIds
+					urlSync
 				/>
 			</div>
 			<Pagination
@@ -291,12 +384,12 @@
 <Modal bind:open={showModal} title={editingTag ? t("tags.edit", "Edit Tag") : t("tags.create", "Create Tag")}>
 	<div class="space-y-4">
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.name", "Name")}</label>
-			<input type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g. javascript" bind:value={formName} oninput={() => { if (!editingTag) formSlug = slugify(formName); }} />
+			<label for="tag-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.name", "Name")}</label>
+			<input id="tag-name" type="text" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g. javascript" bind:value={formName} oninput={() => { if (!editingTag) formSlug = slugify(formName); }} />
 		</div>
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.slug", "Slug")}</label>
-			<input type="text" class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="javascript" bind:value={formSlug} />
+			<label for="tag-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("tags.slug", "Slug")}</label>
+			<input id="tag-slug" type="text" class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="javascript" bind:value={formSlug} />
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
@@ -319,6 +412,64 @@
 	</div>
 </Modal>
 
+<!-- Tag Moderators Modal -->
+<Modal bind:open={showModeratorsModal} title={t("tags.moderators", "Tag Moderators")} size="lg">
+	{#if moderatorTag}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tags.tag", "Tag")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">#{moderatorTag.name}</p>
+			</div>
+
+			{#if canManageTags}
+				<div class="flex gap-2">
+					<input type="text" bind:value={newModeratorUsername} class="flex-1 rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("tags.moderator_username", "Username")} />
+					<Button onclick={addTagModerator} disabled={addingModerator || !newModeratorUsername.trim()}>
+						{addingModerator ? t("common.adding", "Adding...") : t("common.add", "Add")}
+					</Button>
+				</div>
+			{/if}
+
+			{#if loadingModerators}
+				<TableSkeleton rows={3} columns={2} />
+			{:else if tagModerators.length === 0}
+				<div class="py-8 text-center text-sm" style="color: var(--color-muted)">
+					{t("tags.no_moderators", "No moderators assigned")}
+				</div>
+			{:else}
+				<div class="space-y-2">
+					{#each tagModerators as mod (mod.user_id)}
+						<div class="flex items-center justify-between rounded-lg border p-3" style="border-color: var(--color-border)">
+							<span class="text-sm font-medium" style="color: var(--color-foreground)">{mod.username}</span>
+							{#if canManageTags}
+								<Button variant="ghost" size="sm" onclick={() => { removeModeratorTarget = mod; showRemoveModeratorConfirm = true; }} style="color: var(--color-danger)">
+									<Trash2 class="h-3.5 w-3.5" />
+								</Button>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<Button variant="outline" onclick={() => (showModeratorsModal = false)}>{t("common.close", "Close")}</Button>
+	</div>
+</Modal>
+
+<!-- Remove Tag Moderator Confirm -->
+<Modal bind:open={showRemoveModeratorConfirm} title={t("common.confirmDelete", "Confirm Remove")}>
+	{#if removeModeratorTarget}
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t("tags.remove_moderator_confirm", "Remove")} <strong>{removeModeratorTarget.username}</strong> {t("tags.as_moderator", "as moderator?")}
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showRemoveModeratorConfirm = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={confirmRemoveModerator}>{t("common.remove", "Remove")}</Button>
+	</div>
+</Modal>
+
 <!-- TagActionsCell component -->
 {#snippet TagActionsCell(tag: Tag)}
 	<div class="flex items-center gap-1">
@@ -326,6 +477,9 @@
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
 		{#if canManageTags}
+			<Button variant="ghost" size="sm" onclick={() => openModerators(tag)} style="color: var(--color-primary)">
+				<Shield class="h-3.5 w-3.5" />
+			</Button>
 			<Button variant="ghost" size="sm" onclick={() => openEdit(tag)}>
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>

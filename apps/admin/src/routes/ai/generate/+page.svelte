@@ -264,7 +264,7 @@
 						<div class="mb-3 flex items-center justify-between">
 							<h3 class="text-sm font-semibold">{t('ai.result')}</h3>
 							<button
-								class="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+								class="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 								style="border-color: var(--color-border)"
 								onclick={copyResult}
 							>
@@ -336,7 +336,7 @@
 				<div class="space-y-2 max-h-[600px] overflow-y-auto">
 					{#each history as entry (entry.id)}
 						<button
-							class="w-full rounded-md border p-3 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+							class="w-full rounded-md border p-3 text-left transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 							style="border-color: var(--color-border); background-color: var(--color-background)"
 							onclick={() => loadFromHistory(entry)}
 						>

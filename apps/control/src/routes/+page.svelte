@@ -4,7 +4,6 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n';
-	import type { PageData } from './$types';
 	import { PieChart, BarChart } from 'layerchart';
 	import { RotateCw } from 'lucide-svelte';
 
@@ -21,8 +20,6 @@
 		background: ServiceStatus[];
 		realtime: ServiceStatus[];
 	};
-
-	let { data = {} as PageData } = $props();
 
 	let health = $state<HealthResponse>({
 		infrastructure: [],
@@ -62,31 +59,25 @@
 		totalServices > 0 ? Math.round((healthyCount / totalServices) * 100) : 0
 	);
 
-	const pieData = $derived(() => {
+	const pieData = $derived.by(() => {
 		const counts = { healthy: 0, degraded: 0, down: 0, unknown: 0 };
 		for (const s of allServices) {
 			counts[s.status === 'healthy' ? 'healthy' : s.status === 'degraded' ? 'degraded' : s.status === 'down' ? 'down' : 'unknown']++;
 		}
 		return [
-			{ key: 'healthy', label: t('dashboard.healthy'), value: counts.healthy },
-			{ key: 'degraded', label: t('dashboard.degraded'), value: counts.degraded },
-			{ key: 'down', label: t('dashboard.down'), value: counts.down },
-			{ key: 'unknown', label: t('dashboard.unknown_short'), value: counts.unknown }
+			{ key: 'healthy', label: t('dashboard.healthy', 'Healthy'), value: counts.healthy },
+			{ key: 'degraded', label: t('dashboard.degraded', 'Degraded'), value: counts.degraded },
+			{ key: 'down', label: t('dashboard.down', 'Down'), value: counts.down },
+			{ key: 'unknown', label: t('dashboard.unknown_short', 'Unknown'), value: counts.unknown }
 		].filter((d) => d.value > 0);
 	});
 
-	const barData = $derived(() => {
+	const barData = $derived.by(() => {
 		return allServices
 			.filter((s) => s.latency_ms > 0)
 			.sort((a, b) => b.latency_ms - a.latency_ms)
 			.map((s) => ({ key: s.name, label: s.name, value: s.latency_ms }));
 	});
-
-	if (data.initial) {
-		if (data.initial.infrastructure) {
-			applyOverview(data.initial);
-		}
-	}
 
 	async function refresh() {
 		try {
@@ -101,85 +92,95 @@
 		}
 	}
 
-	let interval: ReturnType<typeof setInterval>;
-	let mounted = $state(false);
-
 	$effect(() => {
-		if (!mounted) return;
-		interval = setInterval(refresh, 30_000);
-		return () => clearInterval(interval);
-	});
-
-	$effect(() => {
-		mounted = true;
+		refresh();
+		const interval = setInterval(() => {
+			if (document.visibilityState === 'visible') {
+				refresh();
+			}
+		}, 30_000);
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') refresh();
+		};
+		document.addEventListener('visibilitychange', onVisible);
 		return () => {
-			mounted = false;
 			clearInterval(interval);
+			document.removeEventListener('visibilitychange', onVisible);
 		};
 	});
 </script>
 
-<PageHeader title={t('dashboard.title')} description={t('dashboard.description')} />
+<PageHeader title={t('dashboard.title', 'Dashboard')} description={t('dashboard.description', 'System health overview')} />
 
 {#if !apiAvailable}
 	<div class="border-destructive bg-destructive/10 text-destructive mb-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm">
-		{t('dashboard.analytics_warning')}
+		{t('dashboard.analytics_warning', 'Unable to load health data.')}
 	</div>
 {/if}
 
 <div class="mb-4 flex items-center justify-between">
-	<p class="text-muted-foreground text-xs font-medium">{t('dashboard.last_refresh').replace('{time}', lastRefresh)}</p>
+	<p class="text-muted-foreground text-xs font-medium">{t('dashboard.last_refresh', 'Last refresh: {time}').replace('{time}', lastRefresh)}</p>
 	<button
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
 		onclick={refresh}
 	>
 		<RotateCw class="h-3 w-3" />
-		{t('common.refresh')}
+		{t('common.refresh', 'Refresh')}
 	</button>
 </div>
 
 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
-	<MetricCard label={t('dashboard.total_services')} value={totalServices} />
-	<MetricCard label={t('dashboard.healthy_services')} value={healthyCount} subtitle="{uptimePercent}%" trend={uptimePercent >= 80 ? 'up' : 'down'} />
-	<MetricCard label={t('dashboard.api_uptime')} value="{uptimePercent}%" subtitle={t('dashboard.units.percent')} trend={uptimePercent >= 90 ? 'up' : 'down'} />
-	<MetricCard label={t('dashboard.last_check')} value={lastRefresh} />
+	<MetricCard label={t('dashboard.total_services', 'Total Services')} value={totalServices} />
+	<MetricCard label={t('dashboard.healthy_services', 'Healthy Services')} value={healthyCount} subtitle="{uptimePercent}%" trend={uptimePercent >= 80 ? 'up' : 'down'} />
+	<MetricCard label={t('dashboard.api_uptime', 'API Uptime')} value="{uptimePercent}%" subtitle={t('dashboard.units.percent', '%')} trend={uptimePercent >= 90 ? 'up' : 'down'} />
+	<MetricCard label={t('dashboard.last_check', 'Last Check')} value={lastRefresh} />
 </div>
 
 <div class="grid gap-4 lg:grid-cols-2 mb-6">
 	<div class="border-border-card bg-background-alt shadow-card rounded-card p-5">
-		<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('dashboard.health_distribution')}</h3>
-		{#if pieData().length > 0}
+		<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('dashboard.health_distribution', 'Health Distribution')}</h3>
+		{#if pieData.length > 0}
 			<div class="h-[240px]">
 				<PieChart
-					data={pieData()}
+					data={pieData}
 					key="key"
 					label="label"
 					value="value"
 					innerRadius={50}
 					outerRadius={90}
 					cornerRadius={4}
+					cRange={[
+						'var(--color-emerald-500)',
+						'var(--color-amber-500)',
+						'var(--color-red-500)',
+						'var(--color-muted-foreground)'
+					]}
 					legend
 				/>
 			</div>
 		{:else}
-			<p class="text-muted-foreground text-sm py-8 text-center">{t('dashboard.no_services')}</p>
+			<p class="text-muted-foreground text-sm py-8 text-center">{t('dashboard.no_services', 'No services reported.')}</p>
 		{/if}
 	</div>
 
 	<div class="border-border-card bg-background-alt shadow-card rounded-card p-5">
-		<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('dashboard.latency_chart')}</h3>
-		{#if barData().length > 0}
-			<div class="h-[240px]">
-				<BarChart
-					data={barData()}
-					x="label"
-					y="value"
-					orientation="horizontal"
-					grid={false}
-				/>
-			</div>
+		<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('dashboard.latency_chart', 'Latency Chart')}</h3>
+		{#if barData.length > 0}
+			{#key barData.length}
+				<div class="h-[240px]">
+					<BarChart
+						data={barData}
+						x="value"
+						y="label"
+						orientation="horizontal"
+						grid={false}
+						xPadding={[0.2, 0.2]}
+						cRange={['var(--color-accent-foreground)']}
+					/>
+				</div>
+			{/key}
 		{:else}
-			<p class="text-muted-foreground text-sm py-8 text-center">{t('dashboard.no_services')}</p>
+			<p class="text-muted-foreground text-sm py-8 text-center">{t('dashboard.no_services', 'No services reported.')}</p>
 		{/if}
 	</div>
 </div>
@@ -196,18 +197,18 @@
 				{#each items as item}
 					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-2">
-							<span class="text-foreground text-sm font-medium" title={item.message ? `${t('dashboard.latency_label').replace('{ms}', String(item.latency_ms))} - ${item.message}` : ''}>{item.name}</span>
+							<span class="text-foreground text-sm font-medium" title={item.message ? `${t('dashboard.latency_label', '{ms} ms latency').replace('{ms}', String(item.latency_ms))} - ${item.message}` : ''}>{item.name}</span>
 						</div>
 						<div class="flex items-center gap-3">
 							{#if item.latency_ms > 0}
-								<span class="text-muted-foreground text-xs font-medium">{t('dashboard.latency_value').replace('{ms}', String(item.latency_ms))}</span>
+								<span class="text-muted-foreground text-xs font-medium">{t('dashboard.latency_value', '{ms} ms').replace('{ms}', String(item.latency_ms))}</span>
 							{/if}
 							<StatusBadge status={statusToHealth(item.status)} />
 						</div>
 					</div>
 				{/each}
 				{#if items.length === 0}
-					<p class="text-muted-foreground text-xs text-center py-2">{t('dashboard.no_services')}</p>
+					<p class="text-muted-foreground text-xs text-center py-2">{t('dashboard.no_services', 'No services reported.')}</p>
 				{/if}
 			</div>
 		</div>

@@ -86,7 +86,7 @@
 			label: t("moderation.source", "Source"),
 			sortable: true,
 			render: (v: string) => {
-				const colors = v === "ai_flag" ? "bg-purple-500/15 text-purple-700 dark:text-purple-400" : "bg-blue-500/15 text-blue-700 dark:text-blue-400";
+				const colors = v === "ai_flag" ? "bg-purple-500/15 text-purple-700 dark:text-purple-400" : "bg-blue-500/15 text-info dark:text-blue-400";
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v === "ai_flag" ? "AI Flag" : "User Report"}</span>`;
 			}
 		},
@@ -105,7 +105,7 @@
 			label: t("common.status", "Status"),
 			sortable: true,
 			render: (v: string) => {
-				const colors = v === "pending" ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : v === "resolved" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : v === "dismissed" ? "bg-slate-500/15 text-slate-700 dark:text-slate-400" : "bg-blue-500/15 text-blue-700 dark:text-blue-400";
+				const colors = v === "pending" ? "bg-warning/15 text-warning dark:text-warning" : v === "resolved" ? "bg-success/15 text-success dark:text-success" : v === "dismissed" ? "bg-muted/15 text-muted dark:text-muted" : "bg-blue-500/15 text-info dark:text-blue-400";
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
 			}
 		},

@@ -2,6 +2,7 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	type NotificationType = {
 		key: string;
@@ -17,6 +18,28 @@
 	let editingType = $state<NotificationType | null>(null);
 	let newType = $state({ key: '', label: '', description: '' });
 	let saving = $state(false);
+	let showDeleteConfirm = $state(false);
+	let deleteTarget = $state<NotificationType | null>(null);
+
+	const canManageNotificationTypes = $derived(hasPermission('notification_types.manage'));
+
+	function confirmDelete(ntype: NotificationType) {
+		deleteTarget = ntype;
+		showDeleteConfirm = true;
+	}
+
+	async function executeDelete() {
+		if (!deleteTarget) return;
+		error = '';
+		try {
+			await api(`/admin/notification-types/${deleteTarget.key}`, { method: 'DELETE' });
+			types = types.filter((t) => t.key !== deleteTarget!.key);
+			showDeleteConfirm = false;
+			deleteTarget = null;
+		} catch {
+			error = t('common.error');
+		}
+	}
 
 	$effect(() => {
 		load();
@@ -74,16 +97,6 @@
 			saving = false;
 		}
 	}
-
-	async function deleteType(key: string) {
-		if (!confirm(t('notification_types.confirm_delete'))) return;
-		try {
-			await api(`/admin/notification-types/${key}`, { method: 'DELETE' });
-			types = types.filter((t) => t.key !== key);
-		} catch {
-			error = t('common.error');
-		}
-	}
 </script>
 
 <svelte:head>
@@ -95,13 +108,15 @@
 		<h1 class="text-2xl font-bold tracking-tight">{t('notification_types.title')}</h1>
 		<p class="text-sm" style="color: var(--color-muted)">{t('notification_types.description')}</p>
 	</div>
-	<button
-		class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
-		style="background-color: var(--color-primary)"
-		onclick={openCreate}
-	>
-		{t('notification_types.create')}
-	</button>
+	{#if canManageNotificationTypes}
+		<button
+			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
+			style="background-color: var(--color-primary)"
+			onclick={openCreate}
+		>
+			{t('notification_types.create')}
+		</button>
+	{/if}
 </div>
 
 {#if error}
@@ -133,30 +148,32 @@
 						<td class="px-4 py-3">
 							<div class="flex gap-1">
 								{#if ntype.default_channels?.email}
-									<span class="rounded px-1.5 py-0.5 text-xs bg-blue-500/15 text-blue-700 dark:text-blue-400">{t('notification-types.email')}</span>
+									<span class="rounded px-1.5 py-0.5 text-xs bg-blue-500/15 text-info dark:text-blue-400">{t('notification-types.email')}</span>
 								{/if}
 								{#if ntype.default_channels?.push}
 									<span class="rounded px-1.5 py-0.5 text-xs bg-purple-500/15 text-purple-700 dark:text-purple-400">{t('notification-types.push')}</span>
 								{/if}
 								{#if ntype.default_channels?.in_app}
-									<span class="rounded px-1.5 py-0.5 text-xs bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">{t('notification-types.in_app')}</span>
+									<span class="rounded px-1.5 py-0.5 text-xs bg-success/15 text-success dark:text-success">{t('notification-types.in_app')}</span>
 								{/if}
 							</div>
 						</td>
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-2">
-								<button
-									class="text-xs text-blue-500 hover:text-blue-700"
-									onclick={() => openEdit(ntype)}
-								>
-									{t('common.edit')}
-								</button>
-								<button
-									class="text-xs text-red-500 hover:text-red-700"
-									onclick={() => deleteType(ntype.key)}
-								>
-									{t('common.delete')}
-								</button>
+								{#if canManageNotificationTypes}
+									<button
+										class="text-xs text-blue-500 hover:text-info"
+										onclick={() => openEdit(ntype)}
+									>
+										{t('common.edit')}
+									</button>
+									<button
+										class="text-xs text-danger hover:text-danger"
+										onclick={() => confirmDelete(ntype)}
+									>
+										{t('common.delete')}
+									</button>
+								{/if}
 							</div>
 						</td>
 					</tr>
@@ -226,5 +243,11 @@
 				</button>
 			</div>
 		</div>
+	</Modal>
+
+	<Modal bind:open={showDeleteConfirm} title={t('common.confirmDelete')} confirmLabel={t('common.delete')} onConfirm={executeDelete}>
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('notification_types.confirm_delete')} <strong>{deleteTarget?.label}</strong>?
+		</p>
 	</Modal>
 {/if}

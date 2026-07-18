@@ -13,9 +13,9 @@
 		Link, Languages, Accessibility,
 		Download, Trash2, FileInput, AlertTriangle,
 		Star, MessageCircle, Layout, Image,
-		Type, ListOrdered, GitCompare,
+		Type, ListOrdered, GitCompare, Palette,
 		Clock, UserPlus, ChevronDown, ChevronRight,
-		Briefcase, Eye, X, Menu
+		Briefcase, Eye, X, Menu, ArrowRightLeft
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 
@@ -144,6 +144,7 @@
 			label: "Customization",
 			items: [
 				{ path: "/page-builder", label: "Page Builder", icon: Layout, permission: "admin.settings" },
+				{ path: "/page-builder/themes", label: "Page Themes", icon: Palette, permission: "admin.settings" },
 				{ path: "/page-templates", label: "Page Templates", icon: FileText, permission: "admin.settings" },
 				{ path: "/custom-fields", label: "Custom Fields", icon: Type, permission: "admin.settings" },
 				{ path: "/comparisons", label: "Comparisons", icon: GitCompare, permission: "admin.settings" },
@@ -158,6 +159,9 @@
 				{ path: "/i18n", label: "Translations", icon: Languages, permission: "admin.settings" },
 				{ path: "/notification-types", label: "Notifications", icon: Bell, permission: "admin.settings" },
 				{ path: "/jsonld-templates", label: "JSON-LD Templates", icon: FileCode, permission: "admin.settings" },
+				{ path: "/menus", label: "Menus", icon: Menu, permission: "admin.settings" },
+				{ path: "/email-templates", label: "Email Templates", icon: Mail, permission: "admin.settings" },
+				{ path: "/redirects", label: "Redirects", icon: ArrowRightLeft, permission: "admin.settings" },
 				{ path: "/data-exports", label: "Data Exports", icon: Download, permission: "admin.settings" },
 				{ path: "/deletions", label: "Account Deletions", icon: Trash2, permission: "admin.moderation.view" },
 				{ path: "/gdpr", label: "GDPR Compliance", icon: Accessibility, permission: "admin.moderation.view" }

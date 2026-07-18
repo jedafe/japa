@@ -4,18 +4,15 @@
 	import { Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n';
+	import { escapeHtml } from '$lib/utils';
 	import type { AuditLogEntry, PaginatedResponse, DataTableColumn } from '$lib/api/types';
-	import type { PageData } from './$types';
 
-	let { data = {} as PageData } = $props();
-
-	let entries = $state<AuditLogEntry[]>(data.initial?.entries ?? []);
+	let entries = $state<AuditLogEntry[]>([]);
 	let page = $state(0);
 	let pageSize = $state(10);
-	let totalRows = $state((data.initial?.entries?.length ?? 0) as number);
-	let loading = $state(false);
-	// svelte-ignore state_referenced_locally
-	let apiAvailable = $state(data.initial !== null);
+	let totalRows = $state(0);
+	let loading = $state(true);
+	let apiAvailable = $state(true);
 
 	let sortKey = $state('timestamp');
 	let sortDirection = $state<'asc' | 'desc'>('desc');
@@ -56,7 +53,7 @@
 			label: t('audit.timestamp', 'Timestamp'),
 			sortable: true,
 			render: (val: unknown) =>
-				`<span class="font-mono text-xs">${formatTimestamp(val)}</span>`
+				`<span class="font-mono text-xs">${escapeHtml(formatTimestamp(val))}</span>`
 		},
 		{
 			key: 'actor',
@@ -64,8 +61,8 @@
 			render: (val: unknown) => {
 				const actor = val as AuditLogEntry['actor'];
 				if (!actor) return `<span class="text-muted-foreground">—</span>`;
-				return `<span class="font-medium">${actor.username}</span>
-					<span class="text-muted-foreground ml-1 text-xs">${actor.id.slice(0, 8)}...</span>`;
+				return `<span class="font-medium">${escapeHtml(actor.username)}</span>
+					<span class="text-muted-foreground ml-1 text-xs">${escapeHtml(actor.id?.slice(0, 8))}...</span>`;
 			}
 		},
 		{
@@ -73,7 +70,7 @@
 			label: t('audit.action', 'Action'),
 			sortable: true,
 			render: (val: unknown) => {
-				const action = String(val);
+				const action = escapeHtml(val);
 				const color =
 					action === 'delete'
 						? 'bg-destructive/10 text-destructive'
@@ -87,13 +84,16 @@
 			key: 'entity_type',
 			label: t('audit.target_type', 'Target Type'),
 			render: (val: unknown) =>
-				`<span class="text-muted-foreground text-xs">${val ? String(val) : '—'}</span>`
+				`<span class="text-muted-foreground text-xs">${val ? escapeHtml(val) : '—'}</span>`
 		},
 		{
 			key: 'entity_id',
 			label: t('audit.target_id', 'Target ID'),
-			render: (val: unknown) =>
-				`<span class="font-mono text-xs">${val ? String(val).slice(0, 12) : '—'}${val && String(val).length > 12 ? '...' : ''}</span>`
+			render: (val: unknown) => {
+				const s = val ? String(val) : '';
+				const truncated = s.length > 12 ? s.slice(0, 12) + '...' : s;
+				return `<span class="font-mono text-xs">${escapeHtml(truncated || '—')}</span>`;
+			}
 		}
 	];
 
@@ -145,6 +145,8 @@
 		load();
 	}
 
+	load();
+
 	function handleFilterKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter') applyFilters();
 	}
@@ -185,6 +187,7 @@
 		class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		bind:value={filterActor}
 		onkeydown={handleFilterKeydown}
+		aria-label={t('audit.actor_placeholder', 'Filter by actor...')}
 	/>
 	<Select.Root type="single" bind:value={filterAction} items={actionTypes}>
 		<Select.Trigger
@@ -218,16 +221,19 @@
 		class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		bind:value={filterTarget}
 		onkeydown={handleFilterKeydown}
+		aria-label={t('audit.target_placeholder', 'Filter by target type...')}
 	/>
 	<input
 		type="date"
 		class="border-border-input bg-background text-foreground rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		bind:value={filterFrom}
+		aria-label="Filter from date"
 	/>
 	<input
 		type="date"
 		class="border-border-input bg-background text-foreground rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 		bind:value={filterTo}
+		aria-label="Filter to date"
 	/>
 </div>
 <div class="mb-4">

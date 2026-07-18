@@ -10,6 +10,7 @@
 	import { Webhook, Plus, RefreshCw, Send, Trash2, Pencil, Play } from "lucide-svelte";
 	import { webhooksAdminApiExtended } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type WebhookEndpoint = {
 		id: string;
@@ -25,6 +26,8 @@
 	let loading = $state(true);
 	let error = $state("");
 	let success = $state("");
+
+	const canManageWebhooks = $derived(hasPermission("webhooks.manage"));
 
 	// Modal state
 	let showModal = $state(false);
@@ -71,12 +74,7 @@
 			render: (v: string) => v ? new Date(v).toLocaleDateString() : t("webhooks.never", "Never")
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			render: (_: any, row: WebhookEndpoint) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__testWebhook('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50">${t("webhooks.test", "Test")}</button>
-					<button onclick="window.__editWebhook('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.edit", "Edit")}</button>
-					<button onclick="window.__deleteWebhook('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete", "Delete")}</button>
-				</div>`
+			component: WebhookActionsCell
 		}
 	];
 
@@ -196,7 +194,7 @@
 	title={t("webhooks.title", "Webhooks")}
 	description={t("webhooks.description", "Manage webhook endpoints and delivery logs")}
 	actions={[
-		{ label: t("webhooks.add", "Add Endpoint"), icon: Plus, onclick: openCreate },
+		...(canManageWebhooks ? [{ label: t("webhooks.add", "Add Endpoint"), icon: Plus, onclick: openCreate }] : []),
 		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadEndpoints }
 	]}
 />
@@ -226,12 +224,12 @@
 <Modal bind:open={showModal} title={modalMode === "create" ? t("webhooks.add", "Add Endpoint") : t("webhooks.edit", "Edit Endpoint")}>
 	<div class="space-y-4">
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.name", "Name")}</label>
-			<input type="text" bind:value={formName} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g., Slack Notifications" />
+			<label for="wh-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.name", "Name")}</label>
+			<input id="wh-name" type="text" bind:value={formName} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g., Slack Notifications" />
 		</div>
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.url", "URL")}</label>
-			<input type="url" bind:value={formUrl} class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="https://example.com/webhook" />
+			<label for="wh-url" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.url", "URL")}</label>
+			<input id="wh-url" type="url" bind:value={formUrl} class="mt-1 w-full rounded-lg border p-2 text-sm font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="https://example.com/webhook" />
 		</div>
 		<div>
 			<span class="block text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.events", "Events")}</span>
@@ -244,8 +242,8 @@
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
-			<input type="checkbox" bind:checked={formActive} class="h-4 w-4 rounded" style="accent-color: var(--color-primary)" />
-			<label class="text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.active", "Active")}</label>
+			<input id="wh-active" type="checkbox" bind:checked={formActive} class="h-4 w-4 rounded" style="accent-color: var(--color-primary)" />
+			<label for="wh-active" class="text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.active", "Active")}</label>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
@@ -282,3 +280,20 @@
 		<Button variant="destructive" onclick={confirmDelete}>{t("common.delete", "Delete")}</Button>
 	</div>
 </Modal>
+
+<!-- WebhookActionsCell component -->
+{#snippet WebhookActionsCell(row: WebhookEndpoint)}
+	<div class="flex items-center gap-1">
+		{#if canManageWebhooks}
+			<Button variant="ghost" size="sm" onclick={() => openTest(row)} style="color: var(--color-primary)" title={t("webhooks.test", "Test")}>
+				<Play class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => openDelete(row)} style="color: var(--color-danger)" title={t("common.delete")}>
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { page } from "$app/state";
-	import { goto } from "$app/navigation";
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { Tabs } from "$lib/components/ui/tabs";
@@ -10,7 +10,7 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
-	import { Mail, Plus, Send, Users, BarChart3, Trash2 } from "lucide-svelte";
+	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil } from "lucide-svelte";
 	import { api } from "$lib/api";
 
 	type Subscriber = {
@@ -46,6 +46,9 @@
 
 	let { data } = $props();
 
+	// RBAC: all newsletter mutations require the newsletter.admin node
+	const canManageNewsletter = $derived(hasPermission('newsletter.admin'));
+
 	let activeTab = $state("subscribers");
 	let subscribers = $state<Subscriber[]>([]);
 	let campaigns = $state<Campaign[]>([]);
@@ -62,6 +65,13 @@
 	let showDeleteModal = $state(false);
 	let deleteTarget = $state<Subscriber | null>(null);
 	let deleting = $state(false);
+
+	// Subscriber view/edit + campaign view modals
+	let showSubscriberModal = $state(false);
+	let subscriberTarget = $state<Subscriber | null>(null);
+	let editSubscriberStatus = $state("");
+	let showCampaignModal = $state(false);
+	let campaignTarget = $state<Campaign | null>(null);
 
 	const tabs = [
 		{ value: "subscribers", label: "Subscribers", icon: Users, count: stats.subscribers },
@@ -80,8 +90,8 @@
 						<span class="text-sm font-medium text-primary-700">${(row.email || '?')[0].toUpperCase()}</span>
 					</div>
 					<div>
-						<p class="font-medium text-gray-900">${row.email}</p>
-						${row.name ? `<p class="text-sm text-gray-500">${row.name}</p>` : ''}
+						<p class="font-medium text-foreground">${row.email}</p>
+						${row.name ? `<p class="text-sm text-muted">${row.name}</p>` : ''}
 					</div>
 				</div>
 			`
@@ -92,7 +102,7 @@
 			sortable: true,
 			render: (value: string) => {
 				const variant = value === "active" ? "success" : value === "bounced" ? "destructive" : "secondary";
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${variant === "success" ? "bg-success-100 text-success-800 border-success-200" : variant === "destructive" ? "bg-danger-100 text-danger-800 border-danger-200" : "bg-gray-100 text-gray-800 border-gray-200"}">${value || "active"}</span>`;
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${variant === "success" ? "bg-success/15 text-success border-success" : variant === "destructive" ? "bg-danger/15 text-danger border-danger" : "bg-surface text-foreground border"}">${value || "active"}</span>`;
 			}
 		},
 		{
@@ -105,12 +115,7 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__newsletterEditSubscriber('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.edit")}</button>
-					<button onclick="window.__newsletterDeleteSubscriber('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.remove")}</button>
-				</div>
-			`
+			component: SubscriberActionsCell
 		}
 	];
 
@@ -121,8 +126,8 @@
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
-					<p class="font-medium text-gray-900">${row.subject || row.name || "No subject"}</p>
-					${row.preview ? `<p class="text-sm text-gray-500">${row.preview}</p>` : ""}
+					<p class="font-medium text-foreground">${row.subject || row.name || "No subject"}</p>
+					${row.preview ? `<p class="text-sm text-muted">${row.preview}</p>` : ""}
 				</div>
 			`
 		},
@@ -133,10 +138,10 @@
 			render: (value: string) => {
 				const variant = value === "sent" ? "success" : value === "scheduled" ? "info" : value === "failed" ? "destructive" : "secondary";
 				const classes: Record<string, string> = {
-					success: "bg-success-100 text-success-800 border-success-200",
+					success: "bg-success/15 text-success border-success",
 					info: "bg-info-100 text-info-800 border-info-200",
-					destructive: "bg-danger-100 text-danger-800 border-danger-200",
-					secondary: "bg-gray-100 text-gray-800 border-gray-200"
+					destructive: "bg-danger/15 text-danger border-danger",
+					secondary: "bg-surface text-foreground border"
 				};
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[variant]}">${value || "draft"}</span>`;
 			}
@@ -147,7 +152,7 @@
 			sortable: true,
 			render: (value: string, row: any) => {
 				const date = value || row.sent_at;
-				return date ? new Date(date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : '<span class="text-gray-400">—</span>';
+				return date ? new Date(date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : '<span class="text-muted">—</span>';
 			}
 		},
 		{
@@ -163,12 +168,7 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			render: (_: any, row: any) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__newsletterViewCampaign('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.view")}</button>
-					${row.status === "draft" ? `<button onclick="window.__newsletterSendCampaign('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50">${t("common.send")}</button>` : ""}
-				</div>
-			`
+			component: CampaignActionsCell
 		}
 	];
 
@@ -240,9 +240,29 @@
 		}
 	}
 
-	function confirmDeleteSubscriber(subscriber: Subscriber) {
-		deleteTarget = subscriber;
-		showDeleteModal = true;
+	function openEditSubscriber(sub: Subscriber) {
+		subscriberTarget = sub;
+		editSubscriberStatus = sub.status;
+		showSubscriberModal = true;
+	}
+
+	async function saveSubscriber() {
+		if (!subscriberTarget) return;
+		deleting = true;
+		try {
+			await api(`/admin/newsletter/subscribers/${subscriberTarget.id}`, { method: "PATCH", body: { status: editSubscriberStatus } });
+			showSubscriberModal = false;
+			loadSubscribers();
+		} catch {
+			// API not available
+		} finally {
+			deleting = false;
+		}
+	}
+
+	function openViewCampaign(c: Campaign) {
+		campaignTarget = c;
+		showCampaignModal = true;
 	}
 
 	async function deleteSubscriber() {
@@ -261,22 +281,10 @@
 		}
 	}
 
-	// Expose window functions for DataTable inline actions
-	$effect(() => {
-		(window as any).__newsletterEditSubscriber = (id: string) => {
-			goto(`/newsletter/subscribers/${id}`);
-		};
-		(window as any).__newsletterDeleteSubscriber = (id: string) => {
-			const sub = subscribers.find((s) => s.id === id);
-			if (sub) confirmDeleteSubscriber(sub);
-		};
-		(window as any).__newsletterViewCampaign = (id: string) => {
-			goto(`/newsletter/campaigns/${id}`);
-		};
-		(window as any).__newsletterSendCampaign = (id: string) => {
-			sendCampaign(id);
-		};
-	});
+	function confirmDeleteSubscriber(subscriber: Subscriber) {
+		deleteTarget = subscriber;
+		showDeleteModal = true;
+	}
 
 	let initialized = false;
 	$effect(() => {
@@ -294,10 +302,10 @@
 <PageHeader
 	title="Newsletter"
 	description="Manage email subscribers and campaigns"
-	actions={[
+	actions={canManageNewsletter ? [
 		{ label: "New Campaign", icon: Plus, onclick: () => (showCreateModal = true) },
 		{ label: "Import Subscribers", icon: Users, variant: "outline" }
-	]}
+	] : []}
 />
 
 <div class="space-y-6">
@@ -324,13 +332,13 @@
 		<Card>
 			<CardContent class="p-0">
 				{#if loading}
-					<p class="py-8 text-center text-sm text-gray-500">{t('newsletter.loading_subscribers')}</p>
+					<p class="py-8 text-center text-sm text-muted">{t('newsletter.loading_subscribers')}</p>
 				{:else}
 					<DataTable
 						columns={subscriberColumns}
 						data={subscribers}
 						pageSize={20}
-						selectable={true}
+						selectable={canManageNewsletter}
 						emptyMessage="No subscribers yet"
 					/>
 				{/if}
@@ -342,7 +350,7 @@
 		<Card>
 			<CardContent class="p-0">
 				{#if loading}
-					<p class="py-8 text-center text-sm text-gray-500">{t('newsletter.loading_campaigns')}</p>
+					<p class="py-8 text-center text-sm text-muted">{t('newsletter.loading_campaigns')}</p>
 				{:else}
 					<DataTable
 						columns={campaignColumns}
@@ -359,31 +367,31 @@
 		<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
 			<Card>
 				<CardContent class="p-6">
-					<p class="text-sm font-medium text-gray-500">{t('newsletter.total_subscribers')}</p>
-					<p class="text-2xl font-bold text-gray-900">{stats.subscribers}</p>
+					<p class="text-sm font-medium text-muted">{t('newsletter.total_subscribers')}</p>
+					<p class="text-2xl font-bold text-foreground">{stats.subscribers}</p>
 				</CardContent>
 			</Card>
 			<Card>
 				<CardContent class="p-6">
-					<p class="text-sm font-medium text-gray-500">{t('newsletter.avg_open_rate')}</p>
-					<p class="text-2xl font-bold text-gray-900">{stats.avgOpenRate}%</p>
+					<p class="text-sm font-medium text-muted">{t('newsletter.avg_open_rate')}</p>
+					<p class="text-2xl font-bold text-foreground">{stats.avgOpenRate}%</p>
 				</CardContent>
 			</Card>
 			<Card>
 				<CardContent class="p-6">
-					<p class="text-sm font-medium text-gray-500">{t('newsletter.avg_click_rate')}</p>
-					<p class="text-2xl font-bold text-gray-900">{stats.avgClickRate}%</p>
+					<p class="text-sm font-medium text-muted">{t('newsletter.avg_click_rate')}</p>
+					<p class="text-2xl font-bold text-foreground">{stats.avgClickRate}%</p>
 				</CardContent>
 			</Card>
 		</div>
 
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold text-gray-900">{t('newsletter.campaign_performance')}</h3>
+				<h3 class="text-lg font-semibold text-foreground">{t('newsletter.campaign_performance')}</h3>
 			</CardHeader>
 			<CardContent>
-				<div class="flex h-64 items-center justify-center rounded-lg bg-gray-50">
-					<p class="text-gray-500">{t('newsletter.analytics_chart_placeholder_integrate_wi')}</p>
+				<div class="flex h-64 items-center justify-center rounded-lg bg-surface">
+					<p class="text-muted">{t('newsletter.analytics_chart_placeholder_integrate_wi')}</p>
 				</div>
 			</CardContent>
 		</Card>
@@ -394,30 +402,30 @@
 <Modal bind:open={showCreateModal} title="Create Campaign" description="Compose a new newsletter campaign" size="lg">
 	<div class="space-y-4">
 		<div>
-			<label for="campaign-name" class="mb-1 block text-sm font-medium text-gray-900">{t('newsletter.campaign_name')}</label>
+			<label for="campaign-name" class="mb-1 block text-sm font-medium text-foreground">{t('newsletter.campaign_name')}</label>
 			<input
 				id="campaign-name"
 				type="text"
-				class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="e.g. Weekly Digest #42"
 				bind:value={newCampaign.name}
 			/>
 		</div>
 		<div>
-			<label for="campaign-subject" class="mb-1 block text-sm font-medium text-gray-900">{t('newsletter.subject_line')}</label>
+			<label for="campaign-subject" class="mb-1 block text-sm font-medium text-foreground">{t('newsletter.subject_line')}</label>
 			<input
 				id="campaign-subject"
 				type="text"
-				class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				placeholder="What subscribers will see in their inbox"
 				bind:value={newCampaign.subject}
 			/>
 		</div>
 		<div>
-			<label for="campaign-html" class="mb-1 block text-sm font-medium text-gray-900">{t('newsletter.content_html')}</label>
+			<label for="campaign-html" class="mb-1 block text-sm font-medium text-foreground">{t('newsletter.content_html')}</label>
 			<textarea
 				id="campaign-html"
-				class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				rows="8"
 				placeholder="<h1>{t('newsletter.hello')}</h1><p>{t('newsletter.your_newsletter_content_here')}</p>"
 				bind:value={newCampaign.html}
@@ -439,8 +447,8 @@
 <!-- Delete Subscriber Confirmation Modal -->
 <Modal bind:open={showDeleteModal} title="Remove Subscriber" description="This subscriber will be removed from your mailing list." size="sm">
 	{#if deleteTarget}
-		<div class="rounded-lg bg-gray-50 p-4">
-			<p class="text-sm text-gray-700">
+		<div class="rounded-lg bg-surface p-4">
+			<p class="text-sm text-foreground-alt">
 				Are you sure you want to remove <strong>{deleteTarget.email}</strong>?
 			</p>
 		</div>
@@ -456,3 +464,91 @@
 		</Button>
 	</div>
 </Modal>
+
+<!-- Edit Subscriber Modal -->
+<Modal bind:open={showSubscriberModal} title="Edit Subscriber" size="sm">
+	{#if subscriberTarget}
+		<div class="space-y-4">
+			<div>
+				<p class="text-sm" style="color: var(--color-muted)">{subscriberTarget.email}</p>
+			</div>
+			<div>
+				<label for="sub-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.status', 'Status')}</label>
+				<select id="sub-status" bind:value={editSubscriberStatus} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">
+					<option value="active">Active</option>
+					<option value="unsubscribed">Unsubscribed</option>
+					<option value="bounced">Bounced</option>
+				</select>
+			</div>
+		</div>
+		<div class="mt-4 flex justify-end gap-2">
+			<Button variant="ghost" onclick={() => (showSubscriberModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button onclick={saveSubscriber} disabled={deleting}>{t('common.save', 'Save')}</Button>
+		</div>
+	{/if}
+</Modal>
+
+<!-- View Campaign Modal -->
+<Modal bind:open={showCampaignModal} title="Campaign Details" size="lg">
+	{#if campaignTarget}
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('newsletter.subject_line', 'Subject')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{campaignTarget.subject || campaignTarget.name}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.status', 'Status')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{campaignTarget.status}</p>
+				</div>
+			</div>
+			{#if campaignTarget.preview}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('newsletter.content_html', 'Preview')}</p>
+					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{campaignTarget.preview}</p>
+				</div>
+			{/if}
+			{#if campaignTarget.recipient_count != null}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('newsletter.recipients', 'Recipients')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{campaignTarget.recipient_count.toLocaleString()}</p>
+				</div>
+			{/if}
+		</div>
+		<div class="mt-6 flex justify-end gap-2">
+			{#if campaignTarget.status === 'draft' && canManageNewsletter}
+				{@const ct = campaignTarget}
+				<Button onclick={() => { showCampaignModal = false; sendCampaign(ct.id); }}>
+					<Send class="mr-1 h-3.5 w-3.5" /> {t('common.send', 'Send')}
+				</Button>
+			{/if}
+			<Button variant="outline" onclick={() => (showCampaignModal = false)}>{t('common.close', 'Close')}</Button>
+		</div>
+	{/if}
+</Modal>
+
+{#snippet SubscriberActionsCell(row: Subscriber)}
+	<div class="flex items-center gap-1">
+		{#if canManageNewsletter}
+		<Button variant="ghost" size="sm" onclick={() => openEditSubscriber(row)}>
+			<Pencil class="h-3.5 w-3.5" />
+		</Button>
+		<Button variant="ghost" size="sm" onclick={() => confirmDeleteSubscriber(row)} style="color: var(--color-danger)">
+			<Trash2 class="h-3.5 w-3.5" />
+		</Button>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet CampaignActionsCell(row: Campaign)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openViewCampaign(row)}>
+			<Eye class="h-3.5 w-3.5" />
+		</Button>
+		{#if row.status === 'draft' && canManageNewsletter}
+			<Button variant="ghost" size="sm" onclick={() => sendCampaign(row.id)} style="color: var(--color-primary)">
+				<Send class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

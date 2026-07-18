@@ -71,7 +71,7 @@
 			key: 'event_type',
 			label: 'Event Type',
 			sortable: true,
-			render: (value: string) => `<span class="font-mono text-xs font-medium text-gray-900">${value}</span>`
+			render: (value: string) => `<span class="font-mono text-xs font-medium text-foreground">${value}</span>`
 		},
 		{
 			key: 'points_value',
@@ -82,7 +82,7 @@
 		{
 			key: 'description',
 			label: 'Description',
-			render: (value: string) => `<span class="text-sm text-gray-500">${value || '—'}</span>`
+			render: (value: string) => `<span class="text-sm text-muted">${value || '—'}</span>`
 		},
 		{
 			key: 'is_active',
@@ -90,7 +90,7 @@
 			render: (_: any, row: any) => {
 				const variant = row.is_active ? 'success' : 'secondary';
 				const label = row.is_active ? 'Active' : 'Inactive';
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_active ? 'bg-success-100 text-success-800 border-success-200' : 'bg-gray-100 text-gray-800 border-gray-200'}">${label}</span>`;
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_active ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${label}</span>`;
 			}
 		}
 	];
@@ -202,12 +202,12 @@
 
 <div class="space-y-6">
 	{#if errorMessage}
-		<div class="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+		<div class="rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">
 			{errorMessage}
 		</div>
 	{/if}
 	{#if successMessage}
-		<div class="rounded-lg border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-700">
+		<div class="rounded-lg border border-success bg-success-50 px-4 py-3 text-sm text-success-700">
 			{successMessage}
 		</div>
 	{/if}
@@ -218,8 +218,8 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-gray-500">{t('app.wallet.points_to_credit_ratio')}</p>
-						<p class="text-2xl font-bold text-gray-900">{settings.points_to_credit_ratio}</p>
+						<p class="text-sm font-medium text-muted">{t('app.wallet.points_to_credit_ratio')}</p>
+						<p class="text-2xl font-bold text-foreground">{settings.points_to_credit_ratio}</p>
 					</div>
 					<div class="rounded-lg bg-primary-100 p-3">
 						<DollarSign class="h-6 w-6 text-primary-600" />
@@ -231,10 +231,10 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-gray-500">{t('app.wallet.daily_earning_cap')}</p>
-						<p class="text-2xl font-bold text-gray-900">{settings.daily_earning_cap}</p>
+						<p class="text-sm font-medium text-muted">{t('app.wallet.daily_earning_cap')}</p>
+						<p class="text-2xl font-bold text-foreground">{settings.daily_earning_cap}</p>
 					</div>
-					<div class="rounded-lg bg-warning-100 p-3">
+					<div class="rounded-lg bg-warning/15 p-3">
 						<ArrowDownLeft class="h-6 w-6 text-warning-600" />
 					</div>
 				</div>
@@ -244,13 +244,13 @@
 			<CardContent class="p-6">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="text-sm font-medium text-gray-500">{t('app.wallet.earning_status')}</p>
-						<p class="text-2xl font-bold {settings.enable_earning ? 'text-success-600' : 'text-gray-400'}">
+						<p class="text-sm font-medium text-muted">{t('app.wallet.earning_status')}</p>
+						<p class="text-2xl font-bold {settings.enable_earning ? 'text-success-600' : 'text-muted'}">
 							{settings.enable_earning ? 'Enabled' : 'Disabled'}
 						</p>
 					</div>
-					<div class="rounded-lg {settings.enable_earning ? 'bg-success-100' : 'bg-gray-100'} p-3">
-						<Wallet class="h-6 w-6 {settings.enable_earning ? 'text-success-600' : 'text-gray-400'}" />
+					<div class="rounded-lg {settings.enable_earning ? 'bg-success/15' : 'bg-surface'} p-3">
+						<Wallet class="h-6 w-6 {settings.enable_earning ? 'text-success-600' : 'text-muted'}" />
 					</div>
 				</div>
 			</CardContent>
@@ -263,7 +263,7 @@
 		<Card>
 			<CardContent class="p-6">
 				<div class="mb-4 flex items-center justify-between">
-					<h3 class="text-lg font-semibold text-gray-900">{t('app.wallet.activity_point_rules')}</h3>
+					<h3 class="text-lg font-semibold text-foreground">{t('app.wallet.activity_point_rules')}</h3>
 					<Button onclick={() => { ruleForm = { event_type: '', points_value: 0, description: '', is_active: true }; showRuleModal = true; }}>
 						<Plus class="h-4 w-4 mr-2" />
 						Add Rule
@@ -271,7 +271,7 @@
 				</div>
 
 				{#if rulesLoading}
-					<p class="py-8 text-center text-sm text-gray-500">{t('app.wallet.loading')}</p>
+					<p class="py-8 text-center text-sm text-muted">{t('app.wallet.loading')}</p>
 				{:else}
 					<DataTable
 						columns={ruleColumns}
@@ -285,23 +285,23 @@
 	{:else if activeTab === 'settings'}
 		<Card>
 			<CardContent class="p-6">
-				<h3 class="mb-4 text-lg font-semibold text-gray-900">{t('app.wallet.wallet_settings')}</h3>
+				<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.wallet_settings')}</h3>
 
 				{#if settingsLoading}
-					<p class="py-8 text-center text-sm text-gray-500">{t('app.wallet.loading')}</p>
+					<p class="py-8 text-center text-sm text-muted">{t('app.wallet.loading')}</p>
 				{:else}
 					<div class="grid gap-4 sm:grid-cols-3">
 						<div>
-							<label for="ws-ratio" class="mb-1 block text-sm font-medium text-gray-700">{t('app.wallet.points_to_credit_ratio_2')}</label>
-							<input id="ws-ratio" type="number" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" bind:value={settings.points_to_credit_ratio} min="0" step="0.01" />
+							<label for="ws-ratio" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.points_to_credit_ratio_2')}</label>
+							<input id="ws-ratio" type="number" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={settings.points_to_credit_ratio} min="0" step="0.01" />
 						</div>
 						<div>
-							<label for="ws-cap" class="mb-1 block text-sm font-medium text-gray-700">{t('app.wallet.daily_earning_cap')}</label>
-							<input id="ws-cap" type="number" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" bind:value={settings.daily_earning_cap} min="0" />
+							<label for="ws-cap" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.daily_earning_cap')}</label>
+							<input id="ws-cap" type="number" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={settings.daily_earning_cap} min="0" />
 						</div>
 						<div class="flex items-end gap-2">
-							<input id="ws-earning" type="checkbox" bind:checked={settings.enable_earning} class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-							<label for="ws-earning" class="text-sm font-medium text-gray-700">{t('app.wallet.enable_earning')}</label>
+							<input id="ws-earning" type="checkbox" bind:checked={settings.enable_earning} class="h-4 w-4 rounded border text-primary-600 focus:ring-primary" />
+							<label for="ws-earning" class="text-sm font-medium text-foreground-alt">{t('app.wallet.enable_earning')}</label>
 						</div>
 					</div>
 					<div class="mt-4 flex justify-end">
@@ -315,13 +315,13 @@
 	{:else if activeTab === 'adjust'}
 		<Card>
 			<CardContent class="p-6">
-				<h3 class="mb-4 text-lg font-semibold text-gray-900">{t('app.wallet.user_balance_adjustment')}</h3>
+				<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.user_balance_adjustment')}</h3>
 
 				<!-- Search -->
 				<div class="mb-4 flex gap-2">
 					<input
 						type="text"
-						class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+						class="flex-1 rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 						placeholder="Search by username or user ID..."
 						bind:value={userSearch}
 						onkeydown={(e) => { if (e.key === 'Enter') searchUser(); }}
@@ -330,20 +330,20 @@
 				</div>
 
 				{#if balanceLoading}
-					<p class="py-8 text-center text-sm text-gray-500">{t('app.wallet.searching')}</p>
+					<p class="py-8 text-center text-sm text-muted">{t('app.wallet.searching')}</p>
 				{:else if userBalance}
 					<!-- Current Balance -->
 					<div class="mb-4 grid gap-3 sm:grid-cols-3">
-						<div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-							<p class="text-xs font-medium text-gray-500">{t('app.wallet.user')}</p>
-							<p class="text-sm font-semibold text-gray-900">{userBalance.username}</p>
+						<div class="rounded-lg border border bg-surface p-3">
+							<p class="text-xs font-medium text-muted">{t('app.wallet.user')}</p>
+							<p class="text-sm font-semibold text-foreground">{userBalance.username}</p>
 						</div>
-						<div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-							<p class="text-xs font-medium text-gray-500">{t('app.wallet.points')}</p>
+						<div class="rounded-lg border border bg-surface p-3">
+							<p class="text-xs font-medium text-muted">{t('app.wallet.points')}</p>
 							<p class="text-lg font-bold text-primary-600">{userBalance.points}</p>
 						</div>
-						<div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-							<p class="text-xs font-medium text-gray-500">{t('app.wallet.credits')}</p>
+						<div class="rounded-lg border border bg-surface p-3">
+							<p class="text-xs font-medium text-muted">{t('app.wallet.credits')}</p>
 							<p class="text-lg font-bold text-success-600">{userBalance.credits}</p>
 						</div>
 					</div>
@@ -351,16 +351,16 @@
 					<!-- Adjustment Form -->
 					<div class="grid gap-3 sm:grid-cols-3">
 						<div>
-							<label for="adj-amount" class="mb-1 block text-sm font-medium text-gray-700">{t('app.wallet.amount_credit_debit')}</label>
-							<input id="adj-amount" type="number" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" bind:value={adjustForm.amount} />
+							<label for="adj-amount" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.amount_credit_debit')}</label>
+							<input id="adj-amount" type="number" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={adjustForm.amount} />
 						</div>
 						<div>
-							<label for="adj-type" class="mb-1 block text-sm font-medium text-gray-700">{t('app.wallet.type')}</label>
+							<label for="adj-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.type')}</label>
 							<Select options={adjTypeOptions} bind:value={adjustForm.type} />
 						</div>
 						<div>
-							<label for="adj-reason" class="mb-1 block text-sm font-medium text-gray-700">{t('app.wallet.reason')}</label>
-							<input id="adj-reason" type="text" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" placeholder="Admin adjustment" bind:value={adjustForm.reason} />
+							<label for="adj-reason" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.reason')}</label>
+							<input id="adj-reason" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="Admin adjustment" bind:value={adjustForm.reason} />
 						</div>
 					</div>
 					<div class="mt-4 flex justify-end">
@@ -378,20 +378,20 @@
 <Modal bind:open={showRuleModal} title="Add Activity Rule">
 	<div class="space-y-4">
 		<div>
-			<label for="rule-event" class="mb-1 block text-sm font-medium text-gray-700">{t('app.wallet.event_type')}</label>
-			<input id="rule-event" type="text" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" placeholder="post.created" bind:value={ruleForm.event_type} />
+			<label for="rule-event" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.event_type')}</label>
+			<input id="rule-event" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="post.created" bind:value={ruleForm.event_type} />
 		</div>
 		<div>
-			<label for="rule-points" class="mb-1 block text-sm font-medium text-gray-700">{t('app.wallet.points_value')}</label>
-			<input id="rule-points" type="number" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" bind:value={ruleForm.points_value} />
+			<label for="rule-points" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.points_value')}</label>
+			<input id="rule-points" type="number" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={ruleForm.points_value} />
 		</div>
 		<div>
-			<label for="rule-desc" class="mb-1 block text-sm font-medium text-gray-700">{t('app.wallet.description')}</label>
-			<input id="rule-desc" type="text" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2" placeholder="Awarded for creating a post" bind:value={ruleForm.description} />
+			<label for="rule-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.description')}</label>
+			<input id="rule-desc" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="Awarded for creating a post" bind:value={ruleForm.description} />
 		</div>
 		<div class="flex items-center gap-2">
-			<input id="rule-active" type="checkbox" bind:checked={ruleForm.is_active} class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-			<label for="rule-active" class="text-sm font-medium text-gray-700">{t('app.wallet.active')}</label>
+			<input id="rule-active" type="checkbox" bind:checked={ruleForm.is_active} class="h-4 w-4 rounded border text-primary-600 focus:ring-primary" />
+			<label for="rule-active" class="text-sm font-medium text-foreground-alt">{t('app.wallet.active')}</label>
 		</div>
 		<div class="flex justify-end gap-2 pt-2">
 			<Button variant="outline" onclick={() => showRuleModal = false}>{t('app.wallet.cancel')}</Button>

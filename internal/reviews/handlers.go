@@ -15,23 +15,57 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 const defaultPageSize int32 = 20
 
+// TaskEnqueueClient is the interface for enqueueing background tasks.
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
+
 // Handlers holds dependencies for review HTTP handlers.
 type Handlers struct {
-	Service *Service
+	Service     *Service
+	AsynqClient TaskEnqueueClient
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// enqueueReviewAggregateRecalc enqueues an async review aggregate recalculation
+// task. Fire-and-forget: errors are logged but never propagated.
+func (h *Handlers) enqueueReviewAggregateRecalc(tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"tenant_id":   tenantID.String(),
+		"entity_type": entityType,
+		"entity_id":   entityID.String(),
+	})
+	if err != nil {
+		slog.Warn("reviews: failed to marshal aggregate recalc payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeReviewAggregateRecalc, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeReviewAggregateRecalc)),
+	); err != nil {
+		slog.Warn("reviews: failed to enqueue aggregate recalc task",
+			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +232,9 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enqueue async review aggregate recalculation — fire-and-forget.
+	h.enqueueReviewAggregateRecalc(tenantID, entityType, entityID)
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
@@ -322,6 +359,9 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enqueue async review aggregate recalculation — fire-and-forget.
+	h.enqueueReviewAggregateRecalc(tenantID, review.EntityType, review.EntityID)
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": review})
 }
 
@@ -343,10 +383,20 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fetch review before deleting to get entity info for aggregate recalc.
+	review, err := h.Service.GetReview(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	if err := h.Service.DeleteReview(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Enqueue async review aggregate recalculation — fire-and-forget.
+	h.enqueueReviewAggregateRecalc(tenantID, review.EntityType, review.EntityID)
 
 	writeJSON(w, http.StatusNoContent, nil)
 }

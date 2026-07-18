@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
 	import { PUBLIC_JC_ENV } from '$env/static/public';
 	import { getUser } from '$lib/stores/auth.svelte';
 	import { getTheme, toggleTheme } from '$lib/stores/theme.svelte';
@@ -25,6 +24,7 @@
 			type="button"
 			class="text-muted-foreground hover:bg-dark-04 rounded-9px p-1.5 transition-colors"
 			onclick={toggleTheme}
+			aria-label={getTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
 		>
 				{getTheme() === 'dark' ? '☀️' : '🌙'}
 		</button>
@@ -48,7 +48,7 @@
 						</DropdownMenu.Item>
 						<DropdownMenu.Separator class="bg-border-card my-1 h-px" />
 						<DropdownMenu.Item class="data-highlighted:bg-accent flex cursor-pointer items-center rounded-9px px-3 py-2 text-sm outline-none">
-							<form method="POST" action="/logout" use:enhance class="w-full">
+							<form method="POST" action="/logout" class="w-full">
 								<button type="submit" class="w-full text-left">{t('nav.sign_out')}</button>
 							</form>
 						</DropdownMenu.Item>

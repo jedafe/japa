@@ -1,6 +1,6 @@
 ---
 name: jc-learn-audit
-description: Use when performing a comprehensive quality audit of the JapaConnect Learn app (apps/learn) before merge or release. Verifies the SSR/CSR progress boundary, API route consumption, LayerChart, SEO structured data, and standard compliance.
+description: [Learn app, learn.japaconnect.com] Unified shell adapted for Learn (ADR-060), lesson-player exception, LayerChart 2.0.1. Use when performing a comprehensive quality audit of the JapaConnect Learn app (apps/learn) before merge or release. Verifies the SSR/CSR progress boundary, API route consumption, LayerChart, SEO structured data, and standard compliance.
 ---
 
 # JapaConnect Learn — Audit Skill
@@ -37,3 +37,10 @@ Apply `jc-main-audit` §§B (Rule 16), D (Bits UI), B(runes), H (a11y — plus p
 
 ## Report Format
 Same structure as `jc-main-audit` with categories: SSR/CSR boundary · API routes · Rule 16 · Progress logic · LayerChart · Bits UI · Svelte 5 · SEO · Performance · A11y.
+
+## App Shell & LayerChart (ADR-060 / ADR-059)
+- Learn uses the unified shell (ADR-058) adapted per ADR-060: collapsible left nav (learning-oriented, state via `ui.nav_collapsed` server-side — not localStorage), center, right sidebar (continue/streak/up-next). Flag surfaces built as a top-nav or standalone layout.
+- Lesson player is Learn's reading exception: collapsed nav + `CurriculumRail` (borderless, part of the content — not a second nav) + lesson-meta panel. Flag two-sidebar-looking rails.
+- `TrackCard` is one variant-driven card — flag per-level/type card forks.
+- Charts: pinned `layerchart@2.0.1`, colors via CSS vars, fixed height, Gate-verified data, per-chart skeleton — flag unpinned/`@next` or hardcoded chart colors.
+- Enforce the SSR/CSR boundary: user progress/enrollment must be CSR, never in `+page.server.ts`.

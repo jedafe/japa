@@ -6,8 +6,8 @@
 	import { Tabs, Select, Dialog } from 'bits-ui';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n';
+	import { escapeHtml } from '$lib/utils';
 	import { Plus, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-svelte';
-	import type { PageData } from './$types';
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
 
 	type ScanResult = {
@@ -29,30 +29,27 @@
 		created_at: string;
 	};
 
-	type SecurityPageData = {
-		initial?: { results: ScanResult[]; total_pages: number } | null;
-		ipBlocks?: IpBlock[];
-	};
-
-	let { data = {} as PageData } = $props();
-
-	const pageData = data as SecurityPageData;
+	let {} = $props();
 
 	let activeTab = $state('scan-findings');
 
-	let results = $state<ScanResult[]>(pageData.initial?.results ?? []);
-	let totalPages = $state(pageData.initial?.total_pages ?? 1);
+	let results = $state<ScanResult[]>([]);
+	let totalPages = $state(1);
 	let scanPage = $state(0);
 	let scanPageSize = $state(10);
-	let scanLoading = $state(false);
-	let apiAvailable = $state(pageData.initial !== null);
+	let scanLoading = $state(true);
+	let apiAvailable = $state(true);
 
 	let filterSeverity = $state('all');
 	let searchQuery = $state('');
 
-	let ipBlocks = $state<IpBlock[]>(pageData.ipBlocks ?? []);
-	let ipBlocksLoading = $state(false);
+	let ipBlocks = $state<IpBlock[]>([]);
+	let ipBlocksLoading = $state(true);
 	let ipSearchQuery = $state('');
+	let ipSortKey = $state('');
+	let ipSortDirection = $state<'asc' | 'desc'>('asc');
+	let ipPage = $state(0);
+	let ipPageSize = $state(10);
 
 	let showCreateModal = $state(false);
 	let cidr = $state('');
@@ -102,7 +99,7 @@
 			label: t('security.severity'),
 			sortable: true,
 			render: (val) => {
-				const sev = String(val);
+				const sev = escapeHtml(val);
 				const cls = severityClasses[sev] ?? 'bg-muted text-foreground';
 				return `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${sev}</span>`;
 			}
@@ -117,7 +114,7 @@
 			key: 'created_at',
 			label: t('security.found'),
 			sortable: true,
-			render: (val) => formatDate(String(val))
+			render: (val) => `<span>${escapeHtml(formatDate(String(val)))}</span>`
 		},
 		{
 			key: 'resolved',
@@ -141,20 +138,20 @@
 			label: t('security.block_type'),
 			sortable: true,
 			render: (val) => {
-				const label = blockTypeLabels[String(val)] ?? String(val);
+				const label = escapeHtml(blockTypeLabels[String(val)] ?? String(val));
 				return `<span class="bg-destructive/10 text-destructive inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"><span class="mr-1">⚠</span>${label}</span>`;
 			}
 		},
 		{
 			key: 'reason',
 			label: t('security.reason'),
-			render: (val) => `<span class="text-muted-foreground text-xs">${val ?? '—'}</span>`
+			render: (val) => `<span class="text-muted-foreground text-xs">${val ? escapeHtml(val) : '—'}</span>`
 		},
 		{
 			key: 'created_at',
 			label: t('security.created'),
 			sortable: true,
-			render: (val) => `<span class="text-muted-foreground text-xs">${formatDate(String(val))}</span>`
+			render: (val) => `<span class="text-muted-foreground text-xs">${escapeHtml(formatDate(String(val)))}</span>`
 		}
 	];
 
@@ -167,7 +164,7 @@
 		}
 	];
 
-	let filteredResults = $derived(() => {
+	let filteredResults = $derived.by(() => {
 		let list = results;
 		if (filterSeverity !== 'all') {
 			list = list.filter((r) => r.severity === filterSeverity);
@@ -183,45 +180,83 @@
 		return list;
 	});
 
-	let filteredIpBlocks = $derived(() => {
-		if (!ipSearchQuery.trim()) return ipBlocks;
-		const q = ipSearchQuery.toLowerCase();
-		return ipBlocks.filter(
-			(b) =>
-				b.cidr.toLowerCase().includes(q) ||
-				b.block_type.toLowerCase().includes(q) ||
-				(b.reason ?? '').toLowerCase().includes(q)
-		);
+	let filteredIpBlocks = $derived.by(() => {
+		let list = ipBlocks;
+		if (ipSearchQuery.trim()) {
+			const q = ipSearchQuery.toLowerCase();
+			list = list.filter(
+				(b) =>
+					b.cidr.toLowerCase().includes(q) ||
+					b.block_type.toLowerCase().includes(q) ||
+					(b.reason ?? '').toLowerCase().includes(q)
+			);
+		}
+		if (ipSortKey) {
+			list = [...list].sort((a, b) => {
+				const av = (a as Record<string, unknown>)[ipSortKey] ?? '';
+				const bv = (b as Record<string, unknown>)[ipSortKey] ?? '';
+				const cmp = String(av).localeCompare(String(bv));
+				return ipSortDirection === 'asc' ? cmp : -cmp;
+			});
+		}
+		return list;
 	});
 
 	let previousScanPage = $state(0);
 	let previousScanPageSize = $state(10);
 
-	$effect(() => {
-		if (scanPage !== previousScanPage || scanPageSize !== previousScanPageSize) {
-			previousScanPage = scanPage;
-			previousScanPageSize = scanPageSize;
-			if (apiAvailable) loadScanResults();
+	async function loadIpBlocks() {
+		ipBlocksLoading = true;
+		try {
+			const result = await api<IpBlock[]>('/control/security/ip-blocks');
+			if (result.ok) {
+				ipBlocks = Array.isArray(result.data) ? result.data : [];
+				apiAvailable = true;
+			} else {
+				apiAvailable = false;
+			}
+		} catch {
+			apiAvailable = false;
+		} finally {
+			ipBlocksLoading = false;
 		}
+	}
+
+	$effect(() => {
+		loadScanResults();
+		loadIpBlocks();
+
+		const interval = setInterval(() => {
+			if (document.visibilityState === 'visible') {
+				loadScanResults();
+				loadIpBlocks();
+			}
+		}, 60_000);
+
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') {
+				loadScanResults();
+				loadIpBlocks();
+			}
+		};
+		document.addEventListener('visibilitychange', onVisible);
+
+		return () => {
+			clearInterval(interval);
+			document.removeEventListener('visibilitychange', onVisible);
+		};
 	});
 
 	async function loadScanResults() {
 		scanLoading = true;
 		const sev = filterSeverity !== 'all' ? `&severity=${filterSeverity}` : '';
 		try {
-			const result = await api<
-				| { active_ip_blocks: number }
-				| { results: ScanResult[]; page: number; total_pages: number }
-			>(`/control/security?page=${scanPage}${sev}`);
+			const result = await api<{ results: ScanResult[]; page: number; total_pages: number }>(
+				`/control/security/scan?page=${scanPage}${sev}`
+			);
 			if (result.ok) {
-				const raw = result.data;
-				if ('active_ip_blocks' in raw) {
-					results = [];
-					totalPages = 1;
-				} else {
-					results = raw.results ?? [];
-					totalPages = raw.total_pages ?? 1;
-				}
+				results = result.data.results ?? [];
+				totalPages = result.data.total_pages ?? 1;
 				apiAvailable = true;
 			} else {
 				apiAvailable = false;
@@ -387,8 +422,8 @@
 
 		<DataTable
 			columns={scanColumns}
-			rows={filteredResults()}
-			totalRows={filteredResults().length}
+			rows={filteredResults}
+			totalRows={filteredResults.length}
 			bind:page={scanPage}
 			bind:pageSize={scanPageSize}
 			loading={scanLoading}
@@ -413,8 +448,12 @@
 
 		<DataTable
 			columns={ipBlockColumns}
-			rows={filteredIpBlocks()}
-			totalRows={filteredIpBlocks().length}
+			rows={filteredIpBlocks}
+			totalRows={filteredIpBlocks.length}
+			bind:page={ipPage}
+			bind:pageSize={ipPageSize}
+			bind:sortKey={ipSortKey}
+			bind:sortDirection={ipSortDirection}
 			loading={ipBlocksLoading}
 			emptyMessage={t('security.no_ip_blocks')}
 			emptyIcon={ShieldCheck}

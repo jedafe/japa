@@ -156,16 +156,16 @@
 						<td class="px-4 py-3 font-medium">{widget.name}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{widget.widget_type}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {widget.is_active ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {widget.is_active ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
 								{widget.is_active ? t('widgets.active') : t('widgets.inactive')}
 							</span>
 						</td>
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-1">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => openEdit(widget)}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(widget)}>
 									<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
 								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => deleteWidget(widget.id)}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => deleteWidget(widget.id)}>
 									<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
 								</button>
 							</div>

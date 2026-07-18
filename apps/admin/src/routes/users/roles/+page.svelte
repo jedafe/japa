@@ -2,6 +2,9 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { userManagementApi, permissionsApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+
+	const canManage = $derived(hasPermission('admin.users.view'));
 
 	type Role = {
 		id: string;
@@ -112,7 +115,7 @@
 		<h1 class="text-2xl font-bold tracking-tight">{t('users.roles.title')}</h1>
 		<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('users.roles.description')}</p>
 	</div>
-	<button class="btn btn-primary" onclick={openCreate}>{t('users.roles.create')}</button>
+	{#if canManage}<button class="btn btn-primary" onclick={openCreate}>{t('users.roles.create')}</button>{/if}
 </div>
 
 {#if flashMessage}
@@ -146,25 +149,27 @@
 						<td class="px-4 py-3">
 							<div class="flex flex-wrap gap-1">
 								{#each role.permissions.slice(0, 4) as perm}
-									<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-white/10">{perm}</span>
+									<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">{perm}</span>
 								{/each}
 								{#if role.permissions.length > 4}
-									<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-white/10">+{role.permissions.length - 4}</span>
+									<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">+{role.permissions.length - 4}</span>
 								{/if}
 							</div>
 						</td>
 						<td class="px-4 py-3">
-							<span class="rounded-full bg-black/5 px-2 py-0.5 text-xs font-bold dark:bg-white/10">{role.user_count}</span>
+							<span class="rounded-full bg-black/5 px-2 py-0.5 text-xs font-bold dark:bg-surface/10">{role.user_count}</span>
 						</td>
 						<td class="px-4 py-3">
+							{#if canManage}
 							<div class="flex gap-1">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" style="color: var(--color-primary)" onclick={() => openEdit(role)}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-primary)" onclick={() => openEdit(role)}>
 									{t('common.edit')}
 								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" style="color: var(--color-danger)" onclick={() => confirmDelete(role)}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-danger)" onclick={() => confirmDelete(role)}>
 									{t('common.delete')}
 								</button>
 							</div>
+							{/if}
 						</td>
 					</tr>
 				{:else}

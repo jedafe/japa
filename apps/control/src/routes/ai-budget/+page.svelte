@@ -6,13 +6,11 @@
 	import type { AiBudget } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n';
 	import { DollarSign, RefreshCw, AlertTriangle } from 'lucide-svelte';
-	import type { PageData } from './$types';
 
-	let { data = {} as PageData } = $props();
+	let {} = $props();
 
-	// svelte-ignore state_referenced_locally
-	let budget = $state<AiBudget | null>(data.budget ?? null);
-	let loading = $state(false);
+	let budget = $state<AiBudget | null>(null);
+	let loading = $state(true);
 	let activeTab = $state('overview');
 
 	async function load() {
@@ -23,6 +21,10 @@
 		}
 		loading = false;
 	}
+
+	$effect(() => {
+		load();
+	});
 
 	function formatCost(usd: number): string {
 		return '$' + (usd ?? 0).toFixed(2);

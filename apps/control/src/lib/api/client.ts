@@ -25,24 +25,31 @@ export async function apiFetch<T>(
 	const url = `${PUBLIC_JC_API_URL}${path}`;
 
 	try {
+		const headers: Record<string, string> = {
+			...(options.headers as Record<string, string> | undefined),
+		};
+		if (options.body) {
+			headers['Content-Type'] = 'application/json';
+		}
+
 		const res = await fetcher(url, {
 			...options,
 			credentials: 'include',
-			headers: {
-				'Content-Type': 'application/json',
-				...options.headers,
-			},
+			headers,
 		});
 
 		if (res.status === 401) {
-			if (typeof window !== 'undefined') {
-				window.location.href = '/login';
-			}
 			return { data: null, error: { code: 'unauthorized', message: 'Session expired', status: 401 }, status: 401 };
 		}
 
 		if (res.status === 403) {
 			return { data: null, error: { code: 'forbidden', message: 'Insufficient privileges', status: 403 }, status: 403 };
+		}
+
+		const ct = res.headers.get('content-type') ?? '';
+		if (!ct.includes('application/json')) {
+			const text = await res.text();
+			return { data: null, error: { code: 'non_json_response', message: text.slice(0, 200) || res.statusText, status: res.status }, status: res.status };
 		}
 
 		const body = await res.json();

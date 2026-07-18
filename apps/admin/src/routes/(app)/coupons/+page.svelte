@@ -11,6 +11,7 @@
 	import { Plus, Pencil, Trash2, RefreshCw } from "lucide-svelte";
 	import { couponsAdminApiExtended } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type Coupon = {
 		id: string;
@@ -29,6 +30,8 @@
 	let loading = $state(true);
 	let error = $state("");
 	let success = $state("");
+
+	const canManageCoupons = $derived(hasPermission("coupons.manage"));
 
 	// Modal state
 	let showModal = $state(false);
@@ -71,11 +74,7 @@
 		},
 		{ key: "is_active", label: t("common.status", "Status"), sortable: true },
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			render: (_: any, row: Coupon) => `
-				<div class="flex items-center gap-1">
-					<button onclick="window.__editCoupon('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">${t("common.edit", "Edit")}</button>
-					<button onclick="window.__deleteCoupon('${row.id}')" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-danger-700 hover:bg-danger-50">${t("common.delete", "Delete")}</button>
-				</div>`
+			component: CouponActionsCell
 		}
 	];
 
@@ -183,7 +182,7 @@
 	title={t("coupons.title", "Coupons")}
 	description={t("coupons.description", "Manage discount coupons")}
 	actions={[
-		{ label: t("coupons.create", "Create Coupon"), icon: Plus, onclick: openCreate },
+		...(canManageCoupons ? [{ label: t("coupons.create", "Create Coupon"), icon: Plus, onclick: openCreate }] : []),
 		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadCoupons }
 	]}
 />
@@ -213,37 +212,37 @@
 <Modal bind:open={showModal} title={modalMode === "create" ? t("coupons.create", "Create Coupon") : t("coupons.edit", "Edit Coupon")}>
 	<div class="space-y-4">
 		<div>
-			<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.code", "Code")}</label>
-			<input type="text" bind:value={code} class="mt-1 w-full rounded-lg border p-2 text-sm uppercase" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+			<label for="coupon-code" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.code", "Code")}</label>
+			<input id="coupon-code" type="text" bind:value={code} class="mt-1 w-full rounded-lg border p-2 text-sm uppercase" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.type", "Type")}</label>
-				<Select options={[{ value: "percentage", label: t("coupons.percentage", "Percentage") }, { value: "fixed", label: t("coupons.fixed", "Fixed") }]} bind:value={discountType} />
+				<label for="coupon-type" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.type", "Type")}</label>
+				<Select id="coupon-type" options={[{ value: "percentage", label: t("coupons.percentage", "Percentage") }, { value: "fixed", label: t("coupons.fixed", "Fixed") }]} bind:value={discountType} />
 			</div>
 			<div>
-				<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.value", "Value")}</label>
-				<input type="number" bind:value={discountValue} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
-			</div>
-		</div>
-		<div class="grid grid-cols-2 gap-4">
-			<div>
-				<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.valid_from", "Valid From")}</label>
-				<input type="date" bind:value={validFrom} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
-			</div>
-			<div>
-				<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.valid_until", "Valid Until")}</label>
-				<input type="date" bind:value={validUntil} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+				<label for="coupon-value" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.value", "Value")}</label>
+				<input id="coupon-value" type="number" bind:value={discountValue} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 			</div>
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.usage_limit", "Usage Limit")}</label>
-				<input type="number" bind:value={usageLimit} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+				<label for="coupon-from" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.valid_from", "Valid From")}</label>
+				<input id="coupon-from" type="date" bind:value={validFrom} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+			</div>
+			<div>
+				<label for="coupon-until" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.valid_until", "Valid Until")}</label>
+				<input id="coupon-until" type="date" bind:value={validUntil} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+			</div>
+		</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<label for="coupon-limit" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.usage_limit", "Usage Limit")}</label>
+				<input id="coupon-limit" type="number" bind:value={usageLimit} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 			</div>
 			<div class="flex items-center gap-2 pt-6">
-				<input type="checkbox" bind:checked={isActive} class="h-4 w-4 rounded" style="accent-color: var(--color-primary)" />
-				<label class="text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.active", "Active")}</label>
+				<input id="coupon-active" type="checkbox" bind:checked={isActive} class="h-4 w-4 rounded" style="accent-color: var(--color-primary)" />
+				<label for="coupon-active" class="text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.active", "Active")}</label>
 			</div>
 		</div>
 	</div>
@@ -266,3 +265,17 @@
 		<Button variant="destructive" onclick={confirmDelete}>{t("common.delete", "Delete")}</Button>
 	</div>
 </Modal>
+
+<!-- CouponActionsCell component -->
+{#snippet CouponActionsCell(row: Coupon)}
+	<div class="flex items-center gap-1">
+		{#if canManageCoupons}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => openDelete(row)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

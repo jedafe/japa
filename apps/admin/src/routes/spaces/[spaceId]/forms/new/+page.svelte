@@ -136,7 +136,7 @@
 		<div class="mb-4 flex items-center justify-between">
 			<h2 class="text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.fields')}</h2>
 			<button
-				class="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+				class="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 				style="border-color: var(--color-border)"
 				onclick={addField}
 			>
@@ -240,7 +240,7 @@
 		</button>
 		<a
 			href="/spaces/{spaceId}/forms"
-			class="rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+			class="rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 			style="border-color: var(--color-border)"
 		>
 			{t('common.cancel')}

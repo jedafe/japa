@@ -133,13 +133,13 @@
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{tool.description || '-'}</td>
 						<td class="px-4 py-3 text-xs font-mono">{tool.model}</td>
 						<td class="px-4 py-3">
-							<span class="rounded-full px-2 py-0.5 text-xs font-medium {tool.enabled ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+							<span class="rounded-full px-2 py-0.5 text-xs font-medium {tool.enabled ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
 								{tool.enabled ? t('ai.enabled') : t('ai.disabled')}
 							</span>
 						</td>
 						<td class="px-4 py-3 text-right">
 							<button
-								class="text-xs text-blue-500 hover:text-blue-700"
+								class="text-xs text-blue-500 hover:text-info"
 								onclick={() => editTool(tool)}
 							>
 								{t('common.edit')}

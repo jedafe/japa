@@ -8,15 +8,12 @@
 	import { t } from '$lib/stores/i18n';
 	import { ListTodo, Clock, RefreshCw, X } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
-	import type { PageData } from './$types';
 
-	let { data = {} as PageData } = $props();
+	let {} = $props();
 
-	// svelte-ignore state_referenced_locally
-	let queueStats = $state<QueueStats | null>(data.queueStats ?? null);
-	let loading = $state(false);
-	// svelte-ignore state_referenced_locally
-	let apiAvailable = $state(data.queueStats !== null || data.error === null);
+	let queueStats = $state<QueueStats | null>(null);
+	let loading = $state(true);
+	let apiAvailable = $state(true);
 	let lastRefresh = $state(new Date());
 	let selectedQueue = $state<QueueInfo | null>(null);
 	let refreshing = $state(false);
@@ -82,6 +79,8 @@
 	}
 
 	$effect(() => {
+		refresh();
+
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
 				refresh();
@@ -89,12 +88,20 @@
 		}, 30_000);
 
 		const tickInterval = setInterval(() => {
-			secondsAgo = Math.floor((Date.now() - lastRefresh.getTime()) / 1000);
+			if (document.visibilityState === 'visible') {
+				secondsAgo = Math.floor((Date.now() - lastRefresh.getTime()) / 1000);
+			}
 		}, 1000);
+
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') refresh();
+		};
+		document.addEventListener('visibilitychange', onVisible);
 
 		return () => {
 			clearInterval(interval);
 			clearInterval(tickInterval);
+			document.removeEventListener('visibilitychange', onVisible);
 		};
 	});
 </script>
@@ -207,6 +214,7 @@
 									onkeydown={(e) => e.key === 'Enter' && openQueueDetail(q)}
 									role="button"
 									tabindex="0"
+									aria-label="View details for {q.name}"
 								>
 									<td class="px-4 py-3 font-medium">
 										<div class="flex items-center gap-2">
@@ -263,7 +271,8 @@
 					<Dialog.Title class="text-foreground text-lg font-semibold">{selectedQueue?.name}</Dialog.Title>
 					<p class="text-muted-foreground text-xs">{t('queue.recent_jobs')}</p>
 				</div>
-				<Dialog.Close class="hover:bg-dark-04 rounded-9px p-1.5 transition-colors">
+				<Dialog.Close class="hover:bg-dark-04 rounded-9px p-1.5 transition-colors" aria-label={t('common.close')}>
+					<span class="sr-only">{t('common.close')}</span>
 					<X class="size-4" />
 				</Dialog.Close>
 			</div>

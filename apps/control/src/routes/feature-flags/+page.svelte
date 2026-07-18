@@ -1,13 +1,13 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Switch, Select, Tooltip, Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { FeatureFlag } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n';
 	import { Flag, RefreshCw } from 'lucide-svelte';
-	import type { PageData } from './$types';
 
-	let { data = {} as PageData } = $props();
+	let {} = $props();
 
 	function normalizeFlags(raw: unknown): FeatureFlag[] {
 		if (Array.isArray(raw)) return raw;
@@ -22,14 +22,16 @@
 		return [];
 	}
 
-	// svelte-ignore state_referenced_locally
-	let flags = $state<FeatureFlag[]>(normalizeFlags(data.flags));
-	let loading = $state(false);
+	let flags = $state<FeatureFlag[]>([]);
+	let loading = $state(true);
 	let filter = $state('');
 	let filterGroup = $state('all');
 	let toggling = $state<string | null>(null);
 	let message = $state('');
 	let activeTab = $state('all');
+
+	let confirmDisableOpen = $state(false);
+	let pendingDisableFlag = $state<FeatureFlag | null>(null);
 
 	async function load() {
 		loading = true;
@@ -39,6 +41,10 @@
 		}
 		loading = false;
 	}
+
+	$effect(() => {
+		load();
+	});
 
 	async function toggleFlag(key: string, enabled: boolean) {
 		toggling = key;
@@ -53,6 +59,23 @@
 			message = result.error || t('feature_flags.toggle_error', 'Failed to toggle flag');
 		}
 		toggling = null;
+	}
+
+	function handleFlagToggle(flag: FeatureFlag, checked: boolean) {
+		if (!checked && flag.enabled) {
+			pendingDisableFlag = flag;
+			confirmDisableOpen = true;
+		} else {
+			toggleFlag(flag.key, checked);
+		}
+	}
+
+	function confirmDisable() {
+		if (pendingDisableFlag) {
+			toggleFlag(pendingDisableFlag.key, false);
+		}
+		confirmDisableOpen = false;
+		pendingDisableFlag = null;
 	}
 
 	let allGroups = $derived(
@@ -193,7 +216,7 @@
 									</div>
 									<Switch.Root
 										checked={flag.enabled}
-										onCheckedChange={(checked) => toggleFlag(flag.key, checked)}
+										onCheckedChange={(checked) => handleFlagToggle(flag, checked)}
 										disabled={toggling === flag.key}
 										class="bg-muted data-[state=checked]:bg-foreground peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[3px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
 									>
@@ -208,3 +231,14 @@
 		</Tabs.Content>
 	</Tabs.Root>
 {/if}
+
+<ConfirmModal
+	bind:open={confirmDisableOpen}
+	title={t('feature_flags.disable_title', 'Disable Feature Flag')}
+	consequence={pendingDisableFlag
+		? t('feature_flags.disable_confirm', 'Are you sure you want to disable "{key}"? This may affect users who depend on this feature.').replace('{key}', pendingDisableFlag.key)
+		: ''}
+	confirmText={t('feature_flags.disable_text', 'DISABLE')}
+	onConfirm={confirmDisable}
+	onCancel={() => { confirmDisableOpen = false; pendingDisableFlag = null; }}
+/>

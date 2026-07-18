@@ -56,7 +56,7 @@
 >
   <DatePicker.Trigger
     class={clsx(
-      "flex h-10 w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+      "flex h-10 w-full items-center justify-between rounded-lg border border bg-surface px-3 py-2 text-sm ring-offset-white placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
       className
     )}
   >
@@ -75,7 +75,7 @@
   
   <DatePicker.Portal>
     <DatePicker.Content
-      class="z-50 rounded-lg border border-gray-200 bg-white p-3 shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+      class="z-50 rounded-lg border border bg-surface p-3 shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
       sideOffset={4}
     >
       <DatePicker.Calendar class="rounded-lg">
@@ -90,7 +90,7 @@
             <DatePicker.GridHead>
               <DatePicker.GridRow class="flex">
                 {#each weekdays as day}
-                  <DatePicker.HeadCell class="w-9 rounded-md text-xs font-medium text-gray-500">
+                  <DatePicker.HeadCell class="w-9 rounded-md text-xs font-medium text-muted">
                     {day}
                   </DatePicker.HeadCell>
                 {/each}
@@ -107,7 +107,7 @@
                         class="relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([data-selected])]:rounded-lg [&:has([data-selected])]:bg-primary-100"
                       >
                         <DatePicker.Day
-                          class="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-sm font-normal hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 data-[selected]:bg-primary-600 data-[selected]:text-white data-[disabled]:text-gray-300 data-[disabled]:pointer-events-none"
+                          class="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-sm font-normal hover:bg-surface focus:outline-none focus:ring-2 focus:ring-primary data-[selected]:bg-primary data-[selected]:text-white data-[disabled]:text-gray-300 data-[disabled]:pointer-events-none"
                         />
                       </DatePicker.Cell>
                     {/each}

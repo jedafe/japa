@@ -1,24 +1,23 @@
 ---
 name: jc-main-develop
-description: Use when building new pages or components for the JapaConnect Main App (apps/web, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart, dev.to/Reddit/Ghost/x.com design rules, the API-Readiness Gate, and Rule 16.
+description: Use when building new pages or components for the JapaConnect Main App (apps/web, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart 2.0.1, the unified X.com-style app shell (ADR-058) and its three exceptions, the full visual design language, the API-Readiness Gate, and Rule 16.
 ---
 
 # JapaConnect Main App — Development Skill
 
-You are building JapaConnect's public-facing community platform. SSR via adapter-node + Bun, port 3000.
+You are building JapaConnect's public-facing community platform. SSR via adapter-node + Bun, port 3000. **The single most important rule for layout: everything renders inside the unified app shell (below). This is the structural ground truth — do not build any surface as a standalone layout except the three documented exceptions.**
 
 ## ⛔ API-READINESS GATE — RUN BEFORE ANY IMPLEMENTATION
 Before writing a single line for any page or component:
 1. **List every API endpoint** the feature will consume (reads + mutations).
 2. **Verify each exists** — check the JEOS `api-routes-catalog.md`, or probe the running backend (`curl -s http://localhost:8080/api/v1/...`).
-3. **If ANY endpoint is missing or returns 404:** STOP. Do not implement. Do not mock. Do not hardcode placeholder data. Output an alert in this exact format and wait for the user:
+3. **If ANY endpoint is missing or returns 404:** STOP. Do not implement. Do not mock. Do not hardcode placeholder data. Output the alert and wait:
 
 ```
 ⚠️ MISSING BACKEND API ROUTES — implementation paused
 Feature: [feature name]
 Missing routes:
   - GET  /api/v1/...
-  - POST /api/v1/...
 Action needed: implement these routes in the Go backend before frontend work continues.
 ```
 
@@ -27,62 +26,139 @@ Never work around a missing endpoint. Rule 16 (no hardcoded data) makes mocking 
 ## Non-Negotiable Stack
 - SvelteKit 2.x, adapter-node, Bun runtime · Svelte 5 **strict Runes** (`$state`, `$derived`, `$props`, `$effect`)
 - Bits UI (latest stable), dot-notation (`<Dialog.Root>`, `<Select.Trigger>`) for ALL interactive primitives
-- Tailwind CSS v4 — utilities via `class` prop; theme via CSS custom properties; dark mode = `[data-theme="dark"]` from `jc_theme` cookie (never Tailwind `dark:`)
-- **LayerChart** for ALL data visualization (see below) · Lucide Svelte icons (tree-shaken) · TypeScript, zero `any`
-- Forbidden: `export let`, `$:`, `on:click`, `createEventDispatcher`, localStorage auth, AI attribution in comments/commits
+- Tailwind CSS v4 — utilities via `class`; theme via CSS custom properties; dark mode = `[data-theme="dark"]` from `jc_theme` cookie (never Tailwind `dark:`)
+- **LayerChart `2.0.1`** (pinned; `bun add layerchart@2.0.1`) for ALL data visualization · Lucide Svelte icons · TypeScript, zero `any`
+- Forbidden: `export let`, `$:`, `on:click`, `createEventDispatcher`, localStorage (auth or UI state), AI attribution in comments/commits
 
-## LayerChart — Data Visualization Standard
-All charts on user dashboards, profile analytics tabs, and org analytics use **LayerChart** (Svelte-native, built on Layer Cake — install: `bun add layerchart`).
+---
+
+# THE APP SHELL — Structural Ground Truth (ADR-058)
+
+The main app is **one shell** with a short, closed list of exceptions. Build every surface inside it. Never revert to a top-nav bar or a per-page bespoke layout.
+
+## Desktop: three columns
+```
+┌──────────────┬────────────────────────────┬──────────────────────────┐
+│  LEFT NAV    │       CENTER COLUMN        │   RIGHT SIDEBAR          │
+│  collapsible │  tab bar → sort bar →      │  sticky search + avatar  │
+│  260 / 72px  │  scrolling content ~600px  │  then contextual widgets │
+│  (fixed)     │                            │  ~350px                  │
+└──────────────┴────────────────────────────┴──────────────────────────┘
+```
+Grid: `grid-template-columns: 260px 1fr 350px` (nav expanded) / `72px 1fr 350px` (collapsed). Below `1280px` hide the right sidebar; below `768px` collapse to a single column + bottom tab bar. Per-route change happens **inside** the center column (tabs) and **inside** the right sidebar (widgets) — never by discarding the shell.
+
+Components: `AppShell.svelte` (grid) wraps `LeftNav.svelte` + center `<slot>` + `RightSidebar.svelte`.
+
+## Left nav — collapsible (Hashnode-style)
+- Expanded (~260px): icon + label; Spaces sub-nav visible; full Compose button.
+- Collapsed (~72px): icons only; Spaces → icon + hover-flyout; Compose → circular FAB.
+- Chevron toggle by the logo. Persist state server-side via `PATCH /api/v1/me/account` under `ui.nav_collapsed` — **never localStorage**. Default expanded desktop / collapsed tablet.
+- Items from `GET /api/v1/menus/primary_nav` (RBAC + `visibility`-gated; supports `is_ad_slot` items). Seed order: **Explore · Home · Discover · Notifications · Messages · Profile** — divider — **Spaces (sub-nav) · Forum · Blog · Universities · Compare · [More]** — divider — **Compose** — **avatar + Space switcher** (bottom; Space switcher stays here, not in the account menu).
+
+## Center column
+Tab bar at top swaps content per route (Home: Following/For You · Space: Feed/Forum/Members/About · Profile: Posts/Replies/Media/Likes/Spaces · Forum: All/Q&A/Discussions/Solved · Blog: Latest/Featured/Series · Discover: Spaces/People/Organizations/Tags/Universities). Sort bar (Relevant/Latest/Popular/Rising) sits below the tab bar on feed surfaces, `position: sticky; top: var(--nav-height)`.
+
+**`FeedCard` is ONE variant-driven component** — never a different card per content type. Identical base for every type: avatar, name, Space badge, timestamp, **content-type pill**, preview (title+excerpt or text), engagement bar. Type extras are additive props (`showVoteRail`, `showFeatureImage`), not layout forks. Native ad slots (`feed_native_*`) and inline form embeds render as cards inside the stream.
+
+## Right sidebar
+Sticky top bar: global search input + **user avatar at far right** (→ account dropdown). Below: route-aware widgets — global defaults (trending tags, suggested spaces, `sidebar_top` ad, optional form embed) + per-route overlays via a `sidebar` slot.
+
+## Mobile (≤768px)
+Single column. Left nav → hamburger (top-left). Right sidebar hidden (widgets via "More info" affordance). Bottom tab bar: **Home · Spaces · Compose · Notifications · Profile**. Compose opens the modal composer.
+
+## Compose flow
+Compose button/tab → `ComposeModal.svelte` with a content-type selector. Discussion-type posts compose inline in the modal; blog/CPT route to `/create`. `/forum/[category]/new` remains for full-page new threads.
+
+---
+
+# THE THREE EXCEPTIONS (only these break the shell)
+
+### 1. Blog single (`/blog/[slug]`) & CPT singles — dev.to reading layout
+- Left nav auto-collapses to 72px.
+- `ReactionRail.svelte`: a **borderless, transparent** vertical strip in the article's LEFT margin (react + count, bookmark, comment count, share). It belongs to the article — must read as distinct from the bordered 72px nav, separated by a clear gap. Do NOT box it or make it look like a second nav.
+- Center: article (cover image, title, author line, `.prose` TipTap HTML with `.prose-table-wrapper` tables, inline ad slots `content_top`/`content_inline_*`).
+- Right: `CreatorCard.svelte` REPLACES the search/avatar bar — avatar, name, `@handle`, bio, Primary Space badge, follower count, `<FollowButton>`, then "More from author".
+- Below article: Reddit-style nested comments (unified comment engine, Section 49).
+
+### 2. Create page (`/create`) — dev.to `/new` layout
+- Left nav collapsed. **Form is the main LEFT working area** (cover → title → tags · required Space selector → TipTap body → sticky Save draft / Publish bar).
+- Right panel is a **tabbed switcher: `[ Guide | Settings/SEO ]`**.
+  - `CreateGuidePanel` (default): dynamic help that reacts to focused field — Space→primary-space rule, Tags→discovery tip, Series→grouping, body→`/ @ # [[` reference. Not a static tips list.
+  - `CreateRightPanel` (Settings/SEO): feature image, tags, space assignment, schedule, canonical, visibility, custom fields (Section 06), SEO (meta title/description/OG/index).
+- Space selector must require ≥1 primary space before Publish enables.
+
+### 3. Guest homepage (`/` unauthenticated) — Hashnode-style landing
+- NOT the shell. Rendered by the Page Builder from the `homepage` route-assignment (falls back to `/explore` when none assigned).
+- Slim marketing header → hero/slider → "Explore by destination" grid → trending discussions → featured universities → latest blog → newsletter form embed → CTA banner → footer. Ad slots: `hero_below`, `landing_inline_1`, `landing_footer`.
+- Authenticated `/` is the Primary timeline in the shell (ADR-032, unchanged).
+
+---
+
+# Full Visual Design Language
+
+**Design references per surface** (applied WITHIN the shell): Ghost.org for the blog **list** (magazine cards, large feature image, serif-ish title, reading time); Reddit for **forum threads** (vote rail, nested threaded replies, Best/Top/New tabs); dev.to for **reading & profiles/dashboards** (the blog single, `/create`, profile analytics). These are visual cues layered onto the one shell — not separate layouts.
+
+**Tokens (CSS custom properties, dark-mode-safe — never hardcode hex):**
+- `--color-bg` (#FAFAFA / #0A0A0A), `--color-surface`, `--color-surface-subtle`, `--color-border`, `--color-muted`, `--color-primary` (#3B49DF), `--color-text`, `--chart-1..5`
+- Radius: `--radius` (8px controls, 12px cards). Nav height: `--nav-height`.
+
+**Typography:** sentence case everywhere; two weights (400/500) in chrome; blog/article body may use a reading serif. Body 16px / line-height 1.7. No ALL CAPS.
+
+**Spacing:** generous whitespace; hairline `1px solid var(--color-border)`; cards = surface bg + border + 12px radius + ~1rem 1.25rem padding.
+
+**Profiles (`/u/[username]`, `/org/[slug]`):** cover + avatar header, name/bio/Primary Space badge/join date/follow counts, then center tabs (Posts/Replies/Media/Likes/Spaces; org adds About/Members). Right sidebar: follow button, mutual spaces, org affiliations. **Earned certificates render as badges here** (social proof), linking to public cert pages.
+
+**Profile learning hub — cross-app entry point (ADR-060).** The dashboard (`/dashboard`) is the single entry into the Learn and Docs apps; all tabs consume existing routes (no new backend), and cross-app links work off the shared session cookie + the ADR-054 cross-app menu system:
+- **Learning tab (`/dashboard/learning`):** continue-learning cards from `GET /api/v1/me/enrollments`, resume links deep-linking into `learn.japaconnect.com`; progress via LayerChart `LineChart`.
+- **Certificates tab (`/dashboard/certificates`):** grid from `GET /api/v1/me/certificates`; each links to its public, shareable cert page `/certificates/:id` (same certs badge the public profile).
+- **Knowledge Base tab (`/dashboard/knowledge-base`):** deep-links into Docs (users audience, `docs.japaconnect.com/docs/users`) + the user's bookmarked doc pages.
+
+Learn and Docs are separate SvelteKit apps (owned by the `jc-learn-*` / `jc-docs-*` skills) that share this app's session and theme — link to them by absolute subdomain URL; don't re-implement their surfaces here.
+
+**Empty/loading:** shared `EmptyState` (404/403/500/empty-list; icon + message + primary action) — visually DISTINCT from `LoadingSkeleton` (still-loading ≠ nothing-here). Every async section gets a skeleton.
+
+---
+
+# LayerChart — Data Visualization (ADR-059)
+
+Pinned `layerchart@2.0.1` (Svelte 5; d3-scale bundled). Used on user/org dashboards and profile analytics tabs. Prefer high-level compound charts; component-to-widget map:
+
+| Widget | Component | Source |
+|---|---|---|
+| Impressions over time | `AreaChart` (bisect-x tooltip) | `me/analytics` |
+| Follower/member growth | `LineChart` | `me/analytics/followers` |
+| Top posts / spaces | horizontal `BarChart` | `me/analytics/content` |
+| Reactions breakdown | stacked `BarChart` / radial arc | `me/analytics` |
+| Readers by country | horizontal `BarChart` | Umami (Section 40) |
 
 ```svelte
 <script lang="ts">
-  import { Chart, Svg, Axis, Spline, Area, Bars, Tooltip } from 'layerchart';
-  import { scaleTime, scaleLinear } from 'd3-scale';
+  import { AreaChart } from 'layerchart';
   let { data }: { data: { date: Date; views: number }[] } = $props();
 </script>
-
 <div class="h-64 w-full">
-  <Chart {data} x="date" xScale={scaleTime()} y="views" yScale={scaleLinear()} yNice padding={{ left: 32, bottom: 24 }} tooltip>
-    <Svg>
-      <Axis placement="left" grid rule />
-      <Axis placement="bottom" rule />
-      <Area class="fill-[var(--color-primary)]/20" />
-      <Spline class="stroke-[var(--color-primary)] stroke-2" />
-    </Svg>
-    <Tooltip.Root let:data>
-      <Tooltip.Header>{data.date.toLocaleDateString()}</Tooltip.Header>
-      <Tooltip.List><Tooltip.Item label="Views" value={data.views} /></Tooltip.List>
-    </Tooltip.Root>
-  </Chart>
+  <AreaChart {data} x="date" y="views"
+    props={{ area: { class: 'fill-[var(--chart-1)]/20 stroke-[var(--chart-1)]' } }}
+    tooltip />
 </div>
 ```
 
-Rules: chart colors ONLY via CSS custom properties (dark-mode safe) · chart data ONLY from API (Rule 16) · every chart wrapped in a fixed-height container · every chart has a skeleton loading state · sparklines on stat cards use a minimal `<Chart>` with `<Spline>` only, no axes.
+Rules: chart colors ONLY via CSS custom properties (dark-mode safe) · data ONLY from API (Rule 16) · every chart in a fixed-height container · per-chart skeleton at final dimensions · dashboard shell + metric cards SSR, charts hydrate client-side · round every displayed number · dashboards are private (no ad slots). Do not confuse LayerChart's `<Tooltip.Root>` with Bits UI's — check the import source.
 
-## API Contract (Rule 16)
-- All data from `/api/v1` — `+page.server.ts` `load()` fetches from API, never returns static data
-- Mutations: `fetch` + CSRF token from `$page.data.csrfToken` · Auth from `$page.data.session`
-- Lists: `{ data: T[], meta: { total, page, limit, next_cursor? } }` · Errors: `throw error(status, message)`
+# API Contract (Rule 16)
+All data from `/api/v1` — `+page.server.ts` `load()` fetches from API, never returns static data. Mutations: `fetch` + CSRF token from `$page.data.csrfToken`; auth from `$page.data.session`. Lists: `{ data: T[], meta: { total, page, limit, next_cursor? } }`. Errors: `throw error(status, message)`.
 
-## Rendering Strategy
-SSR for all indexable routes (`/`, `/forum/*`, `/blog/*`, `/spaces/*`, `/u/*`, `/org/*`) · CSR for auth-only (`/home`, `/dms`, `/notifications`) · Optimistic UI + rollback for reactions/bookmarks/follows · skeletons for every async section · `data-sveltekit-preload-data="hover"` already on `<body>`.
+# Rendering Strategy & Routing (ADR-032/058)
+- Root `/`: **authenticated** → Primary timeline (shell); **guest** → Page Builder homepage, fallback `/explore`. Resolve in root `+layout.server.ts` — no client redirect flash.
+- SSR for indexable routes (`/explore`, `/forum/*`, `/blog/*`, `/spaces/*`, `/u/*`, `/org/*`, CPT singles); auth feed and `/discover`/`/notifications`/`/messages` are auth-gated. Blog/CPT single and `/create` render their exception layouts (nav auto-collapsed).
+- `/discover` consumes existing `/api/v1/suggestions/*` — no new backend route.
+- Optimistic UI + rollback for reactions/bookmarks/follows. `data-sveltekit-preload-data="hover"` on `<body>`.
 
-## Design Rules (dev.to / Reddit / Ghost)
-0. **Homepage `/`:** hero banner (welcome + CTA) → tabbed latest content (one tab per post type from API + Spaces + Comparisons) → Explore button → trending sidebar
-1. **Feeds/timeline/Explore for login users feeds, space feeds, organization feeds, etc:** should mimic https://x.com/explore expecially top tab and sidebars
-2. **Blog single:** dev.to — sticky left action sidebar (desktop), bottom bar (mobile), right sidebar (TOC + related), TipTap HTML in `.prose`
-3. **Forum thread:** Reddit — vote rail, nested threaded replies, Best/Top/New/Controversial tabs
-4. **Blog listing:** Ghost — magazine cards, feature image, reading time
-5. **Profiles/dashboards/settings/analytics:** dev.to (analytics tab uses LayerChart)
-6. **Spaces/Tags/Users/Orgs listings:** dev.to tags page — search bar + filters + sorting + tab switcher between entity types + Follow/Unfollow per card
-7. **Content create page:** The page should get inspiration from https://dev.to/new but with TipTap editor
-8. Palette: `--color-bg #FAFAFA/#0A0A0A`, `--color-primary #3B49DF`, `--color-surface`, `--color-muted`, `--color-border` — all as CSS custom properties
+# TipTap Triggers (Locked)
+`/` slash commands · `@` mentions · `#` tags · `[[` interlinking.
 
-## TipTap Triggers (Locked)
-`/` slash commands · `@` mentions · `#` tags · `[[` interlinking
-
-## i18n
+# i18n
 Every user-facing string: `$t('key')`; add keys to `en.json` AND `fr.json`.
 
-## Deliverables Per Task
-1. API-Readiness Gate output (endpoints verified) · 2. `+page.server.ts` typed `load()` · 3. `+page.svelte` (Runes, Bits UI, skeletons, dark mode) · 4. sub-components in `$lib/components/` · 5. types in `$lib/types/index.ts`
+# Deliverables Per Task
+1. API-Readiness Gate output · 2. surface built INSIDE `AppShell` (or one of the three exceptions, explicitly) · 3. typed `+page.server.ts` `load()` · 4. `+page.svelte` (Runes, Bits UI, skeletons, dark mode) · 5. sub-components in `$lib/components/` · 6. types in `$lib/types/index.ts`.

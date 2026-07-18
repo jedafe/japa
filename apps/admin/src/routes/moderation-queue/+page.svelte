@@ -233,7 +233,7 @@
 		{#if activeTab === 'queue' && selectedIds.size > 0}
 			<span class="text-xs" style="color: var(--color-muted)">{selectedIds.size} selected</span>
 			<button
-				class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
+				class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-50"
 				style="color: var(--color-success)"
 				disabled={bulkLoading}
 				onclick={() => bulkAction('approve')}
@@ -242,7 +242,7 @@
 				{t('moderationQueue.bulk_approve')}
 			</button>
 			<button
-				class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
+				class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-50"
 				style="color: var(--color-danger)"
 				disabled={bulkLoading}
 				onclick={() => bulkAction('reject')}
@@ -289,16 +289,16 @@
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(item.reported_at).toLocaleDateString()}</td>
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-1">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => approveItem(item.id)} title={t('moderationQueue.approve')}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => approveItem(item.id)} title={t('moderationQueue.approve')}>
 									<CheckCircle class="h-3 w-3" style="color: var(--color-success)" />
 								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => rejectItem(item.id)} title={t('moderationQueue.reject')}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => rejectItem(item.id)} title={t('moderationQueue.reject')}>
 									<XCircle class="h-3 w-3" style="color: var(--color-danger)" />
 								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => openAssignModal(item.id)} title={t('moderationQueue.assign')}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openAssignModal(item.id)} title={t('moderationQueue.assign')}>
 									<Users class="h-3 w-3" style="color: var(--color-info)" />
 								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" onclick={() => openAppealModal(item.id)} title={t('moderationQueue.appeal')}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openAppealModal(item.id)} title={t('moderationQueue.appeal')}>
 									<ShieldAlert class="h-3 w-3" style="color: var(--color-warning)" />
 								</button>
 							</div>
@@ -332,7 +332,7 @@
 						<td class="px-4 py-3 text-xs font-medium">{alert.type}</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{alert.message}</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {alert.severity === 'high' ? 'bg-red-500/15 text-red-700 dark:text-red-400' : alert.severity === 'medium' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : 'bg-slate-500/15 text-slate-700 dark:text-slate-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {alert.severity === 'high' ? 'bg-danger/15 text-danger dark:text-danger' : alert.severity === 'medium' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-muted/15 text-muted dark:text-muted'}">
 								{alert.severity}
 							</span>
 						</td>
@@ -340,11 +340,11 @@
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-1">
 								{#if !alert.acknowledged}
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" style="color: var(--color-info)" onclick={() => acknowledgeAlert(alert.id)}>
+									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-info)" onclick={() => acknowledgeAlert(alert.id)}>
 										{t('moderationQueue.acknowledge')}
 									</button>
 								{/if}
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-white/10" style="color: var(--color-success)" onclick={() => resolveAlert(alert.id)}>
+								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-success)" onclick={() => resolveAlert(alert.id)}>
 									{t('moderationQueue.resolve')}
 								</button>
 							</div>

@@ -356,6 +356,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Reviews subsystem (Section 29 — Universal Ratings & Reviews).
 	reviewService := reviews.NewService(database)
 	reviewHandlers := reviews.NewHandlers(reviewService)
+	reviewHandlers.AsynqClient = asynqClient
 
 	// Comparison subsystem (Section 30 — Generic Comparison System).
 	comparisonService := comparison.NewService(database)
@@ -387,6 +388,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Advertising subsystem (Section 25 — Ad Placement).
 	adService := advertising.NewService(database)
 	adHandlers := advertising.NewHandlers(adService)
+	adHandlers.AsynqClient = asynqClient
 
 	// Ticket System subsystem (Section 38 — Ticket System).
 	ticketService := tickets.NewServiceWithEnqueuer(database, taskEnqueuer)
@@ -399,10 +401,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// User Affiliate Program subsystem (Section 56).
 	affiliateService := affiliate.NewServiceWithEnqueuer(database, taskEnqueuer)
 	affiliateHandlers := affiliate.NewHandlers(affiliateService)
+	affiliateHandlers.AsynqClient = asynqClient
 
 	// i18n Translation System.
 	i18nService := i18n.NewService(database)
 	i18nHandlers := i18n.NewHandlers(i18nService)
+	i18nHandlers.AsynqClient = asynqClient
 
 	// Register AI translate processor for the worker's i18n:translate_language_pack task.
 	i18nTranslateAdapter := i18n.NewProcessorAdapter(i18nService)
@@ -490,6 +494,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Learning Platform subsystem (Section 36).
 	learningStore := learning.NewStore(database)
 	learningHandlers := learning.NewHandlers(learningStore)
+	learningHandlers.AsynqClient = asynqClient
 
 	// Register learning processor for the worker's learning tasks.
 	learningAdapter := learning.NewProcessorAdapter(learningStore)
@@ -529,6 +534,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiStore := ai.NewStore(database.Reader, database.Writer)
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
 	aiHandlers.SetHonchoClient(honcho.NewClient(cfg.HonchoURL))
+	aiHandlers.AsynqClient = asynqClient
 
 	aiToolRegistry := ai.NewToolRegistry(database)
 
@@ -569,6 +575,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicAPIStore := publicapi.NewStore(database.Writer)
 	publicAPIService := publicapi.NewService(publicAPIStore)
 	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
+	publicAPIHandlers.SetQueries(gen.New(database.Reader))
 
 	// User Profile & Preferences subsystem.
 	usersService := users.NewService(database)
@@ -626,6 +633,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetRBAC(rbacResolver)
 	controlHandlers.SetSettings(settingsService)
 	controlHandlers.SetValkey(vkClient.Redis())
+	controlHandlers.SetMeiliSearch(meiliClient)
 
 	// Infrastructure routes bypass tenant middleware
 	r.Get("/health", h.HealthCheck)
@@ -879,7 +887,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/spaces/{slug}/leave", spaceHandlers.Leave)
 			// catalog: POST /spaces/:id/report — takes a raw ID (like the other
 			// report routes), not the slug the rest of this block resolves on.
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/spaces/{id}/report", reportsHandlers.ReportSpace)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/spaces/{id}/report", reportsHandlers.ReportSpace)
 
 			// Space rule routes (slug-resolved via SpaceResolver middleware)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
@@ -947,9 +955,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/content/{id}/pin", contentHandlers.PinContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
 				Delete("/content/{id}/pin", contentHandlers.UnpinContent)
-			// Reactions (require auth — any authenticated user can react)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/reactions", contentHandlers.AddReaction)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/content/{id}/reactions/{key}", contentHandlers.RemoveReaction)
+			// Reactions (require auth + permission)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).Post("/content/{id}/reactions", contentHandlers.AddReaction)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).Delete("/content/{id}/reactions/{key}", contentHandlers.RemoveReaction)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions", contentHandlers.ListReactions)
 
 			// Reaction type routes (admin-configurable emoji set)
@@ -978,8 +986,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/link-preview", linkPreviewHandlers.Fetch)
 
 			// Content Bookmarks (Section 14 — Content System API)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/bookmark", contentHandlers.AddBookmark)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/content/{id}/bookmark", contentHandlers.RemoveBookmark)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Post("/content/{id}/bookmark", contentHandlers.AddBookmark)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Delete("/content/{id}/bookmark", contentHandlers.RemoveBookmark)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/bookmark", contentHandlers.GetBookmarkStatus)
 
 			// Content Tags (Section 14 — Content System API)
@@ -990,7 +998,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/content/{id}/tags/{tagId}", contentHandlers.RemoveContentTag)
 
 			// Content Shares (Section 14 — Content System API)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/share", contentHandlers.ShareContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.share")).Post("/content/{id}/share", contentHandlers.ShareContent)
 
 			// Related Content (Section 14 — Content System API, pgvector cosine similarity)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/related", contentHandlers.GetRelatedContent)
@@ -998,19 +1006,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Comments (Section 49 — Unified Comment System)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comments/{id}", commentsHandlers.GetComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/comments", commentsHandlers.ListComments)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/comments", commentsHandlers.CreateComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/comments/{id}", commentsHandlers.UpdateComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/comments/{id}", commentsHandlers.DeleteComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/comments/{id}/report", reportsHandlers.ReportComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.edit_own")).Patch("/comments/{id}", commentsHandlers.UpdateComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.delete_own")).Delete("/comments/{id}", commentsHandlers.DeleteComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
 				Post("/comments/{id}/pin", commentsHandlers.PinComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
 				Delete("/comments/{id}/pin", commentsHandlers.UnpinComment)
 
 			// Follow System routes (Section 31 — Follow System)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/follows", followHandlers.ToggleFollow)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).Post("/follows", followHandlers.ToggleFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/following", followHandlers.ListMyFollowing)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/followed-tags", followHandlers.ListMyFollowedTags)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/followers", followHandlers.GetFollowers)
@@ -1020,15 +1028,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/followers", followHandlers.GetFollowers)
 
 			// User Blocks (Section 41 — user-facing, non-admin)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/users/{user_id}/block", interactionsHandlers.ToggleBlock)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/users/{user_id}/block", interactionsHandlers.ToggleBlock)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage")).Post("/users/{user_id}/block", interactionsHandlers.ToggleBlock)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.block.manage")).Delete("/users/{user_id}/block", interactionsHandlers.ToggleBlock)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/blocked-users", interactionsHandlers.ListBlocked)
 
 			// User Mutes (Section 52)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/users/{user_id}/mute", interactionsHandlers.MuteUser)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/users/{user_id}/mute", interactionsHandlers.UnmuteUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.mute.manage")).Post("/users/{user_id}/mute", interactionsHandlers.MuteUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "interactions.mute.manage")).Delete("/users/{user_id}/mute", interactionsHandlers.UnmuteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{user_id}/mute-status", interactionsHandlers.GetUserMuteStatus)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/users/{id}/report", reportsHandlers.ReportUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/users/{id}/report", reportsHandlers.ReportUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-users", interactionsHandlers.ListMutedUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-spaces", interactionsHandlers.ListMutedSpaces)
 
@@ -1109,6 +1117,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// WebSocket + DM routes (Section 10 — Real-Time WebSockets)
 			wsHub := websocket.NewHub()
+			controlHandlers.SetWSHub(wsHub)
 			// PubSub bridge for multi-instance WebSocket scaling.
 			wsBridge := websocket.NewPubSubBridge(vkClient.Redis(), wsHub)
 			wsHub.SetPubSub(wsBridge)
@@ -1127,36 +1136,36 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// WebSocket — tight rate limit on upgrade to prevent abuse
 				// (10 connections per minute per IP, per ADR-022).
 				r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/ws", wsHandlers.HandleWebSocket)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ws/online", wsHandlers.GetOnlineUsers)
 
 				// Direct Messaging
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/dm/conversations", wsHandlers.ListConversations)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations", wsHandlers.InitiateConversation)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.request")).Post("/dm/conversations", wsHandlers.InitiateConversation)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/dm/conversations/{id}/messages", wsHandlers.ListMessages)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/messages", wsHandlers.SendMessage)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/dm/conversations/{id}/messages/{mid}", wsHandlers.EditMessage)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/dm/conversations/{id}/messages/{mid}", wsHandlers.DeleteMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.send")).Post("/dm/conversations/{id}/messages", wsHandlers.SendMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.send")).Patch("/dm/conversations/{id}/messages/{mid}", wsHandlers.EditMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.delete")).Delete("/dm/conversations/{id}/messages/{mid}", wsHandlers.DeleteMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/dm/conversations/{id}/messages/{mid}/report", reportsHandlers.ReportDMMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/accept", wsHandlers.AcceptMessageRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/decline", wsHandlers.DeclineMessageRequest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/dm/requests/{id}/block", wsHandlers.BlockMessageRequest)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/dm/privacy", wsHandlers.UpdateDMPrivacy)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.manage_privacy")).Put("/dm/privacy", wsHandlers.UpdateDMPrivacy)
 			})
 
 			// Media routes (Section 34 — Media System)
 			mediaHandlers := media.NewHandlers(mediaService)
 			mediaHandlers.AsynqClient = asynqClient
 
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/media/upload", mediaHandlers.InitiateUpload)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.upload")).Post("/media/upload", mediaHandlers.InitiateUpload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/media/confirm/{id}", mediaHandlers.ConfirmUpload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/media/{id}", mediaHandlers.GetMedia)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/media/{id}", mediaHandlers.UpdateMetadata)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/media/{id}", mediaHandlers.DeleteMedia)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.delete_own")).Delete("/media/{id}", mediaHandlers.DeleteMedia)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/media", mediaHandlers.ListMedia)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/media", mediaHandlers.ListMyMedia)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/media/bulk-delete", mediaHandlers.BulkDelete)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.delete_own")).Post("/media/bulk-delete", mediaHandlers.BulkDelete)
 
 			// Media quarantine admin routes — review queue for virus scan false positives
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.quarantine.manage")).
@@ -1181,7 +1190,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum", forumHandlers.CreateThread)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.create")).Post("/forum", forumHandlers.CreateThread)
 				r.Get("/forum", forumHandlers.ListThreads)
 				r.Get("/forum/{slug}", forumHandlers.GetThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.edit_own")).
@@ -1192,7 +1201,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/forum/{id}/solve", forumHandlers.SolveThread)
 
 				// Reply routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/{id}/replies", forumHandlers.CreateReply)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.create")).Post("/forum/{id}/replies", forumHandlers.CreateReply)
 				r.Get("/forum/{id}/replies", forumHandlers.ListReplies)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.edit_own")).
 					Patch("/forum/replies/{id}", forumHandlers.UpdateReply)
@@ -1200,12 +1209,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/forum/replies/{id}", forumHandlers.DeleteReply)
 
 				// Vote route
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/vote", forumHandlers.Vote)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).Post("/forum/vote", forumHandlers.Vote)
 
 				// Poll routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
 					Post("/forum/polls", forumHandlers.CreatePoll)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
 				r.Get("/forum/polls/{id}", forumHandlers.GetPoll)
 
 				// Tag routes
@@ -1213,14 +1222,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/forum/tags", forumHandlers.CreateTag)
 				r.Get("/forum/tags", forumHandlers.ListTags)
 				r.Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/forum/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Post("/forum/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Delete("/forum/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).Patch("/forum/tags/{id}", forumHandlers.UpdateTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).Delete("/forum/tags/{id}", forumHandlers.DeleteTag)
 
 				// Bookmark routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/forum/bookmarks", forumHandlers.AddBookmark)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/forum/bookmarks/{id}", forumHandlers.RemoveBookmark)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Post("/forum/bookmarks", forumHandlers.AddBookmark)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Delete("/forum/bookmarks/{id}", forumHandlers.RemoveBookmark)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/bookmarks", forumHandlers.ListBookmarks)
 			})
 
@@ -1288,14 +1297,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(features.Gate(featureChecker, "feature.ratings_reviews")).Group(func(r chi.Router) {
 				// catalog: /reviews/:entity_type/:entity_id[/aggregate]; bare /reviews
 				// (reviewer-scoped list) kept as a documented extra.
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews/{entity_type}/{entity_id}", reviewHandlers.CreateReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.create")).Post("/reviews/{entity_type}/{entity_id}", reviewHandlers.CreateReview)
 				r.Get("/reviews", reviewHandlers.ListReviews)
 				r.Get("/reviews/{entity_type}/{entity_id}", reviewHandlers.ListReviews)
 				r.Get("/reviews/{entity_type}/{entity_id}/aggregate", reviewHandlers.GetAggregate)
 				r.Get("/reviews/{id}", reviewHandlers.GetReview)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.edit_own")).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.delete_own")).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.flag")).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.moderate")).Patch("/admin/reviews/{id}", reviewHandlers.ModerateReview)
 			})
 
@@ -1437,19 +1446,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Organization routes (Section 07 — Organization Profiles & Claim Ownership)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/organizations", orgHandlers.CreateOrganization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.create")).Post("/organizations", orgHandlers.CreateOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/organizations", orgHandlers.ListOrganizations)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/organizations/{slug}", orgHandlers.GetOrganization)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/organizations/{id}", orgHandlers.UpdateOrganization)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/organizations/{id}", orgHandlers.DeleteOrganization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.edit_own")).Patch("/organizations/{id}", orgHandlers.UpdateOrganization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.delete_own")).Delete("/organizations/{id}", orgHandlers.DeleteOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/organizations/{id}/members", orgHandlers.ListMembers)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/organizations/{id}/members", orgHandlers.AddMember)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/organizations/{id}/members/{userId}", orgHandlers.RemoveMember)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/organizations/{id}/members/{userId}", orgHandlers.UpdateMemberRole)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/organizations/{id}/invitations", orgHandlers.InviteMember)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.members.manage")).Post("/organizations/{id}/members", orgHandlers.AddMember)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.members.manage")).Delete("/organizations/{id}/members/{userId}", orgHandlers.RemoveMember)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.members.manage")).Patch("/organizations/{id}/members/{userId}", orgHandlers.UpdateMemberRole)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.invite")).Post("/organizations/{id}/invitations", orgHandlers.InviteMember)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/organizations/{id}/invitations", orgHandlers.ListInvitations)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/organizations/invitations/{token}/accept", orgHandlers.AcceptInvitation)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/claim-ownership", orgHandlers.ClaimOwnership)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.invite")).Post("/organizations/invitations/{token}/accept", orgHandlers.AcceptInvitation)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.claim")).Post("/claim-ownership", orgHandlers.ClaimOwnership)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/claim-ownership", orgHandlers.ListClaims)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Patch("/claim-ownership/{id}", orgHandlers.ReviewClaim)
 
@@ -1459,7 +1468,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.create"),
 				mw.IdempotencyMiddleware(vkClient.Redis())).
 				Post("/payments/intent", paymentHandlers.InitiatePayment)
-			// Webhook routes moved outside /api/v1 rate limit group — see webhook group below.
+			// Payment webhook routes — tighter rate limit for provider callbacks.
+			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/paystack", paymentHandlers.HandlePaystackWebhook)
+			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/stripe", paymentHandlers.HandleStripeWebhook)
+			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/nowpayments", paymentHandlers.HandleNOWPaymentsWebhook)
 			// Payment listing and details (catalog: /me/payments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments", paymentHandlers.ListPayments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments/{id}", paymentHandlers.GetPayment)
@@ -1764,6 +1776,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "api.keys.self_manage")).
 				Delete("/me/api-keys/{id}/ip-allowlist/{ipId}", publicAPIHandlers.RemoveAllowedIP)
 
+			// Public API resource endpoints (Section 47 — api.japaconnect.com).
+			// Gated by API key auth via X-API-Key header. These are read-only
+			// endpoints for external integrations.
+			r.Group(func(r chi.Router) {
+				r.Use(publicapi.APIKeyMiddleware(publicAPIService))
+				r.Use(publicapi.SlidingWindowRateLimit(vkClient.Redis()))
+
+				r.Get("/content/{id}", publicAPIHandlers.GetContentByID)
+				r.Get("/spaces", publicAPIHandlers.ListSpaces)
+				r.Get("/spaces/{slug}", publicAPIHandlers.GetSpaceBySlug)
+				r.Get("/tags", publicAPIHandlers.ListTags)
+				r.Get("/users/{id}", publicAPIHandlers.GetUserByID)
+				r.Get("/search", publicAPIHandlers.SearchContent)
+				r.Get("/me", publicAPIHandlers.GetMyProfile)
+			})
+
 				// User Profile & Preferences routes (catalog: /me, /me/profile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me", usersHandlers.GetMyProfile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/profile", usersHandlers.UpdateMyProfile)
@@ -1992,8 +2020,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "menus.manage")).
 				Post("/admin/menus/{id}/items/reorder", menusHandlers.ReorderMenuItems)
 
-			// Public: resolve menu by slug (no auth required)
-			r.Get("/menus/{slug}", menusHandlers.GetMenuBySlug)
+			// Public: resolve menu by slug. OptionalAuth enriches the request with
+			// the caller's identity when a Bearer token is present (it never rejects),
+			// so the resolver returns authenticated-visibility items for logged-in
+			// users while guests still receive the public menu.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/menus/{slug}", menusHandlers.GetMenuBySlug)
 
 			// ── Email Templates (ADR-055) ───────────────────────────────
 
@@ -2607,17 +2639,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		})
 	})
 
-	// Payment webhook routes — outside /api/v1 group so they don't inherit
-	// the "loose" (300/min) rate limit. Payment providers (Paystack, Stripe,
-	// NOWPayments) can send high-frequency webhook traffic.
-	r.Group(func(r chi.Router) {
-		r.Use(tenant.Middleware(tenantStore))
-		r.Route("/api/v1", func(r chi.Router) {
-			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/paystack", paymentHandlers.HandlePaystackWebhook)
-			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/stripe", paymentHandlers.HandleStripeWebhook)
-			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/nowpayments", paymentHandlers.HandleNOWPaymentsWebhook)
-		})
-	})
+	// Payment webhook routes — inside /api/v1 with a tighter rate limit.
+	// Payment providers (Paystack, Stripe, NOWPayments) can send
+	// high-frequency webhook traffic.
+	// NOTE: These are registered inside the existing /api/v1 group above.
 
 	// Super-admin Control Panel routes (Section 21).
 	// Tenant-scoped, requires auth + control.panel.access permission.
@@ -2660,13 +2685,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Cron / Scheduler jobs (audit C3)
 			r.Get("/cron/jobs", controlHandlers.ListCronJobs)
+			r.Post("/cron/jobs", controlHandlers.CreateCronJob)
+			r.Patch("/cron/jobs/{id}", controlHandlers.UpdateCronJob)
+			r.Delete("/cron/jobs/{id}", controlHandlers.DeleteCronJob)
 			r.Post("/cron/jobs/{id}/trigger", controlHandlers.TriggerCronJob)
+			r.Post("/cron/jobs/{id}/pause", controlHandlers.PauseCronJob)
+			r.Post("/cron/jobs/{id}/unpause", controlHandlers.UnpauseCronJob)
 
 			// Cache Management
 			r.Get("/cache/stats", controlHandlers.CacheStats)
 			r.Post("/cache/flush", controlHandlers.FlushCache)
 
 			// Security
+			r.Get("/security/scan", controlHandlers.ListSecurityScanResults)
 			r.Get("/security", controlHandlers.SecurityOverview)
 			r.Get("/security/ip-blocks", controlHandlers.ListIPBlocks)
 			r.Post("/security/ip-blocks", controlHandlers.CreateIPBlock)

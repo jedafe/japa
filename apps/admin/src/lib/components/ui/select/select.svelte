@@ -9,6 +9,7 @@
     placeholder = "Select...",
     disabled = false,
     class: className,
+    id,
     onchange
   }: {
     options: Array<{ value: string; label: string; disabled?: boolean }>;
@@ -16,6 +17,7 @@
     placeholder?: string;
     disabled?: boolean;
     class?: ClassValue;
+    id?: string;
     onchange?: (val: string) => void;
   } = $props();
 
@@ -31,6 +33,7 @@
 
 <Select.Root type="single" bind:value {disabled} items={options} onValueChange={handleValueChange}>
   <Select.Trigger
+    {id}
     class={clsx(
       "flex h-10 w-full items-center justify-between rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
       className

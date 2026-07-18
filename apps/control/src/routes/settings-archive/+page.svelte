@@ -4,7 +4,7 @@
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
-	import { Tabs, Switch, Tooltip, Label, Select, Combobox } from 'bits-ui';
+	import { Tabs, Switch, Tooltip, Label, Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { SystemSetting } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n';
@@ -19,12 +19,11 @@
 		Undo2,
 		AlertTriangle
 	} from 'lucide-svelte';
-	import type { PageData } from './$types';
 
-	let { data = {} as PageData } = $props();
+	let {} = $props();
 
-	let originalSettings = $state<SystemSetting[]>(data.settings ?? []);
-	let currentSettings = $state<SystemSetting[]>(structuredClone(originalSettings));
+	let originalSettings = $state<SystemSetting[]>([]);
+	let currentSettings = $state<SystemSetting[]>([]);
 	let isDirty = $derived(
 		JSON.stringify(currentSettings) !== JSON.stringify(originalSettings)
 	);
@@ -175,15 +174,19 @@
 			(s, i) => s.value !== originalSettings[i]?.value
 		);
 		let failed = 0;
-		for (const setting of changed) {
-			const result = await api(`/control/system-settings/${setting.key}`, {
-				method: 'PATCH',
-				body: { value: setting.value }
-			});
+		const results = await Promise.all(
+			changed.map((setting) =>
+				api(`/control/system-settings/${setting.key}`, {
+					method: 'PATCH',
+					body: { value: setting.value }
+				})
+			)
+		);
+		for (const result of results) {
 			if (!result.ok) failed++;
 		}
 		if (failed === 0) {
-			originalSettings = structuredClone(currentSettings);
+			originalSettings = JSON.parse(JSON.stringify(currentSettings));
 			message = t('settings.save_all_success', `${changed.length} setting(s) saved successfully.`);
 			messageType = 'success';
 		} else {
@@ -194,7 +197,7 @@
 	}
 
 	function resetAll() {
-		currentSettings = structuredClone(originalSettings);
+		currentSettings = JSON.parse(JSON.stringify(originalSettings));
 		confirmResetAllOpen = false;
 		message = t('settings.reset_all_success', 'All changes reverted.');
 		messageType = 'success';
@@ -227,11 +230,15 @@
 		message = '';
 		const result = await api<SystemSetting[]>('/control/system-settings');
 		if (result.ok) {
-			originalSettings = result.data;
-			currentSettings = structuredClone(result.data);
+			originalSettings = JSON.parse(JSON.stringify(result.data));
+			currentSettings = JSON.parse(JSON.stringify(result.data));
 		}
 		isSaving = false;
 	}
+
+	$effect(() => {
+		load();
+	});
 
 	beforeNavigate(({ cancel }) => {
 		if (isDirty) {

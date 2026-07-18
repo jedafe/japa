@@ -26,9 +26,8 @@
 			const body = await res.json();
 			
 			if (res.ok && body.data?.access_token) {
-				// Now call /api/v1/me to trigger the server to set the cookie
-				// The hooks.server.ts will handle setting the cookie
-				window.location.href = '/';
+				// Reload session state then navigate to the dashboard
+				await goto('/', { invalidateAll: true });
 			} else {
 				error = body.error?.message || 'Invalid credentials';
 			}

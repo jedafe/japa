@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -21,11 +22,17 @@ const defaultPageSize int32 = 20
 // Handlers holds dependencies for Public API HTTP handlers.
 type Handlers struct {
 	Service *Service
+	Queries *gen.Queries
 }
 
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// SetQueries injects the sqlc queries for public API data access.
+func (h *Handlers) SetQueries(q *gen.Queries) {
+	h.Queries = q
 }
 
 // siteURL is the base URL for the site, set during initialization.
@@ -518,4 +525,235 @@ func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": keyID.String()}})
+}
+
+// ---------------------------------------------------------------------------
+// Public API Resource Handlers (Section 47 — api.japaconnect.com)
+// ---------------------------------------------------------------------------
+// These are read-only endpoints exposed to external integrations via API key auth.
+// They proxy to the same underlying data as the tenant-scoped internal API but
+// return a simplified, stable response shape suitable for third-party consumers.
+
+// GetContentByID handles GET /api/v1/content/:id — returns a single content item.
+func (h *Handlers) GetContentByID(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		return
+	}
+
+	content, err := h.Queries.GetContentByID(r.Context(), gen.GetContentByIDParams{
+		ID:       id,
+		TenantID: keyCtx.TenantID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": content})
+}
+
+// ListSpaces handles GET /api/v1/spaces — returns a paginated list of spaces.
+func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	spaces, err := h.Queries.ListSpacesByTenant(r.Context(), keyCtx.TenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+}
+
+// GetSpaceBySlug handles GET /api/v1/spaces/:slug — returns a single space.
+func (h *Handlers) GetSpaceBySlug(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		return
+	}
+
+	space, err := h.Queries.GetSpaceBySlug(r.Context(), gen.GetSpaceBySlugParams{
+		Slug:     slug,
+		TenantID: keyCtx.TenantID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+}
+
+// ListTags handles GET /api/v1/tags — returns a paginated list of tags.
+func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	tags, err := h.Queries.ListTagsByTenant(r.Context(), keyCtx.TenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": tags})
+}
+
+// GetUserByID handles GET /api/v1/users/:id — returns a single user profile.
+func (h *Handlers) GetUserByID(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	user, err := h.Queries.GetUserByID(r.Context(), gen.GetUserByIDParams{
+		UserID:   id,
+		TenantID: keyCtx.TenantID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": user})
+}
+
+// SearchContent handles GET /api/v1/search — searches content by title.
+func (h *Handlers) SearchContent(w http.ResponseWriter, r *http.Request) {
+	if h.Service == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		writeError(w, http.StatusBadRequest, "missing_query", "q parameter is required")
+		return
+	}
+
+	limit := parsePageSize(r, defaultPageSize, 100)
+	offset := parseOffset(r)
+
+	// Search content by title using PostgreSQL ILIKE (simple substring match).
+	rows, err := h.Service.store.dbPool.Query(r.Context(), `
+		SELECT id, title, slug, content_type, status, created_at
+		FROM contents
+		WHERE tenant_id = $1 AND status = 'published' AND title ILIKE '%' || $2 || '%'
+		ORDER BY created_at DESC
+		LIMIT $3 OFFSET $4
+	`, keyCtx.TenantID, q, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	defer rows.Close()
+
+	var results []map[string]any
+	for rows.Next() {
+		var id pgtype.UUID
+		var title, slug, contentType, status string
+		var createdAt pgtype.Timestamptz
+		if err := rows.Scan(&id, &title, &slug, &contentType, &status, &createdAt); err != nil {
+			continue
+		}
+		results = append(results, map[string]any{
+			"id":           id.String(),
+			"title":        title,
+			"slug":         slug,
+			"content_type": contentType,
+			"status":       status,
+			"created_at":   createdAt,
+		})
+	}
+
+	if results == nil {
+		results = []map[string]any{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+}
+
+// GetMyProfile handles GET /api/v1/me — returns the authenticated user's profile.
+// Requires api.read.me scope on the API key.
+func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
+	if h.Queries == nil {
+		writeError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
+		return
+	}
+
+	keyCtx := APIKeyFromContext(r.Context())
+	if keyCtx == nil {
+		writeError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+		return
+	}
+
+	user, err := h.Queries.GetUserByID(r.Context(), gen.GetUserByIDParams{
+		UserID:   keyCtx.UserID,
+		TenantID: keyCtx.TenantID,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": user})
 }

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { api, reviewsAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { RefreshCw } from 'lucide-svelte';
+	import { RefreshCw, Eye } from 'lucide-svelte';
+	import Modal from '$lib/components/Modal.svelte';
 
 	type Review = {
 		id: string;
@@ -15,6 +16,14 @@
 	let reviews = $state<Review[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+
+	let showViewModal = $state(false);
+	let viewTarget = $state<Review | null>(null);
+
+	function openView(review: Review) {
+		viewTarget = review;
+		showViewModal = true;
+	}
 
 	async function load() {
 		loading = true;
@@ -70,6 +79,7 @@
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reviews.rating')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reviews.status')}</th>
 					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reviews.created')}</th>
+					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions', 'Actions')}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -79,15 +89,20 @@
 						<td class="px-4 py-3 text-xs font-mono" style="color: var(--color-muted)">{review.entity_id.slice(0, 12)}</td>
 						<td class="px-4 py-3 text-xs">{review.rating}/5</td>
 						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {review.status === 'approved' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : review.status === 'pending' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : 'bg-red-500/15 text-red-700 dark:text-red-400'}">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {review.status === 'approved' ? 'bg-success/15 text-success dark:text-success' : review.status === 'pending' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-danger/15 text-danger dark:text-danger'}">
 								{review.status}
 							</span>
 						</td>
 						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(review.created_at).toLocaleDateString()}</td>
+						<td class="px-4 py-3">
+							<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-muted)" onclick={() => openView(review)}>
+								{t('common.view', 'View')}
+							</button>
+						</td>
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
+						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">
 							{t('reviews.empty')}
 						</td>
 					</tr>
@@ -96,3 +111,35 @@
 		</table>
 	</div>
 {/if}
+
+<Modal bind:open={showViewModal} title={t('reviews.details', 'Review Details')}>
+	{#if viewTarget}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.entity_type', 'Entity Type')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.entity_type}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.entity_id', 'Entity ID')}</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.entity_id}</p>
+			</div>
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.rating', 'Rating')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.rating}/5</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.status', 'Status')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
+				</div>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.created', 'Created')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
+			</div>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</button>
+	</div>
+</Modal>

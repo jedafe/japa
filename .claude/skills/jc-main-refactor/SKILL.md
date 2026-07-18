@@ -1,6 +1,6 @@
 ---
 name: jc-main-refactor
-description: Use when updating, modernizing, or refactoring existing JapaConnect Main App code (apps/web). Migrates Svelte 4 to Svelte 5 Runes, adopts Bits UI primitives, converts charts to LayerChart, removes hardcoded data per Rule 16.
+description: Use when updating, modernizing, or refactoring existing JapaConnect Main App code (apps/web). Migrates Svelte 4 to Svelte 5 Runes, adopts Bits UI primitives, migrates legacy layouts to the unified app shell (ADR-058), converts charts to LayerChart 2.0.1, removes hardcoded data per Rule 16.
 ---
 
 # JapaConnect Main App — Updating & Refactoring Skill
@@ -22,21 +22,29 @@ If a refactor requires an endpoint that doesn't exist (e.g. replacing hardcoded 
 | CSS hover tooltip | `<Tooltip.Root>` |
 | Manual accordion / tabs / popover | `<Accordion.Root>` / `<Tabs.Root>` / `<Popover.Root>` |
 
-## 3. Chart Migration → LayerChart
-Any chart built with Chart.js, D3 direct DOM, canvas, inline SVG math, or any other library **must** be rewritten in LayerChart:
+## 3. Chart Migration → LayerChart 2.0.1
+Any chart built with Chart.js, D3 direct DOM, canvas, inline SVG math, or any other library **must** be rewritten in LayerChart (pinned `layerchart@2.0.1`, prefer high-level compound charts):
 
 ```svelte
 <!-- BEFORE: Chart.js canvas, manual lifecycle, breaks SSR -->
 <canvas bind:this={el}></canvas>
 
-<!-- AFTER: LayerChart, declarative, SSR-safe markup -->
+<!-- AFTER: LayerChart v2 compound chart, declarative, SSR-safe -->
 <div class="h-64 w-full">
-  <Chart {data} x="date" xScale={scaleTime()} y="count" yNice padding={{ left: 32, bottom: 24 }} tooltip>
-    <Svg><Axis placement="left" grid /><Axis placement="bottom" /><Spline class="stroke-[var(--color-primary)] stroke-2" /></Svg>
-  </Chart>
+  <AreaChart {data} x="date" y="count"
+    props={{ area: { class: 'fill-[var(--chart-1)]/20 stroke-[var(--chart-1)]' } }} tooltip />
 </div>
 ```
-Convert API date strings to `Date` objects · colors via `var(--color-*)` only · add skeleton state · remove the old chart library from package.json if no longer used.
+Use `AreaChart`/`LineChart`/`BarChart` for the mapped dashboard widgets (ADR-059); drop to the low-level `<Chart><Svg>…</Svg></Chart>` only when a compound chart can't express it. Convert API date strings to `Date` objects · colors via `var(--chart-*)`/`var(--color-*)` only · add skeleton state · pin `layerchart@2.0.1` and remove the old chart library from package.json if unused.
+
+## 3b. Legacy Layout → Unified App Shell (ADR-058)
+Migrate pre-shell layouts to the single three-column shell:
+- Replace any top-nav-bar layout / bespoke per-page layout with `AppShell` (`LeftNav` + center + `RightSidebar`) — except the three exceptions (blog/CPT single, `/create`, guest homepage).
+- Collapse a per-content-type `FeedCard` (separate components or big `{#if content_type}` layout branches) into one variant-driven `FeedCard` with a content-type pill + additive props.
+- Move nav-collapse state from `localStorage` to `ui.nav_collapsed` (`PATCH /api/v1/me/account`); move the account dropdown to the right-sidebar avatar; keep the Space switcher in the left nav.
+- Blog/CPT single: make the reaction rail borderless/transparent (`ReactionRail`); replace the search/avatar bar with `CreatorCard`.
+- `/create`: convert the settings drawer into the tabbed `[ Guide | Settings/SEO ]` panel with the dynamic field-focus Guide.
+- Guest `/`: render the Page Builder landing (fallback `/explore`); keep authenticated `/` on the Primary timeline.
 
 ## 4. Rule 16 — Hardcoded Data Removal
 Replace static arrays (nav, countries, tags, groups, post types, chart datasets) with API fetches. Verify the endpoint exists first (Gate 0).
