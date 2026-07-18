@@ -338,7 +338,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	}
 
 	// Feed System subsystem (Section 32 — Activity Feed / Timeline).
-	feedService := feed.NewService(database)
+	feedService := feed.NewService(database, vkClient.Redis())
 	feedService.SetEnqueuer(taskEnqueuer)
 	feedHandlers := feed.NewHandlers(feedService)
 	feedHandlers.SetSettings(settingsService)

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -479,4 +480,110 @@ func pgNumericToFloat64(n pgtype.Numeric) float64 {
 	}
 
 	return f.Float64
+}
+
+// For-You feed bounds and cache tuning (v1 constants).
+const (
+	forYouWindowDays   = 30
+	forYouAffinityCap  = 300
+	forYouVelocityCap  = 300
+	forYouCandidateCap = 600
+	forYouCacheTTL     = 90 * time.Second
+)
+
+// loadAffinity fetches the user's followed authors, spaces (followed ∪ member),
+// and followed tags as ID arrays for the candidate query.
+func (s *Service) loadAffinity(
+	ctx context.Context, tenantID, userID pgtype.UUID,
+) (authorIDs, spaceIDs, tagIDs []pgtype.UUID, err error) {
+	authorIDs, err = s.store.getFollowedEntityIDs(ctx, tenantID, userID, "user")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	followedSpaces, err := s.store.getFollowedEntityIDs(ctx, tenantID, userID, "space")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	memberSpaces, err := s.store.getMemberSpaceIDs(ctx, tenantID, userID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	tagIDs, err = s.store.getFollowedEntityIDs(ctx, tenantID, userID, "tag")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return authorIDs, dedupeUUIDs(append(followedSpaces, memberSpaces...)), tagIDs, nil
+}
+
+// GetForYouFeed returns the personalized, ranked feed for a user, cached 90s per sort.
+func (s *Service) GetForYouFeed(
+	ctx context.Context, tenantID, userID pgtype.UUID, sortMode string, limit, offset int32,
+) ([]FeedItem, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	if offset < 0 {
+		offset = 0
+	}
+
+	key := forYouCacheKey(tenantID, userID, sortMode)
+
+	// 1. Cache hit → slice and return.
+	if s.vk != nil {
+		if data, err := s.vk.Get(ctx, key).Bytes(); err == nil && len(data) > 0 {
+			var ranked []FeedItem
+			if json.Unmarshal(data, &ranked) == nil {
+				return pageSlice(ranked, offset, limit), nil
+			}
+		}
+	}
+
+	// 2. Miss → load affinity, fetch candidates.
+	authorIDs, spaceIDs, tagIDs, err := s.loadAffinity(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	var windowStart pgtype.Timestamptz
+	_ = windowStart.Scan(time.Now().Add(-forYouWindowDays * 24 * time.Hour))
+
+	rows, err := s.store.getForYouCandidates(ctx, gen.GetForYouCandidatesParams{
+		TenantID:        tenantID,
+		WindowStart:     windowStart,
+		ExcludeAuthorID: userID,
+		AuthorIds:       authorIDs,
+		SpaceIds:        spaceIDs,
+		TagIds:          tagIDs,
+		AffinityLimit:   forYouAffinityCap,
+		VelocityLimit:   forYouVelocityCap,
+		CandidateCap:    forYouCandidateCap,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. Score + rank in pure Go.
+	cands := make([]Candidate, len(rows))
+	for i, r := range rows {
+		cands[i] = candidateFromRow(r)
+	}
+
+	ranked := make([]FeedItem, 0, len(cands))
+	for _, c := range rankCandidates(cands, sortMode, time.Now()) {
+		ranked = append(ranked, c.Item)
+	}
+
+	// 4. Cache the ranked list (best-effort).
+	if s.vk != nil {
+		if data, marshalErr := json.Marshal(ranked); marshalErr == nil {
+			_ = s.vk.Set(ctx, key, data, forYouCacheTTL).Err()
+		}
+	}
+
+	return pageSlice(ranked, offset, limit), nil
 }
