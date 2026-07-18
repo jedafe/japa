@@ -21,7 +21,7 @@
 	const colors = {
 		info: 'border-accent text-accent-foreground bg-accent/50',
 		warning: 'border-tertiary text-tertiary bg-tertiary/10',
-		success: 'border-green-500 text-green-600 bg-green-500/10',
+		success: 'border-emerald-500 text-emerald-600 bg-emerald-500/10',
 		error: 'border-destructive text-destructive bg-destructive/10'
 	};
 

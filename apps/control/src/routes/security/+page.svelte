@@ -121,7 +121,7 @@
 			label: t('common.status'),
 			render: (val) =>
 				val
-					? `<span class="bg-green-500/15 text-green-600 rounded-full px-2 py-0.5 text-xs font-medium">${t('security.resolved')}</span>`
+					? `<span class="bg-emerald-500/15 text-emerald-600 rounded-full px-2 py-0.5 text-xs font-medium">${t('security.resolved')}</span>`
 					: `<span class="bg-amber-500/15 text-amber-500 rounded-full px-2 py-0.5 text-xs font-medium">${t('security.open')}</span>`
 		}
 	];

@@ -173,7 +173,7 @@
 				{#if message}
 					<span
 						class="text-xs font-medium"
-						class:text-green-500={messageType === 'success'}
+						class:text-emerald-500={messageType === 'success'}
 						class:text-destructive={messageType === 'error'}
 					>
 						{message}

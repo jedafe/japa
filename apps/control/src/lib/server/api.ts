@@ -3,8 +3,9 @@ import { env } from '$env/dynamic/private';
 /**
  * Server-only base URL for the Go backend API.
  * Configured via PRIVATE_API_BASE_URL environment variable.
- * NOTE: /control routes are mounted at the top level (not under /api/v1),
- * so this base URL must NOT include /api/v1.
+ * Ref: internal/server/server.go — Control Panel routes are mounted under
+ * /api/v1/control/* (inside the /api/v1 chi group), so callers must prepend
+ * /api/v1 for control endpoints too.
  */
 export const API_BASE = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
 

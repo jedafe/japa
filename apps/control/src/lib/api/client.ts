@@ -20,9 +20,16 @@ export async function apiFetch<T>(
 	fetchFn?: typeof fetch
 ): Promise<ApiResult<T>> {
 	const fetcher = fetchFn ?? fetch;
-	// Control panel routes are mounted at the top level (not under /api/v1).
-	// The path should already include the correct prefix (e.g. /control/...).
-	const url = `${PUBLIC_JC_API_URL}${path}`;
+	// Ref: internal/server/server.go — Control Panel routes are mounted under
+	// /api/v1/control/* (inside the /api/v1 chi group). The .env contract states
+	// client fetches use /api/v1/... (see PUBLIC_JC_API_URL). Several pages call
+	// these endpoints as /control/... (no /api/v1 prefix), so normalize here to
+	// keep a single routing contract and avoid 404s against the proxied backend.
+	const normalizedPath =
+		path.startsWith('/control') && !path.startsWith('/api/v1/control')
+			? `/api/v1${path}`
+			: path;
+	const url = `${PUBLIC_JC_API_URL}${normalizedPath}`;
 
 	try {
 		const headers: Record<string, string> = {
