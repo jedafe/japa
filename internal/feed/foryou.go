@@ -134,11 +134,12 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 
 // pageSlice returns a bounded page of items; out-of-range offsets yield empty.
 func pageSlice(items []FeedItem, offset, limit int32) []FeedItem {
-	if offset >= int32(len(items)) {
+	n := int32(len(items)) //nolint:gosec // G115: feed length is bounded by the candidate cap (<< int32 max)
+	if offset >= n {
 		return []FeedItem{}
 	}
 
-	end := min(offset+limit, int32(len(items)))
+	end := min(offset+limit, n)
 
 	return items[offset:end]
 }
@@ -155,6 +156,7 @@ func dedupeUUIDs(in []pgtype.UUID) []pgtype.UUID {
 		}
 
 		seen[k] = struct{}{}
+
 		out = append(out, id)
 	}
 

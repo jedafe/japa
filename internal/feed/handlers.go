@@ -159,6 +159,32 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
+// GetForYouFeed handles GET /api/v1/feed/for-you — personalized ranked feed.
+func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
+	user := h.optionalUser(r)
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+	sortMode := parseSort(r)
+
+	items, err := h.service.GetForYouFeed(r.Context(), tenantID, user.UserID, sortMode, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get For-You feed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
 // GetSpaceFeed handles GET /api/v1/feed/space/{space_id}.
 func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	user := h.optionalUser(r)
