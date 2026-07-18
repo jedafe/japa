@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
 	import { t, translations, initLocale, loadTranslations } from '$lib/stores/i18n';
 	import { setToken } from '$lib/api';
@@ -11,24 +12,21 @@
 	import {
 		Menu,
 		X,
+		LayoutDashboard,
+		ListTodo,
+		Database,
+		ScrollText,
+		Shield,
+		Trash2,
+		Key,
+		AlertTriangle,
+		Settings,
+		Flag,
+		Building2,
+		DollarSign,
+		Clock,
 	} from 'lucide-svelte';
-	import type { Component } from 'svelte';
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const iconModules: Record<string, () => Promise<{ default: any }>> = {
-		LayoutDashboard: async () => ({ default: (await import('lucide-svelte/icons/layout-dashboard')).default }),
-		ListTodo: async () => ({ default: (await import('lucide-svelte/icons/list-todo')).default }),
-		Database: async () => ({ default: (await import('lucide-svelte/icons/database')).default }),
-		ScrollText: async () => ({ default: (await import('lucide-svelte/icons/scroll-text')).default }),
-		Shield: async () => ({ default: (await import('lucide-svelte/icons/shield')).default }),
-		Trash2: async () => ({ default: (await import('lucide-svelte/icons/trash-2')).default }),
-		Key: async () => ({ default: (await import('lucide-svelte/icons/key')).default }),
-		AlertTriangle: async () => ({ default: (await import('lucide-svelte/icons/alert-triangle')).default }),
-		Settings: async () => ({ default: (await import('lucide-svelte/icons/settings')).default }),
-		Flag: async () => ({ default: (await import('lucide-svelte/icons/flag')).default }),
-		Building2: async () => ({ default: (await import('lucide-svelte/icons/building-2')).default }),
-		DollarSign: async () => ({ default: (await import('lucide-svelte/icons/dollar-sign')).default }),
-		Clock: async () => ({ default: (await import('lucide-svelte/icons/clock')).default }),
-	};
+	type LucideIcon = typeof LayoutDashboard;
 
 	let { children } = $props();
 
@@ -36,6 +34,7 @@
 	let userPermissions = $state<string[]>([]);
 	let authChecked = $state(false);
 	let authInflight = false;
+	let mounted = $state(false);
 
 	const currentPath = $derived(page.url.pathname);
 	const isAuthPage = $derived(currentPath === '/login' || currentPath.startsWith('/logout'));
@@ -44,7 +43,16 @@
 		loadTranslations('en');
 	});
 
+	onMount(() => {
+		mounted = true;
+	});
+
 	$effect(() => {
+		// Defer the auth guard until after mount: calling goto() during the layout's
+		// first effect run fires before SvelteKit's `app` global is initialized, which
+		// crashes `get_navigation_intent` (reading `app.hash` of undefined). After mount
+		// the router is ready and `page.url` reflects the real path.
+		if (!mounted) return;
 		if (isAuthPage) {
 			authChecked = true;
 			authInflight = false;
@@ -118,25 +126,25 @@
 	interface NavItem {
 		label: string;
 		href: string;
-		iconName: string;
+		icon: LucideIcon;
 		permission: string;
 		tooltip: string;
 	}
 
 	const navConfig: Omit<NavItem, 'label' | 'tooltip'>[] = [
-		{ href: '/', iconName: 'LayoutDashboard', permission: 'control.dashboard' },
-		{ href: '/queue', iconName: 'ListTodo', permission: 'control.queue' },
-		{ href: '/dlq', iconName: 'AlertTriangle', permission: 'control.queue' },
-		{ href: '/db', iconName: 'Database', permission: 'control.db' },
-		{ href: '/audit', iconName: 'ScrollText', permission: 'control.audit' },
-		{ href: '/security', iconName: 'Shield', permission: 'control.security' },
-		{ href: '/api-keys', iconName: 'Key', permission: 'control.api_keys' },
-		{ href: '/cache', iconName: 'Trash2', permission: 'control.cache' },
-		{ href: '/settings', iconName: 'Settings', permission: 'control.settings' },
-		{ href: '/feature-flags', iconName: 'Flag', permission: 'control.feature_flags' },
-		{ href: '/tenants', iconName: 'Building2', permission: 'control.tenants' },
-		{ href: '/ai-budget', iconName: 'DollarSign', permission: 'control.ai_budget' },
-		{ href: '/cron', iconName: 'Clock', permission: 'control.cron' },
+		{ href: '/', icon: LayoutDashboard, permission: 'control.dashboard' },
+		{ href: '/queue', icon: ListTodo, permission: 'control.queue' },
+		{ href: '/dlq', icon: AlertTriangle, permission: 'control.queue' },
+		{ href: '/db', icon: Database, permission: 'control.db' },
+		{ href: '/audit', icon: ScrollText, permission: 'control.audit' },
+		{ href: '/security', icon: Shield, permission: 'control.security' },
+		{ href: '/api-keys', icon: Key, permission: 'control.api_keys' },
+		{ href: '/cache', icon: Trash2, permission: 'control.cache' },
+		{ href: '/settings', icon: Settings, permission: 'control.settings' },
+		{ href: '/feature-flags', icon: Flag, permission: 'control.feature_flags' },
+		{ href: '/tenants', icon: Building2, permission: 'control.tenants' },
+		{ href: '/ai-budget', icon: DollarSign, permission: 'control.ai_budget' },
+		{ href: '/cron', icon: Clock, permission: 'control.cron' },
 	];
 
 	const navKeyMap: Record<string, { label: string; tooltip: string }> = {
@@ -162,18 +170,6 @@
 			label: tr[navKeyMap[cfg.href].label] ?? navKeyMap[cfg.href].label,
 			tooltip: tr[navKeyMap[cfg.href].tooltip] ?? navKeyMap[cfg.href].tooltip,
 		}));
-	});
-
-	let resolvedIcons: Record<string, Component> = $state({});
-	$effect(() => {
-		for (const item of nav) {
-			if (!resolvedIcons[item.iconName]) {
-				const loader = iconModules[item.iconName];
-				if (loader) {
-					loader().then((mod) => { resolvedIcons[item.iconName] = mod.default; });
-				}
-			}
-		}
 	});
 
 	const pagePermission = $derived(
@@ -225,7 +221,6 @@
 			<nav class="flex-1 space-y-0.5 overflow-y-auto p-3">
 				{#each nav as item}
 					{@const isActive = item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href)}
-					{@const IconComponent = resolvedIcons[item.iconName]}
 					<Tooltip.Root delayDuration={200}>
 						<Tooltip.Trigger>
 							<a
@@ -233,11 +228,7 @@
 								class="hover:bg-dark-04 data-[state=active]:bg-accent flex items-center gap-3 rounded-9px px-3 py-2.5 text-base font-medium transition-colors {isActive ? 'bg-accent text-accent-foreground' : 'text-foreground-alt'}"
 								onclick={() => (sidebarOpen = false)}
 							>
-								{#if IconComponent}
-									<IconComponent class="size-4" />
-								{:else}
-									<span class="size-4"></span>
-								{/if}
+								<item.icon class="size-4" />
 								{item.label}
 							</a>
 						</Tooltip.Trigger>

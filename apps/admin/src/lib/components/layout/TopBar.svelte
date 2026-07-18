@@ -53,7 +53,7 @@
 			class="rounded-md p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10 md:hidden"
 			style="color: var(--color-foreground)"
 			onclick={onMenuClick}
-			aria-label="Toggle sidebar"
+			aria-label={t('lib.components.layout.TopBar.svelte.toggle_sidebar', 'Toggle sidebar')}
 		>
 			<Menu class="h-5 w-5" />
 		</button>
@@ -91,7 +91,7 @@
 							style="color: var(--color-primary)"
 							onclick={() => markAllRead()}
 						>
-							Mark all read
+							{t('lib.components.layout.TopBar.svelte.mark_all_read', 'Mark all read')}
 						</button>
 					</div>
 					<div class="max-h-64 overflow-y-auto">
@@ -149,7 +149,7 @@
 							style="color: var(--color-foreground)"
 							onclick={logout}
 						>
-							Logout
+							{t('lib.components.layout.TopBar.svelte.logout', 'Logout')}
 						</button>
 					</div>
 				{/if}

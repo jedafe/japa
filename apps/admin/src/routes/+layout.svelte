@@ -145,7 +145,7 @@
 
 			const unsubNotification = wsClient.on('notification', (msg: any) => {
 				addNotification({
-					title: msg.title ?? 'Notification',
+					title: msg.title ?? t('layout.ws.notification_title', 'Notification'),
 					body: msg.body ?? '',
 					type: msg.type ?? 'info',
 					link: msg.link
@@ -154,7 +154,7 @@
 
 			const unsubAudit = wsClient.on('audit_log', (msg: any) => {
 				addNotification({
-					title: 'Audit Event',
+					title: t('layout.ws.audit_event', 'Audit Event'),
 					body: `${msg.action_type ?? 'action'} on ${msg.entity_type ?? 'entity'}`,
 					type: 'info'
 				});

@@ -1147,17 +1147,110 @@ func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
 // AI Budget Handlers (stubs)
 // ---------------------------------------------------------------------------
 
+// aiBudgetThresholdKey is the system_settings key holding the monthly AI spend
+// alert threshold in USD (see §19). It is an alert threshold, not a hard cap.
+const aiBudgetThresholdKey = "ai.monthly_budget_usd"
+
+// parseBudgetUSD decodes a JSON-encoded system_settings value into a float USD
+// amount, tolerating a bare number ("100"), a JSON number (100), or a JSON
+// string ("100"). Returns 0 when the value is missing or unparseable.
+func parseBudgetUSD(v string) float64 {
+	v = strings.TrimSpace(v)
+	v = strings.Trim(v, "\"")
+	if v == "" {
+		return 0
+	}
+	if f, err := strconv.ParseFloat(v, 64); err == nil {
+		return f
+	}
+	var f float64
+	if json.Unmarshal([]byte(v), &f) == nil {
+		return f
+	}
+	return 0
+}
+
+// GetAIBudget handles GET /api/v1/control/ai-budget.
+// Returns the current AI budget summary. The monthly threshold is read from
+// system_settings (ai.monthly_budget_usd). Month-to-date spend and per-provider
+// / per-task breakdowns aggregate from the ai_usage_log table; that table is not
+// yet provisioned (see internal/ai/handlers.go), so spend defaults to 0 until
+// usage tracking ships. alert_triggered is derived from threshold vs spend.
 func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	threshold := 0.0
+	if h.Settings != nil {
+		if v, err := h.Settings.GetSetting(r.Context(), tenantID, aiBudgetThresholdKey); err == nil {
+			threshold = parseBudgetUSD(v)
+		}
+	}
+
+	// Spend aggregation requires the ai_usage_log table, which is not yet
+	// created. Report 0 spend and empty breakdowns until that lands.
+	const monthToDateCost = 0.0
+	alertTriggered := threshold > 0 && monthToDateCost >= threshold
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"message": "AI budget endpoint requires implementation",
+			"month_to_date_cost":    monthToDateCost,
+			"budget_threshold_usd":  threshold,
+			"alert_triggered":       alertTriggered,
+			"by_provider":           []any{},
+			"by_task_type":          []any{},
 		},
 	})
 }
 
+// UpdateAIBudget handles PATCH /api/v1/control/ai-budget.
+// Persists the monthly alert threshold (ai.monthly_budget_usd) to
+// system_settings and returns the updated budget summary.
 func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"error": map[string]string{"code": "not_implemented", "message": "AI budget update requires implementation"},
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		BudgetThresholdUSD *float64 `json:"budget_threshold_usd"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.BudgetThresholdUSD == nil || *input.BudgetThresholdUSD < 0 {
+		writeError(w, http.StatusBadRequest, "invalid_threshold", "budget_threshold_usd must be a non-negative number")
+		return
+	}
+
+	threshold := *input.BudgetThresholdUSD
+	data, _ := json.Marshal(threshold)
+	if _, err := h.DB.Writer.Exec(r.Context(),
+		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
+		tenantID, aiBudgetThresholdKey, string(data),
+	); err != nil {
+		slog.Error("control: update ai budget", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI budget threshold")
+		return
+	}
+	if h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
+	}
+
+	const monthToDateCost = 0.0
+	alertTriggered := threshold > 0 && monthToDateCost >= threshold
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"month_to_date_cost":    monthToDateCost,
+			"budget_threshold_usd":  threshold,
+			"alert_triggered":       alertTriggered,
+			"by_provider":           []any{},
+			"by_task_type":          []any{},
+		},
 	})
 }
 
