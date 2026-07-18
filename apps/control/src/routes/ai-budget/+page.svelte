@@ -102,7 +102,7 @@
 					<div class="flex items-center justify-between">
 						<span class="text-muted-foreground text-sm">{t('ai_budget.remaining')}</span>
 						<span class="font-mono text-sm font-medium" class:text-destructive={budget.month_to_date_cost >= budget.budget_threshold_usd} class:text-emerald-500={budget.month_to_date_cost < budget.budget_threshold_usd}>
-							{formatCost(Math.max(0, budget.budget_threshold_usd - budget.month_to_date_cost))}
+							{formatCost(Math.max(0, (budget.budget_threshold_usd ?? 0) - (budget.month_to_date_cost ?? 0)))}
 						</span>
 					</div>
 					<div class="flex items-center justify-between">
