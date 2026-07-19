@@ -2,9 +2,10 @@
 
 **Date:** 2026-07-18
 **Surface:** JapaConnect Main App (`apps/main`, SvelteKit 2 + Svelte 5 Runes, SSR, port 3000)
-**Status:** APPROVED (2026-07-18) — awaiting final spec review
+**Status:** APPROVED (2026-07-18; per-type card style added & approved 2026-07-19) — awaiting final spec review
 **Roadmap context:** ROADMAP-MAIN Phase 04 (Home Timeline). **Sub-project #2** of the personalized feed work; sub-project #1 (backend `GET /feed/for-you`) is complete and merged.
 **Predecessor spec:** `docs/superpowers/specs/2026-07-18-personalized-for-you-feed-design.md` (backend, §1 names this frontend layer as #2).
+**Companion spec:** `docs/superpowers/specs/2026-07-19-per-type-feed-card-style-design.md` (per-type card style — backend + control panel; Layers 1 & 3 of the card-style feature, this spec being Layer 2).
 
 ---
 
@@ -20,7 +21,7 @@ This spec turns that placeholder into a real, personalized, multi-tab feed and f
 |---|----------|--------|
 | F1 | Tab/sort fetch strategy | **URL-driven SSR** — tab & sort are `?tab=`/`?sort=` search params; anchor-link navigation re-runs the server `load`. Token stays server-side; feed views are shareable. |
 | F2 | Pagination | **Infinite scroll** — `IntersectionObserver` sentinel client-fetches the next `page_offset` and appends. |
-| F3 | Card style | **Honor all 4** `feed.card_style` variants (`reddit`/`compact`/`grid`/`magazine`) in one `FeedCard`, selected by the real backend setting. |
+| F3 | Card style | **Honor all 4** variants in one `FeedCard`, selected **per content type** via `feed.card_style` = `{ default, by_type }`. Container is a 2-col grid only when the whole page resolves to `grid`, else a stream (a `grid` item → full-width card). Backend map shape + admin UI: **companion spec** `2026-07-19-per-type-feed-card-style-design.md`. |
 | F4 | Card richness | **Media-rich** — the `magazine` variant carries avatar, relative time, reading time, tags, cover image; other variants share the same data with lighter layout. |
 | F5 | Container treatment | **Bordered rounded surfaces for all four** (`--color-surface`, 1px `--color-border`, `--radius-card`): `reddit`/`compact`/`magazine` are bordered feed surfaces with hairline row dividers; `grid` is individual 2-up cards. *(Supersedes an earlier edge-to-edge/placeholder preference after reviewing the rendered mockup.)* |
 | F6 | Vote / bookmark controls | `reddit` shows a **visible up/down vote rail**; `compact` shows up-chevron + `vote_score`. The vote arrows are the community affordance but the mutation is wired in the later interactions unit (§7), so they are inert in v1. Bookmark/comment/view stay display-only counts. |
@@ -57,7 +58,7 @@ Verified in `internal/feed/handlers.go` + `internal/server/server.go` (routes) o
 
 **Critical backend behavior:** `parseSort` **defaults to `latest`** when `sort` is absent or unrecognized. Therefore the frontend MUST always send an explicit `sort` value; it must never rely on omission to mean "relevant."
 
-**Card style:** `GET /feed/card-style` (public) → `{ "data": { "card_style": string } }`, default `"reddit"`. The setting is tenant-scoped (`system_settings` key `feed.card_style`) and is exposed by a live admin selector in the Control app. Valid values: `reddit`, `compact`, `grid`, `magazine`.
+**Card style (per content type):** `GET /feed/card-style` (public) → `{ "data": { "default": CardStyle, "by_type": { [content_type]: CardStyle } } }`. The backend tolerates the legacy scalar value (`"reddit"`) and normalizes it to `{ default: "reddit", by_type: {} }`. Valid `CardStyle`: `reddit`, `compact`, `grid`, `magazine`. The map shape, migration, and admin UI live in the **companion spec** `2026-07-19-per-type-feed-card-style-design.md` (backend + control). The frontend resolves a style **per feed item**: `cardStyleFor(item.content_type)` = `by_type[content_type] ?? default`.
 
 **`created_at` format:** the backend emits a **non-ISO** timestamp string, e.g. `"2026-07-12 08:03:55.888616 +0100 WAT"`. `new Date(...)` on this returns `Invalid Date` in most engines. Safe parsing is required (see §4).
 
@@ -85,10 +86,10 @@ lib/feed/
 
 - **`endpoint.ts`** — `feedPath(tab: FeedTab, sort: SortValue, pageSize: number, pageOffset: number): string`. The *only* place tab→route and chip→sort knowledge lives. Pure, exhaustively unit-tested. `FeedTab = 'following' | 'for_you' | 'explore'`. Returns a **bare path with no `/api/v1` prefix** (e.g. `/feed/for-you?sort=top&page_size=20&page_offset=40`) — both the server client (`apiList`, prepends `API_V1`) and the browser client (`api.get`, prepends `PUBLIC_JC_API_URL`) add their own base, so double-prefixing must be avoided.
 - **`time.ts`** — `relativeTime(raw: string, now?: Date): string`. Parses ISO **and** the backend's space-separated `+0100 WAT` form; returns `""` on unparseable input (card then omits the timestamp rather than showing "Invalid Date").
-- **`cardStyle.ts`** — `normalizeCardStyle(v: string | null | undefined): CardStyle`. Maps unknown values to `'reddit'`. `CardStyle = 'reddit' | 'compact' | 'grid' | 'magazine'`.
+- **`cardStyle.ts`** — types `CardStyle = 'reddit' | 'compact' | 'grid' | 'magazine'` and `CardStyleConfig = { default: CardStyle; byType: Partial<Record<string, CardStyle>> }`. `normalizeConfig(raw): CardStyleConfig` accepts the endpoint's `{ default, by_type }` **or** a legacy scalar, coercing unknown values to `'reddit'`. `cardStyleFor(contentType, cfg): CardStyle` returns `cfg.byType[contentType] ?? cfg.default`. Pure, exhaustively unit-tested.
 - **`FeedTabs` / `FeedSortBar`** — presentational. Given the current `tab`/`sort` and the active-item id, render anchor links whose `href` preserves the *other* param (switching sort keeps your tab and vice-versa). No imperative routing.
-- **`FeedList`** — given `{ items, tab, sort, pageSize, cardStyle }`. Seeds a local `items` copy from the prop; a `$effect` re-seeds it whenever the incoming SSR `items` identity changes (a new tab/sort produces a fresh SSR payload → replace, never append). Owns `loading` / `atEnd` and the `IntersectionObserver`.
-- **`FeedCard`** — given `{ item, style }`. A single component; conditional layout per `style`, sharing one data set and one metric row.
+- **`FeedList`** — given `{ items, tab, sort, pageSize, cardStyleConfig }`. Seeds a local `items` copy from the prop; a `$effect` re-seeds it whenever the incoming SSR `items` identity changes (a new tab/sort produces a fresh SSR payload → replace, never append). Owns `loading` / `atEnd` and the `IntersectionObserver`. Also owns the **layout mode**: computes each item's style via `cardStyleFor`, and renders a 2-col grid **iff every item resolves to `grid`**, else a single-column stream (§3A).
+- **`FeedCard`** — given `{ item, style, layout }` where `layout ∈ 'stream' | 'grid-cell'`. A single component; conditional card layout per `style`, sharing one data set and one metric row. A `grid`-styled item renders as a full-width image-top card in `stream` layout and as a grid cell in `grid-cell` layout.
 
 **Why anchor links, not `onclick` + `goto`:** SvelteKit intercepts same-origin anchors for client-side navigation automatically. This yields URL-as-state, progressive enhancement (works with JS disabled), and `$navigating`-driven loading with zero imperative routing code. Infinite scroll is the single feature that genuinely requires JS; without JS the feed degrades gracefully to its first page.
 
@@ -97,7 +98,7 @@ lib/feed/
 ## 3. Data flow
 
 1. **`(app)/+layout.server.ts`** — add one graceful call:
-   `cardStyle = normalizeCardStyle((await apiGet('/feed/card-style')).card_style)`, degrading to `'reddit'` on failure. Returned in layout data so the whole shell (and `FeedList`) can read it. Does **not** depend on `?tab`/`?sort`, so it will not re-run on tab/sort switches.
+   `cardStyleConfig = normalizeConfig(await apiGet('/feed/card-style'))`, degrading to `{ default: 'reddit', byType: {} }` on failure. Returned in layout data so the whole shell (and `FeedList`) can read it. Does **not** depend on `?tab`/`?sort`, so it will not re-run on tab/sort switches.
 
 2. **`(app)/+page.server.ts`** — rewritten:
    - Read `tab` and `sort` from `url.searchParams`.
@@ -106,9 +107,10 @@ lib/feed/
    - Build the path with `feedPath(tab, sort, pageSize, 0)`; fetch page 0.
    - Return `{ items, tab, sort, authed, pageSize, loadError }`, preserving the existing `try/catch → loadError` graceful degradation.
 
-3. **`(app)/+page.svelte`** — compose `FeedTabs` + `FeedSortBar` (active state derived from `page.url` / loader data) + `FeedList` (passed `items`, `tab`, `sort`, `pageSize`, and `cardStyle` from layout data). The inline card markup currently in this file is removed in favor of `FeedList` → `FeedCard`.
+3. **`(app)/+page.svelte`** — compose `FeedTabs` + `FeedSortBar` (active state derived from `page.url` / loader data) + `FeedList` (passed `items`, `tab`, `sort`, `pageSize`, and `cardStyleConfig` from layout data). The inline card markup currently in this file is removed in favor of `FeedList` → `FeedCard`.
 
-4. **`FeedList.svelte`** — infinite scroll:
+4. **`FeedList.svelte`** — layout mode + infinite scroll:
+   - **Layout mode** decided from the **initial SSR page**: `gridMode = items.length > 0 && items.every(i => cardStyleFor(i.content_type, cardStyleConfig) === 'grid')`. `gridMode` → 2-col grid container (cards render as `grid-cell`); otherwise → single-column stream (each card `stream`; a `grid`-resolved item is a full-width image-top card). Held across appends and **re-decided on tab/sort change** (fresh SSR page) — never flips mid-scroll.
    - Sentinel `<div>` after the last card; `IntersectionObserver` fires `loadMore()`.
    - `loadMore()` guards on `loading || atEnd`, then `api.get<FeedItem[]>(feedPath(tab, sort, pageSize, items.length))`, appends results, and sets `atEnd = (returned.length < pageSize)`.
    - Observer is created in an `$effect` and disconnected on teardown and on `atEnd`.
@@ -138,8 +140,10 @@ Interactive reference mockup (real tokens, theme-aware, light/dark toggle): arti
 |---------|-----------|
 | `reddit` (default) | **Bordered feed surface** (`--color-surface`, 1px `--color-border`, `--radius-card`) with hairline dividers between rows. |
 | `compact` | Bordered feed surface with hairline dividers between one-line rows. |
-| `grid` | Individual bordered rounded cards in a 2-col grid; 1-col below ~560px. |
+| `grid` | Individual bordered rounded cards. **2-col grid only in `gridMode`** (every item on the page resolves to `grid`; 1-col below ~560px); in a mixed stream a `grid` item is a **full-width image-top card**. |
 | `magazine` | Bordered feed surface, single column, hairline dividers between posts. |
+
+**Per-item style resolution & layout mode (per-type card style):** each card's variant is resolved per item — `cardStyleFor(item.content_type, cardStyleConfig)` = `by_type[content_type] ?? default`. The feed's **container layout** is a single self-adjusting rule: it renders a **2-col grid iff every item on the page resolves to `grid`** (`gridMode`), otherwise a **single-column stream** in which a `grid`-resolved item renders as a full-width image-top card. This gives both behaviors with no context flag: a single-type all-`grid` listing becomes 2-col automatically, while a mixed For-You feed with e.g. `blog_post → grid` keeps blog posts as full-width cards aligned with the other rows, preserving rank order. Mode is fixed from the initial SSR page and re-decided on tab/sort change (never flips mid-scroll).
 
 **Per-variant layout:**
 - **`reddit`** — row = `[up/down vote rail ~30px] · [body] · [thumbnail 84px]`. Body: meta line (`badge · space · author · time`), ~15.5px/600 title, 1-line-clamped excerpt trailing `· Nm read`, foot row (tags left / metrics right). Thumbnail only when `cover_image_url`. Row hover → `surface-subtle`.
@@ -191,7 +195,7 @@ The backend's ~600-item candidate ceiling (backend spec §4) gives infinite scro
 - **Pure unit tests (vitest):**
   - `endpoint.ts` — every tab base path; every chip→sort mapping incl. **Popular→`top`**; explicit `relevant` is always emitted; `page_size`/`page_offset` present (never `limit`).
   - `time.ts` — the backend's `"… +0100 WAT"` string parses to a sensible relative label; ISO input parses; empty/garbage input returns `""`.
-  - `cardStyle.ts` — each valid value passes through; unknown/null/undefined → `'reddit'`.
+  - `cardStyle.ts` — `normalizeConfig` accepts `{ default, by_type }` **and** a legacy scalar; unknown values → `'reddit'`. `cardStyleFor` returns the per-type override or the default. `gridMode` predicate: true only when every item resolves to `grid`; false for any mixed set.
 - **Component behavior (lightweight):** `FeedList` re-seeds (not appends) when the SSR `items` prop changes; `loadMore` respects the `loading`/`atEnd` guards.
 - **API-Readiness Gate:** before merge, validate against the live backend — param names (`page_size`/`page_offset`/`sort`), `/feed/card-style` response shape, and the `created_at` format assumption. No mock-shaped-only verification.
 - **Baseline green:** `svelte-check` and lint must pass (repo baseline is all-green; any failure is a new regression).
@@ -212,11 +216,13 @@ The backend's ~600-item candidate ceiling (backend spec §4) gives infinite scro
 
 ## 8. Build sequence (for the implementation plan)
 
-1. Pure modules + unit tests: `endpoint.ts`, `time.ts`, `cardStyle.ts`.
+> **Cross-layer dependency:** this frontend layer consumes the `GET /feed/card-style` → `{ default, by_type }` contract defined in the companion spec (Layer 1). Build the backend contract first; the frontend can then be developed and tested against a hand-set `feed.card_style` map before the Control UI (Layer 3) exists.
+
+1. Pure modules + unit tests: `endpoint.ts`, `time.ts`, `cardStyle.ts` (incl. `cardStyleFor` + `gridMode`).
 2. `FeedItem` type expansion + i18n keys.
-3. `+layout.server.ts` card-style fetch.
+3. `+layout.server.ts` card-style config fetch.
 4. `+page.server.ts` rewrite (tab/sort/params, remove `?limit=`).
-5. `FeedCard.svelte` (4 variants) + `FeedList.svelte` (infinite scroll).
+5. `FeedCard.svelte` (4 variants × `stream`/`grid-cell` layout) + `FeedList.svelte` (layout mode + infinite scroll).
 6. `FeedTabs.svelte` + `FeedSortBar.svelte` (anchor links).
 7. `(app)/+page.svelte` composition (remove inline card markup).
 8. API-Readiness Gate verification + `svelte-check`/lint green.
