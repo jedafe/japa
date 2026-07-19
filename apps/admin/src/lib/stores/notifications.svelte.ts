@@ -17,13 +17,21 @@ export function getUnreadCount(): number {
 }
 
 let initialized = false;
+let pollInterval: ReturnType<typeof setInterval> | undefined;
 
-export function initNotifications() {
+export function initNotifications(): (() => void) | void {
 	if (initialized || !browser) return;
 	initialized = true;
 
 	fetchNotifications();
-	setInterval(fetchNotifications, 60_000);
+	pollInterval = setInterval(fetchNotifications, 60_000);
+
+	return () => {
+		if (pollInterval) {
+			clearInterval(pollInterval);
+			pollInterval = undefined;
+		}
+	};
 }
 
 async function fetchNotifications() {

@@ -197,7 +197,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('fieldGroups.title')} — JapaConnect Admin</title>
+	<title>{t('custom_fields.title', 'Custom Fields')} — JapaConnect Admin</title>
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('fieldGroups.title')}</h1>

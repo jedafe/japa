@@ -162,6 +162,89 @@ func (c *Checker) SetEnabled(ctx context.Context, tenantID pgtype.UUID, key stri
 	return nil
 }
 
+// FlagConfig is the richer admin-facing metadata stored alongside a flag's
+// enabled state in the feature_flags.config jsonb column. Storage only
+// persists the key → enabled mapping plus this config blob; everything the
+// admin UI shows beyond that (name, description, environment, rollout) lives
+// here so it can be edited without changing the registry.
+type FlagConfig struct {
+	Name              string `json:"name"`
+	Description       string `json:"description"`
+	Environment       string `json:"environment"`
+	RolloutPercentage int    `json:"rolloutPercentage"`
+}
+
+// UpdateFlag upserts a feature flag row, persisting both its enabled state and
+// the richer admin metadata. Unlike SetEnabled, it accepts the full config so
+// the admin UI can edit name/description/environment/rollout in one call.
+func (c *Checker) UpdateFlag(ctx context.Context, tenantID pgtype.UUID, key string, enabled bool, cfg FlagConfig, updatedBy pgtype.UUID) error {
+	configJSON, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshaling feature flag config %s: %w", key, err)
+	}
+
+	_, err = c.db.Writer.Exec(ctx, `
+		INSERT INTO feature_flags (key, tenant_id, enabled, config, updated_by)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (key, tenant_id)
+		DO UPDATE SET enabled = $3, config = $4, updated_by = $5, updated_at = now()
+	`, key, tenantID, enabled, configJSON, updatedBy)
+	if err != nil {
+		return fmt.Errorf("upserting feature flag %s: %w", key, err)
+	}
+
+	return nil
+}
+
+// DeleteFlag removes a feature flag row for the tenant. After deletion the
+// flag falls back to its registry Default, exactly as if it had never been
+// set. The registry key itself is never removed — only the tenant override.
+func (c *Checker) DeleteFlag(ctx context.Context, tenantID pgtype.UUID, key string) error {
+	_, err := c.db.Writer.Exec(ctx, `
+		DELETE FROM feature_flags
+		WHERE key = $1 AND tenant_id = $2
+	`, key, tenantID)
+	if err != nil {
+		return fmt.Errorf("deleting feature flag %s: %w", key, err)
+	}
+
+	return nil
+}
+
+// ListFlagRows returns every feature_flags row for the tenant, registry key or
+// not. Used by ListFeatureFlags so admin-created keys (not in the static
+// Registry) still appear in the admin UI.
+func (c *Checker) ListFlagRows(ctx context.Context, tenantID pgtype.UUID) ([]FlagRow, error) {
+	rows, err := c.db.Reader.Query(ctx, `
+		SELECT key, enabled, config, updated_at
+		FROM feature_flags
+		WHERE tenant_id = $1
+	`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing feature flags: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]FlagRow, 0)
+	for rows.Next() {
+		var r FlagRow
+		if err := rows.Scan(&r.Key, &r.Enabled, &r.Config, &r.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scanning feature flag row: %w", err)
+		}
+		out = append(out, r)
+	}
+
+	return out, rows.Err()
+}
+
+// FlagRow is a raw feature_flags table row for a tenant.
+type FlagRow struct {
+	Key       string
+	Enabled   bool
+	Config    []byte
+	UpdatedAt time.Time
+}
+
 // Gate is HTTP middleware that checks if a feature is enabled.
 // If disabled, returns 404 with {"error":"feature_disabled"}.
 // This MUST be used inside the tenant middleware group so tenant
