@@ -96,7 +96,7 @@
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<Review[]>('/reviews');
+			const result = await api<Review[]>('/admin/reviews');
 			if (result.ok) {
 				reviews = result.data ?? [];
 			} else {

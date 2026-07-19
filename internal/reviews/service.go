@@ -89,6 +89,12 @@ func (s *Service) ListReviewsByReviewer(ctx context.Context, tenantID, reviewerU
 	return s.store.listReviewsByReviewer(ctx, tenantID, reviewerUserID, limit, offset)
 }
 
+// ListReviews returns all reviews for a tenant (admin moderation view),
+// regardless of entity or reviewer and including all statuses.
+func (s *Service) ListReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
+	return s.store.listReviews(ctx, tenantID, limit, offset)
+}
+
 // UpdateReview updates an existing review (owner only).
 func (s *Service) UpdateReview(ctx context.Context, id, tenantID, reviewerUserID pgtype.UUID, rating int16, title, body string) (gen.Review, error) {
 	if rating < RatingMin || rating > RatingMax {

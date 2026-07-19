@@ -1,4 +1,5 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { csrfHeaders, refreshCsrfToken } from './csrf';
 
 export interface ApiOk<T> {
 	data: T;
@@ -15,6 +16,13 @@ export interface ApiResult<T> {
 }
 
 let refreshPromise: Promise<boolean> | null = null;
+
+// isCsrfRejection reports whether an error envelope denotes a CSRF token failure
+// so the client can refresh the token and retry exactly once.
+function isCsrfRejection(status: number, err: ApiErr['error'] | null): boolean {
+	if (status !== 403) return false;
+	return err?.code === 'csrf_token_invalid' || err?.code === 'csrf_token_missing';
+}
 
 async function attemptRefresh(): Promise<boolean> {
 	if (refreshPromise) return refreshPromise;
@@ -35,6 +43,71 @@ async function attemptRefresh(): Promise<boolean> {
 	return refreshPromise;
 }
 
+// dispatch performs a single fetch attempt with CSRF headers attached for unsafe
+// methods, parsing the standard {data|error} envelope.
+async function dispatch<T>(
+	url: string,
+	options: RequestInit,
+	fetcher: typeof fetch,
+	withCsrf: boolean
+): Promise<ApiResult<T>> {
+	const baseHeaders = options.headers as Record<string, string> | undefined;
+	const headers = withCsrf ? csrfHeaders(options.method, baseHeaders) : baseHeaders;
+
+	const res = await fetcher(url, {
+		...options,
+		credentials: 'include',
+		headers: {
+			'Content-Type': 'application/json',
+			...(headers ?? {}),
+		},
+	});
+
+	if (res.status === 401) {
+		const refreshed = await attemptRefresh();
+		if (refreshed) {
+			const retryRes = await fetcher(url, {
+				...options,
+				credentials: 'include',
+				headers: {
+					'Content-Type': 'application/json',
+					...csrfHeaders(options.method, headers),
+				},
+			});
+			if (retryRes.ok) {
+				const body = await retryRes.json();
+				return { data: (body as ApiOk<T>).data, error: null, status: retryRes.status };
+			}
+		}
+		return { data: null, error: { code: 'unauthorized', message: 'Session expired', status: 401 }, status: 401 };
+	}
+
+	if (res.status === 204 || res.status === 205 || res.headers.get('content-length') === '0') {
+		return { data: null, error: null, status: res.status };
+	}
+
+	const body = await res.json();
+
+	if (!res.ok || 'error' in body) {
+		const err = 'error' in body ? body.error : { code: 'unknown', message: res.statusText, status: res.status };
+		return { data: null, error: err, status: res.status };
+	}
+
+	return { data: (body as ApiOk<T>).data, error: null, status: res.status };
+}
+
+// retryAfterCsrfRefresh re-issues a fresh CSRF token and retries the request
+// once. Returns the retry result (which may itself carry a 403 if the token
+// still fails, at which point we surface the error).
+async function retryAfterCsrfRefresh<T>(
+	url: string,
+	options: RequestInit,
+	fetcher: typeof fetch
+): Promise<ApiResult<T>> {
+	await refreshCsrfToken(fetcher);
+	return dispatch<T>(url, options, fetcher, true);
+}
+
 export async function apiFetch<T>(
 	path: string,
 	options: RequestInit = {},
@@ -44,46 +117,15 @@ export async function apiFetch<T>(
 	const url = `${PUBLIC_JC_API_URL}/api/v1${path}`;
 
 	try {
-		const res = await fetcher(url, {
-			...options,
-			credentials: 'include',
-			headers: {
-				'Content-Type': 'application/json',
-				...options.headers,
-			},
-		});
+		const result = await dispatch<T>(url, options, fetcher, true);
 
-		if (res.status === 401) {
-			const refreshed = await attemptRefresh();
-			if (refreshed) {
-				const retryRes = await fetcher(url, {
-					...options,
-					credentials: 'include',
-					headers: {
-						'Content-Type': 'application/json',
-						...options.headers,
-					},
-				});
-				if (retryRes.ok) {
-					const body = await retryRes.json();
-					return { data: (body as ApiOk<T>).data, error: null, status: retryRes.status };
-				}
-			}
-			return { data: null, error: { code: 'unauthorized', message: 'Session expired', status: 401 }, status: 401 };
+		// On a CSRF rejection, refresh the token once and retry so a stale or
+		// missing token does not surface as a hard error to the user.
+		if (isCsrfRejection(result.status, result.error)) {
+			return retryAfterCsrfRefresh<T>(url, options, fetcher);
 		}
 
-		if (res.status === 204 || res.status === 205 || res.headers.get('content-length') === '0') {
-			return { data: null, error: null, status: res.status };
-		}
-
-		const body = await res.json();
-
-		if (!res.ok || 'error' in body) {
-			const err = 'error' in body ? body.error : { code: 'unknown', message: res.statusText, status: res.status };
-			return { data: null, error: err, status: res.status };
-		}
-
-		return { data: (body as ApiOk<T>).data, error: null, status: res.status };
+		return result;
 	} catch (err) {
 		return {
 			data: null,

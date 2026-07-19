@@ -160,7 +160,7 @@
 	async function handleFlushCache() {
 		flushing = true;
 		try {
-			await analyticsAdminApi.flushCache({ targets: "all" });
+			await analyticsAdminApi.flushCache({ scope: "all" });
 			flushModalOpen = false;
 			goto("", { invalidateAll: true });
 		} catch {
@@ -306,7 +306,7 @@
 					columns={[
 						{ key: "metric", label: "Metric", sortable: true },
 						{ key: "value", label: "Value", sortable: true },
-						{ key: "change", label: "Change", sortable: true, render: (v: number) => `<span class="${v >= 0 ? 'text-success-600' : 'text-danger-600'}">${v >= 0 ? '+' : ''}${v}%</span>` }
+						{ key: "change", label: t('analytics.change', 'Change'), sortable: true, render: (v: number) => `<span class="${v >= 0 ? 'text-success-600' : 'text-danger-600'}">${v >= 0 ? '+' : ''}${v}%</span>` }
 					]}
 					data={userAnalytics ?? []}
 					emptyMessage="No user analytics data"
@@ -362,7 +362,7 @@
 				<DataTable
 					columns={[
 						{ key: "period", label: "Period", sortable: true },
-						{ key: "revenue", label: "Revenue", sortable: true, render: (v: number) => `$${v.toLocaleString()}` },
+						{ key: "revenue", label: t('analytics.revenue', 'Revenue'), sortable: true, render: (v: number) => `$${v.toLocaleString()}` },
 						{ key: "transactions", label: "Transactions", sortable: true }
 					]}
 					data={revenueAnalytics ?? []}

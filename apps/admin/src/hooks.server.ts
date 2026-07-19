@@ -1,5 +1,5 @@
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
-import { building } from '$app/environment';
+import { building, dev } from '$app/environment';
 import * as Sentry from '@sentry/sveltekit';
 import { env } from '$env/dynamic/private';
 
@@ -9,6 +9,28 @@ const PUBLIC_ROUTES = ['/login', '/_app'];
 
 function isPublicRoute(pathname: string): boolean {
 	return PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
+}
+
+// Dev-only auto-login is strictly gated behind SvelteKit's compile-time `dev` flag
+// (which is stripped from production builds) AND an explicit opt-in env flag.
+// It NEVER runs in production. The credentials are obviously-dev-only placeholders.
+const DEV_LOGIN_ENABLED = dev && env.JC_DEV_LOGIN === 'true';
+const DEV_LOGIN_EMAIL = 'dev-admin@local.dev';
+const DEV_LOGIN_PASSWORD = 'dev-only-not-a-real-password';
+
+// A limited, clearly-fake local dev user used only when the backend is
+// unreachable during local development. It is NOT a super_admin — it carries
+// the minimal `dev_viewer` group so the UI can render without implying real
+// privileges. This never impersonates a real-looking super admin.
+function createLocalDevUser(): App.Locals['user'] {
+	return {
+		id: 'dev-local-001',
+		username: 'dev_local',
+		email: DEV_LOGIN_EMAIL,
+		displayName: 'Local Dev (backend offline)',
+		groups: ['dev_viewer'],
+		avatar_url: null,
+	};
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -22,81 +44,78 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const token = event.cookies.get('jc_token');
 
-	// Dev mode bypass: try to get a real admin token from the backend
-	const isDev = env.NODE_ENV !== 'production';
-	const devMode = isDev || env.PRIVATE_API_BASE_URL === 'http://localhost:8080';
+	// No token: dev auto-login is an explicit, dev-only convenience.
+	if (!token) {
+		if (DEV_LOGIN_ENABLED) {
+			// Early exit: attempt real dev login against the backend.
+			try {
+				const loginRes = await fetch(`${API_BASE}/api/v1/auth/login`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						email: DEV_LOGIN_EMAIL,
+						password: DEV_LOGIN_PASSWORD,
+					}),
+				});
 
-	if (!token && devMode) {
-		// Try to login with admin credentials to get a real token
-		try {
-			const loginRes = await fetch(`${API_BASE}/api/v1/auth/login`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					email: 'admin@japaconnect.com',
-					password: 'Admin123!'
-				})
-			});
+				if (loginRes.ok) {
+					const { data } = await loginRes.json();
+					const realToken = data?.access_token;
 
-			if (loginRes.ok) {
-				const { data } = await loginRes.json();
-				const realToken = data?.access_token;
+					if (realToken) {
+						event.cookies.set('jc_token', realToken, {
+							path: '/',
+							httpOnly: true,
+							secure: false,
+							sameSite: 'lax',
+							maxAge: 3600 * 24 * 7,
+						});
 
-				if (realToken) {
-					// Set the real token in the cookie
-					event.cookies.set('jc_token', realToken, {
-						path: '/',
-						httpOnly: true,
-						secure: false,
-						sameSite: 'lax',
-						maxAge: 3600 * 24 * 7
-					});
+						const meRes = await fetch(`${API_BASE}/api/v1/me`, {
+							headers: { Authorization: `Bearer ${realToken}` },
+						});
 
-					// Get user info with the real token
-					const meRes = await fetch(`${API_BASE}/api/v1/me`, {
-						headers: { Authorization: `Bearer ${realToken}` }
-					});
-
-					if (meRes.ok) {
-						const { data: userData } = await meRes.json();
-						event.locals.user = userData;
-						event.locals.token = realToken;
+						if (meRes.ok) {
+							const { data: userData } = await meRes.json();
+							event.locals.user = userData;
+							event.locals.token = realToken;
+							return await resolve(event);
+						}
 					}
 				}
+			} catch {
+				// Backend unreachable in dev: fall back to a limited local dev user.
+				event.locals.user = createLocalDevUser();
+				event.locals.token = 'dev-mock-token';
+				return await resolve(event);
 			}
-		} catch {
-			// Fallback to mock user if backend is unavailable
-			event.locals.user = {
-				id: 'dev-admin-001',
-				username: 'dev_admin',
-				email: 'dev@japaconnect.com',
-				displayName: 'Dev Admin',
-				groups: ['super_admin'],
-				avatar_url: null,
-			};
-			event.locals.token = 'dev-mock-token';
-		}
-	} else if (!token) {
-		throw redirect(303, '/login');
-	} else {
-		try {
-			const meRes = await fetch(`${API_BASE}/api/v1/me`, {
-				headers: { Authorization: `Bearer ${token}` },
-			});
 
-			if (meRes.ok) {
-				const { data } = await meRes.json();
-				event.locals.user = data;
-				event.locals.token = token;
-			} else {
-				event.cookies.delete('jc_token', { path: '/' });
-				throw redirect(303, '/login');
-			}
-		} catch (e) {
-			if (e instanceof Response) throw e;
+			// Dev login failed (wrong creds / backend rejected): show login page.
+			throw redirect(303, '/login');
+		}
+
+		// Production (or dev without opt-in): require a real session.
+		throw redirect(303, '/login');
+	}
+
+	// Valid token present: always delegate to the real backend session.
+	try {
+		const meRes = await fetch(`${API_BASE}/api/v1/me`, {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+
+		if (meRes.ok) {
+			const { data } = await meRes.json();
+			event.locals.user = data;
+			event.locals.token = token;
+		} else {
 			event.cookies.delete('jc_token', { path: '/' });
 			throw redirect(303, '/login');
 		}
+	} catch (e) {
+		if (e instanceof Response) throw e;
+		event.cookies.delete('jc_token', { path: '/' });
+		throw redirect(303, '/login');
 	}
 
 	const response = await resolve(event);

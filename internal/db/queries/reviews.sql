@@ -41,6 +41,14 @@ WHERE tenant_id = @tenant_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListReviews :many
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at
+FROM reviews
+WHERE tenant_id = @tenant_id
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: UpdateReview :one
 UPDATE reviews
 SET rating = @rating, title = sqlc.narg(title), body = sqlc.narg(body),

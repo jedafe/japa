@@ -49,6 +49,14 @@
 	let editIsActive = $state(true);
 	let savingEdit = $state(false);
 
+	// Create modal
+	let showCreateModal = $state(false);
+	let createTitle = $state("");
+	let createSlug = $state("");
+	let createDescription = $state("");
+	let createIsActive = $state(true);
+	let savingCreate = $state(false);
+
 	// Backend gates form mutations on forms.create/edit/delete
 	const canManageForms = $derived(hasPermission("forms.create"));
 
@@ -95,7 +103,7 @@
 			render: (value: boolean) => {
 				const variant = value ? "success" : "secondary";
 				const classes = value ? "bg-success/15 text-success border-success" : "bg-surface text-foreground border";
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes}">${value ? "Active" : "Inactive"}</span>`;
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes}">${value ? t('forms.status.active', 'Active') : t('forms.status.inactive', 'Inactive')}</span>`;
 			}
 		},
 		{
@@ -189,6 +197,55 @@
 		}
 	}
 
+	// slugify turns a title into a URL-safe slug (mirrors backend slug rules).
+	function slugify(value: string): string {
+		return value
+			.toLowerCase()
+			.trim()
+			.replace(/[^a-z0-9\s-]/g, "")
+			.replace(/\s+/g, "-")
+			.replace(/-+/g, "-")
+			.replace(/^-|-$/g, "") || "form";
+	}
+
+	function openCreate() {
+		createTitle = "";
+		createSlug = "";
+		createDescription = "";
+		createIsActive = true;
+		showCreateModal = true;
+	}
+
+	// Auto-fill the slug from the title until the user edits it manually.
+	let slugTouched = $state(false);
+	function onTitleInput() {
+		if (!slugTouched) createSlug = slugify(createTitle);
+	}
+
+	async function createForm() {
+		if (!createTitle.trim() || !createSlug.trim()) return;
+		savingCreate = true;
+		try {
+			const result = await api("/forms", {
+				method: "POST",
+				body: {
+					name: createTitle.trim(),
+					slug: createSlug.trim(),
+					description: createDescription.trim() || undefined,
+					status: createIsActive ? "active" : "draft"
+				}
+			});
+			if (result.ok) {
+				showCreateModal = false;
+				loadForms();
+			}
+		} catch {
+			// API not available
+		} finally {
+			savingCreate = false;
+		}
+	}
+
 	let initialized = false;
 	$effect(() => {
 		if (!initialized) {
@@ -199,13 +256,16 @@
 </script>
 
 <svelte:head>
-	<title>Forms — JapaConnect Admin</title>
+	<title>{t('forms.title', 'Forms')} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
 	title="Forms"
 	description="Manage platform forms and collect user submissions"
 	actions={[
+		...(canManageForms
+			? [{ label: "Create Form", icon: Plus, onclick: openCreate }]
+			: []),
 		{ label: "Refresh", icon: RefreshCw, onclick: loadForms, variant: "outline" }
 	]}
 />
@@ -267,6 +327,53 @@
 	</div>
 </div>
 
+<!-- Create Modal -->
+<Modal bind:open={showCreateModal} title="Create Form" size="sm">
+	<div class="space-y-4">
+		<div>
+			<label for="form-create-title" class="mb-1 block text-sm font-medium text-foreground-alt">Title</label>
+			<input
+				id="form-create-title"
+				type="text"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+				placeholder="e.g., Feedback Survey"
+				bind:value={createTitle}
+				oninput={onTitleInput}
+			/>
+		</div>
+		<div>
+			<label for="form-create-slug" class="mb-1 block text-sm font-medium text-foreground-alt">Slug</label>
+			<input
+				id="form-create-slug"
+				type="text"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+				placeholder="feedback-survey"
+				bind:value={createSlug}
+				oninput={() => (slugTouched = true)}
+			/>
+		</div>
+		<div>
+			<label for="form-create-desc" class="mb-1 block text-sm font-medium text-foreground-alt">Description</label>
+			<textarea
+				id="form-create-desc"
+				rows="3"
+				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+				bind:value={createDescription}
+			></textarea>
+		</div>
+		<div class="flex items-center gap-2">
+			<input id="form-create-active" type="checkbox" bind:checked={createIsActive} class="rounded" />
+			<label for="form-create-active" class="text-sm text-foreground-alt">Active</label>
+		</div>
+	</div>
+	<div class="mt-6 flex justify-end gap-3">
+		<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+		<Button onclick={createForm} disabled={savingCreate || !createTitle.trim() || !createSlug.trim()}>
+			{savingCreate ? t('common.creating', 'Creating...') : t('common.create', 'Create Form')}
+		</Button>
+	</div>
+</Modal>
+
 <!-- Edit Modal -->
 <Modal bind:open={showEditModal} title="Edit Form" size="sm">
 	{#if editTarget}
@@ -296,9 +403,9 @@
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end gap-3">
-		<Button variant="outline" onclick={() => (showEditModal = false)}>Cancel</Button>
+		<Button variant="outline" onclick={() => (showEditModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 		<Button onclick={saveEdit} disabled={savingEdit || !editTitle.trim()}>
-			{savingEdit ? "Saving..." : "Save Changes"}
+			{savingEdit ? t('common.saving', 'Saving...') : t('common.save_changes', 'Save Changes')}
 		</Button>
 	</div>
 </Modal>
@@ -317,7 +424,7 @@
 		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('forms.cancel')}</Button>
 		<Button variant="destructive" onclick={deleteForm} disabled={deleting}>
 			{#if deleting}
-				Deleting...
+				{t('common.deleting', 'Deleting...')}
 			{:else}
 				Delete Form
 			{/if}

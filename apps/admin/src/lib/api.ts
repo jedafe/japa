@@ -9,17 +9,12 @@ type FetchOptions = {
 
 type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-let jwtToken: string | null = null;
-
-export function setToken(token: string | null) {
-	jwtToken = token;
+export function setToken(token: string | null): void {
+	// Deprecated no-op: JWT auth state is no longer managed client-side.
 }
 
 export async function api<T>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
 	const headers: Record<string, string> = {};
-	if (jwtToken) {
-		headers['Authorization'] = `Bearer ${jwtToken}`;
-	}
 
 	const result = await apiFetch<T>(path, {
 		method: opts.method ?? 'GET',

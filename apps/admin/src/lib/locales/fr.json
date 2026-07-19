@@ -1458,5 +1458,11 @@
   "common.activate": "Activate",
   "common.pause": "Pause",
   "common.resume": "Resume",
-  "common.retry": "Retry"
+  "common.retry": "Retry",
+  "analytics.change": "Change",
+  "analytics.revenue": "Revenue",
+  "forms.status.active": "Active",
+  "forms.status.inactive": "Inactive",
+  "common.deleting": "Deleting...",
+  "custom_fields.title": "Custom Fields"
 }
