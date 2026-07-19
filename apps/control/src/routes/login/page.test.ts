@@ -10,12 +10,12 @@ vi.mock('$lib/api', () => ({
 describe('Login +page.svelte', () => {
 	it('renders the heading', () => {
 		render(Page);
-		expect(screen.getByRole('heading', { name: /JapaConnect Control/i })).toBeTruthy();
+		expect(screen.getByRole('heading', { name: /JapaControl/i })).toBeTruthy();
 	});
 
 	it('shows sign-in subtitle', () => {
 		render(Page);
-		expect(screen.getByText('Super Admin Console')).toBeTruthy();
+		expect(screen.getByText('Sign in to the control panel')).toBeTruthy();
 	});
 
 	it('renders email and password inputs', () => {

@@ -5,7 +5,7 @@
 	import { Switch, Tooltip, Label, Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { SystemSetting } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n';
+	import { t, translations } from '$lib/stores/i18n';
 	import {
 		Settings,
 		RefreshCw,
@@ -94,6 +94,7 @@
 
 	const selectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
+			$translations;
 			const opts: Record<string, { value: string; label: string }[]> = {
 				'advanced.log_level': [
 					{ value: 'debug', label: t('settings.log_level_debug', 'Debug') },
@@ -137,6 +138,7 @@
 
 	const multiSelectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
+			$translations;
 			const opts: Record<string, { value: string; label: string }[]> = {
 				'i18n.enabled_languages': [
 					{ value: 'en', label: t('settings.lang_en', 'English') },

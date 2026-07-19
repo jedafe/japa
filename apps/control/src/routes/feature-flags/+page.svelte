@@ -5,7 +5,7 @@
 	import { Select, Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { FeatureFlag, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n';
+	import { t, translations } from '$lib/stores/i18n';
 	import { escapeHtml } from '$lib/utils';
 	import { Flag, RefreshCw, Check, X } from 'lucide-svelte';
 
@@ -88,10 +88,14 @@
 		[...new Set(flags.flatMap((f) => f.allowed_groups ?? []))].sort()
 	);
 
-	let groupItems = $derived([
+	let groupItems = $derived.by(() => {
+		$translations;
+		return [
 		{ value: 'all', label: t('feature_flags.all_groups', 'All Groups') },
 		...allGroups.map((g) => ({ value: g, label: g }))
-	]);
+	];
+
+	});
 
 	let filtered = $derived(
 		filter || filterGroup !== 'all'
@@ -112,18 +116,24 @@
 	let filteredEnabled = $derived(filtered.filter((f) => f.enabled));
 	let filteredDisabled = $derived(filtered.filter((f) => !f.enabled));
 
-	let tabItems = $derived([
+	let tabItems = $derived.by(() => {
+		$translations;
+		return [
 		{ value: 'all', label: `${t('common.all', 'All')} (${filtered.length})` },
 		{ value: 'enabled', label: `${t('feature_flags.enabled_count', 'Enabled')} (${filteredEnabled.length})` },
 		{ value: 'disabled', label: `${t('feature_flags.disabled_count', 'Disabled')} (${filteredDisabled.length})` }
-	]);
+	];
+
+	});
 
 	let displayedFlags = $derived(
 		activeTab === 'all' ? filtered : activeTab === 'enabled' ? filteredEnabled : filteredDisabled
 	);
 
 	// M1: shared DataTable spec — columns, per-row actions, bulk actions.
-	const columns: DataTableColumn[] = [
+	let columns = $derived.by<DataTableColumn[]>(() => {
+		$translations;
+		return [
 		{
 			key: 'key',
 			label: t('feature_flags.col_key', 'Key'),
@@ -160,7 +170,11 @@
 		}
 	];
 
-	const rowActions: DataTableRowAction[] = [
+	});
+
+	let rowActions = $derived.by<DataTableRowAction[]>(() => {
+		$translations;
+		return [
 		{
 			label: t('feature_flags.enable', 'Enable'),
 			icon: Check,
@@ -176,7 +190,11 @@
 		}
 	];
 
-	const bulkActions: DataTableBulkAction[] = [
+	});
+
+	let bulkActions = $derived.by<DataTableBulkAction[]>(() => {
+		$translations;
+		return [
 		{
 			label: t('feature_flags.enable_selected', 'Enable Selected'),
 			icon: Check,
@@ -192,6 +210,8 @@
 			}
 		}
 	];
+
+	});
 
 	async function enableSelected(ids: string[]) {
 		for (const f of flags) {

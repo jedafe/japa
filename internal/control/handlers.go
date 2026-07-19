@@ -1483,10 +1483,17 @@ func (h *Handlers) GetAPIKeyAnalytics(w http.ResponseWriter, r *http.Request) {
 // Cron / Scheduler CRUD (custom entries stored in Valkey, synced by worker)
 // ---------------------------------------------------------------------------
 
-const (
-	cronCustomKey = "jc:cron:custom" // HASH  entryID → JSON{type,spec,payload,paused}
-	cronPausedKey = "jc:cron:paused" // SET  entryIDs paused by admin (system entries)
-)
+// cronCustomKey returns the tenant-scoped Valkey key for custom cron jobs.
+// Tenant-scoping (Rule 4 / §4.2 / §9) prevents one tenant's control panel from
+// seeing or mutating another tenant's custom scheduler entries.
+func cronCustomKey(ctx context.Context) string {
+	return "jc:cron:custom:" + tenant.IDFromContext(ctx).String()
+}
+
+// cronPausedKey returns the tenant-scoped Valkey key for paused scheduler entries.
+func cronPausedKey(ctx context.Context) string {
+	return "jc:cron:paused:" + tenant.IDFromContext(ctx).String()
+}
 
 // cronCustomEntry is the JSON shape stored per custom cron job in Valkey.
 type cronCustomEntry struct {
@@ -1509,7 +1516,7 @@ func (h *Handlers) ListCronJobs(w http.ResponseWriter, r *http.Request) {
 			// Fetch paused set so we can flag system entries
 			var pausedSet map[string]struct{}
 			if h.Valkey != nil {
-				if members, err := h.Valkey.SMembers(r.Context(), cronPausedKey).Result(); err == nil {
+				if members, err := h.Valkey.SMembers(r.Context(), cronPausedKey(r.Context())).Result(); err == nil {
 					pausedSet = make(map[string]struct{}, len(members))
 					for _, m := range members {
 						pausedSet[m] = struct{}{}
@@ -1540,7 +1547,7 @@ func (h *Handlers) ListCronJobs(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Custom entries from Valkey (skip if type already covered by a system entry)
 	if h.Valkey != nil {
-		fields, err := h.Valkey.HGetAll(r.Context(), cronCustomKey).Result()
+		fields, err := h.Valkey.HGetAll(r.Context(), cronCustomKey(r.Context())).Result()
 		if err == nil {
 			for id, raw := range fields {
 				var ce cronCustomEntry
@@ -1598,7 +1605,7 @@ func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
 		return
 	}
-	if err := h.Valkey.HSet(r.Context(), cronCustomKey, id, string(data)).Err(); err != nil {
+	if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 		slog.Error("control: create cron job", "error", err)
 		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to save cron job")
 		return
@@ -1623,7 +1630,7 @@ func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only custom entries can be edited
-	raw, err := h.Valkey.HGet(r.Context(), cronCustomKey, id).Result()
+	raw, err := h.Valkey.HGet(r.Context(), cronCustomKey(r.Context()), id).Result()
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", "Cron job not found (only custom jobs can be edited)")
 		return
@@ -1662,7 +1669,7 @@ func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
 		return
 	}
-	if err := h.Valkey.HSet(r.Context(), cronCustomKey, id, string(data)).Err(); err != nil {
+	if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 		slog.Error("control: update cron job", "error", err)
 		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to update cron job")
 		return
@@ -1687,7 +1694,7 @@ func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try custom entry first
-	deleted, err := h.Valkey.HDel(r.Context(), cronCustomKey, id).Result()
+	deleted, err := h.Valkey.HDel(r.Context(), cronCustomKey(r.Context()), id).Result()
 	if err != nil {
 		slog.Error("control: delete cron job", "error", err)
 		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to delete cron job")
@@ -1700,7 +1707,7 @@ func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 
 	// For system entries, we can't truly delete (managed by code).
 	// Instead, mark as paused so it won't run.
-	if err := h.Valkey.SAdd(r.Context(), cronPausedKey, id).Err(); err != nil {
+	if err := h.Valkey.SAdd(r.Context(), cronPausedKey(r.Context()), id).Err(); err != nil {
 		slog.Error("control: pause system cron job", "error", err)
 		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause system cron job")
 		return
@@ -1724,12 +1731,12 @@ func (h *Handlers) PauseCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if it's a custom entry
-	if raw, err := h.Valkey.HGet(r.Context(), cronCustomKey, id).Result(); err == nil {
+	if raw, err := h.Valkey.HGet(r.Context(), cronCustomKey(r.Context()), id).Result(); err == nil {
 		var ce cronCustomEntry
 		if json.Unmarshal([]byte(raw), &ce) == nil {
 			ce.Paused = true
 			data, _ := json.Marshal(ce)
-			if err := h.Valkey.HSet(r.Context(), cronCustomKey, id, string(data)).Err(); err != nil {
+			if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 				slog.Error("control: pause custom cron job", "error", err)
 				writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
 				return
@@ -1740,7 +1747,7 @@ func (h *Handlers) PauseCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// System entry — add to paused set
-	if err := h.Valkey.SAdd(r.Context(), cronPausedKey, id).Err(); err != nil {
+	if err := h.Valkey.SAdd(r.Context(), cronPausedKey(r.Context()), id).Err(); err != nil {
 		slog.Error("control: pause system cron job", "error", err)
 		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
 		return
@@ -1761,12 +1768,12 @@ func (h *Handlers) UnpauseCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if it's a custom entry
-	if raw, err := h.Valkey.HGet(r.Context(), cronCustomKey, id).Result(); err == nil {
+	if raw, err := h.Valkey.HGet(r.Context(), cronCustomKey(r.Context()), id).Result(); err == nil {
 		var ce cronCustomEntry
 		if json.Unmarshal([]byte(raw), &ce) == nil {
 			ce.Paused = false
 			data, _ := json.Marshal(ce)
-			if err := h.Valkey.HSet(r.Context(), cronCustomKey, id, string(data)).Err(); err != nil {
+			if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 				slog.Error("control: unpause custom cron job", "error", err)
 				writeError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
 				return
@@ -1777,7 +1784,7 @@ func (h *Handlers) UnpauseCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// System entry — remove from paused set
-	if err := h.Valkey.SRem(r.Context(), cronPausedKey, id).Err(); err != nil {
+	if err := h.Valkey.SRem(r.Context(), cronPausedKey(r.Context()), id).Err(); err != nil {
 		slog.Error("control: unpause system cron job", "error", err)
 		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
 		return
@@ -1818,7 +1825,7 @@ func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
 
 	// Check custom entries — trigger by re-enqueuing via Asynq client
 	if h.Valkey != nil {
-		if raw, err := h.Valkey.HGet(r.Context(), cronCustomKey, id).Result(); err == nil {
+		if raw, err := h.Valkey.HGet(r.Context(), cronCustomKey(r.Context()), id).Result(); err == nil {
 			var ce cronCustomEntry
 			if json.Unmarshal([]byte(raw), &ce) == nil && ce.Type != "" {
 				task := asynq.NewTask(ce.Type, []byte(ce.Payload))

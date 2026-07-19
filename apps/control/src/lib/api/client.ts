@@ -41,24 +41,36 @@ export async function apiFetch<T>(
 			headers,
 		});
 
+		const ct = res.headers.get('content-type') ?? '';
+		let body: ApiOk<T> | ApiErr | null = null;
+		if (ct.includes('application/json')) {
+			body = (await res.json().catch(() => null)) as ApiOk<T> | ApiErr | null;
+		} else if (res.status !== 204) {
+			const text = await res.text();
+			if (!res.ok) {
+				return {
+					data: null,
+					error: { code: 'non_json_response', message: text.slice(0, 200) || res.statusText, status: res.status },
+					status: res.status
+				};
+			}
+		}
+
+		// Auth failures: surface the backend's real error message (R5 envelope)
+		// instead of a hardcoded string, so e.g. a failed login shows the actual
+		// reason rather than a misleading "Session expired".
 		if (res.status === 401) {
-			return { data: null, error: { code: 'unauthorized', message: 'Session expired', status: 401 }, status: 401 };
+			const msg = (body && 'error' in body && body.error.message) || 'Session expired';
+			return { data: null, error: { code: 'unauthorized', message: msg, status: 401 }, status: 401 };
 		}
 
 		if (res.status === 403) {
-			return { data: null, error: { code: 'forbidden', message: 'Insufficient privileges', status: 403 }, status: 403 };
+			const msg = (body && 'error' in body && body.error.message) || 'Insufficient privileges';
+			return { data: null, error: { code: 'forbidden', message: msg, status: 403 }, status: 403 };
 		}
 
-		const ct = res.headers.get('content-type') ?? '';
-		if (!ct.includes('application/json')) {
-			const text = await res.text();
-			return { data: null, error: { code: 'non_json_response', message: text.slice(0, 200) || res.statusText, status: res.status }, status: res.status };
-		}
-
-		const body = await res.json();
-
-		if (!res.ok || 'error' in body) {
-			const err = 'error' in body ? body.error : { code: 'unknown', message: res.statusText, status: res.status };
+		if (!res.ok || (body && 'error' in body)) {
+			const err = body && 'error' in body ? body.error : { code: 'unknown', message: res.statusText, status: res.status };
 			return { data: null, error: err, status: res.status };
 		}
 

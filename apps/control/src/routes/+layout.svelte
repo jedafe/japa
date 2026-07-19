@@ -127,24 +127,27 @@
 		label: string;
 		href: string;
 		icon: LucideIcon;
-		permission: string;
 		tooltip: string;
 	}
 
+	// The Control Panel is super_admin-only: initAuth (above) redirects any
+	// non-super_admin to /login, and super_admins are granted the '*' permission
+	// set. Per-item permission strings are therefore decorative and were removed
+	// to avoid implying a granular RBAC the backend does not enforce on /control/*.
 	const navConfig: Omit<NavItem, 'label' | 'tooltip'>[] = [
-		{ href: '/', icon: LayoutDashboard, permission: 'control.dashboard' },
-		{ href: '/queue', icon: ListTodo, permission: 'control.queue' },
-		{ href: '/dlq', icon: AlertTriangle, permission: 'control.queue' },
-		{ href: '/db', icon: Database, permission: 'control.db' },
-		{ href: '/audit', icon: ScrollText, permission: 'control.audit' },
-		{ href: '/security', icon: Shield, permission: 'control.security' },
-		{ href: '/api-keys', icon: Key, permission: 'control.api_keys' },
-		{ href: '/cache', icon: Trash2, permission: 'control.cache' },
-		{ href: '/settings', icon: Settings, permission: 'control.settings' },
-		{ href: '/feature-flags', icon: Flag, permission: 'control.feature_flags' },
-		{ href: '/tenants', icon: Building2, permission: 'control.tenants' },
-		{ href: '/ai-budget', icon: DollarSign, permission: 'control.ai_budget' },
-		{ href: '/cron', icon: Clock, permission: 'control.cron' },
+		{ href: '/', icon: LayoutDashboard },
+		{ href: '/queue', icon: ListTodo },
+		{ href: '/dlq', icon: AlertTriangle },
+		{ href: '/db', icon: Database },
+		{ href: '/audit', icon: ScrollText },
+		{ href: '/security', icon: Shield },
+		{ href: '/api-keys', icon: Key },
+		{ href: '/cache', icon: Trash2 },
+		{ href: '/settings', icon: Settings },
+		{ href: '/feature-flags', icon: Flag },
+		{ href: '/tenants', icon: Building2 },
+		{ href: '/ai-budget', icon: DollarSign },
+		{ href: '/cron', icon: Clock }
 	];
 
 	const navKeyMap: Record<string, { label: string; tooltip: string }> = {
@@ -172,15 +175,9 @@
 		}));
 	});
 
-	const pagePermission = $derived(
-		nav.find((item) =>
-			item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href)
-		)?.permission
-	);
-
-	const canAccess = $derived(
-		!pagePermission || userPermissions.includes(pagePermission) || userPermissions.includes('*')
-	);
+	// Access is gated by the super_admin check in initAuth; admitted users carry
+	// the '*' permission set, so the Control Panel is effectively all-or-nothing.
+	const canAccess = $derived(userPermissions.includes('*'));
 </script>
 
 <svelte:head>
