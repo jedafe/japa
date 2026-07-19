@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -704,13 +705,32 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				return true, expiresAt
 			}))
 
-			// Bot detection middleware — identifies known bots from User-Agent
-			// and stores bot info in request context for downstream handlers.
-			// Runs after tenant middleware (needs tenant context) but before
-			// route handlers.
-			r.Use(bots.BotDetectionMiddleware(botStore))
+		// Bot detection middleware — identifies known bots from User-Agent
+		// and stores bot info in request context for downstream handlers.
+		// Runs after tenant middleware (needs tenant context) but before
+		// route handlers.
+		r.Use(bots.BotDetectionMiddleware(botStore))
 
-			// Auth routes (public - no auth required, tenant-scoped)
+		// CSRF double-submit enforcement for all mutating /api/v1 requests
+		// (Bug Hunter §5). Cookie-authenticated browser requests (the admin
+		// SPA) are protected; non-cookie auth (Authorization: Bearer,
+		// X-API-Key) is exempt — those clients are CSRF-immune and would
+		// otherwise break. The public /auth/* subtree (login, register,
+		// password reset) is also exempt: those endpoints are reached before
+		// any token cookie exists and are not state-changing on behalf of an
+		// already-authenticated session. Safe GET/OPTIONS pass through.
+		r.Use(csrf.Middleware([]string{"/"}, func(r *http.Request) bool {
+			return csrf.IsNonCookieAuthenticated(r) ||
+				strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
+				strings.HasPrefix(r.URL.Path, "/api/v1/forms/")
+		}))
+
+		// CSRF token bootstrap endpoint — issues the double-submit cookie and
+		// echoes the token so the SPA can attach it as X-CSRF-Token. The SPA
+		// calls this once at startup and again after a 403 CSRF rejection.
+		r.Get("/csrf", csrf.TokenHandler(cfg.CookieDomain, cfg.IsProduction()))
+
+		// Auth routes (public - no auth required, tenant-scoped)
 			// Tight rate limit to throttle brute-force attempts.
 			r.Route("/auth", func(r chi.Router) {
 				r.Use(mw.RateLimit(vkClient.Redis(), "tight"))
@@ -742,6 +762,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Feature flags admin toggle (requires auth + RBAC permission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "features.manage")).
 				Patch("/admin/feature-flags/{flag_name}", featureHandlers.HandleSetFeatureFlag)
+
+			// Admin Reviews list — all reviews for moderation (gated by reviews.moderate).
+			// Registered outside the ratings_reviews feature gate so admins can always
+			// reach the moderation queue regardless of the feature flag.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.moderate")).
+				Get("/admin/reviews", reviewHandlers.ListAllReviews)
+
+			// Admin Feature Flags management — full CRUD for the admin SPA, all
+			// gated by admin.feature_flags.manage. The public GET /feature-flags
+			// returns a map; GET /admin/feature-flags returns the array form.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.feature_flags.manage")).
+				Get("/admin/feature-flags", featureHandlers.ListFeatureFlags)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.feature_flags.manage")).
+				Post("/admin/feature-flags", featureHandlers.CreateFeatureFlag)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.feature_flags.manage")).
+				Put("/admin/feature-flags/{flag_name}", featureHandlers.UpdateFeatureFlag)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.feature_flags.manage")).
+				Delete("/admin/feature-flags/{flag_name}", featureHandlers.DeleteFeatureFlag)
 
 			// Custom field group routes
 			// Read (require auth)
@@ -2659,7 +2697,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Use(auth.RequireAuth(kr, vkClient.Redis()))
 		r.Use(rbac.RequirePermission(rbacResolver, "control.panel.access"))
 		// Audit finding C1: enforce double-submit CSRF on all mutating /control/* requests.
-		r.Use(csrf.Middleware([]string{"/api/v1/control/"}))
+		// NOTE: the /control group is mounted at the TOP LEVEL (r.Route("/control", ...)
+		// outside the /api/v1 group), so real request paths are "/control/...", NOT
+		// "/api/v1/control/...". The prefix MUST be "/control/" or protection is silently
+		// never applied.
+		r.Use(csrf.Middleware([]string{"/control/"}, csrf.IsNonCookieAuthenticated))
 		// Audit finding M1: (re)issue the csrf_token cookie for control-panel
 		// requests so the SPA always has a valid double-submit token available.
 		r.Use(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction()))

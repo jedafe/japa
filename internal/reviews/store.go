@@ -83,6 +83,27 @@ func (s *Store) listReviewsByReviewer(ctx context.Context, tenantID, reviewerUse
 	return rows, nil
 }
 
+// listReviews returns all reviews for a tenant (admin moderation view).
+// Unlike ListReviewsByEntity/ListReviewsByReviewer it is not scoped to an
+// entity or reviewer and includes all statuses, so moderators can see
+// pending/flagged reviews too.
+func (s *Store) listReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.ListReviews(ctx, gen.ListReviewsParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing reviews: %w", err)
+	}
+
+	return rows, nil
+}
+
 //nolint:unused // reserved for future features
 func (s *Store) updateReview(ctx context.Context, p gen.UpdateReviewParams) (gen.Review, error) {
 	row, err := s.write.UpdateReview(ctx, p)

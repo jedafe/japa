@@ -297,6 +297,28 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusBadRequest, "missing_params", "entity_type+entity_id or reviewer_id required")
 }
 
+// ListAllReviews handles GET /api/v1/admin/reviews.
+// Admin moderation view: lists all reviews for the tenant (all statuses),
+// regardless of entity or reviewer. Gated by reviews.moderate at the router.
+// Returns the standard {"data": [...]} envelope.
+func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	reviews, err := h.Service.ListReviews(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+}
+
 // GetReview handles GET /api/v1/reviews/{id}.
 func (h *Handlers) GetReview(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)

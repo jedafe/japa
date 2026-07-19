@@ -41,7 +41,7 @@
 	let showViewModal = $state(false);
 	let viewTarget = $state<FeatureFlag | null>(null);
 
-	const canManageFlags = $derived(hasPermission("feature-flags.manage"));
+	const canManageFlags = $derived(hasPermission("admin.feature_flags.manage"));
 
 	let form = $state({
 		name: "",
@@ -130,7 +130,7 @@
 
 	async function loadFlags() {
 		loading = true;
-		const result = await api<FeatureFlag[]>("/feature-flags");
+		const result = await api<FeatureFlag[]>("/admin/feature-flags");
 		if (result.ok) {
 			flags = Array.isArray(result.data) ? result.data : [];
 		}
@@ -146,7 +146,7 @@
 		if (!form.name.trim() || !form.key.trim()) return;
 		saving = true;
 		errorMessage = "";
-		const result = await api("/feature-flags", {
+		const result = await api("/admin/feature-flags", {
 			method: "POST",
 			body: {
 				name: form.name.trim(),
@@ -187,13 +187,14 @@
 		if (!editingFlag || !form.name.trim()) return;
 		saving = true;
 		errorMessage = "";
-		const result = await api(`/feature-flags/${editingFlag.id}`, {
+		const result = await api(`/admin/feature-flags/${editingFlag.id}`, {
 			method: "PUT",
 			body: {
 				name: form.name.trim(),
 				description: form.description.trim(),
 				environment: form.environment,
-				rolloutPercentage: form.rolloutPercentage
+				rolloutPercentage: form.rolloutPercentage,
+				isEnabled: editingFlag.isEnabled
 			}
 		});
 		if (result.ok) {
@@ -211,7 +212,10 @@
 	async function toggleFlag(id: string) {
 		const flag = flags.find((f) => f.id === id);
 		if (!flag) return;
-		const result = await api(`/feature-flags/${id}/toggle`, { method: "POST" });
+		const result = await api(`/admin/feature-flags/${id}`, {
+			method: "PATCH",
+			body: { enabled: !flag.isEnabled }
+		});
 		if (result.ok) {
 			successMessage = `Feature flag "${flag.name}" ${flag.isEnabled ? "disabled" : "enabled"}`;
 			loadFlags();
@@ -228,7 +232,7 @@
 	async function confirmDelete() {
 		if (!deletingId) return;
 		saving = true;
-		const result = await api(`/feature-flags/${deletingId}`, { method: "DELETE" });
+		const result = await api(`/admin/feature-flags/${deletingId}`, { method: "DELETE" });
 		if (result.ok) {
 			successMessage = "Feature flag deleted";
 			loadFlags();
@@ -540,6 +544,18 @@
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
 		{#if canManageFlags}
+			<Button
+				variant="ghost"
+				size="sm"
+				onclick={() => toggleFlag(row.id)}
+				title={row.isEnabled ? "Disable" : "Enable"}
+			>
+				{#if row.isEnabled}
+					<ToggleRight class="h-3.5 w-3.5 text-success" />
+				{:else}
+					<ToggleLeft class="h-3.5 w-3.5" />
+				{/if}
+			</Button>
 			<Button variant="ghost" size="sm" onclick={() => openEditModal(row.id)}>
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>

@@ -66,9 +66,9 @@
 			label: "User Management",
 			items: [
 				{ path: "/users", label: "Users", icon: Users, permission: "admin.users.view" },
-				{ path: "/organisations", label: "Organisations", icon: Building, permission: "admin.settings" },
+				{ path: "/organisations", label: "Organisations", icon: Building, permission: "organizations.manage" },
 				{ path: "/universities", label: "Universities", icon: GraduationCap, permission: "admin.settings" },
-				{ path: "/professional-types", label: "Professional Types", icon: Briefcase, permission: "admin.settings" },
+				{ path: "/professional-types", label: "Professional Types", icon: Briefcase, permission: "professional.manage" },
 				{ path: "/users/groups", label: "Groups", icon: Users2, permission: "admin.users.view" }
 			]
 		},
@@ -76,14 +76,14 @@
 			id: "content",
 			label: "Content",
 			items: [
-				{ path: "/content", label: "All Content", icon: FileText, permission: "admin.moderation" },
+				{ path: "/content", label: "All Content", icon: FileText, permission: "admin.content.view" },
 				{ path: "/blog/review-queue", label: "Blog Posts", icon: BookOpen, permission: "blog.review.manage" },
-				{ path: "/docs", label: "Documentation", icon: FileCode, permission: "admin.settings" },
-				{ path: "/media", label: "Media", icon: Image, permission: "admin.settings" },
-				{ path: "/spaces", label: "Spaces", icon: Globe, permission: "admin.settings" },
-				{ path: "/space-types", label: "Space Types", icon: Layout, permission: "admin.settings" },
-				{ path: "/tags", label: "Tags", icon: Tag, permission: "admin.settings" },
-				{ path: "/reactions", label: "Reactions", icon: Star, permission: "admin.settings" }
+			{ path: "/docs", label: "Documentation", icon: FileCode, permission: "docs.manage" },
+			{ path: "/media", label: "Media", icon: Image, permission: "media.view_all" },
+			{ path: "/spaces", label: "Spaces", icon: Globe, permission: "spaces.admin" },
+			{ path: "/space-types", label: "Space Types", icon: Layout, permission: "space_types.create" },
+			{ path: "/tags", label: "Tags", icon: Tag, permission: "tags.manage" },
+			{ path: "/reactions", label: "Reactions", icon: Star, permission: "content.reaction_types.manage" }
 			]
 		},
 		{
@@ -93,8 +93,8 @@
 				{ path: "/moderation", label: "Queue", icon: Shield, permission: "admin.moderation" },
 				{ path: "/moderation-queue", label: "Review Queue", icon: AlertTriangle, permission: "admin.moderation" },
 				{ path: "/spam", label: "Spam Management", icon: AlertTriangle, permission: "spam.ip_block.manage" },
-				{ path: "/tickets", label: "Support Tickets", icon: Ticket, permission: "admin.tickets.manage" },
-				{ path: "/reviews", label: "Reviews", icon: MessageCircle, permission: "admin.settings" }
+			{ path: "/tickets", label: "Support Tickets", icon: Ticket, permission: "tickets.admin" },
+			{ path: "/reviews", label: "Reviews", icon: MessageCircle, permission: "reviews.moderate" }
 			]
 		},
 		{
@@ -102,19 +102,19 @@
 			label: "Analytics & Reports",
 			items: [
 				{ path: "/analytics", label: "Analytics", icon: BarChart3, permission: "admin.analytics.view" },
-				{ path: "/reports", label: "Reports", icon: FileText, permission: "admin.settings" },
-				{ path: "/search", label: "Search Analytics", icon: Search, permission: "admin.settings" }
+			{ path: "/reports", label: "Reports", icon: FileText, permission: "reports.review" },
+			{ path: "/search", label: "Search Analytics", icon: Search, permission: "search.analytics.view" }
 			]
 		},
 		{
 			id: "engagement",
 			label: "Engagement",
 			items: [
-				{ path: "/newsletter", label: "Newsletter", icon: Mail, permission: "admin.settings" },
-				{ path: "/broadcast", label: "Broadcasts", icon: Bell, permission: "admin.broadcast" },
-				{ path: "/forms", label: "Forms", icon: FileInput, permission: "admin.settings" },
-				{ path: "/learning", label: "Learning", icon: GraduationCap, permission: "admin.settings" },
-				{ path: "/mentorship", label: "Mentorship", icon: Users2, permission: "admin.settings" }
+			{ path: "/newsletter", label: "Newsletter", icon: Mail, permission: "newsletter.admin" },
+			{ path: "/broadcast", label: "Broadcasts", icon: Bell, permission: "admin.broadcast" },
+			{ path: "/forms", label: "Forms", icon: FileInput, permission: "forms.create" },
+			{ path: "/learning", label: "Learning", icon: GraduationCap, permission: "learning.admin.manage" },
+			{ path: "/mentorship", label: "Mentorship", icon: Users2, permission: "mentorship.admin" }
 			]
 		},
 		{
@@ -122,11 +122,11 @@
 			label: "Monetization",
 			items: [
 				{ path: "/wallet", label: "Wallet", icon: Wallet, permission: "wallet.admin" },
-				{ path: "/coupons", label: "Coupons", icon: Tag, permission: "admin.settings" },
-				{ path: "/discount-codes", label: "Discount Codes", icon: DollarSign, permission: "admin.settings" },
-				{ path: "/affiliate", label: "Affiliate Links", icon: Link, permission: "admin.settings" },
-				{ path: "/referral", label: "Referrals", icon: Share2, permission: "admin.settings" },
-				{ path: "/ads", label: "Advertisements", icon: Zap, permission: "admin.settings" }
+			{ path: "/coupons", label: "Coupons", icon: Tag, permission: "coupons.manage" },
+			{ path: "/discount-codes", label: "Discount Codes", icon: DollarSign, permission: "payments.discount_codes.manage" },
+			{ path: "/affiliate", label: "Affiliate Links", icon: Link, permission: "affiliate.admin.view" },
+			{ path: "/referral", label: "Referrals", icon: Share2, permission: "referral.admin" },
+			{ path: "/ads", label: "Advertisements", icon: Zap, permission: "ad.campaign.manage" }
 			]
 		},
 		{
@@ -135,7 +135,7 @@
 			items: [
 				{ path: "/ai", label: "AI Tools", icon: Bot, permission: "admin.ai.view" },
 				{ path: "/bots", label: "Bots", icon: Bot, permission: "bots.admin" },
-				{ path: "/webhooks", label: "Webhooks", icon: Webhook, permission: "admin.settings" },
+				{ path: "/webhooks", label: "Webhooks", icon: Webhook, permission: "webhooks.manage" },
 				{ path: "/feature-flags", label: "Feature Flags", icon: Zap, permission: "admin.feature_flags.view" }
 			]
 		},
@@ -143,26 +143,26 @@
 			id: "customization",
 			label: "Customization",
 			items: [
-				{ path: "/page-builder", label: "Page Builder", icon: Layout, permission: "admin.settings" },
-				{ path: "/page-builder/themes", label: "Page Themes", icon: Palette, permission: "admin.settings" },
-				{ path: "/page-templates", label: "Page Templates", icon: FileText, permission: "admin.settings" },
-				{ path: "/custom-fields", label: "Custom Fields", icon: Type, permission: "admin.settings" },
-				{ path: "/comparisons", label: "Comparisons", icon: GitCompare, permission: "admin.settings" },
-				{ path: "/comparison-types", label: "Comparison Types", icon: ListOrdered, permission: "admin.settings" }
+			{ path: "/page-builder", label: "Page Builder", icon: Layout, permission: "pagebuilder.blocks.manage" },
+			{ path: "/page-builder/themes", label: "Page Themes", icon: Palette, permission: "pagebuilder.blocks.manage" },
+			{ path: "/page-templates", label: "Page Templates", icon: FileText, permission: "pagebuilder.templates.manage" },
+			{ path: "/custom-fields", label: "Custom Fields", icon: Type, permission: "custom_fields.group.view" },
+			{ path: "/comparisons", label: "Comparisons", icon: GitCompare, permission: "comparison.type.create" },
+			{ path: "/comparison-types", label: "Comparison Types", icon: ListOrdered, permission: "comparison.type.create" }
 			]
 		},
 		{
 			id: "system",
 			label: "System",
 			items: [
-				{ path: "/settings", label: "Settings", icon: Settings, permission: "admin.settings" },
-				{ path: "/i18n", label: "Translations", icon: Languages, permission: "admin.settings" },
-				{ path: "/notification-types", label: "Notifications", icon: Bell, permission: "admin.settings" },
-				{ path: "/jsonld-templates", label: "JSON-LD Templates", icon: FileCode, permission: "admin.settings" },
-				{ path: "/menus", label: "Menus", icon: Menu, permission: "admin.settings" },
-				{ path: "/email-templates", label: "Email Templates", icon: Mail, permission: "admin.settings" },
-				{ path: "/redirects", label: "Redirects", icon: ArrowRightLeft, permission: "admin.settings" },
-				{ path: "/data-exports", label: "Data Exports", icon: Download, permission: "admin.settings" },
+			{ path: "/settings", label: "Settings", icon: Settings, permission: "admin.settings.view" },
+			{ path: "/i18n", label: "Translations", icon: Languages, permission: "i18n.manage" },
+			{ path: "/notification-types", label: "Notifications", icon: Bell, permission: "notifications.manage" },
+			{ path: "/jsonld-templates", label: "JSON-LD Templates", icon: FileCode, permission: "content.jsonld.manage" },
+			{ path: "/menus", label: "Menus", icon: Menu, permission: "menus.manage" },
+			{ path: "/email-templates", label: "Email Templates", icon: Mail, permission: "email.templates.manage" },
+			{ path: "/redirects", label: "Redirects", icon: ArrowRightLeft, permission: "redirects.manage" },
+			{ path: "/data-exports", label: "Data Exports", icon: Download, permission: "gdpr.data_exports.view" },
 				{ path: "/deletions", label: "Account Deletions", icon: Trash2, permission: "admin.moderation.view" },
 				{ path: "/gdpr", label: "GDPR Compliance", icon: Accessibility, permission: "admin.moderation.view" }
 			]

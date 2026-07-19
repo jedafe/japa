@@ -171,6 +171,53 @@ func (q *Queries) HasUserReviewedEntity(ctx context.Context, arg HasUserReviewed
 	return exists, err
 }
 
+const listReviews = `-- name: ListReviews :many
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at
+FROM reviews
+WHERE tenant_id = $1
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListReviewsParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+func (q *Queries) ListReviews(ctx context.Context, arg ListReviewsParams) ([]Review, error) {
+	rows, err := q.db.Query(ctx, listReviews, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Review
+	for rows.Next() {
+		var i Review
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ReviewerUserID,
+			&i.Rating,
+			&i.Title,
+			&i.Body,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listReviewsByEntity = `-- name: ListReviewsByEntity :many
 SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
        rating, title, body, status, created_at, updated_at

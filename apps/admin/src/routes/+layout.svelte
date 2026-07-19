@@ -14,6 +14,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
+	import { fetchCsrfToken } from '$lib/api/csrf';
 
 	let { children } = $props();
 	let loading = $state(true);
@@ -22,6 +23,11 @@
 
 	// Fetch user data client-side on mount
 	onMount(async () => {
+		// Bootstrap the double-submit CSRF token once on app start so the first
+		// mutating request already carries it. Cached in $lib/api/csrf; the
+		// client also refreshes it automatically after a 403 rejection.
+		fetchCsrfToken().catch(() => {});
+
 		try {
 			// Fetch user info
 			const userResult = await api<{ user: any }>('/me');
@@ -140,7 +146,7 @@
 	// Connect WebSocket after user is loaded
 	$effect(() => {
 		if (!loading) {
-			initNotifications();
+			const unsubNotifications = initNotifications();
 			wsClient.connect();
 
 			const unsubNotification = wsClient.on('notification', (msg: any) => {
@@ -163,6 +169,7 @@
 			return () => {
 				unsubNotification();
 				unsubAudit();
+				unsubNotifications?.();
 				wsClient.disconnect();
 			};
 		}

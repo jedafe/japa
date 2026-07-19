@@ -8,10 +8,21 @@
   import { Button } from "$lib/components/ui/button";
 
   function sanitizeHtml(html: string): string {
-    return html.replace(
-      /<(?!\/?(span|b|i|strong|em|code)\b)[^>]*>/gi,
-      ''
-    ).replace(/\son\w+="[^"]*"/gi, '').replace(/\son\w+='[^']*'/gi, '');
+    // 1. Escape all HTML metacharacters so no raw markup can execute.
+    const escaped = html
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    // 2. Re-allow a safe subset of inline tags, permitting only a `class` attribute.
+    return escaped
+      .replace(/&lt;(b|i|strong|em|code|span)\b((?:\s+class=&quot;[^&]*&quot;)?)\s*&gt;/gi, '<$1$2>')
+      .replace(/&lt;\/(b|i|strong|em|code|span)&gt;/gi, '</$1>');
+  }
+
+  function extractId(row: any): string {
+    return String(row?.id ?? '').split('::')[0] || String(row ?? '');
   }
 
   type Column = {
@@ -127,11 +138,12 @@
   }
 
   function toggleRow(row: any) {
+    const id = extractId(row);
     const next = new Set(selectedIds);
-    if (next.has(row.id)) {
-      next.delete(row.id);
+    if (next.has(id)) {
+      next.delete(id);
     } else {
-      next.add(row.id);
+      next.add(id);
     }
     selectedIds = next;
   }
@@ -140,7 +152,7 @@
     if (selectedIds.size === sortedData.length && sortedData.length > 0) {
       selectedIds = new Set();
     } else {
-      selectedIds = new Set(sortedData.map(r => r.id));
+      selectedIds = new Set(sortedData.map(r => extractId(r)));
     }
   }
 
@@ -277,7 +289,7 @@
             class={clsx(
               "transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]",
               onrowclick && "cursor-pointer",
-              selectedIds.has(row.id) && "bg-primary-50 dark:bg-primary-950/30"
+              selectedIds.has(extractId(row)) && "bg-primary-50 dark:bg-primary-950/30"
             )}
             style="border-color: var(--color-border)"
             onclick={() => onrowclick?.(row)}
@@ -286,11 +298,11 @@
               <td class="w-12 p-4 align-middle" style="border-color: var(--color-border)">
                 <input
                   type="checkbox"
-                  checked={selectedIds.has(row.id)}
+                  checked={selectedIds.has(extractId(row))}
                   onchange={() => toggleRow(row)}
                   class="h-4 w-4 rounded border-gray-300"
                   onclick={(e) => e.stopPropagation()}
-                  aria-label={`Select row ${row.id}`}
+                  aria-label={`Select row ${extractId(row)}`}
                 />
               </td>
             {/if}
