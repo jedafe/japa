@@ -92,9 +92,9 @@
 			message = '';
 			const result = await api(`/control/cron/jobs/${job.id}/trigger`, { method: 'POST' });
 			if (result.ok) {
+				await load();
 				message = t('cron.trigger_success', 'Job triggered successfully.');
 				messageType = 'success';
-				await load();
 			} else {
 				message = result.error || t('cron.trigger_error', 'Failed to trigger job.');
 				messageType = 'error';
@@ -107,9 +107,9 @@
 			message = '';
 			const result = await api(`/control/cron/jobs/${job.id}/pause`, { method: 'POST' });
 			if (result.ok) {
+				await load();
 				message = t('cron.pause_success', 'Job paused successfully.');
 				messageType = 'success';
-				await load();
 			} else {
 				message = result.error || t('cron.pause_error', 'Failed to pause job.');
 				messageType = 'error';
@@ -122,9 +122,9 @@
 			message = '';
 			const result = await api(`/control/cron/jobs/${job.id}/unpause`, { method: 'POST' });
 			if (result.ok) {
+				await load();
 				message = t('cron.unpause_success', 'Job resumed successfully.');
 				messageType = 'success';
-				await load();
 			} else {
 				message = result.error || t('cron.unpause_error', 'Failed to resume job.');
 				messageType = 'error';
@@ -175,10 +175,10 @@
 				body
 			});
 			if (result.ok) {
-				message = t('cron.update_success', 'Job updated successfully.');
-				messageType = 'success';
 				closeEditModal();
 				await load();
+				message = t('cron.update_success', 'Job updated successfully.');
+				messageType = 'success';
 			} else {
 				message = result.error || t('cron.update_error', 'Failed to update job.');
 				messageType = 'error';
@@ -189,10 +189,10 @@
 				body
 			});
 			if (result.ok) {
-				message = t('cron.create_success', 'Job created successfully.');
-				messageType = 'success';
 				closeEditModal();
 				await load();
+				message = t('cron.create_success', 'Job created successfully.');
+				messageType = 'success';
 			} else {
 				message = result.error || t('cron.create_error', 'Failed to create job.');
 				messageType = 'error';
@@ -211,22 +211,23 @@
 		message = '';
 		const result = await api<{ id: string; status: string }>(`/control/cron/jobs/${deletingJob.id}`, { method: 'DELETE' });
 		if (result.ok) {
+			deleteModalOpen = false;
+			deletingJob = null;
+			await load();
 			message = result.data.status === 'paused'
 				? t('cron.delete_system_note', 'System job paused (cannot be deleted).')
 				: t('cron.delete_success', 'Job deleted successfully.');
 			messageType = 'success';
-			await load();
 		} else {
 			message = result.error || t('cron.delete_error', 'Failed to delete job.');
 			messageType = 'error';
+			deleteModalOpen = false;
+			deletingJob = null;
 		}
-		deleteModalOpen = false;
-		deletingJob = null;
 	}
 
 	async function load() {
 		loading = true;
-		message = '';
 		try {
 			const result = await api<CronJob[]>('/control/cron/jobs');
 			if (result.ok) {
@@ -360,7 +361,7 @@
 	</button>
 	<button
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px flex items-center gap-1.5 border px-3 py-2 text-xs font-medium transition-colors"
-		onclick={load}
+		onclick={() => { message = ''; load(); }}
 		disabled={loading}
 	>
 		<RefreshCw class="size-3 {loading ? 'animate-spin' : ''}" />

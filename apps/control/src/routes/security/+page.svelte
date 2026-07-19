@@ -5,7 +5,7 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Tabs, Select, Dialog } from 'bits-ui';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n';
+	import { t, translations } from '$lib/stores/i18n';
 	import { escapeHtml } from '$lib/utils';
 	import { Plus, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
@@ -63,26 +63,38 @@
 	let deleteLoading = $state(false);
 	let deleteError = $state('');
 
-	const blockTypeLabels: Record<string, string> = {
+	let blockTypeLabels = $derived.by<Record<string, string>>(() => {
+		$translations;
+		return {
 		full: t('security.block_full'),
 		registration: t('security.block_registration'),
 		posting: t('security.block_posting'),
 		api: t('security.block_api')
 	};
 
-	const severityItems = [
+	});
+
+	let severityItems = $derived.by(() => {
+		$translations;
+		return [
 		{ value: 'all', label: t('security.severity_all') },
 		{ value: 'info', label: t('security.severity_info') },
 		{ value: 'warning', label: t('security.severity_warning') },
 		{ value: 'critical', label: t('security.severity_critical') }
 	];
 
-	const blockTypeItems = [
+	});
+
+	let blockTypeItems = $derived.by(() => {
+		$translations;
+		return [
 		{ value: 'full', label: t('security.block_full') },
 		{ value: 'registration', label: t('security.block_registration') },
 		{ value: 'posting', label: t('security.block_posting') },
 		{ value: 'api', label: t('security.block_api') }
 	];
+
+	});
 
 	const severityClasses: Record<string, string> = {
 		critical: 'bg-destructive/15 text-destructive',
@@ -93,7 +105,9 @@
 		low: 'bg-blue-500/15 text-blue-500'
 	};
 
-	const scanColumns: DataTableColumn[] = [
+	let scanColumns = $derived.by<DataTableColumn[]>(() => {
+		$translations;
+		return [
 		{
 			key: 'severity',
 			label: t('security.severity'),
@@ -126,7 +140,11 @@
 		}
 	];
 
-	const ipBlockColumns: DataTableColumn[] = [
+	});
+
+	let ipBlockColumns = $derived.by<DataTableColumn[]>(() => {
+		$translations;
+		return [
 		{
 			key: 'cidr',
 			label: t('security.ip_cidr'),
@@ -155,7 +173,11 @@
 		}
 	];
 
-	const ipRowActions: DataTableRowAction[] = [
+	});
+
+	let ipRowActions = $derived.by<DataTableRowAction[]>(() => {
+		$translations;
+		return [
 		{
 			label: t('common.delete'),
 			icon: Trash2,
@@ -163,6 +185,8 @@
 			onClick: (row) => openDeleteConfirm(row as unknown as IpBlock)
 		}
 	];
+
+	});
 
 	let filteredResults = $derived.by(() => {
 		let list = results;

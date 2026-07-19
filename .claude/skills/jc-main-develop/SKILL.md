@@ -1,6 +1,6 @@
 ---
 name: jc-main-develop
-description: Use when building new pages or components for the JapaConnect Main App (apps/web, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart 2.0.1, the unified X.com-style app shell (ADR-058) and its three exceptions, the full visual design language, the API-Readiness Gate, and Rule 16.
+description: Use when building new pages or components for the JapaConnect Main App (apps/main, port 3000, SSR). Covers SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind v4 + LayerChart 2.0.1, the unified X.com-style app shell (ADR-058) and its three exceptions, the full visual design language, the API-Readiness Gate, and Rule 16.
 ---
 
 # JapaConnect Main App — Development Skill
