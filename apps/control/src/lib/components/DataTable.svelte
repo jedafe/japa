@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { t } from '$lib/stores/i18n';
 	import {
 		ChevronLeft,
@@ -208,7 +209,7 @@
 								{#if typeof emptyIcon === 'string'}
 									<span class="text-muted-foreground size-8 opacity-30">{emptyIcon}</span>
 								{:else}
-									<emptyIcon class="text-muted-foreground size-8 opacity-30" />
+									<emptyIcon class="text-muted-foreground size-8 opacity-30"></emptyIcon>
 								{/if}
 							{:else}
 								<Inbox class="text-muted-foreground size-8 opacity-30" />
@@ -275,7 +276,10 @@
 													<DropdownMenu.Item
 														class="data-highlighted:bg-accent flex cursor-pointer items-center gap-2 rounded-9px px-3 py-2 text-sm outline-none {action.variant === 'destructive' ? 'text-destructive data-highlighted:text-destructive' : 'text-foreground'}"
 														disabled={action.disabled?.(row as Record<string, unknown>)}
-														onSelect={() => action.onClick(row as Record<string, unknown>)}
+														onSelect={async () => {
+															await tick();
+															action.onClick(row as Record<string, unknown>);
+														}}
 													>
 													{#if action.icon}
 														<action.icon class="size-4" />
