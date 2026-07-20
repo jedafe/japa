@@ -2,7 +2,7 @@
 	import { PUBLIC_JC_ENV } from '$env/static/public';
 	import { getUser } from '$lib/stores/auth.svelte';
 	import { getTheme, toggleTheme } from '$lib/stores/theme.svelte';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import { DropdownMenu } from 'bits-ui';
 

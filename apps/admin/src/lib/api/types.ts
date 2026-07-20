@@ -235,7 +235,7 @@ export interface WalletRule {
 }
 
 export interface WalletSettings {
-	points_to_credit_ratio: number;
+	points_to_credits_rate: number;
 	daily_earning_cap: number;
 	enable_earning: boolean;
 }

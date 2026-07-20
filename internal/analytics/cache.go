@@ -27,6 +27,21 @@ type FlushScope string
 const (
 	// FlushAll deletes every jc: prefixed key — use with caution.
 	FlushAll FlushScope = "all"
+
+	// FlushPage deletes all jc:cache:page:* entries.
+	FlushPage FlushScope = "page"
+
+	// FlushFeed deletes all jc:cache:feed:* entries.
+	FlushFeed FlushScope = "feed"
+
+	// FlushI18n deletes all jc:cache:i18n:* entries.
+	FlushI18n FlushScope = "i18n"
+
+	// FlushSearch deletes all jc:cache:search:* entries.
+	FlushSearch FlushScope = "search"
+
+	// FlushAnalytics deletes all jc:cache:analytics:* entries.
+	FlushAnalytics FlushScope = "analytics"
 )
 
 // FlushCache removes cached keys matching the given scope.
@@ -123,6 +138,16 @@ func cachePatternForScope(scope FlushScope) string {
 	switch scope {
 	case FlushAll:
 		return "jc:*"
+	case FlushPage:
+		return "jc:cache:page:*"
+	case FlushFeed:
+		return "jc:cache:feed:*"
+	case FlushI18n:
+		return "jc:cache:i18n:*"
+	case FlushSearch:
+		return "jc:cache:search:*"
+	case FlushAnalytics:
+		return "jc:cache:analytics:*"
 	default:
 		return ""
 	}

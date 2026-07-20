@@ -59,13 +59,13 @@ export const ticketTypesApi = {
 
 export const walletApi = {
 	getRules: (params?: string) => api<unknown>(`/admin/wallet/rules${params ? `?${params}` : ''}`),
-	createRule: (body: { event_type: string; points_value: number; description?: string; is_active: boolean }) =>
+	createRule: (body: { activity_key: string; point_value: number; is_enabled: boolean; description?: string }) =>
 		api('/admin/wallet/rules', { method: 'POST', body }),
-	updateRule: (id: string, body: { event_type?: string; points_value?: number; description?: string; is_active?: boolean }) =>
+	updateRule: (id: string, body: { activity_key?: string; point_value?: number; is_enabled?: boolean; description?: string }) =>
 		api(`/admin/wallet/rules/${id}`, { method: 'PATCH', body }),
 
 	getSettings: () => api<unknown>('/admin/wallet/settings'),
-	updateSettings: (body: { points_to_credit_ratio: number; daily_earning_cap: number; enable_earning: boolean }) =>
+	updateSettings: (body: { points_to_credits_rate: number; daily_earning_cap: number; enable_earning: boolean }) =>
 		api('/admin/wallet/settings', { method: 'PUT', body }),
 
 	getUserBalance: (userId: string) => api<unknown>(`/admin/wallet/user/${userId}/balance`),

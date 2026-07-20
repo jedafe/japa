@@ -60,6 +60,10 @@ UPDATE comments
 SET deleted_at = now(), updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
+-- name: SoftDeleteCommentByID :exec
+UPDATE comments SET deleted_at = now(), updated_at = now()
+WHERE id = @id AND deleted_at IS NULL;
+
 -- name: PinComment :exec
 UPDATE comments SET is_pinned = true, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;

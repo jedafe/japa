@@ -5,7 +5,7 @@
 	import { Select, Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { FeatureFlag, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import { t, translations } from '$lib/stores/i18n';
+	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Flag, RefreshCw, Check, X } from 'lucide-svelte';
 
@@ -89,7 +89,7 @@
 	);
 
 	let groupItems = $derived.by(() => {
-		$translations;
+		translations();
 		return [
 		{ value: 'all', label: t('feature_flags.all_groups', 'All Groups') },
 		...allGroups.map((g) => ({ value: g, label: g }))
@@ -117,7 +117,7 @@
 	let filteredDisabled = $derived(filtered.filter((f) => !f.enabled));
 
 	let tabItems = $derived.by(() => {
-		$translations;
+		translations();
 		return [
 		{ value: 'all', label: `${t('common.all', 'All')} (${filtered.length})` },
 		{ value: 'enabled', label: `${t('feature_flags.enabled_count', 'Enabled')} (${filteredEnabled.length})` },
@@ -132,7 +132,7 @@
 
 	// M1: shared DataTable spec — columns, per-row actions, bulk actions.
 	let columns = $derived.by<DataTableColumn[]>(() => {
-		$translations;
+		translations();
 		return [
 		{
 			key: 'key',
@@ -173,7 +173,7 @@
 	});
 
 	let rowActions = $derived.by<DataTableRowAction[]>(() => {
-		$translations;
+		translations();
 		return [
 		{
 			label: t('feature_flags.enable', 'Enable'),
@@ -193,7 +193,7 @@
 	});
 
 	let bulkActions = $derived.by<DataTableBulkAction[]>(() => {
-		$translations;
+		translations();
 		return [
 		{
 			label: t('feature_flags.enable_selected', 'Enable Selected'),

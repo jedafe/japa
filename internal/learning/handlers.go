@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -970,14 +971,27 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
-	// ListAllTracks is the closest available method; enrollments need a dedicated query.
-	// For now, return track info.
-	track, err := h.store.GetTrackByID(r.Context(), t.ID, trackID)
+
+	limit, offset := int32(20), int32(0)
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n)
+		}
+	}
+	if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = int32(n)
+		}
+	}
+
+	enrollments, err := h.store.ListEnrollmentsByTrack(r.Context(), t.ID, trackID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Track not found")
+		slog.Error("learning: list track enrollments", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list enrollments")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"track": track}})
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": enrollments})
 }
 
 // PublishTrack handles POST /admin/learn/tracks/:id/publish.

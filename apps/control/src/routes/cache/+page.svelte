@@ -3,7 +3,7 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Database, RefreshCw } from 'lucide-svelte';
 
 	interface CacheNamespace {

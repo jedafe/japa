@@ -29,9 +29,6 @@ import (
 
 const defaultPageSize int32 = 20
 
-// Task type constant for embedding generation — matches worker.TypeAIGenerateContentEmbedding.
-const taskTypeAIGenerateContentEmbedding = "content:generate_embedding"
-
 // TaskEnqueueClient is the interface for enqueueing background tasks.
 // The Asynq client satisfies this interface. A nil client means tasks
 // are silently skipped (useful for tests and development).
@@ -159,7 +156,7 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 	}
 
 	if _, err := h.AsynqClient.Enqueue(
-		asynq.NewTask(taskTypeAIGenerateContentEmbedding, payload),
+		asynq.NewTask(worker.TypeAIGenerateContentEmbedding, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeAIGenerateContentEmbedding)),
 	); err != nil {
 		slog.Warn("content: failed to enqueue embedding task",

@@ -107,9 +107,9 @@ func (s *Service) enqueueBatchDispatch(window gen.NotificationBatchWindow) {
 		return
 	}
 
-	task := asynq.NewTask(TaskDispatchBatch, payload)
+	task := asynq.NewTask(worker.TypeNotificationDispatchBatch, payload)
 	opts := []asynq.Option{
-		asynq.Queue(worker.QueueForTask(TaskDispatchBatch)),
+		asynq.Queue(worker.QueueForTask(worker.TypeNotificationDispatchBatch)),
 		asynq.ProcessAt(window.WindowCloseAt.Time),
 	}
 	if _, err := s.client.Enqueue(task, opts...); err != nil {

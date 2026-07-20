@@ -31,6 +31,7 @@ type JWTClaims struct {
 	UserID   string `json:"uid"`
 	TenantID string `json:"tid"`
 	JTI      string `json:"jti"`
+	Scope    string `json:"scope,omitempty"` // "totp_verify" for challenge tokens
 }
 
 // KeyRotation holds the active signing keys for JWT rotation.
@@ -123,6 +124,58 @@ func (kr *KeyRotation) MintAccessTokenWithContext(ctx context.Context, userID, t
 	}
 
 	return signed, nil
+}
+
+// TOTPChallengeTTL is the lifetime of a 2FA challenge token (5 minutes).
+const TOTPChallengeTTL = 5 * time.Minute
+
+// MintTOTPChallengeToken creates a short-lived challenge token with scope "totp_verify".
+// The challenge token is issued after successful password validation when TOTP is
+// enabled, and must be presented to complete the 2FA step.
+func (kr *KeyRotation) MintTOTPChallengeToken(userID, tenantID pgtype.UUID) (string, error) {
+	if !userID.Valid || !tenantID.Valid {
+		return "", errors.New("cannot mint challenge token: user or tenant ID invalid")
+	}
+
+	jti := uuid.New().String()
+	now := time.Now()
+
+	claims := JWTClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(TOTPChallengeTTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ID:        jti,
+		},
+		UserID:   userID.String(),
+		TenantID: tenantID.String(),
+		JTI:      jti,
+		Scope:    "totp_verify",
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token.Header["kid"] = kr.CurrentKeyID
+
+	secret, ok := kr.Keys[kr.CurrentKeyID]
+	if !ok {
+		return "", fmt.Errorf("current key ID %s not found in rotation", kr.CurrentKeyID)
+	}
+
+	return token.SignedString(secret)
+}
+
+// ValidateChallengeToken validates a TOTP challenge token and returns its claims.
+// It enforces that the token has scope "totp_verify".
+func (kr *KeyRotation) ValidateChallengeToken(tokenString string) (*JWTClaims, error) {
+	claims, err := kr.ValidateAccessToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+
+	if claims.Scope != "totp_verify" {
+		return nil, errors.New("token is not a TOTP challenge token")
+	}
+
+	return claims, nil
 }
 
 // ValidateAccessToken validates a JWT and returns its claims.

@@ -5,7 +5,7 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Tabs, Select, Dialog } from 'bits-ui';
 	import { api } from '$lib/api';
-	import { t, translations } from '$lib/stores/i18n';
+	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Plus, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
@@ -64,7 +64,7 @@
 	let deleteError = $state('');
 
 	let blockTypeLabels = $derived.by<Record<string, string>>(() => {
-		$translations;
+		translations();
 		return {
 		full: t('security.block_full'),
 		registration: t('security.block_registration'),
@@ -75,7 +75,7 @@
 	});
 
 	let severityItems = $derived.by(() => {
-		$translations;
+		translations();
 		return [
 		{ value: 'all', label: t('security.severity_all') },
 		{ value: 'info', label: t('security.severity_info') },
@@ -86,7 +86,7 @@
 	});
 
 	let blockTypeItems = $derived.by(() => {
-		$translations;
+		translations();
 		return [
 		{ value: 'full', label: t('security.block_full') },
 		{ value: 'registration', label: t('security.block_registration') },
@@ -106,7 +106,7 @@
 	};
 
 	let scanColumns = $derived.by<DataTableColumn[]>(() => {
-		$translations;
+		translations();
 		return [
 		{
 			key: 'severity',
@@ -143,7 +143,7 @@
 	});
 
 	let ipBlockColumns = $derived.by<DataTableColumn[]>(() => {
-		$translations;
+		translations();
 		return [
 		{
 			key: 'cidr',
@@ -176,7 +176,7 @@
 	});
 
 	let ipRowActions = $derived.by<DataTableRowAction[]>(() => {
-		$translations;
+		translations();
 		return [
 		{
 			label: t('common.delete'),
@@ -313,6 +313,11 @@
 	async function createIpBlock() {
 		if (!cidr.trim()) {
 			createError = t('security.cidr_label') + ' is required.';
+			return;
+		}
+		// Basic CIDR validation
+		if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(cidr.trim())) {
+			createError = 'Please enter a valid CIDR (e.g. 192.168.1.0/24).';
 			return;
 		}
 		createLoading = true;

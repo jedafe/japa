@@ -949,6 +949,110 @@ func (q *Queries) ListContentTags(ctx context.Context, contentID pgtype.UUID) ([
 	return items, nil
 }
 
+const listContentsByAuthorProfile = `-- name: ListContentsByAuthorProfile :many
+SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+       created_at, updated_at
+FROM contents
+WHERE author_profile_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListContentsByAuthorProfileParams struct {
+	AuthorProfileID pgtype.UUID `json:"author_profile_id"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	PageOffset      int32       `json:"page_offset"`
+	PageLimit       int32       `json:"page_limit"`
+}
+
+type ListContentsByAuthorProfileRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListContentsByAuthorProfile(ctx context.Context, arg ListContentsByAuthorProfileParams) ([]ListContentsByAuthorProfileRow, error) {
+	rows, err := q.db.Query(ctx, listContentsByAuthorProfile,
+		arg.AuthorProfileID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContentsByAuthorProfileRow
+	for rows.Next() {
+		var i ListContentsByAuthorProfileRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.BodyHtml,
+			&i.FieldValues,
+			&i.ContentHash,
+			&i.GeoSpaceID,
+			&i.HeaderImageID,
+			&i.FeaturedImageID,
+			&i.CanonicalUrl,
+			&i.Status,
+			&i.Visibility,
+			&i.IsLocked,
+			&i.IsPinned,
+			&i.ReadTimeMinutes,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.PublishAt,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listContentsBySpace = `-- name: ListContentsBySpace :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,

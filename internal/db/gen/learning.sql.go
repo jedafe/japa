@@ -668,6 +668,74 @@ func (q *Queries) ListAllLearningTracks(ctx context.Context, tenantID pgtype.UUI
 	return items, nil
 }
 
+const listEnrollmentsByTrackID = `-- name: ListEnrollmentsByTrackID :many
+SELECT e.id, e.tenant_id, e.user_id, e.track_id, e.access_type, e.progress_pct, e.enrolled_at, e.completed_at,
+       u.username,
+       COALESCE(up.display_name, '') AS display_name
+FROM enrollments e
+JOIN users u ON u.id = e.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = e.tenant_id
+WHERE e.track_id = $1 AND e.tenant_id = $2
+ORDER BY e.enrolled_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListEnrollmentsByTrackIDParams struct {
+	TrackID    pgtype.UUID `json:"track_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListEnrollmentsByTrackIDRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	AccessType  string             `json:"access_type"`
+	ProgressPct pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	Username    string             `json:"username"`
+	DisplayName string             `json:"display_name"`
+}
+
+func (q *Queries) ListEnrollmentsByTrackID(ctx context.Context, arg ListEnrollmentsByTrackIDParams) ([]ListEnrollmentsByTrackIDRow, error) {
+	rows, err := q.db.Query(ctx, listEnrollmentsByTrackID,
+		arg.TrackID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEnrollmentsByTrackIDRow
+	for rows.Next() {
+		var i ListEnrollmentsByTrackIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.TrackID,
+			&i.AccessType,
+			&i.ProgressPct,
+			&i.EnrolledAt,
+			&i.CompletedAt,
+			&i.Username,
+			&i.DisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEnrollmentsByUserID = `-- name: ListEnrollmentsByUserID :many
 SELECT id, tenant_id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
 FROM enrollments

@@ -210,6 +210,17 @@ SET progress_pct = @progress_pct,
     completed_at = CASE WHEN @progress_pct >= 100 THEN now() ELSE completed_at END
 WHERE user_id = @user_id AND track_id = @track_id;
 
+-- name: ListEnrollmentsByTrackID :many
+SELECT e.id, e.tenant_id, e.user_id, e.track_id, e.access_type, e.progress_pct, e.enrolled_at, e.completed_at,
+       u.username,
+       COALESCE(up.display_name, '') AS display_name
+FROM enrollments e
+JOIN users u ON u.id = e.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = e.tenant_id
+WHERE e.track_id = @track_id AND e.tenant_id = @tenant_id
+ORDER BY e.enrolled_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- =====================
 -- Quiz Operations
 -- =====================

@@ -69,6 +69,10 @@ export interface SystemSetting {
 	default_value: string;
 	description: string;
 	namespace: string;
+	min?: number;
+	max?: number;
+	sensitive?: boolean;
+	options?: { value: string; label: string }[];
 }
 
 export interface FeatureFlag {

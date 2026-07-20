@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 )
 
@@ -197,6 +198,8 @@ func (s *Service) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUI
 		input.Status = PageStatusDraft
 	}
 
+	input.Blocks = sanitizeBlocksJSON(input.Blocks)
+
 	return s.store.CreatePage(ctx, tenantID, createdBy, input)
 }
 
@@ -206,7 +209,50 @@ func (s *Service) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, inpu
 		return Page{}, errors.New("title is required")
 	}
 
+	input.Blocks = sanitizeBlocksJSON(input.Blocks)
+
 	return s.store.UpdatePage(ctx, id, tenantID, input)
+}
+
+// sanitizeBlocksJSON walks a JSON structure recursively and applies
+// HTML sanitization to any string values. This prevents XSS via
+// unsanitized user-supplied page builder content (AUDIT-BE-008).
+func sanitizeBlocksJSON(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return raw
+	}
+
+	sanitized := sanitizeJSONValue(v)
+	result, err := json.Marshal(sanitized)
+	if err != nil {
+		return raw
+	}
+
+	return result
+}
+
+func sanitizeJSONValue(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		for k, elem := range val {
+			val[k] = sanitizeJSONValue(elem)
+		}
+		return val
+	case []any:
+		for i, elem := range val {
+			val[i] = sanitizeJSONValue(elem)
+		}
+		return val
+	case string:
+		return content.SanitizeHTML(val)
+	default:
+		return v
+	}
 }
 
 // DeletePage removes a page.

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	interface Props {
 		open: boolean;
@@ -25,7 +25,7 @@
 		confirming = false;
 	}
 
-	function handleCancel() {
+	function cancel() {
 		if (confirming) return;
 		onCancel?.();
 		open = false;
@@ -33,7 +33,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open={open} onOpenChange={(isOpen) => { if (!isOpen) handleCancel(); }}>
+<Dialog.Root bind:open={open} onOpenChange={(isOpen) => { if (!isOpen) { typedText = ''; } }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
 		<Dialog.Content
@@ -64,12 +64,12 @@
 				</div>
 			{/if}
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close
+				<button
 					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-md border px-4 py-2 text-sm font-medium transition-colors"
-					onclick={handleCancel}
+					onclick={cancel}
 				>
 					{t('common.cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					type="button"
 					class="bg-destructive text-white rounded-md px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"

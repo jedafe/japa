@@ -5,6 +5,7 @@
 	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
+	import { Select } from "$lib/components/ui/select";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { Plus, RefreshCw, Eye, Pencil, Trash2 } from "lucide-svelte";

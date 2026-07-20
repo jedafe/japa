@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // MaxDeliveryAttempts is the roadmap-mandated retry count for webhook delivery.
@@ -155,10 +156,10 @@ func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]string{"delivery_id": deliveryID.String()})
 		// Without this task the delivery row stays 'pending' forever — surface a failed enqueue.
-		if err := s.enqueuer.Enqueue("webhook:deliver", payload); err != nil {
+		if err := s.enqueuer.Enqueue(worker.TypeWebhookDelivery, payload); err != nil {
 			slog.Error("webhooks: failed to enqueue test delivery",
 				"delivery_id", deliveryID.String(), "error", err)
-			errpkg.CaptureException(fmt.Errorf("enqueue webhook:deliver (delivery %s): %w", deliveryID.String(), err))
+			errpkg.CaptureException(fmt.Errorf("enqueue %s (delivery %s): %w", worker.TypeWebhookDelivery, deliveryID.String(), err))
 		}
 	}
 
@@ -279,10 +280,10 @@ func (s *Service) RetryDelivery(ctx context.Context, tenantID, deliveryID pgtype
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]string{"delivery_id": deliveryID.String()})
 		// The row was just reset to 'pending'; a lost enqueue would strand it — surface the failure.
-		if err := s.enqueuer.Enqueue("webhook:deliver", payload); err != nil {
+		if err := s.enqueuer.Enqueue(worker.TypeWebhookDelivery, payload); err != nil {
 			slog.Error("webhooks: failed to enqueue retry delivery",
 				"delivery_id", deliveryID.String(), "error", err)
-			errpkg.CaptureException(fmt.Errorf("enqueue webhook:deliver (delivery %s): %w", deliveryID.String(), err))
+			errpkg.CaptureException(fmt.Errorf("enqueue %s (delivery %s): %w", worker.TypeWebhookDelivery, deliveryID.String(), err))
 		}
 	}
 

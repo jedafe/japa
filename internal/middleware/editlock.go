@@ -24,7 +24,8 @@ import (
 )
 
 // editLockTTLDefault is the fallback TTL when the system setting is unavailable.
-const editLockTTLDefault = 120 * time.Second
+// MUST match the valkey-keys-catalog.md entry (90s) for audit conformance (AUDIT-BE-028).
+const editLockTTLDefault = 90 * time.Second
 
 // editLockSettingsReader is the subset of config.Settings the edit lock needs.
 type editLockSettingsReader interface {

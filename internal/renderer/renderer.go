@@ -11,6 +11,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -19,6 +21,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/valkey"
 )
+
+// MaxRenderInputSize is the maximum size in bytes of ProseMirror JSON
+// accepted by the renderer. Larger payloads are rejected.
+const MaxRenderInputSize = 512 * 1024 // 512 KiB
 
 // Renderer converts ProseMirror JSON to HTML via TipTap SSR.
 type Renderer struct {
@@ -65,7 +71,12 @@ func (r *Renderer) Render(ctx context.Context, contentID pgtype.UUID, updatedAt 
 }
 
 // renderViaBun shells out to Bun to run the TipTap SSR script.
+// The input is validated before being piped to the external process.
 func (r *Renderer) renderViaBun(ctx context.Context, json []byte) (string, error) {
+	if err := validateRenderInput(json); err != nil {
+		return "", err
+	}
+
 	cmd := exec.CommandContext(ctx, "bun", "run", r.scriptPath) //nolint:gosec // G204: scriptPath from trusted admin config
 	cmd.Stdin = bytes.NewReader(json)
 
@@ -78,6 +89,34 @@ func (r *Renderer) renderViaBun(ctx context.Context, json []byte) (string, error
 	}
 
 	return stdout.String(), nil
+}
+
+// validateRenderInput checks that the supplied ProseMirror JSON is well-formed
+// and within size limits before passing it to an external process.
+func validateRenderInput(data []byte) error {
+	if len(data) > MaxRenderInputSize {
+		return fmt.Errorf("render input exceeds maximum size of %d bytes", MaxRenderInputSize)
+	}
+
+	if len(data) == 0 {
+		return errors.New("render input is empty")
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("render input is not valid JSON: %w", err)
+	}
+
+	docType, ok := doc["type"].(string)
+	if !ok || docType != "doc" {
+		return fmt.Errorf("render input must have root \"type\": \"doc\", got %q", docType)
+	}
+
+	if _, ok := doc["content"]; !ok {
+		return errors.New("render input is missing required \"content\" field")
+	}
+
+	return nil
 }
 
 // cacheKey generates a Valkey cache key for rendered HTML.

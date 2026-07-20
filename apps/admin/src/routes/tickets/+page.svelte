@@ -6,6 +6,7 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
+	import { Select } from "$lib/components/ui/select";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { RefreshCw, Eye, Pencil, Trash2, Ticket, Clock, CheckCircle, AlertCircle } from "lucide-svelte";
@@ -363,11 +364,29 @@
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<label for="tk-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
-				<input id="tk-status" type="text" bind:value={editForm.status} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+				<Select
+					options={[
+						{ value: "open", label: t("tickets.open", "Open") },
+						{ value: "in_progress", label: t("tickets.in_progress", "In Progress") },
+						{ value: "resolved", label: t("tickets.resolved", "Resolved") },
+						{ value: "closed", label: t("tickets.closed", "Closed") }
+					]}
+					value={editForm.status}
+					onchange={(val) => (editForm.status = val)}
+				/>
 			</div>
 			<div>
 				<label for="tk-priority" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.priority", "Priority")}</label>
-				<input id="tk-priority" type="text" bind:value={editForm.priority} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+				<Select
+					options={[
+						{ value: "low", label: t("tickets.low", "Low") },
+						{ value: "medium", label: t("tickets.medium", "Medium") },
+						{ value: "high", label: t("tickets.high", "High") },
+						{ value: "urgent", label: t("tickets.urgent", "Urgent") }
+					]}
+					value={editForm.priority}
+					onchange={(val) => (editForm.priority = val)}
+				/>
 			</div>
 		</div>
 		<div>

@@ -5,6 +5,7 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
+	import { Select } from "$lib/components/ui/select";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { Plus, Pencil, Trash2, RefreshCw, ArrowRightLeft } from "lucide-svelte";
 	import { redirectsAdminApi } from "$lib/api";
@@ -96,6 +97,10 @@
 
 	async function saveRedirect() {
 		if (!fromPath.trim() || !toPath.trim()) return;
+		if (!/^\/[\w\-./]*$/.test(fromPath.trim()) || !/^\/[\w\-./]*$/.test(toPath.trim())) {
+			error = t("redirects.invalid_path", "Paths must start with /");
+			return;
+		}
 		saving = true;
 		error = "";
 		try {

@@ -495,3 +495,51 @@ func (s *Store) getDocumentProfileID(ctx context.Context, documentID, tenantID p
 
 	return row.ProfileID, nil
 }
+
+func (s *Store) listProfileContent(ctx context.Context, tenantID, profileID pgtype.UUID, limit, offset int32) ([]gen.Content, error) {
+	rows, err := s.read.ListContentsByAuthorProfile(ctx, gen.ListContentsByAuthorProfileParams{
+		AuthorProfileID: profileID,
+		TenantID:        tenantID,
+		PageLimit:       limit,
+		PageOffset:      offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing profile content: %w", err)
+	}
+
+	content := make([]gen.Content, len(rows))
+	for i, r := range rows {
+		content[i] = gen.Content{
+			ID:              r.ID,
+			TenantID:        r.TenantID,
+			AuthorID:        r.AuthorID,
+			SpaceID:         r.SpaceID,
+			ContentType:     r.ContentType,
+			Title:           r.Title,
+			Slug:            r.Slug,
+			Body:            r.Body,
+			BodyHtml:        r.BodyHtml,
+			FieldValues:     r.FieldValues,
+			ContentHash:     r.ContentHash,
+			GeoSpaceID:      r.GeoSpaceID,
+			HeaderImageID:   r.HeaderImageID,
+			FeaturedImageID: r.FeaturedImageID,
+			CanonicalUrl:    r.CanonicalUrl,
+			Status:          r.Status,
+			Visibility:      r.Visibility,
+			IsLocked:        r.IsLocked,
+			IsPinned:        r.IsPinned,
+			ReadTimeMinutes: r.ReadTimeMinutes,
+			ViewCount:       r.ViewCount,
+			CommentCount:    r.CommentCount,
+			ShareCount:      r.ShareCount,
+			ReshareCount:    r.ReshareCount,
+			PublishAt:       r.PublishAt,
+			PublishedAt:     r.PublishedAt,
+			CreatedAt:       r.CreatedAt,
+			UpdatedAt:       r.UpdatedAt,
+		}
+	}
+
+	return content, nil
+}

@@ -7,7 +7,7 @@
 	import { api } from '$lib/api';
 	import type { Component } from 'svelte';
 	import type { Tenant, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Pencil, Ban, CheckCircle, Trash2, Plus, X, RefreshCw } from 'lucide-svelte';
 
@@ -81,6 +81,11 @@
 		saving = true;
 		errorMessage = '';
 		const slug = createSlug || autoSlug(createName);
+		if (createDomain && !/^([a-z0-9-]+\.)*[a-z0-9-]+\.[a-z]+$/.test(createDomain)) {
+			errorMessage = 'Please enter a valid domain (e.g. example.com).';
+			saving = false;
+			return;
+		}
 		const result = await api<Tenant>('/control/tenants', {
 			method: 'POST',
 			body: { name: createName, slug, domain: createDomain || undefined }

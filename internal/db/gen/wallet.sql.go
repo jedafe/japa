@@ -186,7 +186,7 @@ func (q *Queries) GetLedgerEntryByID(ctx context.Context, arg GetLedgerEntryByID
 
 const getWalletSettings = `-- name: GetWalletSettings :one
 
-SELECT id, tenant_id, points_to_credits_rate, created_at, updated_at FROM wallet_settings
+SELECT id, tenant_id, points_to_credits_rate, created_at, updated_at, daily_earning_cap, enable_earning FROM wallet_settings
 WHERE tenant_id = $1
 `
 
@@ -202,6 +202,8 @@ func (q *Queries) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (
 		&i.PointsToCreditsRate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DailyEarningCap,
+		&i.EnableEarning,
 	)
 	return i, err
 }
@@ -558,21 +560,30 @@ func (q *Queries) UpsertActivityRule(ctx context.Context, arg UpsertActivityRule
 }
 
 const upsertWalletSettings = `-- name: UpsertWalletSettings :one
-INSERT INTO wallet_settings (tenant_id, points_to_credits_rate)
-VALUES ($1, $2)
+INSERT INTO wallet_settings (tenant_id, points_to_credits_rate, daily_earning_cap, enable_earning)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (tenant_id) DO UPDATE SET
     points_to_credits_rate = EXCLUDED.points_to_credits_rate,
+    daily_earning_cap = EXCLUDED.daily_earning_cap,
+    enable_earning = EXCLUDED.enable_earning,
     updated_at = now()
-RETURNING id, tenant_id, points_to_credits_rate, created_at, updated_at
+RETURNING id, tenant_id, points_to_credits_rate, created_at, updated_at, daily_earning_cap, enable_earning
 `
 
 type UpsertWalletSettingsParams struct {
 	TenantID            pgtype.UUID `json:"tenant_id"`
 	PointsToCreditsRate *int32      `json:"points_to_credits_rate"`
+	DailyEarningCap     int32       `json:"daily_earning_cap"`
+	EnableEarning       bool        `json:"enable_earning"`
 }
 
 func (q *Queries) UpsertWalletSettings(ctx context.Context, arg UpsertWalletSettingsParams) (WalletSetting, error) {
-	row := q.db.QueryRow(ctx, upsertWalletSettings, arg.TenantID, arg.PointsToCreditsRate)
+	row := q.db.QueryRow(ctx, upsertWalletSettings,
+		arg.TenantID,
+		arg.PointsToCreditsRate,
+		arg.DailyEarningCap,
+		arg.EnableEarning,
+	)
 	var i WalletSetting
 	err := row.Scan(
 		&i.ID,
@@ -580,6 +591,8 @@ func (q *Queries) UpsertWalletSettings(ctx context.Context, arg UpsertWalletSett
 		&i.PointsToCreditsRate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DailyEarningCap,
+		&i.EnableEarning,
 	)
 	return i, err
 }

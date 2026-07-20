@@ -4,7 +4,8 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Select } from 'bits-ui';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
+	import { ACTION_TYPES } from '$lib/constants/audit';
 	import { escapeHtml } from '$lib/utils';
 	import type { AuditLogEntry, PaginatedResponse, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { Trash2 } from 'lucide-svelte';
@@ -30,14 +31,10 @@
 	let filterFrom = $state('');
 	let filterTo = $state('');
 
-	const actionTypes = [
+	const actionTypes = $derived([
 		{ value: 'all', label: t('audit.action_all', 'All Actions') },
-		{ value: 'create', label: t('audit.action_create', 'Create') },
-		{ value: 'update', label: t('audit.action_update', 'Update') },
-		{ value: 'delete', label: t('audit.action_delete', 'Delete') },
-		{ value: 'login', label: t('audit.action_login', 'Login') },
-		{ value: 'logout', label: t('audit.action_logout', 'Logout') }
-	];
+		...ACTION_TYPES.map((a) => ({ value: a, label: t(`audit.action_${a}`, a.charAt(0).toUpperCase() + a.slice(1)) }))
+	]);
 
 	function formatTimestamp(val: unknown): string {
 		if (!val) return '—';

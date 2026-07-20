@@ -42,6 +42,47 @@ UPDATE media SET storage_path = @storage_path WHERE id = @id AND tenant_id = @te
 -- name: SoftDeleteMedia :exec
 UPDATE media SET deleted_at = now() WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: RejectMediaByIDAndVirus :exec
+UPDATE media
+SET deleted_at = now(),
+    alt_text = COALESCE(alt_text, '') || ' [REJECTED: ' || @virus_name || ']'
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: QuarantineMediaByID :exec
+UPDATE media
+SET quarantine_reason = @reason,
+    quarantined_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: ApproveQuarantinedMedia :exec
+UPDATE media
+SET quarantine_reason = NULL,
+    quarantined_at = NULL,
+    reviewed_by = @reviewed_by,
+    reviewed_at = now(),
+    confirmed = true
+WHERE id = @id AND tenant_id = @tenant_id AND quarantine_reason IS NOT NULL AND deleted_at IS NULL;
+
+-- name: RejectQuarantinedMedia :exec
+UPDATE media
+SET deleted_at = now(),
+    reviewed_by = @reviewed_by,
+    reviewed_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND quarantine_reason IS NOT NULL AND deleted_at IS NULL;
+
+-- name: ListQuarantinedMedia :many
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
+       file_size_bytes, width_px, height_px, duration_secs, storage_path,
+       storage_bucket, alt_text, caption, confirmed, deleted_at,
+       quarantine_reason, quarantined_at, reviewed_by, reviewed_at,
+       created_at
+FROM media
+WHERE tenant_id = @tenant_id
+  AND quarantine_reason IS NOT NULL
+  AND deleted_at IS NULL
+ORDER BY quarantined_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- =====================
 -- Lists
 -- =====================

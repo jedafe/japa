@@ -380,12 +380,16 @@
 			</div>
 			<div>
 				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="edit-status">{t("common.status", "Status")}</label>
-				<select id="edit-status" class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={editStatus}>
-					<option value="published">{t("content.status.published", "Published")}</option>
-					<option value="draft">{t("content.status.draft", "Draft")}</option>
-					<option value="removed">{t("content.status.removed", "Removed")}</option>
-					<option value="archived">{t("content.status.archived", "Archived")}</option>
-				</select>
+				<Select
+					options={[
+						{ value: "published", label: t("content.status.published", "Published") },
+						{ value: "draft", label: t("content.status.draft", "Draft") },
+						{ value: "removed", label: t("content.status.removed", "Removed") },
+						{ value: "archived", label: t("content.status.archived", "Archived") }
+					]}
+					value={editStatus}
+					onchange={(val) => (editStatus = val)}
+				/>
 			</div>
 			<div>
 				<label class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)" for="edit-body">{t("content.body", "Body")}</label>

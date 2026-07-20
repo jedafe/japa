@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -13,15 +14,18 @@ import (
 const bruteForceKeyPrefix = "jc:bruteforce:"
 
 // ValkeyBruteForceStore implements BruteForceStore backed by Valkey.
-// Keys are namespaced with jc:bruteforce: and expire after FailWindow
-// so stale counters are automatically cleaned up.
+// Keys are namespaced with jc:bruteforce: and expire after the provided
+// failWindow so stale counters are automatically cleaned up.
 type ValkeyBruteForceStore struct {
-	rdb valkeycompat.Cmdable
+	rdb        valkeycompat.Cmdable
+	failWindow time.Duration
 }
 
 // NewValkeyBruteForceStore creates a Valkey-backed brute-force store.
-func NewValkeyBruteForceStore(rdb valkeycompat.Cmdable) *ValkeyBruteForceStore {
-	return &ValkeyBruteForceStore{rdb: rdb}
+// failWindow is the TTL for failure counters — use DefaultFailWindow
+// when the tenant-specific value is unavailable.
+func NewValkeyBruteForceStore(rdb valkeycompat.Cmdable, failWindow time.Duration) *ValkeyBruteForceStore {
+	return &ValkeyBruteForceStore{rdb: rdb, failWindow: failWindow}
 }
 
 // fullKey namespaces the caller-provided key with the brute-force prefix.
@@ -56,7 +60,7 @@ func (s *ValkeyBruteForceStore) GetFailCount(ctx context.Context, key string) (i
 }
 
 // IncrFailCount atomically increments the failure counter and sets (or
-// refreshes) the TTL to FailWindow. Returns the new count after
+// refreshes) the TTL to failWindow. Returns the new count after
 // incrementing. No-op when Valkey is unreachable (graceful degradation).
 func (s *ValkeyBruteForceStore) IncrFailCount(ctx context.Context, key string) error {
 	if s.rdb == nil {
@@ -70,7 +74,7 @@ func (s *ValkeyBruteForceStore) IncrFailCount(ctx context.Context, key string) e
 	// slides forward.
 	pipe := s.rdb.Pipeline()
 	pipe.Incr(ctx, fk)
-	pipe.Expire(ctx, fk, FailWindow)
+	pipe.Expire(ctx, fk, s.failWindow)
 
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("bruteforce incr: %w", err)
