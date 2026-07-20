@@ -49,8 +49,13 @@ export const sensitiveKeys: string[] = [
     'email.smtp_username',
     'payment.secret_key',
     'payment.publishable_key',
+    'payment.paystack_secret_key',
+    'payment.stripe_secret_key',
     'media.storage.access_key',
     'media.storage.secret_key',
+    'media.imgproxy_key',
+    'media.imgproxy_salt',
+    'integrations.meilisearch_key',
     'security.jwt_secret',
     'security.encryption_key',
     'oauth.client_secret',
@@ -61,5 +66,16 @@ export const sensitiveKeys: string[] = [
 export const textareaKeys: string[] = [
     'general.site_description',
     'cors.allowed_origins',
-    'content.link_preview.blacklist'
+    'content.link_preview.blacklist',
+    'seo.meta_description_template'
+];
+
+export const uploadKeys: string[] = [
+    'appearance.favicon_url',
+    'appearance.logo_url',
+    'seo.og_image'
+];
+
+export const colorKeys: string[] = [
+    'appearance.primary_color'
 ];
