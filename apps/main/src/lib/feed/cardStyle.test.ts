@@ -11,6 +11,12 @@ describe('normalizeConfig', () => {
 	it('accepts a legacy scalar', () => {
 		expect(normalizeConfig('magazine')).toEqual({ default: 'magazine', byType: {} });
 	});
+	it('accepts the current backend {card_style} scalar-under-key shape', () => {
+		// GET /feed/card-style returns { data: { card_style } } pre-Layer-1.
+		expect(normalizeConfig({ card_style: 'compact' })).toEqual({ default: 'compact', byType: {} });
+		// An invalid legacy value still degrades to the reddit default.
+		expect(normalizeConfig({ card_style: 'nope' })).toEqual({ default: 'reddit', byType: {} });
+	});
 	it('coerces invalid default and drops invalid overrides', () => {
 		expect(normalizeConfig({ default: 'bogus', by_type: { blog_post: 'grid', x: 'nope' } })).toEqual({
 			default: 'reddit',
