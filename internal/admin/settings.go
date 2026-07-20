@@ -25,12 +25,15 @@ import (
 
 // SettingDef defines the metadata for a single setting within a category.
 type SettingDef struct {
-	Key     string   `json:"key"`
-	Label   string   `json:"label"`
-	Type    string   `json:"type"` // "text", "number", "toggle", "select"
-	Value   any      `json:"value,omitempty"`
-	Options []string `json:"options,omitempty"`
-	Masked  bool     `json:"masked,omitempty"` // true for secrets — API returns "***"
+	Key         string   `json:"key"`
+	Label       string   `json:"label"`
+	Type        string   `json:"type"` // "text", "number", "toggle", "select", "multiselect", "color", "file", "textarea"
+	Value       any      `json:"value,omitempty"`
+	Options     []string `json:"options,omitempty"`
+	Accept      string   `json:"accept,omitempty"`      // file type filter for "file" type
+	Placeholder string   `json:"placeholder,omitempty"` // placeholder text
+	Description string   `json:"description,omitempty"` // helper text below label
+	Masked      bool     `json:"masked,omitempty"`      // true for secrets — API returns "***"
 }
 
 // SettingCategory groups related settings with display metadata.
@@ -84,7 +87,7 @@ var defaultSettings = map[string]SettingCategory{
 		Label: "General",
 		Settings: []SettingDef{
 			{Key: "site_name", Label: "Site Name", Type: "text"},
-			{Key: "site_description", Label: "Site Description", Type: "text"},
+			{Key: "site_description", Label: "Site Description", Type: "textarea"},
 			{Key: "maintenance_mode", Label: "Maintenance Mode", Type: "toggle"},
 			{Key: "registration_open", Label: "Open Registration", Type: "toggle"},
 		},
@@ -100,15 +103,25 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "advertising_enabled", Label: "Advertising", Type: "toggle"},
 		},
 	},
+	"feed": {
+		Key:   "feed",
+		Label: "Feed",
+		Settings: []SettingDef{
+			{Key: "fanout_threshold", Label: "Fanout Threshold", Type: "number", Description: "Max space members for push fan-out"},
+			{Key: "velocity.gravity", Label: "Velocity Gravity", Type: "number", Description: "HN gravity constant for Rising sort"},
+			{Key: "max_followed_spaces_in_feed", Label: "Max Followed Spaces", Type: "number", Description: "Cap on spaces in feed"},
+			{Key: "card_style", Label: "Card Style", Type: "select", Options: []string{"reddit", "compact", "grid", "magazine"}},
+		},
+	},
 	"email": {
 		Key:   "email",
 		Label: "Email",
 		Settings: []SettingDef{
-			{Key: "smtp_host", Label: "SMTP Host", Type: "text"},
+			{Key: "smtp_host", Label: "SMTP Host", Type: "text", Placeholder: "smtp.gmail.com"},
 			{Key: "smtp_port", Label: "SMTP Port", Type: "number"},
 			{Key: "smtp_username", Label: "SMTP Username", Type: "text"},
 			{Key: "smtp_password", Label: "SMTP Password", Type: "text", Masked: true},
-			{Key: "from_address", Label: "From Address", Type: "text"},
+			{Key: "from_address", Label: "From Address", Type: "text", Placeholder: "noreply@example.com"},
 		},
 	},
 	"security": {
@@ -117,17 +130,18 @@ var defaultSettings = map[string]SettingCategory{
 		Settings: []SettingDef{
 			{Key: "max_login_attempts", Label: "Max Login Attempts", Type: "number"},
 			{Key: "lockout_duration_minutes", Label: "Lockout Duration (min)", Type: "number"},
+			{Key: "fail_window_minutes", Label: "Fail Window (min)", Type: "number", Description: "Lockout window in minutes"},
 			{Key: "require_email_verification", Label: "Require Email Verification", Type: "toggle"},
-			{Key: "cors.allowed_origins", Label: "CORS Allowed Origins (comma-separated)", Type: "text"},
+			{Key: "cors.allowed_origins", Label: "CORS Allowed Origins", Type: "textarea", Placeholder: `["https://example.com"]`},
 		},
 	},
 	"appearance": {
 		Key:   "appearance",
 		Label: "Appearance",
 		Settings: []SettingDef{
-			{Key: "primary_color", Label: "Primary Color", Type: "text"},
-			{Key: "logo_url", Label: "Logo URL", Type: "text"},
-			{Key: "favicon_url", Label: "Favicon URL", Type: "text"},
+			{Key: "primary_color", Label: "Primary Color", Type: "color"},
+			{Key: "logo_url", Label: "Logo URL", Type: "file", Accept: "image/*"},
+			{Key: "favicon_url", Label: "Favicon URL", Type: "file", Accept: "image/*"},
 			{Key: "dark_mode_default", Label: "Dark Mode Default", Type: "toggle"},
 			{Key: "feed_card_style", Label: "Feed Card Style", Type: "select", Options: []string{"reddit", "devto"}, Value: "reddit"},
 		},
@@ -139,7 +153,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "allow_social_login", Label: "Allow Social Login", Type: "toggle"},
 			{Key: "require_profile_completion", Label: "Require Profile Completion", Type: "toggle"},
 			{Key: "max_avatar_size_mb", Label: "Max Avatar Size (MB)", Type: "number"},
-			{Key: "allowed_avatar_types", Label: "Allowed Avatar Types", Type: "text"},
+			{Key: "allowed_avatar_types", Label: "Allowed Avatar Types", Type: "multiselect", Options: []string{"jpeg", "jpg", "png", "gif", "webp", "svg"}},
 		},
 	},
 	"content": {
@@ -150,8 +164,14 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "allow_anonymous_posts", Label: "Allow Anonymous Posts", Type: "toggle"},
 			{Key: "require_content_review", Label: "Require Content Review", Type: "toggle"},
 			{Key: "max_upload_size_mb", Label: "Max Upload Size (MB)", Type: "number"},
-			{Key: "allowed_upload_types", Label: "Allowed Upload Types", Type: "text"},
-			{Key: "link_preview.blacklist", Label: "Link Preview Blacklist (comma-separated domains)", Type: "text"},
+			{Key: "allowed_upload_types", Label: "Allowed Upload Types", Type: "multiselect", Options: []string{"jpeg", "jpg", "png", "gif", "webp", "svg", "pdf", "mp4", "webm"}},
+			{Key: "link_preview.blacklist", Label: "Link Preview Blacklist", Type: "textarea", Placeholder: `["example.com", "spam.com"]`},
+			{Key: "edit_lock_ttl_seconds", Label: "Edit Lock TTL (seconds)", Type: "number", Description: "Editor lock TTL in seconds"},
+			{Key: "edit_window_minutes", Label: "Edit Window (minutes)", Type: "number", Description: "Content edit window (24hr default)"},
+			{Key: "max_tags", Label: "Max Tags", Type: "number", Description: "Max tags per content item"},
+			{Key: "min_length", Label: "Min Content Length", Type: "number", Description: "Minimum content body length"},
+			{Key: "comments.edit_window_minutes", Label: "Comment Edit Window (min)", Type: "number"},
+			{Key: "forum.edit_window_minutes", Label: "Forum Edit Window (min)", Type: "number"},
 		},
 	},
 	"payment": {
@@ -174,6 +194,15 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "imgproxy_salt", Label: "imgproxy Salt", Type: "text", Masked: true},
 			{Key: "max_image_width", Label: "Max Image Width (px)", Type: "number"},
 			{Key: "max_image_height", Label: "Max Image Height (px)", Type: "number"},
+			{Key: "allowed_video_types", Label: "Allowed Video Types", Type: "multiselect", Options: []string{"mp4", "webm", "mov", "avi", "mkv"}},
+			{Key: "max_upload_mb", Label: "Max Upload Size (MB)", Type: "number"},
+			{Key: "storage.provider", Label: "Storage Provider", Type: "select", Options: []string{"seaweedfs", "s3", "gcs", "azure", "local"}},
+			{Key: "storage.endpoint", Label: "Storage Endpoint", Type: "text", Placeholder: "https://s3.amazonaws.com"},
+			{Key: "storage.bucket", Label: "Storage Bucket", Type: "text", Placeholder: "japaconnect"},
+			{Key: "storage.region", Label: "Storage Region", Type: "text", Placeholder: "us-east-1"},
+			{Key: "storage.access_key", Label: "Storage Access Key", Type: "text", Masked: true},
+			{Key: "storage.secret_key", Label: "Storage Secret Key", Type: "text", Masked: true},
+			{Key: "cdn.base_url", Label: "CDN Base URL", Type: "text", Placeholder: "https://cdn.example.com"},
 		},
 	},
 	"seo": {
@@ -181,12 +210,12 @@ var defaultSettings = map[string]SettingCategory{
 		Label: "SEO",
 		Settings: []SettingDef{
 			{Key: "meta_title_template", Label: "Meta Title Template", Type: "text"},
-			{Key: "meta_description_template", Label: "Meta Description Template", Type: "text"},
-			{Key: "og_image", Label: "Default OG Image URL", Type: "text"},
-			{Key: "twitter_handle", Label: "Twitter/X Handle", Type: "text"},
+			{Key: "meta_description_template", Label: "Meta Description Template", Type: "textarea"},
+			{Key: "og_image", Label: "Default OG Image", Type: "file", Accept: "image/*"},
+			{Key: "twitter_handle", Label: "Twitter/X Handle", Type: "text", Placeholder: "@username"},
 			{Key: "json_ld_type", Label: "Default JSON-LD Type", Type: "select", Options: []string{"Organization", "WebSite", "LocalBusiness"}},
-			{Key: "google_analytics_id", Label: "Google Analytics ID", Type: "text"},
-			{Key: "google_tag_manager_id", Label: "Google Tag Manager ID", Type: "text"},
+			{Key: "google_analytics_id", Label: "Google Analytics ID", Type: "text", Placeholder: "G-XXXXXXXXXX"},
+			{Key: "google_tag_manager_id", Label: "Google Tag Manager ID", Type: "text", Placeholder: "GTM-XXXXXXX"},
 			{Key: "enable_sitemap", Label: "Enable Sitemap", Type: "toggle"},
 			{Key: "enable_robots_txt", Label: "Enable robots.txt", Type: "toggle"},
 			{Key: "enable_json_ld", Label: "Enable JSON-LD Structured Data", Type: "toggle"},
@@ -196,10 +225,10 @@ var defaultSettings = map[string]SettingCategory{
 		Key:   "integrations",
 		Label: "Integrations",
 		Settings: []SettingDef{
-			{Key: "meilisearch_url", Label: "Meilisearch URL", Type: "text"},
+			{Key: "meilisearch_url", Label: "Meilisearch URL", Type: "text", Placeholder: "http://localhost:7700"},
 			{Key: "meilisearch_key", Label: "Meilisearch Key", Type: "text", Masked: true},
 			{Key: "honcho_enabled", Label: "Honcho Enabled", Type: "toggle"},
-			{Key: "honcho_url", Label: "Honcho URL", Type: "text"},
+			{Key: "honcho_url", Label: "Honcho URL", Type: "text", Placeholder: "https://honcho.example.com"},
 		},
 	},
 	"ai": {
@@ -210,6 +239,9 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "ai_model", Label: "AI Model", Type: "select", Options: []string{"gpt-4", "gpt-3.5-turbo", "claude-3"}},
 			{Key: "ai_max_tokens", Label: "AI Max Tokens", Type: "number"},
 			{Key: "ai_content_moderation", Label: "AI Content Moderation", Type: "toggle"},
+			{Key: "monthly_budget_usd", Label: "Monthly Budget (USD)", Type: "number", Description: "Alert threshold for AI spend"},
+			{Key: "japabot_enabled", Label: "JapaBot Enabled", Type: "toggle"},
+			{Key: "content_assist_enabled", Label: "Content Assist Enabled", Type: "toggle"},
 		},
 	},
 	"advanced": {
@@ -222,13 +254,135 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "rate_limit_per_minute", Label: "Rate Limit (per minute)", Type: "number"},
 		},
 	},
+	"auth": {
+		Key:   "auth",
+		Label: "Authentication",
+		Settings: []SettingDef{
+			{Key: "password.min_length", Label: "Min Password Length", Type: "number"},
+			{Key: "password.require_uppercase", Label: "Require Uppercase", Type: "toggle"},
+			{Key: "session.refresh_days", Label: "Session Refresh (days)", Type: "number"},
+			{Key: "session.access_token_ttl_minutes", Label: "Access Token TTL (min)", Type: "number"},
+			{Key: "totp.required_for_admin", Label: "Require 2FA for Admin", Type: "toggle"},
+			{Key: "email.verify_required", Label: "Require Email Verification", Type: "toggle"},
+		},
+	},
+	"spaces": {
+		Key:   "spaces",
+		Label: "Spaces",
+		Settings: []SettingDef{
+			{Key: "bubble_depth", Label: "Bubble Depth", Type: "number", Description: "How many levels posts bubble up"},
+			{Key: "max_pinned_posts", Label: "Max Pinned Posts", Type: "number", Description: "Max pinned posts per space"},
+		},
+	},
+	"moderation": {
+		Key:   "moderation",
+		Label: "Moderation",
+		Settings: []SettingDef{
+			{Key: "auto_hide_report_count", Label: "Auto-Hide After N Reports", Type: "number"},
+			{Key: "ai_auto_flag_threshold", Label: "AI Auto-Flag Threshold", Type: "number", Description: "Confidence threshold (0-1)"},
+			{Key: "max_links_per_post", Label: "Max Links Per Post", Type: "number"},
+			{Key: "new_account_threshold_days", Label: "New Account Threshold (days)", Type: "number"},
+		},
+	},
+	"wallet": {
+		Key:   "wallet",
+		Label: "Wallet",
+		Settings: []SettingDef{
+			{Key: "min_convert_points", Label: "Min Convert Points", Type: "number"},
+			{Key: "points_to_credit_rate", Label: "Points to Credit Rate", Type: "number", Description: "1 point = N credits"},
+			{Key: "max_daily_earn_points", Label: "Max Daily Earn Points", Type: "number"},
+		},
+	},
+	"api": {
+		Key:   "api",
+		Label: "API",
+		Settings: []SettingDef{
+			{Key: "rate_limit.basic", Label: "Basic Rate Limit", Type: "number", Description: "Requests per minute"},
+			{Key: "rate_limit.standard", Label: "Standard Rate Limit", Type: "number"},
+			{Key: "rate_limit.premium", Label: "Premium Rate Limit", Type: "number"},
+			{Key: "keys.max_per_user", Label: "Max API Keys Per User", Type: "number"},
+			{Key: "idempotency_ttl_hours", Label: "Idempotency TTL (hours)", Type: "number"},
+		},
+	},
+	"ads": {
+		Key:   "ads",
+		Label: "Ads",
+		Settings: []SettingDef{
+			{Key: "frequency_cap_per_day", Label: "Frequency Cap Per Day", Type: "number"},
+			{Key: "min_campaign_budget", Label: "Min Campaign Budget", Type: "number", Description: "Minimum credits"},
+		},
+	},
+	"notifications": {
+		Key:   "notifications",
+		Label: "Notifications",
+		Settings: []SettingDef{
+			{Key: "max_delivery_attempts", Label: "Max Delivery Attempts", Type: "number"},
+			{Key: "batch_window_minutes", Label: "Batch Window (minutes)", Type: "number"},
+		},
+	},
+	"tickets": {
+		Key:   "tickets",
+		Label: "Tickets",
+		Settings: []SettingDef{
+			{Key: "default_sla_hours", Label: "Default SLA (hours)", Type: "number"},
+			{Key: "auto_close_resolved_days", Label: "Auto-Close Resolved (days)", Type: "number"},
+		},
+	},
+	"audit": {
+		Key:   "audit",
+		Label: "Audit",
+		Settings: []SettingDef{
+			{Key: "log_retention_days", Label: "Log Retention (days)", Type: "number"},
+		},
+	},
+	"i18n": {
+		Key:   "i18n",
+		Label: "Languages",
+		Settings: []SettingDef{
+			{Key: "default_language", Label: "Default Language", Type: "select", Options: []string{"en", "fr"}},
+			{Key: "enabled_languages", Label: "Enabled Languages", Type: "multiselect", Options: []string{"en", "fr", "yo", "ha", "ig", "pcm"}},
+		},
+	},
+	"gdpr": {
+		Key:   "gdpr",
+		Label: "GDPR",
+		Settings: []SettingDef{
+			{Key: "deletion_grace_days", Label: "Deletion Grace Period (days)", Type: "number"},
+			{Key: "export_expiry_days", Label: "Export Expiry (days)", Type: "number"},
+			{Key: "hard_delete_enabled", Label: "Enable Hard Delete", Type: "toggle"},
+			{Key: "retention_days", Label: "Retention Days", Type: "number", Description: "0 = immediate"},
+			{Key: "deleted_user_placeholder_uuid", Label: "Deleted User Placeholder UUID", Type: "text"},
+		},
+	},
+	"search": {
+		Key:   "search",
+		Label: "Search",
+		Settings: []SettingDef{
+			{Key: "autocomplete_max", Label: "Autocomplete Max", Type: "number"},
+		},
+	},
+	"affiliate": {
+		Key:   "affiliate",
+		Label: "Affiliate",
+		Settings: []SettingDef{
+			{Key: "min_account_days", Label: "Min Account Days", Type: "number"},
+			{Key: "attribution_window_days", Label: "Attribution Window (days)", Type: "number"},
+			{Key: "commission.pro_monthly", Label: "Pro Monthly Commission %", Type: "number"},
+			{Key: "commission.pro_annual", Label: "Pro Annual Commission %", Type: "number"},
+			{Key: "commission.course", Label: "Course Commission %", Type: "number"},
+			{Key: "max_links_per_user", Label: "Max Links Per User", Type: "number"},
+		},
+	},
 }
 
 // settingCategoryOrder controls the response order sent to the frontend.
 var settingCategoryOrder = []string{
-	"general", "features", "email", "security",
+	"general", "auth", "features", "feed", "email", "security",
 	"appearance", "users", "content", "payment",
 	"media", "seo", "integrations", "ai", "advanced",
+	"spaces", "moderation", "wallet", "api", "ads",
+	"notifications", "tickets", "audit", "i18n", "gdpr",
+	"search", "affiliate",
 }
 
 // ---------------------------------------------------------------------------

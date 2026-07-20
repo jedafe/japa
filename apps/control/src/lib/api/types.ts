@@ -65,7 +65,7 @@ export interface CacheStats {
 export interface SystemSetting {
 	key: string;
 	value: string;
-	type: 'int' | 'float' | 'bool' | 'string' | 'csv';
+	type: 'int' | 'float' | 'bool' | 'string' | 'csv' | 'json';
 	default_value: string;
 	description: string;
 	namespace: string;
