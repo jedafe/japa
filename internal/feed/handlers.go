@@ -265,21 +265,16 @@ func (h *Handlers) GetCardStyle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cardStyle := "reddit" // default
-
+	raw := ""
 	if h.settings != nil {
-		if val, err := h.settings.GetSetting(r.Context(), t.ID, "feed.card_style"); err == nil && val != "" {
-			// Strip JSON quotes if present (values stored as JSONB).
-			var s string
-			if json.Unmarshal([]byte(val), &s) == nil {
-				cardStyle = s
-			} else {
-				cardStyle = val
-			}
+		if val, err := h.settings.GetSetting(r.Context(), t.ID, "feed.card_style"); err == nil {
+			raw = val
 		}
 	}
 
+	cfg := resolveCardStyleConfig(raw)
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]string{"card_style": cardStyle},
+		"data": cfg,
 	})
 }
