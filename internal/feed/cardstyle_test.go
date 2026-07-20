@@ -1,8 +1,14 @@
 package feed
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
+
+	"github.com/jedafe/japa/internal/tenant"
 )
 
 func TestResolveCardStyleConfig(t *testing.T) {
@@ -63,5 +69,37 @@ func TestResolveCardStyleConfig(t *testing.T) {
 				t.Errorf("resolveCardStyleConfig(%q) = %+v, want %+v", tc.raw, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestGetCardStyleDefaultShape(t *testing.T) {
+	t.Parallel()
+
+	// settings is nil, so the handler reads no stored value and must return
+	// the normalized default config. This locks the response field names.
+	h := &Handlers{}
+
+	req := httptest.NewRequest(http.MethodGet, "/feed/card-style", nil)
+	ctx := context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{})
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	h.GetCardStyle(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+
+	var body struct {
+		Data CardStyleConfig `json:"data"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Data.Default != "reddit" {
+		t.Errorf("data.default = %q, want reddit", body.Data.Default)
+	}
+	if body.Data.ByType == nil || len(body.Data.ByType) != 0 {
+		t.Errorf("data.by_type = %v, want empty non-nil map", body.Data.ByType)
 	}
 }
