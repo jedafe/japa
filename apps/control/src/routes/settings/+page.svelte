@@ -5,7 +5,9 @@
 	import { Switch, Tooltip, Label, Select } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { SystemSetting } from '$lib/api/types';
-	import { t, translations } from '$lib/stores/i18n';
+	import { t, translations } from '$lib/stores/i18n.svelte';
+	import FeedCardStyleEditor from '$lib/components/FeedCardStyleEditor.svelte';
+	import { categoryIcons, categoryNames, sensitiveKeys as categorySensitiveKeys, textareaKeys as categoryTextareaKeys, uploadKeys as categoryUploadKeys, colorKeys as categoryColorKeys } from '$lib/components/settings/categoryConfig';
 	import {
 		Settings,
 		RefreshCw,
@@ -26,11 +28,14 @@
 		Server,
 		Cpu,
 		Bell,
-		FolderOpen
+		FolderOpen,
+		Upload,
+		Image as ImageIcon
 	} from 'lucide-svelte';
 
 	let originalSettings = $state<SystemSetting[]>([]);
 	let currentSettings = $state<SystemSetting[]>([]);
+	let contentTypes = $state<{ value: string; label: string }[]>([]);
 	let isDirty = $derived(
 		JSON.stringify(currentSettings) !== JSON.stringify(originalSettings)
 	);
@@ -48,53 +53,9 @@
 	let resetModalOpen = $state(false);
 	let confirmResetAllOpen = $state(false);
 
-	const categoryIcons: Record<string, typeof Settings> = {
-		general: Monitor,
-		advanced: Cpu,
-		feed: FolderOpen,
-		appearance: Palette,
-		media: Server,
-		i18n: Globe,
-		payment: CreditCard,
-		notification: Bell,
-		security: Shield,
-		email: Mail,
-		cors: Globe,
-		content: Sliders,
-		auth: Shield,
-		spaces: Globe,
-		moderation: Shield,
-		wallet: CreditCard,
-		api: Server,
-		ads: Sliders,
-		ai: Cpu
-	};
-
-	const categoryNames: Record<string, string> = {
-		auth: 'Authentication',
-		feed: 'Feed & Content',
-		content: 'Feed & Content',
-		spaces: 'Spaces',
-		moderation: 'Moderation',
-		security: 'Security',
-		wallet: 'Wallet',
-		api: 'API Rate Limits',
-		cors: 'CORS',
-		ads: 'Ads',
-		ai: 'AI',
-		general: 'General',
-		advanced: 'Advanced',
-		appearance: 'Appearance',
-		media: 'Media',
-		i18n: 'Languages',
-		payment: 'Payment',
-		notification: 'Notifications',
-		email: 'Email'
-	};
-
 	const selectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
-			$translations;
+			translations();
 			const opts: Record<string, { value: string; label: string }[]> = {
 				'advanced.log_level': [
 					{ value: 'debug', label: t('settings.log_level_debug', 'Debug') },
@@ -138,7 +99,7 @@
 
 	const multiSelectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
-			$translations;
+			translations();
 			const opts: Record<string, { value: string; label: string }[]> = {
 				'i18n.enabled_languages': [
 					{ value: 'en', label: t('settings.lang_en', 'English') },
@@ -160,11 +121,9 @@
 		})()
 	);
 
-	const textareaKeys = new Set([
-		'general.site_description',
-		'cors.allowed_origins',
-		'content.link_preview.blacklist'
-	]);
+	const textareaKeys = new Set(categoryTextareaKeys);
+	const uploadKeys = new Set(categoryUploadKeys);
+	const colorKeys = new Set(categoryColorKeys);
 
 	function isSelectKey(key: string): boolean {
 		return key in selectOptions;
@@ -176,6 +135,14 @@
 
 	function isTextareaKey(key: string): boolean {
 		return textareaKeys.has(key);
+	}
+
+	function isUploadKey(key: string): boolean {
+		return uploadKeys.has(key);
+	}
+
+	function isColorKey(key: string): boolean {
+		return colorKeys.has(key);
 	}
 
 	function getDisplayValue(setting: SystemSetting): string {
@@ -341,6 +308,13 @@
 		if (result.ok) {
 			originalSettings = JSON.parse(JSON.stringify(result.data));
 			currentSettings = JSON.parse(JSON.stringify(result.data));
+			// Content types drive the per-type card-style editor. This is a main
+			// /api/v1 endpoint (the control `api` helper does not auto-prefix, so
+			// the full path is required — /content-types alone would 404).
+			const ctRes = await api<{ value: string; label: string }[]>('/api/v1/content-types');
+			if (ctRes.ok && Array.isArray(ctRes.data)) {
+				contentTypes = ctRes.data;
+			}
 		}
 		isSaving = false;
 	}
@@ -415,10 +389,13 @@
 	}
 
 	function getSettingComponentType(setting: SystemSetting): string {
+		if (setting.key === 'feed.card_style') return 'card-style';
 		if (setting.type === 'bool' || isBoolValue(setting.value)) return 'switch';
 		if (isSelectKey(setting.key)) return 'select';
 		if (isMultiSelectKey(setting.key)) return 'multi-select';
 		if (isTextareaKey(setting.key)) return 'textarea';
+		if (isUploadKey(setting.key)) return 'upload';
+		if (isColorKey(setting.key)) return 'color';
 		if (setting.type === 'int' || setting.type === 'float') return 'number';
 		return 'text';
 	}
@@ -440,19 +417,7 @@
 	const selectItemClasses =
 		'data-highlighted:bg-accent rounded-lg flex h-9 cursor-pointer items-center px-3 text-sm outline-none';
 
-	const sensitiveKeys = new Set([
-		'email.smtp_password',
-		'email.smtp_username',
-		'payment.secret_key',
-		'payment.publishable_key',
-		'media.storage.access_key',
-		'media.storage.secret_key',
-		'security.jwt_secret',
-		'security.encryption_key',
-		'oauth.client_secret',
-		'oauth.google_client_secret',
-		'oauth.github_client_secret'
-	]);
+	const sensitiveKeys = new Set(categorySensitiveKeys);
 
 	function isSensitiveKey(key: string): boolean {
 		return sensitiveKeys.has(key) || key.includes('secret') || key.includes('password') || key.includes('token') || key.includes('api_key');
@@ -474,6 +439,53 @@
 		if (!value) return '';
 		return '•'.repeat(Math.min(value.length, 16));
 	}
+
+	async function handleFileUpload(setting: SystemSetting, file: File) {
+		uploadingKey = setting.key;
+		uploadError = '';
+		try {
+			const initiateRes = await api<{
+				media_id: string;
+				storage_path: string;
+				presigned_url: string;
+				expires_at: string;
+			}>('/api/v1/media/upload', {
+				method: 'POST',
+				body: { filename: file.name, mime_type: file.type, file_size: file.size }
+			});
+			if (!initiateRes.ok) {
+				uploadError = initiateRes.error || 'Failed to initiate upload';
+				return;
+			}
+			if (!initiateRes.data) {
+				uploadError = 'Failed to initiate upload';
+				return;
+			}
+			const { media_id, presigned_url } = initiateRes.data;
+			const putRes = await fetch(presigned_url, {
+				method: 'PUT',
+				headers: { 'Content-Type': file.type },
+				body: file
+			});
+			if (!putRes.ok) {
+				uploadError = `File upload failed: ${putRes.statusText}`;
+				return;
+			}
+			const confirmRes = await api(`/api/v1/media/confirm/${media_id}`, { method: 'POST' });
+			if (!confirmRes.ok) {
+				uploadError = confirmRes.error || 'Failed to confirm upload';
+				return;
+			}
+			updateSetting(setting.key, `/api/v1/media/${media_id}`);
+		} catch (e) {
+			uploadError = e instanceof Error ? e.message : 'Upload failed';
+		} finally {
+			uploadingKey = '';
+		}
+	}
+
+	let uploadingKey = $state('');
+	let uploadError = $state('');
 </script>
 
 <div class="flex h-full gap-6">
@@ -673,7 +685,13 @@
 
 							<!-- Control -->
 							<div class="flex items-center gap-2">
-								{#if componentType === 'switch'}
+								{#if componentType === 'card-style'}
+											<FeedCardStyleEditor
+												value={setting.value}
+												{contentTypes}
+												onchange={(v) => updateSetting('feed.card_style', v)}
+											/>
+										{:else if componentType === 'switch'}
 									{@const isTrue =
 										isBoolValue(setting.value) &&
 										setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
@@ -809,6 +827,63 @@
 										</button>
 									</div>
 
+								{:else if componentType === 'upload'}
+									<div class="flex items-center gap-2">
+										<input
+											id="setting-{setting.key}"
+											type="text"
+											value={getDisplayValue(setting)}
+											onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)}
+											placeholder="https://..."
+											class="{inputClasses} w-44"
+										/>
+										<label class="border-border-input bg-background-alt hover:bg-muted text-muted-foreground flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors">
+											<input
+												type="file"
+												class="hidden"
+												accept="image/*"
+												onchange={(e) => {
+													const file = e.currentTarget.files?.[0];
+													if (file) handleFileUpload(setting, file);
+												}}
+											/>
+											{#if uploadingKey === setting.key}
+												<Loader2 class="size-3 animate-spin" />
+											{:else}
+												<Upload class="size-3" />
+											{/if}
+										</label>
+										{#if getDisplayValue(setting)}
+											<img
+												src={getDisplayValue(setting)}
+												alt=""
+												class="size-6 rounded border border-border-input object-cover"
+												onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+											/>
+										{/if}
+									</div>
+									{#if uploadError && uploadingKey === setting.key}
+										<p class="text-destructive text-[10px]">{uploadError}</p>
+									{/if}
+
+								{:else if componentType === 'color'}
+									<div class="flex items-center gap-2">
+										<input
+											id="setting-{setting.key}"
+											type="color"
+											value={getDisplayValue(setting) || '#000000'}
+											onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)}
+											class="size-8 cursor-pointer rounded-lg border border-border-input bg-transparent"
+										/>
+										<input
+											type="text"
+											value={getDisplayValue(setting)}
+											onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)}
+											placeholder="#000000"
+											class="{inputClasses} w-24 font-mono text-xs"
+										/>
+									</div>
+
 								{:else}
 									<input
 										id="setting-{setting.key}"
@@ -914,7 +989,13 @@
 										{/if}
 									</div>
 									<div class="flex items-center gap-2">
-										{#if componentType === 'switch'}
+										{#if componentType === 'card-style'}
+											<FeedCardStyleEditor
+												value={setting.value}
+												{contentTypes}
+												onchange={(v) => updateSetting('feed.card_style', v)}
+											/>
+										{:else if componentType === 'switch'}
 											{@const isTrue = isBoolValue(setting.value) && setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
 											<div class="flex items-center gap-2">
 												<span class="text-muted-foreground w-8 text-right text-xs">{isTrue ? t('settings.on') : t('settings.off')}</span>
@@ -1014,7 +1095,32 @@
 											class="{inputClasses} w-28"
 										/>
 
-										{:else if isSensitiveKey(setting.key)}
+										{:else if componentType === 'upload'}
+										<div class="flex items-center gap-2">
+											<input id="setting-{setting.key}" type="text" value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} placeholder="https://..." class="{inputClasses} w-44" />
+											<label class="border-border-input bg-background-alt hover:bg-muted text-muted-foreground flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors">
+												<input type="file" class="hidden" accept="image/*" onchange={(e) => { const file = e.currentTarget.files?.[0]; if (file) handleFileUpload(setting, file); }} />
+												{#if uploadingKey === setting.key}
+													<Loader2 class="size-3 animate-spin" />
+												{:else}
+													<Upload class="size-3" />
+												{/if}
+											</label>
+											{#if getDisplayValue(setting)}
+												<img src={getDisplayValue(setting)} alt="" class="size-6 rounded border border-border-input object-cover" onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+											{/if}
+										</div>
+										{#if uploadError && uploadingKey === setting.key}
+											<p class="text-destructive text-[10px]">{uploadError}</p>
+										{/if}
+
+									{:else if componentType === 'color'}
+										<div class="flex items-center gap-2">
+											<input id="setting-{setting.key}" type="color" value={getDisplayValue(setting) || '#000000'} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} class="size-8 cursor-pointer rounded-lg border border-border-input bg-transparent" />
+											<input type="text" value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} placeholder="#000000" class="{inputClasses} w-24 font-mono text-xs" />
+										</div>
+
+									{:else if isSensitiveKey(setting.key)}
 											<div class="flex items-center gap-1">
 												<input id="setting-{setting.key}" type={revealedKeys.has(setting.key) ? 'text' : 'password'} value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} class="{inputClasses} w-44 font-mono text-xs" />
 												<button type="button" class="text-muted-foreground hover:text-foreground rounded p-1 transition-colors" onclick={() => toggleReveal(setting.key)} aria-label={revealedKeys.has(setting.key) ? t('settings.hide_value', 'Hide') : t('settings.reveal_value', 'Reveal')}>
