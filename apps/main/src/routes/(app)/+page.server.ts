@@ -1,21 +1,23 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { feedPath, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem } from '$lib/types';
 
 /**
- * Root timeline. Authenticated users get their primary feed; guests get the
- * public explore feed (the documented fallback until a Page Builder homepage is
- * assigned to the `homepage` route — ADR-032/058).
+ * Home timeline. Tab + sort come from the URL (?tab=&sort=), so switching them
+ * is a client-side navigation that re-runs this loader. Guests are pinned to
+ * the public explore feed; authed users default to For You.
  */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
-	const path = authed ? '/feed?limit=20' : '/explore?limit=20';
+	const tab = resolveTab(event.url.searchParams.get('tab'), authed);
+	const sort = resolveSort(event.url.searchParams.get('sort'));
 
 	try {
-		const { items } = await apiList<FeedItem>(ctx, path);
-		return { items, authed, loadError: false };
+		const { items } = await apiList<FeedItem>(ctx, feedPath(tab, sort, PAGE_SIZE, 0));
+		return { items, tab, sort, authed, pageSize: PAGE_SIZE, loadError: false };
 	} catch {
-		return { items: [] as FeedItem[], authed, loadError: true };
+		return { items: [] as FeedItem[], tab, sort, authed, pageSize: PAGE_SIZE, loadError: true };
 	}
 };
