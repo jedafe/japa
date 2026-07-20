@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { Select } from 'bits-ui';
 	import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-svelte';
 

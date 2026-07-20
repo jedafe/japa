@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ShieldAlert } from 'lucide-svelte';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let { message = '' }: { message?: string } = $props();
 </script>

@@ -5,7 +5,7 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Dialog, Select } from 'bits-ui';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Play, Pause, PlayCircle, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
@@ -153,7 +153,7 @@
 		editForm = { type: '', spec: '', payload: '{}' };
 	}
 
-	let formValid = $derived(editForm.type.trim() !== '' && editForm.spec.trim() !== '');
+	let formValid = $derived(editForm.type.trim() !== '' && editForm.spec.trim() !== '' && /^(\*\/\d+|\d+\s|\d+\/\d+|[\d,*/-])+/.test(editForm.spec.trim()));
 
 	async function submitJob() {
 		if (!formValid) return;

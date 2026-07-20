@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -204,7 +205,7 @@ func (s *Service) enqueueRecordHit(tenantID pgtype.UUID, idStr string) {
 		slog.Warn("failed to marshal redirect hit payload", "id", idStr, "error", err)
 		return
 	}
-	if err := s.enqueuer.Enqueue("redirect:record_hit", payload); err != nil {
+	if err := s.enqueuer.Enqueue(worker.TypeRedirectRecordHit, payload); err != nil {
 		slog.Warn("failed to enqueue redirect hit", "id", idStr, "error", err)
 	}
 }

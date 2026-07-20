@@ -257,10 +257,12 @@ func (s *Store) getWalletSettings(ctx context.Context, tenantID pgtype.UUID) (ge
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) upsertWalletSettings(ctx context.Context, tenantID pgtype.UUID, pointsToCreditsRate int32) (gen.WalletSetting, error) {
+func (s *Store) upsertWalletSettings(ctx context.Context, tenantID pgtype.UUID, pointsToCreditsRate int32, dailyEarningCap int32, enableEarning bool) (gen.WalletSetting, error) {
 	row, err := s.write.UpsertWalletSettings(ctx, gen.UpsertWalletSettingsParams{
 		TenantID:            tenantID,
 		PointsToCreditsRate: &pointsToCreditsRate,
+		DailyEarningCap:     dailyEarningCap,
+		EnableEarning:       enableEarning,
 	})
 	if err != nil {
 		return gen.WalletSetting{}, fmt.Errorf("upserting wallet settings: %w", err)

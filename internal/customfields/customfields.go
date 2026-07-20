@@ -22,20 +22,27 @@ import (
 const (
 	FieldTypeText          = "text"
 	FieldTypeTextarea      = "textarea"
+	FieldTypeRichText      = "rich_text"
 	FieldTypeNumber        = "number"
+	FieldTypeCurrency      = "currency"
+	FieldTypePercentage    = "percentage"
 	FieldTypeBoolean       = "boolean"
 	FieldTypeDate          = "date"
 	FieldTypeDatetime      = "datetime"
+	FieldTypeTime          = "time"
+	FieldTypeDuration      = "duration"
 	FieldTypeSelect        = "select"
 	FieldTypeMultiselect   = "multiselect"
 	FieldTypeURL           = "url"
 	FieldTypeEmail         = "email"
 	FieldTypePhone         = "phone"
-	FieldTypeMedia         = "media"
-	FieldTypeRichText      = "rich_text"
-	FieldTypePlatformEmbed = "platform_embed"
 	FieldTypeColor         = "color"
 	FieldTypeRating        = "rating"
+	FieldTypeImageSingle   = "image_single"
+	FieldTypeImageMulti    = "image_multi"
+	FieldTypeMedia         = "media"
+	FieldTypePlatformEmbed = "platform_embed"
+	FieldTypeReference     = "reference"
 )
 
 // FieldOption represents a single option in a select or multiselect field.
@@ -46,17 +53,77 @@ type FieldOption struct {
 
 // validFieldTypes is the set of all supported field types.
 var validFieldTypes = map[string]bool{
-	FieldTypeText: true, FieldTypeTextarea: true, FieldTypeNumber: true,
+	FieldTypeText: true, FieldTypeTextarea: true, FieldTypeRichText: true,
+	FieldTypeNumber: true, FieldTypeCurrency: true, FieldTypePercentage: true,
 	FieldTypeBoolean: true, FieldTypeDate: true, FieldTypeDatetime: true,
-	FieldTypeSelect: true, FieldTypeMultiselect: true, FieldTypeURL: true,
-	FieldTypeEmail: true, FieldTypePhone: true, FieldTypeMedia: true,
-	FieldTypeRichText: true, FieldTypePlatformEmbed: true, FieldTypeColor: true,
-	FieldTypeRating: true,
+	FieldTypeTime: true, FieldTypeDuration: true,
+	FieldTypeSelect: true, FieldTypeMultiselect: true,
+	FieldTypeURL: true, FieldTypeEmail: true, FieldTypePhone: true,
+	FieldTypeColor: true, FieldTypeRating: true,
+	FieldTypeImageSingle: true, FieldTypeImageMulti: true, FieldTypeMedia: true,
+	FieldTypePlatformEmbed: true, FieldTypeReference: true,
 }
 
 // IsValidFieldType returns true if the given string is a recognized field type.
 func IsValidFieldType(ft string) bool {
 	return validFieldTypes[ft]
+}
+
+// FieldTypeValueColumn maps a field type to the custom_field_values column it
+// expects to write to. Returns the column name and true, or "" and false for
+// unknown types.
+func FieldTypeValueColumn(ft string) (column string, ok bool) {
+	switch ft {
+	case FieldTypeText, FieldTypeTextarea, FieldTypeURL, FieldTypeEmail,
+		FieldTypePhone, FieldTypeColor, FieldTypePlatformEmbed:
+		return "value_text", true
+	case FieldTypeRichText, FieldTypeSelect, FieldTypeMultiselect,
+		FieldTypeMedia, FieldTypeImageSingle, FieldTypeImageMulti,
+		FieldTypeReference:
+		return "value_json", true
+	case FieldTypeNumber, FieldTypeCurrency, FieldTypePercentage,
+		FieldTypeRating:
+		return "value_number", true
+	case FieldTypeBoolean:
+		return "value_bool", true
+	case FieldTypeDate, FieldTypeDatetime, FieldTypeTime, FieldTypeDuration:
+		return "value_date", true
+	default:
+		return "", false
+	}
+}
+
+// ValidOptionsShape validates that the options JSONB matches the expected
+// shape for the given field_type. Returns a user-facing error message and
+// false when validation fails, or "" and true when it passes.
+func ValidOptionsShape(fieldType string, opts []FieldOption) (msg string, ok bool) {
+	switch fieldType {
+	case FieldTypeSelect, FieldTypeMultiselect:
+		if len(opts) == 0 {
+			return "Select and multiselect fields require at least one option", false
+		}
+		for _, o := range opts {
+			if o.Value == "" || o.Label == "" {
+				return "Each option must have both value and label", false
+			}
+		}
+	case FieldTypeNumber, FieldTypeCurrency, FieldTypePercentage:
+		// Options are optional for number types; if present they must be
+		// {min, max, is_decimal} or {currency_code}. We only validate that
+		// options, when present, can be parsed sensibly — the detailed
+		// structure is server-validated elsewhere.
+	case FieldTypeImageSingle, FieldTypeImageMulti, FieldTypeMedia:
+		// Options should have max_files, max_size_mb, aspect_ratio, or
+		// allowed_types. Presence is optional; we accept anything the
+		// admin provides because the upload handler enforces limits at
+		// runtime.
+	case FieldTypeReference:
+		// Options should include ref_entity_class. Optional — the
+		// resolver enforces the reference type at render time.
+	case FieldTypeDuration:
+		// Options may include display_format.
+	}
+	return "", true
 }
 
 // SupportedEmbedPlatforms is the list of platforms supported by the

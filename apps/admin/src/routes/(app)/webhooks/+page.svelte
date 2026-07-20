@@ -9,6 +9,7 @@
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { Webhook, Plus, RefreshCw, Send, Trash2, Pencil, Play } from "lucide-svelte";
 	import { webhooksAdminApiExtended } from "$lib/api";
+	import { WEBHOOK_EVENT_TYPES } from '$lib/constants/webhooks';
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
@@ -50,13 +51,7 @@
 	let formEvents = $state<string[]>([]);
 	let formActive = $state(true);
 
-	const availableEvents = [
-		"user.created", "user.updated", "user.deleted",
-		"post.created", "post.updated", "post.deleted",
-		"comment.created", "comment.deleted",
-		"order.completed", "payment.received",
-		"ticket.created", "ticket.updated"
-	];
+	const availableEvents = [...WEBHOOK_EVENT_TYPES];
 
 	const columns = [
 		{ key: "name", label: t("webhooks.name", "Name"), sortable: true },

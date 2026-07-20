@@ -83,7 +83,7 @@
 			if (result.ok && result.data) {
 				const data = result.data as any;
 				editSubject = data.subject ?? template.subject;
-				editBody = data.body ?? "";
+				editBody = data.html_body ?? data.plain_text_body ?? "";
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t("common.error", "Failed to load template");
@@ -100,7 +100,7 @@
 		try {
 			const result = await emailTemplatesAdminApi.update(viewingTemplate.id, {
 				subject: editSubject,
-				body: editBody
+				html_body: editBody
 			});
 			if (result.ok) {
 				showViewModal = false;

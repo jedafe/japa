@@ -759,6 +759,21 @@ func (q *Queries) IncrementEntityBookmarkCount(ctx context.Context, arg Incremen
 	return err
 }
 
+const incrementForumThreadViewCount = `-- name: IncrementForumThreadViewCount :exec
+UPDATE forum_threads SET view_count = view_count + 1
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type IncrementForumThreadViewCountParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) IncrementForumThreadViewCount(ctx context.Context, arg IncrementForumThreadViewCountParams) error {
+	_, err := q.db.Exec(ctx, incrementForumThreadViewCount, arg.ID, arg.TenantID)
+	return err
+}
+
 const incrementThreadReplyCount = `-- name: IncrementThreadReplyCount :exec
 UPDATE forum_threads
 SET reply_count = reply_count + $1
@@ -1376,6 +1391,21 @@ func (q *Queries) SoftDeleteForumReply(ctx context.Context, arg SoftDeleteForumR
 	return err
 }
 
+const softDeleteForumTag = `-- name: SoftDeleteForumTag :exec
+UPDATE forum_tags SET deleted_at = now()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`
+
+type SoftDeleteForumTagParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) SoftDeleteForumTag(ctx context.Context, arg SoftDeleteForumTagParams) error {
+	_, err := q.db.Exec(ctx, softDeleteForumTag, arg.ID, arg.TenantID)
+	return err
+}
+
 const softDeleteForumThread = `-- name: SoftDeleteForumThread :exec
 UPDATE forum_threads
 SET deleted_at = now(), updated_at = now()
@@ -1441,6 +1471,57 @@ func (q *Queries) UpdateForumReply(ctx context.Context, arg UpdateForumReplyPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateForumTag = `-- name: UpdateForumTag :one
+UPDATE forum_tags
+SET name = $1,
+    slug = $2,
+    description = $3,
+    rules = $4,
+    cover_image_id = $5,
+    moderator_user_id = $6
+WHERE id = $7 AND tenant_id = $8 AND deleted_at IS NULL
+RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
+          follower_count, moderator_user_id, created_at
+`
+
+type UpdateForumTagParams struct {
+	Name            string      `json:"name"`
+	Slug            string      `json:"slug"`
+	Description     *string     `json:"description"`
+	Rules           *string     `json:"rules"`
+	CoverImageID    pgtype.UUID `json:"cover_image_id"`
+	ModeratorUserID pgtype.UUID `json:"moderator_user_id"`
+	ID              pgtype.UUID `json:"id"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) (ForumTag, error) {
+	row := q.db.QueryRow(ctx, updateForumTag,
+		arg.Name,
+		arg.Slug,
+		arg.Description,
+		arg.Rules,
+		arg.CoverImageID,
+		arg.ModeratorUserID,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i ForumTag
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.Rules,
+		&i.CoverImageID,
+		&i.FollowerCount,
+		&i.ModeratorUserID,
+		&i.CreatedAt,
 	)
 	return i, err
 }

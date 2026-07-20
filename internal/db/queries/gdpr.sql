@@ -47,6 +47,9 @@ WHERE tenant_id = @tenant_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: DeleteAuditLog :exec
+DELETE FROM audit_logs WHERE id = @id;
+
 -- name: DeleteConsent :one
 DELETE FROM consent_records
 WHERE id = @id AND tenant_id = @tenant_id

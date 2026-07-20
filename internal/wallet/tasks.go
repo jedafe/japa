@@ -6,11 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
-)
-
-// Task names for Asynq.
-const (
-	TaskProcessActivityEvent = "wallet:process_activity_event"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // ProcessActivityEventPayload holds the payload for the process_activity_event task.
@@ -30,7 +26,7 @@ func (s *Service) EnqueueProcessActivityEvent(ctx context.Context, eventID, tena
 	}
 
 	if s.enqueuer != nil {
-		return s.enqueuer.Enqueue(TaskProcessActivityEvent, payload)
+		return s.enqueuer.Enqueue(worker.TypeWalletProcessActivityEvent, payload)
 	}
 
 	// Fallback: process synchronously when Asynq is not wired.

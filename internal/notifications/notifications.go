@@ -92,9 +92,9 @@ func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, acti
 		return
 	}
 
-	task := asynq.NewTask(TaskPushDelivery, payload)
+	task := asynq.NewTask(worker.TypePushDelivery, payload)
 
-	info, err := s.client.Enqueue(task, asynq.Queue(worker.QueueForTask(TaskPushDelivery)), asynq.Unique(1*time.Hour))
+	info, err := s.client.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypePushDelivery)), asynq.Unique(1*time.Hour))
 	if err != nil {
 		slog.Error("notifications: failed to enqueue push delivery",
 			"recipient_id", recipientID.String(), "error", err)

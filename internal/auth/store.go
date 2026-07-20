@@ -44,13 +44,14 @@ func (s *DBStore) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, emai
 	}
 
 	return &User{
-		ID:           row.ID,
-		TenantID:     row.TenantID,
-		Email:        row.Email,
-		PasswordHash: passwordHash,
-		Username:     row.Username,
-		ProfileType:  row.ProfileType,
-		Status:       row.Status,
+		ID:              row.ID,
+		TenantID:        row.TenantID,
+		Email:           row.Email,
+		PasswordHash:    passwordHash,
+		Username:        row.Username,
+		ProfileType:     row.ProfileType,
+		Status:          row.Status,
+		EmailVerifiedAt: row.EmailVerifiedAt,
 	}, nil
 }
 

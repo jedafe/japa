@@ -108,5 +108,9 @@ SET deleted_at = now(), body = ''
 WHERE id = @id AND conversation_id = @conversation_id AND sender_id = @sender_id
   AND deleted_at IS NULL;
 
+-- name: SoftDeleteDMMessageByID :exec
+UPDATE dm_messages SET deleted_at = now(), body = ''
+WHERE id = @id AND deleted_at IS NULL;
+
 -- name: GetDMMessageByID :one
 SELECT * FROM dm_messages WHERE id = @id AND conversation_id = @conversation_id;

@@ -169,7 +169,7 @@
 		try {
 			const result = await api(`/forms/${editTarget.id}`, {
 				method: "PATCH",
-				body: { name: editTitle.trim(), description: editDescription.trim() || undefined, status: editIsActive ? "active" : "inactive" }
+				body: { name: editTitle.trim(), description: editDescription.trim() || undefined, status: editIsActive ? "active" : "draft" }
 			});
 			if (result.ok) {
 				showEditModal = false;

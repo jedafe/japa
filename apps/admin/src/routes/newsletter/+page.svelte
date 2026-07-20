@@ -10,6 +10,7 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
+	import { Select } from "$lib/components/ui/select";
 	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil } from "lucide-svelte";
 	import { api } from "$lib/api";
 
@@ -221,10 +222,14 @@
 	async function createCampaign() {
 		if (!newCampaign.name || !newCampaign.subject) return;
 		creating = true;
+		const sanitizedHtml = newCampaign.html.replace(/<script[\s\S]*?<\/script>/gi, '')
+			.replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+			.replace(/\bon\w+\s*=\s*"[^"]*"/gi, '')
+			.replace(/\bon\w+\s*=\s*'[^']*'/gi, '');
 		try {
 			const result = await api("/admin/newsletter/campaigns", {
 				method: "POST",
-				body: newCampaign
+				body: { ...newCampaign, html: sanitizedHtml }
 			});
 			if (result.ok) {
 				showCreateModal = false;
@@ -481,11 +486,15 @@
 			</div>
 			<div>
 				<label for="sub-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.status', 'Status')}</label>
-				<select id="sub-status" bind:value={editSubscriberStatus} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">
-					<option value="active">Active</option>
-					<option value="unsubscribed">Unsubscribed</option>
-					<option value="bounced">Bounced</option>
-				</select>
+				<Select
+					options={[
+						{ value: "active", label: "Active" },
+						{ value: "unsubscribed", label: "Unsubscribed" },
+						{ value: "bounced", label: "Bounced" }
+					]}
+					value={editSubscriberStatus}
+					onchange={(val) => (editSubscriberStatus = val)}
+				/>
 			</div>
 		</div>
 		<div class="mt-4 flex justify-end gap-2">

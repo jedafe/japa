@@ -5,22 +5,21 @@
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Select } from '$lib/components/ui/select';
-	import { Wallet, DollarSign, ArrowUpRight, ArrowDownLeft, Download, Plus, Settings } from 'lucide-svelte';
+	import { Wallet, DollarSign, Download, Plus, Settings } from 'lucide-svelte';
 
 	type ActivityRule = {
 		id: string;
-		event_type: string;
-		points_value: number;
+		activity_key: string;
+		point_value: number;
 		description: string;
-		is_active: boolean;
+		is_enabled: boolean;
 	};
 
 	type WalletSettings = {
-		points_to_credit_ratio: number;
+		points_to_credits_rate: number;
 		daily_earning_cap: number;
 		enable_earning: boolean;
 	};
@@ -32,19 +31,16 @@
 		credits: number;
 	};
 
-	// Activity Rules
 	let rules = $state<ActivityRule[]>([]);
 	let rulesLoading = $state(true);
 	let showRuleModal = $state(false);
-	let ruleForm = $state({ event_type: '', points_value: 0, description: '', is_active: true });
+	let ruleForm = $state({ activity_key: '', point_value: 1, description: '', is_enabled: true });
 	let ruleSaving = $state(false);
 
-	// Wallet Settings
-	let settings = $state<WalletSettings>({ points_to_credit_ratio: 1, daily_earning_cap: 1000, enable_earning: true });
+	let settings = $state<WalletSettings>({ points_to_credits_rate: 100, daily_earning_cap: 1000, enable_earning: true });
 	let settingsLoading = $state(true);
 	let settingsSaving = $state(false);
 
-	// User Balance Adjustment
 	let userSearch = $state('');
 	let userBalance = $state<UserBalance | null>(null);
 	let balanceLoading = $state(false);
@@ -67,30 +63,19 @@
 	];
 
 	const ruleColumns = [
-		{
-			key: 'event_type',
-			label: 'Event Type',
-			sortable: true,
-			render: (value: string) => `<span class="font-mono text-xs font-medium text-foreground">${value}</span>`
+		{ key: 'activity_key', label: 'Activity Key', sortable: true,
+			render: (v: string) => `<span class="font-mono text-xs font-medium text-foreground">${v}</span>`
 		},
-		{
-			key: 'points_value',
-			label: 'Points',
-			sortable: true,
-			render: (value: number) => `<span class="font-semibold">${value}</span>`
+		{ key: 'point_value', label: 'Points', sortable: true,
+			render: (v: number) => `<span class="font-semibold">${v}</span>`
 		},
-		{
-			key: 'description',
-			label: 'Description',
-			render: (value: string) => `<span class="text-sm text-muted">${value || '—'}</span>`
+		{ key: 'description', label: 'Description',
+			render: (v: string) => `<span class="text-sm text-muted">${v || '—'}</span>`
 		},
-		{
-			key: 'is_active',
-			label: 'Status',
+		{ key: 'is_enabled', label: 'Status',
 			render: (_: any, row: any) => {
-				const variant = row.is_active ? 'success' : 'secondary';
-				const label = row.is_active ? 'Active' : 'Inactive';
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_active ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${label}</span>`;
+				const label = row.is_enabled ? 'Active' : 'Inactive';
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_enabled ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${label}</span>`;
 			}
 		}
 	];
@@ -109,24 +94,25 @@
 		settingsLoading = true;
 		const result = await walletApi.getSettings();
 		if (result.ok) {
-			settings = result.data as WalletSettings;
+			const data = result.data as WalletSettings;
+			if (data) settings = data;
 		}
 		settingsLoading = false;
 	}
 
 	async function submitRule() {
-		if (!ruleForm.event_type.trim()) return;
+		if (!ruleForm.activity_key.trim()) return;
 		ruleSaving = true;
 		errorMessage = '';
 		const result = await walletApi.createRule({
-			event_type: ruleForm.event_type.trim(),
-			points_value: ruleForm.points_value,
+			activity_key: ruleForm.activity_key.trim(),
+			point_value: ruleForm.point_value,
 			description: ruleForm.description.trim(),
-			is_active: ruleForm.is_active
+			is_enabled: ruleForm.is_enabled
 		});
 		if (result.ok) {
 			showRuleModal = false;
-			ruleForm = { event_type: '', points_value: 0, description: '', is_active: true };
+			ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true };
 			loadRules();
 		} else {
 			errorMessage = result.error;
@@ -212,99 +198,47 @@
 		</div>
 	{/if}
 
-	<!-- Balance Overview Cards -->
-	<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-		<Card>
-			<CardContent class="p-6">
-				<div class="flex items-center justify-between">
-					<div>
-						<p class="text-sm font-medium text-muted">{t('app.wallet.points_to_credit_ratio')}</p>
-						<p class="text-2xl font-bold text-foreground">{settings.points_to_credit_ratio}</p>
-					</div>
-					<div class="rounded-lg bg-primary-100 p-3">
-						<DollarSign class="h-6 w-6 text-primary-600" />
-					</div>
-				</div>
-			</CardContent>
-		</Card>
-		<Card>
-			<CardContent class="p-6">
-				<div class="flex items-center justify-between">
-					<div>
-						<p class="text-sm font-medium text-muted">{t('app.wallet.daily_earning_cap')}</p>
-						<p class="text-2xl font-bold text-foreground">{settings.daily_earning_cap}</p>
-					</div>
-					<div class="rounded-lg bg-warning/15 p-3">
-						<ArrowDownLeft class="h-6 w-6 text-warning-600" />
-					</div>
-				</div>
-			</CardContent>
-		</Card>
-		<Card>
-			<CardContent class="p-6">
-				<div class="flex items-center justify-between">
-					<div>
-						<p class="text-sm font-medium text-muted">{t('app.wallet.earning_status')}</p>
-						<p class="text-2xl font-bold {settings.enable_earning ? 'text-success-600' : 'text-muted'}">
-							{settings.enable_earning ? 'Enabled' : 'Disabled'}
-						</p>
-					</div>
-					<div class="rounded-lg {settings.enable_earning ? 'bg-success/15' : 'bg-surface'} p-3">
-						<Wallet class="h-6 w-6 {settings.enable_earning ? 'text-success-600' : 'text-muted'}" />
-					</div>
-				</div>
-			</CardContent>
-		</Card>
-	</div>
-
 	<Tabs {tabs} bind:value={activeTab} />
 
 	{#if activeTab === 'rules'}
 		<Card>
 			<CardContent class="p-6">
 				<div class="mb-4 flex items-center justify-between">
-					<h3 class="text-lg font-semibold text-foreground">{t('app.wallet.activity_point_rules')}</h3>
-					<Button onclick={() => { ruleForm = { event_type: '', points_value: 0, description: '', is_active: true }; showRuleModal = true; }}>
+					<h3 class="text-lg font-semibold text-foreground">Activity Point Rules</h3>
+					<Button onclick={() => { ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true }; showRuleModal = true; }}>
 						<Plus class="h-4 w-4 mr-2" />
 						Add Rule
 					</Button>
 				</div>
-
 				{#if rulesLoading}
-					<p class="py-8 text-center text-sm text-muted">{t('app.wallet.loading')}</p>
+					<p class="py-8 text-center text-sm text-muted">Loading...</p>
 				{:else}
-					<DataTable
-						columns={ruleColumns}
-						data={rules}
-						pageSize={20}
-						emptyMessage="No rules configured"
-					/>
+					<DataTable columns={ruleColumns} data={rules} pageSize={20} emptyMessage="No rules configured" />
 				{/if}
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'settings'}
 		<Card>
 			<CardContent class="p-6">
-				<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.wallet_settings')}</h3>
-
+				<h3 class="mb-4 text-lg font-semibold text-foreground">Wallet Settings</h3>
 				{#if settingsLoading}
-					<p class="py-8 text-center text-sm text-muted">{t('app.wallet.loading')}</p>
+					<p class="py-8 text-center text-sm text-muted">Loading...</p>
 				{:else}
-					<div class="grid gap-4 sm:grid-cols-3">
+					<div class="max-w-md space-y-4">
 						<div>
-							<label for="ws-ratio" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.points_to_credit_ratio_2')}</label>
-							<input id="ws-ratio" type="number" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={settings.points_to_credit_ratio} min="0" step="0.01" />
+							<label for="ws-rate" class="mb-1 block text-sm font-medium text-foreground-alt">Points to Credits Rate</label>
+							<input id="ws-rate" type="number" min="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={settings.points_to_credits_rate} />
 						</div>
 						<div>
-							<label for="ws-cap" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.daily_earning_cap')}</label>
-							<input id="ws-cap" type="number" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={settings.daily_earning_cap} min="0" />
+							<label for="ws-cap" class="mb-1 block text-sm font-medium text-foreground-alt">Daily Earning Cap</label>
+							<input id="ws-cap" type="number" min="0" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={settings.daily_earning_cap} />
 						</div>
-						<div class="flex items-end gap-2">
-							<input id="ws-earning" type="checkbox" bind:checked={settings.enable_earning} class="h-4 w-4 rounded border text-primary-600 focus:ring-primary" />
-							<label for="ws-earning" class="text-sm font-medium text-foreground-alt">{t('app.wallet.enable_earning')}</label>
+						<div class="flex items-center gap-3">
+							<input id="ws-earning" type="checkbox" bind:checked={settings.enable_earning} class="h-4 w-4 rounded border" />
+							<label for="ws-earning" class="text-sm font-medium text-foreground-alt">Enable Earning</label>
 						</div>
 					</div>
-					<div class="mt-4 flex justify-end">
+					<div class="mt-6 flex justify-end">
 						<Button onclick={saveSettings} disabled={settingsSaving}>
 							{settingsSaving ? 'Saving...' : 'Save Settings'}
 						</Button>
@@ -315,52 +249,31 @@
 	{:else if activeTab === 'adjust'}
 		<Card>
 			<CardContent class="p-6">
-				<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.user_balance_adjustment')}</h3>
-
-				<!-- Search -->
+				<h3 class="mb-4 text-lg font-semibold text-foreground">User Balance Adjustment</h3>
 				<div class="mb-4 flex gap-2">
-					<input
-						type="text"
-						class="flex-1 rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-						placeholder="Search by username or user ID..."
-						bind:value={userSearch}
-						onkeydown={(e) => { if (e.key === 'Enter') searchUser(); }}
-					/>
-					<Button onclick={searchUser}>{t('app.wallet.search')}</Button>
+					<input type="text" class="flex-1 rounded-lg border bg-surface px-3 py-2 text-sm" placeholder="Search by username or ID..." bind:value={userSearch} onkeydown={(e) => { if (e.key === 'Enter') searchUser(); }} />
+					<Button onclick={searchUser}>Search</Button>
 				</div>
-
 				{#if balanceLoading}
-					<p class="py-8 text-center text-sm text-muted">{t('app.wallet.searching')}</p>
+					<p class="py-8 text-center text-sm text-muted">Searching...</p>
 				{:else if userBalance}
-					<!-- Current Balance -->
 					<div class="mb-4 grid gap-3 sm:grid-cols-3">
-						<div class="rounded-lg border border bg-surface p-3">
-							<p class="text-xs font-medium text-muted">{t('app.wallet.user')}</p>
-							<p class="text-sm font-semibold text-foreground">{userBalance.username}</p>
-						</div>
-						<div class="rounded-lg border border bg-surface p-3">
-							<p class="text-xs font-medium text-muted">{t('app.wallet.points')}</p>
-							<p class="text-lg font-bold text-primary-600">{userBalance.points}</p>
-						</div>
-						<div class="rounded-lg border border bg-surface p-3">
-							<p class="text-xs font-medium text-muted">{t('app.wallet.credits')}</p>
-							<p class="text-lg font-bold text-success-600">{userBalance.credits}</p>
-						</div>
+						<div class="rounded-lg border bg-surface p-3"><p class="text-xs font-medium text-muted">User</p><p class="text-sm font-semibold">{userBalance.username}</p></div>
+						<div class="rounded-lg border bg-surface p-3"><p class="text-xs font-medium text-muted">Points</p><p class="text-lg font-bold text-primary-600">{userBalance.points}</p></div>
+						<div class="rounded-lg border bg-surface p-3"><p class="text-xs font-medium text-muted">Credits</p><p class="text-lg font-bold text-success-600">{userBalance.credits}</p></div>
 					</div>
-
-					<!-- Adjustment Form -->
 					<div class="grid gap-3 sm:grid-cols-3">
 						<div>
-							<label for="adj-amount" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.amount_credit_debit')}</label>
-							<input id="adj-amount" type="number" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={adjustForm.amount} />
+							<label for="adj-amount" class="mb-1 block text-sm font-medium">Amount</label>
+							<input id="adj-amount" type="number" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={adjustForm.amount} />
 						</div>
 						<div>
-							<label for="adj-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.type')}</label>
+							<label class="mb-1 block text-sm font-medium">Type</label>
 							<Select options={adjTypeOptions} bind:value={adjustForm.type} />
 						</div>
 						<div>
-							<label for="adj-reason" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.reason')}</label>
-							<input id="adj-reason" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="Admin adjustment" bind:value={adjustForm.reason} />
+							<label for="adj-reason" class="mb-1 block text-sm font-medium">Reason</label>
+							<input id="adj-reason" type="text" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" placeholder="Admin adjustment" bind:value={adjustForm.reason} />
 						</div>
 					</div>
 					<div class="mt-4 flex justify-end">
@@ -374,30 +287,27 @@
 	{/if}
 </div>
 
-<!-- Add Rule Modal -->
 <Modal bind:open={showRuleModal} title="Add Activity Rule">
 	<div class="space-y-4">
 		<div>
-			<label for="rule-event" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.event_type')}</label>
-			<input id="rule-event" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="post.created" bind:value={ruleForm.event_type} />
+			<label for="rule-key" class="mb-1 block text-sm font-medium">Activity Key</label>
+			<input id="rule-key" type="text" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" placeholder="post.created" bind:value={ruleForm.activity_key} />
 		</div>
 		<div>
-			<label for="rule-points" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.points_value')}</label>
-			<input id="rule-points" type="number" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={ruleForm.points_value} />
+			<label for="rule-points" class="mb-1 block text-sm font-medium">Points</label>
+			<input id="rule-points" type="number" min="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={ruleForm.point_value} />
 		</div>
 		<div>
-			<label for="rule-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.description')}</label>
-			<input id="rule-desc" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="Awarded for creating a post" bind:value={ruleForm.description} />
+			<label for="rule-desc" class="mb-1 block text-sm font-medium">Description</label>
+			<input id="rule-desc" type="text" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" placeholder="Awarded for creating a post" bind:value={ruleForm.description} />
 		</div>
 		<div class="flex items-center gap-2">
-			<input id="rule-active" type="checkbox" bind:checked={ruleForm.is_active} class="h-4 w-4 rounded border text-primary-600 focus:ring-primary" />
-			<label for="rule-active" class="text-sm font-medium text-foreground-alt">{t('app.wallet.active')}</label>
+			<input id="rule-active" type="checkbox" bind:checked={ruleForm.is_enabled} class="h-4 w-4 rounded border" />
+			<label for="rule-active" class="text-sm font-medium">Active</label>
 		</div>
 		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="outline" onclick={() => showRuleModal = false}>{t('app.wallet.cancel')}</Button>
-			<Button onclick={submitRule} disabled={ruleSaving}>
-				{ruleSaving ? 'Saving...' : 'Add Rule'}
-			</Button>
+			<Button variant="outline" onclick={() => showRuleModal = false}>Cancel</Button>
+			<Button onclick={submitRule} disabled={ruleSaving}>{ruleSaving ? 'Saving...' : 'Add Rule'}</Button>
 		</div>
 	</div>
 </Modal>

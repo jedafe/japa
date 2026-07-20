@@ -157,6 +157,15 @@ func (q *Queries) CreateDataExportRequest(ctx context.Context, arg CreateDataExp
 	return i, err
 }
 
+const deleteAuditLog = `-- name: DeleteAuditLog :exec
+DELETE FROM audit_logs WHERE id = $1
+`
+
+func (q *Queries) DeleteAuditLog(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAuditLog, id)
+	return err
+}
+
 const deleteConsent = `-- name: DeleteConsent :one
 DELETE FROM consent_records
 WHERE id = $1 AND tenant_id = $2

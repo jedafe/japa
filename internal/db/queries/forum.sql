@@ -284,6 +284,26 @@ UPDATE forum_tags
 SET follower_count = GREATEST(0, follower_count + @delta)
 WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: UpdateForumTag :one
+UPDATE forum_tags
+SET name = @name,
+    slug = @slug,
+    description = @description,
+    rules = @rules,
+    cover_image_id = @cover_image_id,
+    moderator_user_id = @moderator_user_id
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
+RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
+          follower_count, moderator_user_id, created_at;
+
+-- name: SoftDeleteForumTag :exec
+UPDATE forum_tags SET deleted_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: IncrementForumThreadViewCount :exec
+UPDATE forum_threads SET view_count = view_count + 1
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
 -- =====================
 -- Bookmarks
 -- =====================

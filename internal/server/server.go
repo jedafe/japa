@@ -148,10 +148,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Auth handlers and DB store
 	authStore := auth.NewDBStore(database)
-	bruteForce := auth.NewValkeyBruteForceStore(vkClient.Redis())
+	bruteForce := auth.NewValkeyBruteForceStore(vkClient.Redis(), auth.DefaultFailWindow)
 	authHandlers := &auth.AuthHandlers{
 		DB:          authStore,
 		Queries:     authStore.Queries(),
+		Database:    database,
 		KeyRotation: kr,
 		BruteForce:  bruteForce,
 		Policy:      auth.DefaultPasswordPolicy(),
@@ -385,6 +386,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Payment Core subsystem (Section 17 — Payment Core).
 	paymentService := payments.NewService(database, &walletCreditAdapter{svc: walletService})
 	paymentService.SetEnqueuer(taskEnqueuer)
+
+	// Register payment providers so InitiatePayment can call real provider APIs.
+	paymentService.SetProvider(payments.NewPaystackProvider(cfg.PaystackSecretKey))
+	stripeProvider := payments.NewStripeProvider(cfg.StripeSecretKey)
+	stripeProvider.SetWebhookSecret(cfg.StripeWebhookSecret)
+	paymentService.SetProvider(stripeProvider)
+	paymentService.SetProvider(payments.NewNOWPaymentsProvider(cfg.NOWPaymentsIPNSecret))
+	paymentService.SetProvider(payments.NewManualTransferProvider())
+
 	paymentHandlers := payments.NewHandlers(paymentService)
 	paymentHandlers.StripeWebhookSecret = cfg.StripeWebhookSecret
 	paymentHandlers.NOWPaymentsIPNKey = cfg.NOWPaymentsIPNSecret
@@ -738,6 +748,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Post("/login", authHandlers.Login)
 				r.Post("/refresh", authHandlers.Refresh)
 				r.Post("/logout", authHandlers.Logout)
+
+				// TOTP 2FA challenge verification & backup code (AUDIT-BE-001)
+				// These are unauthenticated — the challenge token itself proves
+				// the user completed password auth.
+				r.Post("/totp/verify-challenge", authHandlers.VerifyLoginChallenge)
+				r.Post("/totp/backup", authHandlers.ConsumeBackupCode)
 
 				// Password reset flow
 				r.Post("/forgot-password", authHandlers.HandleForgotPassword)
@@ -2462,9 +2478,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/spaces/{id}/join-requests/{requestId}", spaceHandlers.UpdateJoinRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Patch("/admin/spaces/{id}/status", spaceHandlers.UpdateSpaceStatus)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderator.assign")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderator.assign")).
 				Post("/admin/spaces/{id}/moderators", spaceHandlers.AdminAssignModerator)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderator.assign")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderator.assign")).
 				Delete("/admin/spaces/{id}/moderators/{moderator_id}", spaceHandlers.AdminRemoveModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/analytics", spaceHandlers.GetSpaceAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).

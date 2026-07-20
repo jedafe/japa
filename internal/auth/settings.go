@@ -43,3 +43,29 @@ func getAccessTokenTTL(ctx context.Context, settings SettingsReader, tenantID pg
 	}
 	return time.Duration(minutes) * time.Minute
 }
+
+// TOTPRequiredForAdmin reads the 'auth.totp.required_for_admin' setting.
+// When true, admin/control panel access requires TOTP enrollment.
+func TOTPRequiredForAdmin(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID) bool {
+	if settings == nil {
+		return false
+	}
+	val, err := settings.GetSettingBool(ctx, tenantID, "auth.totp.required_for_admin")
+	if err != nil {
+		return false
+	}
+	return val
+}
+
+// EmailVerifyRequired reads the 'auth.email.verify_required' setting.
+// When true, users whose email_verified_at is NULL are blocked at login.
+func EmailVerifyRequired(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID) bool {
+	if settings == nil {
+		return false
+	}
+	val, err := settings.GetSettingBool(ctx, tenantID, "auth.email.verify_required")
+	if err != nil {
+		return false
+	}
+	return val
+}

@@ -5,7 +5,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Select } from '$lib/components/ui/select';
 
-	type FieldOption = { id?: string; label: string; sort_order: number };
+	type FieldOption = { value: string; label: string };
 
 	type FieldDefinition = {
 		id: string;
@@ -16,6 +16,7 @@
 		required: boolean;
 		searchable: boolean;
 		sortable: boolean;
+		show_in_frontend: boolean;
 		options: FieldOption[];
 	};
 
@@ -33,10 +34,30 @@
 	let required = $state(false);
 	let searchable = $state(false);
 	let sortable = $state(false);
+	let showInFrontend = $state(true);
 	let options = $state<FieldOption[]>([]);
-	let newOption = $state('');
+	let newOptionValue = $state('');
+	let newOptionLabel = $state('');
 
-	const fieldTypes = ['text', 'number', 'select', 'boolean'];
+	let numMin = $state('');
+	let numMax = $state('');
+	let numIsDecimal = $state(false);
+
+	let fileMaxFiles = $state(1);
+	let fileMaxSizeMb = $state(10);
+
+	let refEntityClass = $state('');
+
+	const fieldTypes = [
+		'text', 'textarea', 'rich_text',
+		'number', 'currency', 'percentage',
+		'boolean',
+		'date', 'datetime', 'time', 'duration',
+		'select', 'multiselect',
+		'url', 'email', 'phone', 'color', 'rating',
+		'image_single', 'image_multi', 'media',
+		'platform_embed', 'reference'
+	];
 	const entityTypes = ['content', 'user', 'space', 'tag'];
 
 	const fieldId = $derived(page.params.id);
@@ -54,6 +75,7 @@
 				required = result.data.required;
 				searchable = result.data.searchable;
 				sortable = result.data.sortable;
+				showInFrontend = result.data.show_in_frontend ?? true;
 				options = result.data.options ?? [];
 			} else {
 				error = result.error;
@@ -73,10 +95,12 @@
 	}
 
 	function addOption() {
-		const trimmed = newOption.trim();
-		if (trimmed && !options.some((o) => o.label === trimmed)) {
-			options = [...options, { label: trimmed, sort_order: options.length }];
-			newOption = '';
+		const v = newOptionValue.trim();
+		const l = newOptionLabel.trim();
+		if (v && l && !options.some((o) => o.value === v)) {
+			options = [...options, { value: v, label: l }];
+			newOptionValue = '';
+			newOptionLabel = '';
 		}
 	}
 
@@ -89,6 +113,37 @@
 			e.preventDefault();
 			addOption();
 		}
+	}
+
+	function buildOptionsJSON(): Record<string, unknown> | null {
+		const needsOptions = ['select', 'multiselect'].includes(fieldType);
+		if (needsOptions) {
+			if (options.length > 0) {
+				return { value_label_pairs: options.map((o) => ({ value: o.value, label: o.label })) };
+			}
+			return null;
+		}
+		if (['number', 'currency', 'percentage'].includes(fieldType)) {
+			const o: Record<string, unknown> = {};
+			if (numMin) o.min = Number(numMin);
+			if (numMax) o.max = Number(numMax);
+			if (numIsDecimal) o.is_decimal = true;
+			return Object.keys(o).length > 0 ? o : null;
+		}
+		if (['image_single', 'image_multi', 'media'].includes(fieldType)) {
+			return { max_files: fileMaxFiles, max_size_mb: fileMaxSizeMb };
+		}
+		if (fieldType === 'reference' && refEntityClass.trim()) {
+			return { ref_entity_class: refEntityClass.trim() };
+		}
+		return null;
+	}
+
+	function buildOptionsArray(): FieldOption[] {
+		if (['select', 'multiselect'].includes(fieldType)) {
+			return options;
+		}
+		return [];
 	}
 
 	async function save() {
@@ -107,10 +162,16 @@
 				entity_type: entityType,
 				required,
 				searchable,
-				sortable
+				sortable,
+				show_in_frontend: showInFrontend,
 			};
-			if (fieldType === 'select') {
-				body.options = options.map((o, idx) => ({ label: o.label, sort_order: idx }));
+			const optsArr = buildOptionsArray();
+			if (optsArr.length > 0) {
+				body.options = optsArr;
+			}
+			const optsJSON = buildOptionsJSON();
+			if (optsJSON) {
+				body.options_json = optsJSON;
 			}
 		const result = await api(`/custom-field-groups/${fieldId}`, {
 			method: 'PATCH',
@@ -233,20 +294,31 @@
 				<input type="checkbox" bind:checked={sortable} class="rounded" />
 				{t('custom_fields.sortable')}
 			</label>
+			<label class="flex items-center gap-2 text-sm">
+				<input type="checkbox" bind:checked={showInFrontend} class="rounded" />
+				Show in frontend
+			</label>
 		</div>
 
-		<!-- Options (for select type) -->
-		{#if fieldType === 'select'}
+		<!-- Options for select / multiselect -->
+		{#if fieldType === 'select' || fieldType === 'multiselect'}
 			<div>
-				<label for="new-option" class="mb-1 block text-sm font-medium">{t('custom_fields.add_option')}</label>
+				<label class="mb-1 block text-sm font-medium">{t('custom_fields.add_option')}</label>
 				<div class="flex gap-2">
 					<input
-						id="new-option"
+						type="text"
+						class="w-32 rounded-md border px-3 py-2 text-sm"
+						style="border-color: var(--color-border); background-color: var(--color-surface)"
+						placeholder="Value"
+						bind:value={newOptionValue}
+						onkeydown={handleOptionKeydown}
+					/>
+					<input
 						type="text"
 						class="flex-1 rounded-md border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background-color: var(--color-surface)"
-						placeholder={t('custom_fields.add_option')}
-						bind:value={newOption}
+						placeholder="Label"
+						bind:value={newOptionLabel}
 						onkeydown={handleOptionKeydown}
 					/>
 					<button
@@ -262,12 +334,61 @@
 					<div class="mt-2 flex flex-wrap gap-2">
 						{#each options as opt}
 							<span class="inline-flex items-center gap-1 rounded-full bg-black/5 px-3 py-1 text-xs dark:bg-surface/10">
-								{opt.label}
+								<span style="color: var(--color-muted)">{opt.value}</span>: {opt.label}
 								<button type="button" class="ml-0.5 text-black/40 hover:text-black dark:text-white/40 dark:hover:text-white" onclick={() => removeOption(opt)}>&times;</button>
 							</span>
 						{/each}
 					</div>
 				{/if}
+			</div>
+		{/if}
+
+		<!-- Number options -->
+		{#if fieldType === 'number' || fieldType === 'currency' || fieldType === 'percentage'}
+			<div class="rounded-md border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
+				<label class="mb-2 block text-sm font-medium">Number constraints</label>
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label for="num-min" class="mb-1 block text-xs" style="color: var(--color-muted)">Min</label>
+						<input id="num-min" type="number" class="w-full rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={numMin} />
+					</div>
+					<div>
+						<label for="num-max" class="mb-1 block text-xs" style="color: var(--color-muted)">Max</label>
+						<input id="num-max" type="number" class="w-full rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={numMax} />
+					</div>
+				</div>
+				<label class="mt-3 flex items-center gap-2 text-xs" style="color: var(--color-muted)">
+					<input type="checkbox" bind:checked={numIsDecimal} class="rounded" />
+					Allow decimal values
+				</label>
+			</div>
+		{/if}
+
+		<!-- Image / file options -->
+		{#if fieldType === 'image_single' || fieldType === 'image_multi' || fieldType === 'media'}
+			<div class="rounded-md border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
+				<label class="mb-2 block text-sm font-medium">File upload settings</label>
+				{#if fieldType === 'image_multi'}
+					<div class="mb-3">
+						<label for="file-max-files" class="mb-1 block text-xs" style="color: var(--color-muted)">Max files</label>
+						<input id="file-max-files" type="number" min="1" max="50" class="w-full rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={fileMaxFiles} />
+					</div>
+				{/if}
+				<div>
+					<label for="file-max-size" class="mb-1 block text-xs" style="color: var(--color-muted)">Max size (MB)</label>
+					<input id="file-max-size" type="number" min="1" max="100" class="w-full rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={fileMaxSizeMb} />
+				</div>
+			</div>
+		{/if}
+
+		<!-- Reference options -->
+		{#if fieldType === 'reference'}
+			<div class="rounded-md border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
+				<label class="mb-2 block text-sm font-medium">Reference settings</label>
+				<div>
+					<label for="ref-entity" class="mb-1 block text-xs" style="color: var(--color-muted)">Target entity class</label>
+					<input id="ref-entity" type="text" class="w-full rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" placeholder="e.g. content, user, space" bind:value={refEntityClass} />
+				</div>
 			</div>
 		{/if}
 

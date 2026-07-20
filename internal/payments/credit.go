@@ -72,13 +72,14 @@ func (s *Service) PayWithCredit(
 	}
 
 	// Record the payment row — single source of truth for "what was purchased."
-	_, err = s.CreatePayment(ctx, tenantID, userID, CreatePaymentInput{
+	// Use createPaymentRow directly to avoid the circular call back through CreatePayment.
+	_, err = s.createPaymentRow(ctx, tenantID, userID, CreatePaymentInput{
 		Provider:    ProviderCredit,
 		PurposeType: purposeType,
 		PurposeID:   purposeID,
 		Amount:      amount,
 		Currency:    "NGN",
-	})
+	}, "NGN", "", "")
 	if err != nil {
 		return 0, fmt.Errorf("recording credit payment: %w", err)
 	}

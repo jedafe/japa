@@ -4,7 +4,7 @@
 	import { Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { AiBudget } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { DollarSign, RefreshCw, AlertTriangle } from 'lucide-svelte';
 
 	let {} = $props();

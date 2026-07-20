@@ -818,6 +818,51 @@ func (s *Store) UpdateEnrollmentProgress(ctx context.Context, userID, trackID pg
 	return nil
 }
 
+// EnrollmentRow holds an enrollment with joined user info.
+type EnrollmentRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	TrackID      pgtype.UUID        `json:"track_id"`
+	AccessType   string             `json:"access_type"`
+	ProgressPct  pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt   pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	Username     string             `json:"username"`
+	DisplayName  string             `json:"display_name"`
+}
+
+// ListEnrollmentsByTrack returns paginated enrollments for a track with user info.
+func (s *Store) ListEnrollmentsByTrack(ctx context.Context, tenantID, trackID pgtype.UUID, limit, offset int32) ([]EnrollmentRow, error) {
+	rows, err := s.read.ListEnrollmentsByTrackID(ctx, gen.ListEnrollmentsByTrackIDParams{
+		TenantID:  tenantID,
+		TrackID:   trackID,
+		PageLimit: limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing enrollments by track: %w", err)
+	}
+
+	result := make([]EnrollmentRow, len(rows))
+	for i, r := range rows {
+		result[i] = EnrollmentRow{
+			ID:          r.ID,
+			TenantID:    r.TenantID,
+			UserID:      r.UserID,
+			TrackID:     r.TrackID,
+			AccessType:  r.AccessType,
+			ProgressPct: r.ProgressPct,
+			EnrolledAt:  r.EnrolledAt,
+			CompletedAt: r.CompletedAt,
+			Username:    r.Username,
+			DisplayName: r.DisplayName,
+		}
+	}
+
+	return result, nil
+}
+
 // ---------------------------------------------------------------------------
 // Quiz operations
 // ---------------------------------------------------------------------------

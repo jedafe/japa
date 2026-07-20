@@ -420,14 +420,12 @@ func (s *Store) incrementReplyCount(ctx context.Context, id, tenantID pgtype.UUI
 // incrementThreadViewCount atomically increments the view_count on a thread.
 // Called fire-and-forget from the GetThread handler.
 func (s *Store) incrementThreadViewCount(ctx context.Context, id, tenantID pgtype.UUID) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		UPDATE forum_threads SET view_count = view_count + 1
-		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-	`, id, tenantID)
-	if err != nil {
+	if err := s.write.IncrementForumThreadViewCount(ctx, gen.IncrementForumThreadViewCountParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("incrementing thread view count: %w", err)
 	}
-
 	return nil
 }
 
@@ -693,40 +691,32 @@ func (s *Store) updateTagFollowerCount(ctx context.Context, id, tenantID pgtype.
 	return nil
 }
 
-// updateTag updates a forum tag's mutable fields using raw SQL since sqlc
-// does not generate an UpdateForumTag query.
+// updateTag updates a forum tag's mutable fields.
 func (s *Store) updateTag(ctx context.Context, id, tenantID pgtype.UUID, name, slug, description, rules string, coverImageID, moderatorUserID pgtype.UUID) (gen.ForumTag, error) {
-	var tag gen.ForumTag
-
-	err := s.db.Writer.QueryRow(ctx, `
-		UPDATE forum_tags
-		SET name = $3, slug = $4, description = $5, rules = $6,
-		    cover_image_id = $7, moderator_user_id = $8
-		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-		RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
-		          follower_count, moderator_user_id, created_at
-	`, id, tenantID, name, slug, strPtr(description), strPtr(rules), coverImageID, moderatorUserID).Scan(
-		&tag.ID, &tag.TenantID, &tag.Name, &tag.Slug, &tag.Description,
-		&tag.Rules, &tag.CoverImageID, &tag.FollowerCount,
-		&tag.ModeratorUserID, &tag.CreatedAt,
-	)
+	tag, err := s.write.UpdateForumTag(ctx, gen.UpdateForumTagParams{
+		ID:              id,
+		TenantID:        tenantID,
+		Name:            name,
+		Slug:            slug,
+		Description:     strPtr(description),
+		Rules:           strPtr(rules),
+		CoverImageID:    coverImageID,
+		ModeratorUserID: moderatorUserID,
+	})
 	if err != nil {
 		return gen.ForumTag{}, fmt.Errorf("updating forum tag: %w", err)
 	}
-
 	return tag, nil
 }
 
-// softDeleteTag marks a forum tag as deleted using raw SQL.
+// softDeleteTag marks a forum tag as deleted.
 func (s *Store) softDeleteTag(ctx context.Context, id, tenantID pgtype.UUID) error {
-	_, err := s.db.Writer.Exec(ctx, `
-		UPDATE forum_tags SET deleted_at = now()
-		WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-	`, id, tenantID)
-	if err != nil {
+	if err := s.write.SoftDeleteForumTag(ctx, gen.SoftDeleteForumTagParams{
+		ID:       id,
+		TenantID: tenantID,
+	}); err != nil {
 		return fmt.Errorf("soft-deleting forum tag: %w", err)
 	}
-
 	return nil
 }
 

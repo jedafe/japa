@@ -6,7 +6,7 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Key, Plus, Copy, Check } from 'lucide-svelte';
 	import { Dialog, Tabs, Select } from 'bits-ui';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 
@@ -60,7 +60,9 @@
 	let selectedIds = $state(new Set<string>());
 
 	let createModalOpen = $state(false);
-	let createForm = $state({ name: '', scopes: '', rate_limit_tier: 'standard', expires_at: '' });
+	const KNOWN_SCOPES = ['read', 'write', 'admin', 'moderate', 'system'];
+
+	let createForm = $state({ name: '', scopes: [] as string[], rate_limit_tier: 'standard', expires_at: '' });
 	let createLoading = $state(false);
 
 	let oneTimeKeyModalOpen = $state(false);
@@ -68,7 +70,7 @@
 	let copiedToClipboard = $state(false);
 
 	let editModalOpen = $state(false);
-	let editForm = $state({ id: '', name: '', scopes: '' });
+	let editForm = $state({ id: '', name: '', scopes: [] as string[] });
 	let editLoading = $state(false);
 
 	const tierItems = $derived([
@@ -257,8 +259,8 @@
 		errorMessage = '';
 
 		const body: Record<string, unknown> = { name: createForm.name.trim() };
-		if (createForm.scopes.trim()) {
-			body.scopes = createForm.scopes.split(',').map((s) => s.trim()).filter(Boolean);
+		if (createForm.scopes.length > 0) {
+			body.scopes = [...createForm.scopes];
 		}
 		if (createForm.rate_limit_tier && createForm.rate_limit_tier !== 'standard') {
 			body.rate_limit_tier = createForm.rate_limit_tier;
@@ -278,7 +280,7 @@
 			const { key, ...keyData } = result.data;
 			oneTimeKeyValue = key;
 			createModalOpen = false;
-			createForm = { name: '', scopes: '', rate_limit_tier: 'standard', expires_at: '' };
+			createForm = { name: '', scopes: [], rate_limit_tier: 'standard', expires_at: '' };
 			keys = [{ ...keyData }, ...keys];
 			oneTimeKeyModalOpen = true;
 		} else {
@@ -296,8 +298,8 @@
 		errorMessage = '';
 
 		const body: Record<string, unknown> = { name: editForm.name.trim() };
-		if (editForm.scopes.trim()) {
-			body.scopes = editForm.scopes.split(',').map((s) => s.trim()).filter(Boolean);
+		if (editForm.scopes.length > 0) {
+			body.scopes = [...editForm.scopes];
 		}
 
 		const result = await api<{ id: string }>(`/control/api-keys/${editForm.id}`, {
@@ -323,7 +325,7 @@
 		editForm = {
 			id: key.id,
 			name: key.name,
-			scopes: (key.scopes || []).join(', ')
+			scopes: [...(key.scopes || [])]
 		};
 		editModalOpen = true;
 	}
@@ -454,7 +456,7 @@
 	{/if}
 {/if}
 
-<Dialog.Root bind:open={createModalOpen} onOpenChange={(isOpen) => { if (!isOpen) createForm = { name: '', scopes: '', rate_limit_tier: 'standard', expires_at: '' }; }}>
+<Dialog.Root bind:open={createModalOpen} onOpenChange={(isOpen) => { if (!isOpen) createForm = { name: '', scopes: [], rate_limit_tier: 'standard', expires_at: '' }; }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
 		<Dialog.Content
@@ -494,14 +496,42 @@
 					<label for="create-scopes" class="text-foreground block text-sm font-medium">
 						{t('api_keys.scopes')}
 					</label>
-					<input
-						id="create-scopes"
-						type="text"
-						bind:value={createForm.scopes}
-						placeholder="read,write,admin"
-						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-					/>
-					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.name_required_scopes')}</p>
+					<div class="mt-1 flex flex-wrap gap-1.5">
+						{#each createForm.scopes as scope}
+							<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium">
+								{scope}
+								<button
+									class="hover:text-destructive ml-0.5 rounded"
+									onclick={() => createForm.scopes = createForm.scopes.filter((s) => s !== scope)}
+								>×</button>
+							</span>
+						{/each}
+					</div>
+					<Select.Root
+						type="single"
+						value=""
+						onValueChange={(v) => {
+							if (v && !createForm.scopes.includes(v)) {
+								createForm.scopes = [...createForm.scopes, v];
+							}
+						}}
+					>
+						<Select.Trigger class="border-border-input bg-background text-foreground mt-2 block w-full rounded-9px border px-3 py-2 text-sm transition-colors">
+							<Select.Value placeholder="Add scope..." />
+						</Select.Trigger>
+						<Select.Portal>
+							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
+								<Select.Viewport class="p-1">
+									{#each KNOWN_SCOPES.filter((s) => !createForm.scopes.includes(s)) as s}
+										<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={s} label={s}>
+											{s}
+										</Select.Item>
+									{/each}
+								</Select.Viewport>
+							</Select.Content>
+						</Select.Portal>
+					</Select.Root>
+					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.scopes_hint')}</p>
 				</div>
 
 				<div>
@@ -637,7 +667,7 @@
 	</Dialog.Portal>
 </Dialog.Root>
 
-<Dialog.Root bind:open={editModalOpen} onOpenChange={(isOpen) => { if (!isOpen) editForm = { id: '', name: '', scopes: '' }; }}>
+<Dialog.Root bind:open={editModalOpen} onOpenChange={(isOpen) => { if (!isOpen) editForm = { id: '', name: '', scopes: [] }; }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
 		<Dialog.Content
@@ -674,14 +704,42 @@
 					<label for="edit-scopes" class="text-foreground block text-sm font-medium">
 						{t('api_keys.scopes')}
 					</label>
-					<input
-						id="edit-scopes"
-						type="text"
-						bind:value={editForm.scopes}
-						placeholder="read,write,admin"
-						class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-					/>
-					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.name_required_scopes')}</p>
+					<div class="mt-1 flex flex-wrap gap-1.5">
+						{#each editForm.scopes as scope}
+							<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium">
+								{scope}
+								<button
+									class="hover:text-destructive ml-0.5 rounded"
+									onclick={() => editForm.scopes = editForm.scopes.filter((s) => s !== scope)}
+								>×</button>
+							</span>
+						{/each}
+					</div>
+					<Select.Root
+						type="single"
+						value=""
+						onValueChange={(v) => {
+							if (v && !editForm.scopes.includes(v)) {
+								editForm.scopes = [...editForm.scopes, v];
+							}
+						}}
+					>
+						<Select.Trigger class="border-border-input bg-background text-foreground mt-2 block w-full rounded-9px border px-3 py-2 text-sm transition-colors">
+							<Select.Value placeholder="Add scope..." />
+						</Select.Trigger>
+						<Select.Portal>
+							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
+								<Select.Viewport class="p-1">
+									{#each KNOWN_SCOPES.filter((s) => !editForm.scopes.includes(s)) as s}
+										<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={s} label={s}>
+											{s}
+										</Select.Item>
+									{/each}
+								</Select.Viewport>
+							</Select.Content>
+						</Select.Portal>
+					</Select.Root>
+					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.scopes_hint')}</p>
 				</div>
 			</div>
 

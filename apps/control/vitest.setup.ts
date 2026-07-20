@@ -16,11 +16,11 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
 	})) as unknown as typeof window.matchMedia;
 }
 
-// Pages import from '$lib/stores/i18n' (NOT the .svelte variant), so the mock
+// Pages import from '$lib/stores/i18n.svelte', so the mock
 // must target that exact specifier or it silently never applies and t() returns
 // raw i18n keys, breaking every getByText assertion.
-vi.mock('$lib/stores/i18n', async () => {
-    const actual = await vi.importActual<typeof import('$lib/stores/i18n')>('$lib/stores/i18n');
+vi.mock('$lib/stores/i18n.svelte', async () => {
+    const actual = await vi.importActual<typeof import('$lib/stores/i18n.svelte')>('$lib/stores/i18n.svelte');
     return {
         ...actual,
         t: (key: string, fallback?: string) => en[key] ?? fallback ?? key,

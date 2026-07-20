@@ -4,31 +4,42 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
-// NoopBlockChecker is a stub implementation that always returns false.
-// Replace with real implementation when Section 19 (user blocking) is complete.
-type NoopBlockChecker struct{}
-
-// IsBlocked always returns false for the noop implementation.
-func (n *NoopBlockChecker) IsBlocked(_ context.Context, _, _ pgtype.UUID) (bool, error) {
-	return false, nil
+// DBCheckers is a production implementation of BlockChecker, SpaceMemberChecker,
+// and UserStatusChecker backed by the database.
+type DBCheckers struct {
+	read  *gen.Queries
 }
 
-// NoopSpaceMemberChecker is a stub implementation that always returns true.
-// Replace with real implementation when space membership queries are added.
-type NoopSpaceMemberChecker struct{}
-
-// IsMember always returns true for the noop implementation.
-func (n *NoopSpaceMemberChecker) IsMember(_ context.Context, _, _ pgtype.UUID) (bool, error) {
-	return true, nil
+// NewDBCheckers creates a DBCheckers backed by the given database reader pool.
+func NewDBCheckers(database *db.DB) *DBCheckers {
+	return &DBCheckers{read: gen.New(database.Reader)}
 }
 
-// NoopUserStatusChecker is a stub implementation that always returns false.
-// Replace with real implementation when Section 19 (account erasure) is complete.
-type NoopUserStatusChecker struct{}
+// IsBlocked checks whether a user block exists between two users in either direction.
+func (c *DBCheckers) IsBlocked(ctx context.Context, blockerID, blockedID pgtype.UUID) (bool, error) {
+	blocked, err := c.read.IsBlocked(ctx, gen.IsBlockedParams{BlockerID: blockerID, BlockedID: blockedID})
+	return blocked, err
+}
 
-// IsErased always returns false for the noop implementation.
-func (n *NoopUserStatusChecker) IsErased(_ context.Context, _ pgtype.UUID) (bool, error) {
-	return false, nil
+// IsMember checks whether a user is a member of a space (tenant-agnostic).
+func (c *DBCheckers) IsMember(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+	isMember, err := c.read.CheckSpaceMembership(ctx, gen.CheckSpaceMembershipParams{
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: pgtype.UUID{},
+	})
+	return isMember, err
+}
+
+// IsErased checks whether a user's account has been deleted/erased.
+func (c *DBCheckers) IsErased(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	status, err := c.read.GetUserStatus(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return status == "deleted", nil
 }

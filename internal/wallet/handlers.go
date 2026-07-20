@@ -315,6 +315,8 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		PointsToCreditsRate int32 `json:"points_to_credits_rate"`
+		DailyEarningCap     int32 `json:"daily_earning_cap"`
+		EnableEarning       bool  `json:"enable_earning"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -329,6 +331,8 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	settings, err := h.Service.UpdateWalletSettings(r.Context(), tenantID, UpdateWalletSettingsInput{
 		PointsToCreditsRate: input.PointsToCreditsRate,
+		DailyEarningCap:     input.DailyEarningCap,
+		EnableEarning:       input.EnableEarning,
 	})
 	if err != nil {
 		handleServiceError(w, err)

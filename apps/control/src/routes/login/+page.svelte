@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { api, setToken } from '$lib/api';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	let email = $state('');
 	let password = $state('');
@@ -10,6 +10,10 @@
 
 	async function handleLogin() {
 		if (!email || !password) return;
+		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+			error = 'Please enter a valid email address.';
+			return;
+		}
 		loading = true;
 		error = '';
 

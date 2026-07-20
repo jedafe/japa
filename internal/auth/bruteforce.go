@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // BruteForceStore is the interface for tracking failed login attempts.
@@ -15,17 +17,34 @@ type BruteForceStore interface {
 	ResetFailCount(ctx context.Context, key string) error
 }
 
-// MaxLoginAttempts is the threshold before exponential backoff kicks in.
-const MaxLoginAttempts = 5
+// DefaultMaxLoginAttempts is the fallback when system_settings key is unavailable.
+const DefaultMaxLoginAttempts = 5
 
-// FailWindow is how long the failure counter persists. If no further
-// failures occur within this window, the counter resets.
-const FailWindow = 15 * time.Minute
+// DefaultFailWindow is the fallback when system_settings key is unavailable.
+const DefaultFailWindow = 15 * time.Minute
+
+// MaxLoginAttempts reads the threshold from system_settings (security.max_login_attempts).
+func MaxLoginAttempts(ctx context.Context, reader SettingsReader, tenantID pgtype.UUID) int {
+	if val, err := reader.GetSettingInt(ctx, tenantID, "security.max_login_attempts"); err == nil && val > 0 {
+		return val
+	}
+	return DefaultMaxLoginAttempts
+}
+
+// FailWindow reads the lockout window from system_settings (security.fail_window_minutes).
+func FailWindow(ctx context.Context, reader SettingsReader, tenantID pgtype.UUID) time.Duration {
+	if val, err := reader.GetSettingInt(ctx, tenantID, "security.fail_window_minutes"); err == nil && val > 0 {
+		return time.Duration(val) * time.Minute
+	}
+	return DefaultFailWindow
+}
 
 // CheckLoginAttempt returns whether a login is allowed and how long
 // to wait if it is not. The identifier should combine both the
 // account (email) and IP address so either can trigger a lockout.
-func CheckLoginAttempt(ctx context.Context, store BruteForceStore, identifier string) (allowed bool, retryAfter time.Duration) {
+// maxAttempts and failWindow are read from system_settings to
+// allow admin-configurable lockout policy per tenant.
+func CheckLoginAttempt(ctx context.Context, store BruteForceStore, identifier string, maxAttempts int) (allowed bool, retryAfter time.Duration) {
 	count, err := store.GetFailCount(ctx, identifier)
 	if err != nil {
 		// On store error, allow the attempt - don't lock users out
@@ -33,8 +52,8 @@ func CheckLoginAttempt(ctx context.Context, store BruteForceStore, identifier st
 		return true, 0
 	}
 
-	if count >= MaxLoginAttempts {
-		backoff := time.Duration(math.Pow(2, float64(count-MaxLoginAttempts+1))) * time.Second
+	if count >= maxAttempts {
+		backoff := time.Duration(math.Pow(2, float64(count-maxAttempts+1))) * time.Second
 		if backoff > 30*time.Minute {
 			backoff = 30 * time.Minute
 		}

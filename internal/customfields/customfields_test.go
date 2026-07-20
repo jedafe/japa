@@ -54,10 +54,15 @@ func TestIsValidFieldType(t *testing.T) {
 	t.Parallel()
 
 	valid := []string{
-		FieldTypeText, FieldTypeTextarea, FieldTypeNumber, FieldTypeBoolean,
-		FieldTypeDate, FieldTypeDatetime, FieldTypeSelect, FieldTypeMultiselect,
-		FieldTypeURL, FieldTypeEmail, FieldTypePhone, FieldTypeMedia,
-		FieldTypeRichText, FieldTypePlatformEmbed, FieldTypeColor, FieldTypeRating,
+		FieldTypeText, FieldTypeTextarea, FieldTypeRichText,
+		FieldTypeNumber, FieldTypeCurrency, FieldTypePercentage,
+		FieldTypeBoolean,
+		FieldTypeDate, FieldTypeDatetime, FieldTypeTime, FieldTypeDuration,
+		FieldTypeSelect, FieldTypeMultiselect,
+		FieldTypeURL, FieldTypeEmail, FieldTypePhone,
+		FieldTypeColor, FieldTypeRating,
+		FieldTypeImageSingle, FieldTypeImageMulti, FieldTypeMedia,
+		FieldTypePlatformEmbed, FieldTypeReference,
 	}
 	for _, ft := range valid {
 		if !IsValidFieldType(ft) {
@@ -65,10 +70,135 @@ func TestIsValidFieldType(t *testing.T) {
 		}
 	}
 
-	for _, ft := range []string{"foo", "", "invalid"} {
+	for _, ft := range []string{"foo", "", "invalid", "checkbox", "radio"} {
 		if IsValidFieldType(ft) {
 			t.Errorf("IsValidFieldType(%q) = true, want false", ft)
 		}
+	}
+}
+
+func TestFieldTypeValueColumn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		fieldType string
+		wantCol   string
+		wantOk    bool
+	}{
+		{FieldTypeText, "value_text", true},
+		{FieldTypeTextarea, "value_text", true},
+		{FieldTypeURL, "value_text", true},
+		{FieldTypeEmail, "value_text", true},
+		{FieldTypePhone, "value_text", true},
+		{FieldTypeColor, "value_text", true},
+		{FieldTypePlatformEmbed, "value_text", true},
+		{FieldTypeRichText, "value_json", true},
+		{FieldTypeSelect, "value_json", true},
+		{FieldTypeMultiselect, "value_json", true},
+		{FieldTypeMedia, "value_json", true},
+		{FieldTypeImageSingle, "value_json", true},
+		{FieldTypeImageMulti, "value_json", true},
+		{FieldTypeReference, "value_json", true},
+		{FieldTypeNumber, "value_number", true},
+		{FieldTypeCurrency, "value_number", true},
+		{FieldTypePercentage, "value_number", true},
+		{FieldTypeRating, "value_number", true},
+		{FieldTypeBoolean, "value_bool", true},
+		{FieldTypeDate, "value_date", true},
+		{FieldTypeDatetime, "value_date", true},
+		{FieldTypeTime, "value_date", true},
+		{FieldTypeDuration, "value_date", true},
+		{"invalid", "", false},
+	}
+
+	for _, tc := range tests {
+		gotCol, gotOk := FieldTypeValueColumn(tc.fieldType)
+		if gotCol != tc.wantCol || gotOk != tc.wantOk {
+			t.Errorf("FieldTypeValueColumn(%q) = (%q, %v), want (%q, %v)",
+				tc.fieldType, gotCol, gotOk, tc.wantCol, tc.wantOk)
+		}
+	}
+}
+
+func TestValidOptionsShape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		fieldType string
+		opts      []FieldOption
+		wantOk    bool
+		wantMsg   string
+	}{
+		{
+			name:      "select with valid options",
+			fieldType: FieldTypeSelect,
+			opts:      []FieldOption{{Value: "opt1", Label: "Option 1"}, {Value: "opt2", Label: "Option 2"}},
+			wantOk:    true,
+		},
+		{
+			name:      "multiselect with valid options",
+			fieldType: FieldTypeMultiselect,
+			opts:      []FieldOption{{Value: "a", Label: "A"}},
+			wantOk:    true,
+		},
+		{
+			name:      "select with empty options",
+			fieldType: FieldTypeSelect,
+			opts:      nil,
+			wantOk:    false,
+			wantMsg:   "Select and multiselect fields require at least one option",
+		},
+		{
+			name:      "select with missing value",
+			fieldType: FieldTypeSelect,
+			opts:      []FieldOption{{Value: "", Label: "Label"}},
+			wantOk:    false,
+			wantMsg:   "Each option must have both value and label",
+		},
+		{
+			name:      "select with missing label",
+			fieldType: FieldTypeSelect,
+			opts:      []FieldOption{{Value: "v", Label: ""}},
+			wantOk:    false,
+			wantMsg:   "Each option must have both value and label",
+		},
+		{
+			name:      "number with no options is ok",
+			fieldType: FieldTypeNumber,
+			opts:      nil,
+			wantOk:    true,
+		},
+		{
+			name:      "text with no options is ok",
+			fieldType: FieldTypeText,
+			opts:      nil,
+			wantOk:    true,
+		},
+		{
+			name:      "image_single with no options is ok",
+			fieldType: FieldTypeImageSingle,
+			opts:      nil,
+			wantOk:    true,
+		},
+		{
+			name:      "reference with no options is ok",
+			fieldType: FieldTypeReference,
+			opts:      nil,
+			wantOk:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg, ok := ValidOptionsShape(tc.fieldType, tc.opts)
+			if ok != tc.wantOk {
+				t.Errorf("ValidOptionsShape() ok = %v, want %v", ok, tc.wantOk)
+			}
+			if msg != tc.wantMsg {
+				t.Errorf("ValidOptionsShape() msg = %q, want %q", msg, tc.wantMsg)
+			}
+		})
 	}
 }
 

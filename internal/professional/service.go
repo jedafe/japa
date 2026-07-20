@@ -781,3 +781,8 @@ func (s *Service) IsAdminMember(ctx context.Context, profileID, userID pgtype.UU
 
 	return member.Role == MemberRoleAdmin, nil
 }
+
+// ListProfileContent returns paginated content authored by a professional profile.
+func (s *Service) ListProfileContent(ctx context.Context, tenantID, profileID pgtype.UUID, limit, offset int32) ([]gen.Content, error) {
+	return s.store.listProfileContent(ctx, tenantID, profileID, limit, offset)
+}

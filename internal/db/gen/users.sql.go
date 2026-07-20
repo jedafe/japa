@@ -308,6 +308,19 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 	return i, err
 }
 
+const getUserStatus = `-- name: GetUserStatus :one
+SELECT COALESCE(status, 'active') AS status
+FROM users
+WHERE id = $1
+`
+
+func (q *Queries) GetUserStatus(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserStatus, id)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
 const listOAuthAccounts = `-- name: ListOAuthAccounts :many
 SELECT id, provider, provider_user_id, created_at
 FROM oauth_accounts

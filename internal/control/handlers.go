@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
@@ -239,22 +240,80 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	type setting struct {
-		ID        pgtype.UUID `json:"id"`
-		Key       string      `json:"key"`
-		Value     string      `json:"value"`
-		IsPublic  bool        `json:"is_public"`
-		CreatedAt time.Time   `json:"created_at"`
-		UpdatedAt time.Time   `json:"updated_at"`
+	type enrichedSetting struct {
+		ID           pgtype.UUID `json:"id"`
+		Key          string      `json:"key"`
+		Value        string      `json:"value"`
+		IsPublic     bool        `json:"is_public"`
+		CreatedAt    time.Time   `json:"created_at"`
+		UpdatedAt    time.Time   `json:"updated_at"`
+		Type         string      `json:"type"`
+		DefaultValue string      `json:"default_value"`
+		Description  string      `json:"description"`
+		Namespace    string      `json:"namespace"`
+		Min          float64     `json:"min,omitempty"`
+		Max          float64     `json:"max,omitempty"`
+		Sensitive    bool        `json:"sensitive"`
+		Options      []any       `json:"options,omitempty"`
 	}
-	var settings []setting
+	var settings []enrichedSetting
 	for rows.Next() {
-		var s setting
+		var s enrichedSetting
 		if err := rows.Scan(&s.ID, &s.Key, &s.Value, &s.IsPublic, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			slog.Error("control: scan setting", "error", err)
 			continue
 		}
+		// Enrich with authoritative metadata from the settings catalog.
+		meta := getSettingMeta(s.Key, s.Value)
+		s.Type = meta.Type
+		s.DefaultValue = meta.DefaultValue
+		s.Description = meta.Description
+		s.Sensitive = meta.Sensitive
+		s.Min = meta.Min
+		s.Max = meta.Max
+		// Derive namespace from the first dot segment.
+		if idx := strings.IndexByte(s.Key, '.'); idx >= 0 {
+			s.Namespace = s.Key[:idx]
+		}
+		// Parse options JSON if present.
+		if meta.Options != "" {
+			var opts []any
+			if err := json.Unmarshal([]byte(meta.Options), &opts); err == nil {
+				s.Options = opts
+			}
+		}
 		settings = append(settings, s)
+	}
+	// Also include catalog entries that are not yet stored in the DB (so the
+	// frontend can see all available settings even before they have been saved).
+	storedKeys := make(map[string]bool, len(settings))
+	for _, s := range settings {
+		storedKeys[s.Key] = true
+	}
+	for key, meta := range settingsCatalog {
+		if storedKeys[key] {
+			continue
+		}
+		var ns string
+		if idx := strings.IndexByte(key, '.'); idx >= 0 {
+			ns = key[:idx]
+		}
+		var opts []any
+		if meta.Options != "" {
+			json.Unmarshal([]byte(meta.Options), &opts)
+		}
+		settings = append(settings, enrichedSetting{
+			Key:          key,
+			Value:        meta.DefaultValue,
+			Type:         meta.Type,
+			DefaultValue: meta.DefaultValue,
+			Description:  meta.Description,
+			Namespace:    ns,
+			Min:          meta.Min,
+			Max:          meta.Max,
+			Sensitive:    meta.Sensitive,
+			Options:      opts,
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
 }
@@ -352,14 +411,21 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
 		return
 	}
-	if tag.RowsAffected() == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "Setting not found")
-		return
-	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "deleted"}})
+	// Look up the default value from the catalog; if not found, the setting was
+	// deleted but had no catalog entry — return an empty default.
+	defaultValue := ""
+	if meta, ok := settingsCatalog[key]; ok {
+		defaultValue = meta.DefaultValue
+	}
+	if tag.RowsAffected() == 0 {
+		// Setting didn't exist in DB (already at default). Return the default value.
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1345,15 +1411,10 @@ func (h *Handlers) DeleteAuditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := h.DB.Writer.Exec(r.Context(),
-		`DELETE FROM audit_logs WHERE id = $1`, id)
-	if err != nil {
+	q := gen.New(h.DB.Writer)
+	if err := q.DeleteAuditLog(r.Context(), id); err != nil {
 		slog.Error("control: delete audit log", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete audit log")
-		return
-	}
-	if tag.RowsAffected() == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "Audit log not found")
 		return
 	}
 
