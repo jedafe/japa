@@ -1,12 +1,13 @@
 <script lang="ts">
+	import { beforeNavigate } from '$app/navigation';
 	import { t } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Select } from '$lib/components/ui/select';
-	import { RefreshCw, Save, Check } from 'lucide-svelte';
+	import { RefreshCw, Save, Check, Upload, RotateCcw, Undo2, AlertTriangle } from 'lucide-svelte';
 	import { Switch } from "bits-ui";
-	import { settingsAdminApi } from '$lib/api';
+	import { settingsAdminApi, api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	const canManage = $derived(hasPermission('admin.settings'));
@@ -15,6 +16,7 @@
 	let savedCategory = $state('');
 	let loading = $state(true);
 	let error = $state('');
+	let messageType = $state<'success' | 'error' | ''>('');
 
 	interface SettingDef {
 		key: string;
@@ -22,6 +24,9 @@
 		type: string;
 		value?: unknown;
 		options?: string[];
+		accept?: string;
+		placeholder?: string;
+		description?: string;
 		masked?: boolean;
 	}
 
@@ -32,10 +37,13 @@
 	}
 
 	let categories = $state<SettingCategory[]>([]);
+	let originalCategories = $state<SettingCategory[]>([]);
 
 	const CATEGORY_ICONS: Record<string, string> = {
 		general: '⚙️',
+		auth: '🔐',
 		features: '🧩',
+		feed: '📰',
 		email: '📧',
 		security: '🔒',
 		appearance: '🎨',
@@ -46,51 +54,166 @@
 		seo: '🔍',
 		integrations: '🔗',
 		ai: '🤖',
-		advanced: '⚡'
+		advanced: '⚡',
+		spaces: '🏠',
+		moderation: '🛡️',
+		wallet: '💰',
+		api: '🔌',
+		ads: '📢',
+		notifications: '🔔',
+		tickets: '🎫',
+		audit: '📋',
+		i18n: '🌐',
+		gdpr: '📜',
+		search: '🔎',
+		affiliate: '🤝'
 	};
 
 	const CATEGORY_DESCRIPTIONS: Record<string, string> = {
-		general: 'Basic platform settings',
-		features: 'Enable or disable platform features',
-		email: 'Email delivery configuration',
-		security: 'Authentication and security settings',
-		appearance: 'Branding, logo, favicon, and visual theme',
-		users: 'User profile and registration settings',
-		content: 'Content creation and moderation settings',
-		payment: 'Payment gateway configuration',
-		media: 'Image processing and upload settings',
-		seo: 'Search engine optimization and metadata',
-		integrations: 'Third-party service connections',
-		ai: 'AI-powered features configuration',
-		advanced: 'System-level and debug settings'
+		general: t('settings.cat_general_desc', 'Basic platform settings'),
+		auth: t('settings.cat_auth_desc', 'Password, session, and 2FA settings'),
+		features: t('settings.cat_features_desc', 'Enable or disable platform features'),
+		feed: t('settings.cat_feed_desc', 'Feed rendering and fan-out settings'),
+		email: t('settings.cat_email_desc', 'Email delivery configuration'),
+		security: t('settings.cat_security_desc', 'Authentication and security settings'),
+		appearance: t('settings.cat_appearance_desc', 'Branding, logo, favicon, and visual theme'),
+		users: t('settings.cat_users_desc', 'User profile and registration settings'),
+		content: t('settings.cat_content_desc', 'Content creation and moderation settings'),
+		payment: t('settings.cat_payment_desc', 'Payment gateway configuration'),
+		media: t('settings.cat_media_desc', 'Image processing and upload settings'),
+		seo: t('settings.cat_seo_desc', 'Search engine optimization and metadata'),
+		integrations: t('settings.cat_integrations_desc', 'Third-party service connections'),
+		ai: t('settings.cat_ai_desc', 'AI-powered features configuration'),
+		advanced: t('settings.cat_advanced_desc', 'System-level and debug settings'),
+		spaces: t('settings.cat_spaces_desc', 'Space hierarchy and pinning settings'),
+		moderation: t('settings.cat_moderation_desc', 'Content moderation and spam detection'),
+		wallet: t('settings.cat_wallet_desc', 'Points and credit conversion settings'),
+		api: t('settings.cat_api_desc', 'API rate limits and key management'),
+		ads: t('settings.cat_ads_desc', 'Advertising and campaign settings'),
+		notifications: t('settings.cat_notifications_desc', 'Notification delivery settings'),
+		tickets: t('settings.cat_tickets_desc', 'Support ticket SLA and auto-close'),
+		audit: t('settings.cat_audit_desc', 'Audit log retention settings'),
+		i18n: t('settings.cat_i18n_desc', 'Language and localization settings'),
+		gdpr: t('settings.cat_gdpr_desc', 'Data protection and deletion settings'),
+		search: t('settings.cat_search_desc', 'Search and autocomplete settings'),
+		affiliate: t('settings.cat_affiliate_desc', 'Affiliate program commission settings')
 	};
 
 	// Track toggle states per category+key
 	let toggleStates = $state<Record<string, boolean>>({});
+	let originalToggleStates = $state<Record<string, boolean>>({});
+
+	// Dirty state tracking
+	let isDirty = $derived(
+		JSON.stringify(categories) !== JSON.stringify(originalCategories) ||
+		JSON.stringify(toggleStates) !== JSON.stringify(originalToggleStates)
+	);
+
+	let dirtyCount = $derived(() => {
+		let count = 0;
+		for (const cat of categories) {
+			const origCat = originalCategories.find(c => c.key === cat.key);
+			if (!origCat) continue;
+			for (const s of cat.settings) {
+				const origSetting = origCat.settings.find(os => os.key === s.key);
+				if (!origSetting) continue;
+				if (s.type === 'toggle') {
+					const id = `${cat.key}.${s.key}`;
+					if (toggleStates[id] !== originalToggleStates[id]) count++;
+				} else if (JSON.stringify(s.value) !== JSON.stringify(origSetting.value)) {
+					count++;
+				}
+			}
+		}
+		return count;
+	});
+
+	// Unsaved changes warning
+	beforeNavigate(({ cancel }) => {
+		if (isDirty) {
+			const confirmed = window.confirm(
+				t('settings.unsaved_navigate', 'You have unsaved changes. Are you sure you want to leave?')
+			);
+			if (!confirmed) cancel();
+		}
+	});
+
+	function isSettingDirty(catKey: string, settingKey: string, settingType: string): boolean {
+		const cat = categories.find(c => c.key === catKey);
+		const origCat = originalCategories.find(c => c.key === catKey);
+		if (!cat || !origCat) return false;
+
+		const setting = cat.settings.find(s => s.key === settingKey);
+		const origSetting = origCat.settings.find(s => s.key === settingKey);
+		if (!setting || !origSetting) return false;
+
+		if (settingType === 'toggle') {
+			const id = `${catKey}.${settingKey}`;
+			return toggleStates[id] !== originalToggleStates[id];
+		}
+		return JSON.stringify(setting.value) !== JSON.stringify(origSetting.value);
+	}
+
+	function getOriginalValue(catKey: string, settingKey: string, settingType: string): unknown {
+		const origCat = originalCategories.find(c => c.key === catKey);
+		if (!origCat) return '';
+		const origSetting = origCat.settings.find(s => s.key === settingKey);
+		if (!origSetting) return '';
+
+		if (settingType === 'toggle') {
+			const id = `${catKey}.${settingKey}`;
+			return originalToggleStates[id] ?? false;
+		}
+		return origSetting.value;
+	}
+
+	function getDisplayValue(value: unknown): string {
+		if (value === null || value === undefined) return '';
+		if (value === '[]' || value === '{}') return '';
+		const str = String(value);
+		if (str.startsWith('"') && str.endsWith('"')) return str.slice(1, -1);
+		return str;
+	}
+
+	// Validation
+	function validateSettingValue(setting: SettingDef): string | null {
+		const raw = String(setting.value ?? '');
+		if (setting.type === 'number') {
+			const trimmed = raw.trim();
+			if (trimmed === '' || Number.isNaN(Number(trimmed))) {
+				return t('settings.validation_number', '"{key}" must be a valid number.').replace('{key}', setting.label);
+			}
+			return null;
+		}
+		return null;
+	}
 
 	async function loadSettings() {
 		loading = true;
 		error = '';
+		messageType = '';
 		try {
 			const result = await settingsAdminApi.list();
 			if (result.ok) {
 				categories = (result.data as SettingCategory[]) ?? [];
+				originalCategories = JSON.parse(JSON.stringify(categories));
 				// Initialize toggle states
 				for (const cat of categories) {
 					for (const s of cat.settings) {
 						if (s.type === 'toggle') {
 							const id = `${cat.key}.${s.key}`;
-							if (!(id in toggleStates)) {
-								toggleStates[id] = Boolean(s.value);
-							}
+							toggleStates[id] = Boolean(s.value);
 						}
 					}
 				}
+				originalToggleStates = JSON.parse(JSON.stringify(toggleStates));
 			} else {
 				error = result.error;
+				messageType = 'error';
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load settings';
+			messageType = 'error';
 		} finally {
 			loading = false;
 		}
@@ -99,11 +222,22 @@
 	async function saveCategory(categoryKey: string) {
 		saving = true;
 		error = '';
+		messageType = '';
 		try {
-			// Collect values from form
 			const cat = categories.find(c => c.key === categoryKey);
 			if (!cat) return;
-			
+
+			// Validate all settings in category
+			for (const s of cat.settings) {
+				const validationError = validateSettingValue(s);
+				if (validationError) {
+					error = validationError;
+					messageType = 'error';
+					saving = false;
+					return;
+				}
+			}
+
 			const entries: Record<string, unknown> = {};
 			for (const s of cat.settings) {
 				const id = `${cat.key}.${s.key}`;
@@ -113,16 +247,27 @@
 					entries[s.key] = s.value;
 				}
 			}
-			
+
 			const result = await settingsAdminApi.updateCategory(categoryKey, entries);
 			if (result.ok) {
+				// Update original state after successful save
+				originalCategories = JSON.parse(JSON.stringify(categories));
+				originalToggleStates = JSON.parse(JSON.stringify(toggleStates));
 				savedCategory = categoryKey;
-				setTimeout(() => (savedCategory = ''), 3000);
+				messageType = 'success';
+				error = t('settings.save_success', `${cat.label} settings saved successfully.`);
+				setTimeout(() => {
+					savedCategory = '';
+					error = '';
+					messageType = '';
+				}, 3000);
 			} else {
 				error = result.error;
+				messageType = 'error';
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to save settings';
+			messageType = 'error';
 		} finally {
 			saving = false;
 		}
@@ -142,18 +287,89 @@
 		}
 	}
 
+	function resetSetting(catKey: string, settingKey: string) {
+		const cat = categories.find(c => c.key === catKey);
+		const origCat = originalCategories.find(c => c.key === catKey);
+		if (!cat || !origCat) return;
+
+		const setting = cat.settings.find(s => s.key === settingKey);
+		const origSetting = origCat.settings.find(s => s.key === settingKey);
+		if (!setting || !origSetting) return;
+
+		if (setting.type === 'toggle') {
+			const id = `${catKey}.${settingKey}`;
+			toggleStates[id] = originalToggleStates[id] ?? false;
+		} else {
+			setting.value = origSetting.value;
+		}
+	}
+
+	function revertAll() {
+		categories = JSON.parse(JSON.stringify(originalCategories));
+		toggleStates = JSON.parse(JSON.stringify(originalToggleStates));
+		error = t('settings.revert_success', 'All changes reverted.');
+		messageType = 'success';
+		setTimeout(() => {
+			error = '';
+			messageType = '';
+		}, 3000);
+	}
+
+	let uploadingKey = $state('');
+	let uploadError = $state('');
+
+	async function handleFileUpload(catKey: string, settingKey: string, file: File) {
+		uploadingKey = `${catKey}.${settingKey}`;
+		uploadError = '';
+		try {
+			const initiateRes = await api<{
+				media_id: string;
+				storage_path: string;
+				presigned_url: string;
+				expires_at: string;
+			}>('/api/v1/media/upload', {
+				method: 'POST',
+				body: { filename: file.name, mime_type: file.type, file_size: file.size }
+			});
+			if (!initiateRes.ok || !initiateRes.data) {
+				uploadError = initiateRes.error || 'Failed to initiate upload';
+				return;
+			}
+			const { media_id, presigned_url } = initiateRes.data;
+			const putRes = await fetch(presigned_url, {
+				method: 'PUT',
+				headers: { 'Content-Type': file.type },
+				body: file
+			});
+			if (!putRes.ok) {
+				uploadError = `File upload failed: ${putRes.statusText}`;
+				return;
+			}
+			const confirmRes = await api(`/api/v1/media/confirm/${media_id}`, { method: 'POST' });
+			if (!confirmRes.ok) {
+				uploadError = confirmRes.error || 'Failed to confirm upload';
+				return;
+			}
+			updateSettingValue(catKey, settingKey, `/api/v1/media/${media_id}`);
+		} catch (e) {
+			uploadError = e instanceof Error ? e.message : 'Upload failed';
+		} finally {
+			uploadingKey = '';
+		}
+	}
+
 	$effect(() => {
 		loadSettings();
 	});
 </script>
 
 <svelte:head>
-	<title>Settings — JapaConnect Admin</title>
+	<title>{t('settings.title', 'Settings')} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
-	title="Settings"
-	description="Configure platform settings and preferences"
+	title={t('settings.title', 'Settings')}
+	description={t('settings.description', 'Configure platform settings and preferences')}
 />
 
 {#if loading}
@@ -161,13 +377,56 @@
 		<RefreshCw class="h-5 w-5 animate-spin" style="color: var(--color-muted)" />
 		<span class="ml-2 text-sm" style="color: var(--color-muted)">{t('settings.loading_settings')}</span>
 	</div>
-{:else if error}
-	<div class="rounded-lg p-4 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-		{error}
-	</div>
 {:else}
+	<!-- Message banner -->
+	{#if error}
+		<div
+			class="mb-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm"
+			style={messageType === 'success'
+				? "border-color: var(--color-success); background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)"
+				: "border-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"}
+		>
+			{#if messageType === 'success'}
+				<Check class="h-4 w-4" />
+			{/if}
+			{error}
+		</div>
+	{/if}
+
+	<!-- Unsaved changes banner -->
+	{#if isDirty}
+		<div
+			class="mb-4 flex items-center gap-3 rounded-xl border px-4 py-3"
+			style="border-color: color-mix(in srgb, var(--color-warning) 30%, transparent); background: color-mix(in srgb, var(--color-warning) 5%, transparent)"
+		>
+			<AlertTriangle class="h-4 w-4 shrink-0" style="color: var(--color-warning)" />
+			<span class="text-sm font-medium" style="color: var(--color-foreground)">
+				{t('settings.unsaved_changes', `You have ${dirtyCount()} unsaved change(s).`)}
+			</span>
+			<div class="flex-1"></div>
+			{#if canManage}
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={revertAll}
+					disabled={saving}
+				>
+					<Undo2 class="h-4 w-4" />
+					{t('settings.revert_all', 'Revert All')}
+				</Button>
+			{/if}
+		</div>
+	{/if}
+
 	<div class="space-y-6">
 		{#each categories as category (category.key)}
+			{@const catDirtyCount = (() => {
+				let count = 0;
+				for (const s of category.settings) {
+					if (isSettingDirty(category.key, s.key, s.type)) count++;
+				}
+				return count;
+			})()}
 			<Card>
 				<CardHeader>
 					<div class="flex items-center gap-3">
@@ -176,27 +435,54 @@
 							<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{category.label}</h3>
 							<p class="text-sm" style="color: var(--color-muted)">{CATEGORY_DESCRIPTIONS[category.key] ?? ''}</p>
 						</div>
+						{#if catDirtyCount > 0}
+							<span
+								class="ml-auto rounded-full px-2 py-0.5 text-xs font-medium"
+								style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
+							>
+								{catDirtyCount} {t('settings.modified', 'modified')}
+							</span>
+						{/if}
 					</div>
 				</CardHeader>
 				<CardContent>
 					<div class="space-y-6">
 						{#each category.settings as setting (setting.key)}
 							{@const toggleId = `${category.key}.${setting.key}`}
-							<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-center">
+							{@const dirty = isSettingDirty(category.key, setting.key, setting.type)}
+							<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-center" style={dirty ? "background: color-mix(in srgb, var(--color-warning) 3%, transparent); margin: -0.5rem; padding: 0.5rem; border-radius: 0.5rem;" : ''}>
 								<div>
-									<label for={toggleId} class="text-sm font-medium" style="color: var(--color-foreground)">
-										{setting.label}
-									</label>
+									<div class="flex items-center gap-2">
+										<label for={toggleId} class="text-sm font-medium" style="color: var(--color-foreground)">
+											{setting.label}
+										</label>
+										{#if dirty}
+											<span
+												class="rounded-full px-1.5 py-0.5 text-[9px] font-medium"
+												style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
+											>
+												{t('settings.badge_dirty', 'modified')}
+											</span>
+										{/if}
+									</div>
+									{#if setting.description}
+										<p class="text-xs mt-0.5" style="color: var(--color-muted)">{setting.description}</p>
+									{/if}
+									{#if dirty}
+										<p class="text-[10px] mt-0.5" style="color: var(--color-muted)">
+											{t('settings.original_value', 'Original:')} {setting.type === 'toggle' ? (getOriginalValue(category.key, setting.key, setting.type) ? t('settings.enabled', 'Enabled') : t('settings.disabled', 'Disabled')) : getDisplayValue(getOriginalValue(category.key, setting.key, setting.type))}
+										</p>
+									{/if}
 								</div>
 
-								<div>
+								<div class="flex items-center gap-2">
 									{#if setting.type === 'text'}
 										<input
 											type={setting.masked ? 'password' : 'text'}
 											id={toggleId}
 											value={String(setting.value ?? '')}
-											placeholder={setting.masked ? '••••••••' : ''}
-											class="h-10 w-full rounded-lg border px-3 py-2 text-sm"
+											placeholder={setting.masked ? '••••••••' : (setting.placeholder ?? '')}
+											class="h-10 flex-1 rounded-lg border px-3 py-2 text-sm"
 											style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 											disabled={!canManage}
 											oninput={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLInputElement).value)}
@@ -206,13 +492,19 @@
 											type="number"
 											id={toggleId}
 											value={setting.value != null ? String(setting.value) : ''}
-											class="h-10 w-full rounded-lg border px-3 py-2 text-sm"
+											class="h-10 w-28 rounded-lg border px-3 py-2 text-sm"
 											style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 											disabled={!canManage}
-											oninput={(e) => updateSettingValue(category.key, setting.key, Number((e.target as HTMLInputElement).value))}
+											oninput={(e) => {
+												const raw = (e.target as HTMLInputElement).value;
+												updateSettingValue(category.key, setting.key, raw === '' ? '' : Number(raw));
+											}}
 										/>
 									{:else if setting.type === 'toggle'}
 										<div class="flex items-center gap-3">
+											<span class="text-sm w-8 text-right" style="color: var(--color-muted)">
+												{toggleStates[toggleId] ? t('settings.on', 'On') : t('settings.off', 'Off')}
+											</span>
 											<Switch.Root
 												checked={toggleStates[toggleId]}
 												onCheckedChange={(v: boolean) => toggleSetting(category.key, setting.key, v)}
@@ -225,9 +517,6 @@
 													class="inline-block h-4 w-4 transform rounded-full bg-surface shadow-sm transition-transform {toggleStates[toggleId] ? 'translate-x-6' : 'translate-x-1'}"
 												/>
 											</Switch.Root>
-											<span class="text-sm" style="color: var(--color-muted)">
-												{toggleStates[toggleId] ? 'Enabled' : 'Disabled'}
-											</span>
 										</div>
 									{:else if setting.type === 'select'}
 										<Select
@@ -241,11 +530,32 @@
 											id={toggleId}
 											value={String(setting.value ?? '')}
 											rows={3}
-											class="w-full rounded-lg border px-3 py-2 text-sm"
+											placeholder={setting.placeholder}
+											class="w-full rounded-lg border px-3 py-2 text-sm font-mono resize-y"
 											style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 											disabled={!canManage}
 											oninput={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLTextAreaElement).value)}
 										></textarea>
+									{:else if setting.type === 'multiselect'}
+										{@const selectedValues = Array.isArray(setting.value) ? setting.value : (typeof setting.value === 'string' && setting.value ? setting.value.split(',').map((v: string) => v.trim()) : [])}
+										<div class="flex flex-wrap gap-2">
+											{#each (setting.options ?? []) as option}
+												<button
+													type="button"
+													class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors"
+													style={selectedValues.includes(option) ? "border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)" : "border-color: var(--color-border); color: var(--color-muted)"}
+													disabled={!canManage}
+													onclick={() => {
+														const newValues = selectedValues.includes(option)
+															? selectedValues.filter((v: string) => v !== option)
+															: [...selectedValues, option];
+														updateSettingValue(category.key, setting.key, newValues.join(','));
+													}}
+												>
+													{option}
+												</button>
+											{/each}
+										</div>
 									{:else if setting.type === 'boolean'}
 										<div class="flex items-center gap-3">
 											<input
@@ -258,9 +568,78 @@
 												onchange={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLInputElement).checked)}
 											/>
 											<label for={toggleId} class="text-sm" style="color: var(--color-muted)">
-												{Boolean(setting.value) ? 'Enabled' : 'Disabled'}
+												{Boolean(setting.value) ? t('settings.enabled', 'Enabled') : t('settings.disabled', 'Disabled')}
 											</label>
 										</div>
+									{:else if setting.type === 'color'}
+										<div class="flex items-center gap-3">
+											<input
+												type="color"
+												id={toggleId}
+												value={String(setting.value ?? '#000000')}
+												disabled={!canManage}
+												class="h-10 w-14 cursor-pointer rounded border p-1"
+												style="border-color: var(--color-border); background: var(--color-surface)"
+												oninput={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLInputElement).value)}
+											/>
+											<input
+												type="text"
+												value={String(setting.value ?? '#000000')}
+												class="h-10 w-24 rounded-lg border px-3 py-2 text-sm font-mono"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												disabled={!canManage}
+												oninput={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLInputElement).value)}
+											/>
+										</div>
+									{:else if setting.type === 'file'}
+										<div class="flex items-center gap-2">
+											<input
+												type="text"
+												id={toggleId}
+												value={String(setting.value ?? '')}
+												placeholder="https://..."
+												class="h-10 flex-1 rounded-lg border px-3 py-2 text-sm"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												disabled={!canManage}
+												oninput={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLInputElement).value)}
+											/>
+											<label class="flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors" style="border-color: var(--color-border); color: var(--color-muted)">
+												<input
+													type="file"
+													class="hidden"
+													accept={setting.accept}
+													disabled={!canManage}
+													onchange={(e) => {
+														const file = (e.target as HTMLInputElement).files?.[0];
+														if (file) handleFileUpload(category.key, setting.key, file);
+													}}
+												/>
+												{#if uploadingKey === toggleId}
+													<RefreshCw class="h-3 w-3 animate-spin" />
+												{:else}
+													<Upload class="h-3 w-3" />
+												{/if}
+											</label>
+											{#if setting.value && typeof setting.value === 'string' && (setting.value.startsWith('/api/v1/media/') || setting.value.startsWith('http'))}
+												<img src={setting.value} alt={setting.label} class="h-10 w-10 rounded border object-cover" style="border-color: var(--color-border)" />
+											{/if}
+										</div>
+										{#if uploadError && uploadingKey === toggleId}
+											<p class="text-xs mt-1" style="color: var(--color-danger)">{uploadError}</p>
+										{/if}
+									{/if}
+
+									<!-- Reset button -->
+									{#if canManage && dirty}
+										<button
+											type="button"
+											class="rounded-lg p-1.5 transition-colors"
+											style="color: var(--color-muted)"
+											title={t('settings.reset_to_default', 'Reset to original value')}
+											onclick={() => resetSetting(category.key, setting.key)}
+										>
+											<RotateCcw class="h-3.5 w-3.5" />
+										</button>
 									{/if}
 								</div>
 							</div>
@@ -275,15 +654,21 @@
 							</div>
 						{/if}
 
-						{#if canManage}<Button disabled={saving} variant="outline" size="sm" onclick={() => saveCategory(category.key)}>
-							{#if saving}
-								<RefreshCw class="h-4 w-4 animate-spin" />
-								Saving...
-							{:else}
-								<Save class="h-4 w-4" />
-								Save {category.label}
-							{/if}
-						</Button>{/if}
+						{#if canManage}
+							<Button disabled={saving || !isDirty} variant="outline" size="sm" onclick={() => revertAll()}>
+								<Undo2 class="h-4 w-4" />
+								{t('settings.revert', 'Revert')}
+							</Button>
+							<Button disabled={saving} variant="outline" size="sm" onclick={() => saveCategory(category.key)}>
+								{#if saving}
+									<RefreshCw class="h-4 w-4 animate-spin" />
+									{t('common.saving', 'Saving...')}
+								{:else}
+									<Save class="h-4 w-4" />
+									{t('settings.save', 'Save')} {category.label}
+								{/if}
+							</Button>
+						{/if}
 					</div>
 				</CardContent>
 			</Card>
