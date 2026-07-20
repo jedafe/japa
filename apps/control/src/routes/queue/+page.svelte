@@ -5,7 +5,7 @@
 	import { Tabs, Tooltip } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { QueueInfo, QueueStats } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { ListTodo, Clock, RefreshCw, X } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 

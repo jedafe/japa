@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
-	import { t, translations, initLocale, loadTranslations } from '$lib/stores/i18n';
+	import { t, translations, initLocale, loadTranslations } from '$lib/stores/i18n.svelte';
 	import { setToken } from '$lib/api';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
@@ -167,7 +167,7 @@
 	};
 
 	const nav = $derived.by(() => {
-		const tr = $translations;
+		const tr = translations();
 		return navConfig.map((cfg) => ({
 			...cfg,
 			label: tr[navKeyMap[cfg.href].label] ?? navKeyMap[cfg.href].label,

@@ -9,7 +9,7 @@
 
 	type FieldDef = {
 		label: string;
-		type: 'text' | 'number' | 'email' | 'checkbox' | 'radio';
+		type: 'text' | 'number' | 'email' | 'boolean' | 'select' | 'textarea' | 'url';
 		required: boolean;
 		options: string[];
 	};
@@ -20,7 +20,7 @@
 	let saving = $state(false);
 	let errorMessage = $state('');
 
-	const fieldTypes = ['text', 'number', 'email', 'checkbox', 'radio'] as const;
+	const fieldTypes = ['text', 'number', 'email', 'boolean', 'select', 'textarea', 'url'] as const;
 
 	function addField() {
 		fields = [...fields, { label: '', type: 'text', required: false, options: [] }];
@@ -69,7 +69,7 @@
 						type: f.type,
 						required: f.required,
 						sort_order: i,
-						options: f.type === 'radio' ? f.options.filter((o) => o.trim()) : []
+						options: f.type === 'select' ? f.options.filter((o) => o.trim()) : []
 					}))
 				}
 			});
@@ -188,7 +188,7 @@
 					</label>
 					</div>
 
-					{#if field.type === 'radio'}
+					{#if field.type === 'select'}
 						<div class="mt-3">
 							<div class="mb-2 flex items-center justify-between">
 								<span class="text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_options')}</span>

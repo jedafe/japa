@@ -126,9 +126,11 @@ SELECT * FROM wallet_settings
 WHERE tenant_id = @tenant_id;
 
 -- name: UpsertWalletSettings :one
-INSERT INTO wallet_settings (tenant_id, points_to_credits_rate)
-VALUES (@tenant_id, @points_to_credits_rate)
+INSERT INTO wallet_settings (tenant_id, points_to_credits_rate, daily_earning_cap, enable_earning)
+VALUES (@tenant_id, @points_to_credits_rate, @daily_earning_cap, @enable_earning)
 ON CONFLICT (tenant_id) DO UPDATE SET
     points_to_credits_rate = EXCLUDED.points_to_credits_rate,
+    daily_earning_cap = EXCLUDED.daily_earning_cap,
+    enable_earning = EXCLUDED.enable_earning,
     updated_at = now()
 RETURNING *;

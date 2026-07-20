@@ -81,10 +81,11 @@ const (
 
 // Service provides payment operations with reader/writer pool separation.
 type Service struct {
-	store    *Store
-	db       *db.DB
-	wallet   CreditSpender
-	enqueuer paymentsEnqueuer
+	store     *Store
+	db        *db.DB
+	wallet    CreditSpender
+	enqueuer  paymentsEnqueuer
+	providers map[string]Provider
 }
 
 // paymentsEnqueuer is the subset of worker.Enqueuer that payments needs.
@@ -100,12 +101,18 @@ func NewService(database *db.DB, wallet CreditSpender) *Service {
 			read:  gen.New(database.Reader),
 			write: gen.New(database.Writer),
 		},
-		db:     database,
-		wallet: wallet,
+		db:        database,
+		wallet:    wallet,
+		providers: make(map[string]Provider),
 	}
 }
 
 // SetEnqueuer injects the Asynq enqueuer for async webhook processing.
 func (s *Service) SetEnqueuer(e paymentsEnqueuer) {
 	s.enqueuer = e
+}
+
+// SetProvider registers a payment provider by name.
+func (s *Service) SetProvider(p Provider) {
+	s.providers[p.Name()] = p
 }

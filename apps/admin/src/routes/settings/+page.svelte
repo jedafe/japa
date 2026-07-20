@@ -128,9 +128,9 @@
 		}
 	}
 
-	function toggleSetting(catKey: string, settingKey: string) {
+	function toggleSetting(catKey: string, settingKey: string, value: boolean) {
 		const id = `${catKey}.${settingKey}`;
-		toggleStates[id] = !toggleStates[id];
+		toggleStates[id] = value;
 	}
 
 	function updateSettingValue(catKey: string, settingKey: string, value: unknown) {
@@ -215,7 +215,7 @@
 										<div class="flex items-center gap-3">
 											<Switch.Root
 												checked={toggleStates[toggleId]}
-												onCheckedChange={(v: boolean) => toggleSetting(category.key, setting.key)}
+												onCheckedChange={(v: boolean) => toggleSetting(category.key, setting.key, v)}
 												disabled={!canManage}
 												class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 {toggleStates[toggleId] ? 'bg-primary' : 'bg-surface'}"
 												style="--ring-color: var(--color-primary); --ring-offset-color: var(--color-surface)"
@@ -236,6 +236,31 @@
 											disabled={!canManage}
 											onchange={(val: string) => updateSettingValue(category.key, setting.key, val)}
 										/>
+									{:else if setting.type === 'textarea'}
+										<textarea
+											id={toggleId}
+											value={String(setting.value ?? '')}
+											rows={3}
+											class="w-full rounded-lg border px-3 py-2 text-sm"
+											style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+											disabled={!canManage}
+											oninput={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLTextAreaElement).value)}
+										></textarea>
+									{:else if setting.type === 'boolean'}
+										<div class="flex items-center gap-3">
+											<input
+												type="checkbox"
+												id={toggleId}
+												checked={Boolean(setting.value)}
+												disabled={!canManage}
+												class="h-5 w-5 rounded border"
+												style="accent-color: var(--color-primary)"
+												onchange={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLInputElement).checked)}
+											/>
+											<label for={toggleId} class="text-sm" style="color: var(--color-muted)">
+												{Boolean(setting.value) ? 'Enabled' : 'Disabled'}
+											</label>
+										</div>
 									{/if}
 								</div>
 							</div>

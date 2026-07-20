@@ -231,11 +231,15 @@
 			<p class="text-sm" style="color: var(--color-muted)">{t('reviews.moderate_help', 'Set the moderation status for this review.')}</p>
 			<div>
 				<label for="moderateStatus" class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reviews.status', 'Status')}</label>
-				<select id="moderateStatus" bind:value={moderateStatus} class="mt-1 w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)">
-					<option value="approved">{t('reviews.status_approved', 'Approved')}</option>
-					<option value="pending">{t('reviews.status_pending', 'Pending')}</option>
-					<option value="rejected">{t('reviews.status_rejected', 'Rejected')}</option>
-				</select>
+				<Select
+					options={[
+						{ value: "approved", label: t('reviews.status_approved', 'Approved') },
+						{ value: "pending", label: t('reviews.status_pending', 'Pending') },
+						{ value: "rejected", label: t('reviews.status_rejected', 'Rejected') }
+					]}
+					value={moderateStatus}
+					onchange={(val) => (moderateStatus = val)}
+				/>
 			</div>
 		</div>
 	{/if}

@@ -621,6 +621,13 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user group")
 		return
 	}
+
+	// Invalidate permission cache so the user's new group membership
+	// takes effect immediately (AUDIT-BE-004).
+	if h.RBAC != nil {
+		h.RBAC.InvalidateUserCache(r.Context(), uid)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"user_id": userID})
 }
 

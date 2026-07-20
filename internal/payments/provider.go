@@ -190,13 +190,13 @@ func (p *PaystackProvider) ProcessWebhookEvent(_ context.Context, event WebhookE
 }
 
 // ---------------------------------------------------------------------------
-// Stripe Provider (secondary — stub with logging)
+// Stripe Provider
 // ---------------------------------------------------------------------------
 
 // StripeProvider implements the Provider interface for Stripe.
 type StripeProvider struct {
 	secretKey     string
-	webhookSecret string // webhook signing secret (whsec_...)
+	webhookSecret string
 }
 
 // NewStripeProvider creates a new Stripe provider.
@@ -214,17 +214,55 @@ func (p *StripeProvider) Name() string {
 	return ProviderStripe
 }
 
-// InitiatePayment creates a Stripe checkout session.
-func (p *StripeProvider) InitiatePayment(_ context.Context, req PaymentRequest) (PaymentResponse, error) {
-	// Stripe Checkout Session creation would go here.
-	// For now, log and return a reference so the payment flow doesn't break.
-	slog.Warn("stripe payment initiation is a placeholder",
-		"amount", req.Amount, "currency", req.Currency)
+// stripeCheckoutRequest is the form-encoded body for POST /v1/checkout/sessions.
+type stripeCheckoutResponse struct {
+	ID  string `json:"id"`
+	URL string `json:"url"`
+}
+
+// InitiatePayment creates a Stripe Checkout Session via the REST API.
+func (p *StripeProvider) InitiatePayment(ctx context.Context, req PaymentRequest) (PaymentResponse, error) {
+	if p.secretKey == "" {
+		return PaymentResponse{}, errors.New("stripe secret key not configured")
+	}
+
+	body := fmt.Sprintf(
+		"mode=payment&line_items[0][price_data][currency]=%s&line_items[0][price_data][product_data][name]=Payment&line_items[0][price_data][unit_amount]=%d&line_items[0][quantity]=1",
+		strings.ToLower(req.Currency),
+		req.Amount,
+	)
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.stripe.com/v1/checkout/sessions", strings.NewReader(body))
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("creating stripe request: %w", err)
+	}
+	httpReq.SetBasicAuth(p.secretKey, "")
+	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("stripe checkout: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("reading stripe response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return PaymentResponse{}, fmt.Errorf("stripe error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var session stripeCheckoutResponse
+	if err := json.Unmarshal(respBody, &session); err != nil {
+		return PaymentResponse{}, fmt.Errorf("parsing stripe response: %w", err)
+	}
 
 	return PaymentResponse{
-		PaymentID:   "",
-		CheckoutURL: "",
-		Reference:   fmt.Sprintf("stripe_placeholder_%d", time.Now().UnixNano()),
+		PaymentID:   session.ID,
+		CheckoutURL: session.URL,
+		Reference:   session.ID,
 	}, nil
 }
 
@@ -305,7 +343,7 @@ func (p *StripeProvider) ProcessWebhookEvent(_ context.Context, event WebhookEve
 }
 
 // ---------------------------------------------------------------------------
-// NOWPayments Provider (secondary — stub with logging)
+// NOWPayments Provider
 // ---------------------------------------------------------------------------
 
 // NOWPaymentsProvider implements the Provider interface for NOWPayments.
@@ -318,20 +356,82 @@ func NewNOWPaymentsProvider(apiKey string) *NOWPaymentsProvider {
 	return &NOWPaymentsProvider{apiKey: apiKey}
 }
 
+// nowpaymentsInvoiceRequest is the JSON body for POST /v1/invoice.
+type nowpaymentsInvoiceRequest struct {
+	PriceAmount   float64 `json:"price_amount"`
+	PriceCurrency string  `json:"price_currency"`
+	OrderID       string  `json:"order_id"`
+	OrderName     string  `json:"order_name,omitempty"`
+}
+
+// nowpaymentsInvoiceResponse is the NOWPayments API response for invoice creation.
+type nowpaymentsInvoiceResponse struct {
+	ID         string `json:"id"`
+	InvoiceURL string `json:"invoice_url"`
+	PaymentID  string `json:"payment_id"`
+}
+
 // Name returns the provider name.
 func (p *NOWPaymentsProvider) Name() string {
 	return ProviderNOWPayments
 }
 
-// InitiatePayment creates a NOWPayments invoice.
-func (p *NOWPaymentsProvider) InitiatePayment(_ context.Context, req PaymentRequest) (PaymentResponse, error) {
-	slog.Warn("nowpayments payment initiation is a placeholder",
-		"amount", req.Amount, "currency", req.Currency)
+// InitiatePayment creates a NOWPayments invoice via the REST API.
+func (p *NOWPaymentsProvider) InitiatePayment(ctx context.Context, req PaymentRequest) (PaymentResponse, error) {
+	if p.apiKey == "" {
+		return PaymentResponse{}, errors.New("nowpayments API key not configured")
+	}
+
+	currency := req.Currency
+	if currency == "" {
+		currency = "USD"
+	}
+
+	// NOWPayments expects decimal amount, not kobo/cents.
+	amount := float64(req.Amount) / 100.0
+
+	payload := nowpaymentsInvoiceRequest{
+		PriceAmount:   amount,
+		PriceCurrency: strings.ToLower(currency),
+		OrderID:       req.PurposeID,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("marshaling nowpayments request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.nowpayments.io/v1/invoice", bytes.NewReader(body))
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("creating nowpayments request: %w", err)
+	}
+	httpReq.Header.Set("x-api-key", p.apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("nowpayments invoice: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return PaymentResponse{}, fmt.Errorf("reading nowpayments response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return PaymentResponse{}, fmt.Errorf("nowpayments error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var invoice nowpaymentsInvoiceResponse
+	if err := json.Unmarshal(respBody, &invoice); err != nil {
+		return PaymentResponse{}, fmt.Errorf("parsing nowpayments response: %w", err)
+	}
 
 	return PaymentResponse{
-		PaymentID:   "",
-		CheckoutURL: "",
-		Reference:   fmt.Sprintf("nowpayments_placeholder_%d", time.Now().UnixNano()),
+		PaymentID:   invoice.PaymentID,
+		CheckoutURL: invoice.InvoiceURL,
+		Reference:   invoice.PaymentID,
 	}, nil
 }
 

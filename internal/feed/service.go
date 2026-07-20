@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // FeedItem represents a single item in a feed response, normalized across
@@ -77,7 +78,7 @@ func (s *Service) FanOutPost(_ context.Context, tenantID, contentID, spaceID pgt
 	}
 
 	if s.enqueuer != nil {
-		if err := s.enqueuer.Enqueue("content:fan_out_to_feeds", payload); err != nil {
+		if err := s.enqueuer.Enqueue(worker.TypeContentFanOutToFeeds, payload); err != nil {
 			return fmt.Errorf("enqueueing fan-out task: %w", err)
 		}
 		return nil

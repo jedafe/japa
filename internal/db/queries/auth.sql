@@ -10,7 +10,7 @@ VALUES (@tenant_id, @email, @username, @password_hash)
 RETURNING id;
 
 -- name: GetUserByEmail :one
-SELECT id, tenant_id, email, password_hash, username, profile_type, status
+SELECT id, tenant_id, email, password_hash, username, profile_type, status, email_verified_at
 FROM users
 WHERE tenant_id = @tenant_id AND email = @email
 LIMIT 1;

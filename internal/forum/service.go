@@ -46,7 +46,7 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 		// compiled-in default when unset or settings not injected. See AUDIT-BE-009.
 		def := DefaultEditWindowMinutes
 		if s.settings != nil {
-			def = s.settings.GetIntOr(ctx, tenantID, "forum.edit_window_minutes", DefaultEditWindowMinutes)
+			def = s.settings.GetIntOr(ctx, tenantID, "content.edit_window_minutes", DefaultEditWindowMinutes)
 		}
 		editWindow = int32(def)
 	}

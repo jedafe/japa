@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
+	import { FEATURE_ENVIRONMENTS } from '$lib/constants/feature-flags';
 	import { api } from "$lib/api";
+
+	const environmentOptions = $derived(FEATURE_ENVIRONMENTS.map((env) => ({ value: env, label: env.charAt(0).toUpperCase() + env.slice(1) })));
+
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent } from "$lib/components/ui/card";

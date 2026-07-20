@@ -7,7 +7,7 @@
 	import { Tabs, Tooltip } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { DlqEntry, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import { t, translations } from '$lib/stores/i18n';
+	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { RefreshCw, RotateCw, Trash2 } from 'lucide-svelte';
 
@@ -187,18 +187,18 @@
 	);
 
 	let columns = $derived.by<DataTableColumn[]>(() => {
-		const tr = $translations;
+		const tr = translations();
 		return [
 			{
 				key: 'task_type',
-				label: t('dlq.task_type', undefined, tr),
+				label: t('dlq.task_type'),
 				sortable: true,
 				render: (val) =>
 					`<span class="bg-tertiary/12 text-tertiary rounded-5px px-1.5 py-0.5 text-xs">${escapeHtml(val)}</span>`
 			},
 			{
 				key: 'error_message',
-				label: t('dlq.error', undefined, tr),
+				label: t('dlq.error'),
 				sortable: true,
 				class: 'max-w-xs truncate',
 				render: (val) =>
@@ -206,13 +206,13 @@
 			},
 			{
 				key: 'retry_count',
-				label: t('dlq.retries', undefined, tr),
+				label: t('dlq.retries'),
 				sortable: true,
 				render: (val) => `<span class="text-xs">${escapeHtml(val)}</span>`
 			},
 			{
 				key: 'failed_at',
-				label: t('dlq.failed_at', undefined, tr),
+				label: t('dlq.failed_at'),
 				sortable: true,
 				render: (val) =>
 					`<span class="text-muted-foreground text-xs">${escapeHtml(formatDate(val as string))}</span>`
@@ -232,10 +232,10 @@
 	}
 
 	let rowActions = $derived.by<DataTableRowAction[]>(() => {
-		const tr = $translations;
+		const tr = translations();
 		return [
 			{
-				label: t('dlq.retry', undefined, tr),
+				label: t('dlq.retry'),
 				icon: RotateCw,
 				onClick: (row) => {
 					confirmRetryEntry = rowToEntry(row as Record<string, unknown>);
@@ -244,7 +244,7 @@
 				disabled: (row) => retrying === (row as Record<string, unknown>).task_id || deleting === (row as Record<string, unknown>).task_id
 			},
 			{
-				label: t('dlq.discard', undefined, tr),
+				label: t('dlq.discard'),
 				icon: Trash2,
 				variant: 'destructive',
 				onClick: (row) => {
@@ -257,10 +257,10 @@
 	});
 
 	let bulkActions = $derived.by<DataTableBulkAction[]>(() => {
-		const tr = $translations;
+		const tr = translations();
 		return [
 			{
-				label: t('dlq.discard_selected', undefined, tr),
+				label: t('dlq.discard_selected'),
 				icon: Trash2,
 				variant: 'destructive',
 				onClick: (ids) => {
@@ -278,7 +278,7 @@
 	}
 </script>
 
-<PageHeader title={t('dlq.title', undefined, $translations)} description={t('dlq.description', undefined, $translations)} />
+<PageHeader title={t('dlq.title')} description={t('dlq.description')} />
 
 {#if successMessage}
 	<AlertBanner variant="success" message={successMessage} class="mb-4" />
@@ -289,13 +289,13 @@
 {/if}
 
 <div class="mb-4 flex items-center gap-3">
-	<SearchInput bind:value={filter} placeholder={t('dlq.filter_placeholder', undefined, $translations)} class="w-72" />
+	<SearchInput bind:value={filter} placeholder={t('dlq.filter_placeholder')} class="w-72" />
 	<button
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors"
 		onclick={() => load()}
 	>
 		<RefreshCw class="size-3" />
-		{t('common.refresh', undefined, $translations)}
+		{t('common.refresh')}
 	</button>
 	{#if entries.length > 0}
 		<Tooltip.Root>
@@ -305,12 +305,12 @@
 					onclick={() => { confirmDiscardAll = true; confirmDiscardAllOpen = true; }}
 				>
 					<Trash2 class="size-3" />
-					{t('dlq.discard_all', undefined, $translations)}
+					{t('dlq.discard_all')}
 				</button>
 			</Tooltip.Trigger>
 			<Tooltip.Portal>
 				<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-					{t('dlq.discard_all_tooltip', undefined, $translations).replace('{count}', String(entries.length))}
+					{t('dlq.discard_all_tooltip').replace('{count}', String(entries.length))}
 				</Tooltip.Content>
 			</Tooltip.Portal>
 		</Tooltip.Root>
@@ -320,10 +320,10 @@
 <Tabs.Root bind:value={activeTab}>
 	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
 		<Tabs.Trigger value="all" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('dlq.all', undefined, $translations)} ({entries.length})
+			{t('dlq.all')} ({entries.length})
 		</Tabs.Trigger>
 		<Tabs.Trigger value="by-type" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('dlq.by_type', undefined, $translations)} ({byTaskType.length})
+			{t('dlq.by_type')} ({byTaskType.length})
 		</Tabs.Trigger>
 	</Tabs.List>
 
@@ -340,7 +340,7 @@
 			{rowActions}
 			{bulkActions}
 			{loading}
-			emptyMessage={t('dlq.no_entries', undefined, $translations)}
+			emptyMessage={t('dlq.no_entries')}
 			getRowId={(row) => (row as Record<string, unknown>).id as string}
 		/>
 	</Tabs.Content>
@@ -360,7 +360,7 @@
 							<div class="flex items-center justify-between px-4 py-3">
 								<div class="min-w-0 flex-1">
 									<p class="text-destructive truncate text-xs">{entry.error_message}</p>
-									<p class="text-muted-foreground text-[10px]">{t('dlq.retries', undefined, $translations)}: {entry.retry_count} | {formatDate(entry.failed_at)}</p>
+									<p class="text-muted-foreground text-[10px]">{t('dlq.retries')}: {entry.retry_count} | {formatDate(entry.failed_at)}</p>
 								</div>
 								<div class="ml-4 flex items-center gap-1">
 									<button
@@ -390,9 +390,9 @@
 {#if confirmRetryEntry}
 	<ConfirmModal
 		bind:open={confirmRetryOpen}
-		title={t('dlq.retry_title', undefined, $translations)}
-		consequence={t('dlq.retry_confirm', undefined, $translations).replace('{task_type}', confirmRetryEntry.task_type)}
-		confirmText={t('dlq.retry_confirm_text', undefined, $translations)}
+		title={t('dlq.retry_title')}
+		consequence={t('dlq.retry_confirm').replace('{task_type}', confirmRetryEntry.task_type)}
+		confirmText={t('dlq.retry_confirm_text')}
 		onConfirm={() => { if (confirmRetryEntry) retryTask(confirmRetryEntry.task_id); }}
 		onCancel={() => { confirmRetryEntry = null; }}
 	/>
@@ -401,9 +401,9 @@
 {#if confirmDiscardEntry}
 	<ConfirmModal
 		bind:open={confirmDiscardOpen}
-		title={t('dlq.discard_title', undefined, $translations)}
-		consequence={t('dlq.discard_confirm', undefined, $translations).replace('{task_type}', confirmDiscardEntry.task_type).replace('{task_id}', confirmDiscardEntry.task_id)}
-		confirmText={t('dlq.discard_confirm_text', undefined, $translations)}
+		title={t('dlq.discard_title')}
+		consequence={t('dlq.discard_confirm').replace('{task_type}', confirmDiscardEntry.task_type).replace('{task_id}', confirmDiscardEntry.task_id)}
+		confirmText={t('dlq.discard_confirm_text')}
 		onConfirm={() => { if (confirmDiscardEntry) discardTask(confirmDiscardEntry.task_id); }}
 		onCancel={() => { confirmDiscardEntry = null; }}
 	/>
@@ -412,9 +412,9 @@
 {#if confirmDiscardAll}
 	<ConfirmModal
 		bind:open={confirmDiscardAllOpen}
-		title={t('dlq.discard_all_title', undefined, $translations)}
-		consequence={t('dlq.discard_all_confirm', undefined, $translations).replace('{count}', String(entries.length))}
-		confirmText={t('dlq.discard_all_confirm_text', undefined, $translations)}
+		title={t('dlq.discard_all_title')}
+		consequence={t('dlq.discard_all_confirm').replace('{count}', String(entries.length))}
+		confirmText={t('dlq.discard_all_confirm_text')}
 		onConfirm={discardAll}
 		onCancel={() => { confirmDiscardAll = false; }}
 	/>
@@ -423,9 +423,9 @@
 {#if confirmBulkDiscardOpen}
 	<ConfirmModal
 		bind:open={confirmBulkDiscardOpen}
-		title={t('dlq.discard_selected_title', undefined, $translations)}
-		consequence={t('dlq.discard_selected_confirm', undefined, $translations).replace('{count}', String(pendingBulkIds.length))}
-		confirmText={t('dlq.discard_selected_confirm_text', undefined, $translations)}
+		title={t('dlq.discard_selected_title')}
+		consequence={t('dlq.discard_selected_confirm').replace('{count}', String(pendingBulkIds.length))}
+		confirmText={t('dlq.discard_selected_confirm_text')}
 		onConfirm={handleBulkDiscardConfirm}
 		onCancel={() => { confirmBulkDiscardOpen = false; pendingBulkIds = []; }}
 	/>

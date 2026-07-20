@@ -637,7 +637,7 @@ func (q *Queries) GetTOTPCredentials(ctx context.Context, arg GetTOTPCredentials
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, tenant_id, email, password_hash, username, profile_type, status
+SELECT id, tenant_id, email, password_hash, username, profile_type, status, email_verified_at
 FROM users
 WHERE tenant_id = $1 AND email = $2
 LIMIT 1
@@ -649,13 +649,14 @@ type GetUserByEmailParams struct {
 }
 
 type GetUserByEmailRow struct {
-	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	Email        string      `json:"email"`
-	PasswordHash *string     `json:"password_hash"`
-	Username     string      `json:"username"`
-	ProfileType  string      `json:"profile_type"`
-	Status       string      `json:"status"`
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Email           string             `json:"email"`
+	PasswordHash    *string            `json:"password_hash"`
+	Username        string             `json:"username"`
+	ProfileType     string             `json:"profile_type"`
+	Status          string             `json:"status"`
+	EmailVerifiedAt pgtype.Timestamptz `json:"email_verified_at"`
 }
 
 func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) (GetUserByEmailRow, error) {
@@ -669,6 +670,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) 
 		&i.Username,
 		&i.ProfileType,
 		&i.Status,
+		&i.EmailVerifiedAt,
 	)
 	return i, err
 }

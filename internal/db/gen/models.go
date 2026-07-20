@@ -702,6 +702,8 @@ type DmMessage struct {
 	Body           string             `json:"body"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	ReadAt         pgtype.Timestamptz `json:"read_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	EditedAt       pgtype.Timestamptz `json:"edited_at"`
 }
 
 type DmMessageRequest struct {
@@ -2219,6 +2221,8 @@ type WalletSetting struct {
 	PointsToCreditsRate *int32             `json:"points_to_credits_rate"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	DailyEarningCap     int32              `json:"daily_earning_cap"`
+	EnableEarning       bool               `json:"enable_earning"`
 }
 
 type WebhookDelivery struct {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import clsx from 'clsx';
 
 	let { src, alt = '', size = 'md', class: className = '' } = $props();

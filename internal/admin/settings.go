@@ -106,6 +106,8 @@ var defaultSettings = map[string]SettingCategory{
 		Settings: []SettingDef{
 			{Key: "smtp_host", Label: "SMTP Host", Type: "text"},
 			{Key: "smtp_port", Label: "SMTP Port", Type: "number"},
+			{Key: "smtp_username", Label: "SMTP Username", Type: "text"},
+			{Key: "smtp_password", Label: "SMTP Password", Type: "text", Masked: true},
 			{Key: "from_address", Label: "From Address", Type: "text"},
 		},
 	},

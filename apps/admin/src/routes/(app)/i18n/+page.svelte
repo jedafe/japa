@@ -220,9 +220,8 @@
 	async function confirmDelete() {
 		if (!deletingTarget) return;
 		saving = true;
-		const res = await api(`/admin/i18n/strings/${deletingTarget.id}`, {
-			method: 'DELETE',
-			body: { locale: selectedLocale }
+		const res = await api(`/admin/i18n/strings/${deletingTarget.id}?locale=${encodeURIComponent(selectedLocale)}`, {
+			method: 'DELETE'
 		});
 		if (res.ok) {
 			successMessage = 'Translation deleted';
@@ -349,7 +348,7 @@
 		</div>
 		<p class="text-xs text-muted">{t('app.i18n.add_language_note')}</p>
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => (createModalOpen = false)}>${t("common.cancel")}</Button>
+			<Button variant="outline" onclick={() => (createModalOpen = false)}>{t("common.cancel")}</Button>
 			<Button onclick={submitLanguage} disabled={creatingLocale || !form.code.trim() || !form.name.trim()}>
 				{creatingLocale ? t('common.saving') : t('app.i18n.create')}
 			</Button>
@@ -375,7 +374,7 @@
 				></textarea>
 			</div>
 			<div class="flex justify-end gap-3 pt-2">
-				<Button variant="outline" onclick={() => (editModalOpen = false)}>${t("common.cancel")}</Button>
+				<Button variant="outline" onclick={() => (editModalOpen = false)}>{t("common.cancel")}</Button>
 				<Button onclick={submitEditString} disabled={saving}>{saving ? t('common.saving') : t('common.save')}</Button>
 			</div>
 		</div>
@@ -389,7 +388,7 @@
 			{t('app.i18n.delete_confirm_body')}
 		</p>
 		<div class="flex justify-end gap-3">
-			<Button variant="outline" onclick={() => (deleteConfirmOpen = false)}>${t("common.cancel")}</Button>
+			<Button variant="outline" onclick={() => (deleteConfirmOpen = false)}>{t("common.cancel")}</Button>
 			<Button variant="destructive" onclick={confirmDelete} disabled={saving}>
 				{saving ? t('common.saving') : t('common.delete')}
 			</Button>
@@ -421,7 +420,7 @@
 			</div>
 		</div>
 		<div class="mt-6 flex justify-end">
-			<Button variant="outline" onclick={() => (showViewModal = false)}>${t('common.close', 'Close')}</Button>
+			<Button variant="outline" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</Button>
 		</div>
 	{:else if viewString}
 		<div class="space-y-4">
@@ -435,7 +434,7 @@
 			</div>
 		</div>
 		<div class="mt-6 flex justify-end">
-			<Button variant="outline" onclick={() => (showViewModal = false)}>${t('common.close', 'Close')}</Button>
+			<Button variant="outline" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</Button>
 		</div>
 	{/if}
 </Modal>

@@ -3,7 +3,7 @@
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import { PieChart, BarChart } from 'layerchart';
 	import { RotateCw } from 'lucide-svelte';
 

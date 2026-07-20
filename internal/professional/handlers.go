@@ -1526,7 +1526,7 @@ func (h *Handlers) UnverifyProfile(w http.ResponseWriter, r *http.Request) {
 
 // ListProfileContent handles GET /profiles/:id/content (P5.6).
 func (h *Handlers) ListProfileContent(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1537,10 +1537,17 @@ func (h *Handlers) ListProfileContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = profileID
+	limit := int32(parsePageSize(r))
+	offset := int32(parsePageSizeOffset(r))
 
-	// Content is linked via author_id — return empty for now
-	writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+	content, err := h.Service.ListProfileContent(r.Context(), tenantID, profileID, limit, offset)
+	if err != nil {
+		slog.Error("professional: list profile content", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list profile content")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
 // InviteMember handles POST /profiles/:id/members/invite (P5.6).

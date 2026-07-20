@@ -4,7 +4,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { api } from '$lib/api';
 	import type { DbHealth } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n';
+	import { t } from '$lib/stores/i18n.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Tabs, Tooltip } from 'bits-ui';
 	import {

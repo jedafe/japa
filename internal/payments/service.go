@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // CreatePaymentInput holds parameters for creating a new payment.
@@ -25,7 +26,7 @@ type CreatePaymentInput struct {
 	DiscountCode string
 }
 
-// CreatePayment creates a new payment record and initiates the payment process.
+// CreatePayment creates a new payment record and initiates the payment with the provider.
 func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput) (gen.Payment, error) {
 	if input.Provider == "" {
 		return gen.Payment{}, errors.New("provider is required")
@@ -44,6 +45,36 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		currency = "NGN"
 	}
 
+	// Credit payments are synchronous wallet debits — no external provider call.
+	if input.Provider == ProviderCredit {
+		return s.payWithCreditInternal(ctx, tenantID, userID, input, currency)
+	}
+
+	// Initiate payment with external provider (Paystack, Stripe, NOWPayments).
+	provider := s.providers[input.Provider]
+	var providerRef, checkoutURL string
+	if provider != nil {
+		resp, err := provider.InitiatePayment(ctx, PaymentRequest{
+			TenantID:    tenantID.String(),
+			UserID:      userID.String(),
+			Amount:      input.Amount,
+			Currency:    currency,
+			PurposeType: input.PurposeType,
+			PurposeID:   input.PurposeID,
+			Metadata:    input.Metadata,
+		})
+		if err != nil {
+			return gen.Payment{}, fmt.Errorf("initiating payment with %s: %w", input.Provider, err)
+		}
+		providerRef = resp.Reference
+		checkoutURL = resp.CheckoutURL
+	}
+
+	return s.createPaymentRow(ctx, tenantID, userID, input, currency, providerRef, checkoutURL)
+}
+
+// createPaymentRow inserts the payment record after validation and discount calculation.
+func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput, currency, providerRef, checkoutURL string) (gen.Payment, error) {
 	var purposeID pgtype.UUID
 	if input.PurposeID != "" {
 		if err := purposeID.Scan(input.PurposeID); err != nil {
@@ -52,31 +83,23 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 	}
 
 	var discountCodeID pgtype.UUID
-
 	var discountAmount int64
 
-	// Apply discount code if provided
 	if input.DiscountCode != "" {
 		code, err := s.store.getDiscountCodeByCode(ctx, tenantID, input.DiscountCode)
 		if err != nil {
 			return gen.Payment{}, fmt.Errorf("invalid discount code: %w", err)
 		}
-
-		// Validate discount code
 		if err := s.validateDiscountCode(ctx, code, userID); err != nil {
 			return gen.Payment{}, err
 		}
-
 		discountCodeID = code.ID
 		discountAmount = s.calculateDiscount(code, input.Amount)
 	}
 
-	// Convert metadata to JSON
 	var metadata []byte
-
 	if input.Metadata != nil {
 		var err error
-
 		metadata, err = json.Marshal(input.Metadata)
 		if err != nil {
 			return gen.Payment{}, fmt.Errorf("marshaling metadata: %w", err)
@@ -85,10 +108,16 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		metadata = []byte("{}")
 	}
 
+	var ref *string
+	if providerRef != "" {
+		ref = &providerRef
+	}
+
 	payment, err := s.store.createPayment(ctx, gen.CreatePaymentParams{
 		TenantID:       tenantID,
 		UserID:         userID,
 		Provider:       input.Provider,
+		ProviderRef:    ref,
 		PurposeType:    input.PurposeType,
 		PurposeID:      purposeID,
 		Amount:         input.Amount,
@@ -102,7 +131,26 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		return gen.Payment{}, err
 	}
 
+	_ = checkoutURL
 	return payment, nil
+}
+
+// payWithCreditInternal handles credit wallet payments.
+func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput, currency string) (gen.Payment, error) {
+	if s.wallet == nil {
+		return gen.Payment{}, errors.New("wallet service not configured")
+	}
+	creditInput := CreditSpendInput{
+		Amount:      input.Amount,
+		Source:      "payment",
+		Reference:   fmt.Sprintf("payment:%s:%s", input.PurposeType, input.PurposeID),
+		PurposeType: input.PurposeType,
+		PurposeID:   input.PurposeID,
+	}
+	if _, err := s.wallet.SpendCredits(ctx, tenantID, userID, creditInput); err != nil {
+		return gen.Payment{}, fmt.Errorf("%w: %w", ErrInsufficientCredit, err)
+	}
+	return s.createPaymentRow(ctx, tenantID, userID, input, currency, "", "")
 }
 
 // GetPayment retrieves a payment by ID.
@@ -162,11 +210,11 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 		// Return the error so the provider receives a 5xx and retries.
 		// The event is already recorded in the DB; on retry the idempotency
 		// check sees it as processed and returns 200.
-		if err := s.enqueuer.Enqueue("payment:process_webhook", payload); err != nil {
+		if err := s.enqueuer.Enqueue(worker.TypePaymentWebhookProcess, payload); err != nil {
 			slog.Error("payments: failed to enqueue webhook processing",
 				"event_id", event.EventID, "provider", provider, "error", err)
-			errpkg.CaptureException(fmt.Errorf("enqueue payment:process_webhook (event %s): %w", event.EventID, err))
-			return fmt.Errorf("enqueue payment:process_webhook (event %s): %w", event.EventID, err)
+			errpkg.CaptureException(fmt.Errorf("enqueue %s (event %s): %w", worker.TypePaymentWebhookProcess, event.EventID, err))
+			return fmt.Errorf("enqueue %s (event %s): %w", worker.TypePaymentWebhookProcess, event.EventID, err)
 		}
 	}
 

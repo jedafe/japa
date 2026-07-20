@@ -536,6 +536,16 @@ func (q *Queries) SoftDeleteComment(ctx context.Context, arg SoftDeleteCommentPa
 	return err
 }
 
+const softDeleteCommentByID = `-- name: SoftDeleteCommentByID :exec
+UPDATE comments SET deleted_at = now(), updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) SoftDeleteCommentByID(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteCommentByID, id)
+	return err
+}
+
 const unpinComment = `-- name: UnpinComment :exec
 UPDATE comments SET is_pinned = false, updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL

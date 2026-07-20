@@ -380,12 +380,17 @@
 		{#if selectedMenu && (selectedMenu.items ?? []).length > 0}
 			<div>
 				<label for="item-parent" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("menus.parent", "Parent")}</label>
-				<select id="item-parent" bind:value={itemParent} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">
-					<option value="">{t("menus.no_parent", "No parent")}</option>
-					{#each (selectedMenu.items ?? []).filter((i) => !editingItem || i.id !== editingItem.id) as parentItem}
-						<option value={parentItem.id}>{parentItem.label}</option>
-					{/each}
-				</select>
+				<Select
+					options={[
+						{ value: "", label: t("menus.no_parent", "No parent") },
+						...(selectedMenu?.items ?? []).filter((i) => !editingItem || i.id !== editingItem.id).map((item) => ({
+							value: item.id,
+							label: item.label
+						}))
+					]}
+					value={itemParent}
+					onchange={(val) => (itemParent = val)}
+				/>
 			</div>
 		{/if}
 		<div class="flex items-center gap-2">

@@ -11,6 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const approveQuarantinedMedia = `-- name: ApproveQuarantinedMedia :exec
+UPDATE media
+SET quarantine_reason = NULL,
+    quarantined_at = NULL,
+    reviewed_by = $1,
+    reviewed_at = now(),
+    confirmed = true
+WHERE id = $2 AND tenant_id = $3 AND quarantine_reason IS NOT NULL AND deleted_at IS NULL
+`
+
+type ApproveQuarantinedMediaParams struct {
+	ReviewedBy pgtype.UUID `json:"reviewed_by"`
+	ID         pgtype.UUID `json:"id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) ApproveQuarantinedMedia(ctx context.Context, arg ApproveQuarantinedMediaParams) error {
+	_, err := q.db.Exec(ctx, approveQuarantinedMedia, arg.ReviewedBy, arg.ID, arg.TenantID)
+	return err
+}
+
 const bulkSoftDeleteMedia = `-- name: BulkSoftDeleteMedia :exec
 
 UPDATE media SET deleted_at = now()
@@ -382,6 +403,145 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 		return nil, err
 	}
 	return items, nil
+}
+
+const listQuarantinedMedia = `-- name: ListQuarantinedMedia :many
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
+       file_size_bytes, width_px, height_px, duration_secs, storage_path,
+       storage_bucket, alt_text, caption, confirmed, deleted_at,
+       quarantine_reason, quarantined_at, reviewed_by, reviewed_at,
+       created_at
+FROM media
+WHERE tenant_id = $1
+  AND quarantine_reason IS NOT NULL
+  AND deleted_at IS NULL
+ORDER BY quarantined_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListQuarantinedMediaParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListQuarantinedMediaRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	UploaderUserID   pgtype.UUID        `json:"uploader_user_id"`
+	OriginalFilename string             `json:"original_filename"`
+	MimeType         string             `json:"mime_type"`
+	FileSizeBytes    int64              `json:"file_size_bytes"`
+	WidthPx          *int32             `json:"width_px"`
+	HeightPx         *int32             `json:"height_px"`
+	DurationSecs     pgtype.Numeric     `json:"duration_secs"`
+	StoragePath      string             `json:"storage_path"`
+	StorageBucket    string             `json:"storage_bucket"`
+	AltText          *string            `json:"alt_text"`
+	Caption          *string            `json:"caption"`
+	Confirmed        bool               `json:"confirmed"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	QuarantineReason *string            `json:"quarantine_reason"`
+	QuarantinedAt    pgtype.Timestamptz `json:"quarantined_at"`
+	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListQuarantinedMedia(ctx context.Context, arg ListQuarantinedMediaParams) ([]ListQuarantinedMediaRow, error) {
+	rows, err := q.db.Query(ctx, listQuarantinedMedia, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListQuarantinedMediaRow
+	for rows.Next() {
+		var i ListQuarantinedMediaRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UploaderUserID,
+			&i.OriginalFilename,
+			&i.MimeType,
+			&i.FileSizeBytes,
+			&i.WidthPx,
+			&i.HeightPx,
+			&i.DurationSecs,
+			&i.StoragePath,
+			&i.StorageBucket,
+			&i.AltText,
+			&i.Caption,
+			&i.Confirmed,
+			&i.DeletedAt,
+			&i.QuarantineReason,
+			&i.QuarantinedAt,
+			&i.ReviewedBy,
+			&i.ReviewedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const quarantineMediaByID = `-- name: QuarantineMediaByID :exec
+UPDATE media
+SET quarantine_reason = $1,
+    quarantined_at = now()
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+`
+
+type QuarantineMediaByIDParams struct {
+	Reason   *string     `json:"reason"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) QuarantineMediaByID(ctx context.Context, arg QuarantineMediaByIDParams) error {
+	_, err := q.db.Exec(ctx, quarantineMediaByID, arg.Reason, arg.ID, arg.TenantID)
+	return err
+}
+
+const rejectMediaByIDAndVirus = `-- name: RejectMediaByIDAndVirus :exec
+UPDATE media
+SET deleted_at = now(),
+    alt_text = COALESCE(alt_text, '') || ' [REJECTED: ' || $1 || ']'
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+`
+
+type RejectMediaByIDAndVirusParams struct {
+	VirusName *string     `json:"virus_name"`
+	ID        pgtype.UUID `json:"id"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) RejectMediaByIDAndVirus(ctx context.Context, arg RejectMediaByIDAndVirusParams) error {
+	_, err := q.db.Exec(ctx, rejectMediaByIDAndVirus, arg.VirusName, arg.ID, arg.TenantID)
+	return err
+}
+
+const rejectQuarantinedMedia = `-- name: RejectQuarantinedMedia :exec
+UPDATE media
+SET deleted_at = now(),
+    reviewed_by = $1,
+    reviewed_at = now()
+WHERE id = $2 AND tenant_id = $3 AND quarantine_reason IS NOT NULL AND deleted_at IS NULL
+`
+
+type RejectQuarantinedMediaParams struct {
+	ReviewedBy pgtype.UUID `json:"reviewed_by"`
+	ID         pgtype.UUID `json:"id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) RejectQuarantinedMedia(ctx context.Context, arg RejectQuarantinedMediaParams) error {
+	_, err := q.db.Exec(ctx, rejectQuarantinedMedia, arg.ReviewedBy, arg.ID, arg.TenantID)
+	return err
 }
 
 const searchMedia = `-- name: SearchMedia :many

@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Space hierarchy levels. Country is the root, state and city nest under
@@ -155,7 +156,7 @@ func (s *Service) EnqueueAutoPopulate(ctx context.Context, spaceID, tenantID pgt
 		"space_id":  spaceID.String(),
 		"tenant_id": tenantID.String(),
 	})
-	if err := s.enqueuer.Enqueue("space:auto_populate", payload); err != nil {
+	if err := s.enqueuer.Enqueue(worker.TypeSpaceAutoPopulate, payload); err != nil {
 		slog.Warn("spaces: failed to enqueue auto_populate", "space_id", spaceID.String(), "error", err)
 	}
 }

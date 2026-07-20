@@ -253,24 +253,9 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 				continue
 			}
 
-			if _, err := queries.UpdatePaymentStatus(ctx, gen.UpdatePaymentStatusParams{
-				Status:   payload.Status,
-				ID:       p.ID,
-				TenantID: tenantID,
-			}); err != nil {
-				slog.Error("task:payment:process_webhook: failed to update payment",
-					"payment_id", p.ID, "error", err)
-				continue
-			}
-
-			updated++
-
-			slog.Info("task:payment:process_webhook: payment updated",
-				"payment_id", p.ID, "status", payload.Status)
-
-			// Enqueue affiliate commission crediting on successful payment.
+			// Enqueue affiliate commission BEFORE marking payment as succeeded
+			// so a failed enqueue doesn't lose the commission (AUDIT-BE-006).
 			if payload.Status == "succeeded" && taskEnqueuer != nil {
-				// Resolve the user's active affiliate link at enqueue time.
 				var linkCode string
 				_ = dbPool.Reader.QueryRow(ctx, `
 					SELECT code FROM user_affiliate_links
@@ -287,8 +272,26 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 				if err := taskEnqueuer.Enqueue(TypeAffiliateCreditCommission, commissionPayload); err != nil {
 					slog.Error("task:payment:process_webhook: failed to enqueue affiliate commission",
 						"payment_id", p.ID, "error", err)
+					// Don't mark payment as succeeded if commission enqueue fails;
+					// the task will retry on the next Asynq attempt.
+					continue
 				}
 			}
+
+			if _, err := queries.UpdatePaymentStatus(ctx, gen.UpdatePaymentStatusParams{
+				Status:   payload.Status,
+				ID:       p.ID,
+				TenantID: tenantID,
+			}); err != nil {
+				slog.Error("task:payment:process_webhook: failed to update payment",
+					"payment_id", p.ID, "error", err)
+				continue
+			}
+
+			updated++
+
+			slog.Info("task:payment:process_webhook: payment updated",
+				"payment_id", p.ID, "status", payload.Status)
 		}
 	}
 
@@ -3110,34 +3113,24 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 		}
 
 	case "comment":
-		result, err := dbPool.Writer.Exec(ctx,
-			`UPDATE comments SET deleted_at = now()
-			 WHERE id = $1 AND deleted_at IS NULL`,
-			entityID)
-		if err != nil {
+		q := gen.New(dbPool.Writer)
+		if err := q.SoftDeleteCommentByID(ctx, entityID); err != nil {
 			slog.Error("task:moderation:auto_hide: failed to hide comment",
 				"comment_id", payload.EntityID, "error", err)
 			return err
 		}
-		if n := result.RowsAffected(); n > 0 {
-			slog.Info("task:moderation:auto_hide: comment hidden",
-				"comment_id", payload.EntityID, "report_count", reportCount)
-		}
+		slog.Info("task:moderation:auto_hide: comment hidden",
+			"comment_id", payload.EntityID, "report_count", reportCount)
 
 	case "message":
-		result, err := dbPool.Writer.Exec(ctx,
-			`UPDATE dm_messages SET deleted_at = now()
-			 WHERE id = $1 AND deleted_at IS NULL`,
-			entityID)
-		if err != nil {
+		q := gen.New(dbPool.Writer)
+		if err := q.SoftDeleteDMMessageByID(ctx, entityID); err != nil {
 			slog.Error("task:moderation:auto_hide: failed to hide message",
 				"message_id", payload.EntityID, "error", err)
 			return err
 		}
-		if n := result.RowsAffected(); n > 0 {
-			slog.Info("task:moderation:auto_hide: message hidden",
-				"message_id", payload.EntityID, "report_count", reportCount)
-		}
+		slog.Info("task:moderation:auto_hide: message hidden",
+			"message_id", payload.EntityID, "report_count", reportCount)
 
 	default:
 		// user/space reports require human review — log but don't auto-hide.

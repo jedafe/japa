@@ -474,6 +474,8 @@ func (s *Service) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (
 // UpdateWalletSettingsInput holds parameters for updating wallet settings.
 type UpdateWalletSettingsInput struct {
 	PointsToCreditsRate int32
+	DailyEarningCap     int32
+	EnableEarning       bool
 }
 
 // UpdateWalletSettings updates wallet settings for a tenant.
@@ -482,7 +484,7 @@ func (s *Service) UpdateWalletSettings(ctx context.Context, tenantID pgtype.UUID
 		return gen.WalletSetting{}, errors.New("points_to_credits_rate must be positive")
 	}
 
-	return s.store.upsertWalletSettings(ctx, tenantID, input.PointsToCreditsRate)
+	return s.store.upsertWalletSettings(ctx, tenantID, input.PointsToCreditsRate, input.DailyEarningCap, input.EnableEarning)
 }
 
 // ListActivityRules returns activity rules for a tenant.

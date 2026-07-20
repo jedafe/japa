@@ -657,7 +657,7 @@
 									</Label.Root>
 									{#if dirty}
 										<span class="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
-											unsaved
+											{t('settings.badge_dirty')}
 										</span>
 									{/if}
 								</div>
@@ -679,7 +679,7 @@
 										setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
 									<div class="flex items-center gap-2">
 										<span class="text-muted-foreground w-8 text-right text-xs">
-											{isTrue ? 'On' : 'Off'}
+											{isTrue ? t('settings.on') : t('settings.off')}
 										</span>
 										<Switch.Root
 											id="setting-{setting.key}"
@@ -703,7 +703,7 @@
 										}}
 									>
 										<Select.Trigger class={selectTriggerClasses} id="setting-{setting.key}">
-											<Select.Value placeholder="Select..." />
+											<Select.Value placeholder={t('settings.select_placeholder')} />
 											<ChevronDown class="text-muted-foreground size-3.5" />
 										</Select.Trigger>
 										<Select.Portal>
@@ -740,7 +740,7 @@
 											}
 										}}>
 											<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
-												<Select.Value placeholder="Add..." />
+												<Select.Value placeholder={t('settings.add_placeholder', 'Add...')} />
 												<ChevronDown class="text-muted-foreground size-3.5" />
 											</Select.Trigger>
 											<Select.Portal>
@@ -803,7 +803,7 @@
 											type="button"
 											class="text-muted-foreground hover:text-foreground rounded p-1 transition-colors"
 											onclick={() => toggleReveal(setting.key)}
-											aria-label={revealedKeys.has(setting.key) ? 'Hide value' : 'Reveal value'}
+											aria-label={revealedKeys.has(setting.key) ? t('settings.hide_value', 'Hide value') : t('settings.reveal_value', 'Reveal value')}
 										>
 											{revealedKeys.has(setting.key) ? '🙈' : '👁'}
 										</button>
@@ -841,12 +841,12 @@
 											sideOffset={4}
 											class="border-dark-10 bg-background shadow-popover z-50 w-[220px] rounded-xl border p-3 text-xs"
 										>
-											<p class="font-medium">Reset to default</p>
+											<p class="font-medium">{t('settings.reset_to_default')}</p>
 											<p class="text-muted-foreground mt-1">
-												Current: <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.value) : setting.value}</span>
+												{t('settings.current_label')} <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.value) : setting.value}</span>
 											</p>
 											<p class="text-muted-foreground">
-												Default: <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.default_value) : setting.default_value}</span>
+												{t('settings.default_label')} <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.default_value) : setting.default_value}</span>
 											</p>
 										</Tooltip.Content>
 									</Tooltip.Portal>
@@ -875,20 +875,20 @@
 										{formatNamespace(category)}
 									</h3>
 									<p class="text-muted-foreground text-[11px]">
-										{count} {count === 1 ? 'setting' : 'settings'}
+										{count} {count === 1 ? t('settings.setting_singular', 'setting') : t('settings.settings', 'settings')}
 									</p>
 								</div>
 							</div>
 							{#if hasDirtyItems}
 								<span class="bg-amber-500/10 text-amber-600 rounded-full px-2 py-0.5 text-[10px] font-medium">
-									{catSettings.filter((s) => isSettingDirty(s.key)).length} modified
+									{catSettings.filter((s) => isSettingDirty(s.key)).length} {t('settings.modified')}
 								</span>
 							{/if}
 							<button
 								class="text-muted-foreground hover:text-foreground text-xs font-medium transition-colors"
 								onclick={() => (activeCategory = category)}
 							>
-								View all →
+								{t('settings.view_all', 'View all')} →
 							</button>
 						</div>
 
@@ -905,7 +905,7 @@
 											</Label.Root>
 											{#if dirty}
 												<span class="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
-													unsaved
+													{t('settings.badge_dirty')}
 												</span>
 											{/if}
 										</div>
@@ -917,7 +917,7 @@
 										{#if componentType === 'switch'}
 											{@const isTrue = isBoolValue(setting.value) && setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
 											<div class="flex items-center gap-2">
-												<span class="text-muted-foreground w-8 text-right text-xs">{isTrue ? 'On' : 'Off'}</span>
+												<span class="text-muted-foreground w-8 text-right text-xs">{isTrue ? t('settings.on') : t('settings.off')}</span>
 												<Switch.Root
 													id="setting-{setting.key}"
 													checked={isTrue}
@@ -930,7 +930,7 @@
 										{:else if componentType === 'select'}
 											<Select.Root type="single" value={getSelectValue(getDisplayValue(setting))} onValueChange={(v) => { if (v !== undefined) updateSetting(setting.key, v); }}>
 												<Select.Trigger class={selectTriggerClasses} id="setting-{setting.key}">
-													<Select.Value placeholder="Select..." />
+													<Select.Value placeholder={t('settings.select_placeholder')} />
 													<ChevronDown class="text-muted-foreground size-3.5" />
 												</Select.Trigger>
 												<Select.Portal>
@@ -948,10 +948,76 @@
 													</Select.Content>
 												</Select.Portal>
 											</Select.Root>
+
+									{:else if componentType === 'multi-select'}
+										{@const selectedValues = getMultiSelectValues(getDisplayValue(setting))}
+										<div class="w-56">
+											<div class="mb-1 flex flex-wrap gap-1">
+												{#each selectedValues as val}
+													{@const optionLabel = (multiSelectOptions[setting.key] ?? []).find((o) => o.value === val)?.label ?? val}
+													<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+														{optionLabel}
+														<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, selectedValues.filter((v) => v !== val).join(','))}>×</button>
+													</span>
+												{/each}
+											</div>
+											<Select.Root type="single" value="" onValueChange={(v) => {
+												if (v && !selectedValues.includes(v)) {
+													updateSetting(setting.key, [...selectedValues, v].join(','));
+												}
+											}}>
+												<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
+													<Select.Value placeholder={t('settings.add_placeholder', 'Add...')} />
+													<ChevronDown class="text-muted-foreground size-3.5" />
+												</Select.Trigger>
+												<Select.Portal>
+													<Select.Content class={selectContentClasses}>
+														<Select.Viewport class="p-1">
+															{#each (multiSelectOptions[setting.key] ?? []).filter((o) => !selectedValues.includes(o.value)) as option}
+																<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
+																	{option.label}
+																</Select.Item>
+															{/each}
+														</Select.Viewport>
+													</Select.Content>
+												</Select.Portal>
+											</Select.Root>
+										</div>
+
+									{:else if componentType === 'textarea'}
+										<textarea
+											id="setting-{setting.key}"
+											rows={2}
+											value={getDisplayValue(setting)}
+											onchange={(e) => {
+												const target = e.currentTarget as HTMLTextAreaElement;
+												const val = target.value.trim();
+												if ((val === '' || val === '[]') && setting.value?.startsWith('[')) {
+													updateSetting(setting.key, '[]');
+												} else {
+													updateSetting(setting.key, val);
+												}
+											}}
+											class="{inputClasses} w-64 resize-y font-mono text-xs"
+										></textarea>
+
+									{:else if componentType === 'number'}
+										<input
+											id="setting-{setting.key}"
+											type="number"
+											value={getDisplayValue(setting)}
+											onchange={(e) => {
+												const target = e.currentTarget as HTMLInputElement;
+												updateSetting(setting.key, target.value);
+											}}
+											step={setting.type === 'float' ? '0.01' : '1'}
+											class="{inputClasses} w-28"
+										/>
+
 										{:else if isSensitiveKey(setting.key)}
 											<div class="flex items-center gap-1">
 												<input id="setting-{setting.key}" type={revealedKeys.has(setting.key) ? 'text' : 'password'} value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} class="{inputClasses} w-44 font-mono text-xs" />
-												<button type="button" class="text-muted-foreground hover:text-foreground rounded p-1 transition-colors" onclick={() => toggleReveal(setting.key)} aria-label={revealedKeys.has(setting.key) ? 'Hide' : 'Reveal'}>
+												<button type="button" class="text-muted-foreground hover:text-foreground rounded p-1 transition-colors" onclick={() => toggleReveal(setting.key)} aria-label={revealedKeys.has(setting.key) ? t('settings.hide_value', 'Hide') : t('settings.reveal_value', 'Reveal')}>
 													{revealedKeys.has(setting.key) ? '🙈' : '👁'}
 												</button>
 											</div>
@@ -966,9 +1032,9 @@
 											</Tooltip.Trigger>
 											<Tooltip.Portal>
 												<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 w-[220px] rounded-xl border p-3 text-xs">
-													<p class="font-medium">Reset to default</p>
-													<p class="text-muted-foreground mt-1">Current: <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.value) : setting.value}</span></p>
-													<p class="text-muted-foreground">Default: <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.default_value) : setting.default_value}</span></p>
+													<p class="font-medium">{t('settings.reset_to_default')}</p>
+													<p class="text-muted-foreground mt-1">{t('settings.current_label')} <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.value) : setting.value}</span></p>
+													<p class="text-muted-foreground">{t('settings.default_label')} <span class="font-medium">{isSensitiveKey(setting.key) ? getMaskedValue(setting.default_value) : setting.default_value}</span></p>
 												</Tooltip.Content>
 											</Tooltip.Portal>
 										</Tooltip.Root>
@@ -980,7 +1046,7 @@
 									class="text-accent-foreground hover:bg-muted/50 w-full px-5 py-2.5 text-left text-xs font-medium transition-colors"
 									onclick={() => (activeCategory = category)}
 								>
-									View all {catSettings.length} settings →
+									{t('settings.view_all_count', 'View all {count} settings').replace('{count}', String(catSettings.length))} →
 								</button>
 							{/if}
 						</div>

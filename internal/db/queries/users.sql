@@ -133,6 +133,11 @@ UPDATE users SET status = 'suspended', updated_at = now() WHERE id = $1 AND tena
 -- name: SoftDeleteUser :exec
 UPDATE users SET status = 'deleted', updated_at = now() WHERE id = $1 AND tenant_id = $2;
 
+-- name: GetUserStatus :one
+SELECT COALESCE(status, 'active') AS status
+FROM users
+WHERE id = $1;
+
 -- name: ListUserActivity :many
 -- Recent authored contents and comments merged into one feed, newest first
 -- (admin user-detail activity tab). Comment bodies are truncated so a long

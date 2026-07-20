@@ -349,6 +349,11 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if msg, ok := ValidOptionsShape(req.FieldType, req.Options); !ok {
+		writeError(w, http.StatusBadRequest, "invalid_options", msg)
+		return
+	}
+
 	if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && len(req.Options) == 0 {
 		writeError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
 		return
@@ -427,6 +432,11 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 
 	if !IsValidFieldType(req.FieldType) {
 		writeError(w, http.StatusBadRequest, "invalid_field_type", "Unsupported field type")
+		return
+	}
+
+	if msg, ok := ValidOptionsShape(req.FieldType, req.Options); !ok {
+		writeError(w, http.StatusBadRequest, "invalid_options", msg)
 		return
 	}
 
@@ -640,21 +650,54 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Fetch the field definition so we can validate the value column matches
+	// the field type (e.g., text fields must write to value_text, not value_number).
+	// Also used to validate platform_embed URLs against allowed platforms.
+	field, err := h.Service.GetField(r.Context(), fieldID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Validate the value was written to the correct column for this field type.
+	expectedCol, known := FieldTypeValueColumn(field.FieldType)
+	if known {
+		switch expectedCol {
+		case "value_text":
+			if req.ValueNumber != "" || req.ValueBool != nil || req.ValueDate != "" || req.ValueJson != nil {
+				writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
+				return
+			}
+		case "value_number":
+			if req.ValueText != nil || req.ValueBool != nil || req.ValueDate != "" || req.ValueJson != nil {
+				writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
+				return
+			}
+		case "value_bool":
+			if req.ValueText != nil || req.ValueNumber != "" || req.ValueDate != "" || req.ValueJson != nil {
+				writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
+				return
+			}
+		case "value_date":
+			if req.ValueText != nil || req.ValueNumber != "" || req.ValueBool != nil || req.ValueJson != nil {
+				writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
+				return
+			}
+		case "value_json":
+			if req.ValueText != nil || req.ValueNumber != "" || req.ValueBool != nil || req.ValueDate != "" {
+				writeError(w, http.StatusBadRequest, "invalid_value", fmt.Sprintf("Field type %q writes to %s — received a value for a different column", field.FieldType, expectedCol))
+				return
+			}
+		}
+	}
+
 	// Validate embed URLs before persisting so invalid links never reach the
 	// database. When no EmbedResolver is configured the check is skipped,
 	// allowing test setups that only exercise value storage.
-	if h.Embed != nil {
-		field, err := h.Service.GetField(r.Context(), fieldID, tenantID)
-		if err != nil {
-			handleServiceError(w, err)
+	if h.Embed != nil && field.FieldType == FieldTypePlatformEmbed && req.ValueText != nil && *req.ValueText != "" {
+		if _, err := h.Embed.Resolve(r.Context(), *req.ValueText, field.EmbedPlatforms); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_embed", "The provided URL is not a valid embed for this field")
 			return
-		}
-
-		if field.FieldType == FieldTypePlatformEmbed && req.ValueText != nil && *req.ValueText != "" {
-			if _, err := h.Embed.Resolve(r.Context(), *req.ValueText, field.EmbedPlatforms); err != nil {
-				writeError(w, http.StatusBadRequest, "invalid_embed", "The provided URL is not a valid embed for this field")
-				return
-			}
 		}
 	}
 
@@ -946,13 +989,28 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build field definitions, mapping the frontend's simple options []string
-	// to the JSONB format the custom_fields table expects.
+	// to the JSONB format the custom_fields table expects. Legacy frontend
+	// types "checkbox" and "radio" are mapped to the canonical backend types
+	// "boolean" and "select".
 	fieldDefs := make([]FormFieldDef, len(req.Fields))
 	for i, f := range req.Fields {
+		ft := f.Type
+		// Legacy mapping: checkbox → boolean, radio → select
+		if ft == "checkbox" {
+			ft = FieldTypeBoolean
+		} else if ft == "radio" {
+			ft = FieldTypeSelect
+		}
+
+		if !IsValidFieldType(ft) {
+			writeError(w, http.StatusBadRequest, "invalid_field_type", "Unsupported field type: "+f.Type)
+			return
+		}
+
 		fieldDefs[i] = FormFieldDef{
 			Label:     strings.TrimSpace(f.Label),
 			Key:       strings.ToLower(strings.ReplaceAll(strings.TrimSpace(f.Label), " ", "_")),
-			FieldType: f.Type,
+			FieldType: ft,
 			Required:  f.Required,
 			Position:  f.SortOrder,
 		}

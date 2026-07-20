@@ -33,3 +33,9 @@
 # permissions
 - Super admin groups should be granted the `*` wildcard permission rather than maintaining explicit permission key mappings. Confidence: 0.65
 
+# backend
+- When frontend has features the backend doesn't support yet (e.g., settings fields, wallet capabilities), wire up backend support rather than stripping the frontend. Confidence: 0.80
+
+# svelte
+- Use Svelte 5 $state runes instead of writable stores, even when it requires updating many files. Confidence: 0.70
+

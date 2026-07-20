@@ -92,7 +92,7 @@ func (q *Queries) GetConversationByID(ctx context.Context, arg GetConversationBy
 }
 
 const getConversationMessages = `-- name: GetConversationMessages :many
-SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, u.username AS sender_username, p.display_name AS sender_display_name
+SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, u.username AS sender_username, p.display_name AS sender_display_name
 FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = $1
@@ -115,6 +115,8 @@ type GetConversationMessagesRow struct {
 	Body              string             `json:"body"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	ReadAt            pgtype.Timestamptz `json:"read_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	EditedAt          pgtype.Timestamptz `json:"edited_at"`
 	SenderUsername    string             `json:"sender_username"`
 	SenderDisplayName *string            `json:"sender_display_name"`
 }
@@ -140,6 +142,8 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 			&i.Body,
 			&i.CreatedAt,
 			&i.ReadAt,
+			&i.DeletedAt,
+			&i.EditedAt,
 			&i.SenderUsername,
 			&i.SenderDisplayName,
 		); err != nil {
@@ -154,7 +158,7 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 }
 
 const getDMMessageByID = `-- name: GetDMMessageByID :one
-SELECT id, conversation_id, sender_id, body, created_at, read_at FROM dm_messages WHERE id = $1 AND conversation_id = $2
+SELECT id, conversation_id, sender_id, body, created_at, read_at, deleted_at, edited_at FROM dm_messages WHERE id = $1 AND conversation_id = $2
 `
 
 type GetDMMessageByIDParams struct {
@@ -172,6 +176,8 @@ func (q *Queries) GetDMMessageByID(ctx context.Context, arg GetDMMessageByIDPara
 		&i.Body,
 		&i.CreatedAt,
 		&i.ReadAt,
+		&i.DeletedAt,
+		&i.EditedAt,
 	)
 	return i, err
 }
@@ -401,6 +407,16 @@ type SoftDeleteDMMessageParams struct {
 
 func (q *Queries) SoftDeleteDMMessage(ctx context.Context, arg SoftDeleteDMMessageParams) error {
 	_, err := q.db.Exec(ctx, softDeleteDMMessage, arg.ID, arg.ConversationID, arg.SenderID)
+	return err
+}
+
+const softDeleteDMMessageByID = `-- name: SoftDeleteDMMessageByID :exec
+UPDATE dm_messages SET deleted_at = now(), body = ''
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) SoftDeleteDMMessageByID(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteDMMessageByID, id)
 	return err
 }
 

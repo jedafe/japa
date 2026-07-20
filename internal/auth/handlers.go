@@ -19,6 +19,7 @@ import (
 	"github.com/jedafe/japa/internal/email"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/csrf"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
@@ -28,6 +29,7 @@ import (
 type AuthHandlers struct { //nolint:revive // stuttering type name preserved for API compatibility
 	DB           Querier
 	Queries      *gen.Queries
+	Database     *db.DB         // Raw DB access for operations not yet in sqlc (e.g., backup code update)
 	KeyRotation  *KeyRotation
 	BruteForce   BruteForceStore
 	Policy       PasswordPolicy
@@ -61,13 +63,14 @@ type Querier interface {
 
 // User represents a user record from the database.
 type User struct {
-	ID           pgtype.UUID
-	TenantID     pgtype.UUID
-	Email        string
-	PasswordHash pgtype.Text
-	Username     string
-	ProfileType  string
-	Status       string
+	ID              pgtype.UUID
+	TenantID        pgtype.UUID
+	Email           string
+	PasswordHash    pgtype.Text
+	Username        string
+	ProfileType     string
+	Status          string
+	EmailVerifiedAt pgtype.Timestamptz
 }
 
 // RefreshToken represents a refresh token record.
@@ -256,8 +259,12 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 	bruteKey := LoginIdentifier(req.Email, ip)
 
-	// Check brute-force lockout
-	allowed, retryAfter := CheckLoginAttempt(r.Context(), h.BruteForce, bruteKey)
+	// Check brute-force lockout — read max attempts from tenant settings.
+	maxAttempts := DefaultMaxLoginAttempts
+	if h.Settings != nil {
+		maxAttempts = MaxLoginAttempts(r.Context(), h.Settings, tenant.ID)
+	}
+	allowed, retryAfter := CheckLoginAttempt(r.Context(), h.BruteForce, bruteKey, maxAttempts)
 	if !allowed {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed login attempts. Please try again later.")
@@ -301,9 +308,48 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check email verification requirement from system_settings.
+	if EmailVerifyRequired(r.Context(), h.Settings, tenant.ID) && !user.EmailVerifiedAt.Valid {
+		writeError(w, http.StatusForbidden, "email_not_verified", "Email verification is required before login")
+		return
+	}
+
 	// Reset brute-force counter on successful login
 	if err := ResetLoginAttempts(r.Context(), h.BruteForce, bruteKey); err != nil {
 		slog.Warn("reset login attempts", "error", err)
+	}
+
+	// Check if 2FA is enabled — if so, require TOTP challenge before
+	// issuing a full session (AUDIT-BE-001).
+	hasTOTP, err := h.Queries.CheckTOTPEnabled(r.Context(), gen.CheckTOTPEnabledParams{
+		TenantID: user.TenantID,
+		UserID:   user.ID,
+	})
+	if err != nil {
+		slog.Warn("check TOTP enabled", "error", err)
+		hasTOTP = false
+	}
+
+	if hasTOTP {
+		challengeToken, err := h.KeyRotation.MintTOTPChallengeToken(user.ID, user.TenantID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "token_error", "Failed to create challenge token")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": map[string]interface{}{
+				"totp_required":   true,
+				"challenge_token": challengeToken,
+				"user": map[string]interface{}{
+					"id":       user.ID.String(),
+					"email":    user.Email,
+					"username": user.Username,
+				},
+			},
+		})
+
+		return
 	}
 
 	accessToken, err := h.KeyRotation.MintAccessToken(user.ID, user.TenantID)
@@ -395,6 +441,223 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"access_token": accessToken,
+		},
+	})
+}
+
+// VerifyLoginChallenge handles POST /api/v1/auth/totp/verify-challenge.
+// Accepts a challenge token from Login (when totp_required=true) and a TOTP
+// code. On success, issues a full access+refresh token pair.
+func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ChallengeToken string `json:"challenge_token"`
+		Code           string `json:"code"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if req.ChallengeToken == "" || req.Code == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "challenge_token and code are required")
+		return
+	}
+
+	claims, err := h.KeyRotation.ValidateChallengeToken(req.ChallengeToken)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid or expired challenge token")
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(claims.UserID); err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
+		return
+	}
+
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(claims.TenantID); err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
+		return
+	}
+
+	req.Code = sanitizeCode(req.Code)
+	if req.Code == "" {
+		writeError(w, http.StatusBadRequest, "missing_code", "Verification code is required")
+		return
+	}
+
+	totpRecord, err := h.Queries.GetTOTPCredentials(r.Context(), gen.GetTOTPCredentialsParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil || !totpRecord.EnabledAt.Valid {
+		writeError(w, http.StatusBadRequest, "totp_error", "2FA not set up")
+		return
+	}
+
+	plaintext, err := decryptSecret(totpRecord.SecretEncrypted)
+	if err != nil {
+		slog.Error("decrypt TOTP secret", "error", err)
+		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to verify 2FA")
+		return
+	}
+
+	if !VerifyTOTP(plaintext, req.Code) {
+		writeError(w, http.StatusUnauthorized, "invalid_totp", "Invalid verification code")
+		return
+	}
+
+	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		return
+	}
+
+	refreshToken, err := generateRefreshToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		return
+	}
+
+	tokenHash := hashRefreshToken(refreshToken)
+	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, tenantID)
+	expiresAt := time.Now().Add(refreshTTL)
+
+	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
+		TenantID:  tenantID,
+		UserID:    userID,
+		TokenHash: tokenHash,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "jc_refresh",
+		Value:    refreshToken,
+		Path:     "/api/v1/auth",
+		Domain:   h.CookieDomain,
+		MaxAge:   int(refreshTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
+
+	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"access_token": accessToken,
+		},
+	})
+}
+
+// ConsumeBackupCode handles POST /api/v1/auth/totp/backup.
+// Accepts a challenge token and a one-time backup code. On success,
+// the backup code is consumed and a full session is issued.
+func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ChallengeToken string `json:"challenge_token"`
+		BackupCode     string `json:"backup_code"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if req.ChallengeToken == "" || req.BackupCode == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "challenge_token and backup_code are required")
+		return
+	}
+
+	claims, err := h.KeyRotation.ValidateChallengeToken(req.ChallengeToken)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid or expired challenge token")
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(claims.UserID); err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
+		return
+	}
+
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(claims.TenantID); err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
+		return
+	}
+
+	req.BackupCode = sanitizeCode(req.BackupCode)
+
+	backupRecord, err := h.Queries.GetTOTPCredentials(r.Context(), gen.GetTOTPCredentialsParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "no_backup_codes", "No backup codes found")
+		return
+	}
+
+	matched, remaining, err := consumeBackupCode(r.Context(), h.Database, &backupRecord, req.BackupCode, tenantID, userID)
+	if err != nil {
+		slog.Error("consume backup code", "error", err)
+		writeError(w, http.StatusInternalServerError, "backup_error", "Failed to verify backup code")
+		return
+	}
+
+	if !matched {
+		writeError(w, http.StatusUnauthorized, "invalid_backup", "Invalid backup code")
+		return
+	}
+
+	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		return
+	}
+
+	refreshToken, err := generateRefreshToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		return
+	}
+
+	tokenHash := hashRefreshToken(refreshToken)
+	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, tenantID)
+	expiresAt := time.Now().Add(refreshTTL)
+
+	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
+		TenantID:  tenantID,
+		UserID:    userID,
+		TokenHash: tokenHash,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "jc_refresh",
+		Value:    refreshToken,
+		Path:     "/api/v1/auth",
+		Domain:   h.CookieDomain,
+		MaxAge:   int(refreshTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
+
+	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"access_token":    accessToken,
+			"codes_remaining": remaining,
 		},
 	})
 }
