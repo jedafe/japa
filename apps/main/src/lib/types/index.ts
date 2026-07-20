@@ -117,6 +117,7 @@ export interface FeedItem {
 	content_type: ContentType;
 	author_id: string;
 	author_name?: string;
+	author_avatar_url?: string | null;
 	space_id?: string | null;
 	space_name?: string | null;
 	excerpt?: string;
@@ -124,4 +125,9 @@ export interface FeedItem {
 	view_count?: number;
 	comment_count?: number;
 	vote_score?: number;
+	velocity_score?: number;
+	bookmark_count?: number;
+	reading_time_minutes?: number;
+	cover_image_url?: string | null;
+	tags?: string[];
 }
