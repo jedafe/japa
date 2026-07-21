@@ -50,12 +50,13 @@ All endpoints confirmed live against the running backend (`:8080`) and/or the JE
 - Draft hydration: `GET /me/drafts`, `GET /content/{slug}` (via `?draft=<id>`).
 
 ### Supporting reads/writes
-- Type selector: `GET /content-types`.
+- Type selector: `GET /content-types` — **returns a static list of 7**: `discussion`, `blog_post`, `page`, `comparison`, `question`, `article`, `guide`. The composer offers **`blog_post` · `article` · `guide`** (standard form) + **`comparison`** (builder); it excludes `discussion`/`question` (composed elsewhere) and `page` (page builder).
+- Feature flags (to filter the selector): `GET /feature-flags` (`HandleGetFeatures`, non-admin read).
 - Space selector (required): `GET /me/spaces` (+ `GET /spaces/search`).
 - Tags (post-level, **deferred linkage**): `GET /tags`, `GET /suggestions/tags`, `POST /content/{id}/tags`, `DELETE /content/{id}/tags/{tagId}`.
 - Series (**deferred linkage**, standard form only): `GET /blog/series`, `POST /blog/series` `{title, slug, description, cover_image_id}`, `POST /blog/series/{id}/posts` `{content_id, position}`, `DELETE /blog/series/{id}/posts/{postId}`.
 - Media (cover + inline images, 2-step): `POST /media/upload` → `POST /media/confirm/{id}`.
-- Custom fields (Section 06): `GET /custom-field-groups`, `GET /custom-field-groups/{id}/fields`, `GET /custom-field-entity-types`, `GET /custom-field-values/{entity_type}/{entity_id}`, `PUT /custom-field-values`. In the standard create, values also ride inside `field_values`.
+- Custom fields (Section 06) — **RESOLVED: inline JSONB, not the normalized subsystem.** Content reads **and** writes custom-field values through the `content.field_values` JSONB bag (verified: `CreateContent` stores `field_values`; the read handler serializes `field_values json.RawMessage`). So the composer **assembles values into `field_values` and sends them inline with `POST /content`/`PATCH`** — custom fields are **atomic with the draft save**, *not* a deferred linkage. The normalized `PUT /custom-field-values` subsystem is **out of scope** for the composer. Field *definitions* to render come from `GET /custom-field-groups` (all tenant groups) filtered client-side to `entity_type === "content"`, then `GET /custom-field-groups/{id}` (returns group **+ fields** in one round trip). Field types to support: text, textarea, rich_text, number, currency, percentage, boolean, date, datetime, time, duration, select, multiselect, url, email, phone, color, rating, image_single, image_multi, media, platform_embed, reference. Content custom fields bind to a single entity type (`"content"`), so they are **shared across the standard types** (blog/article/guide) — they do not swap per `content_type`.
 - Trigger search backends: `GET /search?type=users&q=` (auth; `@`), `GET /search?type=content&q=` / `GET /search/autocomplete` (`[[`), `GET /tags?q=` / `GET /suggestions/tags` (`#`). `/` is local.
 
 ---
@@ -78,12 +79,14 @@ contentType → {
   update:  (id, patch) => Promise<void>,     // PATCH /content/{id} | PATCH /comparisons/{id}
   publish: (id) => Promise<void>,            // POST /content/{id}/publish (+ schedule)
   supportsSeries: boolean,        // standard/blog-family only
-  customFieldEntityType: string,  // which custom-field groups to load
+  customFieldEntityType: 'content',  // always "content" for standard types
+  featureFlag: string | null,     // 'feature.comparison' for comparison; null for content types
 }
 ```
 
-- **Blog + every CPT** resolve to `formKind:'standard'` → `PostEditor` → `POST /content`. Only `content_type` + which custom-field groups load differ between them.
-- **Comparisons** resolve to `formKind:'comparison'` → `ComparisonBuilder` → `POST /comparisons` + sub-resources.
+- **Blog + every CPT** (`blog_post`, `article`, `guide`) resolve to `formKind:'standard'` → `PostEditor` → `POST /content`; they differ only by `content_type`. Content custom fields are entity-scoped (`"content"`), so the same field groups apply to all three — they do not swap per type.
+- **Comparisons** resolve to `formKind:'comparison'` → `ComparisonBuilder` → `POST /comparisons` + sub-resources; `featureFlag:'feature.comparison'` (hard-gated endpoint).
+- **Feature-flag filtering:** the type selector is populated by intersecting `GET /content-types` with `GET /feature-flags`. `comparison` is hidden unless `feature.comparison` is on (its endpoint 403s otherwise); `blog_post` is hidden unless `feature.blog` is on (respecting intent — `POST /content` itself is ungated).
 - Adding a future type = one registry entry, no shell surgery.
 
 ### File structure
@@ -142,7 +145,7 @@ lib/api/create.ts            typed client wrappers for create/patch/publish/uplo
               ├─ ScheduleField → publish_at
               ├─ CanonicalField → canonical_url
               ├─ SeriesSelector (standard form only)
-              ├─ CustomFieldGroup[] per content_type → field_values
+              ├─ CustomFieldGroup[] (entity_type="content", shared across types) → field_values (inline)
               └─ SeoFields (meta title/desc, OG image, index toggle)
 ```
 
@@ -151,7 +154,7 @@ lib/api/create.ts            typed client wrappers for create/patch/publish/uplo
 ## 5. Data Flow & State Machine
 
 ### Load (`+page.server.ts`, SSR, each degrading gracefully)
-Parallel: `GET /content-types` · `GET /me/spaces` · `GET /custom-field-groups` (+ entity-types) · `GET /blog/series` · `?draft=<id>` hydration · CSRF/session from layout data.
+Parallel: `GET /content-types` **∩ `GET /feature-flags`** (→ the filtered type selector) · `GET /me/spaces` · `GET /custom-field-groups` (filtered to `entity_type==="content"`) · `GET /blog/series` · `?draft=<id>` hydration · CSRF/session from layout data.
 
 ### Composer state machine (`useComposerState.svelte.ts`)
 ```
@@ -171,6 +174,8 @@ saved ──Publish (valid)──► POST /content/{id}/publish  ─► publishe
 Two things need a `content_id` that may not exist yet — **tags** (`POST /content/{id}/tags`) and **series** (`POST /blog/series/{id}/posts`). One queue serves both:
 - chosen while `pristine` → held pending → flushed immediately after `creating` resolves;
 - changed while `saved` → reconciled at once (diff add/remove).
+
+**Custom fields are NOT in this queue.** They serialize into the `field_values` JSONB and ride inside the atomic `POST /content`/`PATCH` — so they need no `content_id` and cannot get out of sync with the draft. Only tags and series (which have no create-payload field) are deferred.
 
 ### Comparisons
 Save granularly: `POST /comparisons` mints the shell; title/desc autosave via `PATCH /comparisons/{id}`; items/dimensions/values persist through their own mutations as the grid is edited (no single-blob PATCH).
@@ -249,8 +254,13 @@ All five frontend suites are green as of the last baseline; any failure introduc
 
 ---
 
-## 10. Risks & Open Questions
-- **Comparison editor is a mini-app.** Its granular sub-resource saving is the largest single-component risk; if it threatens the big-bang timeline, it is the natural candidate to land last within the same push.
-- **Exact `field_values` shape** for custom fields (`GET /custom-field-groups/{id}/fields` field schema → how values serialize into `field_values` vs `PUT /custom-field-values`) to be pinned precisely during planning by reading the content service + custom-field handlers.
-- **`content_type` enum values** (`blog_post`, CPT slugs from `GET /content-types`) to be confirmed from the live `content-types` response during planning.
-- **Feature-flag gating:** `/blog` and `/comparisons` groups are feature-flag-gated (`feature.blog`, comparisons flag). `POST /content` with `content_type:"blog_post"` should be verified not to bypass an intended gate; if the blog flag is off, the blog type should be hidden from the selector.
+## 10. Resolved Contract Decisions & Remaining Risks
+
+### Resolved (verified against backend source, 2026-07-21)
+- **`field_values` shape → inline JSONB, atomic.** Content reads and writes custom-field values via the `content.field_values` JSONB column (not the normalized `PUT /custom-field-values` subsystem, which the composer does **not** use). Values assemble into `field_values` and ride inside `POST /content`/`PATCH`. Field *definitions* come from `GET /custom-field-groups` filtered to `entity_type==="content"` → `GET /custom-field-groups/{id}` (group + fields in one trip). Entity types available: `user_profile, content, space, organization, tag, ticket_type, form`. Because content fields bind to the single `"content"` entity type, they are shared across blog/article/guide (no per-type swap).
+- **`content_type` enum → static 7 from `GET /content-types`:** `discussion, blog_post, page, comparison, question, article, guide`. Composer offers `blog_post/article/guide` (standard) + `comparison` (builder). Constants confirmed: `TypeBlogPost="blog_post"`, `TypeComparison="comparison"`, `StatusDraft="draft"`, `VisibilityPublic="public"`.
+- **Feature-flag gating → selector is flag-aware.** `POST /content` is ungated; `POST /blog` is gated by `feature.blog`; `POST /comparisons` is gated by `feature.comparison`. The composer never uses `POST /blog`, so blog works via ungated `POST /content` — but the selector still **hides `blog_post` when `feature.blog` is off** (respecting intent) and **hides `comparison` when `feature.comparison` is off** (its endpoint hard-403s). Flags read via `GET /feature-flags`.
+
+### Remaining risks
+- **Comparison editor is a mini-app.** Its granular sub-resource saving (`/items`, `/dimensions`, `/values`, reorder) is the largest single-component risk; if it threatens the big-bang timeline, it is the natural candidate to land last within the same push.
+- **`custom_field_groups`/`fields` exact JSON field names** are sqlc-generated rows; the plan should confirm the precise property names (e.g. `field_type`, `is_required`, `options`) when wiring `CustomFieldGroup` rendering — a read-only lookup, no design impact.
