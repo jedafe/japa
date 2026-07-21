@@ -97,7 +97,7 @@ func TestSettingsCacheInvalidation(t *testing.T) {
 	var tid pgtype.UUID
 	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
 
-	s.cache[tid.String()+":test_key"] = cachedSetting{value: `true`}
+	s.cache[tid.String()+":test_key"] = cachedSetting{Value: `true`}
 	s.InvalidateSettings(context.Background(), tid)
 	if _, ok := s.cache[tid.String()+":test_key"]; ok {
 		t.Error("invalidate should have removed the cached entry")
