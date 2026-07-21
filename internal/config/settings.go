@@ -27,8 +27,8 @@ type Settings struct {
 }
 
 type cachedSetting struct {
-	value     string
-	createdAt time.Time
+	Value     string    `json:"value"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func NewSettings(database *db.DB, vkClient valkeycompat.Cmdable) *Settings {
@@ -45,9 +45,9 @@ func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key str
 	cacheKey := tenantID.String() + ":" + key
 
 	s.mu.RLock()
-	if cached, ok := s.cache[cacheKey]; ok && time.Since(cached.createdAt) < settingsCacheTTL {
+	if cached, ok := s.cache[cacheKey]; ok && time.Since(cached.CreatedAt) < settingsCacheTTL {
 		s.mu.RUnlock()
-		return cached.value, nil
+		return cached.Value, nil
 	}
 	s.mu.RUnlock()
 
@@ -59,7 +59,7 @@ func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key str
 				s.mu.Lock()
 				s.cache[cacheKey] = entry
 				s.mu.Unlock()
-				return entry.value, nil
+				return entry.Value, nil
 			}
 		}
 	}
@@ -74,7 +74,7 @@ func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key str
 		return "", fmt.Errorf("setting %q not found: %w", key, err)
 	}
 
-	entry := cachedSetting{value: value, createdAt: time.Now()}
+	entry := cachedSetting{Value: value, CreatedAt: time.Now()}
 	s.mu.Lock()
 	s.cache[cacheKey] = entry
 	s.mu.Unlock()
@@ -230,7 +230,7 @@ func (s *Settings) cleanupLoop(maxAge time.Duration) {
 		now := time.Now()
 		s.mu.Lock()
 		for key, entry := range s.cache {
-			if now.Sub(entry.createdAt) > settingsCacheTTL {
+			if now.Sub(entry.CreatedAt) > settingsCacheTTL {
 				delete(s.cache, key)
 			}
 		}
