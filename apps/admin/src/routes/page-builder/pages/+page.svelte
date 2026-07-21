@@ -4,12 +4,11 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { DataTable } from '$lib/components/ui/data-table';
 
-	// RBAC: mutations require pages.manage; publishing additionally requires pages.publish
 	const canManagePages = $derived(hasPermission('pages.manage'));
 	const canPublishPages = $derived(hasPermission('pages.publish'));
 
-	// Delete confirmation
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<Page | null>(null);
 
@@ -26,8 +25,7 @@
 	let loading = $state(true);
 	let error = $state('');
 
-	// Search term wired into the pages load
-	let searchTerm = $state('');
+	let searchQuery = $state('');
 	let showCreateModal = $state(false);
 	let newPage = $state({ title: '', slug: '' });
 	let creating = $state(false);
@@ -41,12 +39,31 @@
 	let seoIssues = $state<string[]>([]);
 	let seoLoading = $state(false);
 
-	// Debounced search handler that refetches the pages list
-	let searchTimer: ReturnType<typeof setTimeout> | undefined;
-	function onSearchInput(e: Event) {
-		searchTerm = (e.currentTarget as HTMLInputElement).value;
-		if (searchTimer) clearTimeout(searchTimer);
-		searchTimer = setTimeout(() => load(), 300);
+	const columns = [
+		{ key: 'title', label: t('page_builder.title'), sortable: true },
+		{ key: 'slug', label: t('page_builder.slug'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">/${v}</span>` },
+		{ key: 'status', label: t('page_builder.status'), sortable: true, render: (v: string) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(v)}">${v}</span>` },
+		{ key: 'updated_at', label: t('page_builder.updated'), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
+		{ key: 'actions', label: t('common.actions'), class: 'w-64 text-right', component: PageActionsCell }
+	];
+
+	function statusBadge(status: string) {
+		switch (status) {
+			case 'published': return 'bg-success/15 text-success dark:text-success';
+			case 'draft': return 'bg-muted/15 text-muted dark:text-muted';
+			case 'archived': return 'bg-warning/15 text-warning dark:text-warning';
+			default: return 'bg-muted/15 text-muted dark:text-muted';
+		}
+	}
+
+	function filteredPages(): Page[] {
+		const q = searchQuery.toLowerCase().trim();
+		if (!q) return pages;
+		return pages.filter(p =>
+			p.title.toLowerCase().includes(q) ||
+			p.slug.toLowerCase().includes(q) ||
+			p.status.toLowerCase().includes(q)
+		);
 	}
 
 	$effect(() => {
@@ -57,10 +74,7 @@
 		loading = true;
 		error = '';
 		try {
-			const params = new URLSearchParams();
-			if (searchTerm.trim()) params.set('q', searchTerm.trim());
-			const qs = params.toString();
-			const result = await api<Page[]>(`/admin/pages${qs ? `?${qs}` : ''}`);
+			const result = await api<Page[]>('/admin/pages');
 			if (result.ok) {
 				pages = result.data ?? [];
 			} else {
@@ -172,16 +186,35 @@
 			seoLoading = false;
 		}
 	}
-
-	function statusBadge(status: string) {
-		switch (status) {
-			case 'published': return 'bg-success/15 text-success dark:text-success';
-			case 'draft': return 'bg-muted/15 text-muted dark:text-muted';
-			case 'archived': return 'bg-warning/15 text-warning dark:text-warning';
-			default: return 'bg-muted/15 text-muted dark:text-muted';
-		}
-	}
 </script>
+
+{#snippet PageActionsCell(row: Page)}
+	<div class="flex items-center justify-end gap-2">
+		<Button variant="ghost" size="sm" onclick={() => validateSeo(row.id)}>
+			SEO
+		</Button>
+		{#if canManagePages}
+			<Button variant="ghost" size="sm" onclick={() => openSaveAsTemplate(row.id, row.title)}>
+				{t('page_builder.save_as_template')}
+			</Button>
+		{/if}
+		{#if row.status !== 'published' && canPublishPages}
+			<Button variant="ghost" size="sm" onclick={() => publishPage(row.id)} style="color: var(--color-success)">
+				{t('page_builder.publish')}
+			</Button>
+		{/if}
+		{#if row.status === 'published' && canManagePages}
+			<Button variant="ghost" size="sm" onclick={() => archivePage(row.id)} style="color: var(--color-warning)">
+				{t('page_builder.archive')}
+			</Button>
+		{/if}
+		{#if canManagePages}
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
+				{t('common.delete')}
+			</Button>
+		{/if}
+	</div>
+{/snippet}
 
 <svelte:head>
 	<title>{t('page_builder.pages_title')} — JapaConnect Admin</title>
@@ -193,15 +226,6 @@
 		<p class="text-sm" style="color: var(--color-muted)">{t('page_builder.pages_description')}</p>
 	</div>
 	<div class="flex items-center gap-2">
-		<!-- Debounced search input wired to the pages load -->
-		<input
-			type="search"
-			placeholder={t('common.search')}
-			oninput={onSearchInput}
-			aria-label={t('common.search')}
-			class="w-full max-w-xs rounded-lg border p-2 text-sm outline-none focus:ring-2"
-			style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
-		/>
 		{#if canManagePages}
 		<button
 			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
@@ -220,82 +244,16 @@
 	</div>
 {/if}
 
-{#if loading}
-	<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<div class="rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium">{t('page_builder.title')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('page_builder.slug')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('page_builder.status')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('page_builder.updated')}</th>
-					<th class="px-4 py-3 text-right font-medium">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each pages as page (page.id)}
-					<tr style="border-bottom: 1px solid var(--color-border)">
-						<td class="px-4 py-3 font-medium">{page.title}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">/{page.slug}</td>
-						<td class="px-4 py-3">
-							<span class="rounded-full px-2 py-0.5 text-xs font-medium {statusBadge(page.status)}">
-								{page.status}
-							</span>
-						</td>
-						<td class="px-4 py-3">{new Date(page.updated_at).toLocaleDateString()}</td>
-						<td class="px-4 py-3 text-right">
-							<div class="flex items-center justify-end gap-2">
-								<button
-									class="text-xs text-info hover:text-info"
-									onclick={() => validateSeo(page.id)}
-								>
-									SEO
-								</button>
-							{#if canManagePages}
-							<button
-								class="text-xs text-info hover:text-info"
-								onclick={() => openSaveAsTemplate(page.id, page.title)}
-							>
-								{t('page_builder.save_as_template')}
-							</button>
-							{/if}
-							{#if page.status !== 'published' && canPublishPages}
-								<button
-									class="text-xs text-success hover:text-success"
-									onclick={() => publishPage(page.id)}
-								>
-									{t('page_builder.publish')}
-								</button>
-							{/if}
-							{#if page.status === 'published' && canManagePages}
-								<button
-									class="text-xs text-warning hover:text-warning"
-									onclick={() => archivePage(page.id)}
-								>
-									{t('page_builder.archive')}
-								</button>
-							{/if}
-							{#if canManagePages}
-							<Button variant="ghost" size="sm" onclick={() => confirmDelete(page)} style="color: var(--color-danger)">
-								{t('common.delete')}
-							</Button>
-							{/if}
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('page_builder.no_pages')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
+<DataTable
+	columns={columns}
+	data={filteredPages()}
+	{loading}
+	pageSize={25}
+	emptyMessage={t('page_builder.no_pages')}
+	searchable
+	searchPlaceholder={t('common.search')}
+	onsearch={(q) => { searchQuery = q; }}
+/>
 
 {#if showCreateModal}
 	<Modal title={t('page_builder.create_page')} onclose={() => { showCreateModal = false; }}>

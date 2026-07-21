@@ -33,9 +33,12 @@
 	let filterTier = $state('all');
 	let activeTab = $state('active');
 	let errorMessage = $state('');
+	let analytics = $state<any>(null);
+	let analyticsLoading = $state(false);
 
 	$effect(() => {
 		load();
+		loadScopes();
 	});
 
 	async function load() {
@@ -50,8 +53,19 @@
 		loading = false;
 	}
 
+	async function loadAnalytics() {
+		analyticsLoading = true;
+		const result = await api<any>('/control/api-keys/analytics');
+		if (result.ok) {
+			analytics = result.data;
+		} else {
+			errorMessage = result.error;
+		}
+		analyticsLoading = false;
+	}
+
 	let confirmOpen = $state(false);
-	let confirmAction = $state<{ type: 'revoke' | 'suspend'; key: AdminApiKey } | null>(null);
+	let confirmAction = $state<{ type: 'revoke' | 'suspend' | 'unsuspend' | 'unrevoke' | 'delete'; key: AdminApiKey } | null>(null);
 
 	let page = $state(0);
 	let pageSize = $state(10);
@@ -60,7 +74,14 @@
 	let selectedIds = $state(new Set<string>());
 
 	let createModalOpen = $state(false);
-	const KNOWN_SCOPES = ['read', 'write', 'admin', 'moderate', 'system'];
+	let availableScopes = $state<{ value: string; label: string; description: string }[]>([]);
+
+	async function loadScopes() {
+		const result = await api<{ value: string; label: string; description: string }[]>('/control/api-scopes');
+		if (result.ok && Array.isArray(result.data)) {
+			availableScopes = result.data;
+		}
+	}
 
 	let createForm = $state({ name: '', scopes: [] as string[], rate_limit_tier: 'standard', expires_at: '' });
 	let createLoading = $state(false);
@@ -195,19 +216,33 @@
 	const rowActions: DataTableRowAction[] = [
 		{
 			label: t('api_keys.edit_key'),
-			onClick: (row) => openEditModal(toKey(row)),
-			disabled: (row) => row.status === 'revoked'
+			onClick: (row) => openEditModal(toKey(row))
 		},
 		{
 			label: t('api_keys.suspend_key'),
 			onClick: (row) => openConfirm('suspend', toKey(row)),
-			disabled: (row) => row.status !== 'active'
+			hidden: (row) => row.status !== 'active'
+		},
+		{
+			label: t('api_keys.unsuspend_key'),
+			onClick: (row) => openConfirm('unsuspend', toKey(row)),
+			hidden: (row) => row.status !== 'suspended'
 		},
 		{
 			label: t('api_keys.revoke_key'),
 			onClick: (row) => openConfirm('revoke', toKey(row)),
 			variant: 'destructive',
-			disabled: (row) => row.status === 'revoked'
+			hidden: (row) => row.status !== 'active'
+		},
+		{
+			label: t('api_keys.unrevoke_key'),
+			onClick: (row) => openConfirm('unrevoke', toKey(row)),
+			hidden: (row) => row.status !== 'revoked'
+		},
+		{
+			label: t('api_keys.delete_key'),
+			onClick: (row) => openConfirm('delete', toKey(row)),
+			variant: 'destructive'
 		}
 	];
 
@@ -228,6 +263,13 @@
 					await revokeKey(id);
 				}
 			}
+		},
+		{
+			label: t('api_keys.delete_selected'),
+			variant: 'destructive',
+			onClick: async (ids: string[]) => {
+				await deleteKeysBatch(ids);
+			}
 		}
 	];
 
@@ -240,12 +282,52 @@
 		}
 	}
 
+	async function unsuspendKey(id: string) {
+		const result = await api(`/control/api-keys/${id}/suspend`, { method: 'DELETE' });
+		if (result.ok) {
+			keys = keys.map((k) => (k.id === id ? { ...k, status: 'active' } : k));
+		} else {
+			errorMessage = result.error || t('api_keys.unsuspend_error');
+		}
+	}
+
+	async function unrevokeKey(id: string) {
+		const result = await api(`/control/api-keys/${id}`, { method: 'PATCH', body: { status: 'active' } });
+		if (result.ok) {
+			keys = keys.map((k) => (k.id === id ? { ...k, status: 'active' } : k));
+		} else {
+			errorMessage = result.error || t('api_keys.unrevoke_error');
+		}
+	}
+
 	async function revokeKey(id: string) {
 		const result = await api(`/control/api-keys/${id}`, { method: 'DELETE' });
 		if (result.ok) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'revoked' } : k));
 		} else {
 			errorMessage = result.error || t('api_keys.revoke_error');
+		}
+	}
+
+	async function deleteKey(id: string) {
+		const result = await api(`/control/api-keys/${id}`, { method: 'DELETE' });
+		if (result.ok) {
+			keys = keys.filter((k) => k.id !== id);
+		} else {
+			errorMessage = result.error || t('api_keys.delete_error');
+		}
+	}
+
+	async function deleteKeysBatch(ids: string[]) {
+		const result = await api<{ deleted: number }>('/control/api-keys/batch-delete', {
+			method: 'POST',
+			body: { ids }
+		});
+		if (result.ok) {
+			keys = keys.filter((k) => !ids.includes(k.id));
+			selectedIds = new Set();
+		} else {
+			errorMessage = result.error || t('api_keys.delete_error');
 		}
 	}
 
@@ -336,7 +418,7 @@
 		setTimeout(() => (copiedToClipboard = false), 2000);
 	}
 
-	function openConfirm(type: 'revoke' | 'suspend', key: AdminApiKey) {
+	function openConfirm(type: 'revoke' | 'suspend' | 'unsuspend' | 'unrevoke' | 'delete', key: AdminApiKey) {
 		confirmAction = { type, key };
 		confirmOpen = true;
 	}
@@ -345,6 +427,9 @@
 		activeTab = value;
 		page = 0;
 		selectedIds = new Set();
+		if (value === 'analytics' && !analytics) {
+			loadAnalytics();
+		}
 	}
 
 	function handleTierChange(value: string) {
@@ -413,9 +498,99 @@
 		<Tabs.Trigger value="all" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
 			{t('api_keys.tab_all')} ({keys.length})
 		</Tabs.Trigger>
+		<Tabs.Trigger value="analytics" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
+			{t('api_keys.analytics_tab')}
+		</Tabs.Trigger>
 	</Tabs.List>
 </Tabs.Root>
 
+{#if activeTab === 'analytics'}
+	<div class="mt-4">
+		{#if analyticsLoading}
+			<div class="text-muted-foreground py-8 text-center text-sm">{t('api_keys.loading') || 'Loading...'}</div>
+		{:else if analytics}
+			<div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+				<div class="border-border-card bg-card rounded-xl border p-4">
+					<div class="text-muted-foreground text-xs">{t('api_keys.total_requests')}</div>
+					<div class="text-foreground mt-1 text-2xl font-semibold">{analytics.total_requests?.toLocaleString() || 0}</div>
+				</div>
+				<div class="border-border-card bg-card rounded-xl border p-4">
+					<div class="text-muted-foreground text-xs">{t('api_keys.active_keys')}</div>
+					<div class="mt-1 text-2xl font-semibold text-emerald-500">{analytics.active_keys || 0}</div>
+				</div>
+				<div class="border-border-card bg-card rounded-xl border p-4">
+					<div class="text-muted-foreground text-xs">{t('api_keys.suspended_keys')}</div>
+					<div class="mt-1 text-2xl font-semibold text-amber-500">{analytics.suspended_keys || 0}</div>
+				</div>
+				<div class="border-border-card bg-card rounded-xl border p-4">
+					<div class="text-muted-foreground text-xs">{t('api_keys.revoked_keys')}</div>
+					<div class="mt-1 text-2xl font-semibold text-destructive">{analytics.revoked_keys || 0}</div>
+				</div>
+			</div>
+
+			{#if analytics.top_keys_by_volume?.length}
+				<div class="border-border-card bg-card mt-4 rounded-xl border p-4">
+					<h3 class="text-foreground mb-3 text-sm font-medium">{t('api_keys.top_keys')}</h3>
+					<div class="space-y-2">
+						{#each analytics.top_keys_by_volume as key}
+							<div class="flex items-center justify-between text-sm">
+								<div class="flex items-center gap-2">
+									<span class="font-mono text-xs text-muted-foreground">{key.key_prefix}</span>
+									<span class="text-foreground">{key.name}</span>
+								</div>
+								<span class="font-mono text-muted-foreground">{key.request_count.toLocaleString()} requests</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			{#if analytics.zero_result_keys?.length}
+				<div class="border-border-card bg-card mt-4 rounded-xl border p-4">
+					<h3 class="text-foreground mb-3 text-sm font-medium">{t('api_keys.zero_usage')}</h3>
+					<div class="space-y-2">
+						{#each analytics.zero_result_keys as key}
+							<div class="flex items-center justify-between text-sm">
+								<div class="flex items-center gap-2">
+									<span class="font-mono text-xs text-muted-foreground">{key.key_prefix}</span>
+									<span class="text-foreground">{key.name}</span>
+								</div>
+								<span class="text-muted-foreground text-xs">No requests</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{:else if analytics.active_keys > 0}
+				<div class="border-border-card bg-card mt-4 rounded-xl border p-4">
+					<p class="text-muted-foreground text-sm">{t('api_keys.no_zero_usage')}</p>
+				</div>
+			{/if}
+
+			{#if analytics.recent_activity?.length}
+				<div class="border-border-card bg-card mt-4 rounded-xl border p-4">
+					<h3 class="text-foreground mb-3 text-sm font-medium">{t('api_keys.recent_activity')}</h3>
+					<div class="space-y-2">
+						{#each analytics.recent_activity as activity}
+							<div class="flex items-center justify-between text-sm">
+								<span class="font-mono text-xs text-muted-foreground">{activity.key_prefix}</span>
+								<div class="flex items-center gap-4">
+									<span class="font-mono text-muted-foreground">{activity.request_count.toLocaleString()}</span>
+									<span class="text-muted-foreground text-xs">{new Date(activity.last_used_at).toLocaleDateString()}</span>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{:else}
+				<div class="border-border-card bg-card mt-4 rounded-xl border p-4">
+					<p class="text-muted-foreground text-sm">{t('api_keys.no_activity')}</p>
+				</div>
+			{/if}
+		{:else}
+			<div class="text-muted-foreground py-8 text-center text-sm">{t('api_keys.empty')}</div>
+		{/if}
+	</div>
+{:else}
 <div class="mt-4">
 	<DataTable
 		{columns}
@@ -433,6 +608,7 @@
 		emptyIcon={Key as any}
 	/>
 </div>
+{/if}
 
 {#if confirmAction}
 	{#if confirmAction.type === 'revoke'}
@@ -444,13 +620,40 @@
 			onConfirm={async () => { await revokeKey(confirmAction!.key.id); confirmAction = null; }}
 			onCancel={() => (confirmAction = null)}
 		/>
-	{:else}
+	{:else if confirmAction.type === 'suspend'}
 		<ConfirmModal
 			bind:open={confirmOpen}
 			title={t('api_keys.suspend_title')}
 			consequence={t('api_keys.suspend_confirm_detail').replace('{name}', confirmAction.key.name).replace('{prefix}', confirmAction.key.key_prefix)}
 			confirmText={t('api_keys.suspend_text')}
 			onConfirm={async () => { await suspendKey(confirmAction!.key.id); confirmAction = null; }}
+			onCancel={() => (confirmAction = null)}
+		/>
+	{:else if confirmAction.type === 'unsuspend'}
+		<ConfirmModal
+			bind:open={confirmOpen}
+			title={t('api_keys.unsuspend_title')}
+			consequence={t('api_keys.unsuspend_confirm_detail').replace('{name}', confirmAction.key.name).replace('{prefix}', confirmAction.key.key_prefix)}
+			confirmText={t('api_keys.unsuspend_text')}
+			onConfirm={async () => { await unsuspendKey(confirmAction!.key.id); confirmAction = null; }}
+			onCancel={() => (confirmAction = null)}
+		/>
+	{:else if confirmAction.type === 'unrevoke'}
+		<ConfirmModal
+			bind:open={confirmOpen}
+			title={t('api_keys.unrevoke_title')}
+			consequence={t('api_keys.unrevoke_confirm_detail').replace('{name}', confirmAction.key.name).replace('{prefix}', confirmAction.key.key_prefix)}
+			confirmText={t('api_keys.unrevoke_text')}
+			onConfirm={async () => { await unrevokeKey(confirmAction!.key.id); confirmAction = null; }}
+			onCancel={() => (confirmAction = null)}
+		/>
+	{:else}
+		<ConfirmModal
+			bind:open={confirmOpen}
+			title={t('api_keys.delete_title')}
+			consequence={t('api_keys.delete_confirm_detail').replace('{name}', confirmAction.key.name).replace('{prefix}', confirmAction.key.key_prefix)}
+			confirmText={t('api_keys.delete_text')}
+			onConfirm={async () => { await deleteKey(confirmAction!.key.id); confirmAction = null; }}
 			onCancel={() => (confirmAction = null)}
 		/>
 	{/if}
@@ -522,9 +725,9 @@
 						<Select.Portal>
 							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
 								<Select.Viewport class="p-1">
-									{#each KNOWN_SCOPES.filter((s) => !createForm.scopes.includes(s)) as s}
-										<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={s} label={s}>
-											{s}
+									{#each availableScopes.filter((s) => !createForm.scopes.includes(s.value)) as s}
+										<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={s.value} label={s.label}>
+											{s.label}
 										</Select.Item>
 									{/each}
 								</Select.Viewport>
@@ -730,9 +933,9 @@
 						<Select.Portal>
 							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
 								<Select.Viewport class="p-1">
-									{#each KNOWN_SCOPES.filter((s) => !editForm.scopes.includes(s)) as s}
-										<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={s} label={s}>
-											{s}
+									{#each availableScopes.filter((s) => !editForm.scopes.includes(s.value)) as s}
+										<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={s.value} label={s.label}>
+											{s.label}
 										</Select.Item>
 									{/each}
 								</Select.Viewport>

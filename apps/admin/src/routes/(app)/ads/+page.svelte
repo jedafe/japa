@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { adsAdminApi } from '$lib/api';
+	import { adsAdminApi, api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -9,7 +9,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { BarChart3, Zap, Pause, Play, StopCircle, Plus, Eye } from 'lucide-svelte';
+	import { BarChart3, Zap, Pause, Play, StopCircle, Plus, Eye, Trash2 } from 'lucide-svelte';
 
 	type Campaign = {
 		id: string;
@@ -65,6 +65,11 @@
 	// End boost confirm
 	let showEndBoostConfirm = $state(false);
 	let endBoostTarget = $state<ActiveBoost | null>(null);
+	let searchQuery = $state("");
+
+	let selectedCampaignIds = $state<Set<string>>(new Set());
+	let selectedBoostIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	const tabs = $derived([
 		{ value: 'campaigns', label: 'Campaigns', icon: BarChart3, count: campaigns.length },
@@ -181,6 +186,10 @@
 				if (result.ok) {
 					const data = result.data as { items?: Campaign[]; campaigns?: Campaign[] } | Campaign[];
 					campaigns = Array.isArray(data) ? data : (data.items ?? data.campaigns ?? []);
+					if (searchQuery) {
+						const q = searchQuery.toLowerCase();
+						campaigns = campaigns.filter((c: any) => c.name?.toLowerCase().includes(q) || c.status?.toLowerCase().includes(q));
+					}
 				} else {
 					errorMessage = result.error;
 				}
@@ -189,6 +198,10 @@
 				if (result.ok) {
 					const data = result.data as { items?: ActiveBoost[]; boosts?: ActiveBoost[] } | ActiveBoost[];
 					activeBoosts = Array.isArray(data) ? data : (data.items ?? data.boosts ?? []);
+					if (searchQuery) {
+						const q = searchQuery.toLowerCase();
+						activeBoosts = activeBoosts.filter((b: any) => b.username?.toLowerCase().includes(q) || b.status?.toLowerCase().includes(q));
+					}
 				} else {
 					errorMessage = result.error;
 				}
@@ -283,6 +296,36 @@
 		endBoostTarget = null;
 	}
 
+	async function bulkDeleteCampaigns() {
+		if (selectedCampaignIds.size === 0) return;
+		bulkDeleting = true;
+		try {
+			for (const id of selectedCampaignIds) {
+				await api(`/admin/ads/campaigns/${id}`, { method: 'DELETE' });
+			}
+			selectedCampaignIds = new Set();
+			load();
+		} catch {
+			errorMessage = t('ads.load_error');
+		}
+		bulkDeleting = false;
+	}
+
+	async function bulkDeleteBoosts() {
+		if (selectedBoostIds.size === 0) return;
+		bulkDeleting = true;
+		try {
+			for (const id of selectedBoostIds) {
+				await api(`/admin/ads/boosts/${id}`, { method: 'DELETE' });
+			}
+			selectedBoostIds = new Set();
+			load();
+		} catch {
+			errorMessage = t('ads.load_error');
+		}
+		bulkDeleting = false;
+	}
+
 	$effect(() => {
 		load();
 	});
@@ -314,23 +357,45 @@
 	{:else if activeTab === 'campaigns'}
 		<Card>
 			<CardContent class="p-0">
-				<DataTable
-					columns={campaignColumns}
-					data={campaigns}
-					pageSize={20}
-					emptyMessage={t('ads.empty')}
-				/>
+			<DataTable
+				columns={campaignColumns}
+				data={campaigns}
+				pageSize={20}
+				emptyMessage={t('ads.empty')}
+				searchable
+				onsearch={(q) => { searchQuery = q; load(); }}
+				selectable
+				bind:selectedIds={selectedCampaignIds}
+			>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDeleteCampaigns} disabled={bulkDeleting || selectedCampaignIds.size === 0}>
+						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedCampaignIds.size})
+					</Button>
+				{/snippet}
+			</DataTable>
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'boosts'}
 		<Card>
 			<CardContent class="p-0">
-				<DataTable
-					columns={boostColumns}
-					data={activeBoosts}
-					pageSize={20}
-					emptyMessage={t('ads.no_boosts')}
-				/>
+			<DataTable
+				columns={boostColumns}
+				data={activeBoosts}
+				pageSize={20}
+				emptyMessage={t('ads.no_boosts')}
+				searchable
+				onsearch={(q) => { searchQuery = q; load(); }}
+				selectable
+				bind:selectedIds={selectedBoostIds}
+			>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDeleteBoosts} disabled={bulkDeleting || selectedBoostIds.size === 0}>
+						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedBoostIds.size})
+					</Button>
+				{/snippet}
+			</DataTable>
 			</CardContent>
 		</Card>
 	{/if}

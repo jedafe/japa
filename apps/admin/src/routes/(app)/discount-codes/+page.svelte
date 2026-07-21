@@ -40,6 +40,10 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<DiscountCode | null>(null);
 
+	// Bulk delete state
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
+
 	const canManageDiscounts = $derived(hasPermission('discount_codes.manage'));
 
 	let code = $state('');
@@ -52,6 +56,7 @@
 	let isActive = $state(true);
 
 	let activeTab = $state('active');
+	let searchQuery = $state("");
 
 	const tabs = $derived([
 		{ value: 'active', label: 'Active', count: codes.filter((c) => c.is_active).length },
@@ -130,6 +135,10 @@
 			const result = await api<DiscountCode[]>('/admin/discount-codes');
 			if (result.ok) {
 				codes = result.data ?? [];
+				if (searchQuery) {
+					const q = searchQuery.toLowerCase();
+					codes = codes.filter((c: any) => c.code?.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q));
+				}
 			} else {
 				errorMessage = result.error;
 			}
@@ -240,6 +249,22 @@
 		deleteTarget = null;
 	}
 
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		try {
+			for (const id of selectedIds) {
+				await api(`/admin/discount-codes/${id}`, { method: 'DELETE' });
+			}
+			selectedIds = new Set();
+			load();
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
 	$effect(() => {
 		load();
 	});
@@ -271,13 +296,25 @@
 			{#if loading}
 				<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 			{:else}
-				<DataTable
-					columns={filteredCodes.length > 0 ? columns : []}
-					data={filteredCodes}
-					pageSize={20}
-					selectable={true}
-					emptyMessage={t('discounts.empty')}
-				/>
+		<DataTable
+			columns={filteredCodes.length > 0 ? columns : []}
+			data={filteredCodes}
+			pageSize={20}
+			selectable={true}
+			bind:selectedIds
+			searchable
+			onsearch={(q) => { searchQuery = q; load(); }}
+			emptyMessage={t('discounts.empty')}
+		>
+			{#snippet bulkActions()}
+				{#if selectedIds.size > 0}
+					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
+						<Trash2 class="mr-1 h-3.5 w-3.5" />
+						Delete Selected ({selectedIds.size})
+					</Button>
+				{/if}
+			{/snippet}
+		</DataTable>
 			{/if}
 		</CardContent>
 	</Card>

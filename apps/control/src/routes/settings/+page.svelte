@@ -46,6 +46,7 @@
 	);
 
 	let isSaving = $state(false);
+	let isLoading = $state(true);
 	let activeCategory = $state('all');
 	let message = $state('');
 	let messageType = $state<'success' | 'error' | ''>('');
@@ -63,12 +64,6 @@
 					{ value: 'warn', label: t('settings.log_level_warn', 'Warn') },
 					{ value: 'error', label: t('settings.log_level_error', 'Error') }
 				],
-				'appearance.feed_card_style': [
-					{ value: 'reddit', label: t('settings.card_style_reddit', 'Reddit') },
-					{ value: 'compact', label: t('settings.card_style_compact', 'Compact') },
-					{ value: 'grid', label: t('settings.card_style_grid', 'Grid') },
-					{ value: 'magazine', label: t('settings.card_style_magazine', 'Magazine') }
-				],
 				'feed.card_style': [
 					{ value: 'reddit', label: t('settings.card_style_reddit', 'Reddit') },
 					{ value: 'compact', label: t('settings.card_style_compact', 'Compact') },
@@ -82,9 +77,8 @@
 				'media.storage.provider': [
 					{ value: 'seaweedfs', label: t('settings.storage_seaweedfs', 'SeaweedFS') },
 					{ value: 's3', label: t('settings.storage_s3', 'Amazon S3') },
-					{ value: 'gcs', label: t('settings.storage_gcs', 'Google Cloud Storage') },
-					{ value: 'azure', label: t('settings.storage_azure', 'Azure Blob') },
-					{ value: 'local', label: t('settings.storage_local', 'Local Disk') }
+					{ value: 'r2', label: t('settings.storage_r2', 'Cloudflare R2') },
+					{ value: 'b2', label: t('settings.storage_b2', 'Backblaze B2') }
 				],
 				'payment.currency': [
 					{ value: 'NGN', label: t('settings.currency_ngn', 'Nigerian Naira (NGN)') },
@@ -236,40 +230,44 @@
 	async function saveAll() {
 		isSaving = true;
 		message = '';
-		const changed = currentSettings.filter(
-			(s, i) => s.value !== originalSettings[i]?.value
-		);
-		// Validate every changed value before sending a single request.
-		for (const setting of changed) {
-			const error = validateSettingValue(setting);
-			if (error) {
-				message = error;
-				messageType = 'error';
-				isSaving = false;
-				return;
+		try {
+			const changed = currentSettings.filter(
+				(s, i) => s.value !== originalSettings[i]?.value
+			);
+			for (const setting of changed) {
+				const error = validateSettingValue(setting);
+				if (error) {
+					message = error;
+					messageType = 'error';
+					return;
+				}
 			}
-		}
-		let failed = 0;
-		const results = await Promise.all(
-			changed.map((setting) =>
-				api(`/control/system-settings/${setting.key}`, {
-					method: 'PATCH',
-					body: { value: setting.value }
-				})
-			)
-		);
-		for (const result of results) {
-			if (!result.ok) failed++;
-		}
-		if (failed === 0) {
-			originalSettings = JSON.parse(JSON.stringify(currentSettings));
-			message = t('settings.save_all_success', `${changed.length} setting(s) saved successfully.`);
-			messageType = 'success';
-		} else {
-			message = t('settings.save_all_error', `Failed to save ${failed} of ${changed.length} setting(s).`);
+			let failed = 0;
+			const results = await Promise.all(
+				changed.map((setting) =>
+					api(`/control/system-settings/${setting.key}`, {
+						method: 'PATCH',
+						body: { value: setting.value }
+					})
+				)
+			);
+			for (const result of results) {
+				if (!result.ok) failed++;
+			}
+			if (failed === 0) {
+				originalSettings = JSON.parse(JSON.stringify(currentSettings));
+				message = t('settings.save_all_success', `${changed.length} setting(s) saved successfully.`);
+				messageType = 'success';
+			} else {
+				message = t('settings.save_all_error', `Failed to save ${failed} of ${changed.length} setting(s).`);
+				messageType = 'error';
+			}
+		} catch {
+			message = t('settings.save_all_error', 'Failed to save settings.');
 			messageType = 'error';
+		} finally {
+			isSaving = false;
 		}
-		isSaving = false;
 	}
 
 	function resetAll() {
@@ -281,42 +279,44 @@
 
 	async function resetSetting(key: string) {
 		message = '';
-		const result = await api<{ key: string; value: string; default_value: string }>(
-			`/control/system-settings/${key}/reset`,
-			{ method: 'POST' }
-		);
-		if (result.ok) {
-			const newValue = result.data.value;
-			currentSettings = currentSettings.map((s) =>
-				s.key === key ? { ...s, value: newValue } : s
+		try {
+			const result = await api<{ key: string; value: string; default_value: string }>(
+				`/control/system-settings/${key}/reset`,
+				{ method: 'POST' }
 			);
-			originalSettings = originalSettings.map((s) =>
-				s.key === key ? { ...s, value: newValue } : s
-			);
-			message = t('settings.reset_success', `Setting "${key}" reset to default value.`);
-			messageType = 'success';
-		} else {
-			message = result.error || t('settings.reset_error', 'Failed to reset setting.');
+			if (result.ok) {
+				const newValue = result.data.value;
+				currentSettings = currentSettings.map((s) =>
+					s.key === key ? { ...s, value: newValue } : s
+				);
+				originalSettings = originalSettings.map((s) =>
+					s.key === key ? { ...s, value: newValue } : s
+				);
+				message = t('settings.reset_success', `Setting "${key}" reset to default value.`);
+				messageType = 'success';
+			} else {
+				message = result.error || t('settings.reset_error', 'Failed to reset setting.');
+				messageType = 'error';
+			}
+		} catch {
+			message = t('settings.reset_error', 'Failed to reset setting.');
 			messageType = 'error';
 		}
 	}
 
 	async function load() {
-		isSaving = true;
+		isLoading = true;
 		message = '';
 		const result = await api<SystemSetting[]>('/control/system-settings');
 		if (result.ok) {
 			originalSettings = JSON.parse(JSON.stringify(result.data));
 			currentSettings = JSON.parse(JSON.stringify(result.data));
-			// Content types drive the per-type card-style editor. This is a main
-			// /api/v1 endpoint (the control `api` helper does not auto-prefix, so
-			// the full path is required — /content-types alone would 404).
 			const ctRes = await api<{ value: string; label: string }[]>('/api/v1/content-types');
 			if (ctRes.ok && Array.isArray(ctRes.data)) {
 				contentTypes = ctRes.data;
 			}
 		}
-		isSaving = false;
+		isLoading = false;
 	}
 
 	beforeNavigate(({ cancel }) => {
@@ -579,9 +579,9 @@
 			<button
 				class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
 				onclick={load}
-				disabled={isSaving}
+				disabled={isLoading || isSaving}
 			>
-				<RefreshCw class="size-3 {isSaving ? 'animate-spin' : ''}" />
+				<RefreshCw class="size-3 {isLoading || isSaving ? 'animate-spin' : ''}" />
 				{t('common.refresh', 'Refresh')}
 			</button>
 		</div>
@@ -640,7 +640,7 @@
 		{/if}
 
 		<!-- Settings content -->
-		{#if isSaving && currentSettings.length === 0}
+		{#if isLoading && currentSettings.length === 0}
 			<div class="space-y-4">
 				{#each Array(3) as _}
 					<div class="border-border-card bg-background-alt h-32 animate-pulse rounded-xl border"></div>

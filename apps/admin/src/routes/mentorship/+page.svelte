@@ -30,6 +30,7 @@
 	let programs = $state<Program[]>([]);
 	let loading = $state(true);
 	let filters = $state<Record<string, string>>({});
+	let selectedIds = $state<Set<string>>(new Set());
 
 	// Create/Edit modal
 	let showModal = $state(false);
@@ -52,15 +53,15 @@
 	const canManageMentorship = $derived(hasPermission("mentorship.admin"));
 
 	const tabs = [
-		{ value: "all", label: "All Programs", icon: Users },
-		{ value: "active", label: "Active", icon: UserCheck },
-		{ value: "inactive", label: "Inactive", icon: Users }
+		{ value: "all", label: t('app.mentorship.tabs.all_programs', 'All Programs'), icon: Users },
+		{ value: "active", label: t('app.mentorship.tabs.active', 'Active'), icon: UserCheck },
+		{ value: "inactive", label: t('app.mentorship.tabs.inactive', 'Inactive'), icon: Users }
 	];
 
 	const columns = [
 		{
 			key: "name",
-			label: "Program",
+			label: t('app.mentorship.columns.program', 'Program'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
@@ -71,35 +72,35 @@
 		},
 		{
 			key: "mentor_count",
-			label: "Mentors",
+			label: t('app.mentorship.columns.mentors', 'Mentors'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
 		},
 		{
 			key: "mentee_count",
-			label: "Mentees",
+			label: t('app.mentorship.columns.mentees', 'Mentees'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
 		},
 		{
 			key: "match_count",
-			label: "Matches",
+			label: t('app.mentorship.columns.matches', 'Matches'),
 			sortable: true,
 			render: (value: number) => `<span class="text-sm text-foreground-alt">${value ?? "—"}</span>`
 		},
 		{
 			key: "is_active",
-			label: "Status",
+			label: t('app.mentorship.columns.status', 'Status'),
 			sortable: true,
 			render: (value: boolean) => {
 				const variant = value ? "success" : "secondary";
 				const classes = value ? "bg-success/15 text-success border-success" : "bg-surface text-foreground border";
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes}">${value ? "Active" : "Inactive"}</span>`;
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes}">${value ? t('app.mentorship.status.active', 'Active') : t('app.mentorship.status.inactive', 'Inactive')}</span>`;
 			}
 		},
 		{
 			key: "created_at",
-			label: "Created",
+			label: t('app.mentorship.columns.created', 'Created'),
 			sortable: true,
 			render: (value: string) => new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
 		},
@@ -208,6 +209,22 @@
 		}
 	}
 
+	let bulkDeleting = $state(false);
+	async function bulkDelete() {
+		const ids = Array.from(selectedIds);
+		if (ids.length === 0) return;
+		bulkDeleting = true;
+		try {
+			await Promise.all(ids.map((id) => api(`/admin/mentorship/programs/${id}`, { method: "DELETE" })));
+			selectedIds = new Set();
+			loadPrograms();
+		} catch {
+			// API not available
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
 	let initialized = false;
 	$effect(() => {
 		if (!initialized) {
@@ -218,14 +235,14 @@
 </script>
 
 <svelte:head>
-	<title>Mentorship — JapaConnect Admin</title>
+	<title>{t('app.mentorship.page_title', 'Mentorship — JapaConnect Admin')}</title>
 </svelte:head>
 
 <PageHeader
-	title="Mentorship"
-	description="Manage mentorship programs and matching"
+	title={t('app.mentorship.title', 'Mentorship')}
+	description={t('app.mentorship.description', 'Manage mentorship programs and matching')}
 	actions={[
-		...(canManageMentorship ? [{ label: "New Program", icon: Plus, onclick: openCreate }] : [])
+		...(canManageMentorship ? [{ label: t('app.mentorship.actions.new_program', 'New Program'), icon: Plus, onclick: openCreate }] : [])
 	]}
 />
 
@@ -235,7 +252,7 @@
 	<FilterBar
 		bind:value={filters}
 		filters={[]}
-		searchPlaceholder="Search programs..."
+		searchPlaceholder={t('app.mentorship.search_placeholder', 'Search programs...')}
 		onsearch={handleFilter}
 		onclear={() => { filters = {}; }}
 	/>
@@ -243,14 +260,23 @@
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
-				<p class="py-8 text-center text-sm text-muted">{t('mentorship.loading_programs')}</p>
+				<p class="py-8 text-center text-sm text-muted">{t('app.mentorship.loading_programs', 'Loading programs...')}</p>
 			{:else}
 				<DataTable
 					columns={columns}
 					data={filteredPrograms}
+					selectable
+					bind:selectedIds
 					pageSize={15}
-					emptyMessage="No mentorship programs found"
-				/>
+					emptyMessage={t('app.mentorship.empty_message', 'No mentorship programs found')}
+				>
+					{#snippet bulkActions()}
+						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
+							<Trash2 class="mr-1 h-3.5 w-3.5" />
+							{bulkDeleting ? t('app.mentorship.actions.deleting', 'Deleting...') : `${t('app.mentorship.actions.delete_selected', 'Delete Selected')} (${selectedIds.size})`}
+						</Button>
+					{/snippet}
+				</DataTable>
 			{/if}
 		</CardContent>
 	</Card>
@@ -259,25 +285,25 @@
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('mentorship.total_programs')}</p>
+				<p class="text-sm text-muted">{t('app.mentorship.stats.total_programs', 'Total Programs')}</p>
 				<p class="text-2xl font-bold text-foreground">{programs.length}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('mentorship.active_programs')}</p>
+				<p class="text-sm text-muted">{t('app.mentorship.stats.active_programs', 'Active Programs')}</p>
 				<p class="text-2xl font-bold text-foreground">{programs.filter((p) => p.is_active).length}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('mentorship.total_mentors')}</p>
+				<p class="text-sm text-muted">{t('app.mentorship.stats.total_mentors', 'Total Mentors')}</p>
 				<p class="text-2xl font-bold text-foreground">{programs.reduce((sum, p) => sum + (p.mentor_count ?? 0), 0)}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('mentorship.total_mentees')}</p>
+				<p class="text-sm text-muted">{t('app.mentorship.stats.total_mentees', 'Total Mentees')}</p>
 				<p class="text-2xl font-bold text-foreground">{programs.reduce((sum, p) => sum + (p.mentee_count ?? 0), 0)}</p>
 			</CardContent>
 		</Card>
@@ -287,28 +313,28 @@
 <!-- Create/Edit Modal -->
 <Modal
 	bind:open={showModal}
-	title={editingProgram ? "Edit Program" : "New Program"}
-	description={editingProgram ? "Update the mentorship program details" : "Create a new mentorship program"}
+	title={editingProgram ? t('app.mentorship.modal.edit_program', 'Edit Program') : t('app.mentorship.modal.new_program', 'New Program')}
+	description={editingProgram ? t('app.mentorship.modal.update_description', 'Update the mentorship program details') : t('app.mentorship.modal.create_description', 'Create a new mentorship program')}
 	size="lg"
 >
 	<div class="space-y-4">
 		<div>
-			<label for="mp-name" class="mb-1 block text-sm font-medium text-foreground">{t('mentorship.program_name')}</label>
+			<label for="mp-name" class="mb-1 block text-sm font-medium text-foreground">{t('app.mentorship.label.program_name', 'Program Name')}</label>
 			<input
 				id="mp-name"
 				type="text"
 				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g. Career Growth Mentorship"
+				placeholder={t('app.mentorship.placeholder.name', 'e.g. Career Growth Mentorship')}
 				bind:value={name}
 			/>
 		</div>
 		<div>
-			<label for="mp-desc" class="mb-1 block text-sm font-medium text-foreground">{t('mentorship.description_2')}</label>
+			<label for="mp-desc" class="mb-1 block text-sm font-medium text-foreground">{t('app.mentorship.label.description', 'Description')}</label>
 			<textarea
 				id="mp-desc"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				rows="3"
-				placeholder="What is this program about?"
+				placeholder={t('app.mentorship.placeholder.description', 'What is this program about?')}
 				bind:value={description}
 			></textarea>
 		</div>
@@ -318,84 +344,84 @@
 				onCheckedChange={(v: boolean) => (isActive = v)}
 				class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 {isActive ? "bg-primary" : "bg-surface"}"
 				style="--ring-color: var(--color-primary); --ring-offset-color: var(--color-surface)"
-				aria-label="Active status"
+				aria-label={t('app.mentorship.aria.active_status', 'Active status')}
 			>
 				<Switch.Thumb
 					class="inline-block h-4 w-4 transform rounded-full bg-surface shadow-sm transition-transform {isActive ? "translate-x-6" : "translate-x-1"}"
 				/>
 			</Switch.Root>
-			<span class="text-sm text-foreground-alt">{isActive ? "Active" : "Inactive"}</span>
+			<span class="text-sm text-foreground-alt">{isActive ? t('app.mentorship.status.active', 'Active') : t('app.mentorship.status.inactive', 'Inactive')}</span>
 		</div>
 	</div>
 
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showModal = false)}>{t('mentorship.cancel')}</Button>
+		<Button variant="outline" onclick={() => (showModal = false)}>{t('app.mentorship.actions.cancel', 'Cancel')}</Button>
 		<Button onclick={saveProgram} disabled={saving || !name.trim()}>
-			{#if saving}
-				Saving...
-			{:else}
-				{editingProgram ? "Save Changes" : "Create Program"}
+		{#if saving}
+			{t('app.mentorship.actions.saving', 'Saving...')}
+		{:else}
+			{editingProgram ? t('app.mentorship.actions.save_changes', 'Save Changes') : t('app.mentorship.actions.create_program', 'Create Program')}
 			{/if}
 		</Button>
 	</div>
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal bind:open={showDeleteModal} title="Delete Program" description="This action cannot be undone." size="sm">
+<Modal bind:open={showDeleteModal} title={t('app.mentorship.modal.delete_program', 'Delete Program')} description={t('app.mentorship.modal.delete_cannot_undo', 'This action cannot be undone.')} size="sm">
 	{#if deleteTarget}
 		<div class="rounded-lg bg-danger-50 p-4">
 			<p class="text-sm text-danger-700">
-				Are you sure you want to delete <strong>{deleteTarget.name}</strong>?
+				{t('app.mentorship.delete.confirm', 'Are you sure you want to delete')} <strong>{deleteTarget.name}</strong>?
 				{#if deleteTarget.mentor_count > 0 || deleteTarget.mentee_count > 0}
-					This program has {deleteTarget.mentor_count} mentors and {deleteTarget.mentee_count} mentees.
+					{t('app.mentorship.delete.has_members', 'This program has')} {deleteTarget.mentor_count} {t('app.mentorship.delete.mentors_and', 'mentors and')} {deleteTarget.mentee_count} {t('app.mentorship.delete.mentees', 'mentees')}.
 				{/if}
 			</p>
 		</div>
 	{/if}
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('mentorship.cancel')}</Button>
+		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('app.mentorship.actions.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={deleteProgram} disabled={deleting}>
-			{#if deleting}
-				Deleting...
-			{:else}
-				Delete Program
+		{#if deleting}
+			{t('app.mentorship.actions.deleting', 'Deleting...')}
+		{:else}
+			{t('app.mentorship.actions.delete_program', 'Delete Program')}
 			{/if}
 		</Button>
 	</div>
 </Modal>
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title="Program Details" size="sm">
+<Modal bind:open={showViewModal} title={t('app.mentorship.modal.program_details', 'Program Details')} size="sm">
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">Name</p>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.name', 'Name')}</p>
 				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.name}</p>
 			</div>
 			{#if viewTarget.description}
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider text-muted">Description</p>
+					<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.description', 'Description')}</p>
 					<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.description}</p>
 				</div>
 			{/if}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">Status</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.is_active ? "Active" : "Inactive"}</p>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.status', 'Status')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.is_active ? t('app.mentorship.status.active', 'Active') : t('app.mentorship.status.inactive', 'Inactive')}</p>
 			</div>
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider text-muted">Mentors</p>
+					<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.mentors', 'Mentors')}</p>
 					<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.mentor_count ?? 0}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider text-muted">Mentees</p>
+					<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.mentees', 'Mentees')}</p>
 					<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.mentee_count ?? 0}</p>
 				</div>
 			</div>
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end">
-		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('mentorship.cancel')}</Button>
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('app.mentorship.actions.close', 'Close')}</Button>
 	</div>
 </Modal>
 

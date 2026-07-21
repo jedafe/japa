@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { FilterBar } from '$lib/components/ui/filter-bar';
+	import { Button } from '$lib/components/ui/button';
 	import { Select } from '$lib/components/ui/select';
 	import { ticketTypesApi } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -15,19 +18,19 @@
 	};
 
 	let ticketTypes = $state<TicketType[]>([]);
-	let page = $state(0);
-	let totalPages = $state(1);
+	let filteredTicketTypes = $state<TicketType[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	let searchQuery = $state('');
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
-	// Modal state
 	let showModal = $state(false);
 	let editingId = $state<string | null>(null);
 	let saving = $state(false);
 	let showDeleteConfirm = $state(false);
 	let deleteTargetId = $state<string | null>(null);
 
-	// Form
 	let form = $state({
 		name: '',
 		slug: '',
@@ -38,7 +41,50 @@
 
 	const canManageTickets = $derived(hasPermission('tickets.review'));
 
+	const filterDefs = [
+		{
+			key: 'is_active',
+			label: t('app.ticket_types.filter_status', 'Status'),
+			options: [
+				{ value: 'true', label: t('app.ticket_types.filter_active', 'Active') },
+				{ value: 'false', label: t('app.ticket_types.filter_inactive', 'Inactive') }
+			]
+		}
+	];
+
+	let filterValues = $state<Record<string, string>>({});
+
+	function handleSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? '';
+		filterValues = values;
+		applySearch(searchQuery);
+	}
+
+	function handleClear() {
+		searchQuery = '';
+		filterValues = {};
+		applySearch('');
+	}
+
 	const priorities = ['low', 'medium', 'high', 'urgent'];
+
+	const columns = [
+		{ key: 'name', label: t('ticket-types.name'), sortable: true },
+		{ key: 'slug', label: t('ticket-types.slug'), sortable: true, class: 'font-mono text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'description', label: t('ticket-types.description'), sortable: false, render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
+		{ key: 'is_active', label: t('ticket-types.active'), sortable: true, render: (v: boolean) => v
+			? `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-success/15 text-success dark:text-success">${t('app.ticket_types.status_active', 'Active')}</span>`
+			: `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-muted/15 text-muted dark:text-muted">${t('app.ticket_types.status_inactive', 'Inactive')}</span>`
+		},
+		{ key: 'default_priority', label: t('ticket-types.priority'), sortable: true, render: (v: string) => {
+			const cls = v === 'urgent' ? 'text-danger dark:text-danger' : v === 'high' ? 'text-warning dark:text-warning' : '';
+			return `<span class="text-xs font-medium ${cls}">${v}</span>`;
+		}},
+		{ key: 'actions', label: '', sortable: false, render: (_v: unknown, row: TicketType) => {
+			if (!canManageTickets) return '';
+			return `<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-info)" data-action="edit" data-id="${row.id}">${t('app.ticket_types.edit', 'Edit')}</button><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-danger)" data-action="delete" data-id="${row.id}">${t('app.ticket_types.delete', 'Delete')}</button>`;
+		}}
+	];
 
 	function slugify(text: string): string {
 		return text
@@ -47,15 +93,28 @@
 			.replace(/^-|-$/g, '');
 	}
 
+	function applySearch(q: string) {
+		searchQuery = q.toLowerCase();
+		filteredTicketTypes = searchQuery
+			? ticketTypes.filter(tt =>
+				tt.name.toLowerCase().includes(searchQuery) ||
+				tt.slug.toLowerCase().includes(searchQuery) ||
+				(tt.description ?? '').toLowerCase().includes(searchQuery)
+			)
+			: ticketTypes;
+	}
+
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const params = new URLSearchParams({ page: String(page) });
-		const result = await ticketTypesApi.list(params.toString());
+		const params = new URLSearchParams();
+		if (filterValues.is_active) params.set('is_active', filterValues.is_active);
+		const qs = params.toString();
+		const result = await ticketTypesApi.list(qs || undefined);
 		if (result.ok) {
 			const data = result.data as { items: TicketType[]; total_pages: number };
 			ticketTypes = data.items ?? [];
-			totalPages = data.total_pages ?? 1;
+			applySearch(searchQuery);
 		} else {
 			errorMessage = result.error;
 		}
@@ -125,10 +184,39 @@
 		}
 	}
 
-	function handlePageChange(p: number) {
-		page = p;
-		load();
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		errorMessage = '';
+		try {
+			for (const id of selectedIds) {
+				await ticketTypesApi.delete(id);
+			}
+			selectedIds = new Set();
+			load();
+		} catch {
+			errorMessage = t('app.ticket_types.failed_to_delete_selected', 'Failed to delete selected items');
+		}
+		bulkDeleting = false;
 	}
+
+	function handleTableClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		const btn = target.closest('[data-action]') as HTMLElement | null;
+		if (!btn) return;
+		e.stopPropagation();
+		const action = btn.dataset.action;
+		const id = btn.dataset.id;
+		if (!id) return;
+		if (action === 'edit') {
+			const item = ticketTypes.find(t => t.id === id);
+			if (item) openEdit(item);
+		} else if (action === 'delete') {
+			confirmDelete(id);
+		}
+	}
+
+	const tableData = $derived(filteredTicketTypes.map(item => ({ ...item })));
 
 	$effect(() => {
 		load();
@@ -136,7 +224,7 @@
 </script>
 
 <svelte:head>
-	<title>Ticket Types — JapaConnect Admin</title>
+	<title>{t('app.ticket_types.page_title', 'Ticket Types')} — JapaConnect Admin</title>
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('ticket-types.ticket_types')}</h1>
@@ -154,82 +242,35 @@
 		style="background-color: var(--color-primary)"
 		onclick={openCreate}
 	>
-		Add Ticket Type
+		{t('app.ticket_types.add_ticket_type', 'Add Ticket Type')}
 	</button>
 </div>
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('ticket-types.loading')}</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ticket-types.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ticket-types.slug')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ticket-types.description')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ticket-types.active')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ticket-types.priority')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each ticketTypes as item}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{item.name}</td>
-						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{item.slug}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.description || '—'}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {item.is_active ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
-								{item.is_active ? 'Active' : 'Inactive'}
-							</span>
-						</td>
-						<td class="px-4 py-3">
-							<span class="text-xs font-medium {item.default_priority === 'urgent' ? 'text-danger dark:text-danger' : item.default_priority === 'high' ? 'text-warning dark:text-warning' : ''}">
-								{item.default_priority}
-							</span>
-						</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-2">
-								{#if canManageTickets}
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-info)"
-										onclick={() => openEdit(item)}
-									>
-										Edit
-									</button>
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-danger)"
-										onclick={() => confirmDelete(item.id)}
-									>
-										Delete
-									</button>
-								{/if}
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">{t('ticket-types.no_ticket_types_configured')}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
 
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
-		</div>
-	</div>
-{/if}
+<div role="presentation" onclick={handleTableClick} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleTableClick(e as unknown as MouseEvent); }}>
+	<DataTable
+		{columns}
+		data={tableData}
+		{loading}
+		pageSize={25}
+		emptyMessage={t('ticket-types.no_ticket_types_configured')}
+		searchable={true}
+		searchPlaceholder={t('ticket-types.search_ticket_types', 'Search ticket types...')}
+		onsearch={applySearch}
+		selectable
+		bind:selectedIds
+	>
+		{#snippet bulkActions()}
+			<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+				{t('app.ticket_types.delete_selected', 'Delete Selected')} ({selectedIds.size})
+			</Button>
+		{/snippet}
+	</DataTable>
+</div>
 
 <!-- Create/Edit Modal -->
-<Modal bind:open={showModal} title={editingId ? 'Edit Ticket Type' : 'Add Ticket Type'} onConfirm={submit} confirmLabel={saving ? 'Saving...' : (editingId ? 'Update' : 'Create')}>
+<Modal bind:open={showModal} title={editingId ? t('app.ticket_types.edit_ticket_type', 'Edit Ticket Type') : t('app.ticket_types.add_ticket_type', 'Add Ticket Type')} onConfirm={submit} confirmLabel={saving ? t('app.ticket_types.saving', 'Saving...') : (editingId ? t('app.ticket_types.update', 'Update') : t('app.ticket_types.create', 'Create'))}>
 	<div class="space-y-3">
 		<div>
 			<label for="tt-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('ticket-types.name')}</label>
@@ -258,6 +299,6 @@
 </Modal>
 
 <!-- Delete Confirmation -->
-<Modal bind:open={showDeleteConfirm} title="Confirm Delete" onConfirm={executeDelete} confirmLabel="Delete">
+<Modal bind:open={showDeleteConfirm} title={t('app.ticket_types.confirm_delete', 'Confirm Delete')} onConfirm={executeDelete} confirmLabel={t('app.ticket_types.delete', 'Delete')}>
 	<p class="text-sm" style="color: var(--color-muted)">{t('ticket-types.are_you_sure_you_want_to_delete_this_tic')}</p>
 </Modal>

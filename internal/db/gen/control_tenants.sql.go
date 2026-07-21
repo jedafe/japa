@@ -14,7 +14,7 @@ import (
 const createTenant = `-- name: CreateTenant :one
 INSERT INTO tenants (name, slug, domain)
 VALUES ($1, $2, $3)
-RETURNING id, name, slug, domain, status, created_at, updated_at
+RETURNING id, name, slug, domain, status, created_at, updated_at, deleted_at
 `
 
 type CreateTenantParams struct {
@@ -31,6 +31,7 @@ type CreateTenantRow struct {
 	Status    string             `json:"status"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
 func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (CreateTenantRow, error) {
@@ -44,21 +45,47 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Cre
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
-const deleteTenant = `-- name: DeleteTenant :exec
-DELETE FROM tenants WHERE id = $1
+const deleteTenant = `-- name: DeleteTenant :one
+UPDATE tenants
+SET status = 'deleted', deleted_at = now(), updated_at = now()
+WHERE id = $1 AND status != 'deleted'
+RETURNING id, name, slug, domain, status, created_at, updated_at, deleted_at
 `
 
-func (q *Queries) DeleteTenant(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteTenant, id)
-	return err
+type DeleteTenantRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Name      string             `json:"name"`
+	Slug      string             `json:"slug"`
+	Domain    *string            `json:"domain"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) DeleteTenant(ctx context.Context, id pgtype.UUID) (DeleteTenantRow, error) {
+	row := q.db.QueryRow(ctx, deleteTenant, id)
+	var i DeleteTenantRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Domain,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }
 
 const getTenantByID = `-- name: GetTenantByID :one
-SELECT id, name, slug, domain, status, created_at, updated_at
+SELECT id, name, slug, domain, status, created_at, updated_at, deleted_at
 FROM tenants
 WHERE id = $1
 `
@@ -71,6 +98,7 @@ type GetTenantByIDRow struct {
 	Status    string             `json:"status"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
 func (q *Queries) GetTenantByID(ctx context.Context, id pgtype.UUID) (GetTenantByIDRow, error) {
@@ -84,14 +112,16 @@ func (q *Queries) GetTenantByID(ctx context.Context, id pgtype.UUID) (GetTenantB
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const listTenants = `-- name: ListTenants :many
 
-SELECT id, name, slug, domain, status, created_at, updated_at
+SELECT id, name, slug, domain, status, created_at, updated_at, deleted_at
 FROM tenants
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC
 `
 
@@ -103,6 +133,7 @@ type ListTenantsRow struct {
 	Status    string             `json:"status"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
 // Control Panel: tenant management (catalog: /control/tenants/*, super-admin only).
@@ -123,6 +154,7 @@ func (q *Queries) ListTenants(ctx context.Context) ([]ListTenantsRow, error) {
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -138,7 +170,7 @@ const setTenantStatus = `-- name: SetTenantStatus :one
 UPDATE tenants
 SET status = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, name, slug, domain, status, created_at, updated_at
+RETURNING id, name, slug, domain, status, created_at, updated_at, deleted_at
 `
 
 type SetTenantStatusParams struct {
@@ -154,6 +186,7 @@ type SetTenantStatusRow struct {
 	Status    string             `json:"status"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
 func (q *Queries) SetTenantStatus(ctx context.Context, arg SetTenantStatusParams) (SetTenantStatusRow, error) {
@@ -167,6 +200,7 @@ func (q *Queries) SetTenantStatus(ctx context.Context, arg SetTenantStatusParams
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -175,7 +209,7 @@ const updateTenant = `-- name: UpdateTenant :one
 UPDATE tenants
 SET name = $1, domain = $2, updated_at = now()
 WHERE id = $3
-RETURNING id, name, slug, domain, status, created_at, updated_at
+RETURNING id, name, slug, domain, status, created_at, updated_at, deleted_at
 `
 
 type UpdateTenantParams struct {
@@ -192,6 +226,7 @@ type UpdateTenantRow struct {
 	Status    string             `json:"status"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
 func (q *Queries) UpdateTenant(ctx context.Context, arg UpdateTenantParams) (UpdateTenantRow, error) {
@@ -205,6 +240,7 @@ func (q *Queries) UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Upd
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }

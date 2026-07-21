@@ -49,28 +49,28 @@
   // Backend gates blog mutations on content.create
   const canManageBlog = $derived(hasPermission("content.create"));
 
-  const tabs = [
-    { value: "all", label: "All Posts" },
-    { value: "published", label: "Published" },
-    { value: "draft", label: "Drafts" },
-    { value: "review", label: "In Review" }
-  ];
+  const tabs = $derived([
+    { value: "all", label: t('app.blog.tab_all', 'All Posts') },
+    { value: "published", label: t('app.blog.tab_published', 'Published') },
+    { value: "draft", label: t('app.blog.tab_drafts', 'Drafts') },
+    { value: "review", label: t('app.blog.tab_in_review', 'In Review') }
+  ]);
 
-  const columns = [
+  const columns = $derived([
     {
       key: "title",
-      label: "Title",
+      label: t('app.blog.col_title', 'Title'),
       sortable: true
     },
     {
       key: "author_name",
-      label: "Author",
+      label: t('app.blog.col_author', 'Author'),
       sortable: true,
-      render: (value: string) => value || "Unknown"
+      render: (value: string) => value || t('app.blog.unknown', 'Unknown')
     },
     {
       key: "categories",
-      label: "Categories",
+      label: t('app.blog.col_categories', 'Categories'),
       render: (value: string[]) => {
         if (!value || value.length === 0) return "—";
         return value.slice(0, 2).join(", ") + (value.length > 2 ? ` +${value.length - 2}` : "");
@@ -78,7 +78,7 @@
     },
     {
       key: "status",
-      label: "Status",
+      label: t('app.blog.col_status', 'Status'),
       sortable: true,
       render: (value: string) => {
         const colors: Record<string, string> = {
@@ -92,23 +92,23 @@
     },
     {
       key: "published_at",
-      label: "Published",
+      label: t('app.blog.col_published', 'Published'),
       sortable: true,
       render: (value: string) => value ? new Date(value).toLocaleDateString() : "—"
     },
     {
       key: "views",
-      label: "Views",
+      label: t('app.blog.col_views', 'Views'),
       sortable: true,
       render: (value: number) => (value ?? 0).toLocaleString()
     },
     {
       key: "actions",
-      label: "Actions",
+      label: t('app.blog.col_actions', 'Actions'),
       class: "w-40",
       component: BlogActionsCell
     }
-  ];
+  ]);
 
   let filteredPosts = $derived.by(() => {
     let result = [...posts];
@@ -144,7 +144,7 @@
         error = result.error;
       }
     } catch {
-      error = "Failed to load blog posts";
+      error = t('app.blog.error_load', 'Failed to load blog posts');
     } finally {
       loading = false;
     }
@@ -182,7 +182,7 @@
         error = result.error;
       }
     } catch {
-      error = "Failed to reject post";
+      error = t('app.blog.error_reject', 'Failed to reject post');
     } finally {
       acting = false;
     }
@@ -205,7 +205,7 @@
         error = result.error;
       }
     } catch {
-      error = "Failed to delete post";
+      error = t('app.blog.error_delete', 'Failed to delete post');
     } finally {
       acting = false;
     }
@@ -228,7 +228,7 @@
       selectedIds = new Set();
       loadPosts();
     } catch {
-      error = "Failed to delete selected posts";
+      error = t('app.blog.error_bulk_delete', 'Failed to delete selected posts');
     } finally {
       bulkDeleting = false;
     }
@@ -240,16 +240,16 @@
 </script>
 
 <svelte:head>
-  <title>Blog — JapaConnect Admin</title>
+  <title>{t('app.blog.page_title', 'Blog — JapaConnect Admin')}</title>
 </svelte:head>
 
 <PageHeader
-  title="Blog Posts"
-  description="Manage blog content and review submissions"
+  title={t('app.blog.title', 'Blog Posts')}
+  description={t('app.blog.description', 'Manage blog content and review submissions')}
   actions={[
-    { label: "New Post", icon: Plus, onclick: () => goto("/blog/new") },
-    { label: "Review Queue", icon: FileText, onclick: () => goto("/blog/review-queue") },
-    { label: "Refresh", icon: RefreshCw, variant: "ghost", onclick: loadPosts }
+    { label: t('app.blog.new_post', 'New Post'), icon: Plus, onclick: () => goto("/blog/new") },
+    { label: t('app.blog.review_queue', 'Review Queue'), icon: FileText, onclick: () => goto("/blog/review-queue") },
+    { label: t('app.blog.refresh', 'Refresh'), icon: RefreshCw, variant: "ghost", onclick: loadPosts }
   ]}
 />
 
@@ -260,22 +260,22 @@
     filters={[
       {
         key: "status",
-        label: "Status",
+        label: t('app.blog.filter_status', 'Status'),
         options: [
-          { value: "published", label: "Published" },
-          { value: "draft", label: "Draft" },
-          { value: "review", label: "In Review" },
-          { value: "archived", label: "Archived" }
+          { value: "published", label: t('app.blog.filter_published', 'Published') },
+          { value: "draft", label: t('app.blog.filter_draft', 'Draft') },
+          { value: "review", label: t('app.blog.filter_in_review', 'In Review') },
+          { value: "archived", label: t('app.blog.filter_archived', 'Archived') }
         ]
       },
       {
         key: "category",
-        label: "Category",
+        label: t('app.blog.filter_category', 'Category'),
         options: [
-          { value: "technology", label: "Technology" },
-          { value: "community", label: "Community" },
-          { value: "events", label: "Events" },
-          { value: "news", label: "News" }
+          { value: "technology", label: t('app.blog.filter_technology', 'Technology') },
+          { value: "community", label: t('app.blog.filter_community', 'Community') },
+          { value: "events", label: t('app.blog.filter_events', 'Events') },
+          { value: "news", label: t('app.blog.filter_news', 'News') }
         ]
       }
     ]}
@@ -300,12 +300,13 @@
             data={filteredPosts}
             selectable
             bind:selectedIds
-            emptyMessage="No blog posts found"
+            pageSize={25}
+            emptyMessage={t('app.blog.empty_message', 'No blog posts found')}
           >
             {#snippet bulkActions()}
               <Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
                 <Trash2 class="mr-1 h-3.5 w-3.5" />
-                {bulkDeleting ? "Deleting..." : `Delete Selected (${selectedIds.size})`}
+                {bulkDeleting ? t('app.blog.deleting', 'Deleting...') : `${t('app.blog.delete_selected', 'Delete Selected')} (${selectedIds.size})`}
               </Button>
             {/snippet}
           </DataTable>
@@ -316,40 +317,40 @@
 </div>
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title="Post Details" size="default">
+<Modal bind:open={showViewModal} title={t('app.blog.modal_post_details', 'Post Details')} size="default">
   {#if viewTarget}
     <div class="space-y-4">
       <div>
-        <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.title')}</p>
+        <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.title', 'Title')}</p>
         <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.title}</p>
       </div>
       {#if viewTarget.excerpt}
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.excerpt')}</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.excerpt', 'Excerpt')}</p>
           <p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.excerpt}</p>
         </div>
       {/if}
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.author')}</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.author', 'Author')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.author_name}</p>
         </div>
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.status')}</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.status', 'Status')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
         </div>
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.views')}</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.views', 'Views')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.views ?? 0).toLocaleString()}</p>
         </div>
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.published')}</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.published', 'Published')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.published_at ? new Date(viewTarget.published_at).toLocaleString() : "—"}</p>
         </div>
       </div>
       {#if viewTarget.categories?.length}
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.categories')}</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.categories', 'Categories')}</p>
           <div class="mt-1 flex flex-wrap gap-1">
             {#each viewTarget.categories as cat}
               <span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary)">{cat}</span>
@@ -359,7 +360,7 @@
       {/if}
       {#if viewTarget.tags?.length}
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.tags')}</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('blog.tags', 'Tags')}</p>
           <div class="mt-1 flex flex-wrap gap-1">
             {#each viewTarget.tags as tag}
               <span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background: var(--color-surface); color: var(--color-muted)">{tag}</span>
@@ -370,53 +371,53 @@
     </div>
   {/if}
   <div class="mt-6 flex justify-end gap-2">
-    <Button variant="outline" onclick={() => goto(`/blog/${viewTarget?.slug || viewTarget?.id}`)}>{t('blog.edit')}</Button>
+    <Button variant="outline" onclick={() => goto(`/blog/${viewTarget?.slug || viewTarget?.id}`)}>{t('blog.edit', 'Edit')}</Button>
     {#if viewTarget?.url}
       <Button variant="outline" onclick={() => openExternal(viewTarget!)}>
-        <ExternalLink class="mr-1 h-3.5 w-3.5" /> View Live
+        <ExternalLink class="mr-1 h-3.5 w-3.5" /> {t('app.blog.view_live', 'View Live')}
       </Button>
     {/if}
-    <Button variant="outline" onclick={() => (showViewModal = false)}>{t('blog.close')}</Button>
+    <Button variant="outline" onclick={() => (showViewModal = false)}>{t('blog.close', 'Close')}</Button>
   </div>
 </Modal>
 
 <!-- Reject Modal -->
-<Modal bind:open={showRejectModal} title="Reject Post">
+<Modal bind:open={showRejectModal} title={t('app.blog.modal_reject_post', 'Reject Post')}>
   <div class="space-y-4">
     <p class="text-sm" style="color: var(--color-foreground)">
-      Are you sure you want to reject "{rejectTarget?.title}"? The author will be notified.
+      {t('app.blog.reject_confirm', 'Are you sure you want to reject "{title}"? The author will be notified.').replace('{title}', rejectTarget?.title ?? '')}
     </p>
     <div>
-      <label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('blog.reason_optional')}</label>
+      <label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('blog.reason_optional', 'Reason (optional)')}</label>
       <textarea
         id="reject-reason"
         bind:value={rejectReason}
         rows="3"
         class="w-full rounded-lg border p-3 text-sm"
         style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-        placeholder="Explain why this post was rejected..."
+        placeholder={t('app.blog.reject_placeholder', 'Explain why this post was rejected...')}
       ></textarea>
     </div>
   </div>
   <div class="mt-4 flex justify-end gap-2">
-    <Button variant="ghost" onclick={() => (showRejectModal = false)}>{t('blog.cancel')}</Button>
+    <Button variant="ghost" onclick={() => (showRejectModal = false)}>{t('blog.cancel', 'Cancel')}</Button>
     <Button variant="destructive" onclick={confirmReject} disabled={acting}>
-      {acting ? "Rejecting..." : "Reject"}
+      {acting ? t('app.blog.rejecting', 'Rejecting...') : t('app.blog.reject', 'Reject')}
     </Button>
   </div>
 </Modal>
 
 <!-- Delete Confirmation -->
-<Modal bind:open={showDeleteConfirm} title="Delete Post">
+<Modal bind:open={showDeleteConfirm} title={t('app.blog.modal_delete_post', 'Delete Post')}>
   <div class="space-y-4">
     <p class="text-sm" style="color: var(--color-foreground)">
-      Are you sure you want to delete "{deleteTarget?.title}"? This action cannot be undone.
+      {t('app.blog.delete_confirm', 'Are you sure you want to delete "{title}"? This action cannot be undone.').replace('{title}', deleteTarget?.title ?? '')}
     </p>
   </div>
   <div class="mt-4 flex justify-end gap-2">
-    <Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('blog.cancel')}</Button>
+    <Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('blog.cancel', 'Cancel')}</Button>
     <Button variant="destructive" onclick={executeDelete} disabled={acting}>
-      {acting ? "Deleting..." : "Delete"}
+      {acting ? t('app.blog.deleting', 'Deleting...') : t('app.blog.delete', 'Delete')}
     </Button>
   </div>
 </Modal>

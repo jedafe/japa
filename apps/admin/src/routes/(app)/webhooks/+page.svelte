@@ -27,6 +27,8 @@
 	let loading = $state(true);
 	let error = $state("");
 	let success = $state("");
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	const canManageWebhooks = $derived(hasPermission("webhooks.manage"));
 
@@ -179,6 +181,42 @@
 		}
 	}
 
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		error = "";
+		try {
+			for (const id of selectedIds) {
+				await webhooksAdminApiExtended.delete(id);
+			}
+			selectedIds = new Set();
+			success = t("webhooks.bulk_deleted", "Selected webhooks deleted");
+			loadEndpoints();
+		} catch {
+			error = t("common.error", "Failed to delete selected webhooks");
+		}
+		bulkDeleting = false;
+	}
+
+	let initialized = false;
+	$effect(() => {
+		if (!initialized) {
+			initialized = true;
+			loadEndpoints();
+		}
+	});
+
+	$effect(() => {
+		if (success) {
+			const msg = success;
+			setTimeout(() => { if (success === msg) success = ''; }, 4000);
+		}
+		if (error) {
+			const msg = error;
+			setTimeout(() => { if (error === msg) error = ''; }, 6000);
+		}
+	});
+
 </script>
 
 <svelte:head>
@@ -210,7 +248,14 @@
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={endpoints} pageSize={10} />
+			<DataTable {columns} data={endpoints} pageSize={10} selectable bind:selectedIds>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						{bulkDeleting ? t("common.deleting", "Deleting...") : t("common.deleteSelected", "Delete Selected")} ({selectedIds.size})
+					</Button>
+				{/snippet}
+			</DataTable>
 		{/if}
 	</CardContent>
 </Card>

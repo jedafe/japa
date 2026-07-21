@@ -6,22 +6,26 @@ vi.mock('$lib/api', () => ({
 	api: vi.fn().mockResolvedValue({ ok: true, data: {} })
 }));
 
+vi.mock('$lib/stores/i18n.svelte', () => ({
+	t: vi.fn((key: string, fallback?: string) => fallback ?? key)
+}));
+
 describe('Cache +page.svelte', () => {
 	it('renders the cache management heading', () => {
 		render(Page);
-		expect(screen.getByText('Cache Management')).toBeTruthy();
+		expect(screen.getByText('cache.title')).toBeTruthy();
 	});
 
 	it('shows the flush all caches action', () => {
 		render(Page);
-		const matches = screen.getAllByText('Flush All Caches');
+		const matches = screen.getAllByText('cache.flush_all');
 		expect(matches.length).toBeGreaterThanOrEqual(1);
-		expect(screen.getByText('Clear every cached layer including pages, feeds, i18n, and search results.')).toBeTruthy();
+		expect(screen.getByText('cache.flush_description')).toBeTruthy();
 	});
 
 	it('has a flush button', () => {
 		render(Page);
-		const flushButton = screen.getByText('Flush All Caches', { selector: 'button' });
+		const flushButton = screen.getByText('cache.flush_all', { selector: 'button' });
 		expect(flushButton).toBeTruthy();
 	});
 });

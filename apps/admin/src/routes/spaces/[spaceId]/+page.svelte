@@ -36,6 +36,9 @@
 	let loadingModerators = $state(true);
 	let error = $state("");
 	let success = $state("");
+	let searchQuery = $state("");
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	// Add moderator modal
 	let showAddModal = $state(false);
@@ -80,7 +83,12 @@
 		try {
 			const result = await spacesAdminApi.get(`${spaceId}/moderators`);
 			if (result.ok) {
-				moderators = (result.data as Moderator[]) ?? [];
+				let items = (result.data as Moderator[]) ?? [];
+				if (searchQuery) {
+					const q = searchQuery.toLowerCase();
+					items = items.filter((m: any) => m.username?.toLowerCase().includes(q) || m.role?.toLowerCase().includes(q));
+				}
+				moderators = items;
 			}
 		} catch {
 			// moderators endpoint may not return list directly; handled in add/remove
@@ -121,6 +129,23 @@
 		} else {
 			error = result.error ?? t("common.error", "Failed to remove moderator");
 		}
+	}
+
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		error = "";
+		try {
+			for (const userId of selectedIds) {
+				await spacesModeratorsAdminApi.remove(spaceId, userId);
+			}
+			selectedIds = new Set();
+			success = t("spaces.moderators_removed", "Moderators removed");
+			await loadModerators();
+		} catch {
+			error = t("common.error", "Failed to remove moderators");
+		}
+		bulkDeleting = false;
 	}
 
 	loadSpace();
@@ -194,7 +219,14 @@
 				{t("spaces.no_moderators", "No moderators assigned")}
 			</div>
 		{:else}
-			<DataTable {columns} data={moderators} pageSize={10} />
+			<DataTable {columns} data={moderators} pageSize={10} searchable onsearch={(q) => { searchQuery = q; loadModerators(); }} selectable bind:selectedIds>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						{bulkDeleting ? t("common.deleting", "Removing...") : t("common.deleteSelected", "Remove Selected")} ({selectedIds.size})
+					</Button>
+				{/snippet}
+			</DataTable>
 		{/if}
 	</CardContent>
 </Card>

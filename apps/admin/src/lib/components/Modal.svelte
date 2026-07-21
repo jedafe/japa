@@ -14,10 +14,24 @@
 		open?: boolean;
 		title: string;
 		children?: Snippet;
-		onConfirm?: () => void;
+		onConfirm?: () => void | Promise<void>;
 		confirmLabel?: string;
 		onclose?: () => void;
 	} = $props();
+
+	let confirming = $state(false);
+
+	async function handleConfirm() {
+		if (!onConfirm) return;
+		confirming = true;
+		try {
+			await onConfirm();
+		} catch {
+			// Let the caller handle errors
+		} finally {
+			confirming = false;
+		}
+	}
 
 	function handleClose() {
 		open = false;
@@ -53,11 +67,12 @@
 						{#snippet child({ props })}
 							<button
 								{...props}
-								class="rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors"
+								class="rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
 								style="background-color: var(--color-primary)"
-								onclick={() => onConfirm()}
+								onclick={handleConfirm}
+								disabled={confirming}
 							>
-								{confirmLabel}
+								{confirming ? t('common.saving') : confirmLabel}
 							</button>
 						{/snippet}
 					</Dialog.Close>

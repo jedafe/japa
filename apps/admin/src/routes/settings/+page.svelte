@@ -212,7 +212,7 @@
 				messageType = 'error';
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load settings';
+			error = e instanceof Error ? e.message : t('settings.load_failed', 'Failed to load settings');
 			messageType = 'error';
 		} finally {
 			loading = false;
@@ -266,7 +266,7 @@
 				messageType = 'error';
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to save settings';
+			error = e instanceof Error ? e.message : t('settings.save_failed', 'Failed to save settings');
 			messageType = 'error';
 		} finally {
 			saving = false;
@@ -331,8 +331,12 @@
 				method: 'POST',
 				body: { filename: file.name, mime_type: file.type, file_size: file.size }
 			});
-			if (!initiateRes.ok || !initiateRes.data) {
-				uploadError = initiateRes.error || 'Failed to initiate upload';
+			if (!initiateRes.ok) {
+				uploadError = initiateRes.error || t('settings.upload_initiate_failed', 'Failed to initiate upload');
+				return;
+			}
+			if (!initiateRes.data) {
+				uploadError = t('settings.upload_initiate_failed', 'Failed to initiate upload');
 				return;
 			}
 			const { media_id, presigned_url } = initiateRes.data;
@@ -342,17 +346,17 @@
 				body: file
 			});
 			if (!putRes.ok) {
-				uploadError = `File upload failed: ${putRes.statusText}`;
+				uploadError = t('settings.upload_file_failed', 'File upload failed: ') + putRes.statusText;
 				return;
 			}
 			const confirmRes = await api(`/api/v1/media/confirm/${media_id}`, { method: 'POST' });
 			if (!confirmRes.ok) {
-				uploadError = confirmRes.error || 'Failed to confirm upload';
+				uploadError = confirmRes.error || t('settings.upload_confirm_failed', 'Failed to confirm upload');
 				return;
 			}
 			updateSettingValue(catKey, settingKey, `/api/v1/media/${media_id}`);
 		} catch (e) {
-			uploadError = e instanceof Error ? e.message : 'Upload failed';
+			uploadError = e instanceof Error ? e.message : t('settings.upload_error', 'Upload failed');
 		} finally {
 			uploadingKey = '';
 		}

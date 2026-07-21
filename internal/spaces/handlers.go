@@ -1755,3 +1755,87 @@ func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
+
+// AdminListJoinRequests handles GET /api/v1/admin/join-requests — all
+// pending join requests across every space in the admin's tenant. Each row is
+// given a composite id (space_id::user_id) so the panel can target a specific
+// request for approval/rejection.
+func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	rows, err := h.Service.read.ListAllSpaceJoinRequests(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
+		return
+	}
+
+	requests := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		compositeID := row.SpaceID.String() + "::" + row.UserID.String()
+		requests = append(requests, map[string]any{
+			"id":           compositeID,
+			"space_id":     row.SpaceID,
+			"user_id":      row.UserID,
+			"username":     row.Username,
+			"display_name": row.DisplayName,
+			"avatar_url":   row.AvatarUrl,
+			"joined_at":    row.JoinedAt,
+			"status":       row.Status,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": requests})
+}
+
+// AdminResolveJoinRequest is the shared approve/reject implementation behind
+// POST /api/v1/admin/join-requests/{id}/approve and /reject. The composite id
+// encodes space_id::user_id, which is split and applied via the existing
+// UpdateSpaceJoinRequest store call.
+func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Request, status string) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	composite := chi.URLParam(r, "id")
+	parts := strings.Split(composite, "::")
+	if len(parts) != 2 {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid composite request id")
+		return
+	}
+
+	var spaceID, userID pgtype.UUID
+	if err := spaceID.Scan(parts[0]); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space id")
+		return
+	}
+	if err := userID.Scan(parts[1]); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user id")
+		return
+	}
+
+	if err := h.Service.write.UpdateSpaceJoinRequest(r.Context(), gen.UpdateSpaceJoinRequestParams{
+		SpaceID:  spaceID,
+		UserID:   userID,
+		Status:   status,
+		TenantID: tenantID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"id": composite, "status": status})
+}
+
+// AdminApproveJoinRequest handles POST /api/v1/admin/join-requests/{id}/approve.
+func (h *Handlers) AdminApproveJoinRequest(w http.ResponseWriter, r *http.Request) {
+	h.AdminResolveJoinRequest(w, r, "approved")
+}
+
+// AdminRejectJoinRequest handles POST /api/v1/admin/join-requests/{id}/reject.
+func (h *Handlers) AdminRejectJoinRequest(w http.ResponseWriter, r *http.Request) {
+	h.AdminResolveJoinRequest(w, r, "rejected")
+}

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { RefreshCw, Trash2 } from 'lucide-svelte';
+	import { RefreshCw } from 'lucide-svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
 
 	type Deletion = {
 		id: string;
@@ -16,6 +17,33 @@
 	let deletions = $state<Deletion[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	let searchQuery = $state('');
+
+	const columns = [
+		{ key: 'user_id', label: t('deletions.user'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+		{ key: 'content_type', label: t('deletions.type'), render: (v: string) => `<span class="text-xs">${v}</span>` },
+		{ key: 'reason', label: t('deletions.reason'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
+		{
+			key: 'hard_deleted',
+			label: t('deletions.hard'),
+			render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">${v ? t('deletions.yes') : t('deletions.no')}</span>`
+		},
+		{
+			key: 'deleted_at',
+			label: t('deletions.date'),
+			sortable: true,
+			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>`
+		}
+	];
+
+	const filteredDeletions = $derived.by(() => {
+		let items = deletions;
+		if (searchQuery) {
+			const q = searchQuery.toLowerCase();
+			items = items.filter((d) => d.user_id.toLowerCase().includes(q) || d.content_type.toLowerCase().includes(q) || d.reason?.toLowerCase().includes(q));
+		}
+		return items;
+	});
 
 	async function load() {
 		loading = true;
@@ -62,38 +90,12 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('deletions.user')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('deletions.type')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('deletions.reason')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('deletions.hard')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('deletions.date')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each deletions as d (d.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-mono text-xs">{d.user_id}</td>
-						<td class="px-4 py-3 text-xs">{d.content_type}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{d.reason || '—'}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {d.hard_deleted ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">
-								{d.hard_deleted ? t('deletions.yes') : t('deletions.no')}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(d.deleted_at).toLocaleString()}</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('deletions.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		columns={columns}
+		data={filteredDeletions}
+		pageSize={25}
+		emptyMessage={t('deletions.empty')}
+		searchable
+		onsearch={(q) => { searchQuery = q; }}
+	/>
 {/if}

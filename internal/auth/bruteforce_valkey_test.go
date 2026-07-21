@@ -40,7 +40,7 @@ func startTestValkey(t *testing.T) valkeycompat.Cmdable {
 func TestValkeyBruteForceStore_GetFailCount_MissingKey(t *testing.T) {
 	t.Parallel()
 	vk := startTestValkey(t)
-	store := NewValkeyBruteForceStore(vk)
+	store := NewValkeyBruteForceStore(vk, DefaultFailWindow)
 
 	count, err := store.GetFailCount(t.Context(), "nonexistent")
 	if err != nil {
@@ -55,7 +55,7 @@ func TestValkeyBruteForceStore_GetFailCount_MissingKey(t *testing.T) {
 func TestValkeyBruteForceStore_IncrAndGet(t *testing.T) {
 	t.Parallel()
 	vk := startTestValkey(t)
-	store := NewValkeyBruteForceStore(vk)
+	store := NewValkeyBruteForceStore(vk, DefaultFailWindow)
 	ctx := t.Context()
 
 	// Increment three times and verify the count after each.
@@ -78,7 +78,7 @@ func TestValkeyBruteForceStore_IncrAndGet(t *testing.T) {
 func TestValkeyBruteForceStore_Reset(t *testing.T) {
 	t.Parallel()
 	vk := startTestValkey(t)
-	store := NewValkeyBruteForceStore(vk)
+	store := NewValkeyBruteForceStore(vk, DefaultFailWindow)
 	ctx := t.Context()
 
 	// Increment then reset.
@@ -107,7 +107,7 @@ func TestValkeyBruteForceStore_Reset(t *testing.T) {
 func TestValkeyBruteForceStore_ResetNonexistent(t *testing.T) {
 	t.Parallel()
 	vk := startTestValkey(t)
-	store := NewValkeyBruteForceStore(vk)
+	store := NewValkeyBruteForceStore(vk, DefaultFailWindow)
 
 	// Resetting a key that never existed should not error.
 	if err := store.ResetFailCount(t.Context(), "ghost"); err != nil {
@@ -118,7 +118,7 @@ func TestValkeyBruteForceStore_ResetNonexistent(t *testing.T) {
 func TestValkeyBruteForceStore_KeyExpiry(t *testing.T) {
 	t.Parallel()
 	vk := startTestValkey(t)
-	store := NewValkeyBruteForceStore(vk)
+	store := NewValkeyBruteForceStore(vk, DefaultFailWindow)
 	ctx := t.Context()
 
 	if err := store.IncrFailCount(ctx, "expiry-test"); err != nil {
@@ -139,7 +139,7 @@ func TestValkeyBruteForceStore_KeyExpiry(t *testing.T) {
 func TestValkeyBruteForceStore_KeyNamespacing(t *testing.T) {
 	t.Parallel()
 	vk := startTestValkey(t)
-	store := NewValkeyBruteForceStore(vk)
+	store := NewValkeyBruteForceStore(vk, DefaultFailWindow)
 	ctx := t.Context()
 
 	// Two different keys should be independent.
@@ -170,17 +170,17 @@ func TestValkeyBruteForceStore_KeyNamespacing(t *testing.T) {
 func TestValkeyBruteForceStore_Integration(t *testing.T) {
 	t.Parallel()
 	vk := startTestValkey(t)
-	store := NewValkeyBruteForceStore(vk)
+	store := NewValkeyBruteForceStore(vk, DefaultFailWindow)
 	ctx := t.Context()
 	id := LoginIdentifier("test@example.com", "10.0.0.1")
 
 	// Simulate 4 failed logins — should still be allowed.
-	for i := range MaxLoginAttempts - 1 {
+	for i := range DefaultMaxLoginAttempts - 1 {
 		if err := RecordFailedLogin(ctx, store, id); err != nil {
 			t.Fatal(err)
 		}
 
-		allowed, _ := CheckLoginAttempt(ctx, store, id)
+		allowed, _ := CheckLoginAttempt(ctx, store, id, DefaultMaxLoginAttempts)
 		if !allowed {
 			t.Fatalf("attempt %d should be allowed", i+1)
 		}
@@ -191,7 +191,7 @@ func TestValkeyBruteForceStore_Integration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	allowed, retryAfter := CheckLoginAttempt(ctx, store, id)
+	allowed, retryAfter := CheckLoginAttempt(ctx, store, id, DefaultMaxLoginAttempts)
 	if allowed {
 		t.Error("login should be blocked after threshold")
 	}
@@ -205,7 +205,7 @@ func TestValkeyBruteForceStore_Integration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	allowed, _ = CheckLoginAttempt(ctx, store, id)
+	allowed, _ = CheckLoginAttempt(ctx, store, id, DefaultMaxLoginAttempts)
 	if !allowed {
 		t.Error("login should be allowed after reset")
 	}
@@ -214,7 +214,7 @@ func TestValkeyBruteForceStore_Integration(t *testing.T) {
 func TestValkeyBruteForceStore_WindowSliding(t *testing.T) {
 	t.Parallel()
 	vk := startTestValkey(t)
-	store := NewValkeyBruteForceStore(vk)
+	store := NewValkeyBruteForceStore(vk, DefaultFailWindow)
 	ctx := t.Context()
 
 	// Record a failure.

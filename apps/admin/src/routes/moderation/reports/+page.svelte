@@ -1,6 +1,7 @@
 <script lang="ts">
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -21,17 +22,13 @@
 	};
 
 	let reports = $state<Report[]>([]);
-	let page = $state(0);
-	let totalPages = $state(1);
 	let loading = $state(true);
 	let filterStatus = $state('');
-	let searchQuery = $state(''); // FilterBar search term, forwarded to the reports API
+	let searchQuery = $state('');
 	let errorMessage = $state('');
 
-	// Expandable detail
 	let expandedId = $state<string | null>(null);
 
-	// Action modal
 	let showActionModal = $state(false);
 	let actionReport = $state<Report | null>(null);
 	let actionType = $state<'dismiss' | 'warn' | 'ban' | 'remove'>('dismiss');
@@ -41,73 +38,6 @@
 	const filterDefs = [
 		{ key: 'status', label: t('moderation.status'), type: 'select' as const, options: ['pending', 'reviewing', 'actioned', 'dismissed'] }
 	];
-
-	async function load() {
-		loading = true;
-		errorMessage = '';
-		const params = new URLSearchParams({ page: String(page) });
-		if (filterStatus) params.set('status', filterStatus);
-		if (searchQuery) params.set('q', searchQuery); // forward the search term to the API
-		try {
-			const result = await api<{ items: Report[]; page: number; total_pages: number }>(`/admin/reports?${params}`);
-			if (result.ok) {
-				reports = result.data.items;
-				totalPages = result.data.total_pages;
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			loading = false;
-		}
-	}
-
-	function handleFilter(values: Record<string, string>) {
-		// Capture the FilterBar search term so the previously-dead box now drives the query.
-		searchQuery = values.search ?? '';
-		filterStatus = values.status ?? '';
-		page = 0;
-		load();
-	}
-
-	function toggleExpand(id: string) {
-		expandedId = expandedId === id ? null : id;
-	}
-
-	function openAction(report: Report, action: 'dismiss' | 'warn' | 'ban' | 'remove') {
-		actionReport = report;
-		actionType = action;
-		actionReason = '';
-		showActionModal = true;
-	}
-
-	async function executeAction() {
-		if (!actionReport) return;
-		acting = true;
-		errorMessage = '';
-		try {
-			// Send the raw action; the backend maps it to a report status and
-			// fires the matching user-moderation side effect (warn/ban).
-			const body = { action: actionType, ...(actionReason.trim() ? { reason: actionReason.trim() } : {}) };
-			const result = await api(`/admin/reports/${actionReport.id}`, { method: 'PATCH', body });
-			if (result.ok) {
-				showActionModal = false;
-				load();
-			} else {
-				errorMessage = result.error;
-			}
-		} catch {
-			errorMessage = t('common.error');
-		} finally {
-			acting = false;
-		}
-	}
-
-	function handlePageChange(p: number) {
-		page = p;
-		load();
-	}
 
 	function statusBadge(status: string) {
 		switch (status) {
@@ -139,10 +69,133 @@
 		}
 	}
 
+	const columns = [
+		{
+			key: 'reporter_name',
+			label: t('moderation.reporter'),
+			sortable: true,
+			render: (_: any, row: Report) => `<p class="font-medium">${row.reporter_name}</p><p class="text-xs" style="color: var(--color-muted)">${row.reporter_id.slice(0, 12)}</p>`
+		},
+		{
+			key: 'target_content_type',
+			label: t('moderation.target'),
+			sortable: true,
+			render: (_: any, row: Report) => `<span class="text-xs" style="color: var(--color-muted)">${row.target_content_type} &middot; ${row.target_content_id.slice(0, 10)}</span>`
+		},
+		{
+			key: 'reason',
+			label: t('moderation.reason'),
+			render: (v: string) => `<span class="text-xs max-w-xs truncate block">${v}</span>`
+		},
+		{
+			key: 'status',
+			label: t('moderation.status'),
+			sortable: true,
+			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${statusBadge(v)}">${v}</span>`
+		},
+		{
+			key: 'created_at',
+			label: t('moderation.date'),
+			sortable: true,
+			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+		},
+		{
+			key: 'actions',
+			label: '',
+			class: 'w-32',
+			component: ReportActionsCell
+		}
+	];
+
+	async function load() {
+		loading = true;
+		errorMessage = '';
+		const params = new URLSearchParams();
+		if (filterStatus) params.set('status', filterStatus);
+		if (searchQuery) params.set('q', searchQuery);
+		try {
+			const result = await api<{ items: Report[] }>(`/admin/reports?${params}`);
+			if (result.ok) {
+				reports = result.data.items;
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			loading = false;
+		}
+	}
+
+	function handleFilter(values: Record<string, string>) {
+		searchQuery = values.search ?? '';
+		filterStatus = values.status ?? '';
+		load();
+	}
+
+	function toggleExpand(id: string) {
+		expandedId = expandedId === id ? null : id;
+	}
+
+	function openAction(report: Report, action: 'dismiss' | 'warn' | 'ban' | 'remove') {
+		actionReport = report;
+		actionType = action;
+		actionReason = '';
+		showActionModal = true;
+	}
+
+	async function executeAction() {
+		if (!actionReport) return;
+		acting = true;
+		errorMessage = '';
+		try {
+			const body = { action: actionType, ...(actionReason.trim() ? { reason: actionReason.trim() } : {}) };
+			const result = await api(`/admin/reports/${actionReport.id}`, { method: 'PATCH', body });
+			if (result.ok) {
+				showActionModal = false;
+				load();
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('common.error');
+		} finally {
+			acting = false;
+		}
+	}
+
 	$effect(() => {
 		load();
 	});
 </script>
+
+{#snippet ReportActionsCell(row: Report)}
+	{#if canManage && row.status === 'pending'}
+		<div class="flex items-center gap-1">
+			<button
+				class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+				style="color: var(--color-muted)"
+				onclick={(e: MouseEvent) => { e.stopPropagation(); openAction(row, 'dismiss'); }}
+			>
+				Dismiss
+			</button>
+			<button
+				class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+				style="color: var(--color-warning)"
+				onclick={(e: MouseEvent) => { e.stopPropagation(); openAction(row, 'warn'); }}
+			>
+				Warn
+			</button>
+			<button
+				class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+				style="color: var(--color-danger)"
+				onclick={(e: MouseEvent) => { e.stopPropagation(); openAction(row, 'remove'); }}
+			>
+				Remove
+			</button>
+		</div>
+	{/if}
+{/snippet}
 
 <svelte:head>
 	<title>{t('moderation.reports')} — JapaConnect Admin</title>
@@ -166,147 +219,71 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.reporter')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.target')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.reason')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.status')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.date')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each reports as report}
-					<tr
-						class="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]"
-						style="border-color: var(--color-border)"
-						onclick={() => toggleExpand(report.id)}
-					>
-						<td class="px-4 py-3">
-							<p class="font-medium">{report.reporter_name}</p>
-							<p class="text-xs" style="color: var(--color-muted)">{report.reporter_id.slice(0, 12)}</p>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">
-							{report.target_content_type} &middot; {report.target_content_id.slice(0, 10)}
-						</td>
-						<td class="px-4 py-3 text-xs max-w-xs truncate">{report.reason}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {statusBadge(report.status)}">
-								{report.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{report.created_at}</td>
-						<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
-							{#if canManage && report.status === 'pending'}
-								<div class="flex items-center gap-1">
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-muted)"
-										onclick={() => openAction(report, 'dismiss')}
-									>
-										Dismiss
-									</button>
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-warning)"
-										onclick={() => openAction(report, 'warn')}
-									>
-										Warn
-									</button>
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-danger)"
-										onclick={() => openAction(report, 'remove')}
-									>
-										Remove
-									</button>
-								</div>
-							{/if}
-						</td>
-					</tr>
-					{#if expandedId === report.id}
-						<tr style="border-color: var(--color-border)">
-							<td colspan="6" class="px-4 py-4" style="background-color: var(--color-surface)">
-								<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.reporter')}</p>
-										<p class="mt-1 text-sm">{report.reporter_name}</p>
-										{#if report.reporter_email}
-											<p class="text-xs" style="color: var(--color-muted)">{report.reporter_email}</p>
-										{/if}
-									</div>
-									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.target_content')}</p>
-										<p class="mt-1 text-sm">{report.target_content_type}</p>
-										<p class="text-xs font-mono" style="color: var(--color-muted)">{report.target_content_id}</p>
-									</div>
-									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.report_reason')}</p>
-										<p class="mt-1 text-sm">{report.reason}</p>
-									</div>
-								</div>
-								{#if report.content_preview}
-									<div class="mt-3 rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
-										<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">{t('moderation.reports.content_preview')}</p>
-										{report.content_preview}
-									</div>
-								{/if}
-								{#if canManage && report.status === 'pending'}
-									<div class="mt-3 flex gap-2">
-										<button
-											class="rounded-md px-3 py-1.5 text-xs font-medium"
-											style="background-color: var(--color-surface); border: 1px solid var(--color-border)"
-											onclick={() => openAction(report, 'dismiss')}
-										>
-											Dismiss Report
-										</button>
-										<button
-											class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
-											style="background-color: var(--color-warning)"
-											onclick={() => openAction(report, 'warn')}
-										>
-											Warn Reporter
-										</button>
-										<button
-											class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
-											style="background-color: var(--color-danger)"
-											onclick={() => openAction(report, 'remove')}
-										>
-											Remove Content
-										</button>
-										<button
-											class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
-											style="background-color: var(--color-danger)"
-											onclick={() => openAction(report, 'ban')}
-										>
-											Ban Target
-										</button>
-									</div>
-								{/if}
-							</td>
-						</tr>
-					{/if}
-				{:else}
-					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							No reports found
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable {columns} data={reports} pageSize={25} searchable emptyMessage="No reports found" onrowclick={(row) => toggleExpand(row.id)} />
 
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
-		</div>
-	</div>
+	{#if expandedId}
+		{@const expanded = reports.find((r) => r.id === expandedId)}
+		{#if expanded}
+			<div class="mt-3 rounded-lg border px-4 py-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+					<div>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.reporter')}</p>
+						<p class="mt-1 text-sm">{expanded.reporter_name}</p>
+						{#if expanded.reporter_email}
+							<p class="text-xs" style="color: var(--color-muted)">{expanded.reporter_email}</p>
+						{/if}
+					</div>
+					<div>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.target_content')}</p>
+						<p class="mt-1 text-sm">{expanded.target_content_type}</p>
+						<p class="text-xs font-mono" style="color: var(--color-muted)">{expanded.target_content_id}</p>
+					</div>
+					<div>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.report_reason')}</p>
+						<p class="mt-1 text-sm">{expanded.reason}</p>
+					</div>
+				</div>
+				{#if expanded.content_preview}
+					<div class="mt-3 rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
+						<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">{t('moderation.reports.content_preview')}</p>
+						{expanded.content_preview}
+					</div>
+				{/if}
+				{#if canManage && expanded.status === 'pending'}
+					<div class="mt-3 flex gap-2">
+						<button
+							class="rounded-md px-3 py-1.5 text-xs font-medium"
+							style="background-color: var(--color-surface); border: 1px solid var(--color-border)"
+							onclick={() => openAction(expanded, 'dismiss')}
+						>
+							Dismiss Report
+						</button>
+						<button
+							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
+							style="background-color: var(--color-warning)"
+							onclick={() => openAction(expanded, 'warn')}
+						>
+							Warn Reporter
+						</button>
+						<button
+							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
+							style="background-color: var(--color-danger)"
+							onclick={() => openAction(expanded, 'remove')}
+						>
+							Remove Content
+						</button>
+						<button
+							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
+							style="background-color: var(--color-danger)"
+							onclick={() => openAction(expanded, 'ban')}
+						>
+							Ban Target
+						</button>
+					</div>
+				{/if}
+			</div>
+		{/if}
+	{/if}
 {/if}
 
 <!-- Action Modal -->

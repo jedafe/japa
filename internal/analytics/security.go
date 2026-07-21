@@ -127,3 +127,111 @@ func (s *Service) scanStaleTokens(ctx context.Context, tenantID pgtype.UUID) err
 
 	return nil
 }
+
+// scanUnverifiedUsers checks for users who haven't verified their email.
+func (s *Service) scanUnverifiedUsers(ctx context.Context, tenantID pgtype.UUID) error {
+	var count int64
+
+	err := s.db.Reader.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM users
+		WHERE tenant_id = $1
+		  AND email_verified_at IS NULL
+		  AND created_at < now() - interval '7 days'
+	`, tenantID).Scan(&count)
+	if err != nil {
+		return nil //nolint:nilerr // table may not exist
+	}
+
+	if count > 10 {
+		meta, _ := json.Marshal(map[string]any{
+			"unverified_count": count,
+			"threshold":        "7 days",
+		})
+
+		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
+			TenantID: tenantID,
+			ScanType: "unverified_users",
+			Severity: string(SeverityInfo),
+			Finding:  fmt.Sprintf("Unverified users: %d users with unverified email older than 7 days", count),
+			Meta:     meta,
+		})
+		if err != nil {
+			return fmt.Errorf("recording unverified users: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// scanWeakPasswordSettings checks for weak password configuration.
+func (s *Service) scanWeakPasswordSettings(ctx context.Context, tenantID pgtype.UUID) error {
+	var minLength int
+
+	err := s.db.Reader.QueryRow(ctx, `
+		SELECT COALESCE(
+			(SELECT value::int FROM system_settings WHERE tenant_id = $1 AND key = 'auth.password.min_length'),
+			8
+		)
+	`, tenantID).Scan(&minLength)
+	if err != nil {
+		return nil //nolint:nilerr
+	}
+
+	if minLength < 8 {
+		meta, _ := json.Marshal(map[string]any{
+			"min_length": minLength,
+			"recommended": 8,
+		})
+
+		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
+			TenantID: tenantID,
+			ScanType: "weak_password_settings",
+			Severity: string(SeverityWarning),
+			Finding:  fmt.Sprintf("Weak password policy: minimum length is %d (recommended: 8+)", minLength),
+			Meta:     meta,
+		})
+		if err != nil {
+			return fmt.Errorf("recording weak password settings: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// scanExcessiveAPIKeys checks for API keys without expiration.
+func (s *Service) scanExcessiveAPIKeys(ctx context.Context, tenantID pgtype.UUID) error {
+	var count int64
+
+	err := s.db.Reader.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM api_keys
+		WHERE tenant_id = $1
+		  AND status = 'active'
+		  AND expires_at IS NULL
+	`, tenantID).Scan(&count)
+	if err != nil {
+		return nil //nolint:nilerr
+	}
+
+	if count > 20 {
+		meta, _ := json.Marshal(map[string]any{
+			"key_count":     count,
+			"issue":         "no_expiration",
+			"recommendation": "Set expiration dates on API keys",
+		})
+
+		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
+			TenantID: tenantID,
+			ScanType: "excessive_api_keys",
+			Severity: string(SeverityInfo),
+			Finding:  fmt.Sprintf("API keys without expiration: %d active keys have no expiration date", count),
+			Meta:     meta,
+		})
+		if err != nil {
+			return fmt.Errorf("recording excessive API keys: %w", err)
+		}
+	}
+
+	return nil
+}

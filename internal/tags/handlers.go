@@ -2,6 +2,7 @@ package tags
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -52,6 +53,16 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	}
 
 	return user, true
+}
+
+// parseUUIDParam reads a UUID URL param, writing a 400 and returning the zero
+// value on failure.
+func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, param)); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("invalid %s: %w", param, err)
+	}
+	return id, nil
 }
 
 // resolveTag looks up a tag by slug, writing a 404 and returning ok=false if
@@ -354,12 +365,50 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 
 // AddTagModerator handles POST /admin/tags/:id/moderators (P5.6 — Task 7).
 // NOTE: No tag_moderators table exists yet — returns accepted but does not persist.
-func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+// ListTagModerators handles GET /api/v1/admin/tags/:id/moderators.
+func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	tagID, err := parseUUIDParam(r, "id")
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
+
+	rows, err := h.service.ListTagModerators(r.Context(), tagID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tag moderators")
+		return
+	}
+
+	moderators := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		moderators = append(moderators, map[string]any{
+			"user_id":  row.UserID,
+			"username": row.Username,
+			"added_at": row.CreatedAt,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": moderators})
+}
+
+// AddTagModerator handles POST /api/v1/admin/tags/:id/moderators (Section 49).
+func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	tagID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		return
+	}
+
 	var input struct {
 		UserID string `json:"user_id"`
 	}
@@ -367,13 +416,53 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{
-		"tag_id": id.String(), "user_id": input.UserID, "status": "pending_migration",
+	if input.UserID == "" {
+		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(input.UserID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+		return
+	}
+
+	row, err := h.service.AddTagModerator(r.Context(), tagID, userID, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to add tag moderator")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+		"tag_id":   row.TagID,
+		"user_id":  row.UserID,
+		"added_at": row.CreatedAt,
 	}})
 }
 
-// RemoveTagModerator handles DELETE /admin/tags/:id/moderators/:userId (P5.6 — Task 7).
-// NOTE: No tag_moderators table exists yet — returns accepted but does not persist.
+// RemoveTagModerator handles DELETE /api/v1/admin/tags/:id/moderators/:userId (Section 49).
 func (h *Handlers) RemoveTagModerator(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusNoContent, nil)
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	tagID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "userId")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+		return
+	}
+
+	if err := h.service.RemoveTagModerator(r.Context(), tagID, userID, tenantID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to remove tag moderator")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
 }

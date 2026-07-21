@@ -70,6 +70,7 @@ func run() error {
 	// Start the Asynq background worker. The worker shares the same
 	// Valkey/Redis instance used for caching. If the worker fails to start
 	// we log the error but continue — the HTTP server remains functional.
+	worker.RegisterDBPool(database)
 	workerShutdown, workerErr := server.StartWorker(workerCfg)
 	if workerErr != nil {
 		slog.Error("failed to start Asynq worker", "error", workerErr)

@@ -29,3 +29,26 @@ RETURNING id, tenant_id, name, slug, description, color, follower_count, created
 
 -- name: DeleteTag :exec
 DELETE FROM tags WHERE id = @id AND tenant_id = @tenant_id;
+
+-- =====================
+-- Tag moderators (Section 49)
+-- =====================
+
+-- name: ListTagModerators :many
+-- Lists the moderators of a tag, joined to users for display.
+SELECT tm.user_id, u.username, tm.created_at
+FROM tag_moderators tm
+JOIN users u ON u.id = tm.user_id AND u.tenant_id = tm.tenant_id
+WHERE tm.tag_id = @tag_id AND tm.tenant_id = @tenant_id
+ORDER BY tm.created_at ASC;
+
+-- name: AddTagModerator :one
+-- Idempotent: re-adding an existing moderator just refreshes created_at.
+INSERT INTO tag_moderators (tenant_id, tag_id, user_id, assigned_by)
+VALUES (@tenant_id, @tag_id, @user_id, @assigned_by)
+ON CONFLICT (tenant_id, tag_id, user_id) DO UPDATE SET created_at = now()
+RETURNING id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at;
+
+-- name: RemoveTagModerator :exec
+DELETE FROM tag_moderators
+WHERE tag_id = @tag_id AND user_id = @user_id AND tenant_id = @tenant_id;

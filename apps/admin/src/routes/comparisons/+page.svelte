@@ -4,6 +4,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
 
 	type ComparisonType = {
 		id: string;
@@ -17,6 +18,7 @@
 	let types = $state<ComparisonType[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	let searchQuery = $state('');
 
 	let showCreateModal = $state(false);
 	let showEditModal = $state(false);
@@ -30,8 +32,31 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<ComparisonType | null>(null);
 
-	// Backend gates comparison-type mutations on comparison.type.create/edit/delete
 	const canManageComparisons = $derived(hasPermission('comparison.type.create'));
+
+	const columns = [
+		{ key: 'name', label: t('comparisons.name'), sortable: true },
+		{ key: 'slug', label: t('comparisons.slug'), render: (v: string) => `<span class="text-xs font-mono" style="color: var(--color-muted)">${v}</span>` },
+		{
+			key: 'is_public',
+			label: t('comparisons.visibility'),
+			render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('comparisons.public') : t('comparisons.private')}</span>`
+		},
+		{
+			key: 'actions',
+			label: t('common.actions'),
+			component: ComparisonActionsCell
+		}
+	];
+
+	const filteredTypes = $derived.by(() => {
+		let items = types;
+		if (searchQuery) {
+			const q = searchQuery.toLowerCase();
+			items = items.filter((ct) => ct.name.toLowerCase().includes(q) || ct.slug.toLowerCase().includes(q));
+		}
+		return items;
+	});
 
 	function openView(ct: ComparisonType) {
 		viewTarget = ct;
@@ -173,52 +198,14 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('comparisons.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('comparisons.slug')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('comparisons.visibility')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each types as ct (ct.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{ct.name}</td>
-						<td class="px-4 py-3 text-xs font-mono" style="color: var(--color-muted)">{ct.slug}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {ct.is_public ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
-								{ct.is_public ? t('comparisons.public') : t('comparisons.private')}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-right">
-							<div class="flex items-center justify-end gap-1">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openView(ct)}>
-									<Eye class="h-3 w-3" style="color: var(--color-muted)" />
-								</button>
-								{#if canManageComparisons}
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(ct)}>
-										<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
-									</button>
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => confirmDelete(ct)}>
-										<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-									</button>
-								{/if}
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('comparisons.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		columns={columns}
+		data={filteredTypes}
+		pageSize={25}
+		emptyMessage={t('comparisons.empty')}
+		searchable
+		onsearch={(q) => { searchQuery = q; }}
+	/>
 {/if}
 
 <!-- View Modal -->
@@ -276,3 +263,19 @@
 		</div>
 	</div>
 </Modal>
+
+{#snippet ComparisonActionsCell(row: ComparisonType)}
+	<div class="flex items-center justify-end gap-1">
+		<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openView(row)}>
+			<Eye class="h-3 w-3" style="color: var(--color-muted)" />
+		</button>
+		{#if canManageComparisons}
+			<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(row)}>
+				<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
+			</button>
+			<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => confirmDelete(row)}>
+				<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
+			</button>
+		{/if}
+	</div>
+{/snippet}

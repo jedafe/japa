@@ -4,6 +4,8 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, Pencil, Trash2 } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
 
 	type Block = {
 		id: string;
@@ -18,8 +20,7 @@
 	let loading = $state(true);
 	let errorMessage = $state('');
 
-	// Search term wired into the blocks load
-	let searchTerm = $state('');
+	let searchQuery = $state('');
 
 	let showCreateModal = $state(false);
 	let showEditModal = $state(false);
@@ -35,14 +36,29 @@
 
 	const canManageBlocks = $derived(hasPermission('pages.manage'));
 
+	const columns = [
+		{ key: 'name', label: t('pageBuilder.name'), sortable: true },
+		{ key: 'block_type', label: t('pageBuilder.type'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'category', label: t('pageBuilder.category'), sortable: true, class: 'text-xs', render: (v: string) => v || '—' },
+		{ key: 'is_enabled', label: t('pageBuilder.status'), sortable: true, render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('pageBuilder.enabled') : t('pageBuilder.disabled')}</span>` },
+		{ key: 'actions', label: t('common.actions'), class: 'w-24 text-right', component: BlockActionsCell }
+	];
+
+	function filteredBlocks(): Block[] {
+		const q = searchQuery.toLowerCase().trim();
+		if (!q) return blocks;
+		return blocks.filter(b =>
+			b.name.toLowerCase().includes(q) ||
+			b.block_type.toLowerCase().includes(q) ||
+			(b.category ?? '').toLowerCase().includes(q)
+		);
+	}
+
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		try {
-			const params = new URLSearchParams();
-			if (searchTerm.trim()) params.set('q', searchTerm.trim());
-			const qs = params.toString();
-			const result = await api<Block[]>(`/admin/pagebuilder/blocks${qs ? `?${qs}` : ''}`);
+			const result = await api<Block[]>('/admin/pagebuilder/blocks');
 			if (result.ok) {
 				blocks = result.data ?? [];
 			} else {
@@ -127,18 +143,23 @@
 		}
 	}
 
-	// Debounced search handler that refetches the blocks list
-	let searchTimer: ReturnType<typeof setTimeout> | undefined;
-	function onSearchInput(e: Event) {
-		searchTerm = (e.currentTarget as HTMLInputElement).value;
-		if (searchTimer) clearTimeout(searchTimer);
-		searchTimer = setTimeout(() => load(), 300);
-	}
-
 	$effect(() => {
 		load();
 	});
 </script>
+
+{#snippet BlockActionsCell(row: Block)}
+	<div class="flex items-center justify-end gap-1">
+		{#if canManageBlocks}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
+				<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => deleteBlock(row.id)}>
+				<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}
 
 <svelte:head>
 	<title>{t('pageBuilder.blocks_title')} — JapaConnect Admin</title>
@@ -153,16 +174,7 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex items-center justify-between gap-2">
-	<!-- Debounced search input wired to the blocks load -->
-	<input
-		type="search"
-		placeholder={t('common.search')}
-		oninput={onSearchInput}
-		aria-label={t('common.search')}
-		class="w-full max-w-xs rounded-lg border p-2 text-sm outline-none focus:ring-2"
-		style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
-	/>
+<div class="mb-4 flex items-center justify-end">
 	{#if canManageBlocks}
 		<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
 			<Plus class="h-3 w-3" />
@@ -171,55 +183,16 @@
 	{/if}
 </div>
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageBuilder.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageBuilder.type')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageBuilder.category')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageBuilder.status')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each blocks as block (block.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{block.name}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{block.block_type}</td>
-						<td class="px-4 py-3 text-xs">{block.category || '—'}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {block.is_enabled ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
-								{block.is_enabled ? t('pageBuilder.enabled') : t('pageBuilder.disabled')}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-right">
-							{#if canManageBlocks}
-								<div class="flex items-center justify-end gap-1">
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(block)}>
-										<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
-									</button>
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => deleteBlock(block.id)}>
-										<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-									</button>
-								</div>
-							{/if}
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('pageBuilder.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
+<DataTable
+	columns={columns}
+	data={filteredBlocks()}
+	{loading}
+	pageSize={25}
+	emptyMessage={t('pageBuilder.empty')}
+	searchable
+	searchPlaceholder={t('common.search')}
+	onsearch={(q) => { searchQuery = q; }}
+/>
 
 <!-- Create/Edit Modal -->
 <Modal bind:open={modalOpen} title={editingBlock ? t('pageBuilder.edit_block') : t('pageBuilder.create_block')} onConfirm={editingBlock ? updateBlock : createBlock} confirmLabel={saving ? t('common.saving') : editingBlock ? t('common.save') : t('common.create')}>

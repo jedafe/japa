@@ -3,6 +3,7 @@
 	import { PUBLIC_JC_ENV } from '$env/static/public';
 	import { user, clearUser } from '$lib/stores/auth.svelte';
 	import { apiFetch } from '$lib/api/client';
+	import { clearAccessToken } from '$lib/api/token';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { getNotifications, getUnreadCount, markRead, markAllRead } from '$lib/stores/notifications.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -27,19 +28,9 @@
 	}
 
 	async function logout() {
-		// NOTE (AUDIT-FE-ADM-003, partial fix only): jc_token is httpOnly, so
-		// it can never be cleared from client JS, and this app ships as a
-		// static SPA (adapter-static + fallback: 'index.html', see
-		// svelte.config.js) with no live server to run a cookie-clearing
-		// action in production. This best-effort revokes the session
-		// server-side (Go backend drops its jc_refresh cookie + JTI
-		// allowlist entry) and clears in-memory client state, but the
-		// jc_token cookie itself keeps being sent until it naturally expires.
-		// Do not consider AUDIT-FE-ADM-003 closed — a full fix needs
-		// AUDIT-FE-ADM-002 resolved first (move off adapter-static, or add a
-		// real server endpoint capable of clearing the cookie).
 		await apiFetch('/auth/logout', { method: 'POST' }).catch(() => {});
 		clearUser();
+		clearAccessToken();
 		await goto('/login', { invalidateAll: true });
 	}
 </script>

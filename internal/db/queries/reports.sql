@@ -51,6 +51,10 @@ WHERE tenant_id = @tenant_id
   AND entity_id = @entity_id
   AND status = 'pending';
 
+-- name: DeleteReport :exec
+DELETE FROM content_reports
+WHERE id = @id AND tenant_id = @tenant_id;
+
 -- name: AutoHideContent :one
 UPDATE contents
 SET auto_hidden = true, auto_hidden_at = now()

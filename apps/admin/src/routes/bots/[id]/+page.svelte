@@ -3,6 +3,8 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 
 	type Bot = {
 		id: string;
@@ -24,6 +26,7 @@
 	let editDescription = $state('');
 	let rateLimitValue = $state(100);
 	let saving = $state(false);
+	let showDeleteModal = $state(false);
 
 	const botId = $derived(page.params.id);
 
@@ -155,15 +158,9 @@
 				<button
 					class="rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 					style="color: var(--color-danger)"
-					onclick={async () => {
+					onclick={() => {
 						if (!bot) return;
-						if (!confirm(t('bots.delete_confirm'))) return;
-						const result = await api(`/admin/bots/${bot.id}`, { method: 'DELETE' });
-						if (result.ok) {
-							await goto('/bots');
-						} else {
-							errorMessage = result.error;
-						}
+						showDeleteModal = true;
 					}}
 				>
 					{t('bots.delete_bot')}
@@ -171,4 +168,28 @@
 			</div>
 		</div>
 	</div>
+
+	<Modal bind:open={showDeleteModal} title={t('bots.delete_confirm')} size="sm">
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('bots.delete_warning', 'This action cannot be undone. The bot and all its data will be permanently removed.')}
+		</p>
+		<div class="mt-4 flex justify-end gap-2">
+			<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t('common.cancel')}</Button>
+			<Button
+				variant="destructive"
+				onclick={async () => {
+					showDeleteModal = false;
+					if (!bot) return;
+					const result = await api(`/admin/bots/${bot.id}`, { method: 'DELETE' });
+					if (result.ok) {
+						await goto('/bots');
+					} else {
+						errorMessage = result.error;
+					}
+				}}
+			>
+				{t('common.delete')}
+			</Button>
+		</div>
+	</Modal>
 {/if}

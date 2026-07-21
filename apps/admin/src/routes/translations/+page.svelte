@@ -3,6 +3,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, RefreshCw, Pencil, Trash2 } from 'lucide-svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
 	import Modal from '$lib/components/Modal.svelte';
 
 	type I18NString = {
@@ -19,22 +21,43 @@
 	let errorMessage = $state('');
 	let selectedLocale = $state('en');
 
-	// Search term wired into the i18n strings load
 	let searchTerm = $state('');
 
-	// Edit (upsert)
 	let showEditModal = $state(false);
 	let editTarget = $state<I18NString | null>(null);
 	let editValue = $state('');
 	let editSaving = $state(false);
 
-	// Delete
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<I18NString | null>(null);
 	let deleteSaving = $state(false);
 
-	// Backend gates i18n string upsert/delete on i18n.manage
 	const canManage = $derived(hasPermission('i18n.manage'));
+
+	const filteredStrings = $derived(
+		searchTerm
+			? strings.filter(
+					(s) =>
+						s.key.toLowerCase().includes(searchTerm.toLowerCase()) ||
+						s.locale.toLowerCase().includes(searchTerm.toLowerCase()) ||
+						s.value.toLowerCase().includes(searchTerm.toLowerCase())
+				)
+			: strings
+	);
+
+	const columns = [
+		{ key: 'key', label: t('i18n.key'), sortable: true,
+			render: (v: string) => `<span class="font-mono text-xs">${v}</span>`
+		},
+		{ key: 'locale', label: t('i18n.locale'), sortable: true },
+		{ key: 'value', label: t('i18n.value'), sortable: false,
+			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v.slice(0, 80)}${v.length > 80 ? '...' : ''}</span>`
+		},
+		{ key: 'updated_at', label: t('i18n.updated'), sortable: true,
+			render: (v: string) => new Date(v).toLocaleDateString()
+		},
+		{ key: 'actions', label: t('common.actions', 'Actions'), class: 'w-24', component: TranslationActionsCell }
+	];
 
 	async function load() {
 		loading = true;
@@ -56,7 +79,6 @@
 		}
 	}
 
-	// Debounced search handler that refetches the strings list
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
 	function onSearchInput(e: Event) {
 		searchTerm = (e.currentTarget as HTMLInputElement).value;
@@ -79,7 +101,6 @@
 		if (!editTarget) return;
 		editSaving = true;
 		try {
-			// Backend upserts by key+locale
 			const result = await api('/admin/i18n/strings', {
 				method: 'POST',
 				body: JSON.stringify({ key: editTarget.key, locale: editTarget.locale, value: editValue })
@@ -134,7 +155,6 @@
 {/if}
 
 <div class="mb-4 flex items-center justify-between gap-2">
-	<!-- Debounced search input wired to the strings load -->
 	<input
 		type="search"
 		placeholder={t('common.search')}
@@ -152,49 +172,12 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('i18n.key')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('i18n.locale')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('i18n.value')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('i18n.updated')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions', 'Actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each strings as s (s.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-mono text-xs">{s.key}</td>
-						<td class="px-4 py-3 text-xs">{s.locale}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{s.value.slice(0, 80)}{s.value.length > 80 ? '...' : ''}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(s.updated_at).toLocaleDateString()}</td>
-						<td class="px-4 py-3">
-							{#if canManage}
-								<div class="flex items-center gap-1">
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-primary)" onclick={() => openEdit(s)}>
-										<Pencil class="inline h-3 w-3" />
-										{t('common.edit', 'Edit')}
-									</button>
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-danger)" onclick={() => confirmDelete(s)}>
-										<Trash2 class="inline h-3 w-3" />
-										{t('common.delete', 'Delete')}
-									</button>
-								</div>
-							{/if}
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('i18n.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		{columns}
+		data={filteredStrings}
+		pageSize={25}
+		emptyMessage={t('i18n.empty')}
+	/>
 {/if}
 
 <Modal bind:open={showEditModal} title={t('i18n.edit_title', 'Edit Translation')}>
@@ -233,3 +216,18 @@
 		</button>
 	</div>
 </Modal>
+
+{#snippet TranslationActionsCell(s: I18NString)}
+	{#if canManage}
+		<div class="flex items-center gap-1">
+			<Button variant="ghost" size="sm" onclick={() => openEdit(s)}>
+				<Pencil class="inline h-3 w-3" />
+				{t('common.edit', 'Edit')}
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(s)} style="color: var(--color-danger)">
+				<Trash2 class="inline h-3 w-3" />
+				{t('common.delete', 'Delete')}
+			</Button>
+		</div>
+	{/if}
+{/snippet}

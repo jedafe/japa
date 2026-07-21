@@ -4,7 +4,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('error.title')} — JapaControl</title>
+	<title>{t('error.title')} — {t('control.brand', 'JapaControl')}</title>
 </svelte:head>
 
 <div class="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">

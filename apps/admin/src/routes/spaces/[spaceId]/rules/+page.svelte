@@ -3,6 +3,8 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
 
 	type Rule = {
 		id: string;
@@ -18,16 +20,33 @@
 	let loading = $state(true);
 	let errorMessage = $state('');
 
-	// Create / Edit modal
+	let searchQuery = $state('');
+
 	let showModal = $state(false);
 	let editingRule = $state<Rule | null>(null);
 	let formTitle = $state('');
 	let formDescription = $state('');
 	let saving = $state(false);
 
-	// Delete confirmation
 	let showDelete = $state(false);
 	let deletingRule = $state<Rule | null>(null);
+
+	const columns = [
+		{ key: 'sort_order', label: '#', sortable: true, class: 'text-xs', render: (_v: number, _row: Rule, i?: number) => String((i ?? 0) + 1) },
+		{ key: 'title', label: t('space_rules.title_label'), sortable: true },
+		{ key: 'description', label: t('space_rules.description_label'), sortable: true, class: 'text-xs max-w-xs truncate', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
+		{ key: 'order', label: t('space_rules.order'), class: 'w-20', component: RuleOrderCell },
+		{ key: 'actions', label: '', class: 'w-32', component: RuleActionsCell }
+	];
+
+	function filteredRules(): Rule[] {
+		const q = searchQuery.toLowerCase().trim();
+		if (!q) return rules;
+		return rules.filter(r =>
+			r.title.toLowerCase().includes(q) ||
+			(r.description ?? '').toLowerCase().includes(q)
+		);
+	}
 
 	async function load() {
 		loading = true;
@@ -128,6 +147,29 @@
 	});
 </script>
 
+{#snippet RuleOrderCell(row: Rule)}
+	{@const idx = rules.findIndex(r => r.id === row.id)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" disabled={idx === 0} onclick={() => moveUp(row, idx)}>
+			&#9650;
+		</Button>
+		<Button variant="ghost" size="sm" disabled={idx === rules.length - 1} onclick={() => moveDown(row, idx)}>
+			&#9660;
+		</Button>
+	</div>
+{/snippet}
+
+{#snippet RuleActionsCell(row: Rule)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openEdit(row)} style="color: var(--color-info)">
+			{t('common.edit')}
+		</Button>
+		<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
+			{t('common.delete')}
+		</Button>
+	</div>
+{/snippet}
+
 <svelte:head>
 	<title>Space Rules — JapaConnect Admin</title>
 </svelte:head>
@@ -152,70 +194,16 @@
 	</div>
 {/if}
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else if rules.length === 0}
-	<div class="rounded-lg border p-8 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<p class="text-sm" style="color: var(--color-muted)">{t('space_rules.empty')}</p>
-	</div>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">#</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_rules.title_label')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_rules.description_label')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_rules.order')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each rules as rule, i}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{i + 1}</td>
-						<td class="px-4 py-3 font-medium">{rule.title}</td>
-						<td class="px-4 py-3 text-xs max-w-xs truncate" style="color: var(--color-muted)">{rule.description || '—'}</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-1">
-								<button
-									class="rounded p-0.5 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-30"
-									disabled={i === 0}
-									onclick={() => moveUp(rule, i)}
-									aria-label="Move up"
-								>&#9650;</button>
-								<button
-									class="rounded p-0.5 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-30"
-									disabled={i === rules.length - 1}
-									onclick={() => moveDown(rule, i)}
-									aria-label="Move down"
-								>&#9660;</button>
-							</div>
-						</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-1">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-									style="color: var(--color-info)"
-									onclick={() => openEdit(rule)}
-								>
-								{t('common.edit')}
-							</button>
-							<button
-								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-								style="color: var(--color-danger)"
-								onclick={() => confirmDelete(rule)}
-							>
-								{t('common.delete')}
-								</button>
-							</div>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
+<DataTable
+	columns={columns}
+	data={filteredRules()}
+	{loading}
+	pageSize={25}
+	emptyMessage={t('space_rules.empty')}
+	searchable
+	searchPlaceholder={t('common.search')}
+	onsearch={(q) => { searchQuery = q; }}
+/>
 
 <!-- Create / Edit Modal -->
 <Modal bind:open={showModal} title={editingRule ? t('space_rules.edit_title') : t('space_rules.add_title')} onConfirm={saveRule} confirmLabel={saving ? t('common.saving') : t('common.save')}>

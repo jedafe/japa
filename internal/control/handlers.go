@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -182,12 +183,13 @@ func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
-	if err := h.Service.DeleteTenant(r.Context(), id); err != nil {
+	tenant, err := h.Service.DeleteTenant(r.Context(), id)
+	if err != nil {
 		slog.Error("control: delete tenant", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tenant")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) SuspendTenant(w http.ResponseWriter, r *http.Request) {
@@ -647,15 +649,14 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 		indexesUnused = []unusedIndex{}
 	}
 
-	// Connection pool stats.
-	var activeConns, idleConns, waitingConns, maxConns int
+	// Connection pool stats (server-side session counts from pg_stat_activity).
+	var activeConns, idleConns, maxConns int
 	_ = h.DB.Reader.QueryRow(ctx, `
 		SELECT
 			COALESCE((SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND datname = current_database()), 0),
 			COALESCE((SELECT count(*) FROM pg_stat_activity WHERE state = 'idle' AND datname = current_database()), 0),
-			COALESCE((SELECT count(*) FROM pg_stat_activity WHERE wait_event_type IS NOT NULL AND datname = current_database()), 0),
 			COALESCE((SELECT setting::int FROM pg_settings WHERE name = 'max_connections'), 0)
-	`).Scan(&activeConns, &idleConns, &waitingConns, &maxConns)
+	`).Scan(&activeConns, &idleConns, &maxConns)
 
 	// Replication.
 	type replicationInfo struct {
@@ -733,7 +734,6 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 			"connection_pool": map[string]any{
 				"active":  activeConns,
 				"idle":    idleConns,
-				"waiting": waitingConns,
 				"max":     maxConns,
 			},
 			"replication": repl,
@@ -798,7 +798,12 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 	for _, queueName := range []string{worker.QueueCritical, worker.QueueDefault, worker.QueueLow} {
 		qi, err := h.Inspector.GetQueueInfo(queueName)
 		if err != nil {
-			slog.Warn("queue stats: failed to get queue info", "queue", queueName, "error", err)
+			// Queue may not exist yet (Asynq creates lazily on first enqueue).
+			// Show it as an empty queue rather than silently skipping.
+			slog.Debug("queue stats: queue not found, showing as empty", "queue", queueName)
+			queues = append(queues, queueInfo{
+				Name: queueName,
+			})
 			continue
 		}
 		queues = append(queues, queueInfo{
@@ -838,12 +843,12 @@ func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var tasks []map[string]any
+	tasks := make([]map[string]any, 0)
 
 	for _, queueName := range []string{"critical", "default", "low"} {
 		entries, err := h.Inspector.ListArchivedTasks(queueName)
 		if err != nil {
-			slog.Warn("dlq: list tasks failed", "queue", queueName, "error", err)
+			slog.Debug("dlq: list tasks failed (queue may not exist yet)", "queue", queueName, "error", err)
 			continue
 		}
 		for _, entry := range entries {
@@ -861,6 +866,82 @@ func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": tasks})
+}
+
+// ListQueueTasks returns recent tasks for a specific queue across all states
+// (pending, active, scheduled, retry, archived, completed).
+func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
+	if h.Inspector == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+			"pending": []any{}, "active": []any{}, "scheduled": []any{},
+			"retry": []any{}, "archived": []any{}, "completed": []any{},
+		}})
+		return
+	}
+
+	queueName := chi.URLParam(r, "queue_name")
+	if queueName == "" {
+		writeError(w, http.StatusBadRequest, "missing_queue", "queue_name is required")
+		return
+	}
+
+	type taskSummary struct {
+		ID          string    `json:"id"`
+		Type        string    `json:"type"`
+		State       string    `json:"state"`
+		Payload     string    `json:"payload"`
+		RetryCount  int       `json:"retry_count"`
+		MaxRetry    int       `json:"max_retry"`
+		LastErr     string    `json:"last_err,omitempty"`
+		LastFailedAt *string  `json:"last_failed_at,omitempty"`
+		NextProcessAt *string `json:"next_process_at,omitempty"`
+	}
+
+	summarize := func(tasks []*asynq.TaskInfo, state string) []taskSummary {
+		result := make([]taskSummary, 0, len(tasks))
+		for _, t := range tasks {
+			ts := taskSummary{
+				ID:         t.ID,
+				Type:       t.Type,
+				State:      state,
+				Payload:    string(t.Payload),
+				RetryCount: t.Retried,
+				MaxRetry:   t.MaxRetry,
+			}
+			if t.LastErr != "" {
+				ts.LastErr = t.LastErr
+			}
+			if !t.LastFailedAt.IsZero() {
+				s := t.LastFailedAt.Format(time.RFC3339)
+				ts.LastFailedAt = &s
+			}
+			if !t.NextProcessAt.IsZero() {
+				s := t.NextProcessAt.Format(time.RFC3339)
+				ts.NextProcessAt = &s
+			}
+			result = append(result, ts)
+		}
+		return result
+	}
+
+	// Collect tasks from each state, best-effort (skip non-existent queues).
+	pending, _ := h.Inspector.ListPendingTasks(queueName)
+	active, _ := h.Inspector.ListActiveTasks(queueName)
+	scheduled, _ := h.Inspector.ListScheduledTasks(queueName)
+	retry, _ := h.Inspector.ListRetryTasks(queueName)
+	archived, _ := h.Inspector.ListArchivedTasks(queueName)
+	completed, _ := h.Inspector.ListCompletedTasks(queueName)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"pending":   summarize(pending, "pending"),
+			"active":    summarize(active, "active"),
+			"scheduled": summarize(scheduled, "scheduled"),
+			"retry":     summarize(retry, "retry"),
+			"archived":  summarize(archived, "archived"),
+			"completed": summarize(completed, "completed"),
+		},
+	})
 }
 
 func (h *Handlers) RetryDLQTask(w http.ResponseWriter, r *http.Request) {
@@ -951,75 +1032,131 @@ func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	info, err := h.Valkey.Info(ctx, "memory", "keyspace").Result()
+	info, err := h.Valkey.Info(ctx, "memory").Result()
 	if err != nil {
 		slog.Error("control: cache stats", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch cache stats")
 		return
 	}
 
-	stats := parseValkeyInfo(info)
+	totalMemoryMB := parseValkeyMemory(info)
+
+	namespaces := countKeysByPrefix(ctx, h.Valkey)
+
+	var totalKeys int64
+	for _, ns := range namespaces {
+		totalKeys += ns.KeyCount
+	}
+
+	if totalKeys > 0 {
+		for i := range namespaces {
+			namespaces[i].MemoryEstimateMB = (float64(namespaces[i].KeyCount) / float64(totalKeys)) * totalMemoryMB
+		}
+	}
+
+	stats := cacheStatsResponse{
+		Namespaces:     namespaces,
+		TotalKeys:      totalKeys,
+		TotalMemoryMB:  totalMemoryMB,
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
-func parseValkeyInfo(info string) cacheStatsResponse {
+func parseValkeyMemory(info string) float64 {
 	var totalMemoryBytes int64
-	var totalKeys int64
-	var namespaces []cacheNamespace
 
 	lines := strings.Split(info, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
 		if strings.HasPrefix(line, "used_memory:") {
 			if val, err := strconv.ParseInt(strings.TrimPrefix(line, "used_memory:"), 10, 64); err == nil {
 				totalMemoryBytes = val
 			}
-			continue
+			break
+		}
+	}
+
+	return float64(totalMemoryBytes) / (1024 * 1024)
+}
+
+func countKeysByPrefix(ctx context.Context, vk valkeycompat.Cmdable) []cacheNamespace {
+	if vk == nil {
+		return nil
+	}
+
+	prefixes := []struct {
+		name    string
+		pattern string
+	}{
+		{"jc:perm", "jc:perm:*"},
+		{"jc:settings", "jc:settings:*"},
+		{"jc:cache:page", "jc:cache:page:*"},
+		{"jc:cache:feed", "jc:cache:feed:*"},
+		{"jc:cache:i18n", "jc:cache:i18n:*"},
+		{"jc:cache:search", "jc:cache:search:*"},
+		{"jc:cache:analytics", "jc:cache:analytics:*"},
+		{"jc:ratelimit", "jc:ratelimit:*"},
+		{"jc:idempotency", "jc:idempotency:*"},
+		{"jc:session", "jc:session:*"},
+		{"jc:spam", "jc:spam:*"},
+		{"jc:render", "jc:render:*"},
+		{"jc:link_preview", "jc:link_preview:*"},
+		{"jc:redirect", "jc:redirect:*"},
+		{"jc:editor_lock", "jc:editor_lock:*"},
+		{"jc:api_rate", "jc:api_rate:*"},
+		{"jc:ws", "jc:ws*"},
+		{"jc:other", "jc:*"},
+	}
+
+	var namespaces []cacheNamespace
+	seen := make(map[string]bool)
+
+	for _, p := range prefixes {
+		var cursor uint64
+		var count int64
+
+		for {
+			keys, nextCursor, err := vk.Scan(ctx, cursor, p.pattern, 100).Result()
+			if err != nil {
+				slog.Error("control: cache stats scan", "pattern", p.pattern, "error", err)
+				break
+			}
+
+			for _, key := range keys {
+				if p.name == "jc:other" {
+					isOther := true
+					for _, pp := range prefixes {
+						if pp.name != "jc:other" && strings.HasPrefix(key, strings.TrimSuffix(pp.pattern, "*")) {
+							isOther = false
+							break
+						}
+					}
+					if isOther && !seen[key] {
+						count++
+						seen[key] = true
+					}
+				} else if !seen[key] {
+					count++
+					seen[key] = true
+				}
+			}
+
+			cursor = nextCursor
+			if cursor == 0 {
+				break
+			}
 		}
 
-		if strings.HasPrefix(line, "db") {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) != 2 {
-				continue
-			}
-			dbName := strings.TrimPrefix(parts[0], "db")
-			kvPairs := strings.Split(parts[1], ",")
-			var keys int64
-			for _, kv := range kvPairs {
-				kvp := strings.SplitN(kv, "=", 2)
-				if len(kvp) != 2 {
-					continue
-				}
-				if kvp[0] == "keys" {
-					keys, _ = strconv.ParseInt(kvp[1], 10, 64)
-				}
-			}
-			totalKeys += keys
+		if count > 0 || p.name != "jc:other" {
 			namespaces = append(namespaces, cacheNamespace{
-				Prefix:           "db" + dbName,
-				KeyCount:         keys,
+				Prefix:           p.name,
+				KeyCount:         count,
 				MemoryEstimateMB: 0,
 			})
 		}
 	}
 
-	totalMemoryMB := float64(totalMemoryBytes) / (1024 * 1024)
-
-	for i := range namespaces {
-		if totalKeys > 0 {
-			namespaces[i].MemoryEstimateMB = (float64(namespaces[i].KeyCount) / float64(totalKeys)) * totalMemoryMB
-		}
-	}
-
-	return cacheStatsResponse{
-		Namespaces:     namespaces,
-		TotalKeys:      totalKeys,
-		TotalMemoryMB:  totalMemoryMB,
-	}
+	return namespaces
 }
 
 func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
@@ -1150,6 +1287,41 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 			"results":     results,
 			"page":        page,
 			"total_pages": totalPages,
+		},
+	})
+}
+
+func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.Client == nil {
+		writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "Task queue not available")
+		return
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"tenant_id": tenantID.String(),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create scan task")
+		return
+	}
+
+	task := asynq.NewTask("security:scan", payload)
+	info, err := h.Client.Enqueue(task)
+	if err != nil {
+		slog.Error("control: trigger security scan", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue security scan")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"task_id": info.ID,
+			"status":  "enqueued",
 		},
 	})
 }
@@ -1325,13 +1497,22 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
+	type auditLogActor struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+	}
 	type auditLog struct {
-		ID          pgtype.UUID  `json:"id"`
-		ActorUserID *pgtype.UUID `json:"actor_user_id"`
-		ActionType  string       `json:"action_type"`
-		TargetType  *string      `json:"target_type"`
-		TargetID    *pgtype.UUID `json:"target_id"`
-		CreatedAt   time.Time    `json:"created_at"`
+		ID                 pgtype.UUID     `json:"id"`
+		Timestamp          time.Time       `json:"timestamp"`
+		Actor              *auditLogActor  `json:"actor"`
+		ActionType         string          `json:"action_type"`
+		EntityType         *string         `json:"entity_type"`
+		EntityID           *string         `json:"entity_id"`
+		TenantID           pgtype.UUID     `json:"tenant_id"`
+		IPAddress          *string         `json:"ip_address"`
+		ImpersonatedUserID *string         `json:"impersonated_user_id"`
+		Metadata           json.RawMessage `json:"metadata"`
+		UserAgent          *string         `json:"user_agent"`
 	}
 
 	page := 0
@@ -1348,16 +1529,16 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := page * perPage
 
-	sortBy := "created_at"
+	sortBy := "al.created_at"
 	sortDir := "DESC"
 	if sb := r.URL.Query().Get("sort_by"); sb != "" {
 		switch sb {
 		case "timestamp", "created_at":
-			sortBy = "created_at"
+			sortBy = "al.created_at"
 		case "action", "action_type":
-			sortBy = "action_type"
+			sortBy = "al.action_type"
 		default:
-			sortBy = "created_at"
+			sortBy = "al.created_at"
 		}
 	}
 	if sd := r.URL.Query().Get("sort_dir"); sd != "" {
@@ -1367,10 +1548,47 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	query := `SELECT id, actor_user_id, action_type, target_type, target_id, created_at
-		FROM audit_logs ORDER BY ` + sortBy + ` ` + sortDir + ` LIMIT $1 OFFSET $2`
+	// Build WHERE clause from query filters.
+	var where string
+	var args []any
+	argIdx := 1
+	if actor := r.URL.Query().Get("actor"); actor != "" {
+		where += fmt.Sprintf(" AND (al.actor_user_id::text = $%d OR u.username ILIKE '%%' || $%d || '%%')", argIdx, argIdx)
+		args = append(args, actor)
+		argIdx++
+	}
+	if actionType := r.URL.Query().Get("action_type"); actionType != "" {
+		where += fmt.Sprintf(" AND al.action_type = $%d", argIdx)
+		args = append(args, actionType)
+		argIdx++
+	}
+	if entityType := r.URL.Query().Get("entity_type"); entityType != "" {
+		where += fmt.Sprintf(" AND al.target_type = $%d", argIdx)
+		args = append(args, entityType)
+		argIdx++
+	}
+	if from := r.URL.Query().Get("from"); from != "" {
+		where += fmt.Sprintf(" AND al.created_at >= $%d", argIdx)
+		args = append(args, from)
+		argIdx++
+	}
+	if to := r.URL.Query().Get("to"); to != "" {
+		where += fmt.Sprintf(" AND al.created_at <= $%d", argIdx)
+		args = append(args, to)
+		argIdx++
+	}
 
-	rows, err := h.DB.Reader.Query(r.Context(), query, perPage, offset)
+	query := fmt.Sprintf(`SELECT al.id, al.created_at, al.actor_user_id, u.username,
+		al.action_type, al.target_type, al.target_id::text, al.tenant_id,
+		al.ip_address::text, al.impersonated_user_id::text, al.metadata
+		FROM audit_logs al
+		LEFT JOIN users u ON u.id = al.actor_user_id
+		WHERE 1=1%s
+		ORDER BY %s %s
+		LIMIT $%d OFFSET $%d`, where, sortBy, sortDir, argIdx, argIdx+1)
+	args = append(args, perPage, offset)
+
+	rows, err := h.DB.Reader.Query(r.Context(), query, args...)
 	if err != nil {
 		slog.Error("control: list audit logs", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list audit logs")
@@ -1381,9 +1599,15 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	var logs []auditLog
 	for rows.Next() {
 		var l auditLog
-		if err := rows.Scan(&l.ID, &l.ActorUserID, &l.ActionType, &l.TargetType, &l.TargetID, &l.CreatedAt); err != nil {
+		var actorID, username sql.NullString
+		if err := rows.Scan(&l.ID, &l.Timestamp, &actorID, &username,
+			&l.ActionType, &l.EntityType, &l.EntityID, &l.TenantID,
+			&l.IPAddress, &l.ImpersonatedUserID, &l.Metadata); err != nil {
 			slog.Error("control: scan audit log", "error", err)
 			continue
+		}
+		if actorID.Valid {
+			l.Actor = &auditLogActor{ID: actorID.String, Username: username.String}
 		}
 		logs = append(logs, l)
 	}
@@ -1525,19 +1749,19 @@ func (h *Handlers) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
-	h.PublicAPI.UpdateAPIKey(w, r)
+	h.PublicAPI.UpdateAPIKeyStatus(w, r)
 }
 
 func (h *Handlers) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
-	h.PublicAPI.RevokeKey(w, r)
+	h.PublicAPI.DeleteKeyPermanently(w, r)
+}
+
+func (h *Handlers) DeleteAPIKeysBatch(w http.ResponseWriter, r *http.Request) {
+	h.PublicAPI.DeleteKeysPermanently(w, r)
 }
 
 func (h *Handlers) GetAPIKeyAnalytics(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"message": "API key analytics requires implementation",
-		},
-	})
+	h.PublicAPI.GetAPIKeyAnalytics(w, r)
 }
 
 // ---------------------------------------------------------------------------
@@ -1901,6 +2125,13 @@ func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeError(w, http.StatusNotFound, "not_found", "Cron job not found")
+}
+
+// ListTaskTypes handles GET /control/task-types — returns the full Asynq task
+// type catalog with name, tier, and description for the cron job editor UI.
+func (h *Handlers) ListTaskTypes(w http.ResponseWriter, r *http.Request) {
+	taskTypes := worker.TaskTypeCatalog()
+	writeJSON(w, http.StatusOK, map[string]any{"data": taskTypes})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

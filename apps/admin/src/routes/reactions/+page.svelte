@@ -1,9 +1,11 @@
 <script lang="ts">
 	import Modal from '$lib/components/Modal.svelte';
-	import { api } from '$lib/api';
+	import { reactionsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye } from 'lucide-svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { FilterBar } from '$lib/components/ui/filter-bar';
+	import { Button } from '$lib/components/ui/button';
 
 	type ReactionType = {
 		key: string;
@@ -15,26 +17,62 @@
 	};
 
 	let reactions = $state<ReactionType[]>([]);
-	let page = $state(0);
-	let totalPages = $state(1);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	let searchQuery = $state('');
+	let filterValues = $state<Record<string, string>>({});
 
-	// Create/Edit modal
 	let showModal = $state(false);
 	let editingReaction = $state<ReactionType | null>(null);
 	let form = $state({ key: '', label: '', emoji: '', enabled: true });
 	let saving = $state(false);
 
-	// Delete modal
 	let showDeleteModal = $state(false);
 	let deleteTarget = $state<ReactionType | null>(null);
 
 	let showViewModal = $state(false);
 	let viewTarget = $state<ReactionType | null>(null);
 
-	// Backend gates reaction-type mutations on content.reaction_types.manage
 	const canManageReactions = $derived(hasPermission('content.reaction_types.manage'));
+
+	const filterDefs = [
+		{
+			key: 'enabled',
+			label: t('reactions.status', 'Status'),
+			options: [
+				{ value: 'true', label: t('reactions.active', 'Active') },
+				{ value: 'false', label: t('reactions.inactive', 'Inactive') }
+			]
+		}
+	];
+
+	const filteredReactions = $derived(
+		searchQuery
+			? reactions.filter(
+					(r) =>
+						r.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						r.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						r.emoji.toLowerCase().includes(searchQuery.toLowerCase())
+				)
+			: reactions
+	);
+
+	const columns = [
+		{ key: 'emoji', label: t('reactions.emoji'), sortable: true,
+			render: (v: string) => `<span class="text-2xl">${v}</span>`
+		},
+		{ key: 'label', label: t('reactions.name'), sortable: true,
+			render: (v: string) => `<span class="font-medium">${v}</span>`
+		},
+		{ key: 'enabled', label: t('reactions.active'), sortable: true,
+			render: (v: boolean) => {
+				const cls = v ? 'bg-success/15 text-success' : 'bg-muted/15 text-muted';
+				const text = v ? 'Active' : 'Inactive';
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${cls}">${text}</span>`;
+			}
+		},
+		{ key: 'actions', label: '', class: 'w-24', component: ReactionActionsCell }
+	];
 
 	function openView(reaction: ReactionType) {
 		viewTarget = reaction;
@@ -44,21 +82,33 @@
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const params = new URLSearchParams({ page: String(page) });
 		try {
-			const result = await api<ReactionType[]>(`/reaction-types?${params}`);
+			const params = new URLSearchParams();
+			if (filterValues.enabled) params.set('enabled', filterValues.enabled);
+			if (searchQuery) params.set('q', searchQuery);
+			const result = await reactionsAdminApi.list(params.toString() || undefined);
 			if (result.ok) {
-				const list = result.data ?? [];
-				reactions = list;
-				totalPages = 1;
+				reactions = (result.data as ReactionType[]) ?? [];
 			} else {
-				errorMessage = result.error;
+				errorMessage = result.error as string;
 			}
 		} catch {
 			errorMessage = t('common.error');
 		} finally {
 			loading = false;
 		}
+	}
+
+	function handleSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? '';
+		filterValues = values;
+		load();
+	}
+
+	function handleClear() {
+		searchQuery = '';
+		filterValues = {};
+		load();
 	}
 
 	function openCreate() {
@@ -89,8 +139,8 @@
 			enabled: form.enabled
 		};
 		const result = editingReaction
-			? await api(`/reaction-types/${editingReaction.key}`, { method: 'PATCH', body })
-			: await api('/reaction-types', { method: 'POST', body });
+			? await reactionsAdminApi.update(editingReaction.key, body)
+			: await reactionsAdminApi.create(body);
 		if (result.ok) {
 			showModal = false;
 			load();
@@ -108,18 +158,13 @@
 	async function executeDelete() {
 		if (!deleteTarget) return;
 		errorMessage = '';
-		const result = await api(`/reaction-types/${deleteTarget.key}`, { method: 'DELETE' });
+		const result = await reactionsAdminApi.delete(deleteTarget.key);
 		if (result.ok) {
 			showDeleteModal = false;
 			load();
 		} else {
 			errorMessage = result.error;
 		}
-	}
-
-	function handlePageChange(p: number) {
-		page = p;
-		load();
 	}
 
 	$effect(() => {
@@ -152,75 +197,20 @@
 	{/if}
 </div>
 
+<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-				<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.emoji')}</th>
-				<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.name')}</th>
-				<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reactions.active')}</th>
-				<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each reactions as reaction}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
-					<td class="px-4 py-3 text-2xl">{reaction.emoji}</td>
-					<td class="px-4 py-3 font-medium">{reaction.label}</td>
-					<td class="px-4 py-3">
-						<span class="inline-block rounded-full px-2 py-0.5 text-xs {reaction.enabled ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
-							{reaction.enabled ? 'Active' : 'Inactive'}
-						</span>
-					</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-1">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-									style="color: var(--color-muted)"
-									onclick={() => openView(reaction)}
-								>
-									{t('common.view')}
-								</button>
-								{#if canManageReactions}
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-info)"
-										onclick={() => openEdit(reaction)}
-									>
-										{t('common.edit')}
-									</button>
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-danger)"
-										onclick={() => confirmDelete(reaction)}
-									>
-										{t('common.delete')}
-									</button>
-								{/if}
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							No reaction types found
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
-		</div>
-	</div>
+	<DataTable
+		{columns}
+		data={filteredReactions}
+		pageSize={25}
+		searchable
+		searchPlaceholder={t('reactions.search', 'Search reactions...')}
+		onsearch={(q) => { searchQuery = q; }}
+		emptyMessage="No reaction types found"
+	/>
 {/if}
 
 <!-- View Modal -->
@@ -305,3 +295,19 @@
 		Are you sure you want to delete the reaction type <strong>{deleteTarget?.emoji} {deleteTarget?.label}</strong>?
 	</p>
 </Modal>
+
+{#snippet ReactionActionsCell(reaction: ReactionType)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(reaction)}>
+			{t('common.view')}
+		</Button>
+		{#if canManageReactions}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(reaction)}>
+				{t('common.edit')}
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(reaction)} style="color: var(--color-danger)">
+				{t('common.delete')}
+			</Button>
+		{/if}
+	</div>
+{/snippet}

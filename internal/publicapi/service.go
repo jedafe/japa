@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Store provides pgx-backed CRUD for API keys.
@@ -159,6 +160,117 @@ type apiKeyRow struct {
 	ExpiresAt     *pgtype.Timestamptz
 	CreatedAt     pgtype.Timestamptz
 	UpdatedAt     pgtype.Timestamptz
+}
+
+// getAnalytics returns aggregate analytics for API keys.
+func (s *Store) getAnalytics(ctx context.Context) (*APIKeyAnalytics, error) {
+	analytics := &APIKeyAnalytics{}
+
+	t := tenant.FromContext(ctx)
+	if t == nil {
+		return nil, fmt.Errorf("tenant not available")
+	}
+	tenantID := t.ID
+
+	// Total counts by status (tenant-scoped).
+	err := s.dbPool.QueryRow(ctx, `
+		SELECT
+			count(*) FILTER (WHERE status = 'active'),
+			count(*) FILTER (WHERE status = 'suspended'),
+			count(*) FILTER (WHERE status = 'revoked'),
+			coalesce(sum(request_count), 0)
+		FROM api_keys
+		WHERE tenant_id = $1
+	`, tenantID).Scan(&analytics.ActiveKeys, &analytics.SuspendedKeys, &analytics.RevokedKeys, &analytics.TotalRequests)
+	if err != nil {
+		return nil, fmt.Errorf("get analytics totals: %w", err)
+	}
+
+	analytics.TotalKeys = analytics.ActiveKeys + analytics.SuspendedKeys + analytics.RevokedKeys
+
+	// Top keys by volume (top 10, tenant-scoped).
+	rows, err := s.dbPool.Query(ctx, `
+		SELECT id, name, key_prefix, request_count, status
+		FROM api_keys
+		WHERE tenant_id = $1 AND request_count > 0
+		ORDER BY request_count DESC
+		LIMIT 10
+	`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get top keys: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var v APIKeyVolume
+		var id pgtype.UUID
+		if err := rows.Scan(&id, &v.Name, &v.KeyPrefix, &v.RequestCount, &v.Status); err != nil {
+			return nil, fmt.Errorf("scan top key: %w", err)
+		}
+		v.ID = id.String()
+		analytics.TopKeys = append(analytics.TopKeys, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Zero usage keys (tenant-scoped).
+	rows2, err := s.dbPool.Query(ctx, `
+		SELECT id, name, key_prefix, request_count, status
+		FROM api_keys
+		WHERE tenant_id = $1 AND request_count = 0 AND status = 'active'
+		ORDER BY created_at DESC
+		LIMIT 10
+	`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get zero usage keys: %w", err)
+	}
+	defer rows2.Close()
+
+	for rows2.Next() {
+		var v APIKeyVolume
+		var id pgtype.UUID
+		if err := rows2.Scan(&id, &v.Name, &v.KeyPrefix, &v.RequestCount, &v.Status); err != nil {
+			return nil, fmt.Errorf("scan zero usage key: %w", err)
+		}
+		v.ID = id.String()
+		analytics.ZeroUsageKeys = append(analytics.ZeroUsageKeys, v)
+	}
+	if err := rows2.Err(); err != nil {
+		return nil, err
+	}
+
+	// Recent activity (last 7 days, tenant-scoped).
+	rows3, err := s.dbPool.Query(ctx, `
+		SELECT key_prefix, last_used_at, request_count
+		FROM api_keys
+		WHERE tenant_id = $1
+		  AND last_used_at IS NOT NULL
+		  AND last_used_at > now() - interval '7 days'
+		ORDER BY last_used_at DESC
+		LIMIT 20
+	`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get recent activity: %w", err)
+	}
+	defer rows3.Close()
+
+	for rows3.Next() {
+		var a APIKeyActivity
+		var lastUsed pgtype.Timestamptz
+		if err := rows3.Scan(&a.KeyPrefix, &lastUsed, &a.RequestCount); err != nil {
+			return nil, fmt.Errorf("scan recent activity: %w", err)
+		}
+		if lastUsed.Valid {
+			a.LastUsedAt = lastUsed.Time.Format(time.RFC3339)
+		}
+		analytics.RecentActivity = append(analytics.RecentActivity, a)
+	}
+	if err := rows3.Err(); err != nil {
+		return nil, err
+	}
+
+	return analytics, nil
 }
 
 func rowToAPIKey(row apiKeyRow) APIKey {
@@ -337,9 +449,47 @@ func (s *Service) SuspendAPIKey(ctx context.Context, keyID pgtype.UUID) error {
 	return s.store.setStatus(ctx, keyID, "suspended")
 }
 
-// UnsuspendAPIKey sets an API key status back to active. 
+// UnsuspendAPIKey sets an API key status back to active.
 func (s *Service) UnsuspendAPIKey(ctx context.Context, keyID pgtype.UUID) error {
 	return s.store.setStatus(ctx, keyID, "active")
+}
+
+// DeleteAPIKey permanently deletes an API key (super_admin only).
+func (s *Service) DeleteAPIKey(ctx context.Context, keyID pgtype.UUID) error {
+	tag, err := s.store.dbPool.Exec(ctx, `
+		DELETE FROM api_keys WHERE id = $1
+	`, keyID)
+	if err != nil {
+		return fmt.Errorf("delete api key: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return errors.New("api key not found")
+	}
+
+	return nil
+}
+
+// DeleteAPIKeys permanently deletes multiple API keys (super_admin only).
+func (s *Service) DeleteAPIKeys(ctx context.Context, keyIDs []pgtype.UUID) error {
+	if len(keyIDs) == 0 {
+		return nil
+	}
+
+	// Build the query with ANY for efficient batch delete.
+	_, err := s.store.dbPool.Exec(ctx, `
+		DELETE FROM api_keys WHERE id = ANY($1)
+	`, keyIDs)
+	if err != nil {
+		return fmt.Errorf("delete api keys: %w", err)
+	}
+
+	return nil
+}
+
+// GetAnalytics returns aggregate analytics for all API keys.
+func (s *Service) GetAnalytics(ctx context.Context) (*APIKeyAnalytics, error) {
+	return s.store.getAnalytics(ctx)
 }
 
 // ---------------------------------------------------------------------------

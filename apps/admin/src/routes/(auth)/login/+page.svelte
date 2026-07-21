@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
-	import { apiFetch } from '$lib/api/client';
+	import { setAccessToken } from '$lib/api/token';
 
 	let email = $state('');
 	let password = $state('');
@@ -22,14 +22,29 @@
 				credentials: 'include',
 				body: JSON.stringify({ email, password })
 			});
-			
-			const body = await res.json();
-			
+
+			// Defensively parse: a failed/empty response (network error, proxy
+			// down, or non-JSON error body) must not throw "Unexpected end of
+			// JSON input". Read as text first, then attempt JSON decode.
+			const text = await res.text();
+			let body: { data?: { access_token?: string }; error?: { message?: string } } = {};
+			if (text) {
+				try {
+					body = JSON.parse(text);
+				} catch {
+					body = {};
+				}
+			}
+
 			if (res.ok && body.data?.access_token) {
-				// Reload session state then navigate to the dashboard
+				setAccessToken(body.data.access_token);
 				await goto('/', { invalidateAll: true });
+			} else if (res.ok) {
+				// Authenticated but no access token (e.g. TOTP challenge) — surface it.
+				error = body.error?.message || 'Login succeeded but no session was issued';
 			} else {
-				error = body.error?.message || 'Invalid credentials';
+				const status = res.status ? ` (${res.status})` : '';
+				error = body.error?.message || `Login failed${status}`;
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Login failed';

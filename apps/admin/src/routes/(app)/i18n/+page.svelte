@@ -44,6 +44,10 @@
 	let successMessage = $state('');
 	let creatingLocale = $state(false);
 
+	let selectedLanguageIds = $state<Set<string>>(new Set());
+	let selectedTranslationIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
+
 	let showViewModal = $state(false);
 	let viewLanguage = $state<Language | null>(null);
 	let viewString = $state<TranslationEntry | null>(null);
@@ -53,20 +57,20 @@
 	let form = $state({ code: '', name: '', flag: '' });
 
 	let tabs = $derived([
-		{ value: 'languages', label: 'Languages', icon: Globe, count: languages.length },
-		{ value: 'translations', label: 'Translations', icon: FileText, count: translations.length }
+		{ value: 'languages', label: t('app.i18n.tab_languages', 'Languages'), icon: Globe, count: languages.length },
+		{ value: 'translations', label: t('app.i18n.tab_translations', 'Translations'), icon: FileText, count: translations.length }
 	]);
 
 	const languageColumns = [
 		{
 			key: 'code',
-			label: 'Code',
+			label: t('app.i18n.code', 'Code'),
 			sortable: true,
 			render: (value: string) => `<span class="font-mono text-sm text-foreground">${value}</span>`
 		},
 		{
 			key: 'name',
-			label: 'Language',
+			label: t('app.i18n.language', 'Language'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-2">
@@ -77,14 +81,20 @@
 		},
 		{
 			key: 'status',
-			label: 'Status',
+			label: t('common.status', 'Status'),
 			sortable: true,
 			render: (_: any, row: any) => {
-				const status = row.isDefault ? 'default' : row.isEnabled ? 'enabled' : 'disabled';
+				const rawStatus = row.isDefault ? 'default' : row.isEnabled ? 'enabled' : 'disabled';
+				const labels: Record<string, string> = {
+					default: t('app.i18n.status_default', 'default'),
+					enabled: t('app.i18n.status_enabled', 'enabled'),
+					disabled: t('app.i18n.status_disabled', 'disabled')
+				};
+				const status = labels[rawStatus] ?? rawStatus;
 				const cls =
-					status === 'default'
+					rawStatus === 'default'
 						? 'bg-primary-100 text-primary-800 border-primary-200'
-						: status === 'enabled'
+						: rawStatus === 'enabled'
 							? 'bg-success/15 text-success border-success'
 							: 'bg-surface text-foreground border';
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${status}</span>`;
@@ -101,13 +111,13 @@
 	const translationColumns = [
 		{
 			key: 'key',
-			label: 'Key',
+			label: t('app.i18n.key', 'Key'),
 			sortable: true,
 			render: (value: string) => `<span class="font-mono text-sm text-foreground">${value}</span>`
 		},
 		{
 			key: 'value',
-			label: 'Value',
+			label: t('app.i18n.value', 'Value'),
 			render: (_: any, row: any) => `
 				<div class="max-w-md truncate text-sm text-foreground-alt">${row.value || '—'}</div>
 			`
@@ -165,7 +175,7 @@
 		// The backend implicitly creates the locale once any translation row exists for it.
 		const enResult = await i18nAdminApiExtended.listStrings('locale=en');
 		if (!enResult.ok) {
-			errorMessage = 'Failed to load source strings';
+			errorMessage = t('app.i18n.load_source_error', 'Failed to load source strings');
 			creatingLocale = false;
 			return;
 		}
@@ -179,10 +189,10 @@
 		if (res.ok) {
 			createModalOpen = false;
 			form = { code: '', name: '', flag: '' };
-			successMessage = 'Language added successfully';
+			successMessage = t('app.i18n.language_added', 'Language added successfully');
 			loadLanguages();
 		} else {
-			errorMessage = res.error ?? 'Failed to add language';
+			errorMessage = res.error ?? t('app.i18n.add_language_error', 'Failed to add language');
 		}
 		creatingLocale = false;
 	}
@@ -204,10 +214,10 @@
 		if (res.ok) {
 			editModalOpen = false;
 			editingString = null;
-			successMessage = 'Translation updated';
+			successMessage = t('app.i18n.translation_updated', 'Translation updated');
 			loadTranslations();
 		} else {
-			errorMessage = res.error ?? 'Failed to update translation';
+			errorMessage = res.error ?? t('app.i18n.update_error', 'Failed to update translation');
 		}
 		saving = false;
 	}
@@ -224,18 +234,61 @@
 			method: 'DELETE'
 		});
 		if (res.ok) {
-			successMessage = 'Translation deleted';
+			successMessage = t('app.i18n.translation_deleted', 'Translation deleted');
 			loadTranslations();
 		} else {
-			errorMessage = res.error ?? 'Failed to delete';
+			errorMessage = res.error ?? t('app.i18n.delete_error', 'Failed to delete');
 		}
 		deleteConfirmOpen = false;
 		deletingTarget = null;
 		saving = false;
 	}
 
+	async function bulkDeleteLanguages() {
+		if (selectedLanguageIds.size === 0) return;
+		bulkDeleting = true;
+		errorMessage = '';
+		try {
+			for (const code of selectedLanguageIds) {
+				await api(`/admin/i18n/languages/${code}`, { method: 'DELETE' });
+			}
+			selectedLanguageIds = new Set();
+			loadLanguages();
+		} catch {
+			errorMessage = t('app.i18n.delete_error', 'Failed to delete');
+		}
+		bulkDeleting = false;
+	}
+
+	async function bulkDeleteTranslations() {
+		if (selectedTranslationIds.size === 0) return;
+		bulkDeleting = true;
+		errorMessage = '';
+		try {
+			for (const id of selectedTranslationIds) {
+				await api(`/admin/i18n/strings/${id}?locale=${encodeURIComponent(selectedLocale)}`, { method: 'DELETE' });
+			}
+			selectedTranslationIds = new Set();
+			loadTranslations();
+		} catch {
+			errorMessage = t('app.i18n.delete_error', 'Failed to delete');
+		}
+		bulkDeleting = false;
+	}
+
 	$effect(() => {
 		loadData();
+	});
+
+	$effect(() => {
+		if (successMessage) {
+			const msg = successMessage;
+			setTimeout(() => { if (successMessage === msg) successMessage = ''; }, 4000);
+		}
+		if (errorMessage) {
+			const msg = errorMessage;
+			setTimeout(() => { if (errorMessage === msg) errorMessage = ''; }, 6000);
+		}
 	});
 </script>
 
@@ -247,7 +300,9 @@
 	title={t('app.i18n.title')}
 	description={t('app.i18n.description')}
 	actions={[
-		{ label: t('app.i18n.add_language'), icon: Plus, onclick: () => (createModalOpen = true) },
+		...(canManageI18n
+			? [{ label: t('app.i18n.add_language'), icon: Plus, onclick: () => (createModalOpen = true) }]
+			: []),
 		{ label: t('common.refresh'), icon: RefreshCw, variant: 'ghost', onclick: loadData }
 	]}
 />
@@ -270,14 +325,23 @@
 		<Card>
 			<CardContent class="p-0">
 				{#if loading}
-					<p class="py-8 text-center text-sm text-muted">Loading...</p>
+					<p class="py-8 text-center text-sm text-muted">{t('common.loading', 'Loading...')}</p>
 				{:else}
 					<DataTable
 						columns={languageColumns}
 						data={languages}
 						pageSize={20}
 						emptyMessage={t('app.i18n.no_languages')}
-					/>
+						selectable
+						bind:selectedIds={selectedLanguageIds}
+					>
+						{#snippet bulkActions()}
+							<Button variant="destructive" size="sm" onclick={bulkDeleteLanguages} disabled={bulkDeleting || selectedLanguageIds.size === 0}>
+								<Trash2 class="h-3.5 w-3.5 mr-1" />
+								{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.deleteSelected', 'Delete Selected')} ({selectedLanguageIds.size})
+							</Button>
+						{/snippet}
+					</DataTable>
 				{/if}
 			</CardContent>
 		</Card>
@@ -285,7 +349,7 @@
 
 	{#if activeTab === 'translations'}
 		<div class="mb-4 flex items-center gap-3">
-			<label for="locale-select" class="text-sm font-medium text-foreground-alt">Language</label>
+			<label for="locale-select" class="text-sm font-medium text-foreground-alt">{t('app.i18n.language', 'Language')}</label>
 			<Select
 				options={languages.map((l) => ({ value: l.code, label: l.name }))}
 				value={selectedLocale}
@@ -299,14 +363,23 @@
 		<Card>
 			<CardContent class="p-0">
 				{#if loading}
-					<p class="py-8 text-center text-sm text-muted">Loading...</p>
+					<p class="py-8 text-center text-sm text-muted">{t('common.loading', 'Loading...')}</p>
 				{:else}
 					<DataTable
 						columns={translationColumns}
 						data={translations}
 						pageSize={50}
 						emptyMessage={t('app.i18n.no_translations')}
-					/>
+						selectable
+						bind:selectedIds={selectedTranslationIds}
+					>
+						{#snippet bulkActions()}
+							<Button variant="destructive" size="sm" onclick={bulkDeleteTranslations} disabled={bulkDeleting || selectedTranslationIds.size === 0}>
+								<Trash2 class="h-3.5 w-3.5 mr-1" />
+								{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.deleteSelected', 'Delete Selected')} ({selectedTranslationIds.size})
+							</Button>
+						{/snippet}
+					</DataTable>
 				{/if}
 			</CardContent>
 		</Card>
@@ -317,27 +390,27 @@
 <Modal bind:open={createModalOpen} title={t('app.i18n.add_language')} description={t('app.i18n.add_language_desc')}>
 	<div class="space-y-4">
 		<div>
-			<label for="lang-code" class="mb-1 block text-sm font-medium text-foreground-alt">Language Code</label>
+			<label for="lang-code" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.language_code', 'Language Code')}</label>
 			<input
 				id="lang-code"
 				type="text"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g., es"
+				placeholder={t('app.i18n.code_placeholder', 'e.g., es')}
 				bind:value={form.code}
 			/>
 		</div>
 		<div>
-			<label for="lang-name" class="mb-1 block text-sm font-medium text-foreground-alt">Language Name</label>
+			<label for="lang-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.language_name', 'Language Name')}</label>
 			<input
 				id="lang-name"
 				type="text"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g., Spanish"
+				placeholder={t('app.i18n.name_placeholder', 'e.g., Spanish')}
 				bind:value={form.name}
 			/>
 		</div>
 		<div>
-			<label for="lang-flag" class="mb-1 block text-sm font-medium text-foreground-alt">Flag Emoji (optional)</label>
+			<label for="lang-flag" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.flag_emoji', 'Flag Emoji (optional)')}</label>
 			<input
 				id="lang-flag"
 				type="text"
@@ -361,11 +434,11 @@
 	{#if editingString}
 		<div class="space-y-4">
 			<div>
-				<label for="edit-key" class="mb-1 block text-sm font-medium text-foreground-alt">Key</label>
+				<label for="edit-key" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.key', 'Key')}</label>
 				<p id="edit-key" class="rounded-lg bg-surface px-3 py-2 font-mono text-xs text-foreground-alt">{editingString.key}</p>
 			</div>
 			<div>
-				<label for="edit-value" class="mb-1 block text-sm font-medium text-foreground-alt">Value ({editingString.locale})</label>
+				<label for="edit-value" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.value', 'Value')} ({editingString.locale})</label>
 				<textarea
 					id="edit-value"
 					rows="4"
@@ -411,7 +484,7 @@
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.i18n.status', 'Status')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewLanguage.isDefault ? 'Default' : viewLanguage.isEnabled ? 'Enabled' : 'Disabled'}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewLanguage.isDefault ? t('app.i18n.status_default', 'Default') : viewLanguage.isEnabled ? t('app.i18n.status_enabled', 'Enabled') : t('app.i18n.status_disabled', 'Disabled')}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.i18n.strings', 'Strings')}</p>

@@ -1,6 +1,6 @@
 ---
 name: jc-main-debug
-description: Use when reviewing or debugging code in the JapaConnect Main App (apps/web, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), LayerChart rendering issues, and Rule 16 violations.
+description: Use when reviewing or debugging code in the JapaConnect Main App (apps/web, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), profile learning hub and cross-app link defects (ADR-060), LayerChart rendering issues, and Rule 16 violations.Use when reviewing or debugging code in the JapaConnect Main App (apps/web, SSR). Diagnoses SSR/hydration mismatches, Svelte 5 Runes violations, Bits UI lifecycle errors, app-shell/layout drift (ADR-058), LayerChart rendering issues, and Rule 16 violations.
 ---
 
 # JapaConnect Main App — Review & Debugging Skill
@@ -62,6 +62,13 @@ If the bug involves data not loading: verify the endpoint actually exists (`curl
 ## 7. SEO & A11y
 - Indexable routes need `<svelte:head>` title/description/OG + JSON-LD (Article/QAPage/Person/Organization)
 - Images: `loading="lazy" decoding="async"` · icon buttons: `aria-label` · `<div onclick>` → `<button>` · focus rings visible
+
+## 7b. Profile Learning Hub & Cross-App (ADR-060)
+- Certificates, enrollments, or knowledge-base lists hardcoded instead of fetched from `GET /api/v1/me/certificates` / `GET /api/v1/me/enrollments` (Rule 16 violation)
+- Learn or Docs surfaces **re-implemented inside the main app** (a lesson player, curriculum rail, or docs nav tree built here) — those belong to the `jc-learn-*` / `jc-docs-*` apps; the main app links out by absolute subdomain URL
+- Cross-app links hardcoded to a wrong/relative path instead of `learn.japaconnect.com` / `docs.japaconnect.com` (breaks the shared-session deep link)
+- Certificate cards not linking to the public shareable page `/certificates/:id`; earned certificates missing as badges on the public profile
+- Dashboard treated as a public surface — it is private: no ad slots, and it must not be indexed
 
 ## Output Protocol
 1. **Root cause** — one sentence · 2. **Broken code** · 3. **Fixed code** (surgical, minimal) · 4. **Secondary findings**

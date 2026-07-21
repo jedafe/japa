@@ -2,6 +2,7 @@
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
@@ -42,8 +43,20 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<Redirect | null>(null);
 	let bulkDeleteIds = $state<Set<string>>(new Set());
+	let filterValues = $state<Record<string, string>>({});
 
 	const canManageRedirects = $derived(hasPermission("redirects.manage"));
+
+	const filterDefs = [
+		{
+			key: "is_active",
+			label: t("common.status", "Status"),
+			options: [
+				{ value: "true", label: t("common.active", "Active") },
+				{ value: "false", label: t("common.inactive", "Inactive") }
+			]
+		}
+	];
 
 	const columns = [
 		{ key: "from_path", label: t("redirects.from", "From"), sortable: true },
@@ -61,7 +74,9 @@
 		loading = true;
 		error = "";
 		try {
-			const result = await redirectsAdminApi.list();
+			const params = new URLSearchParams();
+			if (filterValues.is_active) params.set("is_active", filterValues.is_active);
+			const result = await redirectsAdminApi.list(params.toString() || undefined);
 			if (result.ok) {
 				redirects = (result.data as Redirect[]) ?? [];
 			} else {
@@ -117,7 +132,17 @@
 			if (result.ok) {
 				showModal = false;
 				success = editingRedirect ? t("redirects.updated", "Redirect updated") : t("redirects.created", "Redirect created");
-				loadRedirects();
+	loadRedirects();
+
+	function handleSearch(values: Record<string, string>) {
+		filterValues = values;
+		loadRedirects();
+	}
+
+	function handleClear() {
+		filterValues = {};
+		loadRedirects();
+	}
 			} else {
 				error = result.error ?? t("common.error", "Failed to save redirect");
 			}
@@ -161,6 +186,16 @@
 	}
 
 	loadRedirects();
+
+	function handleSearch(values: Record<string, string>) {
+		filterValues = values;
+		loadRedirects();
+	}
+
+	function handleClear() {
+		filterValues = {};
+		loadRedirects();
+	}
 </script>
 
 <svelte:head>
@@ -195,6 +230,9 @@
 {/if}
 
 <Card>
+	<CardHeader>
+		<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+	</CardHeader>
 	<CardContent>
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />

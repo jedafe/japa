@@ -2,6 +2,9 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
+	import { goto } from '$app/navigation';
 
 	type FormDef = {
 		id: string;
@@ -16,6 +19,25 @@
 	let forms = $state<FormDef[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+
+	let searchQuery = $state('');
+
+	const columns = [
+		{ key: 'name', label: t('space_forms.name'), sortable: true },
+		{ key: 'description', label: t('space_forms.description_label'), sortable: true, class: 'text-xs max-w-xs truncate', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
+		{ key: 'submission_count', label: t('space_forms.submissions'), sortable: true, render: (v: number) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-surface/10">${v}</span>` },
+		{ key: 'created_at', label: t('space_forms.created'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'actions', label: '', class: 'w-20', component: FormActionsCell }
+	];
+
+	function filteredForms(): FormDef[] {
+		const q = searchQuery.toLowerCase().trim();
+		if (!q) return forms;
+		return forms.filter(f =>
+			f.name.toLowerCase().includes(q) ||
+			(f.description ?? '').toLowerCase().includes(q)
+		);
+	}
 
 	async function load() {
 		loading = true;
@@ -36,6 +58,12 @@
 		load();
 	});
 </script>
+
+{#snippet FormActionsCell(row: FormDef)}
+	<Button variant="ghost" size="sm" onclick={() => goto(`/spaces/${spaceId}/forms/${row.id}`)} style="color: var(--color-info)">
+		View
+	</Button>
+{/snippet}
 
 <svelte:head>
 	<title>Space Forms — JapaConnect Admin</title>
@@ -61,51 +89,13 @@
 	</div>
 {/if}
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else if forms.length === 0}
-	<div class="rounded-lg border p-8 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<p class="text-sm" style="color: var(--color-muted)">{t('space_forms.empty')}</p>
-	</div>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_forms.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_forms.description_label')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_forms.submissions')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_forms.created')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each forms as form}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{form.name}</td>
-						<td class="px-4 py-3 text-xs max-w-xs truncate" style="color: var(--color-muted)">{form.description || '—'}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-surface/10">{form.submission_count}</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{form.created_at}</td>
-						<td class="px-4 py-3">
-							<a
-								href="/spaces/{spaceId}/forms/{form.id}"
-								class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-								style="color: var(--color-info)"
-							>
-								View
-							</a>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('space_forms.no_results')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
+<DataTable
+	columns={columns}
+	data={filteredForms()}
+	{loading}
+	pageSize={25}
+	emptyMessage={t('space_forms.empty')}
+	searchable
+	searchPlaceholder={t('common.search')}
+	onsearch={(q) => { searchQuery = q; }}
+/>

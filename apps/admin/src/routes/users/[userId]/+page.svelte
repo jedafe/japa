@@ -8,6 +8,7 @@
   import { Badge } from "$lib/components/ui/badge";
   import { Button } from "$lib/components/ui/button";
   import { Modal } from "$lib/components/ui/modal";
+  import { DataTable } from "$lib/components/ui/data-table";
   import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play } from "lucide-svelte";
    import { userManagementApi, impersonationApi, usersWarningsAdminApi } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -60,7 +61,6 @@
    let loading = $state(true);
    let activeTab = $state("overview");
 
-  // Modal states
   let showBanConfirm = $state(false);
   let showUnbanConfirm = $state(false);
   let showSuspendConfirm = $state(false);
@@ -74,13 +74,11 @@
   let actionError = $state("");
   let actionSuccess = $state("");
 
-  // Impersonation
   let impersonating = $state(false);
   let impersonatingUsername = $state("");
 
   const userId = $derived(page.params.userId ?? "");
   
-  // Permission checks
   const canManageUsers = $derived(hasPermission('users.manage'));
   const canImpersonate = $derived(hasPermission('admin.impersonate'));
   const canDeleteAiContext = $derived(hasPermission('ai.context.admin_delete_entry'));
@@ -92,6 +90,31 @@
      { value: "sessions", label: "Sessions", icon: Users },
      { value: "warnings", label: "Warnings", icon: AlertTriangle }
    ];
+
+  const activityColumns = [
+    { key: 'type', label: t('users.userId.type'), sortable: false, render: (v: string) => `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-secondary) 15%, transparent); color: var(--color-foreground)">${v}</span>` },
+    { key: 'content', label: t('users.userId.content'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+    { key: 'created_at', label: t('users.userId.date'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` }
+  ];
+
+  const aiColumns = [
+    { key: 'entry_type', label: t('users.userId.type'), sortable: false, render: (v: string) => `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-secondary) 15%, transparent); color: var(--color-foreground)">${v}</span>` },
+    { key: 'content', label: t('users.userId.content'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+    { key: 'created_at', label: t('users.userId.created'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+    { key: 'actions', label: '', class: 'w-24', component: AiActionsCell }
+  ];
+
+  const sessionColumns = [
+    { key: 'ip_address', label: t('users.userId.ip_address'), sortable: false, class: 'font-mono text-xs' },
+    { key: 'device', label: t('users.userId.device'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+    { key: 'started_at', label: t('users.userId.started'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` }
+  ];
+
+  const warningColumns = [
+    { key: 'reason', label: t('users.userId.reason'), sortable: false },
+    { key: 'created_at', label: t('users.userId.issued'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+    { key: 'expires_at', label: t('users.userId.expires'), sortable: false, class: 'text-xs', render: (v: string | undefined) => `<span style="color: var(--color-muted)">${v ?? t('users.userId.never', 'Never')}</span>` }
+  ];
 
   async function loadUser() {
     if (!userId) return;
@@ -115,7 +138,6 @@
       const result = await userManagementApi.getUserActivity(userId, "limit=20");
       if (result.ok) activities = result.data.activities;
     } catch {
-      /* ignore */
     }
   }
 
@@ -124,7 +146,6 @@
       const result = await userManagementApi.getAiContext(userId);
       if (result.ok) aiEntries = result.data;
     } catch {
-      /* ignore */
     }
   }
 
@@ -133,7 +154,6 @@
       const result = await userManagementApi.getUserSessions(userId);
       if (result.ok) sessions = result.data;
     } catch {
-      /* ignore */
     }
   }
 
@@ -142,7 +162,6 @@
       const result = await usersWarningsAdminApi.list(userId);
       if (result.ok) warnings = (result.data as Warning[]) ?? [];
     } catch {
-      /* ignore */
     }
   }
 
@@ -259,7 +278,6 @@
     } else flash("Failed to start impersonation", true);
   }
 
-  // Load data on mount
   let initialized = false;
   $effect(() => {
     if (!initialized) {
@@ -273,7 +291,6 @@
             groupIdsByName = Object.fromEntries(groupsResult.data.groups.map((g) => [g.name, g.id]));
           }
         } catch {
-          // Keep default group options
         }
       };
       loadGroups();
@@ -281,11 +298,18 @@
   });
 </script>
 
+{#snippet AiActionsCell(row: AiContextEntry)}
+	{#if canDeleteAiContext}
+		<Button variant="ghost" size="sm" onclick={() => deleteAiEntry(row.id)}>
+			Delete
+		</Button>
+	{/if}
+{/snippet}
+
 <svelte:head>
   <title>{user?.username ?? "User"} — JapaConnect Admin</title>
 </svelte:head>
 
-<!-- Impersonation Banner -->
 {#if impersonating}
   <div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 10%, transparent)">
     <span style="color: var(--color-warning)">{t('users.userId.impersonating')}<strong>{impersonatingUsername}</strong></span>
@@ -312,7 +336,6 @@
 {#if loading}
   <p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.loading')}</p>
 {:else if user}
-  <!-- User Header -->
   <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
     <div class="flex items-center gap-4">
       <div class="flex h-16 w-16 items-center justify-center rounded-2xl text-2xl font-bold text-white" style="background: var(--gradient-primary)">
@@ -332,7 +355,6 @@
       </div>
     </div>
 
-    <!-- Actions -->
     <div class="flex flex-wrap gap-2">
       {#if canManageUsers}
         <Button variant="outline" size="sm" onclick={() => { showWarningModal = true; warningReason = ""; }}>
@@ -372,10 +394,8 @@
     </div>
   </div>
 
-  <!-- Tabs -->
   <Tabs {tabs} bind:value={activeTab} />
 
-  <!-- Tab Content -->
   <Card class="mt-4">
     <CardContent class="p-5">
       {#if activeTab === "overview"}
@@ -414,115 +434,27 @@
 
       {:else if activeTab === "activity"}
         {#if activities.length > 0}
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.type')}</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.content')}</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.date')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each activities as act}
-                  <tr class="border-t" style="border-color: var(--color-border)">
-                    <td class="px-3 py-2">
-                      <Badge variant="secondary">{act.type}</Badge>
-                    </td>
-                    <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{act.content}</td>
-                    <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{act.created_at}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
+          <DataTable columns={activityColumns} data={activities} pageSize={20} showPagination={false} emptyMessage={t('users.userId.no_activity_yet')} />
         {:else}
           <p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.no_activity_yet')}</p>
         {/if}
 
       {:else if activeTab === "ai"}
         {#if aiEntries.length > 0}
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.type')}</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.content')}</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.created')}</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each aiEntries as entry}
-                  <tr class="border-t" style="border-color: var(--color-border)">
-                    <td class="px-3 py-2">
-                      <Badge variant="secondary">{entry.entry_type}</Badge>
-                    </td>
-                    <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{entry.content}</td>
-                    <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{entry.created_at}</td>
-                    <td class="px-3 py-2">
-                      {#if canDeleteAiContext}
-                        <Button variant="ghost" size="sm" onclick={() => deleteAiEntry(entry.id)}>
-                          Delete
-                        </Button>
-                      {/if}
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
+          <DataTable columns={aiColumns} data={aiEntries} pageSize={20} showPagination={false} emptyMessage={t('users.userId.no_ai_context_entries')} />
         {:else}
           <p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.no_ai_context_entries')}</p>
         {/if}
 
       {:else if activeTab === "sessions"}
         {#if sessions.length > 0}
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.ip_address')}</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.device')}</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.started')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each sessions as sess}
-                  <tr class="border-t" style="border-color: var(--color-border)">
-                    <td class="px-3 py-2 font-mono text-xs">{sess.ip_address}</td>
-                    <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{sess.device}</td>
-                    <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{sess.started_at}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
+          <DataTable columns={sessionColumns} data={sessions} pageSize={20} showPagination={false} emptyMessage={t('users.userId.no_sessions_yet')} />
         {:else}
           <p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.no_sessions_yet')}</p>
         {/if}
       {:else if activeTab === "warnings"}
         {#if warnings.length > 0}
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.reason')}</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.issued')}</th>
-                  <th class="px-3 py-2 text-left text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.expires')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each warnings as w}
-                  <tr class="border-t" style="border-color: var(--color-border)">
-                    <td class="px-3 py-2">{w.reason}</td>
-                    <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{w.created_at}</td>
-                    <td class="px-3 py-2 text-xs" style="color: var(--color-muted)">{w.expires_at ?? t('users.userId.never', 'Never')}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
+          <DataTable columns={warningColumns} data={warnings} pageSize={20} showPagination={false} emptyMessage={t('users.userId.no_warnings_yet')} />
         {:else}
           <p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('users.userId.no_warnings_yet')}</p>
         {/if}
@@ -531,7 +463,6 @@
   </Card>
 {/if}
 
-<!-- Ban Confirm Modal -->
 <Modal bind:open={showBanConfirm} title="Ban User" size="sm">
   <p class="text-sm" style="color: var(--color-muted)">{t('users.userId.are_you_sure_you_want_to_ban_this_user_t')}</p>
   <div class="mt-6 flex justify-end gap-3">
@@ -540,7 +471,6 @@
   </div>
 </Modal>
 
-<!-- Unban Confirm Modal -->
 <Modal bind:open={showUnbanConfirm} title="Unban User" size="sm">
   <p class="text-sm" style="color: var(--color-muted)">{t('users.userId.are_you_sure_you_want_to_unban_this_user')}</p>
   <div class="mt-6 flex justify-end gap-3">
@@ -549,7 +479,6 @@
   </div>
 </Modal>
 
-<!-- Suspend Confirm Modal -->
 <Modal bind:open={showSuspendConfirm} title="Suspend User" size="sm">
   <p class="text-sm" style="color: var(--color-muted)">{t('users.userId.are_you_sure_you_want_to_suspend_this_us')}</p>
   <div class="mt-6 flex justify-end gap-3">
@@ -558,7 +487,6 @@
   </div>
 </Modal>
 
-<!-- Delete Confirm Modal -->
 <Modal bind:open={showDeleteConfirm} title="Delete User" size="sm">
   <p class="text-sm" style="color: var(--color-muted)">{t('users.userId.are_you_sure_you_want_to_delete_this_use')}</p>
   <div class="mt-6 flex justify-end gap-3">
@@ -567,7 +495,6 @@
   </div>
 </Modal>
 
-<!-- Warning Modal -->
 <Modal bind:open={showWarningModal} title="Send Warning" size="sm">
   <div>
     <label for="warning-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.userId.reason_for_warning')}</label>
@@ -586,7 +513,6 @@
   </div>
 </Modal>
 
-<!-- Change Group Modal -->
 <Modal bind:open={showGroupModal} title="Change Group" size="sm">
   <div class="space-y-2">
     {#each groupOptions as group}

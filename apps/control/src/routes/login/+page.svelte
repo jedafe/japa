@@ -11,7 +11,7 @@
 	async function handleLogin() {
 		if (!email || !password) return;
 		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-			error = 'Please enter a valid email address.';
+			error = t('login.invalid_email', 'Please enter a valid email address.');
 			return;
 		}
 		loading = true;
@@ -26,30 +26,17 @@
 			if (result.ok) {
 				if (result.data?.access_token) {
 					const token = result.data.access_token;
-					// SECURITY HARDENING (H4):
-					// The auth backend returns only a raw JWT (`access_token`) and does
-					// NOT set an httpOnly session cookie on login. Because `apiFetch`
-					// already sends `credentials: 'include'`, a backend-issued httpOnly
-					// session cookie would be forwarded automatically and we could drop
-					// client-side JWT persistence entirely. Until that backend change
-					// lands, the JWT MUST be persisted so the SPA can re-establish the
-					// session on reload (see +layout.svelte, which reads it back).
-					//
-					// RESIDUAL RISK: a JWT in localStorage is reachable by any
-					// XSS-injected script and can be exfiltrated. This is the minimal
-					// safe change available without a backend session cookie — do not
-					// remove the persistence below or the auth flow breaks.
 					localStorage.setItem('jc_token', token);
 					setToken(token);
 					goto('/');
 				} else {
-					error = 'Invalid credentials.';
+					error = t('login.invalid_credentials', 'Invalid credentials.');
 				}
 			} else {
-				error = result.error || 'Invalid credentials.';
+				error = result.error || t('login.invalid_credentials', 'Invalid credentials.');
 			}
 		} catch {
-			error = 'Could not reach authentication service.';
+			error = t('login.auth_service_unreachable', 'Could not reach authentication service.');
 		} finally {
 			loading = false;
 		}

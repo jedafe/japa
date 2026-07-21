@@ -329,6 +329,21 @@ func (s *Service) RunSecurityScan(ctx context.Context, tenantID pgtype.UUID) err
 		slog.Error("security scan: stale tokens", "error", err)
 	}
 
+	// 4. Check for unverified users.
+	if err := s.scanUnverifiedUsers(ctx, tenantID); err != nil {
+		slog.Error("security scan: unverified users", "error", err)
+	}
+
+	// 5. Check for weak password settings.
+	if err := s.scanWeakPasswordSettings(ctx, tenantID); err != nil {
+		slog.Error("security scan: weak password settings", "error", err)
+	}
+
+	// 6. Check for excessive API keys without expiration.
+	if err := s.scanExcessiveAPIKeys(ctx, tenantID); err != nil {
+		slog.Error("security scan: excessive API keys", "error", err)
+	}
+
 	return nil
 }
 

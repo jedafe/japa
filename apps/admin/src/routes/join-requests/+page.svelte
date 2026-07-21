@@ -2,6 +2,9 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
+	import { Modal } from '$lib/components/ui/modal';
 	import { RefreshCw, CheckCircle, XCircle } from 'lucide-svelte';
 
 	type JoinRequest = {
@@ -16,18 +19,37 @@
 	let requests = $state<JoinRequest[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
-
-	// Search term wired into the join-requests load
-	let searchTerm = $state('');
+	let searchQuery = $state('');
+	let selectedRequest = $state<JoinRequest | null>(null);
+	let showDetailModal = $state(false);
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	const canModerateJoins = $derived(hasPermission('spaces.moderate'));
+
+	const columns = [
+		{ key: 'user_id', label: t('joinRequests.user', 'User'), sortable: true },
+		{ key: 'space_id', label: t('joinRequests.space', 'Space'), sortable: true },
+		{ key: 'message', label: t('joinRequests.message', 'Message'), sortable: false,
+			render: (v: string) => v || '—'
+		},
+		{ key: 'status', label: t('joinRequests.status', 'Status'), sortable: true,
+			render: (v: string) => {
+				const cls = v === 'approved' ? 'bg-success/15 text-success' : v === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-warning/15 text-warning';
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
+			}
+		},
+		{ key: 'requested_at', label: t('joinRequests.requested', 'Requested'), sortable: true,
+			render: (v: string) => new Date(v).toLocaleDateString()
+		}
+	];
 
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		try {
 			const params = new URLSearchParams();
-			if (searchTerm.trim()) params.set('q', searchTerm.trim());
+			if (searchQuery.trim()) params.set('q', searchQuery.trim());
 			const qs = params.toString();
 			const result = await api<JoinRequest[]>(`/admin/join-requests${qs ? `?${qs}` : ''}`);
 			if (result.ok) {
@@ -62,12 +84,20 @@
 		}
 	}
 
-	// Debounced search handler that refetches the join-requests list
-	let searchTimer: ReturnType<typeof setTimeout> | undefined;
-	function onSearchInput(e: Event) {
-		searchTerm = (e.currentTarget as HTMLInputElement).value;
-		if (searchTimer) clearTimeout(searchTimer);
-		searchTimer = setTimeout(() => load(), 300);
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		errorMessage = '';
+		try {
+			for (const id of selectedIds) {
+				await api(`/admin/join-requests/${id}`, { method: 'DELETE' });
+			}
+			selectedIds = new Set();
+			load();
+		} catch {
+			errorMessage = t('common.error');
+		}
+		bulkDeleting = false;
 	}
 
 	$effect(() => {
@@ -88,72 +118,74 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex items-center justify-between gap-2">
-	<!-- Debounced search input wired to the join-requests load -->
-	<input
-		type="search"
-		placeholder={t('common.search')}
-		oninput={onSearchInput}
-		aria-label={t('common.search')}
-		class="w-full max-w-xs rounded-lg border p-2 text-sm outline-none focus:ring-2"
-		style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
-	/>
-	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
-		<RefreshCw class="h-3 w-3" />
+<div class="mb-4 flex items-center justify-end">
+	<Button variant="ghost" size="sm" onclick={load}>
+		<RefreshCw class="mr-1.5 h-3.5 w-3.5" />
 		{t('common.refresh')}
-	</button>
+	</Button>
 </div>
 
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('joinRequests.user')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('joinRequests.space')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('joinRequests.message')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('joinRequests.status')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('joinRequests.requested')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each requests as req (req.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-mono text-xs">{req.user_id}</td>
-						<td class="px-4 py-3 text-xs">{req.space_id}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{req.message || '—'}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {req.status === 'approved' ? 'bg-success/15 text-success dark:text-success' : req.status === 'rejected' ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">
-								{req.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(req.requested_at).toLocaleDateString()}</td>
-						<td class="px-4 py-3 text-right">
-							{#if req.status === 'pending' && canModerateJoins}
-								<div class="flex items-center justify-end gap-1">
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => approveRequest(req.id)}>
-										<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
-										{t('joinRequests.approve')}
-									</button>
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => rejectRequest(req.id)}>
-										<XCircle class="h-3 w-3 inline mr-1" style="color: var(--color-danger)" />
-										{t('joinRequests.reject')}
-									</button>
-								</div>
-							{/if}
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('joinRequests.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		{columns}
+		data={requests}
+		pageSize={25}
+		searchable
+		searchPlaceholder={t('joinRequests.search', 'Search by user or space...')}
+		onsearch={(q) => { searchQuery = q; load(); }}
+		onrowclick={(row) => { selectedRequest = row; showDetailModal = true; }}
+		emptyMessage={t('joinRequests.empty', 'No join requests found')}
+		selectable
+		bind:selectedIds
+	>
+		{#snippet bulkActions()}
+			<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+				<XCircle class="h-3.5 w-3.5 mr-1" />
+				{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.deleteSelected', 'Delete Selected')} ({selectedIds.size})
+			</Button>
+		{/snippet}
+	</DataTable>
 {/if}
+
+<Modal bind:open={showDetailModal} title={t('joinRequests.details', 'Join Request Details')}>
+	{#if selectedRequest}
+		<div class="space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.user')}</p>
+					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{selectedRequest.user_id}</p>
+				</div>
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.space')}</p>
+					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{selectedRequest.space_id}</p>
+				</div>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.message')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{selectedRequest.message || '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.status')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{selectedRequest.status}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('joinRequests.requested')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(selectedRequest.requested_at).toLocaleString()}</p>
+			</div>
+			{#if selectedRequest.status === 'pending' && canModerateJoins}
+				<div class="flex gap-2 pt-4 border-t" style="border-color: var(--color-border)">
+					<Button variant="default" size="sm" onclick={() => { const id = selectedRequest!.id; showDetailModal = false; selectedRequest = null; approveRequest(id); }}>
+						<CheckCircle class="mr-1.5 h-4 w-4" />
+						{t('joinRequests.approve')}
+					</Button>
+					<Button variant="destructive" size="sm" onclick={() => { const id = selectedRequest!.id; showDetailModal = false; selectedRequest = null; rejectRequest(id); }}>
+						<XCircle class="mr-1.5 h-4 w-4" />
+						{t('joinRequests.reject')}
+					</Button>
+				</div>
+			{/if}
+		</div>
+	{/if}
+</Modal>

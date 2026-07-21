@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api, searchAdminApiExtended } from '$lib/api';
+	import { DataTable } from '$lib/components/ui/data-table';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { RefreshCw } from 'lucide-svelte';
 
@@ -14,6 +15,31 @@
 	let analytics = $state<SearchAnalytics[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+
+	const columns = [
+		{
+			key: 'query',
+			label: t('search.query'),
+			sortable: true,
+			render: (v: string) => `<span class="font-medium">${v}</span>`
+		},
+		{
+			key: 'search_count',
+			label: t('search.searches'),
+			sortable: true
+		},
+		{
+			key: 'click_count',
+			label: t('search.clicks'),
+			sortable: true
+		},
+		{
+			key: 'avg_results',
+			label: t('search.avg_results'),
+			sortable: true,
+			render: (v: number) => `<span style="color: var(--color-muted)">${v}</span>`
+		}
+	];
 
 	async function load() {
 		loading = true;
@@ -60,32 +86,5 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('search.query')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('search.searches')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('search.clicks')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('search.avg_results')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each analytics as item (item.query)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{item.query}</td>
-						<td class="px-4 py-3 text-xs">{item.search_count}</td>
-						<td class="px-4 py-3 text-xs">{item.click_count}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.avg_results}</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('search.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable {columns} data={analytics} pageSize={25} searchable emptyMessage={t('search.empty')} />
 {/if}

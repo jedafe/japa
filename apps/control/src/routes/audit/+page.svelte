@@ -101,10 +101,6 @@
 		}
 	];
 
-	// H3: Clear/Delete actions for the (readonly) audit log. NOTE: the
-	// /control audit catalog currently exposes only GET /control/audit-logs
-	// (no delete/clear route). These wire to the most plausible endpoints;
-	// they will surface a graceful error until the backend adds them.
 	const rowActions: DataTableRowAction[] = [
 		{
 			label: t('audit.clear_entry', 'Clear'),
@@ -130,25 +126,33 @@
 	];
 
 	async function deleteEntry(id: string) {
-		const result = await api(`/control/audit-logs/${id}`, { method: 'DELETE' });
-		if (result.ok) {
-			message = '';
-			load();
-		} else {
-			message = result.error || t('audit.clear_error', 'Failed to clear audit entry.');
+		try {
+			const result = await api(`/control/audit-logs/${id}`, { method: 'DELETE' });
+			if (result.ok) {
+				message = '';
+				load();
+			} else {
+				message = result.error || t('audit.clear_error', 'Failed to clear audit entry.');
+			}
+		} catch {
+			message = t('audit.clear_error', 'Failed to clear audit entry.');
 		}
 	}
 
 	async function clearSelected(ids: string[]) {
-		const result = await api('/control/audit-logs/clear', {
-			method: 'POST',
-			body: { ids }
-		});
-		if (result.ok) {
-			message = '';
-			load();
-		} else {
-			message = result.error || t('audit.clear_error', 'Failed to clear audit entry.');
+		try {
+			const result = await api('/control/audit-logs/clear', {
+				method: 'POST',
+				body: { ids }
+			});
+			if (result.ok) {
+				message = '';
+				load();
+			} else {
+				message = result.error || t('audit.clear_error', 'Failed to clear audit entry.');
+			}
+		} catch {
+			message = t('audit.clear_error', 'Failed to clear audit entry.');
 		}
 	}
 
@@ -200,8 +204,6 @@
 		load();
 	}
 
-	load();
-
 	function handleFilterKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter') applyFilters();
 	}
@@ -211,7 +213,13 @@
 	let prevSortKey = $state('timestamp');
 	let prevSortDirection = $state<'asc' | 'desc'>('desc');
 
+	let initialized = false;
 	$effect(() => {
+		if (!initialized) {
+			initialized = true;
+			load();
+			return;
+		}
 		if (
 			page !== prevPage ||
 			pageSize !== prevPageSize ||
