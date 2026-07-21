@@ -42,18 +42,29 @@ func resolveCardStyleConfig(raw string) CardStyleConfig {
 		return cfg
 	}
 
-	// Legacy scalar: the value is a JSON string like "reddit".
-	var scalar string
-	if err := json.Unmarshal([]byte(raw), &scalar); err == nil {
-		if validCardStyle(scalar) {
-			cfg.Default = scalar
+	// The setting lives in JSONB, but the control PATCH path stores every
+	// settings value as a JSON string (json.Marshal of a string), so an object
+	// saved from the editor is double-encoded: the stored value is a JSON
+	// string whose content is itself JSON. Unwrap one such layer, then decide.
+	//   "reddit"                      -> scalar "reddit"      -> default reddit
+	//   "{\"default\":...}"           -> inner object JSON    -> parse object
+	//   {"default":...} (migration)   -> not a JSON string    -> parse object
+	body := raw
+	var unwrapped string
+	if err := json.Unmarshal([]byte(raw), &unwrapped); err == nil {
+		// raw was a JSON string. Its content is either a bare style scalar or
+		// the JSON text of a {default, by_type} object.
+		if validCardStyle(unwrapped) {
+			cfg.Default = unwrapped
+			return cfg
 		}
-		return cfg
+		body = unwrapped
 	}
 
-	// Object form: {default, by_type}.
+	// Object form: {default, by_type} — either the direct JSONB object or the
+	// inner text unwrapped above. Anything else falls back to the default.
 	var obj CardStyleConfig
-	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+	if err := json.Unmarshal([]byte(body), &obj); err != nil {
 		return cfg
 	}
 
