@@ -59,6 +59,14 @@ func TestResolveCardStyleConfig(t *testing.T) {
 			raw:  `not json`,
 			want: CardStyleConfig{Default: "reddit", ByType: map[string]string{}},
 		},
+		{
+			// The control UI + settings PATCH store every value as a JSONB
+			// string, so an object saved from the editor is double-encoded:
+			// the stored value is a JSON string whose content is object JSON.
+			name: "double-encoded object (control UI save path)",
+			raw:  `"{\"default\":\"reddit\",\"by_type\":{\"blog_post\":\"grid\"}}"`,
+			want: CardStyleConfig{Default: "reddit", ByType: map[string]string{"blog_post": "grid"}},
+		},
 	}
 
 	for _, tc := range tests {
