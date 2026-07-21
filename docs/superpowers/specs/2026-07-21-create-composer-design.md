@@ -64,7 +64,7 @@ All endpoints confirmed live against the running backend (`:8080`) and/or the JE
 
 ### Routing & layout
 - Route: `src/routes/(app)/create/+page.svelte` (replaces the stub) + `+page.server.ts` loader.
-- **Exception #2 layout:** the `(app)` layout must, for this route, force the left nav to the collapsed 72px rail and suppress the standard `RightSidebar`. Signaled via page/layout data (`export const` flag on `+page.ts` or a `layout` field returned by the loader consumed in `(app)/+layout.svelte`) — resolved server-side, no client flash.
+- **Exception #2 layout:** the `(app)` layout must, for this route, force the left nav to the collapsed 72px rail and suppress the standard `RightSidebar`. **Mechanism (chosen):** `(app)/+layout.svelte` derives an `isExceptionRoute` flag from `page.route.id` (matching `/(app)/create` and, later, the blog-single route), evaluated during SSR layout render so there is no client flash. This keeps the signal in the layout (which owns the grid) rather than threading state up from the child page.
 - Left column = the **main working area** (form). Right column = tabbed `[ Guide | Settings/SEO ]` panel. Sticky `SaveBar` at the bottom of the left column.
 
 ### The editor-registry seam (the core abstraction)
