@@ -27,7 +27,7 @@
 		rowActions = [],
 		bulkActions = [],
 		loading = false,
-		emptyMessage = 'No data available',
+		emptyMessage = t('common.no_data', 'No data available'),
 		emptyIcon = undefined as any,
 		onRowClick = undefined,
 		getRowId = (row) => (row as Record<string, unknown>).id as string,
@@ -272,7 +272,7 @@
 												sideOffset={4}
 												align="end"
 											>
-												{#each rowActions as action}
+												{#each rowActions.filter(a => !a.hidden?.(row as Record<string, unknown>)) as action}
 													<DropdownMenu.Item
 														class="data-highlighted:bg-accent flex cursor-pointer items-center gap-2 rounded-9px px-3 py-2 text-sm outline-none {action.variant === 'destructive' ? 'text-destructive data-highlighted:text-destructive' : 'text-foreground'}"
 														disabled={action.disabled?.(row as Record<string, unknown>)}
@@ -302,7 +302,7 @@
 	{#if totalPages > 1 || rows.length > 0}
 		<div class="border-border-card flex flex-wrap items-center justify-between gap-3 border-t px-4 py-2.5">
 			<div class="text-muted-foreground flex items-center gap-3 text-sm">
-				<span>{totalRows} item{totalRows !== 1 ? 's' : ''}</span>
+				<span>{totalRows} {totalRows !== 1 ? t('lib.components.DataTable.items', 'items') : t('lib.components.DataTable.item', 'item')}</span>
 				<div class="flex items-center gap-1.5">
 					<span class="text-xs">{t('lib.components.DataTable.svelte.per_page')}</span>
 					<Select.Root
@@ -357,13 +357,13 @@
 					<ChevronLeft class="size-4" />
 				</button>
 				<span class="text-foreground px-2 text-xs font-medium">
-					Page {page + 1} of {totalPages}
+					{t('lib.components.DataTable.page_of', 'Page {p} of {t}').replace('{p}', String(page + 1)).replace('{t}', String(totalPages))}
 				</span>
 				<button
 					class="text-foreground hover:bg-dark-04 flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
 					disabled={page >= totalPages - 1}
 					onclick={() => goTo(page + 1)}
-					aria-label="Next page"
+					aria-label={t('lib.components.DataTable.next_page', 'Next page')}
 				>
 					<ChevronRight class="size-4" />
 				</button>
@@ -385,13 +385,13 @@
 		class="border-border-card bg-background-alt shadow-card mt-3 flex items-center justify-between rounded-xl border px-4 py-3"
 	>
 		<div class="text-foreground flex items-center gap-3 text-sm">
-			<span class="font-medium">{selectedIds.size} selected</span>
+			<span class="font-medium">{t('lib.components.DataTable.selected_count', '{n} selected').replace('{n}', String(selectedIds.size))}</span>
 			<button
 				type="button"
 				class="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2 transition-colors"
 				onclick={clearSelection}
 			>
-				Clear
+				{t('lib.components.DataTable.clear_selection', 'Clear')}
 			</button>
 		</div>
 		<div class="flex items-center gap-2">
@@ -412,3 +412,5 @@
 		</div>
 	</div>
 {/if}
+
+

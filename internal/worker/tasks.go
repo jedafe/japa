@@ -73,6 +73,7 @@ const (
 	TypeMaintenancePrunePushTokens      = "maintenance:prune_push_tokens"
 	TypeModerationAutoHide              = "moderation:auto_hide"
 	TypeDMCleanupDeclinedRequests       = "dm:cleanup_declined_requests"
+	TypeTenantCleanupData               = "tenant:cleanup_data"
 	TypeCouponTrackEvents               = "coupon:track_events"
 	TypeCouponExpireCheck               = "coupon:expire_check"
 	TypeAffiliateRecordClick            = "affiliate:record_click"
@@ -152,6 +153,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeAffiliateCreditCommission, HandleAffiliateCreditCommission)
 	mux.HandleFunc(TypeAffiliateExpireCheck, HandleAffiliateExpireCheck)
 	mux.HandleFunc(TypeRedirectRecordHit, HandleRedirectRecordHit)
+	mux.HandleFunc(TypeTenantCleanupData, HandleTenantCleanupData)
 
 	// Periodic sweep handlers
 	mux.HandleFunc(TypeScheduledPublishSweep, HandleScheduledPublishSweep)

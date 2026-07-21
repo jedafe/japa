@@ -1,5 +1,7 @@
-import { apiFetch } from './api/client';
+import { apiFetch as _apiFetch } from './api/client';
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+
+export { _apiFetch as apiFetch };
 
 type FetchOptions = {
 	method?: string;
@@ -16,7 +18,7 @@ export function setToken(token: string | null): void {
 export async function api<T>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
 	const headers: Record<string, string> = {};
 
-	const result = await apiFetch<T>(path, {
+	const result = await _apiFetch<T>(path, {
 		method: opts.method ?? 'GET',
 		headers,
 		body: opts.body ? JSON.stringify(opts.body) : undefined,
@@ -289,6 +291,8 @@ export const userManagementApi = {
 		api(`/admin/user-groups/${groupId}/members`, { method: 'POST', body: { user_id: userId } }),
 	removeGroupMember: (groupId: string, userId: string) =>
 		api(`/admin/user-groups/${groupId}/members/${userId}`, { method: 'DELETE' }),
+	createUser: (body: { email: string; username: string; password: string; display_name?: string }) =>
+		api<{ id: string; email: string; username: string }>('/admin/users', { method: 'POST', body }),
 	deleteUser: (userId: string) =>
 		api(`/admin/users/${userId}`, { method: 'DELETE' }),
 
@@ -427,13 +431,13 @@ export const organisationsAdminApi = {
 };
 
 export const reactionsAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/reaction-types${params ? `?${params}` : ''}`),
+	list: (params?: string) => api<unknown>(`/reaction-types${params ? `?${params}` : ''}`),
 	create: (body: { key: string; emoji: string; label: string; enabled: boolean }) =>
-		api('/admin/reaction-types', { method: 'POST', body }),
+		api('/reaction-types', { method: 'POST', body }),
 	update: (key: string, body: { emoji?: string; label?: string; enabled?: boolean }) =>
-		api(`/admin/reaction-types/${key}`, { method: 'PATCH', body }),
+		api(`/reaction-types/${key}`, { method: 'PATCH', body }),
 	delete: (key: string) =>
-		api(`/admin/reaction-types/${key}`, { method: 'DELETE' }),
+		api(`/reaction-types/${key}`, { method: 'DELETE' }),
 };
 
 export const universitiesAdminApi = {

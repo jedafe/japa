@@ -2,7 +2,10 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { RefreshCw, Eye, Shield, Trash2 } from 'lucide-svelte';
+	import { RefreshCw, Shield, Trash2 } from 'lucide-svelte';
+	import { Select } from '$lib/components/ui/select';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
 	import Modal from '$lib/components/Modal.svelte';
 
 	type Review = {
@@ -17,25 +20,53 @@
 	let reviews = $state<Review[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	let searchQuery = $state('');
 
 	let showViewModal = $state(false);
 	let viewTarget = $state<Review | null>(null);
 
-	// Moderate
 	let showModerateModal = $state(false);
 	let moderateTarget = $state<Review | null>(null);
 	let moderateStatus = $state<'approved' | 'rejected' | 'pending'>('approved');
 	let moderateSaving = $state(false);
 
-	// Delete
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<Review | null>(null);
 	let deleteSaving = $state(false);
 
-	// Backend gates PATCH /admin/reviews/{id} on reviews.moderate
 	const canModerate = $derived(hasPermission('reviews.moderate'));
-	// Backend gates DELETE /reviews/{id} on reviews.delete_own
 	const canDelete = $derived(hasPermission('reviews.delete_own'));
+
+	const filteredReviews = $derived(
+		searchQuery
+			? reviews.filter(
+					(r) =>
+						r.entity_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						r.entity_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						r.status.toLowerCase().includes(searchQuery.toLowerCase())
+				)
+			: reviews
+	);
+
+	const columns = [
+		{ key: 'entity_type', label: t('reviews.entity_type'), sortable: true },
+		{ key: 'entity_id', label: t('reviews.entity_id'), sortable: true,
+			render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v.slice(0, 12)}</span>`
+		},
+		{ key: 'rating', label: t('reviews.rating'), sortable: true,
+			render: (v: number) => `${v}/5`
+		},
+		{ key: 'status', label: t('reviews.status'), sortable: true,
+			render: (v: string) => {
+				const cls = v === 'approved' ? 'bg-success/15 text-success' : v === 'pending' ? 'bg-warning/15 text-warning' : 'bg-danger/15 text-danger';
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
+			}
+		},
+		{ key: 'created_at', label: t('reviews.created'), sortable: true,
+			render: (v: string) => new Date(v).toLocaleDateString()
+		},
+		{ key: 'actions', label: t('common.actions', 'Actions'), class: 'w-36', component: ReviewActionsCell }
+	];
 
 	function openView(review: Review) {
 		viewTarget = review;
@@ -137,60 +168,15 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reviews.entity_type')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reviews.entity_id')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reviews.rating')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reviews.status')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('reviews.created')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions', 'Actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each reviews as review (review.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 text-xs">{review.entity_type}</td>
-						<td class="px-4 py-3 text-xs font-mono" style="color: var(--color-muted)">{review.entity_id.slice(0, 12)}</td>
-						<td class="px-4 py-3 text-xs">{review.rating}/5</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {review.status === 'approved' ? 'bg-success/15 text-success dark:text-success' : review.status === 'pending' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-danger/15 text-danger dark:text-danger'}">
-								{review.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(review.created_at).toLocaleDateString()}</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-1">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-muted)" onclick={() => openView(review)}>
-									{t('common.view', 'View')}
-								</button>
-								{#if canModerate}
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-primary)" onclick={() => openModerate(review)}>
-										<Shield class="inline h-3 w-3" />
-										{t('reviews.moderate', 'Moderate')}
-									</button>
-								{/if}
-								{#if canDelete}
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-danger)" onclick={() => confirmDelete(review)}>
-										<Trash2 class="inline h-3 w-3" />
-										{t('common.delete', 'Delete')}
-									</button>
-								{/if}
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('reviews.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		{columns}
+		data={filteredReviews}
+		pageSize={25}
+		searchable
+		searchPlaceholder={t('reviews.search', 'Search reviews...')}
+		onsearch={(q) => { searchQuery = q; }}
+		emptyMessage={t('reviews.empty')}
+	/>
 {/if}
 
 <Modal bind:open={showViewModal} title={t('reviews.details', 'Review Details')}>
@@ -238,7 +224,7 @@
 						{ value: "rejected", label: t('reviews.status_rejected', 'Rejected') }
 					]}
 					value={moderateStatus}
-					onchange={(val) => (moderateStatus = val)}
+					onchange={(val) => (moderateStatus = val as typeof moderateStatus)}
 				/>
 			</div>
 		</div>
@@ -262,3 +248,23 @@
 		</button>
 	</div>
 </Modal>
+
+{#snippet ReviewActionsCell(review: Review)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(review)}>
+			{t('common.view', 'View')}
+		</Button>
+		{#if canModerate}
+			<Button variant="ghost" size="sm" onclick={() => openModerate(review)} style="color: var(--color-primary)">
+				<Shield class="inline h-3 w-3" />
+				{t('reviews.moderate', 'Moderate')}
+			</Button>
+		{/if}
+		{#if canDelete}
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(review)} style="color: var(--color-danger)">
+				<Trash2 class="inline h-3 w-3" />
+				{t('common.delete', 'Delete')}
+			</Button>
+		{/if}
+	</div>
+{/snippet}

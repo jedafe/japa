@@ -150,6 +150,28 @@ func (q *Queries) InsertRolePermissionByKey(ctx context.Context, arg InsertRoleP
 	return err
 }
 
+const isUserInGroup = `-- name: IsUserInGroup :one
+SELECT EXISTS(
+    SELECT 1
+    FROM user_group_memberships ugm
+    JOIN user_groups ug ON ugm.group_id = ug.id
+    WHERE ugm.tenant_id = $1 AND ugm.user_id = $2 AND ug.slug = $3
+) AS in_group
+`
+
+type IsUserInGroupParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+	GroupSlug string      `json:"group_slug"`
+}
+
+func (q *Queries) IsUserInGroup(ctx context.Context, arg IsUserInGroupParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isUserInGroup, arg.TenantID, arg.UserID, arg.GroupSlug)
+	var in_group bool
+	err := row.Scan(&in_group)
+	return in_group, err
+}
+
 const listAllPermissions = `-- name: ListAllPermissions :many
 
 SELECT key, description

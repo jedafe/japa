@@ -29,6 +29,7 @@
 
 # workflow
 - When encountering orphaned/disconnected code (unwired tasks, services, etc.), wire them up instead of deleting — don't remove anything that will be useful. Confidence: 0.75
+- Confirm with user before removing any dead code — do not delete without explicit approval. Confidence: 0.85
 
 # permissions
 - Super admin groups should be granted the `*` wildcard permission rather than maintaining explicit permission key mappings. Confidence: 0.65
@@ -38,4 +39,11 @@
 
 # svelte
 - Use Svelte 5 $state runes instead of writable stores, even when it requires updating many files. Confidence: 0.70
+
+# bug-fixing
+- When auditing and fixing bugs, fix ALL identified bugs — don't defer low-severity items without explicit user approval. The user expects comprehensive resolution, not prioritization. Confidence: 0.75
+- Always reset loading/locking state variables (toggling, retrying, deleting, etc.) in `finally` blocks so they clear even on exceptions. Use try/catch/finally pattern for any async operation that sets state. Confidence: 0.70
+
+# package-manager
+- Use bun instead of pnpm for running/installing in the apps (SvelteKit frontends). Confidence: 0.65
 

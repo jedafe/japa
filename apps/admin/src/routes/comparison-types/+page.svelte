@@ -2,11 +2,37 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { comparisonAdminApi, type ComparisonType, type ComparisonTypeDetail, type ComparisonTypeAccess } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { FilterBar } from '$lib/components/ui/filter-bar';
 	import { GitCompare, ChevronDown, ChevronRight, Shield } from 'lucide-svelte';
 
 	let types = $state<ComparisonType[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	let searchQuery = $state('');
+
+	const filterDefs = [
+		{
+			key: 'is_public',
+			label: 'Visibility',
+			options: [
+				{ value: 'true', label: 'Public' },
+				{ value: 'false', label: 'Private' }
+			]
+		}
+	];
+
+	let filterValues = $state<Record<string, string>>({});
+
+	function handleSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? '';
+		filterValues = values;
+	}
+
+	function handleClear() {
+		searchQuery = '';
+		filterValues = {};
+	}
 
 	let showModal = $state(false);
 	let editingId = $state<string | null>(null);
@@ -21,13 +47,42 @@
 		is_public: false
 	});
 
-	// Expanded detail state
 	let expandedId = $state<string | null>(null);
 	let detail = $state<ComparisonTypeDetail | null>(null);
 	let detailLoading = $state(false);
 	let access = $state<ComparisonTypeAccess | null>(null);
 	let accessForm = $state({ allowed_groups: '', allowed_roles: '' });
 	let accessSaving = $state(false);
+
+	const columns = [
+		{ key: 'name', label: t('comparison_types.name'), sortable: true },
+		{ key: 'slug', label: t('comparison_types.slug'), render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'description', label: t('comparison_types.description'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
+		{
+			key: 'is_public',
+			label: t('comparison_types.public'),
+			render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('common.yes') : t('common.no')}</span>`
+		},
+		{ key: 'items', label: t('comparison_types.items'), render: () => `<span class="text-xs" style="color: var(--color-muted)">—</span>` },
+		{
+			key: 'actions',
+			label: '',
+			component: ComparisonTypeActionsCell
+		}
+	];
+
+	const filteredTypes = $derived.by(() => {
+		let items = types;
+		if (searchQuery) {
+			const q = searchQuery.toLowerCase();
+			items = items.filter((ct) => ct.name.toLowerCase().includes(q) || ct.slug.toLowerCase().includes(q) || ct.description?.toLowerCase().includes(q));
+		}
+		if (filterValues.is_public) {
+			const val = filterValues.is_public === 'true';
+			items = items.filter((ct) => ct.is_public === val);
+		}
+		return items;
+	});
 
 	function slugify(text: string): string {
 		return text
@@ -191,152 +246,93 @@
 	</button>
 </div>
 
+<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('comparison_types.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('comparison_types.slug')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('comparison_types.description')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('comparison_types.public')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('comparison_types.items')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each types as item}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
-						<td class="px-4 py-3">
-							<button
-								class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10"
-								onclick={() => toggleExpand(item.id)}
-								aria-label="Expand details"
-							>
-								{#if expandedId === item.id}
-									<ChevronDown class="h-4 w-4" style="color: var(--color-muted)" />
-								{:else}
-									<ChevronRight class="h-4 w-4" style="color: var(--color-muted)" />
-								{/if}
-							</button>
-						</td>
-						<td class="px-4 py-3 font-medium">{item.name}</td>
-						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{item.slug}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.description || '—'}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {item.is_public ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
-								{item.is_public ? t('common.yes') : t('common.no')}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">—</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-2">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-									style="color: var(--color-info)"
-									onclick={() => openEdit(item)}
-								>
-									{t('common.edit')}
-								</button>
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete(item.id)}
-								>
-									{t('common.delete')}
-								</button>
-							</div>
-						</td>
-					</tr>
-					{#if expandedId === item.id}
-						<tr style="border-color: var(--color-border)">
-							<td colspan="7" class="px-4 py-4" style="background-color: var(--color-surface)">
-								{#if detailLoading}
-									<p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-								{:else if detail}
-									<div class="space-y-4">
-										<!-- Dimensions -->
-										<div>
-											<h3 class="mb-2 flex items-center gap-2 text-sm font-semibold">
-												<GitCompare class="h-4 w-4" style="color: var(--color-primary)" />
-												{t('comparison_types.dimensions')}
-											</h3>
-											{#if detail.dimensions.length > 0}
-												<div class="space-y-1">
-													{#each detail.dimensions as dim}
-														<div class="rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-border)">
-															<span class="font-medium">{dim.name}</span>
-															{#if dim.description}<span style="color: var(--color-muted)"> — {dim.description}</span>{/if}
-														</div>
-													{/each}
-												</div>
-											{:else}
-												<p class="text-xs" style="color: var(--color-muted)">{t('comparison-types.no_dimensions_defined')}</p>
-											{/if}
-										</div>
+	<DataTable
+		columns={columns}
+		data={filteredTypes}
+		pageSize={25}
+		emptyMessage={t('comparison_types.empty')}
+		searchable
+		onsearch={(q) => { searchQuery = q; }}
+	/>
 
-										<!-- Item count -->
-										<p class="text-xs" style="color: var(--color-muted)">
-											{t('comparison_types.items')}: <span class="font-medium">{detail.item_count}</span>
-										</p>
-
-										<!-- Access Control -->
-										<div>
-											<h3 class="mb-2 flex items-center gap-2 text-sm font-semibold">
-												<Shield class="h-4 w-4" style="color: var(--color-primary)" />
-												{t('comparison_types.access')}
-											</h3>
-											<div class="space-y-3">
-												<div>
-													<label for="ct-allowed-groups" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('comparison_types.allowed_groups')}</label>
-													<input
-														id="ct-allowed-groups"
-														type="text"
-														class="w-full rounded-md border px-3 py-2 text-sm"
-														style="border-color: var(--color-border); background-color: var(--color-background)"
-														placeholder="group1, group2"
-														bind:value={accessForm.allowed_groups}
-													/>
-												</div>
-												<div>
-													<label for="ct-allowed-roles" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('comparison_types.allowed_roles')}</label>
-													<input
-														id="ct-allowed-roles"
-														type="text"
-														class="w-full rounded-md border px-3 py-2 text-sm"
-														style="border-color: var(--color-border); background-color: var(--color-background)"
-														placeholder="admin, editor"
-														bind:value={accessForm.allowed_roles}
-													/>
-												</div>
-												<button
-													class="rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors"
-													style="background-color: var(--color-primary)"
-													onclick={saveAccess}
-													disabled={accessSaving}
-												>
-													{accessSaving ? t('common.saving') : t('common.save')}
-												</button>
-											</div>
-										</div>
+	{#if expandedId && (detailLoading || detail)}
+		<div class="mt-4 rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
+			{#if detailLoading}
+				<p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
+			{:else if detail}
+				<div class="space-y-4">
+					<div>
+						<h3 class="mb-2 flex items-center gap-2 text-sm font-semibold">
+							<GitCompare class="h-4 w-4" style="color: var(--color-primary)" />
+							{t('comparison_types.dimensions')}
+						</h3>
+						{#if detail.dimensions.length > 0}
+							<div class="space-y-1">
+								{#each detail.dimensions as dim}
+									<div class="rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-border)">
+										<span class="font-medium">{dim.name}</span>
+										{#if dim.description}<span style="color: var(--color-muted)"> — {dim.description}</span>{/if}
 									</div>
-								{:else}
-									<p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('common.error')}</p>
-								{/if}
-							</td>
-						</tr>
-					{/if}
-				{:else}
-					<tr>
-						<td colspan="7" class="px-4 py-8 text-center" style="color: var(--color-muted)">{t('comparison_types.empty')}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+								{/each}
+							</div>
+						{:else}
+							<p class="text-xs" style="color: var(--color-muted)">{t('comparison-types.no_dimensions_defined')}</p>
+						{/if}
+					</div>
+
+					<p class="text-xs" style="color: var(--color-muted)">
+						{t('comparison_types.items')}: <span class="font-medium">{detail.item_count}</span>
+					</p>
+
+					<div>
+						<h3 class="mb-2 flex items-center gap-2 text-sm font-semibold">
+							<Shield class="h-4 w-4" style="color: var(--color-primary)" />
+							{t('comparison_types.access')}
+						</h3>
+						<div class="space-y-3">
+							<div>
+								<label for="ct-allowed-groups" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('comparison_types.allowed_groups')}</label>
+								<input
+									id="ct-allowed-groups"
+									type="text"
+									class="w-full rounded-md border px-3 py-2 text-sm"
+									style="border-color: var(--color-border); background-color: var(--color-background)"
+									placeholder="group1, group2"
+									bind:value={accessForm.allowed_groups}
+								/>
+							</div>
+							<div>
+								<label for="ct-allowed-roles" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('comparison_types.allowed_roles')}</label>
+								<input
+									id="ct-allowed-roles"
+									type="text"
+									class="w-full rounded-md border px-3 py-2 text-sm"
+									style="border-color: var(--color-border); background-color: var(--color-background)"
+									placeholder="admin, editor"
+									bind:value={accessForm.allowed_roles}
+								/>
+							</div>
+							<button
+								class="rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors"
+								style="background-color: var(--color-primary)"
+								onclick={saveAccess}
+								disabled={accessSaving}
+							>
+								{accessSaving ? t('common.saving') : t('common.save')}
+							</button>
+						</div>
+					</div>
+				</div>
+			{:else}
+				<p class="py-4 text-center text-sm" style="color: var(--color-muted)">{t('common.error')}</p>
+			{/if}
+		</div>
+	{/if}
 {/if}
 
 <!-- Create/Edit Modal -->
@@ -365,3 +361,33 @@
 <Modal bind:open={showDeleteConfirm} title={t('common.delete')} onConfirm={executeDelete} confirmLabel={t('common.delete')}>
 	<p class="text-sm" style="color: var(--color-muted)">{t('comparison_types.delete_confirm')}</p>
 </Modal>
+
+{#snippet ComparisonTypeActionsCell(row: ComparisonType)}
+	<div class="flex items-center gap-2">
+		<button
+			class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10"
+			onclick={() => toggleExpand(row.id)}
+			aria-label="Expand details"
+		>
+			{#if expandedId === row.id}
+				<ChevronDown class="h-4 w-4" style="color: var(--color-muted)" />
+			{:else}
+				<ChevronRight class="h-4 w-4" style="color: var(--color-muted)" />
+			{/if}
+		</button>
+		<button
+			class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+			style="color: var(--color-info)"
+			onclick={() => openEdit(row)}
+		>
+			{t('common.edit')}
+		</button>
+		<button
+			class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+			style="color: var(--color-danger)"
+			onclick={() => confirmDelete(row.id)}
+		>
+			{t('common.delete')}
+		</button>
+	</div>
+{/snippet}

@@ -24,7 +24,7 @@
 
 <div class="border-border-card flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
 	<div class="text-muted-foreground flex items-center gap-3 text-sm">
-		<span>{totalItems} item{totalItems !== 1 ? 's' : ''}</span>
+		<span>{t('lib.components.ui.Pagination.item_count', '{n} items').replace('{n}', String(totalItems))}</span>
 
 		<div class="flex items-center gap-1.5">
 			<span class="text-xs">{t('lib.components.ui.Pagination.svelte.per_page')}</span>
@@ -67,7 +67,7 @@
 			class="text-foreground hover:bg-dark-04 flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
 			disabled={page === 0}
 			onclick={() => goTo(0)}
-			aria-label="First page"
+			aria-label={t('lib.components.ui.Pagination.first_page', 'First page')}
 		>
 			<ChevronsLeft class="size-4" />
 		</button>
@@ -75,7 +75,7 @@
 			class="text-foreground hover:bg-dark-04 flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
 			disabled={page === 0}
 			onclick={() => goTo(page - 1)}
-			aria-label="Previous page"
+			aria-label={t('lib.components.ui.Pagination.previous_page', 'Previous page')}
 		>
 			<ChevronLeft class="size-4" />
 		</button>
@@ -88,7 +88,7 @@
 			class="text-foreground hover:bg-dark-04 flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
 			disabled={page >= totalPages - 1}
 			onclick={() => goTo(page + 1)}
-			aria-label="Next page"
+			aria-label={t('lib.components.ui.Pagination.next_page', 'Next page')}
 		>
 			<ChevronRight class="size-4" />
 		</button>
@@ -96,7 +96,7 @@
 			class="text-foreground hover:bg-dark-04 flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-30"
 			disabled={page >= totalPages - 1}
 			onclick={() => goTo(totalPages - 1)}
-			aria-label="Last page"
+			aria-label={t('lib.components.ui.Pagination.last_page', 'Last page')}
 		>
 			<ChevronsRight class="size-4" />
 		</button>

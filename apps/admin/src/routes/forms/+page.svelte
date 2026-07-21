@@ -18,6 +18,7 @@
 		slug: string;
 		space_id?: string;
 		space_name?: string;
+		description?: string;
 		submission_count: number;
 		is_active: boolean;
 		fields_count?: number;
@@ -31,6 +32,8 @@
 	let forms = $state<Form[]>([]);
 	let loading = $state(true);
 	let filters = $state<Record<string, string>>({});
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	// Delete confirmation
 	let showDeleteModal = $state(false);
@@ -61,9 +64,9 @@
 	const canManageForms = $derived(hasPermission("forms.create"));
 
 	const tabs = [
-		{ value: "all", label: "All Forms", icon: FileText },
-		{ value: "active", label: "Active", icon: Eye },
-		{ value: "inactive", label: "Inactive", icon: FileText }
+		{ value: "all", label: t('forms.tab_all', 'All Forms'), icon: FileText },
+		{ value: "active", label: t('forms.tab_active', 'Active'), icon: Eye },
+		{ value: "inactive", label: t('forms.tab_inactive', 'Inactive'), icon: FileText }
 	];
 
 	const columns = [
@@ -82,7 +85,7 @@
 			key: "space_name",
 			label: "Space",
 			sortable: true,
-			render: (value: string) => `<span class="text-sm text-foreground-alt">${value || "Global"}</span>`
+			render: (value: string) => `<span class="text-sm text-foreground-alt">${value || t('forms.global', 'Global')}</span>`
 		},
 		{
 			key: "submission_count",
@@ -92,7 +95,7 @@
 		},
 		{
 			key: "fields_count",
-			label: "Fields",
+			label: t('forms.fields_count', 'Fields'),
 			sortable: true,
 			render: (value: number) => `<span class="text-sm text-foreground-alt">${value ?? "—"}</span>`
 		},
@@ -108,7 +111,7 @@
 		},
 		{
 			key: "created_at",
-			label: "Created",
+			label: t('forms.created', 'Created'),
 			sortable: true,
 			render: (value: string) => new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
 		},
@@ -158,7 +161,7 @@
 	function openEdit(form: Form) {
 		editTarget = form;
 		editTitle = form.title;
-		editDescription = "";
+		editDescription = form.description ?? "";
 		editIsActive = form.is_active;
 		showEditModal = true;
 	}
@@ -194,6 +197,21 @@
 			// API not available
 		} finally {
 			deleting = false;
+		}
+	}
+
+	async function bulkDelete() {
+		const ids = Array.from(selectedIds);
+		if (ids.length === 0) return;
+		bulkDeleting = true;
+		try {
+			await Promise.all(ids.map((id) => api(`/forms/${id}`, { method: "DELETE" })));
+			selectedIds = new Set();
+			loadForms();
+		} catch {
+			// API not available
+		} finally {
+			bulkDeleting = false;
 		}
 	}
 
@@ -260,13 +278,13 @@
 </svelte:head>
 
 <PageHeader
-	title="Forms"
-	description="Manage platform forms and collect user submissions"
+	title={t('forms.title', 'Forms')}
+	description={t('forms.description', 'Manage platform forms and collect user submissions')}
 	actions={[
 		...(canManageForms
-			? [{ label: "Create Form", icon: Plus, onclick: openCreate }]
+			? [{ label: t('forms.create', 'Create Form'), icon: Plus, onclick: openCreate }]
 			: []),
-		{ label: "Refresh", icon: RefreshCw, onclick: loadForms, variant: "outline" }
+		{ label: t('common.refresh', 'Refresh'), icon: RefreshCw, onclick: loadForms, variant: "outline" }
 	]}
 />
 
@@ -278,10 +296,10 @@
 		filters={[
 			{
 				key: "space",
-				label: "Space",
+				label: t('forms.filter_space', 'Space'),
 				options: [
-					{ value: "global", label: "Global" },
-					{ value: "space", label: "Space-specific" }
+					{ value: "global", label: t('forms.global', 'Global') },
+					{ value: "space", label: t('forms.space_specific', 'Space-specific') }
 				]
 			}
 		]}
@@ -297,9 +315,18 @@
 				<DataTable
 					columns={columns}
 					data={filteredForms}
+					selectable
+					bind:selectedIds
 					pageSize={20}
-					emptyMessage="No forms found"
-				/>
+					emptyMessage={t('forms.no_forms', 'No forms found')}
+				>
+					{#snippet bulkActions()}
+						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
+							<Trash2 class="mr-1 h-3.5 w-3.5" />
+							{bulkDeleting ? t('common.deleting', 'Deleting...') : `Delete Selected (${selectedIds.size})`}
+						</Button>
+					{/snippet}
+				</DataTable>
 			{/if}
 		</CardContent>
 	</Card>
@@ -328,21 +355,21 @@
 </div>
 
 <!-- Create Modal -->
-<Modal bind:open={showCreateModal} title="Create Form" size="sm">
+<Modal bind:open={showCreateModal} title={t('forms.create', 'Create Form')} size="sm">
 	<div class="space-y-4">
 		<div>
-			<label for="form-create-title" class="mb-1 block text-sm font-medium text-foreground-alt">Title</label>
+			<label for="form-create-title" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.title_label', 'Title')}</label>
 			<input
 				id="form-create-title"
 				type="text"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g., Feedback Survey"
+				placeholder={t('forms.title_placeholder', 'e.g., Feedback Survey')}
 				bind:value={createTitle}
 				oninput={onTitleInput}
 			/>
 		</div>
 		<div>
-			<label for="form-create-slug" class="mb-1 block text-sm font-medium text-foreground-alt">Slug</label>
+			<label for="form-create-slug" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.slug_label', 'Slug')}</label>
 			<input
 				id="form-create-slug"
 				type="text"
@@ -353,7 +380,7 @@
 			/>
 		</div>
 		<div>
-			<label for="form-create-desc" class="mb-1 block text-sm font-medium text-foreground-alt">Description</label>
+			<label for="form-create-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.description_label', 'Description')}</label>
 			<textarea
 				id="form-create-desc"
 				rows="3"
@@ -363,7 +390,7 @@
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="form-create-active" type="checkbox" bind:checked={createIsActive} class="rounded" />
-			<label for="form-create-active" class="text-sm text-foreground-alt">Active</label>
+			<label for="form-create-active" class="text-sm text-foreground-alt">{t('forms.active_label', 'Active')}</label>
 		</div>
 	</div>
 	<div class="mt-6 flex justify-end gap-3">
@@ -375,11 +402,11 @@
 </Modal>
 
 <!-- Edit Modal -->
-<Modal bind:open={showEditModal} title="Edit Form" size="sm">
+<Modal bind:open={showEditModal} title={t('forms.edit', 'Edit Form')} size="sm">
 	{#if editTarget}
 		<div class="space-y-4">
 			<div>
-				<label for="form-edit-title" class="mb-1 block text-sm font-medium text-foreground-alt">Title</label>
+				<label for="form-edit-title" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.title_label', 'Title')}</label>
 				<input
 					id="form-edit-title"
 					type="text"
@@ -388,7 +415,7 @@
 				/>
 			</div>
 			<div>
-				<label for="form-edit-desc" class="mb-1 block text-sm font-medium text-foreground-alt">Description</label>
+				<label for="form-edit-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.description_label', 'Description')}</label>
 				<textarea
 					id="form-edit-desc"
 					rows="3"
@@ -398,7 +425,7 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<input id="form-edit-active" type="checkbox" bind:checked={editIsActive} class="rounded" />
-				<label for="form-edit-active" class="text-sm text-foreground-alt">Active</label>
+				<label for="form-edit-active" class="text-sm text-foreground-alt">{t('forms.active_label', 'Active')}</label>
 			</div>
 		</div>
 	{/if}
@@ -411,12 +438,12 @@
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal bind:open={showDeleteModal} title="Delete Form" description="This action cannot be undone. All submissions will be lost." size="sm">
+<Modal bind:open={showDeleteModal} title={t('forms.delete', 'Delete Form')} description={t('forms.delete_warning', 'This action cannot be undone. All submissions will be lost.')} size="sm">
 	{#if deleteTarget}
 		<div class="rounded-lg bg-danger-50 p-4">
 			<p class="text-sm text-danger-700">
-				Are you sure you want to delete <strong>{deleteTarget.title}</strong>?
-				This will permanently remove the form and all its submissions.
+				{t('forms.delete_confirm', 'Are you sure you want to delete')} <strong>{deleteTarget.title}</strong>?
+				{t('forms.delete_submissions_lost', 'This will permanently remove the form and all its submissions.')}
 			</p>
 		</div>
 	{/if}
@@ -426,14 +453,14 @@
 			{#if deleting}
 				{t('common.deleting', 'Deleting...')}
 			{:else}
-				Delete Form
+				{t('forms.delete_button', 'Delete Form')}
 			{/if}
 		</Button>
 	</div>
 </Modal>
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title="Form Details" size="sm">
+<Modal bind:open={showViewModal} title={t('forms.details', 'Form Details')} size="sm">
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
@@ -441,12 +468,12 @@
 				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.title}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">Slug</p>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('forms.slug', 'Slug')}</p>
 				<p class="mt-1 text-sm font-mono text-foreground">{viewTarget.slug}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider text-muted">Space</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.space_name || "Global"}</p>
+				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('forms.filter_space', 'Space')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.space_name || t('forms.global', 'Global')}</p>
 			</div>
 			<div class="grid grid-cols-2 gap-4">
 				<div>
@@ -460,7 +487,7 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('forms.status')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.is_active ? "Active" : "Inactive"}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.is_active ? t('forms.status.active', 'Active') : t('forms.status.inactive', 'Inactive')}</p>
 			</div>
 		</div>
 	{/if}

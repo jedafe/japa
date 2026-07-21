@@ -713,6 +713,19 @@ type DmMessageRequest struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type DmRequest struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	RequesterID    pgtype.UUID        `json:"requester_id"`
+	RecipientID    pgtype.UUID        `json:"recipient_id"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	PreviewMessage string             `json:"preview_message"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
+}
+
 type DocPage struct {
 	ID             pgtype.UUID        `json:"id"`
 	TenantID       pgtype.UUID        `json:"tenant_id"`
@@ -1674,6 +1687,17 @@ type PushSubscription struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type PushToken struct {
+	ID         pgtype.UUID        `json:"id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	Token      string             `json:"token"`
+	Platform   string             `json:"platform"`
+	DeviceName *string            `json:"device_name"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
+}
+
 type Reaction struct {
 	TenantID    pgtype.UUID        `json:"tenant_id"`
 	EntityType  string             `json:"entity_type"`
@@ -1952,6 +1976,16 @@ type Tag struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type TagModerator struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	TagID            pgtype.UUID        `json:"tag_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	AssignedBy       string             `json:"assigned_by"`
+	AssignedByUserID pgtype.UUID        `json:"assigned_by_user_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
 type Tenant struct {
 	ID        pgtype.UUID        `json:"id"`
 	Name      string             `json:"name"`
@@ -1960,6 +1994,7 @@ type Tenant struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	Status    string             `json:"status"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type Ticket struct {

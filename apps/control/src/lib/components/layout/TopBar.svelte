@@ -14,7 +14,7 @@
 		<a href="/" class="text-foreground text-sm font-semibold">{t('control.brand', 'JapaControl')}</a>
 		{#if PUBLIC_JC_ENV === 'production'}
 			<span class="bg-destructive rounded-5px px-2 py-0.5 text-xs font-bold text-white">
-				PRODUCTION
+				{t('topbar.production', 'PRODUCTION')}
 			</span>
 		{:else if PUBLIC_JC_ENV === 'staging'}
 			<span class="bg-amber-500 rounded-5px px-2 py-0.5 text-xs font-bold text-black">
@@ -28,7 +28,7 @@
 			type="button"
 			class="text-muted-foreground hover:bg-dark-04 rounded-9px p-1.5 transition-colors"
 			onclick={toggleTheme}
-			aria-label={getTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+			aria-label={getTheme() === 'dark' ? t('topbar.switch_light', 'Switch to light mode') : t('topbar.switch_dark', 'Switch to dark mode')}
 		>
 				{getTheme() === 'dark' ? '☀️' : '🌙'}
 		</button>

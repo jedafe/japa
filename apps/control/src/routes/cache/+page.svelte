@@ -1,5 +1,6 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Tabs } from 'bits-ui';
 	import { api } from '$lib/api';
@@ -20,7 +21,7 @@
 
 	let flushing = $state(false);
 	let message = $state('');
-	let messageType = $state<'success' | 'error' | ''>('');
+	let messageType = $state<'success' | 'error' | 'info'>('info');
 	let showFlushConfirm = $state(false);
 	let activeTab = $state('stats');
 	let stats = $state<CacheStats | null>(null);
@@ -30,26 +31,32 @@
 		if (!stats) {
 			loadStats();
 		}
+		return () => {};
 	});
 
 	async function loadStats() {
 		loadingStats = true;
-		const result = await api<CacheStats | { message: string }>('/control/cache/stats');
-		if (result.ok) {
-			const raw = result.data;
-			if ('message' in raw && raw.message) {
-				stats = null;
-			} else {
-				stats = raw as CacheStats;
+		try {
+			const result = await api<CacheStats | { message: string }>('/control/cache/stats');
+			if (result.ok) {
+				const raw = result.data;
+				if ('message' in raw && raw.message) {
+					stats = null;
+				} else {
+					stats = raw as CacheStats;
+				}
 			}
+		} catch {
+			// Stats unavailable — leave stats as null
+		} finally {
+			loadingStats = false;
 		}
-		loadingStats = false;
 	}
 
 	async function flush() {
 		flushing = true;
 		message = '';
-		messageType = '';
+		messageType = 'info';
 		try {
 			const result = await api('/control/cache/flush', { method: 'POST' });
 			if (result.ok) {
@@ -170,16 +177,12 @@
 				>
 					{flushing ? t('cache.flushing') : t('cache.flush_all')}
 				</button>
-				{#if message}
-					<span
-						class="text-xs font-medium"
-						class:text-emerald-500={messageType === 'success'}
-						class:text-destructive={messageType === 'error'}
-					>
-						{message}
-					</span>
-				{/if}
 			</div>
+			{#if message}
+				<div class="mt-4">
+					<AlertBanner variant={messageType} {message} />
+				</div>
+			{/if}
 		</div>
 	</Tabs.Content>
 </Tabs.Root>

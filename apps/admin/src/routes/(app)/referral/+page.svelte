@@ -8,7 +8,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Select } from '$lib/components/ui/select';
-	import { Gift, Users } from 'lucide-svelte';
+	import { Gift, Users, Trash2 } from 'lucide-svelte';
 
 	type ReferralProgram = {
 		id: string;
@@ -36,6 +36,9 @@
 	let error = $state('');
 	let saving = $state(false);
 	let activeTab = $state('program');
+	let searchQuery = $state("");
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	const tabs = $derived([
 		{ value: 'program', label: 'Program Settings', icon: Gift },
@@ -104,6 +107,10 @@
 			if (referralsResult.ok) {
 				referrals = referralsResult.data ?? [];
 			}
+			if (searchQuery) {
+				const q = searchQuery.toLowerCase();
+				referrals = referrals.filter((r: any) => r.username?.toLowerCase().includes(q) || r.code?.toLowerCase().includes(q));
+			}
 		} catch {
 			error = t('common.error');
 		} finally {
@@ -124,6 +131,22 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		error = '';
+		try {
+			for (const id of selectedIds) {
+				await api(`/admin/referral/referrals/${id}`, { method: 'DELETE' });
+			}
+			selectedIds = new Set();
+			load();
+		} catch {
+			error = t('common.error');
+		}
+		bulkDeleting = false;
 	}
 </script>
 
@@ -212,7 +235,18 @@
 					data={referrals}
 					pageSize={20}
 					emptyMessage={t('referral.no_referrals')}
-				/>
+					searchable
+					onsearch={(q) => { searchQuery = q; load(); }}
+					selectable
+					bind:selectedIds
+				>
+					{#snippet bulkActions()}
+						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+							<Trash2 class="h-3.5 w-3.5 mr-1" />
+							{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.deleteSelected', 'Delete Selected')} ({selectedIds.size})
+						</Button>
+					{/snippet}
+				</DataTable>
 			</CardContent>
 		</Card>
 	{/if}

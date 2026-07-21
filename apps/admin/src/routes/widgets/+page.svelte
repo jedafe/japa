@@ -3,6 +3,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Plus, Pencil, Trash2 } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { FilterBar } from '$lib/components/ui/filter-bar';
 
 	type Widget = {
 		id: string;
@@ -16,6 +18,8 @@
 	let widgets = $state<Widget[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	let searchQuery = $state('');
+	let filterValues = $state<Record<string, string>>({});
 	let editingWidget = $state<Widget | null>(null);
 	let saving = $state(false);
 
@@ -24,21 +28,71 @@
 	let widgetType = $state('');
 	let isActive = $state(true);
 
+	const columns = [
+		{ key: 'name', label: t('widgets.name'), sortable: true },
+		{ key: 'widget_type', label: t('widgets.type'), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>` },
+		{
+			key: 'is_active',
+			label: t('widgets.status'),
+			render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('widgets.active') : t('widgets.inactive')}</span>`
+		},
+		{
+			key: 'actions',
+			label: t('common.actions'),
+			component: WidgetActionsCell
+		}
+	];
+
+	const filteredWidgets = $derived.by(() => {
+		let items = widgets;
+		if (searchQuery) {
+			const q = searchQuery.toLowerCase();
+			items = items.filter((w) => w.name.toLowerCase().includes(q) || w.widget_type.toLowerCase().includes(q));
+		}
+		return items;
+	});
+
+	const filterDefs = [
+		{
+			key: 'is_active',
+			label: t('widgets.status', 'Status'),
+			options: [
+				{ value: 'true', label: t('widgets.active', 'Active') },
+				{ value: 'false', label: t('widgets.inactive', 'Inactive') }
+			]
+		}
+	];
+
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<Widget[]>('/admin/widgets');
+			const params = new URLSearchParams();
+			if (filterValues.is_active) params.set('is_active', filterValues.is_active);
+			if (searchQuery) params.set('q', searchQuery);
+			const result = await api<Widget[]>(`/admin/widgets${params.toString() ? `?${params.toString()}` : ''}`);
 			if (result.ok) {
 				widgets = result.data ?? [];
 			} else {
-				errorMessage = result.error;
+				errorMessage = result.error as string;
 			}
 		} catch {
 			errorMessage = t('common.error');
 		} finally {
 			loading = false;
 		}
+	}
+
+	function handleSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? '';
+		filterValues = values;
+		load();
+	}
+
+	function handleClear() {
+		searchQuery = '';
+		filterValues = {};
+		load();
 	}
 
 	function openCreate() {
@@ -137,50 +191,19 @@
 	</button>
 </div>
 
+<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('widgets.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('widgets.type')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('widgets.status')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each widgets as widget (widget.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{widget.name}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{widget.widget_type}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {widget.is_active ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
-								{widget.is_active ? t('widgets.active') : t('widgets.inactive')}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-right">
-							<div class="flex items-center justify-end gap-1">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(widget)}>
-									<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
-								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => deleteWidget(widget.id)}>
-									<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-								</button>
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('widgets.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		columns={columns}
+		data={filteredWidgets}
+		pageSize={25}
+		emptyMessage={t('widgets.empty')}
+		searchable
+		onsearch={(q) => { searchQuery = q; }}
+	/>
 {/if}
 
 <!-- Create/Edit Modal -->
@@ -200,3 +223,14 @@
 		</div>
 	</div>
 </Modal>
+
+{#snippet WidgetActionsCell(row: Widget)}
+	<div class="flex items-center justify-end gap-1">
+		<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(row)}>
+			<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
+		</button>
+		<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => deleteWidget(row.id)}>
+			<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
+		</button>
+	</div>
+{/snippet}

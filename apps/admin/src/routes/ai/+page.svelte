@@ -3,6 +3,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import { DataTable } from '$lib/components/ui/data-table';
 	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles, AlertTriangle, Wrench, BarChart3, Activity, Settings } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Select } from '$lib/components/ui/select';
@@ -114,6 +115,90 @@
 	let actionLoading = $state(false);
 	let actionMessage = $state('');
 	let actionMessageType = $state<'success' | 'error'>('success');
+
+	let hitlSearchQuery = $state('');
+	let toolsSearchQuery = $state('');
+	let usageSearchQuery = $state('');
+	let modelsSearchQuery = $state('');
+
+	const hitlColumns = [
+		{ key: 'content', label: t('ai.content'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${truncate(v, 80)}</span>` },
+		{ key: 'content_type', label: t('ai.type'), render: (v: string) => `<span class="inline-block rounded-full bg-info/15 px-2 py-0.5 text-xs text-info dark:text-info">${v}</span>` },
+		{ key: 'source', label: t('ai.source'), render: (v: string) => `<span class="text-xs">${v}</span>` },
+		{ key: 'created_at', label: t('ai.created'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
+		{ key: 'actions', label: t('ai.actions'), class: 'w-24', render: (_: any, row: HitlReview) => `<button class="rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-info)" onclick="window.__reviewHitl('${row.id}')">${t('ai.review')}</button>` }
+	];
+
+	const toolsMgmtColumns = [
+		{ key: 'name', label: t('ai.tools.name'), sortable: true },
+		{ key: 'description', label: t('ai.tools.description'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>` },
+		{ key: 'is_enabled', label: t('ai.tools.status'), render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('ai.tools.enabled') : t('ai.tools.disabled')}</span>` },
+		{ key: 'created_at', label: t('ai.tools.created'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
+		{ key: 'actions', label: t('common.actions'), class: 'w-32', render: (_: any, row: AiTool) => `<button class="flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-primary)" onclick="window.__configureAiTool('${row.id}')"><Settings class="h-3 w-3" />${t('common.configure')}</button>` }
+	];
+
+	const modelUsageColumns = [
+		{ key: 'model', label: t('ai.usage.model'), render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: 'requests', label: t('ai.usage.requests'), render: (v: number) => v.toLocaleString() },
+		{ key: 'tokens', label: t('ai.usage.tokens'), render: (v: number) => v.toLocaleString() },
+		{ key: 'cost', label: t('ai.usage.cost'), render: (v: number) => `$${v.toFixed(2)}` }
+	];
+
+	const toolUsageColumns = [
+		{ key: 'tool_name', label: t('ai.tools.name'), render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: 'invocations', label: t('ai.tools.invocations'), render: (v: number) => v.toLocaleString() },
+		{ key: 'avg_latency_ms', label: t('ai.tools.avg_latency'), render: (v: number) => `${v.toFixed(0)}ms` },
+		{ key: 'errors', label: t('ai.tools.errors'), render: (v: number) => `<span class="${v > 0 ? 'text-danger dark:text-danger' : ''}">${v}</span>` }
+	];
+
+	const modelsColumns = [
+		{ key: 'label', label: t('ai.models.name', 'Name'), render: (_: any, row: any) => row.label || row.name },
+		{ key: 'id', label: t('ai.models.id', 'ID'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+		{ key: 'is_active', label: t('ai.models.status', 'Status'), render: (v: boolean) => v ? `<span class="inline-block rounded-full bg-success/15 px-2 py-0.5 text-xs text-success dark:text-success">${t('common.active', 'Active')}</span>` : `<span class="inline-block rounded-full bg-muted/15 px-2 py-0.5 text-xs text-muted dark:text-muted">${t('common.inactive', 'Inactive')}</span>` }
+	];
+
+	const filteredHitlReviews = $derived(
+		hitlSearchQuery
+			? reviews.filter((r) => r.content.toLowerCase().includes(hitlSearchQuery.toLowerCase()) || r.source.toLowerCase().includes(hitlSearchQuery.toLowerCase()))
+			: reviews
+	);
+
+	const filteredTools = $derived(
+		toolsSearchQuery
+			? tools.filter((t) => t.name.toLowerCase().includes(toolsSearchQuery.toLowerCase()))
+			: tools
+	);
+
+	const filteredModelUsage = $derived(
+		usageSearchQuery
+			? (aiUsage?.models_used ?? []).filter((m) => m.model.toLowerCase().includes(usageSearchQuery.toLowerCase()))
+			: (aiUsage?.models_used ?? [])
+	);
+
+	const filteredToolUsage = $derived(
+		usageSearchQuery
+			? toolUsage.filter((t) => t.tool_name.toLowerCase().includes(usageSearchQuery.toLowerCase()))
+			: toolUsage
+	);
+
+	let aiModels = $state<{ id: string; name: string; label: string; is_active: boolean }[]>([]);
+
+	const filteredModels = $derived(
+		modelsSearchQuery
+			? aiModels.filter((m) => (m.label || m.name).toLowerCase().includes(modelsSearchQuery.toLowerCase()))
+			: aiModels
+	);
+
+	$effect(() => {
+		(window as any).__reviewHitl = (id: string) => {
+			const review = reviews.find((r) => r.id === id);
+			if (review) openReview(review);
+		};
+		(window as any).__configureAiTool = (id: string) => {
+			const tool = tools.find((t) => t.id === id);
+			if (tool) openEditTool(tool);
+		};
+	});
 
 	let totalPages = $derived(Math.max(1, Math.ceil(totalReviews / pageSize)));
 
@@ -307,8 +392,6 @@
 		}
 	}
 
-	// Models tab (read-only from /admin/ai/models)
-	let aiModels = $state<{ id: string; name: string; label: string; is_active: boolean }[]>([]);
 	let modelsLoading = $state(false);
 	async function loadModels() {
 		modelsLoading = true;
@@ -544,48 +627,15 @@
 
 		{#if reviewsLoading}
 			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-		{:else if reviews.length === 0}
-			<div class="rounded-lg border py-12 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<Eye class="mx-auto mb-3 h-8 w-8" style="color: var(--color-muted)" />
-				<p class="text-sm" style="color: var(--color-muted)">{t('ai.no_pending')}</p>
-			</div>
 		{:else}
-			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-				<table class="w-full text-sm">
-					<thead>
-						<tr style="border-color: var(--color-border)">
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.content')}</th>
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.type')}</th>
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.source')}</th>
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.created')}</th>
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.actions')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each reviews as review}
-							<tr class="border-t" style="border-color: var(--color-border)">
-								<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{truncate(review.content, 80)}</td>
-								<td class="px-4 py-3">
-									<span class="inline-block rounded-full bg-info/15 px-2 py-0.5 text-xs text-info dark:text-info">
-										{review.content_type}
-									</span>
-								</td>
-								<td class="px-4 py-3 text-xs">{review.source}</td>
-								<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(review.created_at).toLocaleDateString()}</td>
-								<td class="px-4 py-3">
-									<button
-										class="rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-info)"
-										onclick={() => openReview(review)}
-									>
-										{t('ai.review')}
-									</button>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+			<DataTable
+				columns={hitlColumns}
+				data={filteredHitlReviews}
+				searchable={true}
+				onsearch={(q: string) => { hitlSearchQuery = q; }}
+				pageSize={10}
+				emptyMessage={t('ai.no_pending')}
+			/>
 
 			<!-- Pagination -->
 			<div class="mt-3 flex items-center justify-between">
@@ -617,49 +667,14 @@
 		{#if toolsLoading}
 			<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 		{:else}
-			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-				<table class="w-full text-sm">
-					<thead>
-						<tr style="border-bottom: 1px solid var(--color-border)">
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.tools.name')}</th>
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.tools.description')}</th>
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.tools.status')}</th>
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.tools.created')}</th>
-							<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each tools as tool (tool.id)}
-							<tr class="border-t" style="border-color: var(--color-border)">
-								<td class="px-4 py-3 font-medium">{tool.name}</td>
-								<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{tool.description || '—'}</td>
-								<td class="px-4 py-3">
-									<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {tool.is_enabled ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
-										{tool.is_enabled ? t('ai.tools.enabled') : t('ai.tools.disabled')}
-									</span>
-								</td>
-								<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(tool.created_at).toLocaleDateString()}</td>
-								<td class="px-4 py-3 text-right">
-									<button
-										class="flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-primary)"
-										onclick={() => openEditTool(tool)}
-									>
-										<Settings class="h-3 w-3" />
-										{t('common.configure')}
-									</button>
-								</td>
-							</tr>
-						{:else}
-							<tr>
-								<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-									{t('ai.tools.empty')}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+			<DataTable
+				columns={toolsMgmtColumns}
+				data={filteredTools}
+				searchable={true}
+				onsearch={(q: string) => { toolsSearchQuery = q; }}
+				pageSize={25}
+				emptyMessage={t('ai.tools.empty')}
+			/>
 		{/if}
 	</section>
 
@@ -697,63 +712,29 @@
 
 				{#if aiUsage.models_used?.length}
 					<h3 class="mb-3 text-sm font-medium">{t('ai.usage.by_model')}</h3>
-					<div class="mb-6 overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-						<table class="w-full text-sm">
-							<thead>
-								<tr style="border-bottom: 1px solid var(--color-border)">
-									<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.usage.model')}</th>
-									<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.usage.requests')}</th>
-									<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.usage.tokens')}</th>
-									<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.usage.cost')}</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each aiUsage.models_used as m}
-									<tr class="border-t" style="border-color: var(--color-border)">
-										<td class="px-4 py-3 font-medium">{m.model}</td>
-										<td class="px-4 py-3 text-right">{m.requests.toLocaleString()}</td>
-										<td class="px-4 py-3 text-right">{m.tokens.toLocaleString()}</td>
-										<td class="px-4 py-3 text-right">${m.cost.toFixed(2)}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
+					<div class="mb-6">
+						<DataTable
+							columns={modelUsageColumns}
+							data={filteredModelUsage}
+							searchable={true}
+							onsearch={(q: string) => { usageSearchQuery = q; }}
+							pageSize={25}
+							emptyMessage={t('ai.no_usage_data')}
+							showPagination={false}
+						/>
 					</div>
 				{/if}
 			{/if}
 
 			<!-- Tool Usage -->
 			<h3 class="mb-3 text-sm font-medium">{t('ai.tools.usage')}</h3>
-			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-				<table class="w-full text-sm">
-					<thead>
-						<tr style="border-bottom: 1px solid var(--color-border)">
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.tools.name')}</th>
-							<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.tools.invocations')}</th>
-							<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.tools.avg_latency')}</th>
-							<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.tools.errors')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each toolUsage as tu (tu.tool_id)}
-							<tr class="border-t" style="border-color: var(--color-border)">
-								<td class="px-4 py-3 font-medium">{tu.tool_name}</td>
-								<td class="px-4 py-3 text-right">{tu.invocations.toLocaleString()}</td>
-								<td class="px-4 py-3 text-right">{tu.avg_latency_ms.toFixed(0)}ms</td>
-								<td class="px-4 py-3 text-right">
-									<span class={tu.errors > 0 ? 'text-danger dark:text-danger' : ''}>{tu.errors}</span>
-								</td>
-							</tr>
-						{:else}
-							<tr>
-								<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-									{t('ai.tools.no_usage')}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+			<DataTable
+				columns={toolUsageColumns}
+				data={filteredToolUsage}
+				pageSize={25}
+				emptyMessage={t('ai.tools.no_usage')}
+				showPagination={false}
+			/>
 		{/if}
 	</section>
 {/if}
@@ -765,37 +746,16 @@
 			<div class="flex items-center justify-center py-12">
 				<Loader2 class="h-6 w-6 animate-spin" style="color: var(--color-muted)" />
 			</div>
-		{:else if aiModels.length === 0}
-			<div class="py-12 text-center text-sm" style="color: var(--color-muted)">
-				{t('ai.models.empty', 'No AI models configured')}
-			</div>
 		{:else}
-			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-				<table class="w-full text-sm">
-					<thead>
-						<tr style="border-bottom: 1px solid var(--color-border)">
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.models.name', 'Name')}</th>
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.models.id', 'ID')}</th>
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('ai.models.status', 'Status')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each aiModels as m (m.id)}
-							<tr class="border-t" style="border-color: var(--color-border)">
-								<td class="px-4 py-3 font-medium">{m.label || m.name}</td>
-								<td class="px-4 py-3 font-mono text-xs">{m.id}</td>
-								<td class="px-4 py-3">
-									{#if m.is_active}
-										<span class="inline-block rounded-full bg-success/15 px-2 py-0.5 text-xs text-success dark:text-success">{t('common.active', 'Active')}</span>
-									{:else}
-										<span class="inline-block rounded-full bg-muted/15 px-2 py-0.5 text-xs text-muted dark:text-muted">{t('common.inactive', 'Inactive')}</span>
-									{/if}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+			<DataTable
+				columns={modelsColumns}
+				data={filteredModels}
+				searchable={true}
+				onsearch={(q: string) => { modelsSearchQuery = q; }}
+				pageSize={25}
+				emptyMessage={t('ai.models.empty', 'No AI models configured')}
+				showPagination={false}
+			/>
 		{/if}
 	</section>
 {/if}

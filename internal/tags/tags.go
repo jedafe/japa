@@ -100,3 +100,42 @@ func (s *Service) DeleteTag(ctx context.Context, id, tenantID pgtype.UUID) error
 
 	return nil
 }
+
+// ListTagModerators returns the moderators of a tag (Section 49).
+func (s *Service) ListTagModerators(ctx context.Context, tagID, tenantID pgtype.UUID) ([]gen.ListTagModeratorsRow, error) {
+	rows, err := s.read.ListTagModerators(ctx, gen.ListTagModeratorsParams{TenantID: tenantID, TagID: tagID})
+	if err != nil {
+		return nil, fmt.Errorf("listing tag moderators: %w", err)
+	}
+
+	return rows, nil
+}
+
+// AddTagModerator assigns a user as a moderator of a tag (Section 49).
+// Idempotent — re-adding an existing moderator is a no-op refresh.
+func (s *Service) AddTagModerator(ctx context.Context, tagID, userID, tenantID pgtype.UUID) (gen.TagModerator, error) {
+	row, err := s.write.AddTagModerator(ctx, gen.AddTagModeratorParams{
+		TenantID:  tenantID,
+		TagID:     tagID,
+		UserID:    userID,
+		AssignedBy: "site_admin",
+	})
+	if err != nil {
+		return gen.TagModerator{}, fmt.Errorf("adding tag moderator: %w", err)
+	}
+
+	return row, nil
+}
+
+// RemoveTagModerator removes a user as a moderator of a tag (Section 49).
+func (s *Service) RemoveTagModerator(ctx context.Context, tagID, userID, tenantID pgtype.UUID) error {
+	if err := s.write.RemoveTagModerator(ctx, gen.RemoveTagModeratorParams{
+		TenantID: tenantID,
+		TagID:    tagID,
+		UserID:   userID,
+	}); err != nil {
+		return fmt.Errorf("removing tag moderator: %w", err)
+	}
+
+	return nil
+}

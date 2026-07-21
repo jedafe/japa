@@ -11,6 +11,41 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addTagModerator = `-- name: AddTagModerator :one
+INSERT INTO tag_moderators (tenant_id, tag_id, user_id, assigned_by)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (tenant_id, tag_id, user_id) DO UPDATE SET created_at = now()
+RETURNING id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at
+`
+
+type AddTagModeratorParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	TagID      pgtype.UUID `json:"tag_id"`
+	UserID     pgtype.UUID `json:"user_id"`
+	AssignedBy string      `json:"assigned_by"`
+}
+
+// Idempotent: re-adding an existing moderator just refreshes created_at.
+func (q *Queries) AddTagModerator(ctx context.Context, arg AddTagModeratorParams) (TagModerator, error) {
+	row := q.db.QueryRow(ctx, addTagModerator,
+		arg.TenantID,
+		arg.TagID,
+		arg.UserID,
+		arg.AssignedBy,
+	)
+	var i TagModerator
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TagID,
+		&i.UserID,
+		&i.AssignedBy,
+		&i.AssignedByUserID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createTag = `-- name: CreateTag :one
 
 INSERT INTO tags (tenant_id, name, slug, description, color)
@@ -92,6 +127,50 @@ func (q *Queries) GetTagBySlug(ctx context.Context, arg GetTagBySlugParams) (Tag
 	return i, err
 }
 
+const listTagModerators = `-- name: ListTagModerators :many
+
+SELECT tm.user_id, u.username, tm.created_at
+FROM tag_moderators tm
+JOIN users u ON u.id = tm.user_id AND u.tenant_id = tm.tenant_id
+WHERE tm.tag_id = $1 AND tm.tenant_id = $2
+ORDER BY tm.created_at ASC
+`
+
+type ListTagModeratorsParams struct {
+	TagID    pgtype.UUID `json:"tag_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type ListTagModeratorsRow struct {
+	UserID    pgtype.UUID        `json:"user_id"`
+	Username  string             `json:"username"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// =====================
+// Tag moderators (Section 49)
+// =====================
+// Lists the moderators of a tag, joined to users for display.
+func (q *Queries) ListTagModerators(ctx context.Context, arg ListTagModeratorsParams) ([]ListTagModeratorsRow, error) {
+	rows, err := q.db.Query(ctx, listTagModerators, arg.TagID, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTagModeratorsRow
+	for rows.Next() {
+		var i ListTagModeratorsRow
+		if err := rows.Scan(&i.UserID, &i.Username, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTagsByTenant = `-- name: ListTagsByTenant :many
 
 SELECT id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
@@ -132,6 +211,22 @@ func (q *Queries) ListTagsByTenant(ctx context.Context, tenantID pgtype.UUID) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeTagModerator = `-- name: RemoveTagModerator :exec
+DELETE FROM tag_moderators
+WHERE tag_id = $1 AND user_id = $2 AND tenant_id = $3
+`
+
+type RemoveTagModeratorParams struct {
+	TagID    pgtype.UUID `json:"tag_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) RemoveTagModerator(ctx context.Context, arg RemoveTagModeratorParams) error {
+	_, err := q.db.Exec(ctx, removeTagModerator, arg.TagID, arg.UserID, arg.TenantID)
+	return err
 }
 
 const updateTag = `-- name: UpdateTag :one

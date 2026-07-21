@@ -1737,6 +1737,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/reports/{id}", reportsHandlers.GetReport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
 				Patch("/admin/reports/{id}", reportsHandlers.UpdateReport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
+				Delete("/admin/reports/{id}", reportsHandlers.DeleteReport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.consents.view")).
 				Get("/admin/consents", gdprHandlers.ListConsentsByTenant)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.consents.delete")).
@@ -1936,7 +1938,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/tags/{id}", tagsHandlers.UpdateTag)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.delete")).
 				Delete("/admin/tags/{id}", tagsHandlers.DeleteTag)
-			// Tag moderators (P5.6 — Task 7, stub routes — no tag_moderators table yet)
+			// Admin tag listing (reuses the tenant-scoped ListTags handler).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
+				Get("/admin/tags", tagsHandlers.ListTags)
+			// Tag moderators (Section 49).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
+				Get("/admin/tags/{id}/moderators", tagsHandlers.ListTagModerators)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
 				Post("/admin/tags/{id}/moderators", tagsHandlers.AddTagModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tags.edit")).
@@ -2472,8 +2479,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/organizations/{id}/claim", adminHandlers.ClaimOrganization)
 
 			// Task 12: Spaces admin extras
+			// Admin spaces CRUD (reuses the tenant-scoped space handlers; the
+			// admin's resolved tenant scopes the listing).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
+				Get("/admin/spaces", spaceHandlers.ListSpaces)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
+				Get("/admin/spaces/{id}", spaceHandlers.GetSpace)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
+				Post("/admin/spaces", spaceHandlers.CreateSpace)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
+				Patch("/admin/spaces/{id}", spaceHandlers.UpdateSpace)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
+				Delete("/admin/spaces/{id}", spaceHandlers.DeleteSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Get("/admin/spaces/{id}/join-requests", spaceHandlers.ListJoinRequests)
+			// Admin-wide join requests (across all spaces in the admin tenant).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+				Get("/admin/join-requests", spaceHandlers.AdminListJoinRequests)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+				Post("/admin/join-requests/{id}/approve", spaceHandlers.AdminApproveJoinRequest)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
+				Post("/admin/join-requests/{id}/reject", spaceHandlers.AdminRejectJoinRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
 				Patch("/admin/spaces/{id}/join-requests/{requestId}", spaceHandlers.UpdateJoinRequest)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.moderate")).
@@ -2534,6 +2560,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/blog/review-queue/{id}/approve", blogHandlers.UpdateReview)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
 				Post("/admin/blog/review-queue/{id}/reject", blogHandlers.UpdateReview)
+			// Admin blog post management (Section 24 blog extension).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+				Get("/admin/blog", blogHandlers.AdminListPosts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.manage")).
+				Delete("/admin/blog/{id}", blogHandlers.AdminDeletePost)
 
 			// Task 19: Analytics admin — domain-specific
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
@@ -2749,6 +2780,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Queue Monitor
 			r.Get("/queue/stats", controlHandlers.QueueStats)
+			r.Get("/queue/{queue_name}/tasks", controlHandlers.ListQueueTasks)
 			r.Get("/queue/dlq", controlHandlers.ListDLQ)
 			r.Post("/queue/dlq/{task_id}/retry", controlHandlers.RetryDLQTask)
 			r.Delete("/queue/dlq/{task_id}", controlHandlers.DiscardDLQTask)
@@ -2769,6 +2801,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Security
 			r.Get("/security/scan", controlHandlers.ListSecurityScanResults)
+			r.Post("/security/scan", controlHandlers.TriggerSecurityScan)
 			r.Get("/security", controlHandlers.SecurityOverview)
 			r.Get("/security/ip-blocks", controlHandlers.ListIPBlocks)
 			r.Post("/security/ip-blocks", controlHandlers.CreateIPBlock)
@@ -2778,6 +2811,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// API Keys (moved from /admin/api-keys)
 			r.Get("/api-keys", publicAPIHandlers.ListAllKeys)
 			r.Post("/api-keys", controlHandlers.CreateAPIKey)
+			r.Post("/api-keys/batch-delete", controlHandlers.DeleteAPIKeysBatch)
 			r.Get("/api-keys/{id}", controlHandlers.GetAPIKey)
 			r.Patch("/api-keys/{id}", controlHandlers.UpdateAPIKey)
 			r.Delete("/api-keys/{id}", controlHandlers.DeleteAPIKey)
@@ -2793,6 +2827,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/audit-logs", controlHandlers.ListAuditLogs)
 			r.Delete("/audit-logs/{id}", controlHandlers.DeleteAuditLog)
 			r.Post("/audit-logs/clear", controlHandlers.ClearAuditLogs)
+
+			// Task types catalog (drives cron job editor type dropdown)
+			r.Get("/task-types", controlHandlers.ListTaskTypes)
+
+			// API scopes catalog (drives API key scope editor dropdown)
+			r.Get("/api-scopes", rbacHandlers.ListScopes)
 
 			// Deployments
 			r.Get("/deployments", controlHandlers.ListDeployments)

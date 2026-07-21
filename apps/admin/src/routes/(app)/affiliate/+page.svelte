@@ -55,6 +55,12 @@
 	let showCreateModal = $state(false);
 	let newProvider = $state({ name: '', base_url: '', commission_rate: 0 });
 	let saving = $state(false);
+	let searchQuery = $state("");
+
+	let selectedProviderIds = $state<Set<string>>(new Set());
+	let selectedMemberIds = $state<Set<string>>(new Set());
+	let selectedLinkIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	const canManageAffiliate = $derived(hasPermission('affiliate.manage'));
 
@@ -194,7 +200,11 @@
 			if (activeTab === 'providers') {
 				const result = await affiliateProvidersAdminApi.list();
 				if (result.ok) {
-					providers = (Array.isArray(result.data) ? result.data : (result.data as any)?.items ?? []) as AffiliateProvider[];
+					providers = (Array.isArray(result.data) ? result.data : []) as AffiliateProvider[];
+					if (searchQuery) {
+						const q = searchQuery.toLowerCase();
+						providers = providers.filter((p) => p.name?.toLowerCase().includes(q) || (p.is_active ? 'active' : 'inactive').includes(q));
+					}
 				} else {
 					error = result.error;
 				}
@@ -202,6 +212,10 @@
 				const result = await api<AffiliateMember[]>('/admin/affiliate-program/members');
 				if (result.ok) {
 					members = result.data ?? [];
+					if (searchQuery) {
+						const q = searchQuery.toLowerCase();
+						members = members.filter((m: any) => m.username?.toLowerCase().includes(q) || m.status?.toLowerCase().includes(q));
+					}
 				} else {
 					error = result.error;
 				}
@@ -209,6 +223,10 @@
 				const result = await api<AffiliateLink[]>('/admin/affiliate-links');
 				if (result.ok) {
 					links = result.data ?? [];
+					if (searchQuery) {
+						const q = searchQuery.toLowerCase();
+						links = links.filter((l: any) => l.code?.toLowerCase().includes(q) || l.url?.toLowerCase().includes(q) || l.user_id?.toLowerCase().includes(q));
+					}
 				} else {
 					error = result.error;
 				}
@@ -300,6 +318,51 @@
 		showMemberStatusConfirm = false;
 		memberStatusTarget = null;
 	}
+
+	async function bulkDeleteProviders() {
+		if (selectedProviderIds.size === 0) return;
+		bulkDeleting = true;
+		try {
+			for (const id of selectedProviderIds) {
+				await affiliateProvidersAdminApi.delete(id);
+			}
+			selectedProviderIds = new Set();
+			load();
+		} catch {
+			error = t('common.error');
+		}
+		bulkDeleting = false;
+	}
+
+	async function bulkDeleteMembers() {
+		if (selectedMemberIds.size === 0) return;
+		bulkDeleting = true;
+		try {
+			for (const userId of selectedMemberIds) {
+				await updateMemberStatus(userId, 'suspended');
+			}
+			selectedMemberIds = new Set();
+			load();
+		} catch {
+			error = t('common.error');
+		}
+		bulkDeleting = false;
+	}
+
+	async function bulkDeleteLinks() {
+		if (selectedLinkIds.size === 0) return;
+		bulkDeleting = true;
+		try {
+			for (const id of selectedLinkIds) {
+				await api(`/admin/affiliate-links/${id}`, { method: 'DELETE' });
+			}
+			selectedLinkIds = new Set();
+			load();
+		} catch {
+			error = t('common.error');
+		}
+		bulkDeleting = false;
+	}
 </script>
 
 <svelte:head>
@@ -328,34 +391,67 @@
 	{:else if activeTab === 'providers'}
 		<Card>
 			<CardContent class="p-0">
-				<DataTable
-					columns={providerColumns}
-					data={providers}
-					pageSize={20}
-					emptyMessage={t('affiliate.no_providers')}
-				/>
+			<DataTable
+				columns={providerColumns}
+				data={providers}
+				pageSize={20}
+				emptyMessage={t('affiliate.no_providers')}
+				searchable
+				onsearch={(q) => { searchQuery = q; load(); }}
+				selectable
+				bind:selectedIds={selectedProviderIds}
+			>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDeleteProviders} disabled={bulkDeleting || selectedProviderIds.size === 0}>
+						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedProviderIds.size})
+					</Button>
+				{/snippet}
+			</DataTable>
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'members'}
 		<Card>
 			<CardContent class="p-0">
-				<DataTable
-					columns={memberColumns}
-					data={members}
-					pageSize={20}
-					emptyMessage={t('affiliate.no_members')}
-				/>
+			<DataTable
+				columns={memberColumns}
+				data={members}
+				pageSize={20}
+				emptyMessage={t('affiliate.no_members')}
+				searchable
+				onsearch={(q) => { searchQuery = q; load(); }}
+				selectable
+				bind:selectedIds={selectedMemberIds}
+			>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDeleteMembers} disabled={bulkDeleting || selectedMemberIds.size === 0}>
+						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						{bulkDeleting ? 'Deleting...' : 'Suspend Selected'} ({selectedMemberIds.size})
+					</Button>
+				{/snippet}
+			</DataTable>
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'links'}
 		<Card>
 			<CardContent class="p-0">
-				<DataTable
-					columns={linkColumns}
-					data={links}
-					pageSize={20}
-					emptyMessage="No affiliate links found"
-				/>
+			<DataTable
+				columns={linkColumns}
+				data={links}
+				pageSize={20}
+				emptyMessage="No affiliate links found"
+				searchable
+				onsearch={(q) => { searchQuery = q; load(); }}
+				selectable
+				bind:selectedIds={selectedLinkIds}
+			>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDeleteLinks} disabled={bulkDeleting || selectedLinkIds.size === 0}>
+						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedLinkIds.size})
+					</Button>
+				{/snippet}
+			</DataTable>
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'rates'}

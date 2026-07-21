@@ -2,6 +2,7 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	type NotificationType = {
@@ -14,6 +15,7 @@
 	let types = $state<NotificationType[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+	let searchQuery = $state('');
 	let showCreateModal = $state(false);
 	let editingType = $state<NotificationType | null>(null);
 	let newType = $state({ key: '', label: '', description: '' });
@@ -21,8 +23,38 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<NotificationType | null>(null);
 
-	// Backend gates notification-type mutations on notifications.manage
 	const canManageNotificationTypes = $derived(hasPermission('notifications.manage'));
+
+	const columns = [
+		{ key: 'key', label: t('notification_types.key'), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+		{ key: 'label', label: t('notification_types.label'), sortable: true },
+		{ key: 'description', label: t('notification_types.description'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v || '-'}</span>` },
+		{
+			key: 'default_channels',
+			label: t('notification_types.channels'),
+			render: (_: any, row: NotificationType) => {
+				const badges: string[] = [];
+				if (row.default_channels?.email) badges.push(`<span class="rounded px-1.5 py-0.5 text-xs bg-info/15 text-info">${t('notification-types.email')}</span>`);
+				if (row.default_channels?.push) badges.push(`<span class="rounded px-1.5 py-0.5 text-xs bg-info/15 text-info">${t('notification-types.push')}</span>`);
+				if (row.default_channels?.in_app) badges.push(`<span class="rounded px-1.5 py-0.5 text-xs bg-success/15 text-success">${t('notification-types.in_app')}</span>`);
+				return `<div class="flex gap-1">${badges.join('')}</div>`;
+			}
+		},
+		{
+			key: 'actions',
+			label: t('common.actions'),
+			component: NtActionsCell
+		}
+	];
+
+	const filteredTypes = $derived.by(() => {
+		let items = types;
+		if (searchQuery) {
+			const q = searchQuery.toLowerCase();
+			items = items.filter((nt) => nt.key.toLowerCase().includes(q) || nt.label.toLowerCase().includes(q) || nt.description?.toLowerCase().includes(q));
+		}
+		return items;
+	});
 
 	function confirmDelete(ntype: NotificationType) {
 		deleteTarget = ntype;
@@ -98,6 +130,7 @@
 			saving = false;
 		}
 	}
+
 </script>
 
 <svelte:head>
@@ -129,65 +162,14 @@
 {#if loading}
 	<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium">{t('notification_types.key')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('notification_types.label')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('notification_types.description')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('notification_types.channels')}</th>
-					<th class="px-4 py-3 text-right font-medium">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each types as ntype (ntype.key)}
-					<tr style="border-bottom: 1px solid var(--color-border)">
-						<td class="px-4 py-3 font-mono text-xs">{ntype.key}</td>
-						<td class="px-4 py-3 font-medium">{ntype.label}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{ntype.description || '-'}</td>
-						<td class="px-4 py-3">
-							<div class="flex gap-1">
-								{#if ntype.default_channels?.email}
-									<span class="rounded px-1.5 py-0.5 text-xs bg-info/15 text-info dark:text-info">{t('notification-types.email')}</span>
-								{/if}
-								{#if ntype.default_channels?.push}
-									<span class="rounded px-1.5 py-0.5 text-xs bg-info/15 text-info dark:text-info">{t('notification-types.push')}</span>
-								{/if}
-								{#if ntype.default_channels?.in_app}
-									<span class="rounded px-1.5 py-0.5 text-xs bg-success/15 text-success dark:text-success">{t('notification-types.in_app')}</span>
-								{/if}
-							</div>
-						</td>
-						<td class="px-4 py-3 text-right">
-							<div class="flex items-center justify-end gap-2">
-								{#if canManageNotificationTypes}
-									<button
-										class="text-xs text-info hover:text-info"
-										onclick={() => openEdit(ntype)}
-									>
-										{t('common.edit')}
-									</button>
-									<button
-										class="text-xs text-danger hover:text-danger"
-										onclick={() => confirmDelete(ntype)}
-									>
-										{t('common.delete')}
-									</button>
-								{/if}
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('notification_types.no_types')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		columns={columns}
+		data={filteredTypes}
+		pageSize={25}
+		emptyMessage={t('notification_types.no_types')}
+		searchable
+		onsearch={(q) => { searchQuery = q; }}
+	/>
 {/if}
 
 {#if showCreateModal}
@@ -252,3 +234,16 @@
 		</p>
 	</Modal>
 {/if}
+
+{#snippet NtActionsCell(row: NotificationType)}
+	<div class="flex items-center justify-end gap-2">
+		{#if canManageNotificationTypes}
+			<button class="text-xs" style="color: var(--color-primary)" onclick={() => openEdit(row)}>
+				{t('common.edit')}
+			</button>
+			<button class="text-xs" style="color: var(--color-danger)" onclick={() => confirmDelete(row)}>
+				{t('common.delete')}
+			</button>
+		{/if}
+	</div>
+{/snippet}

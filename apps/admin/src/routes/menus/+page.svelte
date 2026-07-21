@@ -7,6 +7,7 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { Plus, Pencil, Trash2, RefreshCw, ArrowUp, ArrowDown, Menu as MenuIcon } from "lucide-svelte";
+	import { Select } from '$lib/components/ui/select';
 	import { menusAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -55,6 +56,10 @@
 
 	// Selected menu for viewing items
 	let selectedMenu = $state<Menu | null>(null);
+
+	let selectedMenuIds = $state<Set<string>>(new Set());
+	let selectedItemIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	const canManageMenus = $derived(hasPermission("menus.manage"));
 
@@ -276,6 +281,41 @@
 
 	function backToMenus() {
 		selectedMenu = null;
+		selectedItemIds = new Set();
+	}
+
+	async function bulkDeleteMenus() {
+		if (selectedMenuIds.size === 0) return;
+		bulkDeleting = true;
+		error = "";
+		try {
+			for (const id of selectedMenuIds) {
+				await menusAdminApi.delete(id);
+			}
+			selectedMenuIds = new Set();
+			loadMenus();
+		} catch {
+			error = t("common.error", "Failed to delete menus");
+		}
+		bulkDeleting = false;
+	}
+
+	async function bulkDeleteItems() {
+		if (selectedItemIds.size === 0 || !selectedMenu) return;
+		bulkDeleting = true;
+		error = "";
+		try {
+			for (const itemId of selectedItemIds) {
+				await menusAdminApi.deleteItem(selectedMenu.id, itemId);
+			}
+			selectedItemIds = new Set();
+			await loadMenus();
+			const refreshed = menus.find((m) => m.id === selectedMenu?.id);
+			if (refreshed) selectedMenu = refreshed;
+		} catch {
+			error = t("common.error", "Failed to delete items");
+		}
+		bulkDeleting = false;
 	}
 
 	loadMenus();
@@ -317,7 +357,14 @@
 				</div>
 			{:else}
 				<!-- wire the search box to re-fetch menus; API ignores q today (see report) -->
-				<DataTable columns={menuColumns} data={menus} pageSize={10} searchable onsearch={() => loadMenus()} />
+				<DataTable columns={menuColumns} data={menus} pageSize={10} searchable onsearch={() => loadMenus()} selectable bind:selectedIds={selectedMenuIds}>
+					{#snippet bulkActions()}
+						<Button variant="destructive" size="sm" onclick={bulkDeleteMenus} disabled={bulkDeleting || selectedMenuIds.size === 0}>
+							<Trash2 class="h-3.5 w-3.5 mr-1" />
+							{bulkDeleting ? t("common.deleting", "Deleting...") : t("common.deleteSelected", "Delete Selected")} ({selectedMenuIds.size})
+						</Button>
+					{/snippet}
+				</DataTable>
 			{/if}
 		</CardContent>
 	</Card>
@@ -336,7 +383,14 @@
 					{t("menus.no_items", "No items in this menu")}
 				</div>
 			{:else}
-				<DataTable columns={itemColumns} data={[...(selectedMenu.items ?? [])].sort((a, b) => a.sort_order - b.sort_order)} pageSize={(selectedMenu.items ?? []).length} />
+				<DataTable columns={itemColumns} data={[...(selectedMenu.items ?? [])].sort((a, b) => a.sort_order - b.sort_order)} pageSize={(selectedMenu.items ?? []).length} selectable bind:selectedIds={selectedItemIds}>
+					{#snippet bulkActions()}
+						<Button variant="destructive" size="sm" onclick={bulkDeleteItems} disabled={bulkDeleting || selectedItemIds.size === 0}>
+							<Trash2 class="h-3.5 w-3.5 mr-1" />
+							{bulkDeleting ? t("common.deleting", "Deleting...") : t("common.deleteSelected", "Delete Selected")} ({selectedItemIds.size})
+						</Button>
+					{/snippet}
+				</DataTable>
 			{/if}
 		</CardContent>
 	</Card>

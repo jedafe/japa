@@ -6,6 +6,7 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
+	import { Select } from "$lib/components/ui/select";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { RefreshCw, Eye, RotateCcw, Trash2, Pencil } from "lucide-svelte";
@@ -388,7 +389,7 @@
 						{ value: "archived", label: t("content.status.archived", "Archived") }
 					]}
 					value={editStatus}
-					onchange={(val) => (editStatus = val)}
+					onchange={(val: string) => (editStatus = val)}
 				/>
 			</div>
 			<div>

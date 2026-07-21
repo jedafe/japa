@@ -44,6 +44,7 @@
 
 	let showViewModal = $state(false);
 	let viewTarget = $state<FeatureFlag | null>(null);
+	let selectedIds = $state<Set<string>>(new Set());
 
 	const canManageFlags = $derived(hasPermission("admin.feature_flags.manage"));
 
@@ -56,9 +57,9 @@
 	});
 
 	let tabs = $derived([
-		{ value: "all", label: "All Flags", icon: Zap, count: flags.length },
-		{ value: "enabled", label: "Enabled", icon: ToggleRight, count: flags.filter((f) => f.isEnabled).length },
-		{ value: "disabled", label: "Disabled", icon: ToggleLeft, count: flags.filter((f) => !f.isEnabled).length }
+		{ value: "all", label: t('app.feature-flags.all_flags', 'All Flags'), icon: Zap, count: flags.length },
+		{ value: "enabled", label: t('app.feature-flags.enabled', 'Enabled'), icon: ToggleRight, count: flags.filter((f) => f.isEnabled).length },
+		{ value: "disabled", label: t('app.feature-flags.disabled', 'Disabled'), icon: ToggleLeft, count: flags.filter((f) => !f.isEnabled).length }
 	]);
 
 	let filteredFlags = $derived.by(() => {
@@ -72,7 +73,7 @@
 	const flagColumns = [
 		{
 			key: "name",
-			label: "Name",
+			label: t('app.feature-flags.name', 'Name'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
@@ -83,12 +84,12 @@
 		},
 		{
 			key: "description",
-			label: "Description",
+			label: t('app.feature-flags.description', 'Description'),
 			render: (value: string) => `<span class="text-sm text-muted">${value || "—"}</span>`
 		},
 		{
 			key: "environment",
-			label: "Environment",
+			label: t('app.feature-flags.environment', 'Environment'),
 			sortable: true,
 			render: (value: string) => {
 				const cls =
@@ -102,7 +103,7 @@
 		},
 		{
 			key: "rolloutPercentage",
-			label: "Rollout",
+			label: t('app.feature-flags.rollout', 'Rollout'),
 			sortable: true,
 			render: (value: number) => `
 				<div class="flex items-center gap-2">
@@ -115,13 +116,14 @@
 		},
 		{
 			key: "isEnabled",
-			label: "Status",
+			label: t('app.feature-flags.label_status', 'Status'),
 			sortable: true,
 			render: (value: boolean) => {
 				const cls = value
 					? "bg-success/15 text-success border-success"
 					: "bg-surface text-foreground border";
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${value ? "Enabled" : "Disabled"}</span>`;
+				const label = value ? t('app.feature-flags.status_enabled', 'Enabled') : t('app.feature-flags.status_disabled', 'Disabled');
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${label}</span>`;
 			}
 		},
 		{
@@ -164,10 +166,10 @@
 		if (result.ok) {
 			createModalOpen = false;
 			resetForm();
-			successMessage = "Feature flag created successfully";
+			successMessage = t('app.feature-flags.created_successfully', 'Feature flag created successfully');
 			loadFlags();
 		} else {
-			errorMessage = result.error ?? "Failed to create feature flag";
+			errorMessage = result.error ?? t('app.feature-flags.create_failed', 'Failed to create feature flag');
 		}
 		saving = false;
 	}
@@ -205,10 +207,10 @@
 			editModalOpen = false;
 			editingFlag = null;
 			resetForm();
-			successMessage = "Feature flag updated successfully";
+			successMessage = t('app.feature-flags.updated_successfully', 'Feature flag updated successfully');
 			loadFlags();
 		} else {
-			errorMessage = result.error ?? "Failed to update feature flag";
+			errorMessage = result.error ?? t('app.feature-flags.update_failed', 'Failed to update feature flag');
 		}
 		saving = false;
 	}
@@ -221,10 +223,10 @@
 			body: { enabled: !flag.isEnabled }
 		});
 		if (result.ok) {
-			successMessage = `Feature flag "${flag.name}" ${flag.isEnabled ? "disabled" : "enabled"}`;
+			successMessage = `${t('app.feature-flags.flag', 'Feature flag')} "${flag.name}" ${flag.isEnabled ? t('app.feature-flags.status_disabled', 'disabled') : t('app.feature-flags.status_enabled', 'enabled')}`;
 			loadFlags();
 		} else {
-			errorMessage = result.error ?? "Failed to toggle flag";
+			errorMessage = result.error ?? t('app.feature-flags.toggle_failed', 'Failed to toggle flag');
 		}
 	}
 
@@ -238,13 +240,31 @@
 		saving = true;
 		const result = await api(`/admin/feature-flags/${deletingId}`, { method: "DELETE" });
 		if (result.ok) {
-			successMessage = "Feature flag deleted";
+			successMessage = t('app.feature-flags.deleted', 'Feature flag deleted');
 			loadFlags();
 		} else {
-			errorMessage = result.error ?? "Failed to delete feature flag";
+			errorMessage = result.error ?? t('app.feature-flags.delete_failed', 'Failed to delete feature flag');
 		}
 		deleteConfirmOpen = false;
 		deletingId = null;
+		saving = false;
+	}
+
+	async function bulkDelete() {
+		saving = true;
+		errorMessage = "";
+		let failed = 0;
+		for (const id of selectedIds) {
+			const result = await api(`/admin/feature-flags/${id}`, { method: "DELETE" });
+			if (!result.ok) failed++;
+		}
+		if (failed > 0) {
+			errorMessage = `${t('app.feature-flags.failed_to_delete_n', 'Failed to delete')} ${failed} ${failed > 1 ? t('app.feature-flags.flags', 'flags') : t('app.feature-flags.flag', 'flag')}`;
+		} else {
+			successMessage = `${selectedIds.size} ${selectedIds.size > 1 ? t('app.feature-flags.flags', 'flags') : t('app.feature-flags.flag', 'flag')} ${t('app.feature-flags.deleted_suffix', 'deleted')}`;
+		}
+		selectedIds = new Set();
+		await loadFlags();
 		saving = false;
 	}
 
@@ -255,18 +275,29 @@
 	$effect(() => {
 		loadFlags();
 	});
+
+	$effect(() => {
+		if (successMessage) {
+			const msg = successMessage;
+			setTimeout(() => { if (successMessage === msg) successMessage = ''; }, 4000);
+		}
+		if (errorMessage) {
+			const msg = errorMessage;
+			setTimeout(() => { if (errorMessage === msg) errorMessage = ''; }, 6000);
+		}
+	});
 </script>
 
 <svelte:head>
-	<title>Feature Flags — JapaConnect Admin</title>
+	<title>{t('app.feature-flags.page_title', 'Feature Flags — JapaConnect Admin')}</title>
 </svelte:head>
 
 <PageHeader
-	title="Feature Flags"
-	description="Manage feature flags and rollout percentages"
+	title={t('app.feature-flags.title', 'Feature Flags')}
+	description={t('app.feature-flags.manage_description', 'Manage feature flags and rollout percentages')}
 	actions={[
-		{ label: "Create Flag", icon: Plus, onclick: () => (createModalOpen = true) },
-		{ label: "Refresh", icon: RefreshCw, variant: "ghost", onclick: loadFlags }
+		{ label: t('app.feature-flags.create_flag', 'Create Flag'), icon: Plus, onclick: () => (createModalOpen = true) },
+		{ label: t('app.feature-flags.refresh', 'Refresh'), icon: RefreshCw, variant: "ghost", onclick: loadFlags }
 	]}
 />
 
@@ -332,11 +363,11 @@
 		filters={[
 			{
 				key: "environment",
-				label: "Environment",
+				label: t('app.feature-flags.filter_environment', 'Environment'),
 				options: [
-					{ value: "production", label: "Production" },
-					{ value: "staging", label: "Staging" },
-					{ value: "development", label: "Development" }
+					{ value: "production", label: t('app.feature-flags.option_production', 'Production') },
+					{ value: "staging", label: t('app.feature-flags.option_staging', 'Staging') },
+					{ value: "development", label: t('app.feature-flags.option_development', 'Development') }
 				]
 			}
 		]}
@@ -351,60 +382,71 @@
 					columns={flagColumns}
 					data={filteredFlags}
 					pageSize={20}
-					emptyMessage="No feature flags found"
-				/>
+					emptyMessage={t('app.feature-flags.no_flags_found', 'No feature flags found')}
+					selectable
+					bind:selectedIds
+				>
+					{#snippet bulkActions()}
+						{#if canManageFlags}
+							<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={saving}>
+								<Trash2 class="h-3.5 w-3.5 mr-1" />
+								{saving ? t('app.feature-flags.deleting', 'Deleting...') : t('app.feature-flags.delete_selected', 'Delete Selected')}
+							</Button>
+						{/if}
+					{/snippet}
+				</DataTable>
 			{/if}
 		</CardContent>
 	</Card>
 </div>
 
 <!-- Create Flag Modal -->
-<Modal bind:open={createModalOpen} title="Create Feature Flag" description="Add a new feature flag to control feature rollouts">
+<Modal bind:open={createModalOpen} title={t('app.feature-flags.create_title', 'Create Feature Flag')} description={t('app.feature-flags.create_description', 'Add a new feature flag to control feature rollouts')}>
 	<div class="space-y-4">
 		<div>
-			<label for="flag-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.name')}</label>
+			<label for="flag-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.name', 'Name')}</label>
 			<input
 				id="flag-name"
 				type="text"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g., New Dashboard"
+				placeholder={t('app.feature-flags.placeholder_name', 'e.g., New Dashboard')}
 				bind:value={form.name}
 			/>
 		</div>
 		<div>
-			<label for="flag-key" class="mb-1 block text-sm font-medium text-foreground-alt">Key</label>
+			<label for="flag-key" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.key', 'Key')}</label>
 			<input
 				id="flag-key"
 				type="text"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g., new_dashboard"
+				placeholder={t('app.feature-flags.placeholder_key', 'e.g., new_dashboard')}
 				bind:value={form.key}
 			/>
 		</div>
 		<div>
-			<label for="flag-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.description')}</label>
+			<label for="flag-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.description', 'Description')}</label>
 			<textarea
 				id="flag-desc"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="What does this flag control?"
+				placeholder={t('app.feature-flags.placeholder_description', 'What does this flag control?')}
 				rows="2"
 				bind:value={form.description}
 			></textarea>
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="flag-env" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.environment')}</label>
+				<label for="flag-env" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.environment', 'Environment')}</label>
 				<Select
 					bind:value={form.environment}
 					options={[
-						{ value: "production", label: "Production" },
-						{ value: "staging", label: "Staging" },
-						{ value: "development", label: "Development" }
+						{ value: "production", label: t('app.feature-flags.option_production', 'Production') },
+						{ value: "staging", label: t('app.feature-flags.option_staging', 'Staging') },
+						{ value: "development", label: t('app.feature-flags.option_development', 'Development') }
 					]}
 				/>
 			</div>
 			<div>
-				<label for="flag-rollout" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.rollout')}</label>
+				<label for="flag-rollout" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.rollout', 'Rollout')}</label>
 				<input
 					id="flag-rollout"
 					type="number"
@@ -416,19 +458,19 @@
 			</div>
 		</div>
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => { createModalOpen = false; resetForm(); }}>{t('app.feature-flags.cancel')}</Button>
+			<Button variant="outline" onclick={() => { createModalOpen = false; resetForm(); }}>{t('app.feature-flags.cancel', 'Cancel')}</Button>
 			<Button onclick={submitFlag} disabled={saving || !form.name.trim() || !form.key.trim()}>
-				{saving ? "Creating..." : "Create Flag"}
+				{saving ? t('app.feature-flags.creating', 'Creating...') : t('app.feature-flags.create_flag', 'Create Flag')}
 			</Button>
 		</div>
 	</div>
 </Modal>
 
 <!-- Edit Flag Modal -->
-<Modal bind:open={editModalOpen} title="Edit Feature Flag" description="Update feature flag configuration">
+<Modal bind:open={editModalOpen} title={t('app.feature-flags.edit_title', 'Edit Feature Flag')} description={t('app.feature-flags.edit_description', 'Update feature flag configuration')}>
 	<div class="space-y-4">
 		<div>
-			<label for="edit-flag-key" class="mb-1 block text-sm font-medium text-foreground-alt">Key</label>
+			<label for="edit-flag-key" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.key', 'Key')}</label>
 			<input
 				id="edit-flag-key"
 				type="text"
@@ -438,39 +480,39 @@
 			/>
 		</div>
 		<div>
-			<label for="edit-flag-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.name')}</label>
+			<label for="edit-flag-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.name', 'Name')}</label>
 			<input
 				id="edit-flag-name"
 				type="text"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g., New Dashboard"
+				placeholder={t('app.feature-flags.placeholder_name', 'e.g., New Dashboard')}
 				bind:value={form.name}
 			/>
 		</div>
 		<div>
-			<label for="edit-flag-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.description')}</label>
+			<label for="edit-flag-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.description', 'Description')}</label>
 			<textarea
 				id="edit-flag-desc"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="What does this flag control?"
+				placeholder={t('app.feature-flags.placeholder_description', 'What does this flag control?')}
 				rows="2"
 				bind:value={form.description}
 			></textarea>
 		</div>
 		<div class="grid grid-cols-2 gap-4">
 			<div>
-				<label for="edit-flag-env" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.environment')}</label>
+				<label for="edit-flag-env" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.environment', 'Environment')}</label>
 				<Select
 					bind:value={form.environment}
 					options={[
-						{ value: "production", label: "Production" },
-						{ value: "staging", label: "Staging" },
-						{ value: "development", label: "Development" }
+						{ value: "production", label: t('app.feature-flags.option_production', 'Production') },
+						{ value: "staging", label: t('app.feature-flags.option_staging', 'Staging') },
+						{ value: "development", label: t('app.feature-flags.option_development', 'Development') }
 					]}
 				/>
 			</div>
 			<div>
-				<label for="edit-flag-rollout" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.rollout')}</label>
+				<label for="edit-flag-rollout" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.feature-flags.rollout', 'Rollout')}</label>
 				<input
 					id="edit-flag-rollout"
 					type="number"
@@ -482,61 +524,61 @@
 			</div>
 		</div>
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => { editModalOpen = false; editingFlag = null; resetForm(); }}>{t('app.feature-flags.cancel')}</Button>
+			<Button variant="outline" onclick={() => { editModalOpen = false; editingFlag = null; resetForm(); }}>{t('app.feature-flags.cancel', 'Cancel')}</Button>
 			<Button onclick={submitEditFlag} disabled={saving || !form.name.trim()}>
-				{saving ? "Saving..." : "Save Changes"}
+				{saving ? t('app.feature-flags.saving', 'Saving...') : t('app.feature-flags.save_changes', 'Save Changes')}
 			</Button>
 		</div>
 	</div>
 </Modal>
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title="Feature Flag Details">
+<Modal bind:open={showViewModal} title={t('app.feature-flags.details_title', 'Feature Flag Details')}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Name</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.feature-flags.name', 'Name')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Key</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.feature-flags.key', 'Key')}</p>
 					<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.key}</p>
 				</div>
 				<div class="col-span-2">
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Description</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.feature-flags.description', 'Description')}</p>
 					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.description || "—"}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Environment</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.feature-flags.environment', 'Environment')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.environment}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Rollout</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.feature-flags.rollout', 'Rollout')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.rolloutPercentage}%</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.isEnabled ? "Enabled" : "Disabled"}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.feature-flags.label_status', 'Status')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.isEnabled ? t('app.feature-flags.status_enabled', 'Enabled') : t('app.feature-flags.status_disabled', 'Disabled')}</p>
 				</div>
 			</div>
 		</div>
 		<div class="mt-6 flex justify-end">
-			<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+			<Button variant="outline" onclick={() => (showViewModal = false)}>{t('app.feature-flags.close', 'Close')}</Button>
 		</div>
 	{/if}
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal bind:open={deleteConfirmOpen} title="Confirm Delete" description="This action cannot be undone">
+<Modal bind:open={deleteConfirmOpen} title={t('app.feature-flags.confirm_delete_title', 'Confirm Delete')} description={t('app.feature-flags.confirm_delete_description', 'This action cannot be undone')}>
 	<div class="space-y-4">
 		<p class="text-sm text-foreground-alt">
-			Are you sure you want to delete this feature flag? All configuration and rollout data will be permanently removed.
+			{t('app.feature-flags.confirm_delete_body', 'Are you sure you want to delete this feature flag? All configuration and rollout data will be permanently removed.')}
 		</p>
 		<div class="flex justify-end gap-3">
-			<Button variant="outline" onclick={() => (deleteConfirmOpen = false)}>{t('app.feature-flags.cancel')}</Button>
+			<Button variant="outline" onclick={() => (deleteConfirmOpen = false)}>{t('app.feature-flags.cancel', 'Cancel')}</Button>
 			<Button variant="destructive" onclick={confirmDelete} disabled={saving}>
-				{saving ? "Deleting..." : "Delete Flag"}
+				{saving ? t('app.feature-flags.deleting', 'Deleting...') : t('app.feature-flags.delete_flag', 'Delete Flag')}
 			</Button>
 		</div>
 	</div>
@@ -552,7 +594,7 @@
 				variant="ghost"
 				size="sm"
 				onclick={() => toggleFlag(row.id)}
-				title={row.isEnabled ? "Disable" : "Enable"}
+				title={row.isEnabled ? t('app.feature-flags.disable', 'Disable') : t('app.feature-flags.enable', 'Enable')}
 			>
 				{#if row.isEnabled}
 					<ToggleRight class="h-3.5 w-3.5 text-success" />

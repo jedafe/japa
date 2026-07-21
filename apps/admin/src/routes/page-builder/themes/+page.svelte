@@ -22,6 +22,8 @@
 	let loading = $state(true);
 	let error = $state("");
 	let success = $state("");
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	// Search term wired into the themes load via the DataTable search box
 	let searchTerm = $state("");
@@ -151,6 +153,23 @@
 		}
 	}
 
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		error = "";
+		try {
+			for (const id of selectedIds) {
+				await pageBuilderAdminApiExtended.deleteTheme(id);
+			}
+			selectedIds = new Set();
+			success = t("themes.bulk_deleted", "Selected themes deleted");
+			loadThemes();
+		} catch {
+			error = t("common.error", "Failed to delete selected themes");
+		}
+		bulkDeleting = false;
+	}
+
 	loadThemes();
 </script>
 
@@ -187,7 +206,14 @@
 				{t("themes.empty", "No themes found")}
 			</div>
 		{:else}
-			<DataTable {columns} data={themes} pageSize={10} searchable onsearch={(q) => { searchTerm = q; loadThemes(); }} />
+			<DataTable {columns} data={themes} pageSize={10} searchable onsearch={(q) => { searchTerm = q; loadThemes(); }} selectable bind:selectedIds>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						{bulkDeleting ? t("common.deleting", "Deleting...") : t("common.deleteSelected", "Delete Selected")} ({selectedIds.size})
+					</Button>
+				{/snippet}
+			</DataTable>
 		{/if}
 	</CardContent>
 </Card>

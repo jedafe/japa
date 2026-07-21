@@ -1,6 +1,7 @@
 <script lang="ts">
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -20,17 +21,13 @@
 	};
 
 	let appeals = $state<Appeal[]>([]);
-	let page = $state(0);
-	let totalPages = $state(1);
 	let loading = $state(true);
 	let filterStatus = $state('');
-	let searchQuery = $state(''); // FilterBar search term, forwarded to the appeals API
+	let searchQuery = $state('');
 	let errorMessage = $state('');
 
-	// Expandable detail
 	let expandedId = $state<string | null>(null);
 
-	// Action modal
 	let showActionModal = $state(false);
 	let actionAppeal = $state<Appeal | null>(null);
 	let actionType = $state<'approve' | 'deny'>('approve');
@@ -41,17 +38,72 @@
 		{ key: 'status', label: t('moderation.status'), type: 'select' as const, options: ['pending', 'approved', 'denied'] }
 	];
 
+	function statusBadge(status: string) {
+		switch (status) {
+			case 'pending': return 'bg-warning/15 text-warning dark:text-warning';
+			case 'approved': return 'bg-success/15 text-success dark:text-success';
+			case 'denied': return 'bg-danger/15 text-danger dark:text-danger';
+			default: return 'bg-muted/15 text-muted dark:text-muted';
+		}
+	}
+
+	function actionBadgeColor(action: string) {
+		switch (action) {
+			case 'ban': return 'bg-danger/15 text-danger dark:text-danger';
+			case 'suspend': return 'bg-warning/15 text-warning dark:text-warning';
+			case 'remove_content': return 'bg-warning/15 text-warning dark:text-warning';
+			default: return 'bg-muted/15 text-muted dark:text-muted';
+		}
+	}
+
+	const columns = [
+		{
+			key: 'username',
+			label: t('moderation.user'),
+			sortable: true,
+			render: (_: any, row: Appeal) => `<p class="font-medium">${row.username}</p><p class="text-xs" style="color: var(--color-muted)">${row.user_id.slice(0, 12)}</p>`
+		},
+		{
+			key: 'original_action',
+			label: t('moderation.original_action'),
+			sortable: true,
+			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${actionBadgeColor(v)}">${v}</span>`
+		},
+		{
+			key: 'appeal_reason',
+			label: t('moderation.appeal_reason'),
+			render: (v: string) => `<span class="text-xs max-w-xs truncate block">${v}</span>`
+		},
+		{
+			key: 'status',
+			label: t('moderation.status'),
+			sortable: true,
+			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${statusBadge(v)}">${v}</span>`
+		},
+		{
+			key: 'created_at',
+			label: t('moderation.date'),
+			sortable: true,
+			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+		},
+		{
+			key: 'actions',
+			label: '',
+			class: 'w-24',
+			component: AppealActionsCell
+		}
+	];
+
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const params = new URLSearchParams({ page: String(page) });
+		const params = new URLSearchParams();
 		if (filterStatus) params.set('status', filterStatus);
-		if (searchQuery) params.set('q', searchQuery); // forward the search term to the API
+		if (searchQuery) params.set('q', searchQuery);
 		try {
-			const result = await api<{ items: Appeal[]; page: number; total_pages: number }>(`/admin/appeals?${params}`);
+			const result = await api<{ items: Appeal[] }>(`/admin/appeals?${params}`);
 			if (result.ok) {
 				appeals = result.data.items;
-				totalPages = result.data.total_pages;
 			} else {
 				errorMessage = result.error;
 			}
@@ -63,10 +115,8 @@
 	}
 
 	function handleFilter(values: Record<string, string>) {
-		// Capture the FilterBar search term so the previously-dead box now drives the query.
 		searchQuery = values.search ?? '';
 		filterStatus = values.status ?? '';
-		page = 0;
 		load();
 	}
 
@@ -103,33 +153,31 @@
 		}
 	}
 
-	function handlePageChange(p: number) {
-		page = p;
-		load();
-	}
-
-	function statusBadge(status: string) {
-		switch (status) {
-			case 'pending': return 'bg-warning/15 text-warning dark:text-warning';
-			case 'approved': return 'bg-success/15 text-success dark:text-success';
-			case 'denied': return 'bg-danger/15 text-danger dark:text-danger';
-			default: return 'bg-muted/15 text-muted dark:text-muted';
-		}
-	}
-
-	function actionBadgeColor(action: string) {
-		switch (action) {
-			case 'ban': return 'bg-danger/15 text-danger dark:text-danger';
-			case 'suspend': return 'bg-warning/15 text-warning dark:text-warning';
-			case 'remove_content': return 'bg-warning/15 text-warning dark:text-warning';
-			default: return 'bg-muted/15 text-muted dark:text-muted';
-		}
-	}
-
 	$effect(() => {
 		load();
 	});
 </script>
+
+{#snippet AppealActionsCell(row: Appeal)}
+	{#if canManage && row.status === 'pending'}
+		<div class="flex items-center gap-1">
+			<button
+				class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+				style="color: var(--color-success)"
+				onclick={(e: MouseEvent) => { e.stopPropagation(); openAction(row, 'approve'); }}
+			>
+				{t('moderation.approve')}
+			</button>
+			<button
+				class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
+				style="color: var(--color-danger)"
+				onclick={(e: MouseEvent) => { e.stopPropagation(); openAction(row, 'deny'); }}
+			>
+				{t('moderation.deny')}
+			</button>
+		</div>
+	{/if}
+{/snippet}
 
 <svelte:head>
 	<title>{t('moderation.appeals')} — JapaConnect Admin</title>
@@ -153,122 +201,51 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.user')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.original_action')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.appeal_reason')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.status')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderation.date')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each appeals as appeal}
-					<tr
-						class="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]"
-						style="border-color: var(--color-border)"
-						onclick={() => toggleExpand(appeal.id)}
-					>
-						<td class="px-4 py-3">
-							<p class="font-medium">{appeal.username}</p>
-							<p class="text-xs" style="color: var(--color-muted)">{appeal.user_id.slice(0, 12)}</p>
-						</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {actionBadgeColor(appeal.original_action)}">
-								{appeal.original_action}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs max-w-xs truncate">{appeal.appeal_reason}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {statusBadge(appeal.status)}">
-								{appeal.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{appeal.created_at}</td>
-						<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
-							{#if canManage && appeal.status === 'pending'}
-								<div class="flex items-center gap-1">
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-success)"
-										onclick={() => openAction(appeal, 'approve')}
-									>
-										{t('moderation.approve')}
-									</button>
-									<button
-										class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-										style="color: var(--color-danger)"
-										onclick={() => openAction(appeal, 'deny')}
-									>
-										{t('moderation.deny')}
-									</button>
-								</div>
-							{/if}
-						</td>
-					</tr>
-					{#if expandedId === appeal.id}
-						<tr style="border-color: var(--color-border)">
-							<td colspan="6" class="px-4 py-4" style="background-color: var(--color-surface)">
-								<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.appeals.original_action')}</p>
-										<p class="mt-1">
-											<span class="inline-block rounded-full px-2 py-0.5 text-xs {actionBadgeColor(appeal.original_action)}">
-												{appeal.original_action}
-											</span>
-										</p>
-										<p class="mt-1 text-sm" style="color: var(--color-muted)">{appeal.original_reason || 'No reason provided'}</p>
-									</div>
-									<div>
-										<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.appeals.appeal_reason')}</p>
-										<p class="mt-1 text-sm">{appeal.appeal_reason}</p>
-									</div>
-								</div>
-								{#if appeal.reviewed_at}
-									<p class="mt-3 text-xs" style="color: var(--color-muted)">Reviewed at: {appeal.reviewed_at}</p>
-								{/if}
-								{#if canManage && appeal.status === 'pending'}
-									<div class="mt-3 flex gap-2">
-										<button
-											class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
-											style="background-color: var(--color-success)"
-											onclick={() => openAction(appeal, 'approve')}
-										>
-											Approve Appeal (Reverse Action)
-										</button>
-										<button
-											class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
-											style="background-color: var(--color-danger)"
-											onclick={() => openAction(appeal, 'deny')}
-										>
-											Deny Appeal
-										</button>
-									</div>
-								{/if}
-							</td>
-						</tr>
-					{/if}
-				{:else}
-					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							No appeals found
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable {columns} data={appeals} pageSize={25} searchable emptyMessage="No appeals found" onrowclick={(row) => toggleExpand(row.id)} />
 
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
-		</div>
-	</div>
+	{#if expandedId}
+		{@const expanded = appeals.find((a) => a.id === expandedId)}
+		{#if expanded}
+			<div class="mt-3 rounded-lg border px-4 py-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+					<div>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.appeals.original_action')}</p>
+						<p class="mt-1">
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs {actionBadgeColor(expanded.original_action)}">
+								{expanded.original_action}
+							</span>
+						</p>
+						<p class="mt-1 text-sm" style="color: var(--color-muted)">{expanded.original_reason || 'No reason provided'}</p>
+					</div>
+					<div>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.appeals.appeal_reason')}</p>
+						<p class="mt-1 text-sm">{expanded.appeal_reason}</p>
+					</div>
+				</div>
+				{#if expanded.reviewed_at}
+					<p class="mt-3 text-xs" style="color: var(--color-muted)">Reviewed at: {expanded.reviewed_at}</p>
+				{/if}
+				{#if canManage && expanded.status === 'pending'}
+					<div class="mt-3 flex gap-2">
+						<button
+							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
+							style="background-color: var(--color-success)"
+							onclick={() => openAction(expanded, 'approve')}
+						>
+							Approve Appeal (Reverse Action)
+						</button>
+						<button
+							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
+							style="background-color: var(--color-danger)"
+							onclick={() => openAction(expanded, 'deny')}
+						>
+							Deny Appeal
+						</button>
+					</div>
+				{/if}
+			</div>
+		{/if}
+	{/if}
 {/if}
 
 <!-- Action Modal -->

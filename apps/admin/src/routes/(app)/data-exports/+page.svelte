@@ -39,6 +39,7 @@
 
 	let showViewModal = $state(false);
 	let viewTarget = $state<DataExport | null>(null);
+	let selectedIds = $state<Set<string>>(new Set());
 
 	const canManageExports = $derived(hasPermission("data-exports.manage"));
 
@@ -49,27 +50,27 @@
 		includeMetadata: true
 	});
 
-	const exportTypes = [
-		{ value: "users", label: "Users" },
-		{ value: "posts", label: "Posts" },
-		{ value: "comments", label: "Comments" },
-		{ value: "orders", label: "Orders" },
-		{ value: "transactions", label: "Transactions" },
-		{ value: "analytics", label: "Analytics" },
-		{ value: "moderation", label: "Moderation Logs" }
-	];
+	const exportTypes = $derived([
+		{ value: "users", label: t('app.data_exports.type_users', 'Users') },
+		{ value: "posts", label: t('app.data_exports.type_posts', 'Posts') },
+		{ value: "comments", label: t('app.data_exports.type_comments', 'Comments') },
+		{ value: "orders", label: t('app.data_exports.type_orders', 'Orders') },
+		{ value: "transactions", label: t('app.data_exports.type_transactions', 'Transactions') },
+		{ value: "analytics", label: t('app.data_exports.type_analytics', 'Analytics') },
+		{ value: "moderation", label: t('app.data_exports.type_moderation', 'Moderation Logs') }
+	]);
 
 	const formatOptions = [
-		{ value: "csv", label: "CSV" },
-		{ value: "json", label: "JSON" },
-		{ value: "xlsx", label: "Excel (XLSX)" }
+		{ value: "csv", label: t('app.data_exports.format_csv', 'CSV') },
+		{ value: "json", label: t('app.data_exports.format_json', 'JSON') },
+		{ value: "xlsx", label: t('app.data_exports.format_xlsx', 'Excel (XLSX)') }
 	];
 
 	let tabs = $derived([
-		{ value: "all", label: "All Exports", icon: Download, count: exports.length },
-		{ value: "active", label: "In Progress", icon: Clock, count: exports.filter((e) => e.status === "pending" || e.status === "processing").length },
-		{ value: "completed", label: "Completed", icon: CheckCircle, count: exports.filter((e) => e.status === "completed").length },
-		{ value: "failed", label: "Failed", icon: XCircle, count: exports.filter((e) => e.status === "failed").length }
+		{ value: "all", label: t('app.data_exports.tab_all', 'All Exports'), icon: Download, count: exports.length },
+		{ value: "active", label: t('app.data_exports.tab_in_progress', 'In Progress'), icon: Clock, count: exports.filter((e) => e.status === "pending" || e.status === "processing").length },
+		{ value: "completed", label: t('app.data_exports.tab_completed', 'Completed'), icon: CheckCircle, count: exports.filter((e) => e.status === "completed").length },
+		{ value: "failed", label: t('app.data_exports.tab_failed', 'Failed'), icon: XCircle, count: exports.filter((e) => e.status === "failed").length }
 	]);
 
 	let filteredExports = $derived.by(() => {
@@ -100,7 +101,7 @@
 	const exportColumns = [
 		{
 			key: "name",
-			label: "Name",
+			label: t('app.data_exports.col_name', 'Name'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
@@ -111,7 +112,7 @@
 		},
 		{
 			key: "status",
-			label: "Status",
+			label: t('app.data_exports.col_status', 'Status'),
 			sortable: true,
 			render: (value: string) => {
 				const variant = statusVariant(value);
@@ -128,19 +129,19 @@
 		},
 		{
 			key: "fileSize",
-			label: "Size",
+			label: t('app.data_exports.col_size', 'Size'),
 			sortable: true,
 			render: (value: number | null) => `<span class="text-sm text-foreground-alt">${formatFileSize(value)}</span>`
 		},
 		{
 			key: "createdAt",
-			label: "Created",
+			label: t('app.data_exports.col_created', 'Created'),
 			sortable: true,
 			render: (value: string) => `<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>`
 		},
 		{
 			key: "completedAt",
-			label: "Completed",
+			label: t('app.data_exports.col_completed', 'Completed'),
 			sortable: true,
 			render: (value: string | null) => value ? `<span class="text-sm text-foreground-alt">${new Date(value).toLocaleString()}</span>` : `<span class="text-sm text-muted">—</span>`
 		},
@@ -177,10 +178,10 @@
 		if (result.ok) {
 			createModalOpen = false;
 			resetForm();
-			successMessage = "Export job queued successfully";
+			successMessage = t('app.data_exports.msg_queued', 'Export job queued successfully');
 			loadExports();
 		} else {
-			errorMessage = result.error ?? "Failed to create export";
+			errorMessage = result.error ?? t('app.data_exports.msg_create_failed', 'Failed to create export');
 		}
 		saving = false;
 	}
@@ -200,13 +201,26 @@
 		saving = true;
 		const result = await api(`/data-exports/${deletingId}`, { method: "DELETE" });
 		if (result.ok) {
-			successMessage = "Export deleted";
+			successMessage = t('app.data_exports.msg_deleted', 'Export deleted');
 			loadExports();
 		} else {
-			errorMessage = result.error ?? "Failed to delete export";
+			errorMessage = result.error ?? t('app.data_exports.msg_delete_failed', 'Failed to delete export');
 		}
 		deleteConfirmOpen = false;
 		deletingId = null;
+		saving = false;
+	}
+
+	async function bulkDelete() {
+		if (!selectedIds.size) return;
+		saving = true;
+		const ids = [...selectedIds];
+		for (const id of ids) {
+			await api(`/data-exports/${id}`, { method: "DELETE" });
+		}
+		selectedIds = new Set();
+		successMessage = t('app.data_exports.msg_bulk_deleted', `${ids.length} export(s) deleted`);
+		loadExports();
 		saving = false;
 	}
 
@@ -220,15 +234,15 @@
 </script>
 
 <svelte:head>
-	<title>Data Exports — JapaConnect Admin</title>
+	<title>{t('app.data_exports.page_title', 'Data Exports — JapaConnect Admin')}</title>
 </svelte:head>
 
 <PageHeader
-	title="Data Exports"
-	description="Export platform data in various formats"
+	title={t('app.data_exports.title', 'Data Exports')}
+	description={t('app.data_exports.description', 'Export platform data in various formats')}
 	actions={[
-		{ label: "New Export", icon: Plus, onclick: () => (createModalOpen = true) },
-		{ label: "Refresh", icon: RefreshCw, variant: "ghost", onclick: loadExports }
+		{ label: t('app.data_exports.action_new', 'New Export'), icon: Plus, onclick: () => (createModalOpen = true) },
+		{ label: t('app.data_exports.action_refresh', 'Refresh'), icon: RefreshCw, variant: "ghost", onclick: loadExports }
 	]}
 />
 
@@ -309,7 +323,7 @@
 		filters={[
 			{
 				key: "type",
-				label: "Export Type",
+				label: t('app.data_exports.filter_export_type', 'Export Type'),
 				options: exportTypes
 			}
 		]}
@@ -324,15 +338,26 @@
 					columns={exportColumns}
 					data={filteredExports}
 					pageSize={20}
-					emptyMessage="No data exports found"
-				/>
+					emptyMessage={t('app.data_exports.empty', 'No data exports found')}
+					selectable
+					bind:selectedIds
+				>
+					{#snippet bulkActions()}
+						{#if canManageExports}
+						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={saving}>
+							<Trash2 class="h-3.5 w-3.5 mr-1" />
+							{t('app.data_exports.action_delete_selected', 'Delete Selected')} ({selectedIds.size})
+						</Button>
+						{/if}
+					{/snippet}
+				</DataTable>
 			{/if}
 		</CardContent>
 	</Card>
 </div>
 
 <!-- Create Export Modal -->
-<Modal bind:open={createModalOpen} title="New Data Export" description="Queue a new data export job">
+<Modal bind:open={createModalOpen} title={t('app.data_exports.modal_new_title', 'New Data Export')} description={t('app.data_exports.modal_new_description', 'Queue a new data export job')}>
 	<div class="space-y-4">
 		<div>
 			<label for="export-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data-exports.export_name')}</label>
@@ -340,7 +365,7 @@
 				id="export-name"
 				type="text"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g., Users Q1 2024"
+				placeholder={t('app.data_exports.name_placeholder', 'e.g., Users Q1 2024')}
 				bind:value={form.name}
 			/>
 		</div>
@@ -366,62 +391,62 @@
 		<div class="flex justify-end gap-3 pt-2">
 			<Button variant="outline" onclick={() => { createModalOpen = false; resetForm(); }}>{t('app.data-exports.cancel')}</Button>
 			<Button onclick={submitExport} disabled={saving || !form.name.trim()}>
-				{saving ? "Queuing..." : "Start Export"}
+				{saving ? t('app.data_exports.btn_queuing', 'Queuing...') : t('app.data_exports.btn_start', 'Start Export')}
 			</Button>
 		</div>
 	</div>
 </Modal>
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title="Export Details">
+<Modal bind:open={showViewModal} title={t('app.data_exports.modal_details_title', 'Export Details')}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Name</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_name', 'Name')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.name}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Type</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_type', 'Type')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type} · {viewTarget.format.toUpperCase()}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_status', 'Status')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Size</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_size', 'Size')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatFileSize(viewTarget.fileSize)}</p>
 				</div>
 				<div class="col-span-2">
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Created</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_created', 'Created')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.createdAt).toLocaleString()}</p>
 				</div>
 				{#if viewTarget.status === "completed" && viewTarget.fileUrl}
 					<div class="col-span-2">
 						<a href={viewTarget.fileUrl} class="inline-flex items-center gap-1 text-sm font-medium" style="color: var(--color-primary)" download>
-							<Download class="h-3.5 w-3.5" /> Download file
+							<Download class="h-3.5 w-3.5" /> {t('app.data_exports.detail_download', 'Download file')}
 						</a>
 					</div>
 				{/if}
 			</div>
 		</div>
 		<div class="mt-6 flex justify-end">
-			<Button variant="outline" onclick={() => (showViewModal = false)}>Close</Button>
+			<Button variant="outline" onclick={() => (showViewModal = false)}>{t('app.data_exports.btn_close', 'Close')}</Button>
 		</div>
 	{/if}
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal bind:open={deleteConfirmOpen} title="Confirm Delete" description="This action cannot be undone">
+<Modal bind:open={deleteConfirmOpen} title={t('app.data_exports.modal_delete_title', 'Confirm Delete')} description={t('app.data_exports.modal_delete_description', 'This action cannot be undone')}>
 	<div class="space-y-4">
 		<p class="text-sm text-foreground-alt">
-			Are you sure you want to delete this export? The downloaded file will no longer be available.
+			{t('app.data_exports.modal_delete_body', 'Are you sure you want to delete this export? The downloaded file will no longer be available.')}
 		</p>
 		<div class="flex justify-end gap-3">
 			<Button variant="outline" onclick={() => (deleteConfirmOpen = false)}>{t('app.data-exports.cancel')}</Button>
 			<Button variant="destructive" onclick={confirmDelete} disabled={saving}>
-				{saving ? "Deleting..." : "Delete Export"}
+				{saving ? t('app.data_exports.btn_deleting', 'Deleting...') : t('app.data_exports.btn_delete_export', 'Delete Export')}
 			</Button>
 		</div>
 	</div>

@@ -142,3 +142,11 @@ SELECT ug.id, ug.tenant_id, ug.name, ug.slug, ug.is_system
 FROM user_group_memberships ugm
 JOIN user_groups ug ON ugm.group_id = ug.id
 WHERE ugm.tenant_id = @tenant_id AND ugm.user_id = @user_id;
+
+-- name: IsUserInGroup :one
+SELECT EXISTS(
+    SELECT 1
+    FROM user_group_memberships ugm
+    JOIN user_groups ug ON ugm.group_id = ug.id
+    WHERE ugm.tenant_id = @tenant_id AND ugm.user_id = @user_id AND ug.slug = @group_slug
+) AS in_group;

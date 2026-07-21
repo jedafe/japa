@@ -70,6 +70,7 @@ type ContentService interface {
 	GetContentBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentBySlugRow, error)
 	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32) ([]gen.ListContentsByTypeRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
+	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
 }
 
 // Handlers holds dependencies for blog HTTP handlers.
@@ -917,6 +918,57 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": post})
+}
+
+// AdminListPosts handles GET /api/v1/admin/blog — all blog posts
+// (any status: draft, scheduled, published, archived) for the admin
+// panel. Reuses the content listing; unlike the public ListPosts it does
+// NOT filter out non-published posts.
+func (h *Handlers) AdminListPosts(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+
+	var cursor pgtype.Timestamptz
+	if cs := r.URL.Query().Get("cursor"); cs != "" {
+		if err := cursor.Scan(cs); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
+			return
+		}
+	}
+
+	posts, err := h.content.ListContentsByType(r.Context(), tenantID, contentTypeBlogPost, cursor, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": posts})
+}
+
+// AdminDeletePost handles DELETE /api/v1/admin/blog/{id} — soft-deletes
+// a blog post (Rule 11: user content is soft-deleted, never hard-deleted).
+func (h *Handlers) AdminDeletePost(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.content.DeleteContent(r.Context(), id, tenantID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete blog post")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }
 
 // CreatePost handles POST /api/v1/blog — creates a blog post (content_type

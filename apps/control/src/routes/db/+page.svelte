@@ -55,15 +55,17 @@
 		vacuuming = true;
 		vacuumMessage = null;
 		try {
-			const result = await api<{ status: string; message: string }>('/control/health/db/vacuum', { method: 'POST' });
-			if (result.ok && result.data.status === 'ok') {
-				vacuumMessage = result.data.message;
+			const result = await api<{ status: string }>('/control/health/db/vacuum', { method: 'POST' });
+			if (result.ok && (result.data.status === 'enqueued' || result.data.status === 'completed')) {
+				vacuumMessage = result.data.status === 'enqueued'
+					? t('db.vacuum_enqueued', 'Vacuum task enqueued successfully')
+					: t('db.vacuum_completed', 'Vacuum completed successfully');
 				await refresh();
 			} else {
-				vacuumMessage = 'Vacuum failed';
+				vacuumMessage = t('db.vacuum_failed', 'Vacuum failed');
 			}
 		} catch {
-			vacuumMessage = 'Vacuum request failed';
+			vacuumMessage = t('db.vacuum_request_failed', 'Vacuum request failed');
 		} finally {
 			vacuuming = false;
 		}
@@ -95,14 +97,14 @@
 	}
 
 	function formatVacuum(v: string | null): string {
-		if (!v) return 'Never';
+		if (!v) return t('db.never', 'Never');
 		return new Date(v).toLocaleDateString();
 	}
 
 	function poolUsagePercent(): number {
 		if (!dbHealth?.connection_pool) return 0;
 		const pool = dbHealth.connection_pool;
-		return pool.max > 0 ? Math.round(((pool.active + pool.waiting) / pool.max) * 100) : 0;
+		return pool.max > 0 ? Math.round(((pool.active + pool.idle) / pool.max) * 100) : 0;
 	}
 
 	function hasPoolWarning(): boolean {
@@ -186,7 +188,7 @@
 	<div class="flex items-center gap-3">
 		<p class="text-xs text-muted-foreground">
 			{t('db.last_updated').replace('{time}', lastRefresh.toLocaleTimeString())}
-			<span class="ml-2">({secondsAgo}s ago)</span>
+			<span class="ml-2">({t('db.seconds_ago', '{seconds}s ago').replace('{seconds}', String(secondsAgo))})</span>
 		</p>
 		<span class="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent-foreground">
 			{t('db.auto_refresh')}
@@ -318,12 +320,6 @@
 						<div class="flex items-center justify-between">
 							<span class="text-sm text-muted-foreground">{t('db.idle_connections')}</span>
 							<span class="text-sm font-mono text-foreground">{dbHealth.connection_pool?.idle ?? 0}</span>
-						</div>
-						<div class="flex items-center justify-between">
-							<span class="text-sm text-muted-foreground">{t('db.waiting_connections')}</span>
-							<span class="text-sm font-mono {(dbHealth.connection_pool?.waiting ?? 0) > 0 ? 'text-accent-foreground' : 'text-foreground'}">
-								{dbHealth.connection_pool?.waiting ?? 0}
-							</span>
 						</div>
 						<div class="flex items-center justify-between">
 							<span class="text-sm text-muted-foreground">{t('db.max_connections')}</span>

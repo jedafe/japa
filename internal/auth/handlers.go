@@ -59,6 +59,9 @@ type Querier interface {
 
 	// Password history
 	GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error)
+
+	// Group membership
+	IsUserInGroup(ctx context.Context, arg gen.IsUserInGroupParams) (bool, error)
 }
 
 // User represents a user record from the database.
@@ -309,9 +312,21 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check email verification requirement from system_settings.
+	// Super admins bypass email verification — they are platform operators.
 	if EmailVerifyRequired(r.Context(), h.Settings, tenant.ID) && !user.EmailVerifiedAt.Valid {
-		writeError(w, http.StatusForbidden, "email_not_verified", "Email verification is required before login")
-		return
+		isSuperAdmin, err := h.DB.IsUserInGroup(r.Context(), gen.IsUserInGroupParams{
+			TenantID:  tenant.ID,
+			UserID:   user.ID,
+			GroupSlug: "super_admin",
+		})
+		if err != nil {
+			slog.Warn("check super admin group", "error", err)
+		}
+
+		if !isSuperAdmin {
+			writeError(w, http.StatusForbidden, "email_not_verified", "Email verification is required before login")
+			return
+		}
 	}
 
 	// Reset brute-force counter on successful login

@@ -3,7 +3,10 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, Pencil, Trash2 } from 'lucide-svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
 	import Modal from '$lib/components/Modal.svelte';
+	import { FilterBar } from '$lib/components/ui/filter-bar';
 
 	const canManage = $derived(hasPermission('pagebuilder.templates.manage'));
 
@@ -21,8 +24,27 @@
 	let loading = $state(true);
 	let errorMessage = $state('');
 
-	// Search term wired into the page-templates load
 	let searchTerm = $state('');
+
+	const filterDefs = [
+		{ key: "is_active", label: "Status", options: [
+			{ value: "true", label: "Active" },
+			{ value: "false", label: "Inactive" }
+		]}
+	];
+	let filterValues = $state<Record<string, string>>({});
+
+	function handleSearch(values: Record<string, string>) {
+		filterValues = values;
+		searchTerm = values.search ?? "";
+		load();
+	}
+
+	function handleClear() {
+		filterValues = {};
+		searchTerm = "";
+		load();
+	}
 
 	let showCreateModal = $state(false);
 	let showEditModal = $state(false);
@@ -36,12 +58,42 @@
 	let description = $state('');
 	let isActive = $state(true);
 
+	const filteredTemplates = $derived(
+		searchTerm
+			? templates.filter(
+					(t) =>
+						t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+						t.slug.toLowerCase().includes(searchTerm.toLowerCase()) ||
+						(t.description ?? '').toLowerCase().includes(searchTerm.toLowerCase())
+				)
+			: templates
+	);
+
+	const columns = [
+		{ key: 'name', label: t('pageTemplates.name'), sortable: true,
+			render: (v: string) => `<span class="font-medium">${v}</span>`
+		},
+		{ key: 'slug', label: t('pageTemplates.slug'), sortable: true,
+			render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>`
+		},
+		{ key: 'block_count', label: t('pageTemplates.blocks'), sortable: true },
+		{ key: 'is_active', label: t('pageTemplates.status'), sortable: true,
+			render: (v: boolean) => {
+				const cls = v ? 'bg-success/15 text-success' : 'bg-muted/15 text-muted';
+				const text = v ? t('pageTemplates.active') : t('pageTemplates.inactive');
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${text}</span>`;
+			}
+		},
+		{ key: 'actions', label: t('common.actions'), class: 'w-24', component: TemplateActionsCell }
+	];
+
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		try {
 			const params = new URLSearchParams();
 			if (searchTerm.trim()) params.set('q', searchTerm.trim());
+			if (filterValues.is_active) params.set('is_active', filterValues.is_active);
 			const qs = params.toString();
 			const result = await api<PageTemplate[]>(`/admin/page-templates${qs ? `?${qs}` : ''}`);
 			if (result.ok) {
@@ -54,14 +106,6 @@
 		} finally {
 			loading = false;
 		}
-	}
-
-	// Debounced search handler that refetches the page-templates list
-	let searchTimer: ReturnType<typeof setTimeout> | undefined;
-	function onSearchInput(e: Event) {
-		searchTerm = (e.currentTarget as HTMLInputElement).value;
-		if (searchTimer) clearTimeout(searchTimer);
-		searchTimer = setTimeout(() => load(), 300);
 	}
 
 	function openCreate() {
@@ -155,14 +199,13 @@
 {/if}
 
 <div class="mb-4 flex items-center justify-between gap-2">
-	<!-- Debounced search input wired to the page-templates load -->
-	<input
-		type="search"
-		placeholder={t('common.search')}
-		oninput={onSearchInput}
-		aria-label={t('common.search')}
-		class="w-full max-w-xs rounded-lg border p-2 text-sm outline-none focus:ring-2"
-		style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)"
+	<FilterBar
+		filters={filterDefs}
+		bind:value={filterValues}
+		searchPlaceholder={t('common.search')}
+		onsearch={handleSearch}
+		onclear={handleClear}
+		class="flex-1"
 	/>
 	{#if canManage}<button class="btn btn-primary flex items-center gap-1.5 text-xs" onclick={openCreate}>
 		<Plus class="h-3 w-3" />
@@ -173,51 +216,12 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageTemplates.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageTemplates.slug')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageTemplates.blocks')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('pageTemplates.status')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each templates as tpl (tpl.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{tpl.name}</td>
-						<td class="px-4 py-3 text-xs font-mono" style="color: var(--color-muted)">{tpl.slug}</td>
-						<td class="px-4 py-3 text-xs">{tpl.block_count}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {tpl.is_active ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
-								{tpl.is_active ? t('pageTemplates.active') : t('pageTemplates.inactive')}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-right">
-							{#if canManage}
-							<div class="flex items-center justify-end gap-1">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(tpl)}>
-									<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
-								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => deleteTemplate(tpl.id)}>
-									<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-								</button>
-							</div>
-							{/if}
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('pageTemplates.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		{columns}
+		data={filteredTemplates}
+		pageSize={25}
+		emptyMessage={t('pageTemplates.empty')}
+	/>
 {/if}
 
 <!-- Create/Edit Modal -->
@@ -241,3 +245,16 @@
 		</div>
 	</div>
 </Modal>
+
+{#snippet TemplateActionsCell(tpl: PageTemplate)}
+	{#if canManage}
+		<div class="flex items-center gap-1">
+			<Button variant="ghost" size="sm" onclick={() => openEdit(tpl)}>
+				<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => deleteTemplate(tpl.id)} style="color: var(--color-danger)">
+				<Trash2 class="h-3 w-3" />
+			</Button>
+		</div>
+	{/if}
+{/snippet}

@@ -2,6 +2,7 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
 
 	type AITool = {
 		id: string;
@@ -27,6 +28,35 @@
 	let showEditModal = $state(false);
 	let editingTool = $state<AITool | null>(null);
 	let saving = $state(false);
+	let searchQuery = $state('');
+
+	const toolColumns = [
+		{ key: 'name', label: t('ai.tool_name'), sortable: true },
+		{ key: 'description', label: t('ai.description'), render: (v: string) => v || '-' },
+		{ key: 'model', label: t('ai.model'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+		{ key: 'enabled', label: t('ai.status'), render: (v: boolean) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('ai.enabled') : t('ai.disabled')}</span>` },
+		{ key: 'actions', label: t('common.actions'), class: 'w-24', render: (_: any, row: AITool) => `<button class="text-xs text-info hover:text-info" onclick="window.__editAiTool('${row.id}')">${t('common.edit')}</button>` }
+	];
+
+	const usageColumns = [
+		{ key: 'model', label: t('ai.model'), render: (v: string) => `<span class="font-mono">${v}</span>` },
+		{ key: 'requests', label: t('ai.requests'), render: (v: number) => v.toLocaleString() },
+		{ key: 'tokens', label: t('ai.tokens'), render: (v: number) => v.toLocaleString() },
+		{ key: 'cost', label: t('ai.cost'), render: (v: number) => `$${v.toFixed(2)}` }
+	];
+
+	const filteredTools = $derived(
+		searchQuery
+			? tools.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()) || (t.description || '').toLowerCase().includes(searchQuery.toLowerCase()))
+			: tools
+	);
+
+	$effect(() => {
+		(window as any).__editAiTool = (id: string) => {
+			const tool = tools.find((t) => t.id === id);
+			if (tool) editTool(tool);
+		};
+	});
 
 	$effect(() => {
 		load();
@@ -115,47 +145,14 @@
 {#if loading}
 	<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else if activeTab === 'tools'}
-	<div class="rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium">{t('ai.tool_name')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('ai.description')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('ai.model')}</th>
-					<th class="px-4 py-3 text-left font-medium">{t('ai.status')}</th>
-					<th class="px-4 py-3 text-right font-medium">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each tools as tool (tool.id)}
-					<tr style="border-bottom: 1px solid var(--color-border)">
-						<td class="px-4 py-3 font-medium">{tool.name}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{tool.description || '-'}</td>
-						<td class="px-4 py-3 text-xs font-mono">{tool.model}</td>
-						<td class="px-4 py-3">
-							<span class="rounded-full px-2 py-0.5 text-xs font-medium {tool.enabled ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">
-								{tool.enabled ? t('ai.enabled') : t('ai.disabled')}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-right">
-							<button
-								class="text-xs text-info hover:text-info"
-								onclick={() => editTool(tool)}
-							>
-								{t('common.edit')}
-							</button>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('ai.no_tools')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		columns={toolColumns}
+		data={filteredTools}
+		searchable={true}
+		onsearch={(q: string) => { searchQuery = q; }}
+		pageSize={25}
+		emptyMessage={t('ai.no_tools')}
+	/>
 {:else if activeTab === 'usage' && usage}
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
 		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
@@ -172,34 +169,13 @@
 		</div>
 	</div>
 
-	<div class="rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium">{t('ai.model')}</th>
-					<th class="px-4 py-3 text-right font-medium">{t('ai.requests')}</th>
-					<th class="px-4 py-3 text-right font-medium">{t('ai.tokens')}</th>
-					<th class="px-4 py-3 text-right font-medium">{t('ai.cost')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each usage.by_model as model (model.model)}
-					<tr style="border-bottom: 1px solid var(--color-border)">
-						<td class="px-4 py-3 font-mono">{model.model}</td>
-						<td class="px-4 py-3 text-right">{model.requests.toLocaleString()}</td>
-						<td class="px-4 py-3 text-right">{model.tokens.toLocaleString()}</td>
-						<td class="px-4 py-3 text-right">${model.cost.toFixed(2)}</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('ai.no_usage_data')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		columns={usageColumns}
+		data={usage.by_model}
+		pageSize={25}
+		emptyMessage={t('ai.no_usage_data')}
+		showPagination={false}
+	/>
 {/if}
 
 {#if showEditModal && editingTool}

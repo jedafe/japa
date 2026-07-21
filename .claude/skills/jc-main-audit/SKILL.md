@@ -1,6 +1,6 @@
 ---
 name: jc-main-audit
-description: Use when performing a comprehensive quality audit of the JapaConnect Main App (apps/web) before merge or release. Covers Rule 16, Svelte 5, Bits UI, app-shell/layout compliance (ADR-058), LayerChart 2.0.1, SSR/SEO, security, accessibility, and i18n compliance.
+description: Use when performing a comprehensive quality audit of the JapaConnect Main App (apps/web) before merge or release. Covers Rule 16, Svelte 5, Bits UI, app-shell/layout compliance (ADR-058), profile learning hub and cross-app compliance (ADR-060), LayerChart 2.0.1, SSR/SEO, security, accessibility, and i18n.Use when performing a comprehensive quality audit of the JapaConnect Main App (apps/web) before merge or release. Covers Rule 16, Svelte 5, Bits UI, app-shell/layout compliance (ADR-058), LayerChart 2.0.1, SSR/SEO, security, accessibility, and i18n compliance.
 ---
 
 # JapaConnect Main App — Audit Skill
@@ -32,6 +32,13 @@ All dropdowns/modals/selects/tooltips/accordions/tabs are Bits UI primitives · 
 - Blog/CPT single: transparent `ReactionRail` + `CreatorCard` (not the search/avatar bar). `/create`: tabbed `[ Guide | Settings/SEO ]` with dynamic Guide. Guest `/`: Page Builder landing; authenticated `/`: Primary timeline
 - Discover uses existing `/suggestions/*` (no invented backend route)
 
+## E3. Profile Learning Hub & Cross-App (ADR-060)
+- Dashboard hub tabs present and API-sourced: `/dashboard/learning` (`me/enrollments`), `/dashboard/certificates` (`me/certificates`), `/dashboard/knowledge-base` (docs + bookmarks) — flag any hardcoded lists
+- No Learn/Docs surface re-implemented in this app (lesson player, curriculum rail, docs nav tree belong to `jc-learn-*` / `jc-docs-*`)
+- Cross-app links use absolute subdomain URLs (`learn.japaconnect.com`, `docs.japaconnect.com`)
+- Certificate cards link to the public shareable page `/certificates/:id`; earned certificates badge the public profile
+- Dashboard is private: no ad slots, not indexed
+
 ## F. SSR & SEO
 Indexable routes render content in server HTML · `<svelte:head>` with title/description on every indexable route · JSON-LD: Article (blog), QAPage (solved threads), Person/Organization (profiles) · images lazy · `data-sveltekit-preload-data="hover"` on body.
 
@@ -57,6 +64,7 @@ List hardcoded strings not in `$t()` · flag keys in `en.json` missing from `fr.
 | Svelte 5 Runes | ✅/❌ |
 | Bits UI | ✅/❌ |
 | App Shell / Layout (ADR-058) | ✅/❌ |
+| Profile hub / Cross-app (ADR-060) | ✅/❌ |
 | LayerChart | ✅/❌ |
 | SSR/SEO | ✅/❌ |
 | Security | ✅/❌ |

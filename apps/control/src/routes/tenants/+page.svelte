@@ -47,7 +47,8 @@
 	const statusItems = [
 		{ value: 'all', label: t('tenants.status_all', 'All Status') },
 		{ value: 'active', label: t('tenants.status_active', 'Active') },
-		{ value: 'suspended', label: t('tenants.status_suspended', 'Suspended') }
+		{ value: 'suspended', label: t('tenants.status_suspended', 'Suspended') },
+		{ value: 'deleted', label: t('tenants.status_deleted', 'Deleted') }
 	];
 
 	async function load() {
@@ -80,23 +81,27 @@
 	async function createTenant() {
 		saving = true;
 		errorMessage = '';
-		const slug = createSlug || autoSlug(createName);
-		if (createDomain && !/^([a-z0-9-]+\.)*[a-z0-9-]+\.[a-z]+$/.test(createDomain)) {
-			errorMessage = 'Please enter a valid domain (e.g. example.com).';
+		try {
+			const slug = createSlug || autoSlug(createName);
+			if (createDomain && !/^([a-z0-9-]+\.)*[a-z0-9-]+\.[a-z]+$/.test(createDomain)) {
+				errorMessage = t('tenants.invalid_domain', 'Please enter a valid domain (e.g. example.com).');
+				return;
+			}
+			const result = await api<Tenant>('/control/tenants', {
+				method: 'POST',
+				body: { name: createName, slug, domain: createDomain || undefined }
+			});
+			if (result.ok) {
+				tenants = [result.data, ...tenants];
+				showCreateModal = false;
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('tenants.create_error', 'Create request failed.');
+		} finally {
 			saving = false;
-			return;
 		}
-		const result = await api<Tenant>('/control/tenants', {
-			method: 'POST',
-			body: { name: createName, slug, domain: createDomain || undefined }
-		});
-		if (result.ok) {
-			tenants = [result.data, ...tenants];
-			showCreateModal = false;
-		} else {
-			errorMessage = result.error;
-		}
-		saving = false;
 	}
 
 	function openEdit(tenant: Tenant) {
@@ -110,47 +115,64 @@
 		if (!editingTenant) return;
 		saving = true;
 		errorMessage = '';
-		const result = await api<Tenant>(`/control/tenants/${editingTenant.id}`, {
-			method: 'PATCH',
-			body: { name: editName, domain: editDomain || undefined }
-		});
-		if (result.ok) {
-			tenants = tenants.map((t) => (t.id === editingTenant!.id ? { ...t, ...result.data } : t));
-			showEditModal = false;
-			editingTenant = null;
-		} else {
-			errorMessage = result.error;
+		try {
+			const result = await api<Tenant>(`/control/tenants/${editingTenant.id}`, {
+				method: 'PATCH',
+				body: { name: editName, domain: editDomain || undefined }
+			});
+			if (result.ok) {
+				tenants = tenants.map((t) => (t.id === editingTenant!.id ? { ...t, ...result.data } : t));
+				showEditModal = false;
+				editingTenant = null;
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('tenants.edit_error', 'Edit request failed.');
+		} finally {
+			saving = false;
 		}
-		saving = false;
 	}
 
 	async function suspendTenant(id: string) {
 		errorMessage = '';
-		const result = await api<Tenant>(`/control/tenants/${id}/suspend`, { method: 'POST' });
-		if (result.ok) {
-			tenants = tenants.map((t) => (t.id === id ? { ...t, status: 'suspended' } : t));
-		} else {
-			errorMessage = result.error;
+		try {
+			const result = await api<Tenant>(`/control/tenants/${id}/suspend`, { method: 'POST' });
+			if (result.ok) {
+				tenants = tenants.map((t) => (t.id === id ? { ...t, status: 'suspended' } : t));
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('tenants.suspend_error', 'Suspend request failed.');
 		}
 	}
 
 	async function unsuspendTenant(id: string) {
 		errorMessage = '';
-		const result = await api<Tenant>(`/control/tenants/${id}/unsuspend`, { method: 'POST' });
-		if (result.ok) {
-			tenants = tenants.map((t) => (t.id === id ? { ...t, status: 'active' } : t));
-		} else {
-			errorMessage = result.error;
+		try {
+			const result = await api<Tenant>(`/control/tenants/${id}/unsuspend`, { method: 'POST' });
+			if (result.ok) {
+				tenants = tenants.map((t) => (t.id === id ? { ...t, status: 'active' } : t));
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('tenants.unsuspend_error', 'Unsuspend request failed.');
 		}
 	}
 
 	async function deleteTenant(id: string) {
 		errorMessage = '';
-		const result = await api<{ status: string }>(`/control/tenants/${id}`, { method: 'DELETE' });
-		if (result.ok) {
-			tenants = tenants.filter((t) => t.id !== id);
-		} else {
-			errorMessage = result.error;
+		try {
+			const result = await api<Tenant>(`/control/tenants/${id}`, { method: 'DELETE' });
+			if (result.ok) {
+				tenants = tenants.map((t) => (t.id === id ? { ...t, ...result.data } : t));
+			} else {
+				errorMessage = result.error;
+			}
+		} catch {
+			errorMessage = t('tenants.delete_error', 'Delete request failed.');
 		}
 	}
 
@@ -202,7 +224,7 @@
 			sortable: true,
 			render: (v) => {
 				const s = escapeHtml(v);
-				const cls = s === 'active' ? 'bg-emerald-500/12 text-emerald-600' : s === 'suspended' ? 'bg-tertiary/12 text-tertiary' : '';
+				const cls = s === 'active' ? 'bg-emerald-500/12 text-emerald-600' : s === 'suspended' ? 'bg-tertiary/12 text-tertiary' : s === 'deleted' ? 'bg-muted/12 text-muted-foreground' : '';
 				return `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${s}</span>`;
 			}
 		},
@@ -220,25 +242,36 @@
 			{
 				label: t('tenants.edit_tenant'),
 				icon: Pencil,
-				onClick: (row) => openEdit(row as unknown as Tenant)
+				onClick: (row) => openEdit(row as unknown as Tenant),
+				disabled: (row) => (row as unknown as Tenant).status === 'deleted'
 			},
 			{
 				label: t('tenants.suspend_tenant'),
 				icon: Ban,
 				onClick: (row) => openConfirm('suspend', row as unknown as Tenant),
-				disabled: (row) => (row as unknown as Tenant).status !== 'active'
+				disabled: (row) => {
+					const s = (row as unknown as Tenant).status;
+					return s !== 'active';
+				}
 			},
 			{
 				label: t('tenants.unsuspend_tenant'),
 				icon: CheckCircle,
 				onClick: (row) => openConfirm('unsuspend', row as unknown as Tenant),
-				disabled: (row) => (row as unknown as Tenant).status !== 'suspended'
+				disabled: (row) => {
+					const s = (row as unknown as Tenant).status;
+					return s !== 'suspended';
+				}
 			},
 			{
 				label: t('tenants.delete_tenant'),
 				icon: Trash2,
 				onClick: (row) => openConfirm('delete', row as unknown as Tenant),
-				variant: 'destructive'
+				variant: 'destructive',
+				disabled: (row) => {
+					const s = (row as unknown as Tenant).status;
+					return s === 'deleted';
+				}
 			}
 		];
 	}

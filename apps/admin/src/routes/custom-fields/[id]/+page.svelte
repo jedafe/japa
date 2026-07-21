@@ -4,6 +4,8 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Select } from '$lib/components/ui/select';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 
 	type FieldOption = { value: string; label: string };
 
@@ -24,6 +26,7 @@
 	let loading = $state(true);
 	let saving = $state(false);
 	let deleting = $state(false);
+	let showDeleteModal = $state(false);
 	let error = $state('');
 	let success = $state('');
 
@@ -191,7 +194,11 @@
 	}
 
 	async function deleteField() {
-		if (!confirm(t('custom_fields.delete_confirm'))) return;
+		showDeleteModal = true;
+	}
+
+	async function executeDelete() {
+		showDeleteModal = false;
 		deleting = true;
 		error = '';
 		try {
@@ -214,7 +221,7 @@
 </script>
 
 <svelte:head>
-	<title>Edit Custom Field — JapaConnect Admin</title>
+	<title>{t('custom_fields.edit_title')} — JapaConnect Admin</title>
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('custom_fields.edit_title')}</h1>
@@ -296,20 +303,20 @@
 			</label>
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" bind:checked={showInFrontend} class="rounded" />
-				Show in frontend
+				{t('custom_fields.show_in_frontend', 'Show in frontend')}
 			</label>
 		</div>
 
 		<!-- Options for select / multiselect -->
 		{#if fieldType === 'select' || fieldType === 'multiselect'}
 			<div>
-				<label class="mb-1 block text-sm font-medium">{t('custom_fields.add_option')}</label>
+				<span class="mb-1 block text-sm font-medium">{t('custom_fields.add_option')}</span>
 				<div class="flex gap-2">
 					<input
 						type="text"
 						class="w-32 rounded-md border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background-color: var(--color-surface)"
-						placeholder="Value"
+						placeholder={t('custom_fields.option_value', 'Value')}
 						bind:value={newOptionValue}
 						onkeydown={handleOptionKeydown}
 					/>
@@ -317,7 +324,7 @@
 						type="text"
 						class="flex-1 rounded-md border px-3 py-2 text-sm"
 						style="border-color: var(--color-border); background-color: var(--color-surface)"
-						placeholder="Label"
+						placeholder={t('custom_fields.option_label', 'Label')}
 						bind:value={newOptionLabel}
 						onkeydown={handleOptionKeydown}
 					/>
@@ -346,7 +353,7 @@
 		<!-- Number options -->
 		{#if fieldType === 'number' || fieldType === 'currency' || fieldType === 'percentage'}
 			<div class="rounded-md border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<label class="mb-2 block text-sm font-medium">Number constraints</label>
+				<span class="mb-2 block text-sm font-medium">Number constraints</span>
 				<div class="grid grid-cols-2 gap-3">
 					<div>
 						<label for="num-min" class="mb-1 block text-xs" style="color: var(--color-muted)">Min</label>
@@ -367,7 +374,7 @@
 		<!-- Image / file options -->
 		{#if fieldType === 'image_single' || fieldType === 'image_multi' || fieldType === 'media'}
 			<div class="rounded-md border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<label class="mb-2 block text-sm font-medium">File upload settings</label>
+				<span class="mb-2 block text-sm font-medium">File upload settings</span>
 				{#if fieldType === 'image_multi'}
 					<div class="mb-3">
 						<label for="file-max-files" class="mb-1 block text-xs" style="color: var(--color-muted)">Max files</label>
@@ -384,10 +391,10 @@
 		<!-- Reference options -->
 		{#if fieldType === 'reference'}
 			<div class="rounded-md border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<label class="mb-2 block text-sm font-medium">Reference settings</label>
+				<span class="mb-2 block text-sm font-medium">Reference settings</span>
 				<div>
 					<label for="ref-entity" class="mb-1 block text-xs" style="color: var(--color-muted)">Target entity class</label>
-					<input id="ref-entity" type="text" class="w-full rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" placeholder="e.g. content, user, space" bind:value={refEntityClass} />
+					<input id="ref-entity" type="text" class="w-full rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" placeholder={t('custom_fields.ref_entity_placeholder', 'e.g. content, user, space')} bind:value={refEntityClass} />
 				</div>
 			</div>
 		{/if}
@@ -422,3 +429,13 @@
 {:else}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('custom_fields.not_found')}</p>
 {/if}
+
+<Modal bind:open={showDeleteModal} title={t('custom_fields.delete_confirm')} size="sm">
+	<p class="text-sm" style="color: var(--color-muted)">
+		{t('custom_fields.delete_warning', 'This action cannot be undone. All field data will be lost.')}
+	</p>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteModal = false)}>{t('common.cancel')}</Button>
+		<Button variant="destructive" onclick={executeDelete}>{t('common.delete')}</Button>
+	</div>
+</Modal>

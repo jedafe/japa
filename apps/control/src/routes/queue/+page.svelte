@@ -4,9 +4,10 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { Tabs, Tooltip } from 'bits-ui';
 	import { api } from '$lib/api';
-	import type { QueueInfo, QueueStats } from '$lib/api/types';
+	import type { QueueInfo, QueueStats, QueueTask, QueueTasksResponse } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { ListTodo, Clock, RefreshCw, X } from 'lucide-svelte';
+	import { escapeHtml } from '$lib/utils';
+	import { ListTodo, Clock, RefreshCw, X, AlertTriangle, CheckCircle, Timer, RotateCw } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 
 	let {} = $props();
@@ -16,9 +17,13 @@
 	let apiAvailable = $state(true);
 	let lastRefresh = $state(new Date());
 	let selectedQueue = $state<QueueInfo | null>(null);
+	let queueTasks = $state<QueueTasksResponse | null>(null);
+	let queueTasksLoading = $state(false);
+	let queueTasksAbort = $state<AbortController | null>(null);
 	let refreshing = $state(false);
 	let secondsAgo = $state(0);
 	let activeTab = $state('overview');
+	let taskTab = $state('pending');
 
 	interface QueueResponse {
 		queues?: QueueInfo[];
@@ -26,19 +31,21 @@
 		total_active: number;
 		total_completed_24h: number;
 		total_failed_24h: number;
+		dlq_count: number;
 	}
 
-	async function refresh() {
+	async function refresh(signal?: AbortSignal) {
 		refreshing = true;
 		try {
-			const result = await api<QueueResponse | { message: string }>('/control/queue/stats');
+			const result = await api<QueueResponse | { message: string }>('/control/queue/stats', { signal });
+			if (signal?.aborted) return;
 			if (result.ok) {
 				const raw = result.data;
 				if ('message' in raw && raw.message) {
 					queueStats = { queues: [], total_pending: 0, total_active: 0, total_completed_24h: 0, total_failed_24h: 0, dlq_count: 0 };
 				} else {
 					const queueData = raw as QueueResponse;
-					queueStats = { queues: queueData.queues ?? [], total_pending: queueData.total_pending, total_active: queueData.total_active, total_completed_24h: queueData.total_completed_24h, total_failed_24h: queueData.total_failed_24h, dlq_count: 0 };
+					queueStats = { queues: queueData.queues ?? [], total_pending: queueData.total_pending, total_active: queueData.total_active, total_completed_24h: queueData.total_completed_24h, total_failed_24h: queueData.total_failed_24h, dlq_count: queueData.dlq_count ?? 0 };
 				}
 				apiAvailable = true;
 				lastRefresh = new Date();
@@ -74,12 +81,51 @@
 		return ms + 'ms';
 	}
 
-	function openQueueDetail(q: QueueInfo) {
+	async function openQueueDetail(q: QueueInfo) {
+		queueTasksAbort?.abort();
+		const controller = new AbortController();
+		queueTasksAbort = controller;
 		selectedQueue = q;
+		queueTasksLoading = true;
+		queueTasks = null;
+		taskTab = 'pending';
+		try {
+			const result = await api<QueueTasksResponse>(`/control/queue/${q.name}/tasks`, { signal: controller.signal });
+			if (controller.signal.aborted) return;
+			if (result.ok) {
+				queueTasks = result.data;
+			}
+		} catch {
+			// silent
+		} finally {
+			if (!controller.signal.aborted) {
+				queueTasksLoading = false;
+			}
+		}
+	}
+
+	function taskCount(state: keyof QueueTasksResponse): number {
+		return queueTasks?.[state]?.length ?? 0;
+	}
+
+	function formatTaskTime(ts: string | undefined): string {
+		if (!ts) return '—';
+		try {
+			return new Date(ts).toLocaleString();
+		} catch {
+			return ts;
+		}
+	}
+
+	function truncatePayload(payload: string, max = 80): string {
+		if (!payload || payload === '{}') return '—';
+		return payload.length > max ? payload.slice(0, max) + '…' : payload;
 	}
 
 	$effect(() => {
-		refresh();
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), 15000);
+		refresh(controller.signal);
 
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
@@ -99,6 +145,8 @@
 		document.addEventListener('visibilitychange', onVisible);
 
 		return () => {
+			clearTimeout(timeout);
+			controller.abort();
 			clearInterval(interval);
 			clearInterval(tickInterval);
 			document.removeEventListener('visibilitychange', onVisible);
@@ -127,7 +175,7 @@
 	<button
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
 		disabled={refreshing}
-		onclick={refresh}
+		onclick={() => refresh()}
 	>
 		<RefreshCw class="size-3 {refreshing ? 'animate-spin' : ''}" />
 		{t('common.refresh')}
@@ -295,11 +343,83 @@
 						<p class="text-destructive text-lg font-bold">{formatNumber(selectedQueue?.failed_24h ?? 0)}</p>
 					</div>
 				</div>
-				<div class="bg-muted/50 border-border-card rounded-9px border p-6 text-center">
-					<Clock class="text-muted-foreground mx-auto size-6 opacity-40" />
-					<p class="text-muted-foreground mt-2 text-sm">{t('queue.no_jobs')}</p>
-					<p class="text-muted-foreground mt-1 text-xs">{t('queue.detail_not_available')}</p>
-				</div>
+
+				{#if queueTasksLoading}
+					<div class="space-y-2">
+						{#each Array(3) as _}
+							<div class="bg-muted h-12 animate-pulse rounded-lg"></div>
+						{/each}
+					</div>
+				{:else if queueTasks}
+					<!-- Task state tabs -->
+					<div class="mb-3 flex gap-1 overflow-x-auto">
+						{#each [
+							{ key: 'pending', icon: Timer, count: taskCount('pending') },
+							{ key: 'active', icon: RotateCw, count: taskCount('active') },
+							{ key: 'scheduled', icon: Clock, count: taskCount('scheduled') },
+							{ key: 'retry', icon: AlertTriangle, count: taskCount('retry') },
+							{ key: 'archived', icon: AlertTriangle, count: taskCount('archived') },
+							{ key: 'completed', icon: CheckCircle, count: taskCount('completed') }
+						] as tab}
+							<button
+								class="flex items-center gap-1 whitespace-nowrap rounded-7px px-3 py-1.5 text-xs font-medium transition-colors {taskTab === tab.key ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted'}"
+								onclick={() => { taskTab = tab.key; }}
+							>
+								<tab.icon class="size-3" />
+								{tab.key}
+								<span class="rounded-full bg-background/50 px-1.5 py-0.5 text-[10px]">{tab.count}</span>
+							</button>
+						{/each}
+					</div>
+
+					<!-- Task list -->
+					{#if queueTasks[taskTab as keyof QueueTasksResponse]?.length}
+						<div class="max-h-64 overflow-y-auto rounded-lg border border-border-card">
+							<table class="w-full text-xs">
+								<thead>
+									<tr class="border-b border-border-card">
+										<th class="text-muted-foreground px-3 py-2 text-left font-medium">Type</th>
+										<th class="text-muted-foreground px-3 py-2 text-left font-medium">ID</th>
+										{#if taskTab === 'retry' || taskTab === 'archived'}
+											<th class="text-muted-foreground px-3 py-2 text-left font-medium">Error</th>
+										{/if}
+										{#if taskTab === 'scheduled'}
+											<th class="text-muted-foreground px-3 py-2 text-left font-medium">Next Run</th>
+										{/if}
+										{#if taskTab === 'retry' || taskTab === 'archived'}
+											<th class="text-muted-foreground px-3 py-2 text-right font-medium">Retries</th>
+										{/if}
+									</tr>
+								</thead>
+								<tbody>
+									{#each queueTasks[taskTab as keyof QueueTasksResponse] ?? [] as task (task.id)}
+										<tr class="border-t border-border-card">
+											<td class="px-3 py-2 font-mono">{task.type}</td>
+											<td class="text-muted-foreground max-w-[120px] truncate px-3 py-2 font-mono">{task.id}</td>
+											{#if taskTab === 'retry' || taskTab === 'archived'}
+												<td class="max-w-[200px] truncate px-3 py-2 text-destructive">{escapeHtml(task.last_err) || '—'}</td>
+											{/if}
+											{#if taskTab === 'scheduled'}
+												<td class="text-muted-foreground px-3 py-2">{formatTaskTime(task.next_process_at)}</td>
+											{/if}
+											{#if taskTab === 'retry' || taskTab === 'archived'}
+												<td class="text-muted-foreground px-3 py-2 text-right">{task.retry_count}/{task.max_retry}</td>
+											{/if}
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{:else}
+						<div class="py-6 text-center">
+							<p class="text-muted-foreground text-sm">{t('queue.no_tasks_in_state', 'No tasks in this state')}</p>
+						</div>
+					{/if}
+				{:else}
+					<div class="py-6 text-center">
+						<p class="text-muted-foreground text-sm">{t('queue.failed_to_load_tasks', 'Failed to load tasks')}</p>
+					</div>
+				{/if}
 			</div>
 			<div class="border-border-card flex justify-end border-t px-6 py-3">
 				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-1.5 text-sm font-medium transition-colors">

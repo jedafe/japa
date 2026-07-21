@@ -105,10 +105,16 @@
 
 			const result = await tagsAdminApi.list(params.toString());
 			if (result.ok) {
-				const d = result.data as unknown as { items: Tag[]; total: number; page: number; total_pages: number };
-				tags = d.items ?? (Array.isArray(result.data) ? result.data : []);
-				totalItems = d.total ?? tags.length;
-				totalPages = d.total_pages ?? 1;
+				const d = result.data as Tag[] | { items: Tag[]; page: number; total_pages: number };
+				if (Array.isArray(d)) {
+					tags = d;
+					totalItems = d.length;
+					totalPages = 1;
+				} else {
+					tags = d.items ?? [];
+					totalItems = d.items?.length ?? 0;
+					totalPages = d.total_pages ?? 1;
+				}
 			} else {
 				error = result.error ?? t("common.error", "Failed to load tags");
 			}

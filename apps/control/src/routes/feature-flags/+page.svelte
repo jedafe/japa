@@ -54,17 +54,23 @@
 
 	async function toggleFlag(key: string, enabled: boolean) {
 		toggling = key;
-		const result = await api(`/control/feature-flags/${key}`, {
-			method: 'PATCH',
-			body: { enabled }
-		});
-		if (result.ok) {
-			flags = flags.map((f) => (f.key === key ? { ...f, enabled } : f));
-			message = t('feature_flags.toggle_success', 'Flag toggled').replace('{key}', key).replace('{status}', enabled ? t('feature_flags.enabled', 'enabled') : t('feature_flags.disabled', 'disabled'));
-		} else {
-			message = result.error || t('feature_flags.toggle_error', 'Failed to toggle flag');
+		try {
+			const result = await api(`/control/feature-flags/${key}`, {
+				method: 'PATCH',
+				body: { enabled }
+			});
+			if (result.ok) {
+				flags = flags.map((f) => (f.key === key ? { ...f, enabled } : f));
+				message = t('feature_flags.toggle_success', 'Flag toggled').replace('{key}', key).replace('{status}', enabled ? t('feature_flags.enabled', 'enabled') : t('feature_flags.disabled', 'disabled'));
+				setTimeout(() => { message = ''; }, 3000);
+			} else {
+				message = result.error || t('feature_flags.toggle_error', 'Failed to toggle flag');
+			}
+		} catch {
+			message = t('feature_flags.toggle_error', 'Failed to toggle flag');
+		} finally {
+			toggling = null;
 		}
-		toggling = null;
 	}
 
 	function handleFlagToggle(flag: FeatureFlag, checked: boolean) {

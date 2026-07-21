@@ -15,20 +15,43 @@
 
 	type UserGrowthRow = { day: string; new_users: number };
 	type ContentOverTimeRow = { day: string; content_count: number };
-	type TopContentRow = { title: string; views?: number; content_type?: string };
+	type TopContentRow = {
+		content_id: string;
+		total_views: number;
+		total_reactions: number;
+		total_comments: number;
+		total_unique_viewers: number;
+	};
 	type EventCountRow = { event_type: string; count: number };
 	type DailyActiveRow = { day: string; dau: number };
+	type MonthlyActiveRow = { month: string; mau: number };
+	type TrafficSourceRow = { referrer: string | null; visits: number };
+	type ContentStatRow = {
+		day: string;
+		tenant_id: string;
+		content_id: string;
+		views: number;
+		reactions: number;
+		comments: number;
+		unique_viewers: number;
+	};
+	type SpaceStatRow = { name?: string; title?: string; member_count?: number };
 
 	type OverviewData = {
 		daily_active_users: DailyActiveRow[] | null;
-		monthly_active_users: unknown[] | null;
+		monthly_active_users: MonthlyActiveRow[] | null;
 		event_counts: EventCountRow[] | null;
 		content_over_time: ContentOverTimeRow[] | null;
 		user_growth: UserGrowthRow[] | null;
-		traffic_sources: unknown[] | null;
+		traffic_sources: TrafficSourceRow[] | null;
 		top_content: TopContentRow[] | null;
-		content_stats: unknown[] | null;
-		space_stats: unknown[] | null;
+		content_stats: ContentStatRow[] | null;
+		space_stats: SpaceStatRow[] | null;
+		pending_reports?: number;
+		pending_tickets?: number;
+		spam_queue?: number;
+		generations_today?: number;
+		hitl_pending?: number;
 	};
 
 	type UserAnalytics = {
@@ -58,10 +81,10 @@
 	let to = $state(page.url.searchParams.get('to') ?? '');
 
 	const periods = [
-		{ value: '24h', label: '24 Hours' },
-		{ value: '7d', label: '7 Days' },
-		{ value: '30d', label: '30 Days' },
-		{ value: '90d', label: '90 Days' }
+		{ value: '24h', label: t('dashboard.period_24h', '24 Hours') },
+		{ value: '7d', label: t('dashboard.period_7d', '7 Days') },
+		{ value: '30d', label: t('dashboard.period_30d', '30 Days') },
+		{ value: '90d', label: t('dashboard.period_90d', '90 Days') }
 	];
 
 	const tabs = [
@@ -87,6 +110,19 @@
 
 	const topContent = $derived(overview.top_content ?? []);
 	const eventCounts = $derived(overview.event_counts ?? []);
+
+	const monthlyActiveData = $derived(
+		(overview.monthly_active_users ?? []).map((d) => ({
+			date: new Date(d.month),
+			count: d.mau
+		}))
+	);
+
+	const trafficSources = $derived(
+		(overview.traffic_sources ?? [])
+			.sort((a, b) => b.visits - a.visits)
+			.slice(0, 10)
+	);
 
 	async function load() {
 		loading = true;
@@ -314,6 +350,69 @@
 				</Card>
 			</div>
 
+			<!-- Monthly Active Users + Traffic Sources -->
+			<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+				<!-- Monthly Active Users Chart -->
+				<Card>
+					<CardHeader>
+						<h3 class="text-sm font-medium" style="color: var(--color-muted)">
+							{t('dashboard.monthly_active_users', 'Monthly Active Users')}
+						</h3>
+					</CardHeader>
+					<CardContent>
+						{#if monthlyActiveData.length > 0}
+							<div class="h-64">
+								<LineChart
+									data={monthlyActiveData}
+									x="date"
+									y="count"
+									props={{
+										spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--color-success, #22c55e)' }
+									}}
+								/>
+							</div>
+						{:else}
+							<div class="flex h-64 items-center justify-center">
+								<p class="text-sm" style="color: var(--color-muted)">
+									{t('dashboard.no_data', 'No data available')}
+								</p>
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<!-- Traffic Sources -->
+				<Card>
+					<CardHeader>
+						<h3 class="text-sm font-medium" style="color: var(--color-muted)">
+							{t('dashboard.traffic_sources', 'Traffic Sources')}
+						</h3>
+					</CardHeader>
+					<CardContent>
+						{#if trafficSources.length > 0}
+							<div class="space-y-3">
+								{#each trafficSources as source}
+									<div class="flex items-center justify-between rounded-lg px-3 py-2">
+										<span class="text-sm" style="color: var(--color-foreground)">
+											{source.referrer ?? 'Direct'}
+										</span>
+										<span class="text-sm" style="color: var(--color-muted)">
+											{source.visits.toLocaleString()} visits
+										</span>
+									</div>
+								{/each}
+							</div>
+						{:else}
+							<div class="flex h-64 items-center justify-center">
+								<p class="text-sm" style="color: var(--color-muted)">
+									{t('dashboard.no_data', 'No data available')}
+								</p>
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+			</div>
+
 			<!-- Top Content -->
 			<Card>
 				<CardHeader>
@@ -328,21 +427,19 @@
 					{#if topContent.length > 0}
 						<div class="space-y-3">
 							{#each topContent as item}
-								<div class="flex items-center justify-between rounded-lg px-3 py-2">
+								<a href="/content/{item.content_id}" class="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-[color-mix(in_srgb,var(--color-muted)_5%,transparent)]">
 									<div class="min-w-0 flex-1">
 										<p class="truncate text-sm font-medium" style="color: var(--color-foreground)">
-											{item.title}
+											{item.content_id.slice(0, 8)}...
 										</p>
-										{#if item.content_type}
-											<p class="text-xs" style="color: var(--color-muted)">{item.content_type}</p>
-										{/if}
+										<div class="mt-1 flex items-center gap-3 text-xs" style="color: var(--color-muted)">
+											<span>{item.total_views.toLocaleString()} views</span>
+											<span>{item.total_reactions.toLocaleString()} reactions</span>
+											<span>{item.total_comments.toLocaleString()} comments</span>
+											<span>{item.total_unique_viewers.toLocaleString()} viewers</span>
+										</div>
 									</div>
-									{#if item.views !== undefined}
-										<span class="text-sm" style="color: var(--color-muted)">
-											{item.views.toLocaleString()} views
-										</span>
-									{/if}
-								</div>
+								</a>
 							{/each}
 						</div>
 					{:else}
@@ -409,11 +506,14 @@
 					<CardContent>
 						{#if overview.space_stats && overview.space_stats.length > 0}
 							<div class="space-y-3">
-								{#each overview.space_stats.slice(0, 5) as space}
-									<div class="flex items-center justify-between rounded-lg px-3 py-2">
-										<span class="text-sm" style="color: var(--color-foreground)">{JSON.stringify(space)}</span>
-									</div>
-								{/each}
+							{#each overview.space_stats.slice(0, 5) as space}
+								<div class="flex items-center justify-between rounded-lg px-3 py-2">
+									<span class="text-sm" style="color: var(--color-foreground)">{space.name ?? space.title ?? 'Space'}</span>
+									{#if space.member_count !== undefined}
+										<span class="text-xs" style="color: var(--color-muted)">{space.member_count} members</span>
+									{/if}
+								</div>
+							{/each}
 							</div>
 						{:else}
 							<p class="py-4 text-center text-sm" style="color: var(--color-muted)">
@@ -425,44 +525,44 @@
 			</div>
 		{/if}
 
-		{#if activeTab === 'moderation'}
-			<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-				<a href="/moderation?tab=pending">
-					<StatCard
-						label={t('dashboard.pending_reports', 'Pending Reports')}
-						value="0"
-					/>
-				</a>
-				<a href="/tickets">
-					<StatCard
-						label={t('dashboard.pending_tickets', 'Pending Tickets')}
-						value="0"
-					/>
-				</a>
-				<a href="/moderation?tab=spam">
-					<StatCard
-						label={t('dashboard.spam_queue', 'Spam Queue')}
-						value="0"
-					/>
-				</a>
-			</div>
-		{/if}
+	{#if activeTab === 'moderation'}
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+			<a href="/moderation?tab=pending">
+				<StatCard
+					label={t('dashboard.pending_reports', 'Pending Reports')}
+					value={(overview.pending_reports ?? 0).toLocaleString()}
+				/>
+			</a>
+			<a href="/tickets">
+				<StatCard
+					label={t('dashboard.pending_tickets', 'Pending Tickets')}
+					value={(overview.pending_tickets ?? 0).toLocaleString()}
+				/>
+			</a>
+			<a href="/moderation?tab=spam">
+				<StatCard
+					label={t('dashboard.spam_queue', 'Spam Queue')}
+					value={(overview.spam_queue ?? 0).toLocaleString()}
+				/>
+			</a>
+		</div>
+	{/if}
 
-		{#if activeTab === 'ai'}
-			<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-				<StatCard
-					label={t('dashboard.generations_today', 'Generations Today')}
-					value="0"
-				/>
-				<StatCard
-					label={t('dashboard.hitl_pending', 'HITL Pending Review')}
-					value="0"
-				/>
-				<StatCard
-					label={t('dashboard.new_today', 'New Users Today')}
-					value={(userStats.new_users_today ?? 0).toLocaleString()}
-				/>
-			</div>
-		{/if}
+	{#if activeTab === 'ai'}
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+			<StatCard
+				label={t('dashboard.generations_today', 'Generations Today')}
+				value={(overview.generations_today ?? 0).toLocaleString()}
+			/>
+			<StatCard
+				label={t('dashboard.hitl_pending', 'HITL Pending Review')}
+				value={(overview.hitl_pending ?? 0).toLocaleString()}
+			/>
+			<StatCard
+				label={t('dashboard.new_today', 'New Users Today')}
+				value={(userStats.new_users_today ?? 0).toLocaleString()}
+			/>
+		</div>
+	{/if}
 	</div>
 {/if}

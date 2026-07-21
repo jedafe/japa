@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { api, setToken } from '$lib/api';
 	import { clearUser } from '$lib/stores/auth.svelte';
+	import { t } from '$lib/stores/i18n.svelte';
 
 	onMount(async () => {
 		const token = localStorage.getItem('jc_token');
@@ -22,4 +23,4 @@
 	});
 </script>
 
-<p class="text-muted-foreground text-sm">Signing out...</p>
+<p class="text-muted-foreground text-sm">{t('common.signing_out', 'Signing out...')}</p>

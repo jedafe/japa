@@ -119,21 +119,21 @@
 <div class="mb-4 flex gap-2">
 	<Select
 		options={[
-			{ value: '', label: 'All Severities' },
-			{ value: 'critical', label: 'Critical' },
-			{ value: 'high', label: 'High' },
-			{ value: 'medium', label: 'Medium' },
-			{ value: 'low', label: 'Low' }
+			{ value: '', label: t('app.moderation.alerts.filter.all_severities', 'All Severities') },
+			{ value: 'critical', label: t('app.moderation.alerts.severity.critical', 'Critical') },
+			{ value: 'high', label: t('app.moderation.alerts.severity.high', 'High') },
+			{ value: 'medium', label: t('app.moderation.alerts.severity.medium', 'Medium') },
+			{ value: 'low', label: t('app.moderation.alerts.severity.low', 'Low') }
 		]}
 		bind:value={filterSeverity}
 		onchange={load}
 	/>
 	<Select
 		options={[
-			{ value: '', label: 'All Statuses' },
-			{ value: 'open', label: 'Open' },
-			{ value: 'acknowledged', label: 'Acknowledged' },
-			{ value: 'resolved', label: 'Resolved' }
+			{ value: '', label: t('app.moderation.alerts.filter.all_statuses', 'All Statuses') },
+			{ value: 'open', label: t('app.moderation.alerts.status.open', 'Open') },
+			{ value: 'acknowledged', label: t('app.moderation.alerts.status.acknowledged', 'Acknowledged') },
+			{ value: 'resolved', label: t('app.moderation.alerts.status.resolved', 'Resolved') }
 		]}
 		bind:value={filterStatus}
 		onchange={load}
@@ -143,7 +143,7 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else if alerts.length === 0}
-	<EmptyState title="No moderation alerts" description="All clear — no alerts match your current filters." />
+	<EmptyState title={t('app.moderation.alerts.empty_title', 'No moderation alerts')} description={t('app.moderation.alerts.empty_description', 'All clear — no alerts match your current filters.')} />
 {:else}
 	<div class="space-y-3">
 		{#each alerts as alert}
@@ -180,7 +180,7 @@
 								style="color: var(--color-warning)"
 								onclick={() => acknowledgeAlert(alert.id)}
 							>
-								Acknowledge
+								{t('app.moderation.alerts.acknowledge', 'Acknowledge')}
 							</button>
 						{/if}
 						{#if canManage && alert.status !== 'resolved'}
@@ -189,7 +189,7 @@
 								style="color: var(--color-success)"
 								onclick={() => resolveAlert(alert.id)}
 							>
-								Resolve
+								{t('app.moderation.alerts.resolve', 'Resolve')}
 							</button>
 						{/if}
 					</div>

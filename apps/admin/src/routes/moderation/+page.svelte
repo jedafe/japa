@@ -53,29 +53,29 @@
 			key: "type",
 			label: t("moderation.source", "Source"),
 			options: [
-				{ value: "user_report", label: "User Report" },
-				{ value: "ai_flag", label: "AI Flag" }
+				{ value: "user_report", label: t("app.moderation.queue.user_report", "User Report") },
+				{ value: "ai_flag", label: t("app.moderation.queue.ai_flag", "AI Flag") }
 			]
 		},
 		{
 			key: "content_type",
 			label: t("moderation.content_type", "Content Type"),
 			options: [
-				{ value: "post", label: "Post" },
-				{ value: "comment", label: "Comment" },
-				{ value: "blog", label: "Blog" },
-				{ value: "forum", label: "Forum" },
-				{ value: "message", label: "Message" }
+				{ value: "post", label: t("app.moderation.queue.post", "Post") },
+				{ value: "comment", label: t("app.moderation.queue.comment", "Comment") },
+				{ value: "blog", label: t("app.moderation.queue.blog", "Blog") },
+				{ value: "forum", label: t("app.moderation.queue.forum", "Forum") },
+				{ value: "message", label: t("app.moderation.queue.message", "Message") }
 			]
 		},
 		{
 			key: "status",
 			label: t("common.status", "Status"),
 			options: [
-				{ value: "pending", label: "Pending" },
-				{ value: "reviewed", label: "Reviewed" },
-				{ value: "resolved", label: "Resolved" },
-				{ value: "dismissed", label: "Dismissed" }
+				{ value: "pending", label: t("app.moderation.queue.pending", "Pending") },
+				{ value: "reviewed", label: t("app.moderation.queue.reviewed", "Reviewed") },
+				{ value: "resolved", label: t("app.moderation.queue.resolved", "Resolved") },
+				{ value: "dismissed", label: t("app.moderation.queue.dismissed", "Dismissed") }
 			]
 		}
 	];
@@ -87,7 +87,8 @@
 			sortable: true,
 			render: (v: string) => {
 				const colors = v === "ai_flag" ? "bg-info/15 text-info dark:text-info" : "bg-info/15 text-info dark:text-info";
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v === "ai_flag" ? "AI Flag" : "User Report"}</span>`;
+				const label = v === "ai_flag" ? t('app.moderation.queue.ai_flag', 'AI Flag') : t('app.moderation.queue.user_report', 'User Report');
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${label}</span>`;
 			}
 		},
 		{
@@ -245,7 +246,7 @@
 
 {#if selectedIds.size > 0}
 	<div class="mb-4 flex items-center gap-3 rounded-lg p-3" style="background: var(--color-primary); color: white">
-		<span class="text-sm font-medium">{selectedIds.size} selected</span>
+		<span class="text-sm font-medium">{selectedIds.size} {t('app.moderation.queue.selected_count', 'selected')}</span>
 		<Button variant="ghost" size="sm" onclick={() => bulkAction("approve")} disabled={acting}>
 			<Check class="mr-1 h-3.5 w-3.5" /> {t("moderation.approve", "Approve")}
 		</Button>
@@ -283,7 +284,7 @@
 			<div class="grid grid-cols-2 gap-4">
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.source')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type === "ai_flag" ? "AI Flag" : "User Report"}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type === "ai_flag" ? t('app.moderation.queue.ai_flag', 'AI Flag') : t('app.moderation.queue.user_report', 'User Report')}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.content_type')}</p>
@@ -317,10 +318,10 @@
 	<div class="mt-6 flex justify-end gap-2">
 		{#if viewTarget && canModerate}
 			<Button variant="outline" onclick={() => { showViewModal = false; openAction(viewTarget!, "approve"); }}>
-				<Check class="mr-1 h-3.5 w-3.5" /> Approve
+				<Check class="mr-1 h-3.5 w-3.5" /> {t("app.moderation.queue.approve_action", "Approve")}
 			</Button>
 			<Button variant="destructive" onclick={() => { showViewModal = false; openAction(viewTarget!, "reject"); }}>
-				<X class="mr-1 h-3.5 w-3.5" /> Reject
+				<X class="mr-1 h-3.5 w-3.5" /> {t("app.moderation.queue.reject_action", "Reject")}
 			</Button>
 		{/if}
 		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('moderation.close')}</Button>
@@ -347,7 +348,7 @@
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => showActionModal = false}>{t("common.cancel", "Cancel")}</Button>
 		<Button variant={actionType === "approve" ? "default" : "destructive"} onclick={executeAction} disabled={acting}>
-			{acting ? "Processing..." : actionType === "approve" ? t("moderation.approve", "Approve") : actionType === "reject" ? t("moderation.reject", "Reject") : t("common.delete", "Delete")}
+			{acting ? t("app.moderation.queue.processing", "Processing...") : actionType === "approve" ? t("moderation.approve", "Approve") : actionType === "reject" ? t("moderation.reject", "Reject") : t("common.delete", "Delete")}
 		</Button>
 	</div>
 </Modal>

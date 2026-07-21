@@ -50,16 +50,18 @@
 	let showViewModal = $state(false);
 	let viewTarget = $state<Broadcast | null>(null);
 
+	let selectedIds = $state<Set<string>>(new Set());
+
 	const tabs = [
-		{ value: "all", label: "All", icon: Radio },
-		{ value: "draft", label: "Drafts", icon: Clock },
-		{ value: "sent", label: "Sent", icon: CheckCircle }
+		{ value: "all", label: t('broadcasts.tab_all', 'All'), icon: Radio },
+		{ value: "draft", label: t('broadcasts.tab_drafts', 'Drafts'), icon: Clock },
+		{ value: "sent", label: t('broadcasts.tab_sent', 'Sent'), icon: CheckCircle }
 	];
 
 	const columns = [
 		{
 			key: "title",
-			label: "Title",
+			label: t('broadcasts.column_title', 'Title'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
@@ -70,16 +72,16 @@
 		},
 		{
 			key: "target_audience",
-			label: "Audience",
+			label: t('broadcasts.column_audience', 'Audience'),
 			sortable: true,
 			render: (value: string) => {
-				const labels: Record<string, string> = { all: "All Users", active: "Active Users", premium: "Premium Users" };
+				const labels: Record<string, string> = { all: t('broadcasts.all_users', 'All Users'), active: t('broadcasts.active_users', 'Active Users'), premium: t('broadcasts.premium_users', 'Premium Users') };
 				return `<span class="text-sm text-foreground-alt">${labels[value] || value}</span>`;
 			}
 		},
 		{
 			key: "status",
-			label: "Status",
+			label: t('common.status', 'Status'),
 			sortable: true,
 			render: (value: string) => {
 				const variant = value === "sent" ? "success" : value === "scheduled" ? "info" : value === "failed" ? "destructive" : "secondary";
@@ -94,13 +96,13 @@
 		},
 		{
 			key: "recipient_count",
-			label: "Recipients",
+			label: t('broadcasts.column_recipients', 'Recipients'),
 			sortable: true,
 			render: (value: number) => `<span class="text-sm font-medium">${(value ?? 0).toLocaleString()}</span>`
 		},
 		{
 			key: "sent_at",
-			label: "Sent",
+			label: t('broadcasts.column_sent', 'Sent'),
 			sortable: true,
 			render: (value: string) => value ? new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : '<span class="text-muted">—</span>'
 		},
@@ -113,9 +115,9 @@
 	];
 
 	const audienceOptions = [
-		{ value: 'all', label: 'All Users' },
-		{ value: 'active', label: 'Active Users' },
-		{ value: 'premium', label: 'Premium Users' }
+		{ value: 'all', label: t('broadcasts.all_users', 'All Users') },
+		{ value: 'active', label: t('broadcasts.active_users', 'Active Users') },
+		{ value: 'premium', label: t('broadcasts.premium_users', 'Premium Users') }
 	];
 
 	let filteredBroadcasts = $derived.by(() => {
@@ -149,6 +151,15 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	async function bulkDelete() {
+		if (!selectedIds.size) return;
+		for (const id of selectedIds) {
+			await api(`/admin/broadcasts/${id}`, { method: "DELETE" });
+		}
+		selectedIds = new Set();
+		loadBroadcasts();
 	}
 
 	function handleFilter(values: Record<string, string>) {
@@ -214,14 +225,14 @@
 </script>
 
 <svelte:head>
-	<title>Broadcasts — JapaConnect Admin</title>
+	<title>{t('broadcasts.page_title', 'Broadcasts')} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
-	title="Broadcasts"
-	description="Send targeted messages to platform users"
+	title={t('broadcasts.title', 'Broadcasts')}
+	description={t('broadcasts.description', 'Send targeted messages to platform users')}
 		actions={[
-		...(canManage ? [{ label: "New Broadcast", icon: Plus, onclick: () => (showCreateModal = true) }] : [])
+		...(canManage ? [{ label: t('broadcasts.new_broadcast', 'New Broadcast'), icon: Plus, onclick: () => (showCreateModal = true) }] : [])
 	]}
 />
 
@@ -233,11 +244,11 @@
 		filters={[
 			{
 				key: "audience",
-				label: "Audience",
+				label: t('broadcasts.filter_audience', 'Audience'),
 				options: [
-					{ value: "all", label: "All Users" },
-					{ value: "active", label: "Active Users" },
-					{ value: "premium", label: "Premium Users" }
+					{ value: "all", label: t('broadcasts.all_users', 'All Users') },
+					{ value: "active", label: t('broadcasts.active_users', 'Active Users') },
+					{ value: "premium", label: t('broadcasts.premium_users', 'Premium Users') }
 				]
 			}
 		]}
@@ -248,53 +259,63 @@
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
-				<p class="py-8 text-center text-sm text-muted">{t('broadcasts.loading_broadcasts')}</p>
+				<p class="py-8 text-center text-sm text-muted">{t('broadcasts.loading_broadcasts', 'Loading broadcasts...')}</p>
 			{:else}
 				<DataTable
 					columns={columns}
 					data={filteredBroadcasts}
 					pageSize={15}
-					emptyMessage="No broadcasts found"
-				/>
+					emptyMessage={t('broadcasts.no_broadcasts_found', 'No broadcasts found')}
+					selectable={canManage}
+					bind:selectedIds
+				>
+					{#snippet bulkActions()}
+						{#if canManage && selectedIds.size > 0}
+							<Button variant="destructive" size="sm" onclick={bulkDelete}>
+								{t('broadcasts.delete_selected', 'Delete Selected')} ({selectedIds.size})
+							</Button>
+						{/if}
+					{/snippet}
+				</DataTable>
 			{/if}
 		</CardContent>
 	</Card>
 </div>
 
 <!-- Create Broadcast Modal -->
-<Modal bind:open={showCreateModal} title="New Broadcast" description="Create and send a broadcast message" size="lg">
+<Modal bind:open={showCreateModal} title={t('broadcasts.new_broadcast', 'New Broadcast')} description={t('broadcasts.create_description', 'Create and send a broadcast message')} size="lg">
 	<div class="space-y-4">
 		<div>
-			<label for="bc-title" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.title_2')}</label>
+			<label for="bc-title" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.title_label', 'Title')}</label>
 			<input
 				id="bc-title"
 				type="text"
 				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g. Platform Maintenance Notice"
+				placeholder={t('broadcasts.placeholder_title', 'e.g. Platform Maintenance Notice')}
 				bind:value={newBroadcast.title}
 			/>
 		</div>
 		<div>
-			<label for="bc-body" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.message')}</label>
+			<label for="bc-body" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.message_label', 'Message')}</label>
 			<textarea
 				id="bc-body"
 				class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 				rows="5"
-				placeholder="Write your broadcast message..."
+				placeholder={t('broadcasts.placeholder_message', 'Write your broadcast message...')}
 				bind:value={newBroadcast.body}
 			></textarea>
 		</div>
 		<div>
-			<label for="bc-audience" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.target_audience')}</label>
+			<label for="bc-audience" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.target_audience_label', 'Target Audience')}</label>
 			<Select options={audienceOptions} bind:value={newBroadcast.target_audience} />
 		</div>
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('broadcasts.cancel')}</Button>
+			<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('broadcasts.cancel', 'Cancel')}</Button>
 			{#if canManage}<Button onclick={createBroadcast} disabled={creating || !newBroadcast.title.trim() || !newBroadcast.body.trim()}>
-				{#if creating}
-					Creating...
-				{:else}
-					Create Broadcast
+			{#if creating}
+				{t('broadcasts.creating', 'Creating...')}
+			{:else}
+				{t('broadcasts.create_broadcast', 'Create Broadcast')}
 				{/if}
 			</Button>{/if}
 		</div>
@@ -302,29 +323,29 @@
 </Modal>
 
 <!-- Send Confirmation Modal -->
-<Modal bind:open={showSendModal} title="Send Broadcast" description="This message will be sent immediately to the target audience." size="sm">
+<Modal bind:open={showSendModal} title={t('broadcasts.send_broadcast', 'Send Broadcast')} description={t('broadcasts.send_immediately_warning', 'This message will be sent immediately to the target audience.')} size="sm">
 	{#if sendTarget}
 		<div class="rounded-lg bg-surface p-4">
 			<p class="text-sm font-medium text-foreground">{sendTarget.title}</p>
-			<p class="mt-1 text-sm text-muted">Audience: {sendTarget.target_audience === "all" ? "All Users" : sendTarget.target_audience === "active" ? "Active Users" : "Premium Users"}</p>
+			<p class="mt-1 text-sm text-muted">{t('broadcasts.audience_prefix', 'Audience')}: {sendTarget.target_audience === "all" ? t('broadcasts.all_users', 'All Users') : sendTarget.target_audience === "active" ? t('broadcasts.active_users', 'Active Users') : t('broadcasts.premium_users', 'Premium Users')}</p>
 		</div>
 	{/if}
 	<div class="flex justify-end gap-3 pt-4">
-		<Button variant="outline" onclick={() => (showSendModal = false)}>{t('broadcasts.cancel')}</Button>
+		<Button variant="outline" onclick={() => (showSendModal = false)}>{t('broadcasts.cancel', 'Cancel')}</Button>
 		{#if canManage}<Button onclick={sendBroadcast} disabled={sending}>
 		{#if sending}
 			<Send class="h-4 w-4 mr-2 animate-spin" />
-			Sending...
+			{t('broadcasts.sending', 'Sending...')}
 		{:else}
 				<Send class="h-4 w-4 mr-2" />
-				Send Now
+				{t('broadcasts.send_now', 'Send Now')}
 			{/if}
 		</Button>{/if}
 	</div>
 </Modal>
 
 <!-- View Broadcast Modal -->
-<Modal bind:open={showViewModal} title="Broadcast Details" size="lg">
+<Modal bind:open={showViewModal} title={t('broadcasts.broadcast_details', 'Broadcast Details')} size="lg">
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
