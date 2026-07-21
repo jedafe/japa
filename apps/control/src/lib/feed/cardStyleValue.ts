@@ -17,8 +17,17 @@ export function parseCardStyleValue(raw: string): ParsedCardStyle {
 		return fallback;
 	}
 
+	// Every settings value is stored as a JSON string, so an object saved from
+	// this editor comes back double-encoded: a JSON string whose content is
+	// object JSON. A bare style scalar stays a scalar; anything else gets one
+	// more parse to reach the {default, by_type} object.
 	if (typeof v === 'string') {
-		return { default: STYLES.includes(v) ? v : 'reddit', byType: {} };
+		if (STYLES.includes(v)) return { default: v, byType: {} };
+		try {
+			v = JSON.parse(v);
+		} catch {
+			return fallback;
+		}
 	}
 	if (v && typeof v === 'object') {
 		const o = v as { default?: unknown; by_type?: unknown };
