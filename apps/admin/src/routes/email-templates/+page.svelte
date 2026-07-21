@@ -24,6 +24,7 @@
 	let loading = $state(true);
 	let error = $state("");
 	let success = $state("");
+	let searchQuery = $state("");
 
 	// View/Edit modal
 	let showViewModal = $state(false);
@@ -62,7 +63,12 @@
 		try {
 			const result = await emailTemplatesAdminApi.list();
 			if (result.ok) {
-				templates = (result.data as EmailTemplate[]) ?? [];
+				let items = (result.data as EmailTemplate[]) ?? [];
+				if (searchQuery) {
+					const q = searchQuery.toLowerCase();
+					items = items.filter(t => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q) || t.subject.toLowerCase().includes(q));
+				}
+				templates = items;
 			} else {
 				error = result.error ?? t("common.error", "Failed to load email templates");
 			}
@@ -81,7 +87,7 @@
 		try {
 			const result = await emailTemplatesAdminApi.get(id);
 			if (result.ok && result.data) {
-				const data = result.data as any;
+				const data = result.data as { subject?: string; html_body?: string; plain_text_body?: string };
 				editSubject = data.subject ?? template.subject;
 				editBody = data.html_body ?? data.plain_text_body ?? "";
 			}
@@ -183,7 +189,7 @@
 				{t("email_templates.empty", "No email templates found")}
 			</div>
 		{:else}
-			<DataTable {columns} data={templates} pageSize={10} />
+			<DataTable {columns} data={templates} pageSize={10} searchable onsearch={(q) => { searchQuery = q; loadTemplates(); }} />
 		{/if}
 	</CardContent>
 </Card>

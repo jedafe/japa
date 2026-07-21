@@ -2,6 +2,7 @@
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Select } from "$lib/components/ui/select";
@@ -51,14 +52,59 @@
 	let ipBlocks = $state<IpBlock[]>([]);
 	let showIpModal = $state(false);
 	let ipForm = $state({ cidr: "", block_type: "permanent", reason: "", expires_at: "" });
+	let ipSearch = $state("");
 
 	// Censored Words
 	let censoredWords = $state<CensoredWord[]>([]);
 	let showCwModal = $state(false);
 	let cwForm = $state({ pattern: "", action: "block", replacement: "" });
+	let cwSearch = $state("");
 
 	// User Blocks
 	let userBlocks = $state<UserBlock[]>([]);
+	let ubSearch = $state("");
+
+	const ipBlockFilterDefs = [
+		{
+			key: "block_type",
+			label: t("spam.block_type", "Block Type"),
+			options: [
+				{ value: "permanent", label: t("spam.permanent", "Permanent") },
+				{ value: "temporary", label: t("spam.temporary", "Temporary") }
+			]
+		}
+	];
+	const cwFilterDefs = [
+		{
+			key: "action",
+			label: t("spam.action", "Action"),
+			options: [
+				{ value: "block", label: t("spam.action_block", "Block") },
+				{ value: "replace", label: t("spam.action_replace", "Replace") },
+				{ value: "flag", label: t("spam.action_flag", "Flag") }
+			]
+		}
+	];
+
+	let ipFilterValues = $state<Record<string, string>>({});
+	let cwFilterValues = $state<Record<string, string>>({});
+
+	function handleIpSearch(values: Record<string, string>) {
+		ipFilterValues = values;
+		loadIpBlocks();
+	}
+	function handleIpClear() {
+		ipFilterValues = {};
+		loadIpBlocks();
+	}
+	function handleCwSearch(values: Record<string, string>) {
+		cwFilterValues = values;
+		loadCensoredWords();
+	}
+	function handleCwClear() {
+		cwFilterValues = {};
+		loadCensoredWords();
+	}
 
 	// Delete confirmation
 	let showDeleteConfirm = $state(false);
@@ -97,9 +143,16 @@
 		loading = true;
 		error = "";
 		try {
-			const result = await spamApi.getIpBlocks();
+			const params = new URLSearchParams();
+			if (ipFilterValues.block_type) params.set("block_type", ipFilterValues.block_type);
+			const result = await spamApi.getIpBlocks(params.toString() || undefined);
 			if (result.ok) {
-				ipBlocks = (result.data as IpBlock[]) ?? [];
+				let items = (result.data as IpBlock[]) ?? [];
+				if (ipSearch) {
+					const q = ipSearch.toLowerCase();
+					items = items.filter((b: any) => b.cidr?.toLowerCase().includes(q) || b.reason?.toLowerCase().includes(q));
+				}
+				ipBlocks = items;
 			} else {
 				error = result.error ?? t("common.error", "Failed to load IP blocks");
 			}
@@ -114,9 +167,16 @@
 		loading = true;
 		error = "";
 		try {
-			const result = await spamApi.getCensoredWords();
+			const params = new URLSearchParams();
+			if (cwFilterValues.action) params.set("action", cwFilterValues.action);
+			const result = await spamApi.getCensoredWords(params.toString() || undefined);
 			if (result.ok) {
-				censoredWords = (result.data as CensoredWord[]) ?? [];
+				let items = (result.data as CensoredWord[]) ?? [];
+				if (cwSearch) {
+					const q = cwSearch.toLowerCase();
+					items = items.filter((w: any) => w.pattern?.toLowerCase().includes(q) || w.action?.toLowerCase().includes(q));
+				}
+				censoredWords = items;
 			} else {
 				error = result.error ?? t("common.error", "Failed to load censored words");
 			}
@@ -133,7 +193,12 @@
 		try {
 			const result = await spamApi.getUserBlocks();
 			if (result.ok) {
-				userBlocks = (result.data as UserBlock[]) ?? [];
+				let items = (result.data as UserBlock[]) ?? [];
+				if (ubSearch) {
+					const q = ubSearch.toLowerCase();
+					items = items.filter((b: any) => b.username?.toLowerCase().includes(q) || b.reason?.toLowerCase().includes(q));
+				}
+				userBlocks = items;
 			} else {
 				error = result.error ?? t("common.error", "Failed to load user blocks");
 			}
@@ -274,11 +339,14 @@
 		{/if}
 	</div>
 	<Card>
+		<CardHeader>
+			<FilterBar filters={ipBlockFilterDefs} onsearch={handleIpSearch} onclear={handleIpClear} />
+		</CardHeader>
 		<CardContent>
 			{#if loading}
 				<TableSkeleton rows={5} columns={ipColumns.length} />
 			{:else}
-				<DataTable columns={ipColumns} data={ipBlocks} pageSize={10} />
+				<DataTable columns={ipColumns} data={ipBlocks} pageSize={10} searchable onsearch={(q) => { ipSearch = q; loadIpBlocks(); }} />
 			{/if}
 		</CardContent>
 	</Card>
@@ -295,11 +363,14 @@
 		{/if}
 	</div>
 	<Card>
+		<CardHeader>
+			<FilterBar filters={cwFilterDefs} onsearch={handleCwSearch} onclear={handleCwClear} />
+		</CardHeader>
 		<CardContent>
 			{#if loading}
 				<TableSkeleton rows={5} columns={cwColumns.length} />
 			{:else}
-				<DataTable columns={cwColumns} data={censoredWords} pageSize={10} />
+				<DataTable columns={cwColumns} data={censoredWords} pageSize={10} searchable onsearch={(q) => { cwSearch = q; loadCensoredWords(); }} />
 			{/if}
 		</CardContent>
 	</Card>
@@ -312,7 +383,7 @@
 			{#if loading}
 				<TableSkeleton rows={5} columns={ubColumns.length} />
 			{:else}
-				<DataTable columns={ubColumns} data={userBlocks} pageSize={10} />
+				<DataTable columns={ubColumns} data={userBlocks} pageSize={10} searchable onsearch={(q) => { ubSearch = q; loadUserBlocks(); }} />
 			{/if}
 		</CardContent>
 	</Card>

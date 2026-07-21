@@ -4,6 +4,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
 
 	type FieldDef = {
 		id: string;
@@ -39,13 +40,44 @@
 	let errorMessage = $state('');
 	let saveMsg = $state('');
 
-	// Edit form metadata
+	let searchQuery = $state('');
+
 	let editName = $state('');
 	let editDescription = $state('');
 	let saving = $state(false);
 
-	// Delete
 	let showDelete = $state(false);
+
+	const submissionColumns = $derived([
+		{ key: 'created_at', label: t('space_forms.submitted'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+		...(form?.fields ?? []).map((field: FieldDef) => ({
+			key: `field_${field.label}`,
+			label: field.label,
+			sortable: false,
+			class: 'text-xs',
+			render: (_v: unknown, row: Submission) => formatFieldValue(row.data[field.label])
+		}))
+	]);
+
+	function getSubmissionData(sub: Submission): Record<string, unknown> {
+		const row: Record<string, unknown> = { id: sub.id, created_at: sub.created_at, submitter_id: sub.submitter_id };
+		for (const field of (form?.fields ?? [])) {
+			row[`field_${field.label}`] = sub.data[field.label];
+		}
+		return row;
+	}
+
+	function filteredSubmissions(): Record<string, unknown>[] {
+		const q = searchQuery.toLowerCase().trim();
+		const rows = submissions.map(getSubmissionData);
+		if (!q) return rows;
+		return rows.filter(r => {
+			return Object.values(r).some(v => {
+				if (v === null || v === undefined) return false;
+				return String(v).toLowerCase().includes(q);
+			});
+		});
+	}
 
 	async function load() {
 		loading = true;
@@ -71,7 +103,6 @@
 				submissions = result.data;
 			}
 		} catch {
-			// API not available
 		}
 	}
 
@@ -170,7 +201,6 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else if activeTab === 'edit'}
-	<!-- Edit Form Definition -->
 	<div class="space-y-6">
 		<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
 			<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.details')}</h2>
@@ -211,7 +241,6 @@
 			</div>
 		</div>
 
-		<!-- Field list (read-only display) -->
 		<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
 			<h2 class="mb-4 text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.fields')}</h2>
 			{#if form?.fields && form.fields.length > 0}
@@ -237,34 +266,20 @@
 		</div>
 	</div>
 {:else}
-	<!-- Submissions -->
 	{#if submissions.length === 0}
 		<div class="rounded-lg border p-8 text-center" style="border-color: var(--color-border); background-color: var(--color-surface)">
 			<p class="text-sm" style="color: var(--color-muted)">{t('space_forms.no_submissions')}</p>
 		</div>
 	{:else}
-		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-			<table class="w-full text-sm">
-				<thead>
-					<tr style="border-color: var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('space_forms.submitted')}</th>
-						{#each form?.fields ?? [] as field}
-							<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{field.label}</th>
-						{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each submissions as sub}
-						<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{sub.created_at}</td>
-							{#each form?.fields ?? [] as field}
-								<td class="px-4 py-3 text-xs">{formatFieldValue(sub.data[field.label])}</td>
-							{/each}
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
+		<DataTable
+			columns={submissionColumns}
+			data={filteredSubmissions()}
+			pageSize={25}
+			emptyMessage={t('space_forms.no_submissions')}
+			searchable
+			searchPlaceholder={t('common.search')}
+			onsearch={(q) => { searchQuery = q; }}
+		/>
 	{/if}
 {/if}
 

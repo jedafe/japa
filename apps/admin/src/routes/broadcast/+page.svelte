@@ -7,6 +7,7 @@
 	import { Select } from '$lib/components/ui/select';
 	import Modal from '$lib/components/Modal.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { DataTable } from '$lib/components/ui/data-table';
 
 	type Broadcast = {
 		id: string;
@@ -21,8 +22,8 @@
 	let broadcasts = $state<Broadcast[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+	let searchQuery = $state('');
 
-	// Send form
 	let title = $state('');
 	let message = $state('');
 	let targetScope = $state('all');
@@ -35,9 +36,40 @@
 		{ value: 'all', label: t('broadcast.audiences.all') }
 	]);
 
-	// Delete confirmation
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<Broadcast | null>(null);
+
+	const columns = [
+		{
+			key: 'title',
+			label: t('broadcast.title_label'),
+			sortable: true,
+			render: (_: any, row: Broadcast) => `<span class="font-medium">${row.title}</span>`
+		},
+		{
+			key: 'sent_by',
+			label: t('broadcast.sent_by'),
+			sortable: true,
+			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+		},
+		{
+			key: 'recipient_count',
+			label: t('broadcast.recipients'),
+			sortable: true
+		},
+		{
+			key: 'sent_at',
+			label: t('broadcast.sent_at'),
+			sortable: true,
+			render: (v: string) => new Date(v).toLocaleDateString()
+		},
+		{
+			key: 'actions',
+			label: t('common.actions'),
+			class: 'w-24',
+			component: BroadcastActionsCell
+		}
+	];
 
 	$effect(() => {
 		(async () => {
@@ -119,6 +151,14 @@
 		}
 	}
 </script>
+
+{#snippet BroadcastActionsCell(row: Broadcast)}
+	{#if canManage}
+		<Button variant="ghost" size="sm" onclick={(e: MouseEvent) => { e.stopPropagation(); confirmDelete(row); }} style="color: var(--color-danger)">
+			{t('common.delete')}
+		</Button>
+	{/if}
+{/snippet}
 
 <svelte:head>
 	<title>Broadcast — JapaConnect Admin</title>
@@ -214,40 +254,7 @@
 	{#if loading}
 		<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 	{:else}
-		<div class="rounded-lg border" style="border-color: var(--color-border)">
-			<table class="w-full text-sm">
-				<thead>
-					<tr style="border-bottom: 1px solid var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium">{t('broadcast.title_label')}</th>
-						<th class="px-4 py-3 text-left font-medium">{t('broadcast.sent_by')}</th>
-						<th class="px-4 py-3 text-left font-medium">{t('broadcast.recipients')}</th>
-						<th class="px-4 py-3 text-left font-medium">{t('broadcast.sent_at')}</th>
-						<th class="px-4 py-3 text-right font-medium">{t('common.actions')}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each broadcasts as bc (bc.id)}
-						<tr style="border-bottom: 1px solid var(--color-border)">
-							<td class="px-4 py-3 font-medium">{bc.title}</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{bc.sent_by}</td>
-							<td class="px-4 py-3">{bc.recipient_count}</td>
-							<td class="px-4 py-3">{new Date(bc.sent_at).toLocaleDateString()}</td>
-							<td class="px-4 py-3 text-right">
-								{#if canManage}<Button variant="ghost" size="sm" onclick={() => confirmDelete(bc)} style="color: var(--color-danger)">
-									{t('common.delete')}
-								</Button>{/if}
-							</td>
-						</tr>
-					{:else}
-						<tr>
-							<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-								{t('broadcast.no_broadcasts')}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
+		<DataTable {columns} data={broadcasts} pageSize={25} searchable emptyMessage={t('broadcast.no_broadcasts')} />
 	{/if}
 {/if}
 

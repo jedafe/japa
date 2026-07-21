@@ -67,6 +67,11 @@
 	let deleteTarget = $state<Subscriber | null>(null);
 	let deleting = $state(false);
 
+	// Bulk delete state
+	let selectedSubscriberIds = $state<Set<string>>(new Set());
+	let selectedCampaignIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
+
 	// Subscriber view/edit + campaign view modals
 	let showSubscriberModal = $state(false);
 	let subscriberTarget = $state<Subscriber | null>(null);
@@ -75,15 +80,15 @@
 	let campaignTarget = $state<Campaign | null>(null);
 
 	const tabs = [
-		{ value: "subscribers", label: "Subscribers", icon: Users, count: stats.subscribers },
-		{ value: "campaigns", label: "Campaigns", icon: Mail, count: stats.campaigns },
-		{ value: "analytics", label: "Analytics", icon: BarChart3 }
+		{ value: "subscribers", label: t('app.newsletter.tab_subscribers', 'Subscribers'), icon: Users, count: stats.subscribers },
+		{ value: "campaigns", label: t('app.newsletter.tab_campaigns', 'Campaigns'), icon: Mail, count: stats.campaigns },
+		{ value: "analytics", label: t('app.newsletter.tab_analytics', 'Analytics'), icon: BarChart3 }
 	];
 
 	const subscriberColumns = [
 		{
 			key: "email",
-			label: "Email",
+			label: t('app.newsletter.col_email', 'Email'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div class="flex items-center gap-3">
@@ -99,7 +104,7 @@
 		},
 		{
 			key: "status",
-			label: "Status",
+			label: t('app.newsletter.col_status', 'Status'),
 			sortable: true,
 			render: (value: string) => {
 				const variant = value === "active" ? "success" : value === "bounced" ? "destructive" : "secondary";
@@ -108,7 +113,7 @@
 		},
 		{
 			key: "subscribedAt",
-			label: "Subscribed",
+			label: t('app.newsletter.col_subscribed', 'Subscribed'),
 			sortable: true,
 			render: (value: string, row: any) => new Date(value || row.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
 		},
@@ -123,7 +128,7 @@
 	const campaignColumns = [
 		{
 			key: "subject",
-			label: "Subject",
+			label: t('app.newsletter.col_subject', 'Subject'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
@@ -134,7 +139,7 @@
 		},
 		{
 			key: "status",
-			label: "Status",
+			label: t('app.newsletter.col_status', 'Status'),
 			sortable: true,
 			render: (value: string) => {
 				const variant = value === "sent" ? "success" : value === "scheduled" ? "info" : value === "failed" ? "destructive" : "secondary";
@@ -149,7 +154,7 @@
 		},
 		{
 			key: "sentAt",
-			label: "Sent",
+			label: t('app.newsletter.col_sent', 'Sent'),
 			sortable: true,
 			render: (value: string, row: any) => {
 				const date = value || row.sent_at;
@@ -158,7 +163,7 @@
 		},
 		{
 			key: "openRate",
-			label: "Open Rate",
+			label: t('app.newsletter.col_open_rate', 'Open Rate'),
 			sortable: true,
 			render: (value: number, row: any) => {
 				const rate = value ?? row.open_rate ?? 0;
@@ -298,6 +303,22 @@
 		showDeleteModal = true;
 	}
 
+	async function bulkDeleteCampaigns() {
+		if (selectedCampaignIds.size === 0) return;
+		bulkDeleting = true;
+		try {
+			for (const id of selectedCampaignIds) {
+				await api(`/admin/newsletter/campaigns/${id}`, { method: 'DELETE' });
+			}
+			selectedCampaignIds = new Set();
+			loadCampaigns();
+		} catch {
+			// API not available
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
 	let initialized = false;
 	$effect(() => {
 		if (!initialized) {
@@ -308,15 +329,15 @@
 </script>
 
 <svelte:head>
-	<title>Newsletter — JapaConnect Admin</title>
+	<title>{t('app.newsletter.page_title', 'Newsletter')} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
-	title="Newsletter"
-	description="Manage email subscribers and campaigns"
+	title={t('app.newsletter.title', 'Newsletter')}
+	description={t('app.newsletter.description', 'Manage email subscribers and campaigns')}
 	actions={canManageNewsletter ? [
-		{ label: "New Campaign", icon: Plus, onclick: () => (showCreateModal = true) },
-		{ label: "Import Subscribers", icon: Users, variant: "outline" }
+		{ label: t('app.newsletter.btn_new_campaign', 'New Campaign'), icon: Plus, onclick: () => (showCreateModal = true) },
+		{ label: t('app.newsletter.btn_import_subscribers', 'Import Subscribers'), icon: Users, variant: "outline" }
 	] : []}
 />
 
@@ -329,11 +350,11 @@
 			filters={[
 				{
 					key: "status",
-					label: "Status",
+					label: t('app.newsletter.filter_status', 'Status'),
 					options: [
-						{ value: "active", label: "Active" },
-						{ value: "unsubscribed", label: "Unsubscribed" },
-						{ value: "bounced", label: "Bounced" }
+						{ value: "active", label: t('app.newsletter.status_active', 'Active') },
+						{ value: "unsubscribed", label: t('app.newsletter.status_unsubscribed', 'Unsubscribed') },
+						{ value: "bounced", label: t('app.newsletter.status_bounced', 'Bounced') }
 					]
 				}
 			]}
@@ -351,7 +372,8 @@
 						data={subscribers}
 						pageSize={20}
 						selectable={canManageNewsletter}
-						emptyMessage="No subscribers yet"
+						bind:selectedIds={selectedSubscriberIds}
+						emptyMessage={t('app.newsletter.empty_subscribers', 'No subscribers yet')}
 					/>
 				{/if}
 			</CardContent>
@@ -368,8 +390,19 @@
 						columns={campaignColumns}
 						data={campaigns}
 						pageSize={10}
-						emptyMessage="No campaigns yet"
-					/>
+						selectable={canManageNewsletter}
+						bind:selectedIds={selectedCampaignIds}
+						emptyMessage={t('app.newsletter.empty_campaigns', 'No campaigns yet')}
+					>
+						{#snippet bulkActions()}
+							{#if selectedCampaignIds.size > 0 && canManageNewsletter}
+								<Button variant="destructive" size="sm" onclick={bulkDeleteCampaigns} disabled={bulkDeleting}>
+									<Trash2 class="mr-1 h-3.5 w-3.5" />
+									{t('app.newsletter.btn_delete_selected', 'Delete Selected')} ({selectedCampaignIds.size})
+								</Button>
+							{/if}
+						{/snippet}
+					</DataTable>
 				{/if}
 			</CardContent>
 		</Card>
@@ -411,7 +444,7 @@
 </div>
 
 <!-- Create Campaign Modal -->
-<Modal bind:open={showCreateModal} title="Create Campaign" description="Compose a new newsletter campaign" size="lg">
+<Modal bind:open={showCreateModal} title={t('app.newsletter.modal_create_campaign', 'Create Campaign')} description={t('app.newsletter.modal_create_campaign_desc', 'Compose a new newsletter campaign')} size="lg">
 	<div class="space-y-4">
 		<div>
 			<label for="campaign-name" class="mb-1 block text-sm font-medium text-foreground">{t('newsletter.campaign_name')}</label>
@@ -419,7 +452,7 @@
 				id="campaign-name"
 				type="text"
 				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="e.g. Weekly Digest #42"
+				placeholder={t('app.newsletter.placeholder_campaign_name', 'e.g. Weekly Digest #42')}
 				bind:value={newCampaign.name}
 			/>
 		</div>
@@ -429,7 +462,7 @@
 				id="campaign-subject"
 				type="text"
 				class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-				placeholder="What subscribers will see in their inbox"
+				placeholder={t('app.newsletter.placeholder_subject', 'What subscribers will see in their inbox')}
 				bind:value={newCampaign.subject}
 			/>
 		</div>
@@ -447,9 +480,9 @@
 			<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('newsletter.cancel')}</Button>
 			<Button onclick={createCampaign} disabled={creating || !newCampaign.name || !newCampaign.subject}>
 				{#if creating}
-					Creating...
+					{t('app.newsletter.creating', 'Creating...')}
 				{:else}
-					Create Campaign
+					{t('app.newsletter.btn_create_campaign', 'Create Campaign')}
 				{/if}
 			</Button>
 		</div>
@@ -457,11 +490,11 @@
 </Modal>
 
 <!-- Delete Subscriber Confirmation Modal -->
-<Modal bind:open={showDeleteModal} title="Remove Subscriber" description="This subscriber will be removed from your mailing list." size="sm">
+<Modal bind:open={showDeleteModal} title={t('app.newsletter.modal_remove_subscriber', 'Remove Subscriber')} description={t('app.newsletter.modal_remove_subscriber_desc', 'This subscriber will be removed from your mailing list.')} size="sm">
 	{#if deleteTarget}
 		<div class="rounded-lg bg-surface p-4">
 			<p class="text-sm text-foreground-alt">
-				Are you sure you want to remove <strong>{deleteTarget.email}</strong>?
+				{t('app.newsletter.confirm_remove_prefix', 'Are you sure you want to remove')} <strong>{deleteTarget.email}</strong>?
 			</p>
 		</div>
 	{/if}
@@ -469,16 +502,16 @@
 		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('newsletter.cancel')}</Button>
 		<Button variant="destructive" onclick={deleteSubscriber} disabled={deleting}>
 			{#if deleting}
-				Removing...
+				{t('app.newsletter.removing', 'Removing...')}
 			{:else}
-				Remove
+				{t('app.newsletter.btn_remove', 'Remove')}
 			{/if}
 		</Button>
 	</div>
 </Modal>
 
 <!-- Edit Subscriber Modal -->
-<Modal bind:open={showSubscriberModal} title="Edit Subscriber" size="sm">
+<Modal bind:open={showSubscriberModal} title={t('app.newsletter.modal_edit_subscriber', 'Edit Subscriber')} size="sm">
 	{#if subscriberTarget}
 		<div class="space-y-4">
 			<div>
@@ -488,9 +521,9 @@
 				<label for="sub-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.status', 'Status')}</label>
 				<Select
 					options={[
-						{ value: "active", label: "Active" },
-						{ value: "unsubscribed", label: "Unsubscribed" },
-						{ value: "bounced", label: "Bounced" }
+						{ value: "active", label: t('app.newsletter.status_active', 'Active') },
+						{ value: "unsubscribed", label: t('app.newsletter.status_unsubscribed', 'Unsubscribed') },
+						{ value: "bounced", label: t('app.newsletter.status_bounced', 'Bounced') }
 					]}
 					value={editSubscriberStatus}
 					onchange={(val) => (editSubscriberStatus = val)}
@@ -505,7 +538,7 @@
 </Modal>
 
 <!-- View Campaign Modal -->
-<Modal bind:open={showCampaignModal} title="Campaign Details" size="lg">
+<Modal bind:open={showCampaignModal} title={t('app.newsletter.modal_campaign_details', 'Campaign Details')} size="lg">
 	{#if campaignTarget}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">

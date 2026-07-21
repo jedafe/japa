@@ -1,6 +1,6 @@
 ---
 name: jc-main-refactor
-description: Use when updating, modernizing, or refactoring existing JapaConnect Main App code (apps/web). Migrates Svelte 4 to Svelte 5 Runes, adopts Bits UI primitives, migrates legacy layouts to the unified app shell (ADR-058), converts charts to LayerChart 2.0.1, removes hardcoded data per Rule 16.
+description: Use when updating, modernizing, or refactoring existing JapaConnect Main App code (apps/web). Migrates Svelte 4 to Svelte 5 Runes, adopts Bits UI primitives, migrates legacy layouts to the unified app shell (ADR-058), consolidates the profile learning hub and cross-app links (ADR-060), converts charts to LayerChart 2.0.1, removes hardcoded data per Rule 16.Use when updating, modernizing, or refactoring existing JapaConnect Main App code (apps/web). Migrates Svelte 4 to Svelte 5 Runes, adopts Bits UI primitives, migrates legacy layouts to the unified app shell (ADR-058), converts charts to LayerChart 2.0.1, removes hardcoded data per Rule 16.
 ---
 
 # JapaConnect Main App — Updating & Refactoring Skill
@@ -49,7 +49,13 @@ Migrate pre-shell layouts to the single three-column shell:
 ## 4. Rule 16 — Hardcoded Data Removal
 Replace static arrays (nav, countries, tags, groups, post types, chart datasets) with API fetches. Verify the endpoint exists first (Gate 0).
 
-## 5. Standard Patterns
+## 5b. Profile Learning Hub & Cross-App (ADR-060)
+- Replace hardcoded certificate/enrollment/knowledge-base lists with `GET /api/v1/me/certificates`, `GET /api/v1/me/enrollments`, and the bookmark routes (no new backend needed).
+- Extract any Learn/Docs surface re-implemented in this app (lesson player, curriculum rail, docs nav tree) — replace with an absolute deep link to `learn.japaconnect.com` / `docs.japaconnect.com`; those apps own those surfaces.
+- Consolidate scattered learning links into the dashboard hub tabs: `/dashboard/learning`, `/dashboard/certificates`, `/dashboard/knowledge-base`.
+- Point certificate cards at the public shareable page `/certificates/:id`; add earned-certificate badges to the public profile.
+
+## 6. Standard Patterns
 - Skeletons: `{#if loading}<Skeleton/>{:else if error}<ErrorState/>{:else if empty}<EmptyState/>{:else}...{/if}` — skeleton shape matches real content
 - Optimistic UI with rollback for reactions/bookmarks/follows
 - Tailwind v4: remove `@apply`, `theme()`, `dark:` variant

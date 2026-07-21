@@ -98,15 +98,15 @@
     showDeleteModal = true;
   }
 
-  const tabs = [
-    { value: "all", label: "All Media" },
-    { value: "quarantined", label: "Quarantined", icon: Shield }
-  ];
+  const tabs = $derived([
+    { value: "all", label: t('app.media.tab_all', 'All Media') },
+    { value: "quarantined", label: t('app.media.tab_quarantined', 'Quarantined'), icon: Shield }
+  ]);
 
   const columns = [
     {
       key: "filename",
-      label: "File",
+      label: t('app.media.col_file', 'File'),
       sortable: true,
       render: (_: any, row: any) => `
         <div class="flex items-center gap-3">
@@ -120,20 +120,20 @@
     },
     {
       key: "mime_type",
-      label: "Type",
+      label: t('app.media.col_type', 'Type'),
       sortable: true,
       render: (value: string) =>
         `<span class="inline-flex items-center rounded-full bg-surface px-2.5 py-0.5 text-xs font-medium text-foreground">${value || "unknown"}</span>`
     },
     {
       key: "file_size",
-      label: "Size",
+      label: t('app.media.col_size', 'Size'),
       sortable: true,
       render: (value: number) => formatFileSize(value)
     },
     {
       key: "status",
-      label: "Status",
+      label: t('app.media.col_status', 'Status'),
       sortable: true,
       render: (value: string) => {
         const variants: Record<string, string> = {
@@ -147,7 +147,7 @@
     },
     {
       key: "created_at",
-      label: "Uploaded",
+      label: t('app.media.col_uploaded', 'Uploaded'),
       sortable: true,
       render: (value: string) =>
         new Date(value).toLocaleDateString("en-US", {
@@ -231,7 +231,7 @@
         errorMessage = result.error;
       }
     } catch {
-      errorMessage = "Failed to load media";
+      errorMessage = t('app.media.err_load', 'Failed to load media');
     } finally {
       loading = false;
     }
@@ -256,7 +256,7 @@
         errorMessage = result.error;
       }
     } catch {
-      errorMessage = "Failed to delete media";
+      errorMessage = t('app.media.err_delete', 'Failed to delete media');
     }
   }
 
@@ -271,7 +271,7 @@
       selectedIds = new Set();
       await load();
     } catch {
-      errorMessage = "Failed to delete selected media";
+      errorMessage = t('app.media.err_bulk_delete', 'Failed to delete selected media');
     } finally {
       bulkDeleting = false;
     }
@@ -283,13 +283,13 @@
 </script>
 
 <svelte:head>
-  <title>Media Library — JapaConnect Admin</title>
+  <title>{t('app.media.page_title', 'Media Library')} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
-  title="Media Library"
-  description="Manage uploaded files and media"
-  actions={[{ label: "Upload", icon: Upload, href: "/media/upload" }]}
+  title={t('app.media.page_title', 'Media Library')}
+  description={t('app.media.page_desc', 'Manage uploaded files and media')}
+  actions={[{ label: t('app.media.action_upload', 'Upload'), icon: Upload, href: "/media/upload" }]}
 />
 
 <div class="space-y-6">
@@ -322,22 +322,22 @@
     filters={[
       {
         key: "status",
-        label: "Status",
+        label: t('app.media.filter_status', 'Status'),
         options: [
-          { value: "approved", label: "Approved" },
-          { value: "pending", label: "Pending" },
-          { value: "quarantined", label: "Quarantined" },
-          { value: "rejected", label: "Rejected" }
+          { value: "approved", label: t('app.media.status_approved', 'Approved') },
+          { value: "pending", label: t('app.media.status_pending', 'Pending') },
+          { value: "quarantined", label: t('app.media.status_quarantined', 'Quarantined') },
+          { value: "rejected", label: t('app.media.status_rejected', 'Rejected') }
         ]
       },
       {
         key: "mime_type",
-        label: "File Type",
+        label: t('app.media.filter_file_type', 'File Type'),
         options: [
-          { value: "image/", label: "Images" },
-          { value: "video/", label: "Videos" },
-          { value: "audio/", label: "Audio" },
-          { value: "application/", label: "Documents" }
+          { value: "image/", label: t('app.media.type_images', 'Images') },
+          { value: "video/", label: t('app.media.type_videos', 'Videos') },
+          { value: "audio/", label: t('app.media.type_audio', 'Audio') },
+          { value: "application/", label: t('app.media.type_documents', 'Documents') }
         ]
       }
     ]}
@@ -379,7 +379,7 @@
         </Card>
       {:else}
         <div class="col-span-full py-12 text-center text-muted">
-          No media files found
+          {t('app.media.empty_grid', 'No media files found')}
         </div>
       {/each}
     </div>
@@ -392,12 +392,12 @@
           pageSize={20}
           selectable={true}
           bind:selectedIds
-          emptyMessage="No media files found"
+          emptyMessage={t('app.media.empty_table', 'No media files found')}
         >
           {#snippet bulkActions()}
             <Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
               <Trash2 class="mr-1 h-3.5 w-3.5" />
-              {bulkDeleting ? "Deleting..." : `Delete Selected (${selectedIds.size})`}
+            {bulkDeleting ? t('app.media.deleting', 'Deleting...') : `${t('app.media.delete_selected', 'Delete Selected')} (${selectedIds.size})`}
             </Button>
           {/snippet}
         </DataTable>
@@ -407,7 +407,7 @@
 </div>
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title="Media Details" size="lg">
+<Modal bind:open={showViewModal} title={t('app.media.modal_details_title', 'Media Details')} size="lg">
   {#if viewTarget}
     <div class="space-y-4">
       <div class="flex aspect-video items-center justify-center rounded-lg" style="background: var(--color-surface)">
@@ -420,23 +420,23 @@
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Filename</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.field_filename', 'Filename')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.filename}</p>
         </div>
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Type</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.field_type', 'Type')}</p>
           <p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.mime_type}</p>
         </div>
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Size</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.field_size', 'Size')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatFileSize(viewTarget.file_size)}</p>
         </div>
         <div>
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Status</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.field_status', 'Status')}</p>
           <p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
         </div>
         <div class="col-span-2">
-          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Alt Text</p>
+          <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.field_alt_text', 'Alt Text')}</p>
           <p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.alt_text || "—"}</p>
         </div>
       </div>
@@ -448,10 +448,10 @@
 </Modal>
 
 <!-- State Action (Approve/Reject) Confirm -->
-<Modal bind:open={showStateModal} title={stateAction === "approve" ? "Approve Media" : "Reject Media"}>
+<Modal bind:open={showStateModal} title={stateAction === "approve" ? t('app.media.modal_approve_title', 'Approve Media') : t('app.media.modal_reject_title', 'Reject Media')}>
   {#if stateTarget}
     <p class="text-sm" style="color: var(--color-foreground)">
-      {stateAction === "approve" ? "Approve" : "Reject"} <strong>{stateTarget.filename}</strong>?
+      {stateAction === "approve" ? t('app.media.action_approve', 'Approve') : t('app.media.action_reject', 'Reject')} <strong>{stateTarget.filename}</strong>?
     </p>
   {/if}
   <div class="mt-4 flex justify-end gap-2">
@@ -463,10 +463,10 @@
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal bind:open={showDeleteModal} title="Delete Media">
+<Modal bind:open={showDeleteModal} title={t('app.media.modal_delete_title', 'Delete Media')}>
   <div class="space-y-4">
     <p class="text-sm text-foreground-alt">
-      Are you sure you want to delete "{deleteTargetName}"? This action cannot be undone.
+      {t('app.media.delete_confirm', 'Are you sure you want to delete')} "{deleteTargetName}"? {t('app.media.delete_cannot_undo', 'This action cannot be undone.')}
     </p>
     <div class="flex justify-end gap-3">
       <Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('media.cancel')}</Button>

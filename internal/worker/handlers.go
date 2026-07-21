@@ -143,6 +143,24 @@ func requireDB() (*gen.Queries, error) {
 	return gen.New(dbPool.Writer), nil
 }
 
+// resolveBaseURL returns the site base URL for a tenant by checking
+// system_settings first, then falling back to the JC_SITE_URL env var.
+func resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
+	if dbPool == nil {
+		return os.Getenv("JC_SITE_URL")
+	}
+
+	var baseURL string
+	err := dbPool.Reader.QueryRow(ctx,
+		`SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'site.base_url'`,
+		tenantID).Scan(&baseURL)
+	if err == nil && baseURL != "" {
+		return baseURL
+	}
+
+	return os.Getenv("JC_SITE_URL")
+}
+
 // readDB returns a read-only query interface.
 
 // ---------------------------------------------------------------------------
@@ -1584,6 +1602,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 // ---------------------------------------------------------------------------
 
 // HandleDigestEmail sends a digest email summarizing recent activity to a user.
+// When called by the cron scheduler with an empty payload, iterates all active users.
 func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:email:send_digest")
 
@@ -1598,23 +1617,73 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 		Email    string `json:"email"`
 		Period   string `json:"period"` // "daily", "weekly"
 	}
+	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
 
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:email:send_digest: invalid payload", "error", err)
+	// When a specific user is targeted, send only to that user.
+	if payload.UserID != "" && payload.TenantID != "" && payload.Email != "" {
+		return sendDigestToUser(ctx, payload.UserID, payload.TenantID, payload.Email, payload.Period)
+	}
+
+	// Cron mode: iterate all active users with digest enabled.
+	period := payload.Period
+	if period == "" {
+		period = "daily"
+	}
+
+	rows, err := dbPool.Reader.Query(ctx,
+		`SELECT u.id, u.tenant_id, u.email
+		 FROM users u
+		 WHERE u.status = 'active'
+		   AND u.email IS NOT NULL AND u.email != ''
+		   AND u.email_verified_at IS NOT NULL
+		   AND COALESCE(
+		     (SELECT value::bool FROM system_settings ss
+		      WHERE ss.tenant_id = u.tenant_id AND ss.key = 'email.digest_enabled'),
+		     true)
+		 ORDER BY u.id`)
+	if err != nil {
+		slog.Error("task:email:send_digest: list users failed", "error", err)
 		return err
 	}
+	defer rows.Close()
 
-	userID, err := scanUUID(payload.UserID)
-	if err != nil {
-		return fmt.Errorf("task:email:send_digest: %w", err)
+	sentCount := 0
+	for rows.Next() {
+		var userID, tenantID, email string
+		if err := rows.Scan(&userID, &tenantID, &email); err != nil {
+			continue
+		}
+		if err := sendDigestToUser(ctx, userID, tenantID, email, period); err != nil {
+			slog.Error("task:email:send_digest: failed for user", "user_id", userID, "error", err)
+			continue
+		}
+		sentCount++
 	}
 
-	tenantID, err := scanUUID(payload.TenantID)
-	if err != nil {
-		return fmt.Errorf("task:email:send_digest: %w", err)
+	if err := rows.Err(); err != nil {
+		slog.Error("task:email:send_digest: row iteration error", "error", err)
 	}
 
-	// Fetch user's feed items for the digest period.
+	slog.Info("task:email:send_digest: complete", "sent", sentCount)
+	return nil
+}
+
+// sendDigestToUser sends a digest email to a single user.
+func sendDigestToUser(ctx context.Context, userID, tenantID, email, period string) error {
+	if period == "" {
+		period = "daily"
+	}
+
+	uid, err := scanUUID(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user_id: %w", err)
+	}
+
+	tid, err := scanUUID(tenantID)
+	if err != nil {
+		return fmt.Errorf("invalid tenant_id: %w", err)
+	}
+
 	feedItems, err := dbPool.Reader.Query(ctx,
 		`SELECT c.id, c.title, c.slug, c.content_type
 		 FROM feeds f
@@ -1623,17 +1692,15 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 		   AND f.created_at >= now() - INTERVAL '7 days'
 		 ORDER BY f.created_at DESC
 		 LIMIT 20`,
-		userID, tenantID)
+		uid, tid)
 	if err != nil {
-		slog.Error("task:email:send_digest: failed to fetch feed",
-			"user_id", payload.UserID, "error", err)
-		return err
+		return fmt.Errorf("fetching feed: %w", err)
 	}
 	defer feedItems.Close()
 
 	var body strings.Builder
 
-	body.WriteString(fmt.Sprintf("<h2>%s Digest</h2>\n", cases.Title(language.English).String(payload.Period)))
+	body.WriteString(fmt.Sprintf("<h2>%s Digest</h2>\n", cases.Title(language.English).String(period)))
 	body.WriteString("<ul>\n")
 
 	itemCount := 0
@@ -1654,30 +1721,27 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	body.WriteString("</ul>\n")
 
 	if err := feedItems.Err(); err != nil {
-		slog.Error("task:email:send_digest: row iteration error", "error", err)
+		return fmt.Errorf("iterating feed: %w", err)
 	}
 
 	if itemCount == 0 {
-		slog.Info("task:email:send_digest: no items, skipping",
-			"user_id", payload.UserID)
 		return nil
 	}
 
-	if err := sendEmail(payload.Email,
-		fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(payload.Period)),
+	if err := sendEmail(email,
+		fmt.Sprintf("Your %s Digest", cases.Title(language.English).String(period)),
 		body.String(), true); err != nil {
-		slog.Error("task:email:send_digest: email failed",
-			"user_id", payload.UserID, "error", err)
-		return err
+		return fmt.Errorf("sending email: %w", err)
 	}
 
 	slog.Info("task:email:send_digest: sent",
-		"user_id", payload.UserID, "items", itemCount)
+		"user_id", userID, "items", itemCount)
 
 	return nil
 }
 
 // HandleSitemapGenerate regenerates the XML sitemap for the tenant.
+// When called by the cron scheduler with an empty payload, iterates all active tenants.
 func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:sitemap:generate")
 
@@ -1690,18 +1754,53 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 		TenantID string `json:"tenant_id"`
 		BaseURL  string `json:"base_url"`
 	}
+	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
 
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:sitemap:generate: invalid payload", "error", err)
-		return err
+	// Collect tenant IDs: single requested tenant or all active ones.
+	var tenantIDs []pgtype.UUID
+	if payload.TenantID != "" {
+		tid, err := scanUUID(payload.TenantID)
+		if err != nil {
+			return fmt.Errorf("task:sitemap:generate: %w", err)
+		}
+		tenantIDs = []pgtype.UUID{tid}
+	} else {
+		rows, err := dbPool.Reader.Query(ctx, `SELECT id FROM tenants WHERE status = 'active'`)
+		if err != nil {
+			slog.Error("task:sitemap:generate: list tenants failed", "error", err)
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var tid pgtype.UUID
+			if err := rows.Scan(&tid); err != nil {
+				continue
+			}
+			tenantIDs = append(tenantIDs, tid)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
 	}
 
-	tenantID, err := scanUUID(payload.TenantID)
-	if err != nil {
-		return fmt.Errorf("task:sitemap:generate: %w", err)
+	for _, tenantID := range tenantIDs {
+		baseURL := payload.BaseURL
+		if baseURL == "" {
+			baseURL = resolveBaseURL(ctx, tenantID)
+		}
+		if baseURL == "" {
+			slog.Warn("task:sitemap:generate: no base_url, skipping tenant", "tenant_id", tenantID.String())
+			continue
+		}
+
+		generateSitemapForTenant(ctx, tenantID, baseURL)
 	}
 
-	// Generate sitemap XML from published content.
+	return nil
+}
+
+// generateSitemapForTenant generates the sitemap XML for a single tenant.
+func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
 	rows, err := dbPool.Reader.Query(ctx,
 		`SELECT slug, updated_at FROM contents
 		 WHERE tenant_id = $1 AND status = 'published'
@@ -1709,8 +1808,8 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 		 LIMIT 10000`,
 		tenantID)
 	if err != nil {
-		slog.Error("task:sitemap:generate: failed to list content", "error", err)
-		return err
+		slog.Error("task:sitemap:generate: failed to list content", "tenant_id", tenantID.String(), "error", err)
+		return
 	}
 	defer rows.Close()
 
@@ -1730,7 +1829,7 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 		}
 
 		sitemap.WriteString(fmt.Sprintf("  <url>\n    <loc>%s/%s</loc>\n    <lastmod>%s</lastmod>\n  </url>\n",
-			payload.BaseURL, slug,
+			baseURL, slug,
 			updatedAt.Time.Format("2006-01-02")))
 
 		urlCount++
@@ -1739,20 +1838,20 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 	sitemap.WriteString("</urlset>\n")
 
 	if err := rows.Err(); err != nil {
-		return err
+		slog.Error("task:sitemap:generate: row iteration error", "tenant_id", tenantID.String(), "error", err)
+		return
 	}
 
 	if err := os.WriteFile("sitemap.xml", []byte(sitemap.String()), 0o600); err != nil {
-		slog.Error("task:sitemap:generate: failed to write file", "error", err)
-		return err
+		slog.Error("task:sitemap:generate: failed to write file", "tenant_id", tenantID.String(), "error", err)
+		return
 	}
 
-	slog.Info("task:sitemap:generate: sitemap written", "url_count", urlCount)
-
-	return nil
+	slog.Info("task:sitemap:generate: sitemap written", "tenant_id", tenantID.String(), "url_count", urlCount)
 }
 
 // HandleRSSRegenerate regenerates the RSS feed for published content.
+// When called by the cron scheduler with an empty payload, iterates all active tenants.
 func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:rss_regenerate")
 
@@ -1765,18 +1864,53 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 		TenantID string `json:"tenant_id"`
 		BaseURL  string `json:"base_url"`
 	}
+	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
 
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:rss_regenerate: invalid payload", "error", err)
-		return err
+	// Collect tenant IDs: single requested tenant or all active ones.
+	var tenantIDs []pgtype.UUID
+	if payload.TenantID != "" {
+		tid, err := scanUUID(payload.TenantID)
+		if err != nil {
+			return fmt.Errorf("task:rss_regenerate: %w", err)
+		}
+		tenantIDs = []pgtype.UUID{tid}
+	} else {
+		rows, err := dbPool.Reader.Query(ctx, `SELECT id FROM tenants WHERE status = 'active'`)
+		if err != nil {
+			slog.Error("task:rss_regenerate: list tenants failed", "error", err)
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var tid pgtype.UUID
+			if err := rows.Scan(&tid); err != nil {
+				continue
+			}
+			tenantIDs = append(tenantIDs, tid)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
 	}
 
-	tenantID, err := scanUUID(payload.TenantID)
-	if err != nil {
-		return fmt.Errorf("task:rss_regenerate: %w", err)
+	for _, tenantID := range tenantIDs {
+		baseURL := payload.BaseURL
+		if baseURL == "" {
+			baseURL = resolveBaseURL(ctx, tenantID)
+		}
+		if baseURL == "" {
+			slog.Warn("task:rss_regenerate: no base_url, skipping tenant", "tenant_id", tenantID.String())
+			continue
+		}
+
+		generateRSSForTenant(ctx, tenantID, baseURL)
 	}
 
-	// Fetch latest published blog posts.
+	return nil
+}
+
+// generateRSSForTenant generates the RSS feed for a single tenant.
+func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
 	rows, err := dbPool.Reader.Query(ctx,
 		`SELECT title, slug, created_at FROM contents
 		 WHERE tenant_id = $1 AND status = 'published'
@@ -1784,8 +1918,8 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 		 LIMIT 50`,
 		tenantID)
 	if err != nil {
-		slog.Error("task:rss_regenerate: failed to list content", "error", err)
-		return err
+		slog.Error("task:rss_regenerate: failed to list content", "tenant_id", tenantID.String(), "error", err)
+		return
 	}
 	defer rows.Close()
 
@@ -1795,7 +1929,7 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 	rss.WriteString("<rss version=\"2.0\">\n")
 	rss.WriteString("<channel>\n")
 	rss.WriteString(fmt.Sprintf("  <title>%s</title>\n", siteName))
-	rss.WriteString(fmt.Sprintf("  <link>%s</link>\n", payload.BaseURL))
+	rss.WriteString(fmt.Sprintf("  <link>%s</link>\n", baseURL))
 	rss.WriteString("  <description>Nigerian diaspora community platform</description>\n")
 
 	itemCount := 0
@@ -1810,7 +1944,7 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 
 		rss.WriteString("  <item>\n")
 		rss.WriteString(fmt.Sprintf("    <title>%s</title>\n", title))
-		rss.WriteString(fmt.Sprintf("    <link>%s/%s</link>\n", payload.BaseURL, slug))
+		rss.WriteString(fmt.Sprintf("    <link>%s/%s</link>\n", baseURL, slug))
 		rss.WriteString(fmt.Sprintf("    <pubDate>%s</pubDate>\n",
 			createdAt.Time.Format(time.RFC1123Z)))
 		rss.WriteString("  </item>\n")
@@ -1822,17 +1956,16 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 	rss.WriteString("</rss>\n")
 
 	if err := rows.Err(); err != nil {
-		return err
+		slog.Error("task:rss_regenerate: row iteration error", "tenant_id", tenantID.String(), "error", err)
+		return
 	}
 
 	if err := os.WriteFile("feed.xml", []byte(rss.String()), 0o600); err != nil {
-		slog.Error("task:rss_regenerate: failed to write file", "error", err)
-		return err
+		slog.Error("task:rss_regenerate: failed to write file", "tenant_id", tenantID.String(), "error", err)
+		return
 	}
 
-	slog.Info("task:rss_regenerate: feed written", "item_count", itemCount)
-
-	return nil
+	slog.Info("task:rss_regenerate: feed written", "tenant_id", tenantID.String(), "item_count", itemCount)
 }
 
 // HandleDataExport generates a GDPR data export archive for a user.
@@ -1969,41 +2102,58 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 		TenantID string `json:"tenant_id"`
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:maintenance:update_velocity_scores: invalid payload", "error", err)
-		return err
+	// Payload is optional — scheduler sends nil. Parse without failing.
+	_ = parsePayload(t, &payload)
+
+	// If a specific tenant was provided, process only that tenant.
+	// Otherwise, iterate over all active tenants.
+	tenantIDs := []string{}
+	if payload.TenantID != "" {
+		tenantIDs = []string{payload.TenantID}
+	} else {
+		rows, err := dbPool.Reader.Query(ctx, `SELECT id::text FROM tenants WHERE status = 'active'`)
+		if err != nil {
+			slog.Error("task:maintenance:update_velocity_scores: failed to list tenants", "error", err)
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				continue
+			}
+			tenantIDs = append(tenantIDs, id)
+		}
 	}
 
-	tenantID, err := scanUUID(payload.TenantID)
-	if err != nil {
-		return fmt.Errorf("task:maintenance:update_velocity_scores: %w", err)
+	for _, tid := range tenantIDs {
+		tenantID, err := scanUUID(tid)
+		if err != nil {
+			continue
+		}
+		// Update velocity scores for recently active content.
+		// Velocity = (vote_score * 2 + comment_count + view_count / 100) / hours_since_publish
+		_, err = dbPool.Writer.Exec(ctx,
+			`UPDATE content_scores cs
+			 SET velocity_score = CASE
+			       WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
+			       THEN GREATEST(0, (cs.vote_score * 2 + cs.comment_count + cs.view_count / 100.0) /
+			            (EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0))
+			       ELSE 0
+			     END,
+			     last_scored_at = now()
+			 FROM contents c
+			 WHERE cs.content_id = c.id
+			   AND c.tenant_id = $1
+			   AND c.status = 'published'
+			   AND c.created_at >= now() - INTERVAL '30 days'`,
+			tenantID)
+		if err != nil {
+			slog.Error("task:maintenance:update_velocity_scores: failed to update scores", "error", err, "tenant_id", tid)
+		}
 	}
 
-	// Update velocity scores for recently active content.
-	// Velocity = (vote_score * 2 + comment_count + view_count / 100) / hours_since_publish
-	_, err = dbPool.Writer.Exec(ctx,
-		`UPDATE content_scores cs
-		 SET velocity_score = CASE
-		       WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
-		       THEN GREATEST(0, (cs.vote_score * 2 + cs.comment_count + cs.view_count / 100.0) /
-		            (EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0))
-		       ELSE 0
-		     END,
-		     last_scored_at = now()
-		 FROM contents c
-		 WHERE cs.content_id = c.id
-		   AND c.tenant_id = $1
-		   AND c.status = 'published'
-		   AND c.created_at >= now() - INTERVAL '30 days'`,
-		tenantID)
-	if err != nil {
-		slog.Error("task:maintenance:update_velocity_scores: failed to update scores", "error", err)
-		return err
-	}
-
-	slog.Info("task:maintenance:update_velocity_scores: complete",
-		"tenant_id", payload.TenantID)
-
+	slog.Info("task:maintenance:update_velocity_scores: complete", "tenants", len(tenantIDs))
 	return nil
 }
 
@@ -2020,58 +2170,69 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 		TenantID string `json:"tenant_id"`
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:maintenance:check_sla_breaches: invalid payload", "error", err)
-		return err
-	}
+	// Payload is optional — scheduler sends nil. Parse without failing.
+	_ = parsePayload(t, &payload)
 
-	tenantID, err := scanUUID(payload.TenantID)
-	if err != nil {
-		return fmt.Errorf("task:maintenance:check_sla_breaches: %w", err)
+	// If a specific tenant was provided, process only that tenant.
+	// Otherwise, iterate over all active tenants.
+	tenantIDs := []string{}
+	if payload.TenantID != "" {
+		tenantIDs = []string{payload.TenantID}
+	} else {
+		rows, err := dbPool.Reader.Query(ctx, `SELECT id::text FROM tenants WHERE status = 'active'`)
+		if err != nil {
+			slog.Error("task:maintenance:check_sla_breaches: failed to list tenants", "error", err)
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				continue
+			}
+			tenantIDs = append(tenantIDs, id)
+		}
 	}
-
-	// Find tickets where SLA has been breached.
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT id, subject, sla_breach_at FROM tickets
-		 WHERE tenant_id = $1
-		   AND sla_breach_at IS NOT NULL
-		   AND sla_breach_at < now()
-		   AND status NOT IN ('resolved', 'closed')
-		 ORDER BY sla_breach_at ASC`,
-		tenantID)
-	if err != nil {
-		slog.Error("task:maintenance:check_sla_breaches: query failed", "error", err)
-		return err
-	}
-	defer rows.Close()
 
 	breachCount := 0
 
-	for rows.Next() {
-		var id pgtype.UUID
-
-		var subject string
-
-		var slaBreachAt pgtype.Timestamptz
-		if err := rows.Scan(&id, &subject, &slaBreachAt); err != nil {
+	for _, tid := range tenantIDs {
+		tenantID, err := scanUUID(tid)
+		if err != nil {
 			continue
 		}
 
-		slog.Warn("task:maintenance:check_sla_breaches: SLA breach detected",
-			"ticket_id", id.String(),
-			"subject", subject,
-			"sla_breach_at", slaBreachAt.Time)
+		// Find tickets where SLA has been breached.
+		rows, err := dbPool.Reader.Query(ctx,
+			`SELECT id, subject, sla_breach_at FROM tickets
+			 WHERE tenant_id = $1
+			   AND sla_breach_at IS NOT NULL
+			   AND sla_breach_at < now()
+			   AND status NOT IN ('resolved', 'closed')
+			 ORDER BY sla_breach_at ASC`,
+			tenantID)
+		if err != nil {
+			slog.Error("task:maintenance:check_sla_breaches: query failed", "error", err, "tenant_id", tid)
+			continue
+		}
 
-		breachCount++
+		for rows.Next() {
+			var id pgtype.UUID
+			var subject string
+			var slaBreachAt pgtype.Timestamptz
+			if err := rows.Scan(&id, &subject, &slaBreachAt); err != nil {
+				continue
+			}
+			slog.Warn("task:maintenance:check_sla_breaches: SLA breach detected",
+				"ticket_id", id.String(),
+				"subject", subject,
+				"sla_breach_at", slaBreachAt.Time)
+			breachCount++
+		}
+		rows.Close()
 	}
 
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	slog.Info("task:maintenance:check_sla_breaches: complete",
-		"breached_count", breachCount)
-
+	slog.Info("task:maintenance:check_sla_breaches: complete", "breached_count", breachCount)
 	return nil
 }
 
@@ -2085,6 +2246,12 @@ func HandleMaintenanceUpdateGeoIPDB(_ context.Context, t *asynq.Task) error {
 	}
 
 	if err := geoipUpdater.DownloadAndUpdate(); err != nil {
+		// JC_MAXMIND_LICENSE_KEY not set is a config issue, not a task failure.
+		// Skip gracefully to avoid burning retries in the DLQ.
+		if strings.Contains(err.Error(), "JC_MAXMIND_LICENSE_KEY is not set") {
+			slog.Warn("task:maintenance:update_geoip_db: license key not configured, skipping")
+			return nil
+		}
 		slog.Error("task:maintenance:update_geoip_db: update failed", "error", err)
 		return fmt.Errorf("geoip database update: %w", err)
 	}
@@ -2137,70 +2304,114 @@ func HandleAnalyticsRefreshViews(ctx context.Context, t *asynq.Task) error {
 	return analyticsProcessor.RefreshViews(ctx)
 }
 
-// HandleSecurityScan runs a periodic security scan on uploaded media.
+// HandleSecurityScan runs a periodic security scan on uploaded media and
+// triggers the analytics security scan (failed-login spikes, SLA breaches,
+// stale tokens) that populates security_scan_results for the control panel.
+//
+// When the cron scheduler fires with an empty payload ("{}"), the handler
+// iterates over all active tenants. A specific tenant_id can be passed for
+// targeted scans.
 func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:security:scan")
-
-	var payload struct {
-		TenantID string `json:"tenant_id"`
-	}
-
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:security:scan: invalid payload", "error", err)
-		return err
-	}
-
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(payload.TenantID); err != nil {
-		slog.Error("task:security:scan: invalid tenant_id", "error", err)
-		return err
-	}
 
 	if dbPool == nil {
 		slog.Warn("task:security:scan: no database, skipping")
 		return nil
 	}
 
-	// Find media with status 'uploaded' that need scanning.
-	rows, err := dbPool.Reader.Query(ctx, `
-		SELECT id, file_path FROM media
-		WHERE tenant_id = $1 AND status = 'uploaded'
-		ORDER BY created_at ASC
-		LIMIT 50
-	`, tenantID)
-	if err != nil {
-		slog.Error("task:security:scan: query failed", "error", err)
-		return err
+	var payload struct {
+		TenantID string `json:"tenant_id"`
 	}
-	defer rows.Close()
+	if err := parsePayload(t, &payload); err != nil {
+		// Tolerate empty/malformed payload from cron scheduler — process all tenants.
+		slog.Warn("task:security:scan: could not parse payload, processing all tenants", "error", err)
+	}
 
-	scanCount := 0
-	for rows.Next() {
-		var id pgtype.UUID
-		var filePath string
-		if err := rows.Scan(&id, &filePath); err != nil {
-			continue
+	// Collect tenant IDs: either the single requested tenant or all active ones.
+	var tenantIDs []pgtype.UUID
+	if payload.TenantID != "" {
+		var tid pgtype.UUID
+		if err := tid.Scan(payload.TenantID); err != nil {
+			slog.Error("task:security:scan: invalid tenant_id", "error", err)
+			return fmt.Errorf("task:security:scan: invalid tenant_id: %w", err)
 		}
-		// Enqueue each media for ClamAV scan via the moderation processor.
-		if moderationProcessor != nil {
-			if err := moderationProcessor.ScanContent(ctx, "media", id.String(), payload.TenantID); err != nil {
-				slog.Error("task:security:scan: scan enqueue failed", "media_id", id.String(), "error", err)
-			} else {
-				scanCount++
+		tenantIDs = []pgtype.UUID{tid}
+	} else {
+		rows, err := dbPool.Reader.Query(ctx, `SELECT id FROM tenants WHERE status = 'active'`)
+		if err != nil {
+			slog.Error("task:security:scan: list tenants failed", "error", err)
+			return fmt.Errorf("task:security:scan: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var tid pgtype.UUID
+			if err := rows.Scan(&tid); err != nil {
+				continue
+			}
+			tenantIDs = append(tenantIDs, tid)
+		}
+		if err := rows.Err(); err != nil {
+			slog.Error("task:security:scan: tenant iteration error", "error", err)
+			return fmt.Errorf("task:security:scan: %w", err)
+		}
+	}
+
+	if len(tenantIDs) == 0 {
+		slog.Warn("task:security:scan: no active tenants found")
+		return nil
+	}
+
+	for _, tenantID := range tenantIDs {
+		tid := tenantID // capture for closure
+
+		// 1. Run the analytics security scan (populates security_scan_results).
+		if analyticsProcessor != nil {
+			if err := analyticsProcessor.RunSecurityScan(ctx, tid.Bytes); err != nil {
+				slog.Error("task:security:scan: analytics scan failed", "tenant_id", tid.String(), "error", err)
 			}
 		}
+
+		// 2. Scan uploaded media via ClamAV (existing behaviour).
+		mediaRows, err := dbPool.Reader.Query(ctx, `
+			SELECT id, file_path FROM media
+			WHERE tenant_id = $1 AND status = 'uploaded'
+			ORDER BY created_at ASC
+			LIMIT 50
+		`, tid)
+		if err != nil {
+			slog.Error("task:security:scan: media query failed", "tenant_id", tid.String(), "error", err)
+			continue
+		}
+
+		scanCount := 0
+		for mediaRows.Next() {
+			var id pgtype.UUID
+			var filePath string
+			if err := mediaRows.Scan(&id, &filePath); err != nil {
+				continue
+			}
+			if moderationProcessor != nil {
+				if err := moderationProcessor.ScanContent(ctx, "media", id.String(), tid.String()); err != nil {
+					slog.Error("task:security:scan: media scan enqueue failed", "media_id", id.String(), "error", err)
+				} else {
+					scanCount++
+				}
+			}
+		}
+		mediaRows.Close()
+		if err := mediaRows.Err(); err != nil {
+			slog.Error("task:security:scan: media iteration error", "tenant_id", tid.String(), "error", err)
+		}
+
+		slog.Info("task:security:scan: tenant complete", "tenant_id", tid.String(), "media_scanned", scanCount)
 	}
 
-	if err := rows.Err(); err != nil {
-		slog.Error("task:security:scan: rows iteration error", "tenant_id", payload.TenantID, "error", err)
-		return err
-	}
-
-	slog.Info("task:security:scan: complete", "scanned_count", scanCount)
+	slog.Info("task:security:scan: complete", "tenant_count", len(tenantIDs))
 	return nil
 }
 
 // HandleMaintenanceRegenerateLLMsTxt regenerates the llms.txt file for the tenant.
+// When called by the cron scheduler with an empty payload, iterates all active tenants.
 func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:maintenance:regenerate_llms_txt")
 
@@ -2213,18 +2424,53 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 		TenantID string `json:"tenant_id"`
 		BaseURL  string `json:"base_url"`
 	}
+	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
 
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:maintenance:regenerate_llms_txt: invalid payload", "error", err)
-		return err
+	// Collect tenant IDs: single requested tenant or all active ones.
+	var tenantIDs []pgtype.UUID
+	if payload.TenantID != "" {
+		tid, err := scanUUID(payload.TenantID)
+		if err != nil {
+			return fmt.Errorf("task:maintenance:regenerate_llms_txt: %w", err)
+		}
+		tenantIDs = []pgtype.UUID{tid}
+	} else {
+		rows, err := dbPool.Reader.Query(ctx, `SELECT id FROM tenants WHERE status = 'active'`)
+		if err != nil {
+			slog.Error("task:maintenance:regenerate_llms_txt: list tenants failed", "error", err)
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var tid pgtype.UUID
+			if err := rows.Scan(&tid); err != nil {
+				continue
+			}
+			tenantIDs = append(tenantIDs, tid)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
 	}
 
-	tenantID, err := scanUUID(payload.TenantID)
-	if err != nil {
-		return fmt.Errorf("task:maintenance:regenerate_llms_txt: %w", err)
+	for _, tenantID := range tenantIDs {
+		baseURL := payload.BaseURL
+		if baseURL == "" {
+			baseURL = resolveBaseURL(ctx, tenantID)
+		}
+		if baseURL == "" {
+			slog.Warn("task:maintenance:regenerate_llms_txt: no base_url, skipping tenant", "tenant_id", tenantID.String())
+			continue
+		}
+
+		generateLLMsTxtForTenant(ctx, tenantID, baseURL)
 	}
 
-	// Generate llms.txt for AI consumption.
+	return nil
+}
+
+// generateLLMsTxtForTenant generates the llms.txt file for a single tenant.
+func generateLLMsTxtForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
 	rows, err := dbPool.Reader.Query(ctx,
 		`SELECT title, slug FROM contents
 		 WHERE tenant_id = $1 AND status = 'published'
@@ -2232,8 +2478,8 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 		 LIMIT 1000`,
 		tenantID)
 	if err != nil {
-		slog.Error("task:maintenance:regenerate_llms_txt: failed to list content", "error", err)
-		return err
+		slog.Error("task:maintenance:regenerate_llms_txt: failed to list content", "tenant_id", tenantID.String(), "error", err)
+		return
 	}
 	defer rows.Close()
 
@@ -2251,24 +2497,23 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 			continue
 		}
 
-		llms.WriteString(fmt.Sprintf("- [%s](%s/%s)\n", title, payload.BaseURL, slug))
+		llms.WriteString(fmt.Sprintf("- [%s](%s/%s)\n", title, baseURL, slug))
 
 		pageCount++
 	}
 
 	if err := rows.Err(); err != nil {
-		return err
+		slog.Error("task:maintenance:regenerate_llms_txt: row iteration error", "tenant_id", tenantID.String(), "error", err)
+		return
 	}
 
 	if err := os.WriteFile("llms.txt", []byte(llms.String()), 0o600); err != nil {
-		slog.Error("task:maintenance:regenerate_llms_txt: failed to write file", "error", err)
-		return err
+		slog.Error("task:maintenance:regenerate_llms_txt: failed to write file", "tenant_id", tenantID.String(), "error", err)
+		return
 	}
 
 	slog.Info("task:maintenance:regenerate_llms_txt: file written",
-		"page_count", pageCount)
-
-	return nil
+		"tenant_id", tenantID.String(), "page_count", pageCount)
 }
 
 // HandleLearningIssueCertificate issues a completion certificate for a learning track.
@@ -2947,7 +3192,7 @@ func HandleMaintenanceCheckExpiredBans(ctx context.Context, _ *asynq.Task) error
 	return nil
 }
 
-// HandleMaintenanceCheckExpiredBoosts expires organization_boosts past ends_at.
+// HandleMaintenanceCheckExpiredBoosts expires organization_boosts past end_date.
 func HandleMaintenanceCheckExpiredBoosts(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:check_expired_boosts — expiring boosts")
 	_, err := requireDB()
@@ -2956,9 +3201,9 @@ func HandleMaintenanceCheckExpiredBoosts(ctx context.Context, _ *asynq.Task) err
 	}
 	result, err := dbPool.Writer.Exec(ctx, `
 		UPDATE organization_boosts
-		SET status = 'expired'
+		SET status = 'ended'
 		WHERE status = 'active'
-		AND ends_at < now()
+		AND end_date < now()
 	`)
 	if err != nil {
 		slog.Error("maintenance:check_expired_boosts failed", "error", err)
@@ -3467,5 +3712,74 @@ func HandleAffiliateExpireCheck(ctx context.Context, _ *asynq.Task) error {
 	if rows > 0 {
 		slog.Info("affiliate:expire_check — deactivated links", "count", rows)
 	}
+	return nil
+}
+
+// HandleTenantCleanupData is the handler for tenant:cleanup_data tasks.
+// It hard-deletes all data associated with a soft-deleted tenant after the
+// 30-day grace period (Section 21). The task is enqueued with a 30-day delay
+// at the time of soft-deletion.
+func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
+	if dbPool == nil {
+		return fmt.Errorf("tenant:cleanup_data: db pool not registered")
+	}
+
+	var payload struct {
+		TenantID string `json:"tenant_id"`
+	}
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		return fmt.Errorf("tenant:cleanup_data: bad payload: %w", err)
+	}
+	if payload.TenantID == "" {
+		return fmt.Errorf("tenant:cleanup_data: missing tenant_id in payload")
+	}
+
+	var tenantID pgtype.UUID
+	if err := tenantID.Scan(payload.TenantID); err != nil {
+		return fmt.Errorf("tenant:cleanup_data: invalid tenant_id %q: %w", payload.TenantID, err)
+	}
+
+	// Verify the tenant is still in 'deleted' status before cleanup.
+	// If the tenant was re-activated (unsuspended), skip hard-delete.
+	var status string
+	err := dbPool.Reader.QueryRow(ctx,
+		`SELECT status FROM tenants WHERE id = $1`,
+		tenantID,
+	).Scan(&status)
+	if err != nil {
+		// Tenant may have been already hard-deleted or doesn't exist.
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("tenant:cleanup_data — tenant not found, skipping", "tenant_id", payload.TenantID)
+			return nil
+		}
+		return fmt.Errorf("tenant:cleanup_data: %w", err)
+	}
+	if status != "deleted" {
+		slog.Info("tenant:cleanup_data — tenant no longer in deleted status, skipping", "tenant_id", payload.TenantID, "status", status)
+		return nil
+	}
+
+	// Hard-delete the tenant. All tables with ON DELETE CASCADE will cascade.
+	// Tables without ON DELETE CASCADE (users, organizations, learning, etc.)
+	// must be cleaned explicitly — for now this is a stub that logs the intent.
+	// Full implementation will iterate all FK-referencing tables without CASCADE
+	// and hard-delete them first, then delete the tenant.
+	slog.Info("tenant:cleanup_data — tenant eligible for hard-delete, but cascade cleanup not yet implemented (stub)", "tenant_id", payload.TenantID)
+
+	// TODO: Implement full cascade hard-delete for all tenant-scoped tables
+	// that reference tenants(id) without ON DELETE CASCADE:
+	// - users, profiles, user_preferences, onboarding
+	// - organizations (2 FKs)
+	// - doc_pages
+	// - webhooks, webhook_history
+	// - ai_templates
+	// - api_keys
+	// - learning tables (5)
+	// - search_events
+	// - trending_snapshots
+	// - affiliate_providers, affiliate_links
+	// - moderation_alerts
+	// Once all child rows are deleted, run: DELETE FROM tenants WHERE id = $1
+
 	return nil
 }

@@ -138,7 +138,7 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 // scheduledTask creates a scheduled Asynq task with the correct queue tier
 // and a Unique key to prevent duplicate execution across replicas.
 func scheduledTask(taskType string, uniquePeriod time.Duration) *asynq.Task {
-	return asynq.NewTask(taskType, nil,
+	return asynq.NewTask(taskType, []byte("{}"),
 		asynq.Queue(QueueForTask(taskType)),
 		asynq.Unique(uniquePeriod),
 	)

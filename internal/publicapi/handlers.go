@@ -3,10 +3,12 @@ package publicapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -324,6 +326,168 @@ func (h *Handlers) UnsuspendKey(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"status": "active"},
+	})
+}
+
+// DeleteKeyPermanently permanently deletes an API key (super_admin only).
+// DELETE /api/v1/control/api-keys/:id/permanent.
+func (h *Handlers) DeleteKeyPermanently(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	keyID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		return
+	}
+
+	if err := h.Service.DeleteAPIKey(r.Context(), keyID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{"status": "deleted"},
+	})
+}
+
+// UpdateAPIKeyStatus updates the status of an API key (super_admin only).
+// PATCH /api/v1/control/api-keys/:id.
+func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	keyID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
+		return
+	}
+
+	var input struct {
+		Name          string `json:"name"`
+		Status        string `json:"status"`
+		RateLimitTier string `json:"rate_limit_tier"`
+		Notes         string `json:"notes"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	// Validate status if provided.
+	if input.Status != "" {
+		validStatuses := map[string]bool{"active": true, "suspended": true, "revoked": true}
+		if !validStatuses[input.Status] {
+			writeError(w, http.StatusBadRequest, "invalid_status", "Status must be active, suspended, or revoked")
+			return
+		}
+	}
+
+	// Build dynamic update query.
+	updates := []string{}
+	args := []any{keyID}
+	argIdx := 2
+
+	if input.Name != "" {
+		updates = append(updates, fmt.Sprintf("name = $%d", argIdx))
+		args = append(args, input.Name)
+		argIdx++
+	}
+
+	if input.Status != "" {
+		updates = append(updates, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, input.Status)
+		argIdx++
+	}
+
+	if input.RateLimitTier != "" {
+		updates = append(updates, fmt.Sprintf("rate_limit_tier = $%d", argIdx))
+		args = append(args, input.RateLimitTier)
+		argIdx++
+	}
+
+	if input.Notes != "" {
+		updates = append(updates, fmt.Sprintf("notes = $%d", argIdx))
+		args = append(args, input.Notes)
+		argIdx++
+	}
+
+	if len(updates) == 0 {
+		writeError(w, http.StatusBadRequest, "validation_error", "No fields to update")
+		return
+	}
+
+	updates = append(updates, "updated_at = now()")
+
+	query := fmt.Sprintf("UPDATE api_keys SET %s WHERE id = $1", strings.Join(updates, ", "))
+
+	tag, err := h.Service.store.dbPool.Exec(r.Context(), query, args...)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "not_found", "API key not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{"id": keyID.String()},
+	})
+}
+
+// DeleteKeysPermanently permanently deletes multiple API keys (super_admin only).
+// POST /api/v1/control/api-keys/batch-delete.
+func (h *Handlers) DeleteKeysPermanently(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		IDs []string `json:"ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	if len(input.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "validation_error", "ids is required")
+		return
+	}
+
+	if len(input.IDs) > 100 {
+		writeError(w, http.StatusBadRequest, "validation_error", "Maximum 100 keys per batch")
+		return
+	}
+
+	var keyIDs []pgtype.UUID
+	for _, idStr := range input.IDs {
+		var id pgtype.UUID
+		if err := id.Scan(idStr); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID: "+idStr)
+			return
+		}
+		keyIDs = append(keyIDs, id)
+	}
+
+	if err := h.Service.DeleteAPIKeys(r.Context(), keyIDs); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"deleted": len(keyIDs),
+		},
 	})
 }
 
@@ -756,4 +920,21 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": user})
+}
+
+// GetAPIKeyAnalytics returns aggregate analytics for all API keys (admin view).
+// GET /api/v1/control/api-keys/analytics.
+func (h *Handlers) GetAPIKeyAnalytics(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	analytics, err := h.Service.GetAnalytics(r.Context())
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": analytics})
 }

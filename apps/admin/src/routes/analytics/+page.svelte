@@ -27,7 +27,19 @@
 	let to = $state(page.url.searchParams.get("to") ?? "");
 	
 	// Analytics data
-	let overview = $state<Record<string, unknown> | null>(null);
+	type OverviewData = {
+		daily_active_users: Array<{ day: string; dau: number }> | null;
+		monthly_active_users: Array<{ month: string; mau: number }> | null;
+		event_counts: Array<{ event_type: string; count: number }> | null;
+		content_over_time: Array<{ day: string; content_count: number }> | null;
+		user_growth: Array<{ day: string; new_users: number }> | null;
+		traffic_sources: Array<{ referrer: string | null; visits: number }> | null;
+		top_content: Array<{ content_id: string; total_views: number; total_reactions: number; total_comments: number; total_unique_viewers: number }> | null;
+		content_stats: unknown[] | null;
+		space_stats: unknown[] | null;
+	};
+
+	let overview = $state<OverviewData | null>(null);
 	let security = $state<{ scans?: Array<Record<string, unknown>> } | null>(null);
 	let userAnalytics = $state<Array<Record<string, unknown>> | null>(null);
 	let contentAnalytics = $state<Array<Record<string, unknown>> | null>(null);
@@ -50,7 +62,7 @@
 				analyticsAdminApi.getSearch()
 			]);
 			
-			overview = overviewRes.status === 'fulfilled' && overviewRes.value.ok ? (overviewRes.value.data as Record<string, unknown>) : null;
+			overview = overviewRes.status === 'fulfilled' && overviewRes.value.ok ? (overviewRes.value.data as OverviewData) : null;
 			security = securityRes.status === 'fulfilled' && securityRes.value.ok ? (securityRes.value.data as { scans?: Array<Record<string, unknown>> }) : null;
 			userAnalytics = usersRes.status === 'fulfilled' && usersRes.value.ok ? (usersRes.value.data as Array<Record<string, unknown>>) : null;
 			contentAnalytics = contentRes.status === 'fulfilled' && contentRes.value.ok ? (contentRes.value.data as Array<Record<string, unknown>>) : null;
@@ -58,7 +70,7 @@
 			revenueAnalytics = revenueRes.status === 'fulfilled' && revenueRes.value.ok ? (revenueRes.value.data as Array<Record<string, unknown>>) : null;
 			searchAnalytics = searchRes.status === 'fulfilled' && searchRes.value.ok ? (searchRes.value.data as Array<Record<string, unknown>>) : null;
 		} catch (e) {
-			error = e instanceof Error ? e.message : "Failed to load analytics";
+			error = e instanceof Error ? e.message : t('analytics.failed_to_load', 'Failed to load analytics');
 		} finally {
 			loading = false;
 		}
@@ -82,79 +94,79 @@
 	});
 	
 	const tabs = [
-		{ value: "overview", label: "Overview", icon: TrendingUp },
-		{ value: "users", label: "Users", icon: Users },
-		{ value: "content", label: "Content", icon: MessageSquare },
-		{ value: "spaces", label: "Spaces", icon: Eye },
-		{ value: "revenue", label: "Revenue", icon: DollarSign },
-		{ value: "search", label: "Search", icon: Search },
-		{ value: "security", label: "Security", icon: Shield }
+		{ value: "overview", label: t('analytics.tab_overview', 'Overview'), icon: TrendingUp },
+		{ value: "users", label: t('analytics.tab_users', 'Users'), icon: Users },
+		{ value: "content", label: t('analytics.tab_content', 'Content'), icon: MessageSquare },
+		{ value: "spaces", label: t('analytics.tab_spaces', 'Spaces'), icon: Eye },
+		{ value: "revenue", label: t('analytics.tab_revenue', 'Revenue'), icon: DollarSign },
+		{ value: "search", label: t('analytics.tab_search', 'Search'), icon: Search },
+		{ value: "security", label: t('analytics.tab_security', 'Security'), icon: Shield }
 	];
 	
 	const overviewCards = $derived([
 		{ 
-			label: "Total Users", 
-			value: (overview?.totalUsers as number) ?? 0, 
-			change: (overview?.usersChange as number) ?? 0, 
+			label: t('analytics.daily_active_users', 'Daily Active Users'), 
+			value: overview?.daily_active_users?.[overview.daily_active_users.length - 1]?.dau ?? 0, 
+			change: 0,
 			icon: Users, 
 			color: "primary" 
 		},
 		{ 
-			label: "Active Users", 
-			value: (overview?.activeUsers as number) ?? 0, 
-			change: (overview?.activeChange as number) ?? 0, 
+			label: t('analytics.monthly_active_users', 'Monthly Active Users'), 
+			value: overview?.monthly_active_users?.[overview.monthly_active_users.length - 1]?.mau ?? 0, 
+			change: 0,
 			icon: Users, 
 			color: "success" 
 		},
 		{ 
-			label: "New Signups", 
-			value: (overview?.newSignups as number) ?? 0, 
-			change: (overview?.signupChange as number) ?? 0, 
+			label: t('analytics.new_signups', 'New Signups (Latest)'), 
+			value: overview?.user_growth?.[overview.user_growth.length - 1]?.new_users ?? 0, 
+			change: 0,
 			icon: UserPlus, 
 			color: "info" 
 		},
 		{ 
-			label: "Total Spaces", 
-			value: (overview?.totalSpaces as number) ?? 0, 
-			change: (overview?.spacesChange as number) ?? 0, 
+			label: t('analytics.total_spaces', 'Total Spaces'), 
+			value: (overview?.space_stats as unknown as { total_spaces?: number })?.total_spaces ?? 0, 
+			change: 0,
 			icon: Eye, 
 			color: "warning" 
 		},
 		{ 
-			label: "Total Posts", 
-			value: (overview?.totalPosts as number) ?? 0, 
-			change: (overview?.postsChange as number) ?? 0, 
+			label: t('analytics.content_count', 'Content Items'), 
+			value: overview?.content_over_time?.length ?? 0, 
+			change: 0,
 			icon: MessageSquare, 
 			color: "primary" 
 		},
 		{ 
-			label: "Revenue", 
-			value: `$${((overview?.revenue as number) ?? 0).toLocaleString()}`, 
-			change: (overview?.revenueChange as number) ?? 0, 
-			icon: DollarSign, 
+			label: t('analytics.event_count', 'Events'), 
+			value: overview?.event_counts?.reduce((sum, e) => sum + e.count, 0) ?? 0, 
+			change: 0,
+			icon: TrendingUp, 
 			color: "success" 
 		}
 	]);
 	
 	const securityColumns = [
-		{ key: "scanId", label: "Scan ID", sortable: true },
-		{ key: "type", label: "Type", sortable: true },
+		{ key: "id", label: t('analytics.scan_id', 'Scan ID'), sortable: true },
+		{ key: "scan_type", label: t('analytics.type', 'Type'), sortable: true },
 		{ 
-			key: "status", 
-			label: "Status", 
+			key: "severity", 
+			label: t('analytics.status', 'Severity'), 
 			sortable: true,
 			render: (value: string) => {
-				const colors = value === 'passed' ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger';
-				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${colors}">${value}</span>`;
+				const colors: Record<string, string> = { low: 'bg-info-100 text-info-800', medium: 'bg-warning/15 text-warning', high: 'bg-danger/15 text-danger', critical: 'bg-danger text-white' };
+				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${colors[value] || 'bg-surface text-foreground'}">${value}</span>`;
 			}
 		},
 		{ 
-			key: "date", 
-			label: "Date", 
+			key: "created_at", 
+			label: t('analytics.date', 'Date'), 
 			sortable: true,
 			render: (value: string) => new Date(value).toLocaleString()
 		},
-		{ key: "findings", label: "Findings", sortable: true }
+		{ key: "finding", label: t('analytics.findings', 'Finding'), sortable: true }
 	];
 	
 	async function handleFlushCache() {
@@ -164,7 +176,7 @@
 			flushModalOpen = false;
 			goto("", { invalidateAll: true });
 		} catch {
-			error = "Failed to flush cache";
+			error = t('analytics.failed_to_flush_cache', 'Failed to flush cache');
 		} finally {
 			flushing = false;
 		}
@@ -176,11 +188,11 @@
 </script>
 
 <PageHeader
-	title="Analytics"
-	description="Monitor platform performance and user engagement"
+	title={t('analytics.page_title', 'Analytics')}
+	description={t('analytics.page_description', 'Monitor platform performance and user engagement')}
 	actions={[
-		{ label: "Export Report", icon: Download, onclick: handleExport, variant: "outline" },
-		{ label: "Flush Cache", icon: RefreshCw, onclick: () => flushModalOpen = true, variant: "ghost" }
+		{ label: t('analytics.export_report', 'Export Report'), icon: Download, onclick: handleExport, variant: "outline" },
+		{ label: t('analytics.flush_cache', 'Flush Cache'), icon: RefreshCw, onclick: () => flushModalOpen = true, variant: "ghost" }
 	]}
 />
 
@@ -224,15 +236,15 @@
 		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 			<Card>
 				<CardHeader>
-					<h3 class="text-sm font-medium" style="color: var(--color-muted)">{t('analytics.user_growth')}</h3>
+					<h3 class="text-sm font-medium" style="color: var(--color-muted)">{t('analytics.user_growth', 'User Growth')}</h3>
 				</CardHeader>
 				<CardContent>
 					{#if loading}
 						<div class="h-64 animate-pulse rounded-lg" style="background: var(--color-surface)"></div>
-					{:else if ((overview?.userGrowth as Array<{ date: string; count: number }>) ?? []).length > 0}
+					{:else if ((overview?.user_growth) ?? []).length > 0}
 						<div class="h-64">
 							<LineChart
-								data={((overview?.userGrowth as Array<{ date: string; count: number }>) ?? []).map((d) => ({ date: new Date(d.date), count: d.count }))}
+								data={(overview?.user_growth ?? []).map((d) => ({ date: new Date(d.day), count: d.new_users }))}
 								x="date"
 								y="count"
 								props={{
@@ -244,7 +256,7 @@
 						</div>
 					{:else}
 						<div class="flex h-64 items-center justify-center">
-							<p class="text-sm" style="color: var(--color-muted)">{t('analytics.no_data_available')}</p>
+							<p class="text-sm" style="color: var(--color-muted)">{t('analytics.no_data_available', 'No data available')}</p>
 						</div>
 					{/if}
 				</CardContent>
@@ -252,15 +264,15 @@
 			
 			<Card>
 				<CardHeader>
-					<h3 class="text-sm font-medium" style="color: var(--color-muted)">{t('analytics.content_activity')}</h3>
+					<h3 class="text-sm font-medium" style="color: var(--color-muted)">{t('analytics.content_activity', 'Content Activity')}</h3>
 				</CardHeader>
 				<CardContent>
 					{#if loading}
 						<div class="h-64 animate-pulse rounded-lg" style="background: var(--color-surface)"></div>
-					{:else if ((overview?.contentActivity as Array<{ date: string; count: number }>) ?? []).length > 0}
+					{:else if ((overview?.content_over_time) ?? []).length > 0}
 						<div class="h-64">
 							<AreaChart
-								data={((overview?.contentActivity as Array<{ date: string; count: number }>) ?? []).map((d) => ({ date: new Date(d.date), count: d.count }))}
+								data={(overview?.content_over_time ?? []).map((d) => ({ date: new Date(d.day), count: d.content_count }))}
 								x="date"
 								y="count"
 								props={{
@@ -272,7 +284,7 @@
 						</div>
 					{:else}
 						<div class="flex h-64 items-center justify-center">
-							<p class="text-sm" style="color: var(--color-muted)">{t('analytics.no_data_available')}</p>
+							<p class="text-sm" style="color: var(--color-muted)">{t('analytics.no_data_available', 'No data available')}</p>
 						</div>
 					{/if}
 				</CardContent>
@@ -283,14 +295,14 @@
 	{#if activeTab === "security"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.security_scans')}</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.security_scans', 'Security Scans')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
 					columns={securityColumns}
 					data={security?.scans ?? []}
 					pageSize={10}
-					emptyMessage="No security scans found"
+					emptyMessage={t('analytics.no_security_scans', 'No security scans found')}
 				/>
 			</CardContent>
 		</Card>
@@ -299,17 +311,17 @@
 	{#if activeTab === "users"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.user_analytics')}</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.user_analytics', 'User Analytics')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
 					columns={[
-						{ key: "metric", label: "Metric", sortable: true },
-						{ key: "value", label: "Value", sortable: true },
+						{ key: "metric", label: t('analytics.metric', 'Metric'), sortable: true },
+						{ key: "value", label: t('analytics.value', 'Value'), sortable: true },
 						{ key: "change", label: t('analytics.change', 'Change'), sortable: true, render: (v: number) => `<span class="${v >= 0 ? 'text-success-600' : 'text-danger-600'}">${v >= 0 ? '+' : ''}${v}%</span>` }
 					]}
 					data={userAnalytics ?? []}
-					emptyMessage="No user analytics data"
+					emptyMessage={t('analytics.no_user_analytics', 'No user analytics data')}
 				/>
 			</CardContent>
 		</Card>
@@ -318,17 +330,17 @@
 	{#if activeTab === "content"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.content_analytics')}</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.content_analytics', 'Content Analytics')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
 					columns={[
-						{ key: "type", label: "Type", sortable: true },
-						{ key: "count", label: "Count", sortable: true },
-						{ key: "engagement", label: "Engagement", sortable: true }
+						{ key: "type", label: t('analytics.type', 'Type'), sortable: true },
+						{ key: "count", label: t('analytics.count', 'Count'), sortable: true },
+						{ key: "engagement", label: t('analytics.engagement', 'Engagement'), sortable: true }
 					]}
 					data={contentAnalytics ?? []}
-					emptyMessage="No content analytics data"
+					emptyMessage={t('analytics.no_content_analytics', 'No content analytics data')}
 				/>
 			</CardContent>
 		</Card>
@@ -337,17 +349,17 @@
 	{#if activeTab === "spaces"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.space_analytics')}</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.space_analytics', 'Space Analytics')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
 					columns={[
-						{ key: "space", label: "Space", sortable: true },
-						{ key: "members", label: "Members", sortable: true },
-						{ key: "activity", label: "Activity", sortable: true }
+						{ key: "space", label: t('analytics.space', 'Space'), sortable: true },
+						{ key: "members", label: t('analytics.members', 'Members'), sortable: true },
+						{ key: "activity", label: t('analytics.activity', 'Activity'), sortable: true }
 					]}
 					data={spaceAnalytics ?? []}
-					emptyMessage="No space analytics data"
+					emptyMessage={t('analytics.no_space_analytics', 'No space analytics data')}
 				/>
 			</CardContent>
 		</Card>
@@ -356,17 +368,17 @@
 	{#if activeTab === "revenue"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.revenue_analytics')}</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.revenue_analytics', 'Revenue Analytics')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
 					columns={[
-						{ key: "period", label: "Period", sortable: true },
+						{ key: "period", label: t('analytics.period', 'Period'), sortable: true },
 						{ key: "revenue", label: t('analytics.revenue', 'Revenue'), sortable: true, render: (v: number) => `$${v.toLocaleString()}` },
-						{ key: "transactions", label: "Transactions", sortable: true }
+						{ key: "transactions", label: t('analytics.transactions', 'Transactions'), sortable: true }
 					]}
 					data={revenueAnalytics ?? []}
-					emptyMessage="No revenue analytics data"
+					emptyMessage={t('analytics.no_revenue_analytics', 'No revenue analytics data')}
 				/>
 			</CardContent>
 		</Card>
@@ -375,17 +387,17 @@
 	{#if activeTab === "search"}
 		<Card>
 			<CardHeader>
-				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.search_analytics')}</h3>
+				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.search_analytics', 'Search Analytics')}</h3>
 			</CardHeader>
 			<CardContent>
 				<DataTable
 					columns={[
-						{ key: "query", label: "Query", sortable: true },
-						{ key: "count", label: "Count", sortable: true },
-						{ key: "results", label: "Avg Results", sortable: true }
+						{ key: "query", label: t('analytics.query', 'Query'), sortable: true },
+						{ key: "count", label: t('analytics.count', 'Count'), sortable: true },
+						{ key: "results", label: t('analytics.avg_results', 'Avg Results'), sortable: true }
 					]}
 					data={searchAnalytics ?? []}
-					emptyMessage="No search analytics data"
+					emptyMessage={t('analytics.no_search_analytics', 'No search analytics data')}
 				/>
 			</CardContent>
 		</Card>
@@ -394,18 +406,18 @@
 
 <Modal
 	bind:open={flushModalOpen}
-	title="Flush Analytics Cache"
-	description="This will clear all cached analytics data. The cache will rebuild automatically."
+	title={t('analytics.flush_analytics_cache', 'Flush Analytics Cache')}
+	description={t('analytics.flush_cache_description', 'This will clear all cached analytics data. The cache will rebuild automatically.')}
 	size="sm"
 >
 	<div class="flex justify-end gap-3">
-		<Button variant="outline" onclick={() => flushModalOpen = false}>{t('analytics.cancel')}</Button>
+		<Button variant="outline" onclick={() => flushModalOpen = false}>{t('analytics.cancel', 'Cancel')}</Button>
 		<Button variant="destructive" onclick={handleFlushCache} disabled={flushing}>
 			{#if flushing}
 				<RefreshCw class="h-4 w-4 mr-2 animate-spin" />
-				Flushing...
+				{t('analytics.flushing', 'Flushing...')}
 			{:else}
-				Flush Cache
+				{t('analytics.flush_cache', 'Flush Cache')}
 			{/if}
 		</Button>
 	</div>

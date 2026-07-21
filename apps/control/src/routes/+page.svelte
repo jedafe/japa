@@ -150,9 +150,9 @@
 					outerRadius={90}
 					cornerRadius={4}
 					cRange={[
-						'var(--color-emerald-500)',
-						'var(--color-amber-500)',
-						'var(--color-red-500)',
+						'var(--color-accent-foreground)',
+						'var(--color-tertiary)',
+						'var(--color-destructive)',
 						'var(--color-muted-foreground)'
 					]}
 					legend

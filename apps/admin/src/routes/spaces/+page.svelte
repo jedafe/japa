@@ -135,10 +135,16 @@
 
 			const result = await spacesAdminApi.list(params.toString());
 			if (result.ok) {
-				const d = result.data as unknown as { items: Space[]; total: number; page: number; total_pages: number };
-				spaces = d.items ?? [];
-				totalItems = d.total ?? spaces.length;
-				totalPages = d.total_pages ?? 1;
+				const d = result.data as Space[] | { items: Space[]; page: number; total_pages: number };
+				if (Array.isArray(d)) {
+					spaces = d;
+					totalItems = d.length;
+					totalPages = 1;
+				} else {
+					spaces = d.items ?? [];
+					totalItems = d.items?.length ?? 0;
+					totalPages = d.total_pages ?? 1;
+				}
 			} else {
 				error = result.error ?? t("common.error", "Failed to load spaces");
 			}

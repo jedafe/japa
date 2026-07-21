@@ -3,6 +3,8 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { RefreshCw, CheckCircle, XCircle } from 'lucide-svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
 
 	type JoinRequest = {
 		id: string;
@@ -17,7 +19,27 @@
 	let loading = $state(true);
 	let errorMessage = $state('');
 
+	let searchQuery = $state('');
+
 	let spaceId = $derived(page.params.id);
+
+	const columns = [
+		{ key: 'user_id', label: t('joinRequests.user'), sortable: true, class: 'font-mono text-xs' },
+		{ key: 'message', label: t('joinRequests.message'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
+		{ key: 'status', label: t('joinRequests.status'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'approved' ? 'bg-success/15 text-success dark:text-success' : v === 'rejected' ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
+		{ key: 'requested_at', label: t('joinRequests.requested'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
+		{ key: 'actions', label: t('common.actions'), class: 'w-32 text-right', component: JoinRequestActionsCell }
+	];
+
+	function filteredRequests(): JoinRequest[] {
+		const q = searchQuery.toLowerCase().trim();
+		if (!q) return requests;
+		return requests.filter(r =>
+			r.user_id.toLowerCase().includes(q) ||
+			r.status.toLowerCase().includes(q) ||
+			(r.message ?? '').toLowerCase().includes(q)
+		);
+	}
 
 	async function load() {
 		loading = true;
@@ -54,6 +76,21 @@
 	});
 </script>
 
+{#snippet JoinRequestActionsCell(row: JoinRequest)}
+	{#if row.status === 'pending'}
+		<div class="flex items-center justify-end gap-1">
+			<Button variant="ghost" size="sm" onclick={() => updateRequest(row.id, 'approved')}>
+				<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
+				{t('joinRequests.approve')}
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => updateRequest(row.id, 'rejected')}>
+				<XCircle class="h-3 w-3 inline mr-1" style="color: var(--color-danger)" />
+				{t('joinRequests.reject')}
+			</Button>
+		</div>
+	{/if}
+{/snippet}
+
 <svelte:head>
 	<title>{t('joinRequests.title')} — JapaConnect Admin</title>
 </svelte:head>
@@ -74,54 +111,13 @@
 	</button>
 </div>
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('joinRequests.user')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('joinRequests.message')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('joinRequests.status')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('joinRequests.requested')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each requests as req (req.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-mono text-xs">{req.user_id}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{req.message || '—'}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {req.status === 'approved' ? 'bg-success/15 text-success dark:text-success' : req.status === 'rejected' ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">
-								{req.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(req.requested_at).toLocaleDateString()}</td>
-						<td class="px-4 py-3 text-right">
-							{#if req.status === 'pending'}
-								<div class="flex items-center justify-end gap-1">
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => updateRequest(req.id, 'approved')}>
-										<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
-										{t('joinRequests.approve')}
-									</button>
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => updateRequest(req.id, 'rejected')}>
-										<XCircle class="h-3 w-3 inline mr-1" style="color: var(--color-danger)" />
-										{t('joinRequests.reject')}
-									</button>
-								</div>
-							{/if}
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('joinRequests.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
+<DataTable
+	columns={columns}
+	data={filteredRequests()}
+	{loading}
+	pageSize={25}
+	emptyMessage={t('joinRequests.empty')}
+	searchable
+	searchPlaceholder={t('common.search')}
+	onsearch={(q) => { searchQuery = q; }}
+/>

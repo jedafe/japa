@@ -342,6 +342,17 @@ LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tena
 WHERE sm.space_id = @space_id AND sm.tenant_id = @tenant_id AND sm.status = 'pending'
 ORDER BY sm.joined_at ASC;
 
+-- name: ListAllSpaceJoinRequests :many
+-- Admin-wide pending join requests across every space in the admin's tenant.
+-- space_id is included so the admin panel can build a composite request id
+-- (space_id::user_id) for the approve/reject endpoints.
+SELECT sm.space_id, sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status
+FROM space_members sm
+JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+WHERE sm.tenant_id = @tenant_id AND sm.status = 'pending'
+ORDER BY sm.joined_at ASC;
+
 -- name: UpdateSpaceJoinRequest :exec
 UPDATE space_members
 SET status = @status

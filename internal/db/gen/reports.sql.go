@@ -164,6 +164,21 @@ func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Con
 	return i, err
 }
 
+const deleteReport = `-- name: DeleteReport :exec
+DELETE FROM content_reports
+WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteReportParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteReport(ctx context.Context, arg DeleteReportParams) error {
+	_, err := q.db.Exec(ctx, deleteReport, arg.ID, arg.TenantID)
+	return err
+}
+
 const getReport = `-- name: GetReport :one
 SELECT id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
     status, reviewed_by, resolution_note, resolved_at, created_at

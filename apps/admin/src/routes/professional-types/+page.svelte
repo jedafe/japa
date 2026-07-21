@@ -13,6 +13,9 @@
 	let types = $state<ProfileType[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+	let searchQuery = $state('');
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	let showModal = $state(false);
 	let saving = $state(false);
@@ -40,7 +43,12 @@
 		error = '';
 		const result = await professionalAdminApi.listTypes();
 		if (result.ok) {
-			types = result.data ?? [];
+			let items = result.data ?? [];
+			if (searchQuery) {
+				const q = searchQuery.toLowerCase();
+				items = items.filter((t: ProfileType) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q));
+			}
+			types = items;
 		} else {
 			error = result.error;
 		}
@@ -59,7 +67,7 @@
 
 		const result = await professionalAdminApi.getType(id);
 		if (result.ok && result.data) {
-			detailFields = (result.data as any).fields ?? [];
+			detailFields = (result.data as { fields?: Array<{ name: string; field_type: string; required: boolean }> })?.fields ?? [];
 		}
 		detailLoading = false;
 	}
@@ -101,6 +109,22 @@
 		} catch {
 			error = t('common.error');
 		}
+	}
+
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		error = '';
+		try {
+			for (const id of selectedIds) {
+				await professionalAdminApi.deleteType(id);
+			}
+			selectedIds = new Set();
+			await load();
+		} catch {
+			error = t('common.error');
+		}
+		bulkDeleting = false;
 	}
 
 	async function submit() {
@@ -164,7 +188,19 @@
 				data={types}
 				onrowclick={handleRowClick}
 				emptyMessage={t('professional_types.empty', 'No profile types configured')}
-			/>
+				pageSize={25}
+				searchable
+				onsearch={(q) => { searchQuery = q; load(); }}
+				selectable
+				bind:selectedIds
+			>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.deleteSelected', 'Delete Selected')} ({selectedIds.size})
+					</Button>
+				{/snippet}
+			</DataTable>
 		{/if}
 	</CardContent>
 </Card>

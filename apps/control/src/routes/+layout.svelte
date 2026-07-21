@@ -191,7 +191,7 @@
 	</main>
 {:else if !authChecked}
 	<main class="bg-background text-foreground flex min-h-screen items-center justify-center">
-		<p class="text-muted-foreground text-sm">Loading...</p>
+		<p class="text-muted-foreground text-sm">{t('common.loading', 'Loading...')}</p>
 	</main>
 {:else}
 	<div class="bg-background text-foreground flex h-screen overflow-hidden">

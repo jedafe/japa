@@ -36,6 +36,12 @@ const (
 	SystemGroupGuest      = "guest"
 )
 
+// SystemWildcardPermission is the special permission key that grants a user
+// unrestricted access to every permission node. It is assigned only to the
+// super-admin role(s); HasPermission short-circuits to true when present,
+// so super-admin never needs the (redundant) exhaustive list of per-node grants.
+const SystemWildcardPermission = "*"
+
 // Permission represents a single permission node (e.g. "blog.publish").
 type Permission struct {
 	Key         string
@@ -114,7 +120,29 @@ func (r *RBAC) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, 
 		return false
 	}
 
+	// Wildcard: a user granted "*" implicitly holds every permission node,
+	// so super-admin does not need an explicit grant per node.
+	if uc.Permissions[SystemWildcardPermission] {
+		return true
+	}
+
 	return uc.Permissions[permKey]
+}
+
+// IsSuperAdmin checks if a user belongs to the super_admin group.
+// Super admins bypass all permission checks.
+func (r *RBAC) IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool {
+	inGroup, err := r.read.IsUserInGroup(ctx, gen.IsUserInGroupParams{
+		TenantID:  tenantID,
+		UserID:   userID,
+		GroupSlug: SystemGroupSuperAdmin,
+	})
+	if err != nil {
+		slog.Warn("rbac: failed to check super admin group", "error", err)
+		return false
+	}
+
+	return inGroup
 }
 
 // GetUserContext loads a user's groups and resolved permissions.

@@ -3,6 +3,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Eye, Trash2 } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
 
 	type Track = {
 		id: string;
@@ -20,6 +22,25 @@
 	let selectedTrack = $state<Track | null>(null);
 	let enrollments = $state<{ user_id: string; enrolled_at: string }[]>([]);
 	let showEnrollments = $state(false);
+
+	let searchQuery = $state('');
+
+	const columns = [
+		{ key: 'title', label: t('learn.title'), sortable: true },
+		{ key: 'slug', label: t('learn.slug'), sortable: true, class: 'text-xs font-mono', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'enrollment_count', label: t('learn.enrollments'), sortable: true, class: 'text-xs' },
+		{ key: 'is_published', label: t('learn.status'), sortable: true, render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">${v ? t('learn.published') : t('learn.draft')}</span>` },
+		{ key: 'actions', label: t('common.actions'), class: 'w-32 text-right', component: TrackActionsCell }
+	];
+
+	function filteredTracks(): Track[] {
+		const q = searchQuery.toLowerCase().trim();
+		if (!q) return tracks;
+		return tracks.filter(tr =>
+			tr.title.toLowerCase().includes(q) ||
+			tr.slug.toLowerCase().includes(q)
+		);
+	}
 
 	async function load() {
 		loading = true;
@@ -79,6 +100,22 @@
 	});
 </script>
 
+{#snippet TrackActionsCell(row: Track)}
+	<div class="flex items-center justify-end gap-1">
+		{#if !row.is_published}
+			<Button variant="ghost" size="sm" onclick={() => publishTrack(row)}>
+				{t('learn.publish')}
+			</Button>
+		{/if}
+		<Button variant="ghost" size="sm" onclick={() => viewEnrollments(row)}>
+			<Eye class="h-3 w-3" style="color: var(--color-info)" />
+		</Button>
+		<Button variant="ghost" size="sm" onclick={() => deleteTrack(row.id)}>
+			<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
+		</Button>
+	</div>
+{/snippet}
+
 <svelte:head>
 	<title>{t('learn.title')} — JapaConnect Admin</title>
 </svelte:head>
@@ -92,61 +129,19 @@
 	</div>
 {/if}
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('learn.title')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('learn.slug')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('learn.enrollments')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('learn.status')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each tracks as track (track.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{track.title}</td>
-						<td class="px-4 py-3 text-xs font-mono" style="color: var(--color-muted)">{track.slug}</td>
-						<td class="px-4 py-3 text-xs">{track.enrollment_count}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {track.is_published ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">
-								{track.is_published ? t('learn.published') : t('learn.draft')}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-right">
-							<div class="flex items-center justify-end gap-1">
-								{#if !track.is_published}
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => publishTrack(track)}>
-										{t('learn.publish')}
-									</button>
-								{/if}
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => viewEnrollments(track)}>
-									<Eye class="h-3 w-3" style="color: var(--color-info)" />
-								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => deleteTrack(track.id)}>
-									<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-								</button>
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('learn.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
+<DataTable
+	columns={columns}
+	data={filteredTracks()}
+	{loading}
+	pageSize={25}
+	emptyMessage={t('learn.empty')}
+	searchable
+	searchPlaceholder={t('common.search')}
+	onsearch={(q) => { searchQuery = q; }}
+/>
 
 <!-- Enrollments Modal -->
-<Modal bind:open={showEnrollments} title={t('learn.enrollments')} onConfirm={() => showEnrollments = false} confirmLabel={t('common.close')}>
+<Modal bind:open={showEnrollments} title={t('learn.enrollments')} onConfirm={() => { showEnrollments = false; }} confirmLabel={t('common.close')}>
 	{#if selectedTrack}
 		<p class="text-sm mb-3" style="color: var(--color-muted)">{selectedTrack.title}</p>
 		{#if enrollments.length === 0}

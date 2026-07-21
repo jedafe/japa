@@ -2,10 +2,11 @@
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Plus, RefreshCw } from 'lucide-svelte';
+	import { Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 	import { userManagementApi, permissionsApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -26,8 +27,12 @@
 	let saveError = $state('');
 	let saving = $state(false);
 
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
+
 	let allPermissions = $state<string[]>([]);
 	let permSearch = $state('');
+	let searchQuery = $state("");
 
 	const canManageGroups = $derived(hasPermission('admin.rbac.manage'));
 
@@ -53,6 +58,10 @@
 				groups = d.groups ?? [];
 				totalItems = d.total ?? 0;
 				totalPages = Math.ceil(totalItems / pageSize) || 1;
+			}
+			if (searchQuery) {
+				const q = searchQuery.toLowerCase();
+				groups = groups.filter((g: any) => g.name?.toLowerCase().includes(q) || g.description?.toLowerCase().includes(q));
 			}
 			if (permsResult.ok) allPermissions = permsResult.data;
 		} catch { /* ignore */ }
@@ -80,6 +89,19 @@
 		} else {
 			saveError = result.error ?? t('users.groups.save_error', 'Failed to save group');
 		}
+	}
+
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		try {
+			for (const id of selectedIds) {
+				await userManagementApi.deleteGroup(id);
+			}
+			selectedIds = new Set();
+			load();
+		} catch { /* ignore */ }
+		bulkDeleting = false;
 	}
 
 	const columns = [
@@ -139,7 +161,18 @@
 				{columns}
 				data={groups}
 				emptyMessage={t('users.groups.empty', 'No groups found')}
-			/>
+				searchable
+				onsearch={(q) => { searchQuery = q; load(); }}
+				selectable
+				bind:selectedIds
+			>
+				{#snippet bulkActions()}
+					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+						<Trash2 class="h-3.5 w-3.5 mr-1" />
+						{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedIds.size})
+					</Button>
+				{/snippet}
+			</DataTable>
 			<Pagination
 				bind:page={currentPage}
 				{totalPages}

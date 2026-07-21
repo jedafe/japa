@@ -130,6 +130,7 @@ var taskTier = func() map[string]string {
 		TypeMaintenancePruneOldFeeds, TypeMaintenancePruneAuditLogs,
 		TypeMaintenancePrunePushTokens, TypeModerationAutoHide,
 		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents,
+		TypeTenantCleanupData,
 		TypeCouponExpireCheck, TypeAffiliateRecordClick,
 		TypeAffiliateCreditCommission, TypeAffiliateExpireCheck,
 		TypeRedirectRecordHit,
@@ -148,4 +149,88 @@ func QueueForTask(taskType string) string {
 		return q
 	}
 	return QueueDefault
+}
+
+// TaskTypeCatalog returns the full Asynq task type catalog with name, tier, and
+// description for use by the control panel cron job editor UI.
+func TaskTypeCatalog() []map[string]string {
+	tasks := []struct {
+		Name        string
+		Tier        string
+		Description string
+	}{
+		// Critical tier
+		{TypeNotificationDispatchBatch, "critical", "Batch send notifications"},
+		{TypeWebhookDelivery, "critical", "Deliver outbound webhook events"},
+		{TypePaymentWebhookProcess, "critical", "Process inbound payment webhook"},
+		{TypeTicketSendConfirmation, "critical", "Send ticket confirmation email"},
+		{TypePushDelivery, "critical", "Send push notifications"},
+		{TypeDMNotifyRequest, "critical", "Notify DM request received"},
+		{TypeDMNotifyMessage, "critical", "Notify new DM message"},
+		// Default tier
+		{TypeEmailSend, "default", "Send transactional email"},
+		{TypeSearchIndexSync, "default", "Index entity in Meilisearch"},
+		{TypeImageProcessing, "default", "Resize/optimize uploaded images"},
+		{TypeAITaskProcessing, "default", "Process AI task"},
+		{TypeEngagementCountUpdate, "default", "Update engagement counters"},
+		{TypeModerationScan, "default", "Run moderation scan on content"},
+		{TypeScheduledPublish, "default", "Publish scheduled content"},
+		{TypeLinkPreviewFetch, "default", "Fetch link preview metadata"},
+		{TypeLanguagePackAITranslate, "default", "AI-translate language pack"},
+		{TypeMediaScan, "default", "Scan uploaded media for policy violations"},
+		{TypeContentFanOutToFeeds, "default", "Fan out content to follower feeds"},
+		{TypeAIGenerateContentEmbedding, "default", "Generate vector embedding for content"},
+		{TypeReviewAggregateRecalc, "default", "Recalculate review aggregate scores"},
+		{TypeTicketSendStatusUpdate, "default", "Send ticket status change email"},
+		{TypeLearningUpdateTrackCompletion, "default", "Update learning track completion"},
+		{TypeVideoProcessing, "default", "Process uploaded video files"},
+		{TypeWalletProcessActivityEvent, "default", "Process wallet activity event"},
+		{TypeNewsletterSend, "default", "Send newsletter to subscribers"},
+		// Low tier
+		{TypeDigestEmail, "low", "Send digest email"},
+		{TypeSitemapGenerate, "low", "Generate sitemap XML"},
+		{TypeRSSRegenerate, "low", "Regenerate RSS feed XML"},
+		{TypeDataExport, "low", "Generate GDPR data export"},
+		{TypeAccountDeletionCleanup, "low", "GDPR account deletion cleanup"},
+		{TypeAdEventIngest, "low", "Ingest ad impression/click events"},
+		{TypeMaintenanceUpdateVelocityScores, "low", "Update velocity scores"},
+		{TypeMaintenanceCheckSLABreaches, "low", "Check ticket SLA breaches"},
+		{TypeMaintenanceUpdateGeoIPDB, "low", "Update GeoIP database"},
+		{TypeSpaceAutoPopulate, "low", "Auto-populate space content"},
+		{TypeAnalyticsRefreshViews, "low", "Refresh analytics view counts"},
+		{TypeSecurityScan, "low", "Run security scan"},
+		{TypeMaintenanceRegenerateLLMsTxt, "low", "Regenerate llms.txt file"},
+		{TypeLearningIssueCertificate, "low", "Issue learning certificate"},
+		{TypeDBManualVacuum, "low", "Run database VACUUM"},
+		{TypeNewsletterDigest, "low", "Send newsletter digest"},
+		{TypeComputeTrending, "low", "Compute trending content"},
+		{TypeComputeSuggestions, "low", "Compute content suggestions"},
+		{TypeMaintenanceCheckExpiredBans, "low", "Check and lift expired user bans"},
+		{TypeMaintenanceCheckExpiredBoosts, "low", "Check and expire content boosts"},
+		{TypeMaintenancePruneOldFeeds, "low", "Prune old feed entries"},
+		{TypeMaintenancePruneAuditLogs, "low", "Prune old audit logs"},
+		{TypeMaintenancePrunePushTokens, "low", "Prune stale push tokens"},
+		{TypeModerationAutoHide, "low", "Auto-hide heavily reported content"},
+		{TypeDMCleanupDeclinedRequests, "low", "Clean up declined DM requests"},
+		{TypeCouponTrackEvents, "low", "Track coupon usage events"},
+		{TypeCouponExpireCheck, "low", "Expire outdated coupons"},
+		{TypeAffiliateRecordClick, "low", "Record affiliate link click"},
+		{TypeAffiliateCreditCommission, "low", "Credit affiliate commission"},
+		{TypeAffiliateExpireCheck, "low", "Expire stale affiliate links"},
+		{TypeRedirectRecordHit, "low", "Record URL redirect hit"},
+		{TypeTenantCleanupData, "low", "Hard-delete tenant data after 30-day grace period"},
+		{TypeScheduledPublishSweep, "low", "Sweep and publish due scheduled content"},
+		{TypeGdprRetentionSweep, "low", "Process GDPR retention-wait deletions"},
+	}
+
+	result := make([]map[string]string, len(tasks))
+	for i, t := range tasks {
+		result[i] = map[string]string{
+			"value":       t.Name,
+			"label":       t.Name,
+			"tier":        t.Tier,
+			"description": t.Description,
+		}
+	}
+	return result
 }

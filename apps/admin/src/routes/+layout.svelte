@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
 	import { getPermissions } from '$lib/stores/permissions.svelte';
+	import { getAccessToken, setAccessToken } from '$lib/api/token';
 
 	import { initNotifications, addNotification } from '$lib/stores/notifications.svelte';
 	import { wsClient } from '$lib/websocket';
@@ -13,7 +14,7 @@
 	import '../app.css';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api';
+	import { api, apiFetch } from '$lib/api';
 	import { fetchCsrfToken } from '$lib/api/csrf';
 
 	let { children } = $props();
@@ -21,20 +22,24 @@
 	let sidebarMobileOpen = $state(false);
 	let currentPermissions = $state<string[]>([]);
 
-	// Fetch user data client-side on mount
 	onMount(async () => {
-		// Bootstrap the double-submit CSRF token once on app start so the first
-		// mutating request already carries it. Cached in $lib/api/csrf; the
-		// client also refreshes it automatically after a 403 rejection.
 		fetchCsrfToken().catch(() => {});
 
+		if (!getAccessToken()) {
+			const refreshRes = await apiFetch<{ access_token: string }>('/auth/refresh', {
+				method: 'POST',
+				headers: { 'X-Skip-Refresh': '1' }
+			});
+			if (!refreshRes.error && refreshRes.data?.access_token) {
+				setAccessToken(refreshRes.data.access_token);
+			}
+		}
+
 		try {
-			// Fetch user info
 			const userResult = await api<{ user: any }>('/me');
 			if (userResult.ok) {
 				setUser(userResult.data.user);
 				
-				// Fetch permissions separately
 				const permResult = await api<{ permissions: string[] }>('/me/permissions');
 				if (permResult.ok) {
 					setPermissions(permResult.data.permissions ?? []);
@@ -58,7 +63,7 @@
 	const PAGE_PERMISSIONS: Record<string, string> = {
 		'/users': 'admin.users.view',
 		'/content': 'admin.content.view',
-		'/moderation': 'admin.moderation.view',
+		'/moderation': 'admin.moderation',
 		'/analytics': 'admin.analytics.view',
 		'/settings': 'admin.settings.view',
 		'/roles': 'admin.roles.view',
@@ -115,7 +120,7 @@
 		'/affiliate': 'affiliate.admin.view',
 		'/docs': 'docs.manage',
 		'/deletions': 'gdpr.deletions.view',
-		'/moderation-queue': 'admin.moderation.view',
+		'/moderation-queue': 'admin.moderation',
 		'/moderation/content': 'moderation.content.review',
 		'/moderation/reports': 'reports.review',
 		'/moderation/appeals': 'reports.review',

@@ -1,8 +1,13 @@
 <script lang="ts">
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
+	import { Modal } from '$lib/components/ui/modal';
+	import { TableSkeleton } from '$lib/components/ui/skeleton';
+	import { RefreshCw, CheckCircle, XCircle, ShieldAlert, Users, MessageSquare, AlertTriangle } from 'lucide-svelte';
 	import { moderationAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { RefreshCw, CheckCircle, XCircle, ShieldAlert, Users, MessageSquare, AlertTriangle } from 'lucide-svelte';
-	import Modal from '$lib/components/Modal.svelte';
 
 	type ModerationQueueItem = {
 		id: string;
@@ -30,21 +35,86 @@
 	let errorMessage = $state('');
 	let activeTab = $state<'queue' | 'alerts'>('queue');
 
-	// Bulk selection
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkLoading = $state(false);
 
-	// Assign modal
 	let showAssignModal = $state(false);
 	let assignItemId = $state('');
 	let assigneeId = $state('');
 	let assignLoading = $state(false);
 
-	// Appeal modal
 	let showAppealModal = $state(false);
 	let appealItemId = $state('');
 	let appealReason = $state('');
 	let appealLoading = $state(false);
+
+	const queueColumns = [
+		{
+			key: 'content_type',
+			label: t('moderationQueue.type'),
+			sortable: true
+		},
+		{
+			key: 'content_id',
+			label: t('moderationQueue.content_id'),
+			render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v.slice(0, 12)}</span>`
+		},
+		{
+			key: 'reason',
+			label: t('moderationQueue.reason'),
+			render: (v: string) => v || '—'
+		},
+		{
+			key: 'assignee_name',
+			label: t('moderationQueue.assignee'),
+			render: (v: string) => v || '—'
+		},
+		{
+			key: 'reported_at',
+			label: t('moderationQueue.reported'),
+			sortable: true,
+			render: (v: string) => new Date(v).toLocaleDateString()
+		},
+		{
+			key: 'actions',
+			label: t('common.actions'),
+			class: 'w-32',
+			component: QueueActionsCell
+		}
+	];
+
+	const alertColumns = [
+		{
+			key: 'type',
+			label: t('moderationQueue.alert_type'),
+			sortable: true
+		},
+		{
+			key: 'message',
+			label: t('moderationQueue.message')
+		},
+		{
+			key: 'severity',
+			label: t('moderationQueue.severity'),
+			sortable: true,
+			render: (v: string) => {
+				const cls = v === 'high' ? 'bg-danger/15 text-danger dark:text-danger' : v === 'medium' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-muted/15 text-muted dark:text-muted';
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
+			}
+		},
+		{
+			key: 'created_at',
+			label: t('moderationQueue.created'),
+			sortable: true,
+			render: (v: string) => new Date(v).toLocaleDateString()
+		},
+		{
+			key: 'actions',
+			label: t('common.actions'),
+			class: 'w-32',
+			component: AlertActionsCell
+		}
+	];
 
 	async function load() {
 		loading = true;
@@ -89,24 +159,6 @@
 			load();
 		} catch {
 			errorMessage = t('common.error');
-		}
-	}
-
-	function toggleSelect(id: string) {
-		const next = new Set(selectedIds);
-		if (next.has(id)) {
-			next.delete(id);
-		} else {
-			next.add(id);
-		}
-		selectedIds = next;
-	}
-
-	function toggleSelectAll() {
-		if (selectedIds.size === items.length) {
-			selectedIds = new Set();
-		} else {
-			selectedIds = new Set(items.map((i) => i.id));
 		}
 	}
 
@@ -199,185 +251,131 @@
 	<title>{t('moderationQueue.title')} — JapaConnect Admin</title>
 </svelte:head>
 
-<h1 class="mb-1 text-2xl font-bold tracking-tight">{t('moderationQueue.title')}</h1>
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('moderationQueue.description')}</p>
-
-<!-- Tabs -->
-<div class="mb-6 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border)">
-	<button
-		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		style={activeTab === 'queue' ? 'background-color: var(--color-primary); color: white' : ''}
-		onclick={() => { activeTab = 'queue'; selectedIds = new Set(); load(); }}
-	>
-		<MessageSquare class="h-4 w-4" />
-		{t('moderationQueue.tab_queue')}
-	</button>
-	<button
-		class="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-		style={activeTab === 'alerts' ? 'background-color: var(--color-primary); color: white' : ''}
-		onclick={() => { activeTab = 'alerts'; load(); }}
-	>
-		<AlertTriangle class="h-4 w-4" />
-		{t('moderationQueue.tab_alerts')}
-	</button>
-</div>
+<PageHeader
+	title={t('moderationQueue.title')}
+	description={t('moderationQueue.description')}
+	actions={[
+		{ label: t('common.refresh'), icon: RefreshCw, onclick: load }
+	]}
+/>
 
 {#if errorMessage}
-	<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
 		{errorMessage}
 	</div>
 {/if}
 
-<div class="mb-4 flex items-center justify-between">
-	<div class="flex items-center gap-2">
-		{#if activeTab === 'queue' && selectedIds.size > 0}
-			<span class="text-xs" style="color: var(--color-muted)">{selectedIds.size} selected</span>
-			<button
-				class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-50"
-				style="color: var(--color-success)"
-				disabled={bulkLoading}
-				onclick={() => bulkAction('approve')}
-			>
-				<CheckCircle class="h-3 w-3" />
-				{t('moderationQueue.bulk_approve')}
-			</button>
-			<button
-				class="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-50"
-				style="color: var(--color-danger)"
-				disabled={bulkLoading}
-				onclick={() => bulkAction('reject')}
-			>
-				<XCircle class="h-3 w-3" />
-				{t('moderationQueue.bulk_reject')}
-			</button>
-		{/if}
-	</div>
-	<button class="btn btn-secondary flex items-center gap-1.5 text-xs" onclick={load}>
-		<RefreshCw class="h-3 w-3" />
-		{t('common.refresh')}
+<!-- Tabs -->
+<div class="mb-6 flex gap-1 rounded-lg p-1" style="background: var(--color-surface)">
+	<button
+		class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+		style={activeTab === 'queue' ? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)' : 'color: var(--color-muted)'}
+		onclick={() => { activeTab = 'queue'; selectedIds = new Set(); load(); }}
+	>
+		<MessageSquare class="mr-2 h-4 w-4" />
+		{t('moderationQueue.tab_queue')}
+	</button>
+	<button
+		class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+		style={activeTab === 'alerts' ? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)' : 'color: var(--color-muted)'}
+		onclick={() => { activeTab = 'alerts'; load(); }}
+	>
+		<AlertTriangle class="mr-2 h-4 w-4" />
+		{t('moderationQueue.tab_alerts')}
 	</button>
 </div>
 
-{#if loading}
-	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
-{:else if activeTab === 'queue'}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">
-						<input type="checkbox" checked={selectedIds.size === items.length && items.length > 0} onchange={toggleSelectAll} class="h-3.5 w-3.5 rounded" />
-					</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderationQueue.type')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderationQueue.content_id')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderationQueue.reason')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderationQueue.assignee')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderationQueue.reported')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each items as item (item.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3">
-							<input type="checkbox" checked={selectedIds.has(item.id)} onchange={() => toggleSelect(item.id)} class="h-3.5 w-3.5 rounded" />
-						</td>
-						<td class="px-4 py-3 text-xs">{item.content_type}</td>
-						<td class="px-4 py-3 text-xs font-mono" style="color: var(--color-muted)">{item.content_id.slice(0, 12)}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.reason || '—'}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{item.assignee_name || '—'}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(item.reported_at).toLocaleDateString()}</td>
-						<td class="px-4 py-3 text-right">
-							<div class="flex items-center justify-end gap-1">
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => approveItem(item.id)} title={t('moderationQueue.approve')}>
-									<CheckCircle class="h-3 w-3" style="color: var(--color-success)" />
-								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => rejectItem(item.id)} title={t('moderationQueue.reject')}>
-									<XCircle class="h-3 w-3" style="color: var(--color-danger)" />
-								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openAssignModal(item.id)} title={t('moderationQueue.assign')}>
-									<Users class="h-3 w-3" style="color: var(--color-info)" />
-								</button>
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openAppealModal(item.id)} title={t('moderationQueue.appeal')}>
-									<ShieldAlert class="h-3 w-3" style="color: var(--color-warning)" />
-								</button>
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="7" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('moderationQueue.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{:else if activeTab === 'alerts'}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderationQueue.alert_type')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderationQueue.message')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderationQueue.severity')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('moderationQueue.created')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each alerts as alert (alert.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 text-xs font-medium">{alert.type}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{alert.message}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {alert.severity === 'high' ? 'bg-danger/15 text-danger dark:text-danger' : alert.severity === 'medium' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-muted/15 text-muted dark:text-muted'}">
-								{alert.severity}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(alert.created_at).toLocaleDateString()}</td>
-						<td class="px-4 py-3 text-right">
-							<div class="flex items-center justify-end gap-1">
-								{#if !alert.acknowledged}
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-info)" onclick={() => acknowledgeAlert(alert.id)}>
-										{t('moderationQueue.acknowledge')}
-									</button>
-								{/if}
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-success)" onclick={() => resolveAlert(alert.id)}>
-									{t('moderationQueue.resolve')}
-								</button>
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('moderationQueue.no_alerts')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
+<Card>
+	<CardContent>
+		{#if loading}
+			<TableSkeleton rows={8} columns={activeTab === 'queue' ? queueColumns.length : alertColumns.length} />
+		{:else if activeTab === 'queue'}
+			<DataTable
+				columns={queueColumns}
+				data={items}
+				selectable={true}
+				bind:selectedIds
+				pageSize={25}
+				emptyMessage={t('moderationQueue.empty')}
+			>
+				{#snippet bulkActions()}
+					<Button variant="ghost" size="sm" onclick={() => bulkAction('approve')} disabled={bulkLoading} style="color: var(--color-success)">
+						<CheckCircle class="mr-1 h-3.5 w-3.5" />
+						{t('moderationQueue.bulk_approve')}
+					</Button>
+					<Button variant="ghost" size="sm" onclick={() => bulkAction('reject')} disabled={bulkLoading} style="color: var(--color-danger)">
+						<XCircle class="mr-1 h-3.5 w-3.5" />
+						{t('moderationQueue.bulk_reject')}
+					</Button>
+				{/snippet}
+			</DataTable>
+		{:else}
+			<DataTable
+				columns={alertColumns}
+				data={alerts}
+				pageSize={25}
+				emptyMessage={t('moderationQueue.no_alerts')}
+			/>
+		{/if}
+	</CardContent>
+</Card>
 
 <!-- Assign Moderator Modal -->
-<Modal bind:open={showAssignModal} title={t('moderationQueue.assign_moderator')} onConfirm={assignModerator} confirmLabel={assignLoading ? t('common.saving') : t('common.confirm')}>
+<Modal bind:open={showAssignModal} title={t('moderationQueue.assign_moderator')}>
 	<div class="space-y-4">
 		<div>
 			<label for="assignee-id" class="mb-1 block text-sm font-medium">{t('moderationQueue.assignee_id')}</label>
 			<input id="assignee-id" type="text" bind:value={assigneeId} placeholder="User ID" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
 		</div>
 	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showAssignModal = false)}>{t('common.cancel')}</Button>
+		<Button onclick={assignModerator} disabled={assignLoading}>{assignLoading ? t('common.saving') : t('common.confirm')}</Button>
+	</div>
 </Modal>
 
 <!-- Appeal Modal -->
-<Modal bind:open={showAppealModal} title={t('moderationQueue.handle_appeal')} onConfirm={submitAppeal} confirmLabel={appealLoading ? t('common.saving') : t('common.confirm')}>
+<Modal bind:open={showAppealModal} title={t('moderationQueue.handle_appeal')}>
 	<div class="space-y-4">
 		<div>
 			<label for="appeal-reason" class="mb-1 block text-sm font-medium">{t('moderationQueue.appeal_reason')}</label>
 			<textarea id="appeal-reason" bind:value={appealReason} rows="3" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" placeholder={t('moderationQueue.appeal_reason_placeholder')}></textarea>
 		</div>
 	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="outline" onclick={() => (showAppealModal = false)}>{t('common.cancel')}</Button>
+		<Button onclick={submitAppeal} disabled={appealLoading}>{appealLoading ? t('common.saving') : t('common.confirm')}</Button>
+	</div>
 </Modal>
+
+<!-- Queue Action Cell Snippet -->
+{#snippet QueueActionsCell(item: ModerationQueueItem)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => approveItem(item.id)} title={t('moderationQueue.approve')} style="color: var(--color-success)">
+			<CheckCircle class="h-3.5 w-3.5" />
+		</Button>
+		<Button variant="ghost" size="sm" onclick={() => rejectItem(item.id)} title={t('moderationQueue.reject')} style="color: var(--color-danger)">
+			<XCircle class="h-3.5 w-3.5" />
+		</Button>
+		<Button variant="ghost" size="sm" onclick={() => openAssignModal(item.id)} title={t('moderationQueue.assign')} style="color: var(--color-info)">
+			<Users class="h-3.5 w-3.5" />
+		</Button>
+		<Button variant="ghost" size="sm" onclick={() => openAppealModal(item.id)} title={t('moderationQueue.appeal')} style="color: var(--color-warning)">
+			<ShieldAlert class="h-3.5 w-3.5" />
+		</Button>
+	</div>
+{/snippet}
+
+<!-- Alert Action Cell Snippet -->
+{#snippet AlertActionsCell(alert: ModerationAlert)}
+	<div class="flex items-center gap-1">
+		{#if !alert.acknowledged}
+			<Button variant="ghost" size="sm" onclick={() => acknowledgeAlert(alert.id)} style="color: var(--color-info)">
+				{t('moderationQueue.acknowledge')}
+			</Button>
+		{/if}
+		<Button variant="ghost" size="sm" onclick={() => resolveAlert(alert.id)} style="color: var(--color-success)">
+			{t('moderationQueue.resolve')}
+		</Button>
+	</div>
+{/snippet}

@@ -38,6 +38,8 @@
 	let editingJob = $state<CronJob | null>(null);
 	let editForm = $state({ type: '', spec: '', payload: '{}' });
 	let saving = $state(false);
+	let selectedSchedulePreset = $state('');
+	let customScheduleMode = $state(false);
 
 	let deleteModalOpen = $state(false);
 	let deletingJob = $state<CronJob | null>(null);
@@ -46,6 +48,44 @@
 		{ value: 'all', label: t('cron.all_status', 'All Status') },
 		{ value: 'active', label: t('cron.active', 'Active') },
 		{ value: 'paused', label: t('cron.paused', 'Paused') }
+	];
+
+	interface TaskTypeOption {
+		value: string;
+		label: string;
+		description: string;
+		tier: 'critical' | 'default' | 'low';
+	}
+	let taskTypeOptions = $state<TaskTypeOption[]>([]);
+
+	async function loadTaskTypes() {
+		const result = await api<{ value: string; label: string; tier: string; description: string }[]>("/control/task-types");
+		if (result.ok && Array.isArray(result.data)) {
+			taskTypeOptions = result.data.map((t) => ({
+				value: t.value,
+				label: t.label,
+				description: t.description,
+				tier: t.tier as "critical" | "default" | "low",
+			}));
+		}
+	}
+
+	interface SchedulePreset {
+		value: string;
+		label: string;
+		cron: string;
+	}
+
+	const schedulePresets: SchedulePreset[] = [
+		{ value: 'every_minute', label: 'Every minute', cron: '* * * * *' },
+		{ value: 'every_5min', label: 'Every 5 minutes', cron: '*/5 * * * *' },
+		{ value: 'every_15min', label: 'Every 15 minutes', cron: '*/15 * * * *' },
+		{ value: 'every_30min', label: 'Every 30 minutes', cron: '*/30 * * * *' },
+		{ value: 'hourly', label: 'Every hour', cron: '0 * * * *' },
+		{ value: 'every_6h', label: 'Every 6 hours', cron: '0 */6 * * *' },
+		{ value: 'daily_3am', label: 'Daily at 03:00', cron: '0 3 * * *' },
+		{ value: 'weekly_sun_2am', label: 'Weekly (Sun 02:00)', cron: '0 2 * * 0' },
+		{ value: 'custom', label: 'Custom cron expression...', cron: '' }
 	];
 
 	const columns: DataTableColumn[] = [
@@ -90,13 +130,18 @@
 	function triggerJob(job: CronJob) {
 		void (async () => {
 			message = '';
-			const result = await api(`/control/cron/jobs/${job.id}/trigger`, { method: 'POST' });
-			if (result.ok) {
-				await load();
-				message = t('cron.trigger_success', 'Job triggered successfully.');
-				messageType = 'success';
-			} else {
-				message = result.error || t('cron.trigger_error', 'Failed to trigger job.');
+			try {
+				const result = await api(`/control/cron/jobs/${job.id}/trigger`, { method: 'POST' });
+				if (result.ok) {
+					await load();
+					message = t('cron.trigger_success', 'Job triggered successfully.');
+					messageType = 'success';
+				} else {
+					message = result.error || t('cron.trigger_error', 'Failed to trigger job.');
+					messageType = 'error';
+				}
+			} catch {
+				message = t('cron.trigger_error', 'Failed to trigger job.');
 				messageType = 'error';
 			}
 		})();
@@ -105,13 +150,18 @@
 	function pauseJob(job: CronJob) {
 		void (async () => {
 			message = '';
-			const result = await api(`/control/cron/jobs/${job.id}/pause`, { method: 'POST' });
-			if (result.ok) {
-				await load();
-				message = t('cron.pause_success', 'Job paused successfully.');
-				messageType = 'success';
-			} else {
-				message = result.error || t('cron.pause_error', 'Failed to pause job.');
+			try {
+				const result = await api(`/control/cron/jobs/${job.id}/pause`, { method: 'POST' });
+				if (result.ok) {
+					await load();
+					message = t('cron.pause_success', 'Job paused successfully.');
+					messageType = 'success';
+				} else {
+					message = result.error || t('cron.pause_error', 'Failed to pause job.');
+					messageType = 'error';
+				}
+			} catch {
+				message = t('cron.pause_error', 'Failed to pause job.');
 				messageType = 'error';
 			}
 		})();
@@ -120,13 +170,18 @@
 	function unpauseJob(job: CronJob) {
 		void (async () => {
 			message = '';
-			const result = await api(`/control/cron/jobs/${job.id}/unpause`, { method: 'POST' });
-			if (result.ok) {
-				await load();
-				message = t('cron.unpause_success', 'Job resumed successfully.');
-				messageType = 'success';
-			} else {
-				message = result.error || t('cron.unpause_error', 'Failed to resume job.');
+			try {
+				const result = await api(`/control/cron/jobs/${job.id}/unpause`, { method: 'POST' });
+				if (result.ok) {
+					await load();
+					message = t('cron.unpause_success', 'Job resumed successfully.');
+					messageType = 'success';
+				} else {
+					message = result.error || t('cron.unpause_error', 'Failed to resume job.');
+					messageType = 'error';
+				}
+			} catch {
+				message = t('cron.unpause_error', 'Failed to resume job.');
 				messageType = 'error';
 			}
 		})();
@@ -140,9 +195,19 @@
 				spec: job.spec,
 				payload: job.payload || '{}'
 			};
+			const match = schedulePresets.find((p) => p.cron === job.spec && p.value !== 'custom');
+			if (match) {
+				selectedSchedulePreset = match.value;
+				customScheduleMode = false;
+			} else {
+				selectedSchedulePreset = 'custom';
+				customScheduleMode = true;
+			}
 		} else {
 			editingJob = null;
 			editForm = { type: '', spec: '', payload: '{}' };
+			selectedSchedulePreset = '';
+			customScheduleMode = false;
 		}
 		editModalOpen = true;
 	}
@@ -151,9 +216,23 @@
 		editModalOpen = false;
 		editingJob = null;
 		editForm = { type: '', spec: '', payload: '{}' };
+		selectedSchedulePreset = '';
+		customScheduleMode = false;
 	}
 
-	let formValid = $derived(editForm.type.trim() !== '' && editForm.spec.trim() !== '' && /^(\*\/\d+|\d+\s|\d+\/\d+|[\d,*/-])+/.test(editForm.spec.trim()));
+	let formValid = $derived(editForm.type.trim() !== '' && editForm.spec.trim() !== '' && /^[\d*/\-,]+(\s[\d*/\-,]+){4}$/.test(editForm.spec.trim()));
+
+	function handleSchedulePresetChange(value: string) {
+		selectedSchedulePreset = value;
+		if (value === 'custom') {
+			customScheduleMode = true;
+			editForm.spec = '';
+		} else {
+			customScheduleMode = false;
+			const preset = schedulePresets.find((p) => p.value === value);
+			if (preset) editForm.spec = preset.cron;
+		}
+	}
 
 	async function submitJob() {
 		if (!formValid) return;
@@ -168,37 +247,43 @@
 
 		saving = true;
 		message = '';
-		const body = { type: editForm.type.trim(), spec: editForm.spec.trim(), payload: editForm.payload };
-		if (editingJob) {
-			const result = await api(`/control/cron/jobs/${editingJob.id}`, {
-				method: 'PATCH',
-				body
-			});
-			if (result.ok) {
-				closeEditModal();
-				await load();
-				message = t('cron.update_success', 'Job updated successfully.');
-				messageType = 'success';
+		try {
+			const body = { type: editForm.type.trim(), spec: editForm.spec.trim(), payload: editForm.payload };
+			if (editingJob) {
+				const result = await api(`/control/cron/jobs/${editingJob.id}`, {
+					method: 'PATCH',
+					body
+				});
+				if (result.ok) {
+					closeEditModal();
+					await load();
+					message = t('cron.update_success', 'Job updated successfully.');
+					messageType = 'success';
+				} else {
+					message = result.error || t('cron.update_error', 'Failed to update job.');
+					messageType = 'error';
+				}
 			} else {
-				message = result.error || t('cron.update_error', 'Failed to update job.');
-				messageType = 'error';
+				const result = await api<CronJob>('/control/cron/jobs', {
+					method: 'POST',
+					body
+				});
+				if (result.ok) {
+					closeEditModal();
+					await load();
+					message = t('cron.create_success', 'Job created successfully.');
+					messageType = 'success';
+				} else {
+					message = result.error || t('cron.create_error', 'Failed to create job.');
+					messageType = 'error';
+				}
 			}
-		} else {
-			const result = await api<CronJob>('/control/cron/jobs', {
-				method: 'POST',
-				body
-			});
-			if (result.ok) {
-				closeEditModal();
-				await load();
-				message = t('cron.create_success', 'Job created successfully.');
-				messageType = 'success';
-			} else {
-				message = result.error || t('cron.create_error', 'Failed to create job.');
-				messageType = 'error';
-			}
+		} catch {
+			message = t('cron.create_error', 'Failed to create job.');
+			messageType = 'error';
+		} finally {
+			saving = false;
 		}
-		saving = false;
 	}
 
 	function confirmDelete(job: CronJob) {
@@ -209,18 +294,22 @@
 	async function handleDelete() {
 		if (!deletingJob) return;
 		message = '';
-		const result = await api<{ id: string; status: string }>(`/control/cron/jobs/${deletingJob.id}`, { method: 'DELETE' });
-		if (result.ok) {
-			deleteModalOpen = false;
-			deletingJob = null;
-			await load();
-			message = result.data.status === 'paused'
-				? t('cron.delete_system_note', 'System job paused (cannot be deleted).')
-				: t('cron.delete_success', 'Job deleted successfully.');
-			messageType = 'success';
-		} else {
-			message = result.error || t('cron.delete_error', 'Failed to delete job.');
+		try {
+			const result = await api<{ id: string; status: string }>(`/control/cron/jobs/${deletingJob.id}`, { method: 'DELETE' });
+			if (result.ok) {
+				await load();
+				message = result.data.status === 'paused'
+					? t('cron.delete_system_note', 'System job paused (cannot be deleted).')
+					: t('cron.delete_success', 'Job deleted successfully.');
+				messageType = 'success';
+			} else {
+				message = result.error || t('cron.delete_error', 'Failed to delete job.');
+				messageType = 'error';
+			}
+		} catch {
+			message = t('cron.delete_error', 'Failed to delete job.');
 			messageType = 'error';
+		} finally {
 			deleteModalOpen = false;
 			deletingJob = null;
 		}
@@ -246,6 +335,7 @@
 
 	$effect(() => {
 		load();
+		loadTaskTypes();
 	});
 
 	let filteredJobs = $derived(
@@ -408,28 +498,96 @@
 					<label for="cron-type" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.job_type', 'Job Type')}
 					</label>
-					<input
-						id="cron-type"
-						type="text"
-						bind:value={editForm.type}
-						class="border-border-input bg-background text-foreground w-full rounded-5px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-						placeholder="email:send"
-					/>
+					<Select.Root type="single" value={editForm.type} onValueChange={(v) => { if (v) editForm.type = v; }}>
+						<Select.Trigger
+							id="cron-type"
+							class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+							aria-label={t('cron.job_type', 'Job Type')}
+						>
+							<Select.Value placeholder={t('cron.select_task_type', 'Select a task type...')} />
+						</Select.Trigger>
+						<Select.Portal>
+							<Select.Content
+								class="border-border-input bg-background shadow-popover z-50 max-h-80 rounded-xl border overflow-y-auto"
+								sideOffset={4}
+							>
+								<Select.Viewport class="p-1">
+									{#each ['critical', 'default', 'low'] as tier}
+										<div class="text-muted-foreground px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider">
+											{tier === 'critical' ? 'Critical' : tier === 'default' ? 'Default' : 'Low'} {t('cron.tier', 'Tier')}
+										</div>
+										{#each taskTypeOptions.filter((o) => o.tier === tier) as option}
+											<Select.Item
+												class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+												value={option.value}
+												label={option.label}
+											>
+												{#snippet children({ selected })}
+													<span class="font-mono text-xs">{option.label}</span>
+													{#if selected}<span class="ml-auto">✓</span>{/if}
+												{/snippet}
+											</Select.Item>
+										{/each}
+									{/each}
+								</Select.Viewport>
+							</Select.Content>
+						</Select.Portal>
+					</Select.Root>
+					<p class="text-muted-foreground mt-1 text-xs">
+						{t('cron.job_type_hint', 'The Asynq task type to execute')}
+					</p>
 				</div>
 				<div>
-					<label for="cron-spec" class="text-foreground mb-1 block text-sm font-medium">
+					<label for="cron-schedule-preset" class="text-foreground mb-1 block text-sm font-medium">
 						{t('cron.schedule', 'Schedule')}
 					</label>
-					<input
-						id="cron-spec"
-						type="text"
-						bind:value={editForm.spec}
-						class="border-border-input bg-background text-foreground w-full rounded-5px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-						placeholder="0 */6 * * *"
-					/>
-					<p class="text-muted-foreground mt-1 text-xs">
-						{t('cron.cron_expression', 'Cron expression (e.g. 0 */6 * * *)')}
-					</p>
+					<Select.Root type="single" value={selectedSchedulePreset} onValueChange={handleSchedulePresetChange}>
+						<Select.Trigger
+							id="cron-schedule-preset"
+							class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+							aria-label={t('cron.schedule', 'Schedule')}
+						>
+							<Select.Value placeholder={t('cron.select_schedule', 'Select a schedule...')} />
+						</Select.Trigger>
+						<Select.Portal>
+							<Select.Content
+								class="border-border-input bg-background shadow-popover z-50 rounded-xl border"
+								sideOffset={4}
+							>
+								<Select.Viewport class="p-1">
+									{#each schedulePresets as preset}
+										<Select.Item
+											class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+											value={preset.value}
+											label={preset.label}
+										>
+											{#snippet children({ selected })}
+												<span>{preset.label}</span>
+												{#if preset.cron}<span class="text-muted-foreground ml-auto font-mono text-[10px]">{preset.cron}</span>{/if}
+												{#if selected}<span class="ml-1">✓</span>{/if}
+											{/snippet}
+										</Select.Item>
+									{/each}
+								</Select.Viewport>
+							</Select.Content>
+						</Select.Portal>
+					</Select.Root>
+					{#if customScheduleMode}
+						<input
+							id="cron-spec"
+							type="text"
+							bind:value={editForm.spec}
+							class="border-border-input bg-background text-foreground mt-2 w-full rounded-5px border px-3 py-2 font-mono text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+							placeholder="0 */6 * * *"
+						/>
+						<p class="text-muted-foreground mt-1 text-xs">
+							{t('cron.cron_expression', 'Cron expression (e.g. 0 */6 * * *)')}
+						</p>
+					{:else if editForm.spec}
+						<p class="text-muted-foreground mt-1 font-mono text-xs">
+							{editForm.spec}
+						</p>
+					{/if}
 				</div>
 				<div>
 					<label for="cron-payload" class="text-foreground mb-1 block text-sm font-medium">

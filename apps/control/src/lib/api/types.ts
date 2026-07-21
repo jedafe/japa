@@ -47,12 +47,35 @@ export interface QueueStats {
 	dlq_count: number;
 }
 
+export interface QueueTask {
+	id: string;
+	type: string;
+	state: string;
+	payload: string;
+	retry_count: number;
+	max_retry: number;
+	last_err?: string;
+	last_failed_at?: string;
+	next_process_at?: string;
+}
+
+export interface QueueTasksResponse {
+	pending: QueueTask[];
+	active: QueueTask[];
+	scheduled: QueueTask[];
+	retry: QueueTask[];
+	archived: QueueTask[];
+	completed: QueueTask[];
+}
+
 export interface DlqEntry {
 	task_id: string;
 	task_type: string;
+	queue: string;
 	error_message: string;
 	failed_at: string;
 	retry_count: number;
+	max_retries: number;
 	payload: Record<string, unknown>;
 }
 
@@ -168,7 +191,7 @@ export interface DbHealth {
 	tables: { name: string; live_rows: number; dead_rows: number; dead_ratio: number; row_count: number; size_bytes: number; index_count: number; last_vacuum: string | null }[];
 	slow_queries: { pid: number; duration: number; duration_ms: number; state: string; query_preview: string; query: string; timestamp: string }[];
 	indexes_unused: { name: string; table_name: string; scans: number }[];
-	connection_pool?: { active: number; idle: number; waiting: number; max: number };
+	connection_pool?: { active: number; idle: number; max: number };
 	replication?: { state: string; lag_seconds: number };
 }
 
@@ -205,6 +228,7 @@ export interface DataTableRowAction<T = Record<string, unknown>> {
 	onClick: (row: T) => void;
 	variant?: 'default' | 'destructive';
 	disabled?: (row: T) => boolean;
+	hidden?: (row: T) => boolean;
 }
 
 export interface DataTableBulkAction {

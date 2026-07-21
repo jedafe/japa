@@ -52,6 +52,8 @@
 	let loading = $state(true);
 	let error = $state("");
 	let filters = $state<Record<string, string>>({});
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	// Create modal
 	let showCreateModal = $state(false);
@@ -73,38 +75,38 @@
 	const canManageLearning = $derived(hasPermission("learning.admin.manage"));
 
 	const tabs = $derived([
-		{ value: "tracks", label: "Tracks", icon: GraduationCap, count: tracks.length },
-		{ value: "modules", label: "Modules", icon: Layers, count: modules.length },
-		{ value: "lessons", label: "Lessons", icon: FileText, count: lessons.length }
+		{ value: "tracks", label: t('app.learning.tab_tracks', 'Tracks'), icon: GraduationCap, count: tracks.length },
+		{ value: "modules", label: t('app.learning.tab_modules', 'Modules'), icon: Layers, count: modules.length },
+		{ value: "lessons", label: t('app.learning.tab_lessons', 'Lessons'), icon: FileText, count: lessons.length }
 	]);
 
 	const trackColumns = [
 		{
 			key: "title",
-			label: "Track",
+			label: t('app.learning.col_track', 'Track'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
 					<p class="font-medium text-foreground">${row.title}</p>
-					<p class="text-sm text-muted line-clamp-1">${row.description || "No description"}</p>
+					<p class="text-sm text-muted line-clamp-1">${row.description || "${t('app.learning.no_description', 'No description')}"}</p>
 				</div>
 			`
 		},
 		{
 			key: "module_count",
-			label: "Modules",
+			label: t('app.learning.col_modules', 'Modules'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
 		},
 		{
 			key: "enrollment_count",
-			label: "Enrollments",
+			label: t('app.learning.col_enrollments', 'Enrollments'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>`
 		},
 		{
 			key: "status",
-			label: "Status",
+			label: t('app.learning.col_status', 'Status'),
 			sortable: true,
 			render: (value: string) => {
 				const variant = value === "published" ? "success" : value === "draft" ? "warning" : "secondary";
@@ -127,7 +129,7 @@
 	const moduleColumns = [
 		{
 			key: "title",
-			label: "Module",
+			label: t('app.learning.col_module', 'Module'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
@@ -138,13 +140,13 @@
 		},
 		{
 			key: "lesson_count",
-			label: "Lessons",
+			label: t('app.learning.col_lessons', 'Lessons'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
 		},
 		{
 			key: "sort_order",
-			label: "Order",
+			label: t('app.learning.col_order', 'Order'),
 			sortable: true,
 			render: (value: number) => `<span class="text-sm text-foreground-alt">${value}</span>`
 		},
@@ -159,7 +161,7 @@
 	const lessonColumns = [
 		{
 			key: "title",
-			label: "Lesson",
+			label: t('app.learning.col_lesson', 'Lesson'),
 			sortable: true,
 			render: (_: any, row: any) => `
 				<div>
@@ -170,13 +172,13 @@
 		},
 		{
 			key: "duration_minutes",
-			label: "Duration",
+			label: t('app.learning.col_duration', 'Duration'),
 			sortable: true,
-			render: (value: number) => `<span class="text-sm text-foreground-alt">${value ? `${value} min` : "—"}</span>`
+			render: (value: number) => `<span class="text-sm text-foreground-alt">${value ? `${value} ${t('app.learning.min', 'min')}` : "—"}</span>`
 		},
 		{
 			key: "sort_order",
-			label: "Order",
+			label: t('app.learning.col_order', 'Order'),
 			sortable: true,
 			render: (value: number) => `<span class="text-sm text-foreground-alt">${value}</span>`
 		},
@@ -211,7 +213,7 @@
 				lessons = result.ok ? (result.data ?? []) : [];
 			}
 		} catch {
-			error = "Failed to load data";
+			error = t('app.learning.error_load', 'Failed to load data');
 		} finally {
 			loading = false;
 		}
@@ -239,7 +241,7 @@
 				await refresh();
 			}
 		} catch {
-			error = "Failed to create track";
+			error = t('app.learning.error_create_track', 'Failed to create track');
 		} finally {
 			creating = false;
 		}
@@ -257,7 +259,7 @@
 			newModule = { track_id: "", title: "" };
 			await refresh();
 		} catch {
-			error = "Failed to create module";
+			error = t('app.learning.error_create_module', 'Failed to create module');
 		} finally {
 			creating = false;
 		}
@@ -275,7 +277,7 @@
 			newLesson = { module_id: "", title: "", body: "" };
 			await refresh();
 		} catch {
-			error = "Failed to create lesson";
+			error = t('app.learning.error_create_lesson', 'Failed to create lesson');
 		} finally {
 			creating = false;
 		}
@@ -287,7 +289,7 @@
 			await api(`/admin/learn/tracks/${id}/publish`, { method: "POST" });
 			await refresh();
 		} catch {
-			error = "Failed to publish track";
+			error = t('app.learning.error_publish_track', 'Failed to publish track');
 		} finally {
 			publishing = false;
 		}
@@ -315,7 +317,7 @@
 			deleteTarget = null;
 			await refresh();
 		} catch {
-			error = "Failed to delete item";
+			error = t('app.learning.error_delete_item', 'Failed to delete item');
 		} finally {
 			deleting = false;
 		}
@@ -324,17 +326,42 @@
 	$effect(() => {
 		refresh();
 	});
+
+	$effect(() => {
+		void activeTab;
+		selectedIds = new Set();
+	});
+
+	async function bulkDelete() {
+		if (selectedIds.size === 0 || bulkDeleting) return;
+		bulkDeleting = true;
+		try {
+			const ids = Array.from(selectedIds);
+			const endpoint = activeTab === "tracks"
+				? (id: string) => `/admin/learn/tracks/${id}`
+				: activeTab === "modules"
+					? (id: string) => `/admin/learn/modules/${id}`
+					: (id: string) => `/admin/learn/lessons/${id}`;
+			await Promise.all(ids.map((id) => api(endpoint(id), { method: "DELETE" })));
+			selectedIds = new Set();
+			await refresh();
+		} catch {
+			error = t('app.learning.error_delete_bulk', 'Failed to delete selected items');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
 </script>
 
 <svelte:head>
-	<title>Learning — JapaConnect Admin</title>
+	<title>{t('app.learning.page_title', 'Learning — JapaConnect Admin')}</title>
 </svelte:head>
 
 <PageHeader
-	title="Learning Management"
-	description="Create and manage courses, modules, and lessons"
+	title={t('app.learning.title', 'Learning Management')}
+	description={t('app.learning.description', 'Create and manage courses, modules, and lessons')}
 	actions={[
-		...(canManageLearning ? [{ label: `New ${activeTab === "tracks" ? "Track" : activeTab === "modules" ? "Module" : "Lesson"}`, icon: Plus, onclick: openCreate }] : [])
+		...(canManageLearning ? [{ label: `${t('app.learning.new_prefix', 'New')} ${activeTab === "tracks" ? t('app.learning.track', 'Track') : activeTab === "modules" ? t('app.learning.module', 'Module') : t('app.learning.lesson', 'Lesson')}`, icon: Plus, onclick: openCreate }] : [])
 	]}
 />
 
@@ -350,7 +377,7 @@
 	<FilterBar
 		bind:value={filters}
 		filters={[]}
-		searchPlaceholder="Search learning content..."
+		searchPlaceholder={t('app.learning.search_placeholder', 'Search learning content...')}
 		onsearch={handleFilter}
 		onclear={() => { filters = {}; }}
 	/>
@@ -368,8 +395,17 @@
 					columns={currentColumns}
 					data={currentData}
 					pageSize={15}
-					emptyMessage={`No ${activeTab} found`}
-				/>
+					emptyMessage={t(`app.learning.empty_${activeTab}`, `No ${activeTab} found`)}
+					selectable={canManageLearning}
+					bind:selectedIds
+				>
+					{#snippet bulkActions()}
+						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
+							<Trash2 class="h-3.5 w-3.5" />
+							{bulkDeleting ? t('app.learning.deleting', 'Deleting...') : t('app.learning.delete_selected', 'Delete Selected')}
+						</Button>
+					{/snippet}
+				</DataTable>
 			{/if}
 		</CardContent>
 	</Card>
@@ -378,8 +414,8 @@
 <!-- Create Modal -->
 <Modal
 	bind:open={showCreateModal}
-	title={`Create ${activeTab === "tracks" ? "Track" : activeTab === "modules" ? "Module" : "Lesson"}`}
-	description={`Add a new ${activeTab.slice(0, -1)} to the learning platform`}
+	title={`${t('app.learning.create_prefix', 'Create')} ${activeTab === "tracks" ? t('app.learning.track', 'Track') : activeTab === "modules" ? t('app.learning.module', 'Module') : t('app.learning.lesson', 'Lesson')}`}
+	description={`${t('app.learning.add_new_prefix', 'Add a new')} ${activeTab.slice(0, -1)} ${t('app.learning.add_new_suffix', 'to the learning platform')}`}
 	size="lg"
 >
 	{#if activeTab === "tracks"}
@@ -390,7 +426,7 @@
 					id="track-title"
 					type="text"
 					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-					placeholder="e.g. JavaScript Fundamentals"
+					placeholder={t('app.learning.placeholder_track_title', 'e.g. JavaScript Fundamentals')}
 					bind:value={newTrack.title}
 				/>
 			</div>
@@ -400,7 +436,7 @@
 					id="track-description"
 					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					rows="3"
-					placeholder="What will students learn?"
+					placeholder={t('app.learning.placeholder_track_description', 'What will students learn?')}
 					bind:value={newTrack.description}
 				></textarea>
 			</div>
@@ -413,7 +449,7 @@
 					id="module-track-id"
 					type="text"
 					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-					placeholder="Parent track ID"
+					placeholder={t('app.learning.placeholder_parent_track_id', 'Parent track ID')}
 					bind:value={newModule.track_id}
 				/>
 			</div>
@@ -423,7 +459,7 @@
 					id="module-title"
 					type="text"
 					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-					placeholder="e.g. Variables and Types"
+					placeholder={t('app.learning.placeholder_module_title', 'e.g. Variables and Types')}
 					bind:value={newModule.title}
 				/>
 			</div>
@@ -436,7 +472,7 @@
 					id="lesson-module-id"
 					type="text"
 					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-					placeholder="Parent module ID"
+					placeholder={t('app.learning.placeholder_parent_module_id', 'Parent module ID')}
 					bind:value={newLesson.module_id}
 				/>
 			</div>
@@ -446,7 +482,7 @@
 					id="lesson-title"
 					type="text"
 					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-					placeholder="e.g. Introduction to Closures"
+					placeholder={t('app.learning.placeholder_lesson_title', 'e.g. Introduction to Closures')}
 					bind:value={newLesson.title}
 				/>
 			</div>
@@ -456,7 +492,7 @@
 					id="lesson-body"
 					class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					rows="8"
-					placeholder="Lesson content in Markdown..."
+					placeholder={t('app.learning.placeholder_lesson_body', 'Lesson content in Markdown...')}
 					bind:value={newLesson.body}
 				></textarea>
 			</div>
@@ -470,20 +506,20 @@
 			disabled={creating}
 		>
 			{#if creating}
-				Creating...
+				{t('app.learning.creating', 'Creating...')}
 			{:else}
-				Create
+				{t('app.learning.create', 'Create')}
 			{/if}
 		</Button>
 	</div>
 </Modal>
 
 <!-- Delete Confirmation Modal -->
-<Modal bind:open={showDeleteModal} title="Delete Item" description="This action cannot be undone." size="sm">
+<Modal bind:open={showDeleteModal} title={t('app.learning.modal_delete_title', 'Delete Item')} description={t('app.learning.modal_delete_description', 'This action cannot be undone.')} size="sm">
 	{#if deleteTarget}
 		<div class="rounded-lg bg-danger-50 p-4">
 			<p class="text-sm text-danger-700">
-				Are you sure you want to delete <strong>{deleteTarget.title}</strong>?
+				{t('app.learning.delete_confirm', 'Are you sure you want to delete')} <strong>{deleteTarget.title}</strong>?
 			</p>
 		</div>
 	{/if}
@@ -491,20 +527,20 @@
 		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('learning.cancel')}</Button>
 		<Button variant="destructive" onclick={deleteItem} disabled={deleting}>
 			{#if deleting}
-				Deleting...
+				{t('app.learning.deleting', 'Deleting...')}
 			{:else}
-				Delete
+				{t('app.learning.delete', 'Delete')}
 			{/if}
 		</Button>
 	</div>
 </Modal>
 
 <!-- Publish Confirm Modal -->
-<Modal bind:open={showPublishModal} title="Publish Track" description="This will make the track visible to learners." size="sm">
+<Modal bind:open={showPublishModal} title={t('app.learning.modal_publish_title', 'Publish Track')} description={t('app.learning.modal_publish_description', 'This will make the track visible to learners.')} size="sm">
 	{#if publishTarget}
 		<div class="rounded-lg bg-success-50 p-4">
 			<p class="text-sm text-success-700">
-				Publish <strong>{publishTarget.title}</strong>?
+				{t('app.learning.publish_confirm', 'Publish')} <strong>{publishTarget.title}</strong>?
 			</p>
 		</div>
 	{/if}
@@ -512,9 +548,9 @@
 		<Button variant="outline" onclick={() => (showPublishModal = false)}>{t('learning.cancel')}</Button>
 		<Button onclick={async () => { if (publishTarget) { await publishTrack(publishTarget.id); showPublishModal = false; publishTarget = null; }}} disabled={publishing}>
 			{#if publishing}
-				Publishing...
+				{t('app.learning.publishing', 'Publishing...')}
 			{:else}
-				Publish
+				{t('app.learning.publish', 'Publish')}
 			{/if}
 		</Button>
 	</div>
@@ -525,7 +561,7 @@
 	<div class="flex items-center gap-1">
 		{#if canManageLearning && row.status === "draft"}
 			<Button variant="ghost" size="sm" onclick={() => openPublish(row.id, row.title)} style="color: var(--color-success)">
-				<Send class="h-3.5 w-3.5" /> Publish
+				<Send class="h-3.5 w-3.5" /> {t('app.learning.publish', 'Publish')}
 			</Button>
 		{/if}
 		{#if canManageLearning}

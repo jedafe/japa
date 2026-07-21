@@ -34,10 +34,10 @@ func TestCheckLoginAttempt_AllowedUnderThreshold(t *testing.T) {
 	store := newMockBruteForceStore()
 	ctx := t.Context()
 
-	for i := range MaxLoginAttempts - 1 {
+	for i := range DefaultMaxLoginAttempts - 1 {
 		store.counts["user1"] = i
 
-		allowed, _ := CheckLoginAttempt(ctx, store, "user1")
+		allowed, _ := CheckLoginAttempt(ctx, store, "user1", DefaultMaxLoginAttempts)
 		if !allowed {
 			t.Errorf("attempt %d should be allowed", i+1)
 		}
@@ -49,9 +49,9 @@ func TestCheckLoginAttempt_BlockedAtThreshold(t *testing.T) {
 
 	store := newMockBruteForceStore()
 	ctx := t.Context()
-	store.counts["user1"] = MaxLoginAttempts
+	store.counts["user1"] = DefaultMaxLoginAttempts
 
-	allowed, retryAfter := CheckLoginAttempt(ctx, store, "user1")
+	allowed, retryAfter := CheckLoginAttempt(ctx, store, "user1", DefaultMaxLoginAttempts)
 	if allowed {
 		t.Error("login should be blocked at threshold")
 	}
@@ -109,7 +109,7 @@ func TestExponentialBackoff(t *testing.T) {
 	// At 5 failures (threshold): 2^1 = 2 seconds
 	store.counts["user1"] = 5
 
-	_, retry := CheckLoginAttempt(ctx, store, "user1")
+	_, retry := CheckLoginAttempt(ctx, store, "user1", DefaultMaxLoginAttempts)
 	if retry != 2*time.Second {
 		t.Errorf("at threshold: expected 2s, got %v", retry)
 	}
@@ -117,7 +117,7 @@ func TestExponentialBackoff(t *testing.T) {
 	// At 6 failures: 2^2 = 4 seconds
 	store.counts["user1"] = 6
 
-	_, retry = CheckLoginAttempt(ctx, store, "user1")
+	_, retry = CheckLoginAttempt(ctx, store, "user1", DefaultMaxLoginAttempts)
 	if retry != 4*time.Second {
 		t.Errorf("at 6: expected 4s, got %v", retry)
 	}

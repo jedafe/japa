@@ -4,6 +4,9 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, Pencil, Trash2, Shield } from 'lucide-svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { FilterBar } from '$lib/components/ui/filter-bar';
+	import { Button } from '$lib/components/ui/button';
 
 	type FieldGroup = {
 		id: string;
@@ -30,6 +33,8 @@
 	let groups = $state<FieldGroup[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	let showCreateModal = $state(false);
 	let showEditModal = $state(false);
@@ -52,8 +57,52 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<FieldGroup | null>(null);
 
-	// Backend gates field-group mutations on custom_fields.group.create/edit/delete
+	let searchQuery = $state('');
+
 	const canManageFields = $derived(hasPermission('custom_fields.group.create'));
+
+	const filterDefs = [
+		{
+			key: 'entity_type',
+			label: 'Entity Type',
+			options: [
+				{ value: 'user', label: 'User' },
+				{ value: 'post', label: 'Post' },
+				{ value: 'space', label: 'Space' },
+				{ value: 'comment', label: 'Comment' },
+				{ value: 'message', label: 'Message' }
+			]
+		}
+	];
+
+	let filterValues = $state<Record<string, string>>({});
+
+	function handleFilterSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? '';
+		filterValues = values;
+	}
+
+	function handleFilterClear() {
+		searchQuery = '';
+		filterValues = {};
+	}
+
+	const filteredGroups = $derived(
+		searchQuery
+			? groups.filter(
+					(g) =>
+						g.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						g.entity_type.toLowerCase().includes(searchQuery.toLowerCase())
+				)
+			: groups
+	);
+
+	const columns = [
+		{ key: 'name', label: t('fieldGroups.name'), sortable: true },
+		{ key: 'entity_type', label: t('fieldGroups.entity_type'), sortable: true },
+		{ key: 'field_count', label: t('fieldGroups.fields'), sortable: true },
+		{ key: 'actions', label: t('common.actions'), class: 'w-24', component: FieldGroupActionsCell }
+	];
 
 	function confirmDelete(group: FieldGroup) {
 		deleteTarget = group;
@@ -73,13 +122,36 @@
 		}
 	}
 
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		errorMessage = '';
+		try {
+			for (const id of selectedIds) {
+				await api(`/admin/field-groups/${id}`, { method: 'DELETE' });
+			}
+			selectedIds = new Set();
+			load();
+		} catch {
+			errorMessage = t('common.error');
+		}
+		bulkDeleting = false;
+	}
+
+	function handleSearch(q: string) {
+		searchQuery = q;
+	}
+
 	async function load() {
 		loading = true;
 		errorMessage = '';
 		try {
-			const result = await api<FieldGroup[]>('/admin/field-groups');
+			const params = new URLSearchParams();
+			if (filterValues.entity_type) params.set('entity_type', filterValues.entity_type);
+			const qs = params.toString();
+			const result = await fieldGroupsAdminApiExtended.list(qs || undefined);
 			if (result.ok) {
-				groups = result.data ?? [];
+				groups = (Array.isArray(result.data) ? result.data : []) as FieldGroup[];
 			} else {
 				errorMessage = result.error;
 			}
@@ -236,51 +308,29 @@
 		</button>
 	</div>
 
+	<FilterBar filters={filterDefs} onsearch={handleFilterSearch} onclear={handleFilterClear} />
+
 	{#if loading}
 		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 	{:else}
-		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-			<table class="w-full text-sm">
-				<thead>
-					<tr style="border-bottom: 1px solid var(--color-border)">
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('fieldGroups.name')}</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('fieldGroups.entity_type')}</th>
-						<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('fieldGroups.fields')}</th>
-						<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each groups as group (group.id)}
-						<tr class="border-t" style="border-color: var(--color-border)">
-							<td class="px-4 py-3 font-medium">{group.name}</td>
-							<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{group.entity_type}</td>
-							<td class="px-4 py-3 text-xs">{group.field_count}</td>
-							<td class="px-4 py-3 text-right">
-								<div class="flex items-center justify-end gap-1">
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openPermissions(group)} title={t('fieldGroups.permissions')}>
-										<Shield class="h-3 w-3" style="color: var(--color-primary)" />
-									</button>
-									{#if canManageFields}
-										<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(group)}>
-											<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
-										</button>
-										<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => confirmDelete(group)}>
-											<Trash2 class="h-3 w-3" style="color: var(--color-danger)" />
-										</button>
-									{/if}
-								</div>
-							</td>
-						</tr>
-					{:else}
-						<tr>
-							<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-								{t('fieldGroups.empty')}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
+		<DataTable
+			{columns}
+			data={filteredGroups}
+			pageSize={25}
+			emptyMessage={t('fieldGroups.empty')}
+			searchable
+			searchPlaceholder={t('common.search') + ' ' + t('fieldGroups.title').toLowerCase() + '...'}
+			onsearch={handleSearch}
+			selectable
+			bind:selectedIds
+		>
+			{#snippet bulkActions()}
+				<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+					<Trash2 class="h-3.5 w-3.5 mr-1" />
+					{bulkDeleting ? t('common.deleting', 'Deleting...') : t('common.deleteSelected', 'Delete Selected')} ({selectedIds.size})
+				</Button>
+			{/snippet}
+		</DataTable>
 	{/if}
 
 {:else if activeTab === 'permissions'}
@@ -364,3 +414,20 @@
 		{t('fieldGroups.delete_confirm')} <strong>{deleteTarget?.name}</strong>?
 	</p>
 </Modal>
+
+<!-- FieldGroupActionsCell snippet for DataTable -->
+{#snippet FieldGroupActionsCell(group: FieldGroup)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openPermissions(group)} title={t('fieldGroups.permissions')}>
+			<Shield class="h-3.5 w-3.5" style="color: var(--color-primary)" />
+		</Button>
+		{#if canManageFields}
+			<Button variant="ghost" size="sm" onclick={() => openEdit(group)}>
+				<Pencil class="h-3.5 w-3.5" />
+			</Button>
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(group)} style="color: var(--color-danger)">
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

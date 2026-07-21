@@ -10,6 +10,7 @@
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { page } from "$app/state";
+	import { FilterBar } from "$lib/components/ui/filter-bar";
 
 	type Consent = {
 		id: string;
@@ -27,9 +28,39 @@
 	let success = $state("");
 	let searchQuery = $state(""); // bound to the DataTable search box; forwarded to the API
 
+	const filterDefs = [
+		{ key: "consent_type", label: t("app.gdpr.consents.filter_consent_type", "Consent Type"), options: [
+			{ value: "marketing", label: t("app.gdpr.consents.option_marketing", "Marketing") },
+			{ value: "analytics", label: t("app.gdpr.consents.option_analytics", "Analytics") },
+			{ value: "functional", label: t("app.gdpr.consents.option_functional", "Functional") },
+			{ value: "necessary", label: t("app.gdpr.consents.option_necessary", "Necessary") }
+		]},
+		{ key: "granted", label: t("app.gdpr.consents.filter_status", "Status"), options: [
+			{ value: "true", label: t("app.gdpr.consents.option_granted", "Granted") },
+			{ value: "false", label: t("app.gdpr.consents.option_revoked", "Revoked") }
+		]}
+	];
+	let filterValues = $state<Record<string, string>>({});
+
+	function handleSearch(values: Record<string, string>) {
+		filterValues = values;
+		searchQuery = values.search ?? "";
+		loadConsents();
+	}
+
+	function handleClear() {
+		filterValues = {};
+		searchQuery = "";
+		loadConsents();
+	}
+
 	const canDeleteConsent = $derived(hasPermission("gdpr.consents.delete"));
 	let showDeleteModal = $state(false);
 	let deleteTarget = $state<Consent | null>(null);
+
+	// Bulk delete state
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	let showViewModal = $state(false);
 	let viewTarget = $state<Consent | null>(null);
@@ -56,6 +87,23 @@
 		}
 	}
 
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		try {
+			for (const id of selectedIds) {
+				await gdprAdminApiExtendedV2.deleteConsent(id);
+			}
+			selectedIds = new Set();
+			success = t("gdpr.consents_bulk_deleted", "Selected consents deleted");
+			loadConsents();
+		} catch {
+			error = t("common.error", "Failed to delete consents");
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
 	const columns = [
 		{ key: "user_id", label: t("gdpr.user", "User ID"), sortable: true },
 		{ key: "consent_type", label: t("gdpr.consent_type", "Consent Type"), sortable: true },
@@ -76,7 +124,12 @@
 		loading = true;
 		error = "";
 		try {
-			const result = await gdprAdminApiExtendedV2.listConsents(searchQuery ? `q=${encodeURIComponent(searchQuery)}` : undefined);
+			const params = new URLSearchParams();
+			if (searchQuery) params.set("q", searchQuery);
+			if (filterValues.consent_type) params.set("consent_type", filterValues.consent_type);
+			if (filterValues.granted) params.set("granted", filterValues.granted);
+			const qs = params.toString();
+			const result = await gdprAdminApiExtendedV2.listConsents(qs || undefined);
 			if (result.ok) {
 				consents = (result.data as Consent[]) ?? [];
 			} else {
@@ -120,6 +173,14 @@
 
 <Card>
 	<CardContent>
+		<FilterBar
+			filters={filterDefs}
+			bind:value={filterValues}
+			searchPlaceholder={t("common.search", "Search...")}
+			onsearch={handleSearch}
+			onclear={handleClear}
+			class="mb-4"
+		/>
 		{#if loading}
 			<TableSkeleton rows={10} columns={columns.length} />
 		{:else if consents.length === 0}
@@ -127,7 +188,16 @@
 				{t("gdpr.no_consents", "No consent records found")}
 			</div>
 		{:else}
-			<DataTable {columns} data={consents} pageSize={20} searchable onsearch={(q) => { searchQuery = q; loadConsents(); }} />
+			<DataTable {columns} data={consents} pageSize={20} searchable onsearch={(q) => { searchQuery = q; loadConsents(); }} selectable={canDeleteConsent} bind:selectedIds>
+				{#snippet bulkActions()}
+					{#if selectedIds.size > 0 && canDeleteConsent}
+						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
+							<Trash2 class="mr-1 h-3.5 w-3.5" />
+							{t("app.gdpr.consents.delete_selected", "Delete Selected")} ({selectedIds.size})
+						</Button>
+					{/if}
+				{/snippet}
+			</DataTable>
 		{/if}
 	</CardContent>
 </Card>

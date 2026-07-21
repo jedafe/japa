@@ -63,6 +63,10 @@
 	let deleteLoading = $state(false);
 	let deleteError = $state('');
 
+	let scanRunning = $state(false);
+	let scanMessage = $state('');
+	let scanMessageType = $state<'success' | 'error' | ''>('');
+
 	let blockTypeLabels = $derived.by<Record<string, string>>(() => {
 		translations();
 		return {
@@ -99,10 +103,7 @@
 	const severityClasses: Record<string, string> = {
 		critical: 'bg-destructive/15 text-destructive',
 		warning: 'bg-amber-500/15 text-amber-500',
-		info: 'bg-blue-500/15 text-blue-500',
-		high: 'bg-destructive/15 text-destructive',
-		medium: 'bg-amber-500/15 text-amber-500',
-		low: 'bg-blue-500/15 text-blue-500'
+		info: 'bg-blue-500/15 text-blue-500'
 	};
 
 	let scanColumns = $derived.by<DataTableColumn[]>(() => {
@@ -188,6 +189,9 @@
 
 	});
 
+	let scanSortKey = $state('');
+	let scanSortDirection = $state<'asc' | 'desc'>('asc');
+
 	let filteredResults = $derived.by(() => {
 		let list = results;
 		if (filterSeverity !== 'all') {
@@ -200,6 +204,14 @@
 					r.title.toLowerCase().includes(q) ||
 					r.description.toLowerCase().includes(q)
 			);
+		}
+		if (scanSortKey) {
+			list = [...list].sort((a, b) => {
+				const av = (a as Record<string, unknown>)[scanSortKey] ?? '';
+				const bv = (b as Record<string, unknown>)[scanSortKey] ?? '';
+				const cmp = String(av).localeCompare(String(bv));
+				return scanSortDirection === 'asc' ? cmp : -cmp;
+			});
 		}
 		return list;
 	});
@@ -297,6 +309,30 @@
 		loadScanResults();
 	}
 
+	async function triggerScan() {
+		scanRunning = true;
+		scanMessage = '';
+		scanMessageType = '';
+		try {
+			const result = await api<{ task_id: string; status: string }>('/control/security/scan', {
+				method: 'POST'
+			});
+			if (result.ok) {
+				scanMessage = t('security.scan_enqueued', 'Scan enqueued. Results will appear shortly.');
+				scanMessageType = 'success';
+				setTimeout(() => loadScanResults(), 5000);
+			} else {
+				scanMessage = result.error || t('security.scan_error', 'Failed to trigger scan');
+				scanMessageType = 'error';
+			}
+		} catch {
+			scanMessage = t('security.scan_error', 'Failed to trigger scan');
+			scanMessageType = 'error';
+		} finally {
+			scanRunning = false;
+		}
+	}
+
 	function openCreateModal() {
 		cidr = '';
 		blockType = 'full';
@@ -312,12 +348,12 @@
 
 	async function createIpBlock() {
 		if (!cidr.trim()) {
-			createError = t('security.cidr_label') + ' is required.';
+			createError = t('security.cidr_required', 'CIDR is required.');
 			return;
 		}
 		// Basic CIDR validation
 		if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(cidr.trim())) {
-			createError = 'Please enter a valid CIDR (e.g. 192.168.1.0/24).';
+			createError = t('security.invalid_cidr', 'Please enter a valid CIDR (e.g. 192.168.1.0/24).');
 			return;
 		}
 		createLoading = true;
@@ -447,7 +483,23 @@
 				{t('audit.apply_filters', 'Apply')}
 			</button>
 			<SearchInput bind:value={searchQuery} placeholder={t('security.search_findings', 'Search findings...')} class="w-64" />
+			<div class="flex-1"></div>
+			<button
+				type="button"
+				class="bg-foreground text-background flex items-center gap-1.5 rounded-9px px-3 py-1.5 text-xs font-medium transition-colors hover:opacity-90 disabled:opacity-50"
+				onclick={triggerScan}
+				disabled={scanRunning}
+			>
+				{scanRunning ? t('common.loading', 'Running...') : t('security.run_scan', 'Run Scan')}
+			</button>
 		</div>
+		{#if scanMessage}
+			<div class="mb-4">
+				<div class="flex items-center gap-2 rounded-lg border px-4 py-3 text-sm {scanMessageType === 'success' ? 'border-emerald-500 text-emerald-600 bg-emerald-500/10' : 'border-destructive text-destructive bg-destructive/10'}">
+					{scanMessage}
+				</div>
+			</div>
+		{/if}
 
 		<DataTable
 			columns={scanColumns}
@@ -455,6 +507,8 @@
 			totalRows={filteredResults.length}
 			bind:page={scanPage}
 			bind:pageSize={scanPageSize}
+			bind:sortKey={scanSortKey}
+			bind:sortDirection={scanSortDirection}
 			loading={scanLoading}
 			emptyMessage={t('security.no_findings')}
 			emptyIcon={ShieldCheck}

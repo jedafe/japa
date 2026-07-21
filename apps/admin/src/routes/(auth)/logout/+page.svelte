@@ -2,6 +2,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { clearUser } from '$lib/stores/auth.svelte';
+	import { clearAccessToken } from '$lib/api/token';
 
 	(async () => {
 		try {
@@ -14,7 +15,7 @@
 		}
 
 		clearUser();
-		document.cookie = 'jc_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+		clearAccessToken();
 		await goto('/login', { invalidateAll: true });
 	})();
 </script>

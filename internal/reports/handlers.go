@@ -227,6 +227,27 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DeleteReport handles DELETE /api/v1/admin/reports/{id}.
+func (h *Handlers) DeleteReport(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.service.DeleteReport(r.Context(), id, tenantID); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+}
+
 // GetReport handles GET /api/v1/admin/reports/{id}.
 func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)

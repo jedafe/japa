@@ -3,6 +3,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import { Select } from '$lib/components/ui/select';
+	import { DataTable } from '$lib/components/ui/data-table';
 	import { docsApi } from '$lib/api';
 
 	type DocPage = {
@@ -21,6 +22,7 @@
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let filterAudience = $state('');
+	let searchQuery = $state('');
 
 	let showModal = $state(false);
 	let editingId = $state<string | null>(null);
@@ -40,6 +42,25 @@
 	const filterDefs = [
 		{ key: 'audience', label: 'Audience', type: 'select' as const, options: audiences }
 	];
+
+	const columns = [
+		{ key: 'title', label: t('docs.title_2'), sortable: true },
+		{ key: 'slug', label: t('docs.slug'), render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'audience', label: t('docs.audience'), render: (v: string) => `<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">${v}</span>` },
+		{ key: 'status', label: t('docs.status'), render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${v === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
+		{ key: 'updated_at', label: t('docs.updated'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'actions', label: '', class: 'w-48', render: (_: any, row: DocPage) => {
+			const unpublishStyle = row.status === 'published' ? 'var(--color-warning)' : 'var(--color-success)';
+			const unpublishLabel = row.status === 'published' ? 'Unpublish' : 'Publish';
+			return `<div class="flex items-center gap-2"><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-info)" onclick="window.__editDoc('${row.id}')">Edit</button><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: ${unpublishStyle}" onclick="window.__toggleDoc('${row.id}')">${unpublishLabel}</button><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-danger)" onclick="window.__deleteDoc('${row.id}')">Delete</button></div>`;
+		}}
+	];
+
+	const filteredDocs = $derived(
+		searchQuery
+			? docs.filter((d) => d.title.toLowerCase().includes(searchQuery.toLowerCase()) || d.slug.toLowerCase().includes(searchQuery.toLowerCase()))
+			: docs
+	);
 
 	function slugify(text: string): string {
 		return text
@@ -149,6 +170,15 @@
 
 	$effect(() => {
 		load();
+		(window as any).__editDoc = (id: string) => {
+			const doc = docs.find((d) => d.id === id);
+			if (doc) openEdit(doc);
+		};
+		(window as any).__toggleDoc = (id: string) => {
+			const doc = docs.find((d) => d.id === id);
+			if (doc) togglePublish(doc);
+		};
+		(window as any).__deleteDoc = (id: string) => confirmDelete(id);
 	});
 </script>
 
@@ -180,66 +210,15 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('docs.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-color: var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('docs.title_2')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('docs.slug')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('docs.audience')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('docs.status')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('docs.updated')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each docs as doc}
-					<tr class="border-t hover:bg-black/[0.02] dark:hover:bg-surface/[0.02]" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{doc.title}</td>
-						<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-muted)">{doc.slug}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">{doc.audience}</span>
-						</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {doc.status === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">
-								{doc.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{doc.updated_at}</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-2">
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-									style="color: var(--color-info)"
-									onclick={() => openEdit(doc)}
-								>
-									Edit
-								</button>
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-									style="color: {doc.status === 'published' ? 'var(--color-warning)' : 'var(--color-success)'}"
-									onclick={() => togglePublish(doc)}
-								>
-									{doc.status === 'published' ? 'Unpublish' : 'Publish'}
-								</button>
-								<button
-									class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
-									style="color: var(--color-danger)"
-									onclick={() => confirmDelete(doc.id)}
-								>
-									Delete
-								</button>
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="6" class="px-4 py-8 text-center" style="color: var(--color-muted)">{t('docs.no_documentation_pages_found')}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		columns={columns}
+		data={filteredDocs}
+		searchable={true}
+		onsearch={(q: string) => { searchQuery = q; }}
+		pageSize={25}
+		emptyMessage={t('docs.no_documentation_pages_found')}
+		showPagination={false}
+	/>
 
 	<div class="mt-3 flex items-center justify-between">
 		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>

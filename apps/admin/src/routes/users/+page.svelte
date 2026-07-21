@@ -7,8 +7,9 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw, Eye, Pencil, Trash2, Ban, Play, UserPlus } from "lucide-svelte";
+	import { RefreshCw, Eye, Pencil, Trash2, Ban, Play, UserPlus, Plus } from "lucide-svelte";
 	import { userManagementApi, impersonationApi } from "$lib/api";
+	import type { UserDetail } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { goto, invalidateAll } from "$app/navigation";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -42,6 +43,12 @@
 	let deleteTarget = $state<User | null>(null);
 	let acting = $state(false);
 
+	// Create user modal
+	let showCreateModal = $state(false);
+	let createForm = $state({ email: "", username: "", password: "", display_name: "" });
+	let creating = $state(false);
+	let createError = $state("");
+
 	// Impersonation state
 	let impersonating = $state(false);
 	let impersonatingUsername = $state("");
@@ -55,20 +62,20 @@
 			key: "status",
 			label: t("common.status", "Status"),
 			options: [
-				{ value: "active", label: "Active" },
-				{ value: "pending", label: "Pending" },
-				{ value: "suspended", label: "Suspended" },
-				{ value: "banned", label: "Banned" }
+				{ value: "active", label: t("users.status_active", "Active") },
+				{ value: "pending", label: t("users.status_pending", "Pending") },
+				{ value: "suspended", label: t("users.status_suspended", "Suspended") },
+				{ value: "banned", label: t("users.status_banned", "Banned") }
 			]
 		},
 		{
 			key: "group",
 			label: t("users.group", "Group"),
 			options: [
-				{ value: "user", label: "User" },
-				{ value: "moderator", label: "Moderator" },
-				{ value: "admin", label: "Admin" },
-				{ value: "super_admin", label: "Super Admin" }
+				{ value: "user", label: t("users.role_user", "User") },
+				{ value: "moderator", label: t("users.role_moderator", "Moderator") },
+				{ value: "admin", label: t("users.role_admin", "Admin") },
+				{ value: "super_admin", label: t("users.role_super_admin", "Super Admin") }
 			]
 		}
 	];
@@ -132,9 +139,9 @@
 
 			const result = await userManagementApi.list(params.toString());
 			if (result.ok) {
-				const d = result.data as unknown as { items: User[]; total: number; page: number; total_pages: number };
-				users = d.items ?? [];
-				totalItems = d.total ?? users.length;
+				const d = result.data as unknown as { users: User[]; total: number; page: number; total_pages: number };
+				users = d.users ?? [];
+				totalItems = d.total ?? 0;
 				totalPages = d.total_pages ?? 1;
 			} else {
 				error = result.error ?? t("common.error", "Failed to load users");
@@ -166,6 +173,30 @@
 	function confirmDelete(user: User) {
 		deleteTarget = user;
 		showDeleteConfirm = true;
+	}
+
+	async function executeCreate() {
+		creating = true;
+		createError = "";
+		try {
+			const result = await userManagementApi.createUser({
+				email: createForm.email,
+				username: createForm.username,
+				password: createForm.password,
+				display_name: createForm.display_name || undefined
+			});
+			if (result.ok) {
+				showCreateModal = false;
+				createForm = { email: "", username: "", password: "", display_name: "" };
+				loadUsers();
+			} else {
+				createError = result.error ?? t("common.error", "Failed to create user");
+			}
+		} catch (e) {
+			createError = e instanceof Error ? e.message : t("common.error", "Failed to create user");
+		} finally {
+			creating = false;
+		}
 	}
 
 	async function executeDelete() {
@@ -306,7 +337,8 @@
 	title={t("users.title", "Users")}
 	description={t("users.description", "Manage platform users")}
 	actions={[
-		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadUsers }
+		...(canManageUsers ? [{ label: t("users.create", "Create User"), icon: Plus, variant: "default" as const, onclick: () => { createForm = { email: "", username: "", password: "", display_name: "" }; showCreateModal = true; } }] : []),
+		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: loadUsers }
 	]}
 />
 
@@ -330,10 +362,10 @@
 
 {#if selectedIds.size > 0}
 	<div class="mb-4 flex items-center gap-3 rounded-lg p-3" style="background: var(--color-primary); color: white">
-		<span class="text-sm font-medium">{selectedIds.size} selected</span>
+		<span class="text-sm font-medium">{selectedIds.size} {t('app.users.selected_count', 'selected')}</span>
 		{#if canManageUsers}
 			<Button variant="ghost" size="sm" onclick={bulkDelete} disabled={acting}>
-				<Trash2 class="mr-1 h-3.5 w-3.5" /> Delete Selected
+				<Trash2 class="mr-1 h-3.5 w-3.5" /> {t('users.bulk_delete', 'Delete Selected')}
 			</Button>
 		{/if}
 	</div>
@@ -411,12 +443,51 @@
 <Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
 	{#if deleteTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
-			Delete user <strong>{deleteTarget.username}</strong>? This cannot be undone.
+			{@html t('app.users.delete_confirm', `Delete user <strong>{username}</strong>? This cannot be undone.`).replace('{username}', deleteTarget.username)}
 		</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('users.cancel')}</Button>
-		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? "Deleting..." : "Delete"}</Button>
+		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? t('app.users.deleting', 'Deleting...') : t('app.users.delete_action', 'Delete')}</Button>
+	</div>
+</Modal>
+
+<!-- Create User Modal -->
+<Modal bind:open={showCreateModal} title={t("users.create", "Create User")} size="default">
+	{#if createError}
+		<div class="mb-4 rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+			{createError}
+		</div>
+	{/if}
+	<form onsubmit={(e) => { e.preventDefault(); executeCreate(); }} class="space-y-4">
+		<div>
+			<label for="create-email" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.email", "Email")} *</label>
+			<input id="create-email" type="email" required bind:value={createForm.email}
+				class="w-full rounded-lg border p-2 text-sm outline-none focus:ring-2"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)" />
+		</div>
+		<div>
+			<label for="create-username" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.username", "Username")} *</label>
+			<input id="create-username" type="text" required bind:value={createForm.username}
+				class="w-full rounded-lg border p-2 text-sm outline-none focus:ring-2"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)" />
+		</div>
+		<div>
+			<label for="create-display-name" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.display_name", "Display Name")}</label>
+			<input id="create-display-name" type="text" bind:value={createForm.display_name}
+				class="w-full rounded-lg border p-2 text-sm outline-none focus:ring-2"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)" />
+		</div>
+		<div>
+			<label for="create-password" class="mb-1 block text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.password", "Password")} *</label>
+			<input id="create-password" type="password" required bind:value={createForm.password}
+				class="w-full rounded-lg border p-2 text-sm outline-none focus:ring-2"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground); --tw-ring-color: var(--color-primary)" />
+		</div>
+	</form>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showCreateModal = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="default" onclick={executeCreate} disabled={creating}>{creating ? t("common.creating", "Creating...") : t("users.create", "Create User")}</Button>
 	</div>
 </Modal>
 

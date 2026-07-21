@@ -1,5 +1,6 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { csrfHeaders, refreshCsrfToken } from './csrf';
+import { getAccessToken, setAccessToken, clearAccessToken } from './token';
 
 export interface ApiOk<T> {
 	data: T;
@@ -33,7 +34,15 @@ async function attemptRefresh(): Promise<boolean> {
 				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
 			});
-			return res.ok;
+			if (res.ok) {
+				const body = await res.json();
+				const newToken = body?.data?.access_token;
+				if (newToken) {
+					setAccessToken(newToken);
+					return true;
+				}
+			}
+			return false;
 		} catch {
 			return false;
 		} finally {
@@ -54,11 +63,17 @@ async function dispatch<T>(
 	const baseHeaders = options.headers as Record<string, string> | undefined;
 	const headers = withCsrf ? csrfHeaders(options.method, baseHeaders) : baseHeaders;
 
+	const accessToken = getAccessToken();
+	const authHeader: Record<string, string> = accessToken
+		? { Authorization: `Bearer ${accessToken}` }
+		: {};
+
 	const res = await fetcher(url, {
 		...options,
 		credentials: 'include',
 		headers: {
 			'Content-Type': 'application/json',
+			...authHeader,
 			...(headers ?? {}),
 		},
 	});
@@ -66,11 +81,16 @@ async function dispatch<T>(
 	if (res.status === 401) {
 		const refreshed = await attemptRefresh();
 		if (refreshed) {
+			const retryToken = getAccessToken();
+			const retryAuth: Record<string, string> = retryToken
+				? { Authorization: `Bearer ${retryToken}` }
+				: {};
 			const retryRes = await fetcher(url, {
 				...options,
 				credentials: 'include',
 				headers: {
 					'Content-Type': 'application/json',
+					...retryAuth,
 					...csrfHeaders(options.method, headers),
 				},
 			});
@@ -79,6 +99,7 @@ async function dispatch<T>(
 				return { data: (body as ApiOk<T>).data, error: null, status: retryRes.status };
 			}
 		}
+		clearAccessToken();
 		return { data: null, error: { code: 'unauthorized', message: 'Session expired', status: 401 }, status: 401 };
 	}
 
@@ -115,14 +136,19 @@ export async function apiFetch<T>(
 ): Promise<ApiResult<T>> {
 	const fetcher = fetchFn ?? fetch;
 	const url = `${PUBLIC_JC_API_URL}/api/v1${path}`;
+	const skipRefresh = options.headers && (options.headers as Record<string, string>)['X-Skip-Refresh'] === '1';
+	const cleanOptions = { ...options };
+	if (skipRefresh && cleanOptions.headers) {
+		const h = { ...(cleanOptions.headers as Record<string, string>) };
+		delete h['X-Skip-Refresh'];
+		cleanOptions.headers = h;
+	}
 
 	try {
-		const result = await dispatch<T>(url, options, fetcher, true);
+		const result = await dispatch<T>(url, cleanOptions, fetcher, true);
 
-		// On a CSRF rejection, refresh the token once and retry so a stale or
-		// missing token does not surface as a hard error to the user.
-		if (isCsrfRejection(result.status, result.error)) {
-			return retryAfterCsrfRefresh<T>(url, options, fetcher);
+		if (!skipRefresh && isCsrfRejection(result.status, result.error)) {
+			return retryAfterCsrfRefresh<T>(url, cleanOptions, fetcher);
 		}
 
 		return result;

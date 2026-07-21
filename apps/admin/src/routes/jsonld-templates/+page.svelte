@@ -25,6 +25,8 @@
 	let loading = $state(true);
 	let error = $state('');
 	let success = $state('');
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkDeleting = $state(false);
 
 	// Modal state
 	let showTemplateModal = $state(false);
@@ -237,6 +239,32 @@
 		}
 	}
 
+	async function bulkDelete() {
+		if (selectedIds.size === 0) return;
+		bulkDeleting = true;
+		try {
+			const templatesData: Record<string, unknown> = {};
+			for (const t of templates) {
+				if (!selectedIds.has(t.id)) {
+					templatesData[t.id] = t.content;
+				}
+			}
+
+			const result = await jsonLdApi.updateTemplates(templatesData);
+			if (result.ok) {
+				success = `${selectedIds.size} template${selectedIds.size > 1 ? 's' : ''} deleted successfully`;
+				selectedIds = new Set();
+				load();
+			} else {
+				error = t('common.error');
+			}
+		} catch {
+			error = t('common.error');
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
 	function exportTemplates() {
 		const data = JSON.stringify(
 			templates.reduce((acc, t) => {
@@ -329,7 +357,16 @@
 					emptyMessage="No JSON-LD templates configured"
 					searchable
 					onsearch={() => load()}
-				/>
+					selectable
+					bind:selectedIds
+				>
+					{#snippet bulkActions()}
+						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
+							<Trash2 class="h-3.5 w-3.5 mr-1" />
+							{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedIds.size})
+						</Button>
+					{/snippet}
+				</DataTable>
 			</CardContent>
 		</Card>
 

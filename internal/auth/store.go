@@ -144,3 +144,8 @@ func (s *DBStore) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUI
 
 	return hashes, nil
 }
+
+// IsUserInGroup checks if a user belongs to a group identified by slug.
+func (s *DBStore) IsUserInGroup(ctx context.Context, arg gen.IsUserInGroupParams) (bool, error) {
+	return s.queries.IsUserInGroup(ctx, arg)
+}

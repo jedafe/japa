@@ -109,10 +109,16 @@
 
 			const result = await reportsAdminApiExtended.list(params.toString());
 			if (result.ok) {
-				const d = result.data as unknown as { items: Report[]; total: number; page: number; total_pages: number };
-				reports = d.items ?? [];
-				totalItems = d.total ?? reports.length;
-				totalPages = d.total_pages ?? 1;
+				const d = result.data as { items: Report[]; page: number; total_pages: number } | Report[];
+				if (Array.isArray(d)) {
+					reports = d;
+					totalItems = d.length;
+					totalPages = 1;
+				} else {
+					reports = d.items ?? [];
+					totalItems = d.items?.length ?? 0;
+					totalPages = d.total_pages ?? 1;
+				}
 			} else {
 				error = result.error ?? t("common.error", "Failed to load reports");
 			}

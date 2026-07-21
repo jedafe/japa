@@ -3,6 +3,9 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { RefreshCw, CheckCircle, Eye } from 'lucide-svelte';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { FilterBar } from '$lib/components/ui/filter-bar';
+	import { Button } from '$lib/components/ui/button';
 	import Modal from '$lib/components/Modal.svelte';
 
 	type Profile = {
@@ -17,12 +20,69 @@
 	let profiles = $state<Profile[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	let searchQuery = $state('');
+
+	const filterDefs = [
+		{
+			key: 'is_verified',
+			label: 'Verification',
+			options: [
+				{ value: 'true', label: 'Verified' },
+				{ value: 'false', label: 'Unverified' }
+			]
+		}
+	];
+
+	let filterValues = $state<Record<string, string>>({});
+
+	function handleSearch(values: Record<string, string>) {
+		searchQuery = values.search ?? '';
+		filterValues = values;
+	}
+
+	function handleClear() {
+		searchQuery = '';
+		filterValues = {};
+	}
 
 	let showViewModal = $state(false);
 	let viewTarget = $state<Profile | null>(null);
 
-	// Backend gates POST/DELETE /admin/profiles/{id}/verify on admin.moderation
 	const canModerate = $derived(hasPermission('admin.moderation'));
+
+	const filteredProfiles = $derived(
+		(() => {
+			let items = searchQuery
+				? profiles.filter(
+						(p) =>
+							p.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+							p.professional_type.toLowerCase().includes(searchQuery.toLowerCase())
+					)
+				: profiles;
+			if (filterValues.is_verified) {
+				const val = filterValues.is_verified === 'true';
+				items = items.filter((p) => p.is_verified === val);
+			}
+			return items;
+		})()
+	);
+
+	const columns = [
+		{ key: 'display_name', label: t('profiles.name'), sortable: true,
+			render: (v: string) => `<span class="font-medium">${v}</span>`
+		},
+		{ key: 'professional_type', label: t('profiles.type'), sortable: true,
+			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+		},
+		{ key: 'is_verified', label: t('profiles.verification'), sortable: true,
+			render: (v: boolean) => {
+				const cls = v ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning';
+				const text = v ? t('profiles.verified') : t('profiles.unverified');
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${text}</span>`;
+			}
+		},
+		{ key: 'actions', label: t('common.actions'), class: 'w-36', component: ProfileActionsCell }
+	];
 
 	function openView(profile: Profile) {
 		viewTarget = profile;
@@ -91,58 +151,20 @@
 	</button>
 </div>
 
+<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
-		<table class="w-full text-sm">
-			<thead>
-				<tr style="border-bottom: 1px solid var(--color-border)">
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('profiles.name')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('profiles.type')}</th>
-					<th class="px-4 py-3 text-left font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('profiles.verification')}</th>
-					<th class="px-4 py-3 text-right font-medium" style="color: var(--color-muted); background-color: var(--color-surface)">{t('common.actions')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each profiles as profile (profile.id)}
-					<tr class="border-t" style="border-color: var(--color-border)">
-						<td class="px-4 py-3 font-medium">{profile.display_name}</td>
-						<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{profile.professional_type}</td>
-						<td class="px-4 py-3">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {profile.is_verified ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">
-								{profile.is_verified ? t('profiles.verified') : t('profiles.unverified')}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-right">
-							<div class="flex items-center justify-end gap-2">
-							<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-muted)" onclick={() => openView(profile)}>
-								<Eye class="h-3 w-3 inline mr-1" />
-								{t('common.view')}
-							</button>
-							{#if canModerate && !profile.is_verified}
-									<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => verifyProfile(profile.id)}>
-										<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
-										{t('profiles.verify')}
-									</button>
-							{:else if canModerate}
-								<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => unverifyProfile(profile.id)} style="color: var(--color-danger)">
-									{t('profiles.unverify')}
-								</button>
-							{/if}
-							</div>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="4" class="px-4 py-8 text-center" style="color: var(--color-muted)">
-							{t('profiles.empty')}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<DataTable
+		{columns}
+		data={filteredProfiles}
+		pageSize={25}
+		searchable
+		searchPlaceholder={t('profiles.search', 'Search profiles...')}
+		onsearch={(q) => { searchQuery = q; }}
+		emptyMessage={t('profiles.empty')}
+	/>
 {/if}
 
 <Modal bind:open={showViewModal} title={t('profiles.details', 'Profile Details')}>
@@ -172,3 +194,22 @@
 		<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</button>
 	</div>
 </Modal>
+
+{#snippet ProfileActionsCell(profile: Profile)}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openView(profile)}>
+			<Eye class="h-3 w-3 inline mr-1" />
+			{t('common.view')}
+		</Button>
+		{#if canModerate && !profile.is_verified}
+			<Button variant="ghost" size="sm" onclick={() => verifyProfile(profile.id)}>
+				<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
+				{t('profiles.verify')}
+			</Button>
+		{:else if canModerate}
+			<Button variant="ghost" size="sm" onclick={() => unverifyProfile(profile.id)} style="color: var(--color-danger)">
+				{t('profiles.unverify')}
+			</Button>
+		{/if}
+	</div>
+{/snippet}

@@ -18,6 +18,13 @@ import (
 const (
 	TenantStatusActive    = "active"
 	TenantStatusSuspended = "suspended"
+	TenantStatusDeleted   = "deleted"
+
+	// DefaultTenantID is the UUID of the seeded default tenant
+	// (00000000-0000-0000-0000-000000000001). It must never be
+	// soft-deleted or suspended — deleting it would orphan every
+	// test-seed reference and break the platform.
+	DefaultTenantID = "00000000-0000-0000-0000-000000000001"
 )
 
 // Service provides control-panel data access.
@@ -92,13 +99,26 @@ func (s *Service) UpdateTenant(ctx context.Context, id pgtype.UUID, input Update
 	return t, nil
 }
 
-// DeleteTenant deletes a tenant.
-func (s *Service) DeleteTenant(ctx context.Context, id pgtype.UUID) error {
-	if err := s.write.DeleteTenant(ctx, id); err != nil {
-		return fmt.Errorf("deleting tenant: %w", err)
+// DeleteTenant soft-deletes a tenant (sets status='deleted', deleted_at=now()).
+// The default tenant (00000000-0000-0000-0000-000000000001) cannot be deleted.
+// Per Section 21, a 30-day grace period applies before the tenant:cleanup_data
+// Asynq task hard-deletes all associated data.
+func (s *Service) DeleteTenant(ctx context.Context, id pgtype.UUID) (gen.DeleteTenantRow, error) {
+	if id.String() == DefaultTenantID {
+		return gen.DeleteTenantRow{}, fmt.Errorf("deleting tenant: cannot delete the default tenant")
+	}
+	t, err := s.write.DeleteTenant(ctx, id)
+	if err != nil {
+		return gen.DeleteTenantRow{}, fmt.Errorf("deleting tenant: %w", err)
 	}
 
-	return nil
+	// TODO: enqueue tenant:cleanup_data Asynq task for 30-day grace period.
+	// When the task type and handler are implemented, add:
+	//   payload, _ := json.Marshal(map[string]any{"tenant_id": t.ID.String()})
+	//   task := asynq.NewTask(worker.TypeTenantCleanupData, payload)
+	//   _, err = s.enqueuer.Enqueue(ctx, task, asynq.ProcessAt(time.Now().Add(30*24*time.Hour)), asynq.Queue(worker.QueueForTask(worker.TypeTenantCleanupData)))
+
+	return t, nil
 }
 
 // SuspendTenant sets a tenant's status to suspended.

@@ -92,6 +92,16 @@ func NewService(database *db.DB, settings *config.Settings, vk valkeycompat.Cmda
 	}
 }
 
+// DeleteReport removes a report (admin moderation action). It is a hard
+// delete from content_reports because reports are audit-adjacent queue items,
+// not user content, so Rule 11 (soft-delete user content) does not apply.
+func (s *Service) DeleteReport(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteReport(ctx, gen.DeleteReportParams{ID: id, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("delete report: %w", err)
+	}
+	return nil
+}
+
 // CreateReport submits a report. Returns ErrAlreadyReported if this reporter
 // already reported the same entity (enforced by a partial unique index).
 // For content entities, checks the auto-hide threshold and hides the content

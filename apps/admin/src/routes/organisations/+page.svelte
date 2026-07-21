@@ -92,10 +92,16 @@
 			if (filterValues.verified) params.set("verified", filterValues.verified);
 			const result = await organisationsAdminApi.list(params.toString());
 			if (result.ok) {
-				const d = result.data as unknown as { items: Organisation[]; total: number; page: number; total_pages: number };
-				orgs = d.items ?? (Array.isArray(result.data) ? result.data as Organisation[] : []);
-				totalItems = d.total ?? orgs.length;
-				totalPages = d.total_pages ?? 1;
+				const d = result.data as Organisation[] | { items: Organisation[]; page: number; total_pages: number };
+				if (Array.isArray(d)) {
+					orgs = d;
+					totalItems = d.length;
+					totalPages = 1;
+				} else {
+					orgs = d.items ?? [];
+					totalItems = d.items?.length ?? 0;
+					totalPages = d.total_pages ?? 1;
+				}
 			} else {
 				error = result.error ?? t("common.error", "Failed to load");
 			}

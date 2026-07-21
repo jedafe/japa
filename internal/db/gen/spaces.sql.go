@@ -714,6 +714,56 @@ func (q *Queries) IncrementSpaceFollowerCount(ctx context.Context, arg Increment
 	return err
 }
 
+const listAllSpaceJoinRequests = `-- name: ListAllSpaceJoinRequests :many
+SELECT sm.space_id, sm.user_id, u.username, up.display_name, up.avatar_url, sm.joined_at, sm.status
+FROM space_members sm
+JOIN users u ON u.id = sm.user_id AND u.tenant_id = sm.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = sm.user_id AND up.tenant_id = sm.tenant_id
+WHERE sm.tenant_id = $1 AND sm.status = 'pending'
+ORDER BY sm.joined_at ASC
+`
+
+type ListAllSpaceJoinRequestsRow struct {
+	SpaceID     pgtype.UUID        `json:"space_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Username    string             `json:"username"`
+	DisplayName *string            `json:"display_name"`
+	AvatarUrl   *string            `json:"avatar_url"`
+	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
+	Status      string             `json:"status"`
+}
+
+// Admin-wide pending join requests across every space in the admin's tenant.
+// space_id is included so the admin panel can build a composite request id
+// (space_id::user_id) for the approve/reject endpoints.
+func (q *Queries) ListAllSpaceJoinRequests(ctx context.Context, tenantID pgtype.UUID) ([]ListAllSpaceJoinRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listAllSpaceJoinRequests, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllSpaceJoinRequestsRow
+	for rows.Next() {
+		var i ListAllSpaceJoinRequestsRow
+		if err := rows.Scan(
+			&i.SpaceID,
+			&i.UserID,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
+			&i.JoinedAt,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChildSpaces = `-- name: ListChildSpaces :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,

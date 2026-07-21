@@ -31,6 +31,14 @@ func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.H
 				return
 			}
 
+			// Super admins bypass all permission checks.
+			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
+				next.ServeHTTP(w, r.WithContext(ctx))
+
+				return
+			}
+
 			if !resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
@@ -56,6 +64,15 @@ func RequirePermissionWithInvalidation(resolver *RBAC, permKey string) func(http
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
+
+				return
+			}
+
+			// Super admins bypass all permission checks.
+			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				resolver.InvalidateUserCache(r.Context(), user.UserID)
 
 				return
 			}

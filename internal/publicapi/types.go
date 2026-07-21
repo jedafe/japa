@@ -70,3 +70,31 @@ func APIKeyFromContext(ctx context.Context) *APIKeyContext {
 	ak, _ := ctx.Value(apiKeyContextKey).(*APIKeyContext)
 	return ak
 }
+
+// APIKeyAnalytics holds aggregate analytics data for API keys.
+type APIKeyAnalytics struct {
+	TotalKeys      int64              `json:"total_keys"`
+	ActiveKeys     int64              `json:"active_keys"`
+	SuspendedKeys  int64              `json:"suspended_keys"`
+	RevokedKeys    int64              `json:"revoked_keys"`
+	TotalRequests  int64              `json:"total_requests"`
+	TopKeys        []APIKeyVolume     `json:"top_keys_by_volume"`
+	ZeroUsageKeys  []APIKeyVolume     `json:"zero_result_keys"`
+	RecentActivity []APIKeyActivity   `json:"recent_activity"`
+}
+
+// APIKeyVolume represents a key's request volume for analytics.
+type APIKeyVolume struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	KeyPrefix    string `json:"key_prefix"`
+	RequestCount int64  `json:"request_count"`
+	Status       string `json:"status"`
+}
+
+// APIKeyActivity represents a key's recent activity for analytics.
+type APIKeyActivity struct {
+	KeyPrefix  string  `json:"key_prefix"`
+	LastUsedAt string  `json:"last_used_at"`
+	RequestCount int64 `json:"request_count"`
+}

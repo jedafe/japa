@@ -29,8 +29,12 @@
 
 	$effect(() => {
 		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), 15000);
 		load(controller.signal);
-		return () => controller.abort();
+		return () => {
+			clearTimeout(timeout);
+			controller.abort();
+		};
 	});
 
 	let confirmRetryOpen = $state(false);
@@ -71,54 +75,69 @@
 			const result = await api<DlqEntry[]>('/control/queue/dlq', { signal });
 			if (signal?.aborted) return;
 			if (result.ok) {
-				entries = result.data;
+				entries = result.data ?? [];
 			} else {
-				showError(t('dlq.load_error'));
+				showError(t('dlq.load_error', 'Failed to load DLQ entries.'));
 			}
 		} catch {
-			if (!signal?.aborted) showError(t('dlq.load_error'));
+			if (!signal?.aborted) showError(t('dlq.load_error', 'Failed to load DLQ entries.'));
 		} finally {
-			if (!signal?.aborted) loading = false;
+			loading = false;
 		}
 	}
 
 	async function retryTask(taskId: string) {
 		retrying = taskId;
-		const result = await api(`/control/queue/dlq/${taskId}/retry`, { method: 'POST' });
-		retrying = null;
-		confirmRetryEntry = null;
-		if (result.ok) {
-			showSuccess(t('dlq.retry_success'));
-			await load();
-		} else {
+		try {
+			const result = await api(`/control/queue/dlq/${taskId}/retry`, { method: 'POST' });
+			if (result.ok) {
+				showSuccess(t('dlq.retry_success'));
+				await load();
+			} else {
+				showError(result.error || t('dlq.retry_error'));
+			}
+		} catch {
 			showError(t('dlq.retry_error'));
+		} finally {
+			retrying = null;
+			confirmRetryEntry = null;
 		}
 	}
 
 	async function discardTask(taskId: string) {
 		deleting = taskId;
-		const result = await api(`/control/queue/dlq/${taskId}`, { method: 'DELETE' });
-		deleting = null;
-		confirmDiscardEntry = null;
-		if (result.ok) {
-			entries = entries.filter((e) => e.task_id !== taskId);
-			showSuccess(t('dlq.discard_success'));
-		} else {
+		try {
+			const result = await api(`/control/queue/dlq/${taskId}`, { method: 'DELETE' });
+			if (result.ok) {
+				showSuccess(t('dlq.discard_success'));
+				await load();
+			} else {
+				showError(result.error || t('dlq.discard_error'));
+			}
+		} catch {
 			showError(t('dlq.discard_error'));
+		} finally {
+			deleting = null;
+			confirmDiscardEntry = null;
 		}
 	}
 
 	async function discardAll() {
 		deleting = '__all__';
-		const result = await api('/control/queue/dlq/discard-all', { method: 'POST' });
-		deleting = null;
-		confirmDiscardAll = false;
-		if (result.ok) {
-			entries = [];
-			selectedIds = new Set();
-			showSuccess(t('dlq.discard_all_success'));
-		} else {
+		try {
+			const result = await api('/control/queue/dlq/discard-all', { method: 'POST' });
+			if (result.ok) {
+				entries = [];
+				selectedIds = new Set();
+				showSuccess(t('dlq.discard_all_success'));
+			} else {
+				showError(result.error || t('dlq.discard_all_error'));
+			}
+		} catch {
 			showError(t('dlq.discard_all_error'));
+		} finally {
+			deleting = null;
+			confirmDiscardAll = false;
 		}
 	}
 
@@ -128,12 +147,18 @@
 
 	async function bulkDiscard(ids: string[]) {
 		const taskIds = ids.map(extractTaskId);
+		let failed = 0;
 		for (const taskId of taskIds) {
-			await api(`/control/queue/dlq/${taskId}`, { method: 'DELETE' });
+			const result = await api(`/control/queue/dlq/${taskId}`, { method: 'DELETE' });
+			if (!result.ok) failed++;
 		}
 		entries = entries.filter((e) => !taskIds.includes(e.task_id));
 		selectedIds = new Set();
-		showSuccess(t('dlq.discard_success'));
+		if (failed > 0) {
+			showError(t('dlq.discard_partial_error', '{count} tasks could not be discarded.').replace('{count}', String(failed)));
+		} else {
+			showSuccess(t('dlq.discard_success'));
+		}
 	}
 
 	let filtered = $derived(
@@ -171,8 +196,10 @@
 			id: `${e.task_id}::${page * pageSize + i}`,
 			task_id: e.task_id,
 			task_type: e.task_type,
+			queue: e.queue,
 			error_message: e.error_message,
 			retry_count: e.retry_count,
+			max_retries: e.max_retries,
 			failed_at: e.failed_at
 		}))
 	);
@@ -195,6 +222,13 @@
 				sortable: true,
 				render: (val) =>
 					`<span class="bg-tertiary/12 text-tertiary rounded-5px px-1.5 py-0.5 text-xs">${escapeHtml(val)}</span>`
+			},
+			{
+				key: 'queue',
+				label: t('dlq.queue', 'Queue'),
+				sortable: true,
+				render: (val) =>
+					`<span class="bg-muted text-muted-foreground rounded-5px px-1.5 py-0.5 text-xs">${escapeHtml(val)}</span>`
 			},
 			{
 				key: 'error_message',
@@ -224,8 +258,10 @@
 		return {
 			task_id: row.task_id as string,
 			task_type: row.task_type as string,
+			queue: (row.queue as string) ?? '',
 			error_message: row.error_message as string,
 			retry_count: row.retry_count as number,
+			max_retries: (row.max_retries as number) ?? 0,
 			failed_at: row.failed_at as string,
 			payload: {}
 		};
