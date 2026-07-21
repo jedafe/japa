@@ -21,6 +21,14 @@ describe('parseCardStyleValue', () => {
 		expect(parseCardStyleValue('')).toEqual({ default: 'reddit', byType: {} });
 		expect(parseCardStyleValue('nonsense')).toEqual({ default: 'reddit', byType: {} });
 	});
+	it('parses the double-encoded value the settings PATCH stores', () => {
+		// Every settings value is stored as a JSON string, so an object saved
+		// from this editor comes back double-encoded (a JSON string of object JSON).
+		expect(parseCardStyleValue('"{\\"default\\":\\"reddit\\",\\"by_type\\":{\\"blog_post\\":\\"grid\\"}}"')).toEqual({
+			default: 'reddit',
+			byType: { blog_post: 'grid' }
+		});
+	});
 });
 
 describe('buildCardStyleValue', () => {
