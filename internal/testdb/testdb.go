@@ -19,7 +19,6 @@ package testdb
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -67,18 +66,21 @@ var (
 // the first call in a test binary it applies every pending forward
 // migration (guarded by sync.Once); subsequent calls, including from other
 // tests in the same package, reuse the same pool. Connect fails the test
-// immediately if the resolved DSN targets the primary "japa" database, so
-// a misconfigured environment can never run destructive seeding against
-// real data.
+// immediately unless it can positively confirm the resolved DSN targets a
+// database other than the primary "japa" — any parse error, an empty name,
+// or a name equal to "japa" all fail closed, so a misconfigured or
+// adversarial DSN can never run destructive seeding against real data.
 func Connect(t *testing.T) *db.DB {
 	t.Helper()
 
 	dsn := resolveDSN()
 
-	if name := databaseNameFromDSN(dsn); name == primaryDatabaseName {
-		t.Fatalf("testdb: refusing to run integration tests against the primary %q database; "+
-			"set JC_TEST_DATABASE_URL to a dedicated test database (resolved DSN targets database %q)",
-			primaryDatabaseName, name)
+	name, err := resolvedDatabaseName(dsn)
+	if err != nil || name == "" || name == primaryDatabaseName {
+		t.Fatalf("testdb: refusing to run integration tests: could not confirm the resolved DSN "+
+			"targets a database other than the primary %q (resolved database=%q, parse error=%v); "+
+			"set JC_TEST_DATABASE_URL to a dedicated test database",
+			primaryDatabaseName, name, err)
 	}
 
 	setupOnce.Do(func() {
@@ -109,17 +111,33 @@ func resolveDSN() string {
 	return defaultTestDSN
 }
 
-// databaseNameFromDSN extracts the database name (the URL path component)
-// from a Postgres connection string. It returns "" if the DSN cannot be
-// parsed as a URL; an unparseable DSN is treated as "not the primary
-// database" here and will fail loudly at connect time instead.
-func databaseNameFromDSN(dsn string) string {
-	u, err := url.Parse(dsn)
+// resolvedDatabaseName returns the database name pgx will actually connect
+// to for dsn, parsed with pgxpool's own parser — the identical path db.New
+// uses internally (see internal/db/pool.go's createPool, which calls
+// pgxpool.ParseConfig then pgxpool.NewWithConfig). This must not diverge
+// from the real connection logic: a hand-rolled net/url.Parse extraction
+// disagrees with pgx on at least two DSN forms that a naive check would
+// wrongly wave through —
+//
+//   - libpq keyword/value DSNs ("host=localhost dbname=japa ..."): the
+//     whole string lands in a URL's Path, never matching "japa" by name,
+//     while pgx correctly resolves Database="japa".
+//   - a `?dbname=` query override on a postgresql:// URL
+//     ("postgresql://.../japa_test?dbname=japa"): pgx's own parser lets the
+//     dbname query parameter override the URL path's database, resolving
+//     to "japa", while a Path-only check would still see "japa_test".
+//
+// Using pgx's parser here closes both gaps because the guard now sees
+// exactly what the connection will see. A non-nil error means the DSN
+// could not be parsed at all — callers must treat that as "unsafe", not
+// "not the primary database".
+func resolvedDatabaseName(dsn string) (string, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("parsing dsn: %w", err)
 	}
 
-	return strings.TrimPrefix(u.Path, "/")
+	return cfg.ConnConfig.Database, nil
 }
 
 // connectAndMigrate opens the writer/reader pools and applies every
