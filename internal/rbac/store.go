@@ -196,13 +196,40 @@ func (s *Store) ListGroups(ctx context.Context, tenantID pgtype.UUID) ([]Group, 
 	groups := make([]Group, 0, len(rows))
 
 	for _, r := range rows {
-		groups = append(groups, Group{
+		g := Group{
 			ID:       r.ID,
 			TenantID: r.TenantID,
 			Name:     r.Name,
 			Slug:     r.Slug,
 			IsSystem: r.IsSystem,
-		})
+		}
+
+		// Count members.
+		members, err := s.read.ListGroupMembersByGroupID(ctx, r.ID)
+		if err == nil {
+			g.MemberCount = int32(len(members))
+		}
+
+		// Get permissions via group → roles → permissions.
+		roleRows, err := s.read.ListGroupRolesByGroupID(ctx, r.ID)
+		if err == nil {
+			permSet := make(map[string]struct{})
+			for _, role := range roleRows {
+				permRows, err := s.read.ListRolePermissionsByKey(ctx, role.ID)
+				if err == nil {
+					for _, p := range permRows {
+						permSet[p.Key] = struct{}{}
+					}
+				}
+			}
+			perms := make([]string, 0, len(permSet))
+			for k := range permSet {
+				perms = append(perms, k)
+			}
+			g.Permissions = perms
+		}
+
+		groups = append(groups, g)
 	}
 
 	return groups, nil
@@ -264,8 +291,11 @@ func (s *Store) ListPermissions(ctx context.Context) ([]Permission, error) {
 
 // Role represents a user role.
 type Role struct {
-	ID   pgtype.UUID `json:"id"`
-	Name string      `json:"name"`
+	ID         pgtype.UUID `json:"id"`
+	Name       string      `json:"name"`
+	Slug       string      `json:"slug"`
+	Permissions []string   `json:"permissions"`
+	UserCount  int32       `json:"user_count"`
 }
 
 // ListRoles returns all roles.
@@ -285,6 +315,52 @@ func (s *Store) ListRoles(ctx context.Context) ([]Role, error) {
 	}
 
 	return roles, nil
+}
+
+// ListRolesPaginated returns a paginated list of roles with optional search.
+func (s *Store) ListRolesPaginated(ctx context.Context, search string, limit, offset int32) ([]Role, int32, error) {
+	rows, err := s.read.ListRolesPaginated(ctx, gen.ListRolesPaginatedParams{
+		Search:     search,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing roles paginated: %w", err)
+	}
+
+	roles := make([]Role, 0, len(rows))
+	for _, r := range rows {
+		role := Role{
+			ID:   r.ID,
+			Name: r.Name,
+			Slug: r.Slug,
+		}
+
+		// Get permissions for this role.
+		permRows, err := s.read.ListRolePermissionsByKey(ctx, r.ID)
+		if err == nil {
+			perms := make([]string, 0, len(permRows))
+			for _, p := range permRows {
+				perms = append(perms, p.Key)
+			}
+			role.Permissions = perms
+		}
+
+		// Count groups assigned to this role.
+		groupRows, err := s.read.ListGroupsByRoleID(ctx, r.ID)
+		if err == nil {
+			role.UserCount = int32(len(groupRows))
+		}
+
+		roles = append(roles, role)
+	}
+
+	total, err := s.read.CountRoles(ctx, search)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting roles: %w", err)
+	}
+
+	return roles, total, nil
 }
 
 // CreateRole creates a new role and returns its ID.

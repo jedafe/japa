@@ -11,6 +11,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adminUpdateMediaStatus = `-- name: AdminUpdateMediaStatus :exec
+UPDATE media
+SET confirmed = $1,
+    quarantine_reason = $2::text,
+    reviewed_by = $3,
+    reviewed_at = CASE WHEN $2 IS NULL AND $1 THEN now() ELSE reviewed_at END
+WHERE id = $4 AND tenant_id = $5 AND deleted_at IS NULL
+`
+
+type AdminUpdateMediaStatusParams struct {
+	Confirmed        bool        `json:"confirmed"`
+	QuarantineReason string      `json:"quarantine_reason"`
+	ReviewedBy       pgtype.UUID `json:"reviewed_by"`
+	ID               pgtype.UUID `json:"id"`
+	TenantID         pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) AdminUpdateMediaStatus(ctx context.Context, arg AdminUpdateMediaStatusParams) error {
+	_, err := q.db.Exec(ctx, adminUpdateMediaStatus,
+		arg.Confirmed,
+		arg.QuarantineReason,
+		arg.ReviewedBy,
+		arg.ID,
+		arg.TenantID,
+	)
+	return err
+}
+
 const approveQuarantinedMedia = `-- name: ApproveQuarantinedMedia :exec
 UPDATE media
 SET quarantine_reason = NULL,
@@ -92,7 +120,7 @@ func (q *Queries) CountMediaByUploader(ctx context.Context, arg CountMediaByUplo
 
 const getMediaByID = `-- name: GetMediaByID :one
 
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at FROM media WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id FROM media WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type GetMediaByIDParams struct {
@@ -127,12 +155,13 @@ func (q *Queries) GetMediaByID(ctx context.Context, arg GetMediaByIDParams) (Med
 		&i.QuarantinedAt,
 		&i.ReviewedBy,
 		&i.ReviewedAt,
+		&i.UserGroupID,
 	)
 	return i, err
 }
 
 const getMediaByStoragePath = `-- name: GetMediaByStoragePath :one
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at FROM media WHERE storage_path = $1 AND tenant_id = $2
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id FROM media WHERE storage_path = $1 AND tenant_id = $2
 `
 
 type GetMediaByStoragePathParams struct {
@@ -164,6 +193,7 @@ func (q *Queries) GetMediaByStoragePath(ctx context.Context, arg GetMediaByStora
 		&i.QuarantinedAt,
 		&i.ReviewedBy,
 		&i.ReviewedAt,
+		&i.UserGroupID,
 	)
 	return i, err
 }
@@ -173,7 +203,7 @@ const insertMedia = `-- name: InsertMedia :one
 
 INSERT INTO media (tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, storage_path, storage_bucket)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at
+RETURNING id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id
 `
 
 type InsertMediaParams struct {
@@ -223,12 +253,13 @@ func (q *Queries) InsertMedia(ctx context.Context, arg InsertMediaParams) (Mediu
 		&i.QuarantinedAt,
 		&i.ReviewedBy,
 		&i.ReviewedAt,
+		&i.UserGroupID,
 	)
 	return i, err
 }
 
 const listMediaByTenant = `-- name: ListMediaByTenant :many
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at FROM media
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id FROM media
 WHERE tenant_id = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -270,6 +301,7 @@ func (q *Queries) ListMediaByTenant(ctx context.Context, arg ListMediaByTenantPa
 			&i.QuarantinedAt,
 			&i.ReviewedBy,
 			&i.ReviewedAt,
+			&i.UserGroupID,
 		); err != nil {
 			return nil, err
 		}
@@ -282,7 +314,7 @@ func (q *Queries) ListMediaByTenant(ctx context.Context, arg ListMediaByTenantPa
 }
 
 const listMediaByType = `-- name: ListMediaByType :many
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at FROM media
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id FROM media
 WHERE tenant_id = $1 AND mime_type LIKE $2 || '%' AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
@@ -330,6 +362,7 @@ func (q *Queries) ListMediaByType(ctx context.Context, arg ListMediaByTypeParams
 			&i.QuarantinedAt,
 			&i.ReviewedBy,
 			&i.ReviewedAt,
+			&i.UserGroupID,
 		); err != nil {
 			return nil, err
 		}
@@ -343,7 +376,7 @@ func (q *Queries) ListMediaByType(ctx context.Context, arg ListMediaByTypeParams
 
 const listMediaByUploader = `-- name: ListMediaByUploader :many
 
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at FROM media
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id FROM media
 WHERE tenant_id = $1 AND uploader_user_id = $2 AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
@@ -394,6 +427,7 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 			&i.QuarantinedAt,
 			&i.ReviewedBy,
 			&i.ReviewedAt,
+			&i.UserGroupID,
 		); err != nil {
 			return nil, err
 		}
@@ -410,7 +444,7 @@ SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
        file_size_bytes, width_px, height_px, duration_secs, storage_path,
        storage_bucket, alt_text, caption, confirmed, deleted_at,
        quarantine_reason, quarantined_at, reviewed_by, reviewed_at,
-       created_at
+       created_at, user_group_id
 FROM media
 WHERE tenant_id = $1
   AND quarantine_reason IS NOT NULL
@@ -446,6 +480,7 @@ type ListQuarantinedMediaRow struct {
 	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
 	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UserGroupID      pgtype.UUID        `json:"user_group_id"`
 }
 
 func (q *Queries) ListQuarantinedMedia(ctx context.Context, arg ListQuarantinedMediaParams) ([]ListQuarantinedMediaRow, error) {
@@ -478,6 +513,7 @@ func (q *Queries) ListQuarantinedMedia(ctx context.Context, arg ListQuarantinedM
 			&i.ReviewedBy,
 			&i.ReviewedAt,
 			&i.CreatedAt,
+			&i.UserGroupID,
 		); err != nil {
 			return nil, err
 		}
@@ -545,7 +581,7 @@ func (q *Queries) RejectQuarantinedMedia(ctx context.Context, arg RejectQuaranti
 }
 
 const searchMedia = `-- name: SearchMedia :many
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at FROM media
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id FROM media
 WHERE tenant_id = $1
   AND deleted_at IS NULL
   AND (original_filename ILIKE '%' || $2 || '%'
@@ -597,6 +633,7 @@ func (q *Queries) SearchMedia(ctx context.Context, arg SearchMediaParams) ([]Med
 			&i.QuarantinedAt,
 			&i.ReviewedBy,
 			&i.ReviewedAt,
+			&i.UserGroupID,
 		); err != nil {
 			return nil, err
 		}
@@ -628,8 +665,9 @@ SET alt_text = COALESCE($1, alt_text),
     caption = COALESCE($2, caption),
     width_px = COALESCE($3, width_px),
     height_px = COALESCE($4, height_px),
-    duration_secs = COALESCE($5, duration_secs)
-WHERE id = $6 AND tenant_id = $7
+    duration_secs = COALESCE($5, duration_secs),
+    user_group_id = $6
+WHERE id = $7 AND tenant_id = $8
 `
 
 type UpdateMediaMetadataParams struct {
@@ -638,6 +676,7 @@ type UpdateMediaMetadataParams struct {
 	WidthPx      *int32         `json:"width_px"`
 	HeightPx     *int32         `json:"height_px"`
 	DurationSecs pgtype.Numeric `json:"duration_secs"`
+	UserGroupID  pgtype.UUID    `json:"user_group_id"`
 	ID           pgtype.UUID    `json:"id"`
 	TenantID     pgtype.UUID    `json:"tenant_id"`
 }
@@ -649,6 +688,7 @@ func (q *Queries) UpdateMediaMetadata(ctx context.Context, arg UpdateMediaMetada
 		arg.WidthPx,
 		arg.HeightPx,
 		arg.DurationSecs,
+		arg.UserGroupID,
 		arg.ID,
 		arg.TenantID,
 	)

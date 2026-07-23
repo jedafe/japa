@@ -44,17 +44,20 @@ const SystemWildcardPermission = "*"
 
 // Permission represents a single permission node (e.g. "blog.publish").
 type Permission struct {
-	Key         string
-	Description string
+	Key         string `json:"key"`
+	Description string `json:"description"`
 }
 
 // Group represents a user group.
 type Group struct {
-	ID       pgtype.UUID
-	TenantID pgtype.UUID
-	Name     string
-	Slug     string
-	IsSystem bool
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	Description string      `json:"description"`
+	IsSystem    bool        `json:"is_system"`
+	MemberCount int32       `json:"member_count"`
+	Permissions []string    `json:"permissions"`
 }
 
 // UserContext holds a user's groups and their resolved permissions.

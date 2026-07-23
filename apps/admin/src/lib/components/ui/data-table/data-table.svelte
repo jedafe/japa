@@ -8,17 +8,18 @@
   import { Button } from "$lib/components/ui/button";
 
   function sanitizeHtml(html: string): string {
-    // 1. Escape all HTML metacharacters so no raw markup can execute.
-    const escaped = html
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-    // 2. Re-allow a safe subset of inline tags, permitting only a `class` attribute.
-    return escaped
-      .replace(/&lt;(b|i|strong|em|code|span)\b((?:\s+class=&quot;[^&]*&quot;)?)\s*&gt;/gi, '<$1$2>')
-      .replace(/&lt;\/(b|i|strong|em|code|span)&gt;/gi, '</$1>');
+    // Allow only safe inline tags with class/style attributes.
+    // Block everything else to prevent XSS.
+    return html.replace(
+      /<(\/?)(b|i|strong|em|code|span)(\b[^>]*)?>/gi,
+      (match, slash, tag, attrs) => {
+        if (slash) return `</${tag}>`;
+        if (!attrs) return `<${tag}>`;
+        // Strip everything except class and style attributes
+        const safe = attrs.replace(/\s+(?!class|style)[a-z-]+=("[^"]*"|'[^']*'|\S+)/gi, '');
+        return `<${tag}${safe}>`;
+      }
+    );
   }
 
   function extractId(row: any): string {
@@ -32,6 +33,7 @@
     class?: string;
     render?: (value: any, row: any) => string;
     component?: Component<any> | ((...args: any[]) => any);
+    componentSnippet?: Snippet<[{ value: any; row: any; [key: string]: any }]>;
     componentProps?: Record<string, any>;
   };
 
@@ -41,7 +43,7 @@
      selectable = false,
      selectedIds = $bindable(new Set<string>()),
      onrowclick,
-     emptyMessage = "No data available",
+     emptyMessage = t("common.no_data", "No data available"),
      class: className,
      showPagination = true,
      loading = false,
@@ -105,8 +107,11 @@
     let sorted = [...data];
     if (sortColumn) {
       sorted.sort((a, b) => {
-        const aVal = a[sortColumn!];
-        const bVal = b[sortColumn!];
+        let aVal = a[sortColumn!];
+        let bVal = b[sortColumn!];
+        // Handle arrays (e.g. groups) by joining for comparison
+        if (Array.isArray(aVal)) aVal = aVal.join(', ');
+        if (Array.isArray(bVal)) bVal = bVal.join(', ');
         const compare = typeof aVal === "string"
           ? aVal.localeCompare(bVal)
           : (aVal ?? 0) - (bVal ?? 0);
@@ -308,7 +313,9 @@
             {/if}
             {#each columns as column}
               <td class="p-4 align-middle" style="border-color: var(--color-border)">
-                {#if column.component}
+                {#if column.componentSnippet}
+                  {@render column.componentSnippet({ value: row[column.key], row, ...column.componentProps })}
+                {:else if column.component}
                   <column.component value={row[column.key]} {row} {...column.componentProps ?? {}} />
                 {:else if column.render}
                   {@html sanitizeHtml(column.render(row[column.key], row))}
@@ -332,7 +339,7 @@
   </div>
   {#if selectable && selectedIds.size > 0 && (bulkActionsSnippet || defaultBulkActions)}
     <div class="mt-3 flex flex-wrap items-center gap-3 rounded-lg p-3" style="background: color-mix(in srgb, var(--color-primary) 12%, transparent)">
-      <span class="text-sm font-medium" style="color: var(--color-foreground)">{selectedIds.size} selected</span>
+      <span class="text-sm font-medium" style="color: var(--color-foreground)">{t('common.selected', '{count} selected').replace('{count}', String(selectedIds.size))}</span>
       {#if bulkActionsSnippet}
         {@render bulkActionsSnippet()}
       {/if}

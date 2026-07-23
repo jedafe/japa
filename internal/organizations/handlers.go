@@ -44,7 +44,10 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func parsePageSize(r *http.Request) int32 {
-	s := r.URL.Query().Get("page_size")
+	s := r.URL.Query().Get("limit")
+	if s == "" {
+		s = r.URL.Query().Get("page_size")
+	}
 	if s == "" {
 		return DefaultPageSize
 	}
@@ -59,7 +62,15 @@ func parsePageSize(r *http.Request) int32 {
 }
 
 func parsePageOffset(r *http.Request) int32 {
-	s := r.URL.Query().Get("page_offset")
+	s := r.URL.Query().Get("page")
+	if s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 0 {
+			return 0
+		}
+		return int32(n) //nolint:gosec // bounded by query parameter
+	}
+	s = r.URL.Query().Get("page_offset")
 	if s == "" {
 		return 0
 	}
@@ -175,14 +186,30 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 
 	orgType := r.URL.Query().Get("org_type")
 	countryCode := r.URL.Query().Get("country_code")
+	search := r.URL.Query().Get("q")
+	verified := r.URL.Query().Get("verified")
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
 
-	result, err := h.service.ListOrganizations(r.Context(), tenantID, orgType, countryCode, parsePageSize(r), parsePageOffset(r))
+	items, total, err := h.service.ListOrganizations(r.Context(), tenantID, orgType, countryCode, search, verified, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	totalPages := int32(1)
+	if limit > 0 && total > 0 {
+		totalPages = int32((total + int64(limit) - 1) / int64(limit))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"items":       items,
+			"total":       total,
+			"total_pages": totalPages,
+			"page":        offset / limit,
+		},
+	})
 }
 
 type updateOrganizationRequest struct {

@@ -150,6 +150,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 		Description  *string `json:"description"`
 		Icon         *string `json:"icon"`
 		FieldGroupID string  `json:"field_group_id"`
+		IsUniversity bool    `json:"is_university"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -182,6 +183,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 		Description:  req.Description,
 		Icon:         req.Icon,
 		FieldGroupID: fieldGroupID,
+		IsUniversity: req.IsUniversity,
 		IsSystem:     false,
 	})
 	if err != nil {
@@ -206,6 +208,7 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 		Description  *string `json:"description"`
 		Icon         *string `json:"icon"`
 		FieldGroupID string  `json:"field_group_id"`
+		IsUniversity bool    `json:"is_university"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -236,6 +239,7 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 		Description:  req.Description,
 		Icon:         req.Icon,
 		FieldGroupID: fieldGroupID,
+		IsUniversity: req.IsUniversity,
 		ID:           id,
 		TenantID:     tenantID,
 	})
@@ -319,6 +323,43 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
+// AdminListSpaces handles GET /api/v1/admin/spaces — paginated spaces for the
+// admin panel with owner and space_type name resolved via JOINs.
+func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	spaces, err := h.Service.AdminListSpaces(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	total, err := h.Service.AdminListSpacesCount(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = int32((total + int64(limit) - 1) / int64(limit))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"items":       spaces,
+			"total":       total,
+			"total_pages": totalPages,
+		},
+	})
+}
+
 // ListMySpaces handles GET /api/v1/me/spaces — every space the caller belongs to.
 func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -379,6 +420,37 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	space, err := h.Service.GetSpaceBySlug(r.Context(), slug, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	rules, err := h.Service.ListSpaceRules(r.Context(), space.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"space": space, "rules": rules},
+	})
+}
+
+// AdminGetSpace handles GET /api/v1/admin/spaces/{id} — returns a single space
+// by UUID (not slug) for the admin panel.
+func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	space, err := h.Service.GetSpace(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1019,6 +1091,34 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mods, err := h.Service.ListModerators(r.Context(), space.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": mods})
+}
+
+// AdminListModerators handles GET /api/v1/admin/spaces/{id}/moderators.
+func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	spaceID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		return
+	}
+
+	_, err = h.Service.GetSpaceByID(r.Context(), tenantID, spaceID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	mods, err := h.Service.ListModerators(r.Context(), spaceID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

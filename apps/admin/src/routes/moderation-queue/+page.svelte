@@ -349,32 +349,32 @@
 </Modal>
 
 <!-- Queue Action Cell Snippet -->
-{#snippet QueueActionsCell(item: ModerationQueueItem)}
+{#snippet QueueActionsCell({ value, row }: { value: any; row: ModerationQueueItem })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => approveItem(item.id)} title={t('moderationQueue.approve')} style="color: var(--color-success)">
+		<Button variant="ghost" size="sm" onclick={() => approveItem(row.id)} title={t('moderationQueue.approve')} style="color: var(--color-success)">
 			<CheckCircle class="h-3.5 w-3.5" />
 		</Button>
-		<Button variant="ghost" size="sm" onclick={() => rejectItem(item.id)} title={t('moderationQueue.reject')} style="color: var(--color-danger)">
+		<Button variant="ghost" size="sm" onclick={() => rejectItem(row.id)} title={t('moderationQueue.reject')} style="color: var(--color-danger)">
 			<XCircle class="h-3.5 w-3.5" />
 		</Button>
-		<Button variant="ghost" size="sm" onclick={() => openAssignModal(item.id)} title={t('moderationQueue.assign')} style="color: var(--color-info)">
+		<Button variant="ghost" size="sm" onclick={() => openAssignModal(row.id)} title={t('moderationQueue.assign')} style="color: var(--color-info)">
 			<Users class="h-3.5 w-3.5" />
 		</Button>
-		<Button variant="ghost" size="sm" onclick={() => openAppealModal(item.id)} title={t('moderationQueue.appeal')} style="color: var(--color-warning)">
+		<Button variant="ghost" size="sm" onclick={() => openAppealModal(row.id)} title={t('moderationQueue.appeal')} style="color: var(--color-warning)">
 			<ShieldAlert class="h-3.5 w-3.5" />
 		</Button>
 	</div>
 {/snippet}
 
 <!-- Alert Action Cell Snippet -->
-{#snippet AlertActionsCell(alert: ModerationAlert)}
+{#snippet AlertActionsCell({ value, row }: { value: any; row: ModerationAlert })}
 	<div class="flex items-center gap-1">
-		{#if !alert.acknowledged}
-			<Button variant="ghost" size="sm" onclick={() => acknowledgeAlert(alert.id)} style="color: var(--color-info)">
+		{#if !row.acknowledged}
+			<Button variant="ghost" size="sm" onclick={() => acknowledgeAlert(row.id)} style="color: var(--color-info)">
 				{t('moderationQueue.acknowledge')}
 			</Button>
 		{/if}
-		<Button variant="ghost" size="sm" onclick={() => resolveAlert(alert.id)} style="color: var(--color-success)">
+		<Button variant="ghost" size="sm" onclick={() => resolveAlert(row.id)} style="color: var(--color-success)">
 			{t('moderationQueue.resolve')}
 		</Button>
 	</div>

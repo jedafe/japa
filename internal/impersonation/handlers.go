@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers holds dependencies for impersonation HTTP handlers.
@@ -34,6 +35,15 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	}
 
 	return user, true
+}
+
+func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return pgtype.UUID{}, false
+	}
+	return t.ID, true
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -75,7 +85,12 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // StartImpersonation begins impersonating a target user.
 // POST /api/v1/admin/impersonate — body: {"user_id": "uuid"}.
 func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -100,9 +115,7 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, _ := h.requireUser(w, r)
-
-	if err := h.Service.StartImpersonation(r.Context(), user.UserID, targetUserID); err != nil {
+	if err := h.Service.StartImpersonation(r.Context(), tenantID, user.UserID, targetUserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -123,7 +136,12 @@ func (h *Handlers) EndImpersonation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.EndImpersonation(r.Context(), user.UserID); err != nil {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.Service.EndImpersonation(r.Context(), tenantID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

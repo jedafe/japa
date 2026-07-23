@@ -37,8 +37,10 @@
 	let totalItems = $state(0);
 	let pageSize = $state(25);
 	let totalPages = $state(1);
-	let searchQuery = $state("");
-	let filterValues = $state<Record<string, string>>({});
+	let searchQuery = $state(page.url.searchParams.get("q") ?? "");
+	let filterValues = $state<Record<string, string>>(
+		page.url.searchParams.get("filter") ? { post_count: page.url.searchParams.get("filter")! } : {}
+	);
 	let selectedIds = $state<Set<string>>(new Set());
 
 	// Modals
@@ -73,7 +75,7 @@
 		{ key: "post_count", label: t("tags.posts", "Posts"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
 		{ key: "follower_count", label: t("tags.followers", "Followers"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
 		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-36", component: TagActionsCell }
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-36", componentSnippet: TagActionsCell }
 	];
 
 	function slugify(text: string): string {
@@ -88,18 +90,10 @@
 				page: String(currentPage),
 				limit: String(pageSize)
 			});
-			const urlQ = page.url.searchParams.get("q") ?? "";
-			const urlFilter = page.url.searchParams.get("filter") ?? "";
-			if (urlQ) {
-				searchQuery = urlQ;
-				params.set("q", urlQ);
-			} else if (searchQuery) {
+			if (searchQuery) {
 				params.set("q", searchQuery);
 			}
-			if (urlFilter) {
-				filterValues = { post_count: urlFilter };
-				params.set("filter", urlFilter);
-			} else if (filterValues.post_count) {
+			if (filterValues.post_count) {
 				params.set("filter", filterValues.post_count);
 			}
 
@@ -477,19 +471,19 @@
 </Modal>
 
 <!-- TagActionsCell component -->
-{#snippet TagActionsCell(tag: Tag)}
+{#snippet TagActionsCell({ value, row }: { value: any; row: Tag })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(tag)}>
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
 		{#if canManageTags}
-			<Button variant="ghost" size="sm" onclick={() => openModerators(tag)} style="color: var(--color-primary)">
+			<Button variant="ghost" size="sm" onclick={() => openModerators(row)} style="color: var(--color-primary)">
 				<Shield class="h-3.5 w-3.5" />
 			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openEdit(tag)}>
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(tag)} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 				<Trash2 class="h-3.5 w-3.5" />
 			</Button>
 		{/if}

@@ -557,7 +557,7 @@
 </Modal>
 
 <!-- Action Cells -->
-{#snippet TrackActionsCell(row: any)}
+{#snippet TrackActionsCell({ value, row }: { value: any; row: any })}
 	<div class="flex items-center gap-1">
 		{#if canManageLearning && row.status === "draft"}
 			<Button variant="ghost" size="sm" onclick={() => openPublish(row.id, row.title)} style="color: var(--color-success)">
@@ -572,7 +572,7 @@
 	</div>
 {/snippet}
 
-{#snippet ModuleActionsCell(row: any)}
+{#snippet ModuleActionsCell({ value, row }: { value: any; row: any })}
 	<div class="flex items-center gap-1">
 		{#if canManageLearning}
 			<Button variant="ghost" size="sm" onclick={() => confirmDelete("module", row.id, row.title)} style="color: var(--color-danger)">
@@ -582,7 +582,7 @@
 	</div>
 {/snippet}
 
-{#snippet LessonActionsCell(row: any)}
+{#snippet LessonActionsCell({ value, row }: { value: any; row: any })}
 	<div class="flex items-center gap-1">
 		{#if canManageLearning}
 			<Button variant="ghost" size="sm" onclick={() => confirmDelete("lesson", row.id, row.title)} style="color: var(--color-danger)">

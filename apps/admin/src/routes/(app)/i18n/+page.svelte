@@ -512,7 +512,7 @@
 	{/if}
 </Modal>
 
-{#snippet LanguageActionsCell(row: Language)}
+{#snippet LanguageActionsCell({ value, row }: { value: any; row: Language })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openLanguageView(row)}>
 			<Eye class="h-3.5 w-3.5" />
@@ -520,7 +520,7 @@
 	</div>
 {/snippet}
 
-{#snippet TranslationActionsCell(row: TranslationEntry)}
+{#snippet TranslationActionsCell({ value, row }: { value: any; row: TranslationEntry })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openStringView(row)}>
 			<Eye class="h-3.5 w-3.5" />

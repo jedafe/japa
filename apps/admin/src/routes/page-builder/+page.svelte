@@ -148,7 +148,7 @@
 	});
 </script>
 
-{#snippet BlockActionsCell(row: Block)}
+{#snippet BlockActionsCell({ value, row }: { value: any; row: Block })}
 	<div class="flex items-center justify-end gap-1">
 		{#if canManageBlocks}
 			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>

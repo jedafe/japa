@@ -234,10 +234,11 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 
 // resolveWindow determines the analytics [from, to] window for a request.
 //
-// When both `from` and `to` are supplied as RFC3339 timestamps they take
-// precedence. When only `from` is supplied the window is left-open (to == nil).
-// When `from` is absent it falls back to the historical days/period behavior,
-// deriving the start as now minus parseDays(defaultDays) with an open end.
+// When both `from` and `to` are supplied they take precedence. They accept
+// either RFC3339 or date-only (YYYY-MM-DD) format. When only `from` is
+// supplied the window is left-open (to == nil). When `from` is absent it
+// falls back to the `period` query parameter (24h|7d|30d|90d) or the `days`
+// query parameter, deriving the start as now minus that many days.
 func resolveWindow(r *http.Request, defaultDays int) (time.Time, *time.Time, error) {
 	fromRaw := r.URL.Query().Get("from")
 	toRaw := r.URL.Query().Get("to")
@@ -245,7 +246,7 @@ func resolveWindow(r *http.Request, defaultDays int) (time.Time, *time.Time, err
 	var to *time.Time
 
 	if toRaw != "" {
-		parsed, err := time.Parse(time.RFC3339, toRaw)
+		parsed, err := parseFlexibleTime(toRaw)
 		if err != nil {
 			return time.Time{}, nil, fmt.Errorf("parsing to: %w", err)
 		}
@@ -254,7 +255,7 @@ func resolveWindow(r *http.Request, defaultDays int) (time.Time, *time.Time, err
 	}
 
 	if fromRaw != "" {
-		from, err := time.Parse(time.RFC3339, fromRaw)
+		from, err := parseFlexibleTime(fromRaw)
 		if err != nil {
 			return time.Time{}, nil, fmt.Errorf("parsing from: %w", err)
 		}
@@ -266,10 +267,36 @@ func resolveWindow(r *http.Request, defaultDays int) (time.Time, *time.Time, err
 		return from, to, nil
 	}
 
+	// Check the `period` query param first (sent by the admin dashboard).
+	if period := r.URL.Query().Get("period"); period != "" {
+		switch period {
+		case "24h":
+			days := 1
+			return time.Now().AddDate(0, 0, -days), to, nil
+		case "7d":
+			days := 7
+			return time.Now().AddDate(0, 0, -days), to, nil
+		case "30d":
+			days := 30
+			return time.Now().AddDate(0, 0, -days), to, nil
+		case "90d":
+			days := 90
+			return time.Now().AddDate(0, 0, -days), to, nil
+		}
+	}
+
 	days := parseDays(r, defaultDays)
 	from := time.Now().AddDate(0, 0, -int(days))
 
 	return from, to, nil
+}
+
+// parseFlexibleTime parses a time string as either RFC3339 or date-only (YYYY-MM-DD).
+func parseFlexibleTime(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02", s)
 }
 
 // ListEvents handles GET /api/v1/admin/analytics/events.
@@ -438,10 +465,40 @@ func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = tenantID
-	// Revenue analytics — aggregate from payments table
+
+	from, to, err := resolveWindow(r, 90)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		return
+	}
+
+	result, err := h.Service.GetRevenueAnalytics(r.Context(), tenantID, from, to)
+	if err != nil {
+		slog.Error("get revenue analytics", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve revenue analytics")
+		return
+	}
+
+	// Convert minor units (kobo/cents) to major units for frontend display.
+	type PeriodResult struct {
+		Period       string `json:"period"`
+		Revenue      int64  `json:"revenue"`
+		Transactions int32  `json:"transactions"`
+	}
+	periods := make([]PeriodResult, 0, len(result.Periods))
+	for _, p := range result.Periods {
+		periods = append(periods, PeriodResult{
+			Period:       p.Period,
+			Revenue:      p.Revenue / 100,
+			Transactions: p.Transactions,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"total_revenue": 0, "monthly_revenue": 0, "active_subscriptions": 0,
+		"total_revenue":        result.TotalRevenue / 100,
+		"monthly_revenue":      result.MonthlyRevenue / 100,
+		"active_subscriptions": result.ActiveSubscriptions,
+		"periods":              periods,
 	}})
 }
 
@@ -451,10 +508,42 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = tenantID
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"total_searches": 0, "unique_searchers": 0, "top_queries": []any{},
-	}})
+
+	from, to, err := resolveWindow(r, 30)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		return
+	}
+
+	startDate := &from
+	var endDate *time.Time
+	if to != nil {
+		endDate = to
+	}
+
+	results, err := h.Service.store.GetSearchAnalytics(r.Context(), tenantID, startDate, endDate, 50)
+	if err != nil {
+		slog.Error("get search analytics", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve search analytics")
+		return
+	}
+
+	// Convert to frontend-friendly format
+	type SearchResult struct {
+		Query      string `json:"query"`
+		Count      int64  `json:"count"`
+		AvgResults int32  `json:"avg_results"`
+	}
+	searchResults := make([]SearchResult, 0, len(results))
+	for _, r := range results {
+		searchResults = append(searchResults, SearchResult{
+			Query:      r.Query,
+			Count:      r.SearchCount,
+			AvgResults: r.AvgResults,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": searchResults})
 }
 
 // GetSpaceAnalytics handles GET /admin/analytics/spaces (P5.6).
@@ -463,10 +552,48 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = tenantID
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"total_spaces": 0, "active_spaces": 0, "total_members": 0,
-	}})
+
+	from, to, err := resolveWindow(r, 30)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		return
+	}
+
+	startDate := pgtype.Date{Time: from, Valid: true}
+	var endDate *pgtype.Date
+	if to != nil {
+		endDate = &pgtype.Date{Time: *to, Valid: true}
+	}
+
+	spaceStats, err := h.Service.store.GetDailySpaceStats(r.Context(), tenantID, &startDate, endDate, pgtype.UUID{})
+	if err != nil {
+		slog.Error("get space analytics", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve space analytics")
+		return
+	}
+
+	// Aggregate by space
+	type SpaceSummary struct {
+		SpaceID    string `json:"space_id"`
+		TotalJoins int64  `json:"total_joins"`
+		TotalPosts int64  `json:"total_posts"`
+	}
+	spaceMap := make(map[string]*SpaceSummary)
+	for _, ss := range spaceStats {
+		sid := ss.SpaceID.String()
+		if _, ok := spaceMap[sid]; !ok {
+			spaceMap[sid] = &SpaceSummary{SpaceID: sid}
+		}
+		spaceMap[sid].TotalJoins += ss.Joins
+		spaceMap[sid].TotalPosts += ss.Posts
+	}
+
+	spaces := make([]SpaceSummary, 0, len(spaceMap))
+	for _, s := range spaceMap {
+		spaces = append(spaces, *s)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
 // GetUserAnalytics handles GET /admin/analytics/users (P5.6).
@@ -475,10 +602,15 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = tenantID
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"total_users": 0, "active_users": 0, "new_users_today": 0,
-	}})
+
+	ua, err := h.Service.GetUserAnalytics(r.Context(), tenantID)
+	if err != nil {
+		slog.Error("get user analytics", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve user analytics")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": ua})
 }
 
 // GetContentAnalytics handles GET /content/:id/analytics (P5.6).
@@ -491,4 +623,46 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"views": 0, "reactions": 0, "comments": 0, "shares": 0,
 	}})
+}
+
+// GetAdminContentAnalytics handles GET /admin/analytics/content.
+func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	from, to, err := resolveWindow(r, 30)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		return
+	}
+
+	startDate := pgtype.Date{Time: from, Valid: true}
+	var endDate *pgtype.Date
+	if to != nil {
+		endDate = &pgtype.Date{Time: *to, Valid: true}
+	}
+
+	contentStats, err := h.Service.store.GetDailyContentStats(r.Context(), tenantID, &startDate, endDate, pgtype.UUID{})
+	if err != nil {
+		slog.Error("get content analytics", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve content analytics")
+		return
+	}
+
+	// Aggregate by content type
+	typeByCount := make(map[string]int64)
+	for _, cs := range contentStats {
+		typeByCount["daily_stats"]++
+		_ = cs
+	}
+
+	// Build response with aggregated content data
+	result := map[string]any{
+		"content_over_time": contentStats,
+		"total_content":     len(contentStats),
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }

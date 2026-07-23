@@ -293,7 +293,7 @@
 </Modal>
 
 <!-- CouponActionsCell component -->
-{#snippet CouponActionsCell(row: Coupon)}
+{#snippet CouponActionsCell({ value, row }: { value: any; row: Coupon })}
 	<div class="flex items-center gap-1">
 		{#if canManageCoupons}
 			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>

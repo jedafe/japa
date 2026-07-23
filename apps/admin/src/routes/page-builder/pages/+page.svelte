@@ -188,7 +188,7 @@
 	}
 </script>
 
-{#snippet PageActionsCell(row: Page)}
+{#snippet PageActionsCell({ value, row }: { value: any; row: Page })}
 	<div class="flex items-center justify-end gap-2">
 		<Button variant="ghost" size="sm" onclick={() => validateSeo(row.id)}>
 			SEO

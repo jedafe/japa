@@ -100,7 +100,7 @@
 	});
 </script>
 
-{#snippet TrackActionsCell(row: Track)}
+{#snippet TrackActionsCell({ value, row }: { value: any; row: Track })}
 	<div class="flex items-center justify-end gap-1">
 		{#if !row.is_published}
 			<Button variant="ghost" size="sm" onclick={() => publishTrack(row)}>

@@ -147,7 +147,7 @@
 	});
 </script>
 
-{#snippet RuleOrderCell(row: Rule)}
+{#snippet RuleOrderCell({ value, row }: { value: any; row: Rule })}
 	{@const idx = rules.findIndex(r => r.id === row.id)}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" disabled={idx === 0} onclick={() => moveUp(row, idx)}>
@@ -159,7 +159,7 @@
 	</div>
 {/snippet}
 
-{#snippet RuleActionsCell(row: Rule)}
+{#snippet RuleActionsCell({ value, row }: { value: any; row: Rule })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openEdit(row)} style="color: var(--color-info)">
 			{t('common.edit')}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -85,5 +86,54 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 			"email":    input.Email,
 			"username": input.Username,
 		},
+	})
+}
+
+// HardDeleteUser handles DELETE /admin/users/{id}/hard — permanently erases
+// a soft-deleted user and all cascading data. Only works on users with status=deleted.
+func (h *Handlers) HardDeleteUser(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.GDPR == nil {
+		writeError(w, http.StatusInternalServerError, "not_configured", "Hard delete is not configured")
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	// Verify the user is soft-deleted before allowing hard delete.
+	user, err := h.Queries.GetUserByID(r.Context(), gen.GetUserByIDParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "User not found")
+		return
+	}
+	if user.Status != "deleted" {
+		writeError(w, http.StatusBadRequest, "not_deleted", "User must be soft-deleted before hard delete")
+		return
+	}
+
+	if err := h.GDPR.HardDeleteUser(r.Context(), userID, tenantID); err != nil {
+		writeError(w, http.StatusInternalServerError, "hard_delete_error", "Failed to hard delete user")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":      userID.String(),
+		"status":  "hard_deleted",
+		"message": "User permanently erased",
 	})
 }

@@ -9,9 +9,10 @@
 		confirmText?: string;
 		onConfirm?: () => void;
 		onCancel?: () => void;
+		onOpenChange?: (open: boolean) => void;
 	}
 
-	let { open = $bindable(false), title, consequence, confirmText = '', onConfirm, onCancel }: Props = $props();
+	let { open = $bindable(false), title, consequence, confirmText = '', onConfirm, onCancel, onOpenChange }: Props = $props();
 
 	let typedText = $state('');
 	let confirming = $state(false);
@@ -33,7 +34,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open={open} onOpenChange={(isOpen) => { if (!isOpen) { typedText = ''; } }}>
+<Dialog.Root bind:open={open} onOpenChange={(isOpen) => { if (!isOpen) { typedText = ''; } onOpenChange?.(isOpen); }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
 		<Dialog.Content

@@ -5,11 +5,58 @@
 package gen
 
 import (
+	"database/sql/driver"
+	"fmt"
 	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pgvector/pgvector-go"
 )
+
+type BanOperation string
+
+const (
+	BanOperationPost       BanOperation = "post"
+	BanOperationComment    BanOperation = "comment"
+	BanOperationDiscussion BanOperation = "discussion"
+	BanOperationBlog       BanOperation = "blog"
+	BanOperationMessage    BanOperation = "message"
+)
+
+func (e *BanOperation) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = BanOperation(s)
+	case string:
+		*e = BanOperation(s)
+	default:
+		return fmt.Errorf("unsupported scan type for BanOperation: %T", src)
+	}
+	return nil
+}
+
+type NullBanOperation struct {
+	BanOperation BanOperation `json:"ban_operation"`
+	Valid        bool         `json:"valid"` // Valid is true if BanOperation is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullBanOperation) Scan(value interface{}) error {
+	if value == nil {
+		ns.BanOperation, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.BanOperation.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullBanOperation) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.BanOperation), nil
+}
 
 type AccountDeletionRequest struct {
 	ID          pgtype.UUID        `json:"id"`
@@ -1098,6 +1145,7 @@ type Medium struct {
 	QuarantinedAt    pgtype.Timestamptz `json:"quarantined_at"`
 	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
 	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
+	UserGroupID      pgtype.UUID        `json:"user_group_id"`
 }
 
 type MentorReview struct {
@@ -1937,6 +1985,7 @@ type SpaceType struct {
 	IsSystem     bool               `json:"is_system"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	IsUniversity bool               `json:"is_university"`
 }
 
 type Subscription struct {
@@ -2172,13 +2221,15 @@ type UserGroupPromotion struct {
 }
 
 type UserModerationAction struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
-	Action    string             `json:"action"`
-	Reason    *string            `json:"reason"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID            pgtype.UUID        `json:"id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	Action        string             `json:"action"`
+	Reason        *string            `json:"reason"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	ViolationType *string            `json:"violation_type"`
 }
 
 type UserMute struct {
@@ -2187,6 +2238,18 @@ type UserMute struct {
 	UserID      pgtype.UUID        `json:"user_id"`
 	MutedUserID pgtype.UUID        `json:"muted_user_id"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type UserOperationBan struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Operation BanOperation       `json:"operation"`
+	Reason    *string            `json:"reason"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	IssuedBy  pgtype.UUID        `json:"issued_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type UserPreference struct {

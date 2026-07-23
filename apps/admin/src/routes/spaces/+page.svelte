@@ -21,6 +21,7 @@
 		owner_id: string;
 		member_count: number;
 		status: string;
+		visibility: string;
 		space_type: string;
 		created_at: string;
 		updated_at: string;
@@ -59,18 +60,18 @@
 			key: "status",
 			label: t("spaces.status", "Status"),
 			options: [
-				{ value: "active", label: "Active" },
-				{ value: "suspended", label: "Suspended" },
-				{ value: "archived", label: "Archived" }
+				{ value: "active", label: t("spaces.active", "Active") },
+				{ value: "suspended", label: t("spaces.suspended", "Suspended") },
+				{ value: "archived", label: t("spaces.archived", "Archived") }
 			]
 		},
 		{
-			key: "space_type",
-			label: t("spaces.type", "Type"),
+			key: "visibility",
+			label: t("spaces.visibility", "Visibility"),
 			options: [
-				{ value: "public", label: "Public" },
-				{ value: "private", label: "Private" },
-				{ value: "university", label: "University" }
+				{ value: "public", label: t("spaces.public", "Public") },
+				{ value: "private", label: t("spaces.private", "Private") },
+				{ value: "restricted", label: t("spaces.restricted", "Restricted") }
 			]
 		}
 	];
@@ -93,8 +94,8 @@
 			render: (v: number) => (v ?? 0).toLocaleString()
 		},
 		{
-			key: "space_type",
-			label: t("spaces.type", "Type"),
+			key: "visibility",
+			label: t("spaces.visibility", "Visibility"),
 			sortable: true,
 			render: (v: string) => v || "—"
 		},
@@ -116,8 +117,8 @@
 		{
 			key: "actions",
 			label: t("common.actions", "Actions"),
-			class: "w-40",
-			component: SpaceActionsCell
+			class: "w-52",
+			componentSnippet: SpaceActionsCell
 		}
 	];
 
@@ -126,23 +127,23 @@
 		error = "";
 		try {
 			const params = new URLSearchParams({
-				page: String(currentPage),
-				limit: String(pageSize)
+				page_size: String(pageSize),
+				page_offset: String(currentPage * pageSize)
 			});
 			if (searchQuery) params.set("q", searchQuery);
 			if (filterValues.status) params.set("status", filterValues.status);
-			if (filterValues.space_type) params.set("space_type", filterValues.space_type);
+			if (filterValues.visibility) params.set("visibility", filterValues.visibility);
 
 			const result = await spacesAdminApi.list(params.toString());
 			if (result.ok) {
-				const d = result.data as Space[] | { items: Space[]; page: number; total_pages: number };
+				const d = result.data as Space[] | { items: Space[]; total: number; total_pages: number };
 				if (Array.isArray(d)) {
 					spaces = d;
 					totalItems = d.length;
 					totalPages = 1;
 				} else {
 					spaces = d.items ?? [];
-					totalItems = d.items?.length ?? 0;
+					totalItems = d.total ?? d.items?.length ?? 0;
 					totalPages = d.total_pages ?? 1;
 				}
 			} else {
@@ -175,7 +176,7 @@
 	function openEdit(space: Space) {
 		editTarget = space;
 		editName = space.name;
-		editType = space.space_type;
+		editType = space.visibility;
 		showEditModal = true;
 	}
 
@@ -183,7 +184,7 @@
 		if (!editTarget) return;
 		acting = true;
 		try {
-			const result = await spacesAdminApi.update(editTarget.id, { name: editName, space_type: editType });
+			const result = await spacesAdminApi.update(editTarget.id, { name: editName, visibility: editType });
 			if (result.ok) {
 				showEditModal = false;
 				loadSpaces();
@@ -293,10 +294,10 @@
 
 {#if selectedIds.size > 0}
 	<div class="mb-4 flex items-center gap-3 rounded-lg p-3" style="background: var(--color-primary); color: white">
-		<span class="text-sm font-medium">{selectedIds.size} selected</span>
+		<span class="text-sm font-medium">{t("common.selected", "{count} selected")} ({selectedIds.size})</span>
 		{#if canManageSpaces}
 			<Button variant="ghost" size="sm" onclick={bulkDelete} disabled={acting}>
-				<Trash2 class="mr-1 h-3.5 w-3.5" /> Delete Selected
+				<Trash2 class="mr-1 h-3.5 w-3.5" /> {t("common.delete_selected", "Delete Selected")}
 			</Button>
 		{/if}
 	</div>
@@ -350,8 +351,8 @@
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.member_count.toLocaleString()}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.type')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.space_type || "—"}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.visibility')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.visibility || "—"}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.status')}</p>
@@ -384,7 +385,7 @@
 				/>
 			</div>
 			<div>
-				<label for="edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.type')}</label>
+				<label for="edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.visibility')}</label>
 				<select
 					id="edit-type"
 					class="w-full rounded-lg border px-3 py-2 text-sm"
@@ -393,14 +394,14 @@
 				>
 					<option value="public">{t('spaces.public')}</option>
 					<option value="private">{t('spaces.private')}</option>
-					<option value="university">{t('spaces.university')}</option>
+					<option value="restricted">{t('spaces.restricted')}</option>
 				</select>
 			</div>
 		</div>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showEditModal = false)}>{t('spaces.cancel')}</Button>
-		<Button onclick={saveEdit} disabled={acting}>{acting ? "Saving..." : "Save"}</Button>
+		<Button onclick={saveEdit} disabled={acting}>{acting ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
 	</div>
 </Modal>
 
@@ -408,23 +409,23 @@
 <Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
 	{#if deleteTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
-			Delete space <strong>{deleteTarget.name}</strong>? This cannot be undone.
+			{t("spaces.delete_confirm", "Delete space")} <strong>{deleteTarget.name}</strong>? {t("common.cannotUndo", "This action cannot be undone.")}
 		</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('spaces.cancel')}</Button>
-		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? "Deleting..." : "Delete"}</Button>
+		<Button variant="destructive" onclick={executeDelete} disabled={acting}>{acting ? t("common.deleting", "Deleting...") : t("common.delete", "Delete")}</Button>
 	</div>
 </Modal>
 
 <!-- Suspend/Unsuspend Modal -->
-<Modal bind:open={showSuspendModal} title={suspendTarget?.status === "suspended" ? "Unsuspend Space" : "Suspend Space"} size="sm">
+<Modal bind:open={showSuspendModal} title={suspendTarget?.status === "suspended" ? t("spaces.unsuspend_space", "Unsuspend Space") : t("spaces.suspend_space", "Suspend Space")} size="sm">
 	{#if suspendTarget}
 		<p class="text-sm mb-3" style="color: var(--color-foreground)">
 			{#if suspendTarget.status === "suspended"}
-				Unsuspend <strong>{suspendTarget.name}</strong>? It will become accessible again.
+				{t("spaces.unsuspend_confirm", "Unsuspend")} <strong>{suspendTarget.name}</strong>? {t("spaces.unsuspend_desc", "It will become accessible again.")}
 			{:else}
-				Suspend <strong>{suspendTarget.name}</strong>? New content will be blocked.
+				{t("spaces.suspend_confirm", "Suspend")} <strong>{suspendTarget.name}</strong>? {t("spaces.suspend_desc", "New content will be blocked.")}
 			{/if}
 		</p>
 		{#if suspendTarget.status !== "suspended"}
@@ -432,7 +433,7 @@
 				class="w-full rounded-lg border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				rows="3"
-				placeholder="Reason (optional)"
+				placeholder={t("spaces.reason_placeholder", "Reason (optional)")}
 				bind:value={suspendReason}
 			></textarea>
 		{/if}
@@ -440,32 +441,32 @@
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => (showSuspendModal = false)}>{t('spaces.cancel')}</Button>
 		<Button variant={suspendTarget?.status === "suspended" ? "default" : "destructive"} onclick={executeSuspend} disabled={acting}>
-			{acting ? "Processing..." : suspendTarget?.status === "suspended" ? "Unsuspend" : "Suspend"}
+			{acting ? t("spaces.processing", "Processing...") : suspendTarget?.status === "suspended" ? t("spaces.unsuspend", "Unsuspend") : t("spaces.suspend", "Suspend")}
 		</Button>
 	</div>
 </Modal>
 
 <!-- SpaceActionsCell component -->
-{#snippet SpaceActionsCell(space: Space)}
+{#snippet SpaceActionsCell({ value, row }: { value: any; row: Space })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(space)}>
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
-		<Button variant="ghost" size="sm" onclick={() => goto(`/spaces/${space.id}`)} style="color: var(--color-primary)">
+		<Button variant="ghost" size="sm" onclick={() => goto(`/spaces/${row.id}`)} style="color: var(--color-primary)">
 			{t("spaces.manage", "Manage")}
 		</Button>
 		{#if canManageSpaces}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(space)}>
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>
 		{/if}
 		{#if canModerateSpaces}
-			<Button variant="ghost" size="sm" onclick={() => openSuspend(space)} style="color: var(--color-warning)">
-				{space.status === "suspended" ? "Unsuspend" : "Suspend"}
+			<Button variant="ghost" size="sm" onclick={() => openSuspend(row)} style="color: var(--color-warning)">
+				{row.status === "suspended" ? t("spaces.unsuspend", "Unsuspend") : t("spaces.suspend", "Suspend")}
 			</Button>
 		{/if}
 		{#if canManageSpaces}
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(space)} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 				<Trash2 class="h-3.5 w-3.5" />
 			</Button>
 		{/if}

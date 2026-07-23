@@ -264,7 +264,7 @@
 	</div>
 </Modal>
 
-{#snippet ComparisonActionsCell(row: ComparisonType)}
+{#snippet ComparisonActionsCell({ value, row }: { value: any; row: ComparisonType })}
 	<div class="flex items-center justify-end gap-1">
 		<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openView(row)}>
 			<Eye class="h-3 w-3" style="color: var(--color-muted)" />

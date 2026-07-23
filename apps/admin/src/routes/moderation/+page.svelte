@@ -354,21 +354,21 @@
 </Modal>
 
 <!-- ModActionsCell component -->
-{#snippet ModActionsCell(item: ModItem)}
+{#snippet ModActionsCell({ value, row }: { value: any; row: ModItem })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(item)}>
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
 		{#if canModerate}
-			{#if item.status === "pending"}
-				<Button variant="ghost" size="sm" onclick={() => openAction(item, "approve")} style="color: var(--color-success)">
+			{#if row.status === "pending"}
+				<Button variant="ghost" size="sm" onclick={() => openAction(row, "approve")} style="color: var(--color-success)">
 					<Check class="h-3.5 w-3.5" />
 				</Button>
-				<Button variant="ghost" size="sm" onclick={() => openAction(item, "reject")} style="color: var(--color-danger)">
+				<Button variant="ghost" size="sm" onclick={() => openAction(row, "reject")} style="color: var(--color-danger)">
 					<X class="h-3.5 w-3.5" />
 				</Button>
 			{/if}
-			<Button variant="ghost" size="sm" onclick={() => openAction(item, "delete")} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => openAction(row, "delete")} style="color: var(--color-danger)">
 				<Trash2 class="h-3.5 w-3.5" />
 			</Button>
 		{/if}

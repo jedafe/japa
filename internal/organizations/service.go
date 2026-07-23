@@ -110,9 +110,17 @@ func (s *Service) GetOrganizationBySlug(ctx context.Context, slug string, tenant
 	return s.store.GetOrganizationBySlug(ctx, slug, tenantID)
 }
 
-// ListOrganizations returns organizations filtered by type and country.
-func (s *Service) ListOrganizations(ctx context.Context, tenantID pgtype.UUID, orgType, countryCode string, limit, offset int32) ([]gen.Organization, error) {
-	return s.store.ListOrganizations(ctx, tenantID, orgType, countryCode, limit, offset)
+// ListOrganizations returns organizations filtered by type, country, search, and verified status.
+func (s *Service) ListOrganizations(ctx context.Context, tenantID pgtype.UUID, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
+	items, err := s.store.ListOrganizations(ctx, tenantID, orgType, countryCode, search, verified, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.CountOrganizations(ctx, tenantID, orgType, countryCode, search, verified)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 // UpdateOrganization updates an organization. Only owner or admin can update.
@@ -298,6 +306,11 @@ func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pg
 // ListOwnershipClaims returns claims filtered by status (admin).
 func (s *Service) ListOwnershipClaims(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListOwnershipClaimsRow, error) {
 	return s.store.ListOwnershipClaims(ctx, tenantID, status, limit, offset)
+}
+
+// GetPendingOwnershipClaims returns pending claims with details (admin).
+func (s *Service) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetPendingOwnershipClaimsRow, error) {
+	return s.store.GetPendingOwnershipClaims(ctx, tenantID)
 }
 
 // ReviewOwnershipClaim approves or rejects a claim (admin).

@@ -423,7 +423,7 @@
 </Modal>
 
 <!-- DiscountActionsCell component -->
-{#snippet DiscountActionsCell(row: DiscountCode)}
+{#snippet DiscountActionsCell({ value, row }: { value: any; row: DiscountCode })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => viewUsage(row)} title={t('discounts.usage')}>
 			<Eye class="h-3.5 w-3.5" />

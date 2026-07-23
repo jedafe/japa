@@ -103,11 +103,13 @@ func (s *Store) upsertPreferences(ctx context.Context, tenantID, userID pgtype.U
 	return nil
 }
 
-// listUsers returns a paginated list of users for a tenant, optionally filtered by search.
-func (s *Store) listUsers(ctx context.Context, tenantID pgtype.UUID, search string, limit, offset int32) ([]gen.ListUsersRow, error) {
+// listUsers returns a paginated list of users for a tenant, optionally filtered by search, status, and group.
+func (s *Store) listUsers(ctx context.Context, tenantID pgtype.UUID, search, status, groupSlug string, limit, offset int32) ([]gen.ListUsersRow, error) {
 	rows, err := s.read.ListUsers(ctx, gen.ListUsersParams{
 		TenantID:   tenantID,
 		Search:     search,
+		Status:     status,
+		GroupSlug:  groupSlug,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -118,11 +120,13 @@ func (s *Store) listUsers(ctx context.Context, tenantID pgtype.UUID, search stri
 	return rows, nil
 }
 
-// countUsers returns the total count of users for a tenant, optionally filtered by search.
-func (s *Store) countUsers(ctx context.Context, tenantID pgtype.UUID, search string) (int32, error) {
+// countUsers returns the total count of users for a tenant, optionally filtered by search, status, and group.
+func (s *Store) countUsers(ctx context.Context, tenantID pgtype.UUID, search, status, groupSlug string) (int32, error) {
 	count, err := s.read.CountUsers(ctx, gen.CountUsersParams{
-		TenantID: tenantID,
-		Search:   search,
+		TenantID:  tenantID,
+		Search:    search,
+		Status:    status,
+		GroupSlug: groupSlug,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting users: %w", err)

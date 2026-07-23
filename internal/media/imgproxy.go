@@ -19,13 +19,15 @@ type ImageProxyOpts struct {
 
 // MediaURL generates an imgproxy HMAC-SHA256 signed URL for a media item.
 // Called on every serialization — NEVER cached in DB.
+// Falls back to a local serving endpoint when imgproxy is not configured.
 func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string { //nolint:revive // stuttering type name preserved for API compatibility
 	key := os.Getenv("JC_IMGPROXY_KEY")
 	salt := os.Getenv("JC_IMGPROXY_SALT")
 	baseURL := os.Getenv("JC_IMGPROXY_BASE_URL")
 
+	// Fallback to local serving endpoint when imgproxy is not configured.
 	if key == "" || salt == "" || baseURL == "" {
-		return ""
+		return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
 	}
 
 	src := "s3://" + storageBucket + "/" + storagePath

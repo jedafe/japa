@@ -492,7 +492,7 @@
 </Modal>
 
 <!-- TemplateActionsCell -->
-{#snippet TemplateActionsCell(row: JsonLdTemplate)}
+{#snippet TemplateActionsCell({ value, row }: { value: any; row: JsonLdTemplate })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openViewTemplate(row)}>
 			<Eye class="h-3.5 w-3.5" />

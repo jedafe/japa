@@ -217,14 +217,14 @@
 	</div>
 </Modal>
 
-{#snippet TranslationActionsCell(s: I18NString)}
+{#snippet TranslationActionsCell({ value, row }: { value: any; row: I18NString })}
 	{#if canManage}
 		<div class="flex items-center gap-1">
-			<Button variant="ghost" size="sm" onclick={() => openEdit(s)}>
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
 				<Pencil class="inline h-3 w-3" />
 				{t('common.edit', 'Edit')}
 			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(s)} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 				<Trash2 class="inline h-3 w-3" />
 				{t('common.delete', 'Delete')}
 			</Button>

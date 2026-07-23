@@ -485,7 +485,7 @@
 </Modal>
 
 <!-- MenuActionsCell -->
-{#snippet MenuActionsCell(row: Menu)}
+{#snippet MenuActionsCell({ value, row }: { value: any; row: Menu })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => viewMenuItems(row)} style="color: var(--color-primary)">
 			{t("menus.items", "Items")}
@@ -502,7 +502,7 @@
 {/snippet}
 
 <!-- ItemActionsCell -->
-{#snippet ItemActionsCell(row: MenuItem)}
+{#snippet ItemActionsCell({ value, row }: { value: any; row: MenuItem })}
 	<div class="flex items-center gap-1">
 		{#if canManageMenus}
 			<Button variant="ghost" size="sm" onclick={() => moveItem(row.id, -1)}>

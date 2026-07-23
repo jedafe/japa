@@ -89,6 +89,7 @@ WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
     'api_keys.tab_all',
     'api_keys.tier',
     'api_keys.tier_all',
+    'api_keys.tier_basic',
     'api_keys.tier_premium',
     'api_keys.tier_standard',
     'api_keys.tier_unlimited',

@@ -38,6 +38,10 @@ ON CONFLICT DO NOTHING;
 UPDATE user_moderation_actions SET deleted_at = now()
 WHERE user_id = $1 AND action = 'ban' AND deleted_at IS NULL;
 
+-- name: CreateUserUnban :exec
+INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, created_at)
+VALUES ($1, (SELECT tenant_id FROM users WHERE id = $1), 'unban', 'Admin unbanned', now());
+
 -- name: ListActiveUserBans :many
 SELECT id, action, reason, expires_at, created_at
 FROM user_moderation_actions

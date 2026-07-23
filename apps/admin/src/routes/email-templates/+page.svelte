@@ -247,7 +247,7 @@
 	</div>
 </Modal>
 
-{#snippet TemplateActionsCell(row: EmailTemplate)}
+{#snippet TemplateActionsCell({ value, row }: { value: any; row: EmailTemplate })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openView(row.id)}>
 			<Eye class="h-3.5 w-3.5" />

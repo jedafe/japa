@@ -5,11 +5,12 @@
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import { Dialog, Select } from 'bits-ui';
 	import { api } from '$lib/api';
+	import { goto } from '$app/navigation';
 	import type { Component } from 'svelte';
 	import type { Tenant, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { Pencil, Ban, CheckCircle, Trash2, Plus, X, RefreshCw } from 'lucide-svelte';
+	import { Pencil, Ban, CheckCircle, Trash2, Plus, X, RefreshCw, Settings } from 'lucide-svelte';
 
 	let {} = $props();
 
@@ -240,6 +241,11 @@
 	function buildRowActions(): DataTableRowAction[] {
 		return [
 			{
+				label: t('tenants.settings', 'Settings'),
+				icon: Settings,
+				onClick: (row) => goto(`/tenants/${(row as unknown as Tenant).id}/settings`)
+			},
+			{
 				label: t('tenants.edit_tenant'),
 				icon: Pencil,
 				onClick: (row) => openEdit(row as unknown as Tenant),
@@ -450,10 +456,10 @@
 
 {#if confirmAction}
 	{#if confirmAction.type === 'suspend'}
-		<ConfirmModal bind:open={confirmOpen} title={t('tenants.suspend_title')} consequence={t('tenants.suspend_confirm').replace('{name}', confirmAction.tenant.name)} confirmText={t('tenants.suspend_text')} onConfirm={async () => { if (confirmAction?.type === 'suspend') await suspendTenant(confirmAction.tenant.id); confirmAction = null; }} onCancel={() => (confirmAction = null)} />
+		<ConfirmModal bind:open={confirmOpen} title={t('tenants.suspend_title')} consequence={t('tenants.suspend_confirm').replace('{name}', confirmAction.tenant.name)} confirmText={t('tenants.suspend_text')} onConfirm={async () => { if (confirmAction?.type === 'suspend') await suspendTenant(confirmAction.tenant.id); confirmAction = null; }} onCancel={() => (confirmAction = null)} onOpenChange={(isOpen) => { if (!isOpen) confirmAction = null; }} />
 	{:else if confirmAction.type === 'unsuspend'}
-		<ConfirmModal bind:open={confirmOpen} title={t('tenants.unsuspend_title')} consequence={t('tenants.unsuspend_confirm').replace('{name}', confirmAction.tenant.name)} confirmText={t('tenants.unsuspend_text')} onConfirm={async () => { if (confirmAction?.type === 'unsuspend') await unsuspendTenant(confirmAction.tenant.id); confirmAction = null; }} onCancel={() => (confirmAction = null)} />
+		<ConfirmModal bind:open={confirmOpen} title={t('tenants.unsuspend_title')} consequence={t('tenants.unsuspend_confirm').replace('{name}', confirmAction.tenant.name)} confirmText={t('tenants.unsuspend_text')} onConfirm={async () => { if (confirmAction?.type === 'unsuspend') await unsuspendTenant(confirmAction.tenant.id); confirmAction = null; }} onCancel={() => (confirmAction = null)} onOpenChange={(isOpen) => { if (!isOpen) confirmAction = null; }} />
 	{:else if confirmAction.type === 'delete'}
-		<ConfirmModal bind:open={confirmOpen} title={t('tenants.delete_title')} consequence={t('tenants.delete_confirm').replace('{name}', confirmAction.tenant.name).replace('{slug}', confirmAction.tenant.slug)} confirmText={t('tenants.delete_text')} onConfirm={async () => { if (confirmAction?.type === 'delete') await deleteTenant(confirmAction.tenant.id); confirmAction = null; }} onCancel={() => (confirmAction = null)} />
+		<ConfirmModal bind:open={confirmOpen} title={t('tenants.delete_title')} consequence={t('tenants.delete_confirm').replace('{name}', confirmAction.tenant.name).replace('{slug}', confirmAction.tenant.slug)} confirmText={t('tenants.delete_text')} onConfirm={async () => { if (confirmAction?.type === 'delete') await deleteTenant(confirmAction.tenant.id); confirmAction = null; }} onCancel={() => (confirmAction = null)} onOpenChange={(isOpen) => { if (!isOpen) confirmAction = null; }} />
 	{/if}
 {/if}

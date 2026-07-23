@@ -4,18 +4,109 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
+
+// MediaResponse is the API response shape for media items, matching frontend expectations.
+type MediaResponse struct {
+	ID          string  `json:"id"`
+	Filename    string  `json:"filename"`
+	MimeType    string  `json:"mime_type"`
+	FileSize    int64   `json:"file_size"`
+	AltText     *string `json:"alt_text"`
+	Status      string  `json:"status"`
+	CreatedAt   string  `json:"created_at"`
+	URL         string  `json:"url"`
+	UserGroupID *string `json:"user_group_id"`
+}
+
+// toMediaResponse transforms a gen.Medium into the API response format.
+func toMediaResponse(m *gen.Medium, url string) MediaResponse {
+	status := "pending"
+	if m.Confirmed {
+		status = "approved"
+	} else if m.QuarantineReason != nil && *m.QuarantineReason != "" {
+		status = "quarantined"
+	}
+
+	var userGroupID *string
+	if m.UserGroupID.Valid {
+		s := m.UserGroupID.String()
+		userGroupID = &s
+	}
+
+	return MediaResponse{
+		ID:          m.ID.String(),
+		Filename:    m.OriginalFilename,
+		MimeType:    m.MimeType,
+		FileSize:    m.FileSizeBytes,
+		AltText:     m.AltText,
+		Status:      status,
+		CreatedAt:   m.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		URL:         url,
+		UserGroupID: userGroupID,
+	}
+}
+
+// toMediaResponses transforms a slice of gen.Medium into API response format.
+func toMediaResponses(items []gen.Medium, svc *Service) []MediaResponse {
+	result := make([]MediaResponse, len(items))
+	for i := range items {
+		result[i] = toMediaResponse(&items[i], svc.GetMediaURL(&items[i], ImageProxyOpts{}))
+	}
+	return result
+}
+
+// toQuarantinedMediaResponse transforms a QuarantinedMedia into the API response format.
+func toQuarantinedMediaResponse(m *QuarantinedMedia, url string) MediaResponse {
+	status := "pending"
+	if m.Confirmed {
+		status = "approved"
+	} else if m.QuarantineReason != nil && *m.QuarantineReason != "" {
+		status = "quarantined"
+	}
+
+	return MediaResponse{
+		ID:        m.ID.String(),
+		Filename:  m.OriginalFilename,
+		MimeType:  m.MimeType,
+		FileSize:  m.FileSizeBytes,
+		AltText:   m.AltText,
+		Status:    status,
+		CreatedAt: m.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		URL:       url,
+	}
+}
+
+// toQuarantinedMediaResponses transforms a slice of QuarantinedMedia into API response format.
+func toQuarantinedMediaResponses(items []QuarantinedMedia, svc *Service) []MediaResponse {
+	result := make([]MediaResponse, len(items))
+	for i := range items {
+		result[i] = toQuarantinedMediaResponse(&items[i], svc.GetMediaURL(&gen.Medium{
+			ID:             items[i].ID,
+			StoragePath:    items[i].StoragePath,
+			StorageBucket:  items[i].StorageBucket,
+		}, ImageProxyOpts{}))
+	}
+	return result
+}
 
 // parseMediaID extracts and validates a media UUID from the :id URL parameter.
 func parseMediaID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
@@ -366,20 +457,18 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 	// Generate imgproxy URL on serialization (never cached).
 	url := h.service.GetMediaURL(&m, ImageProxyOpts{})
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"media": m,
-			"url":   url,
-		},
+		"data": toMediaResponse(&m, url),
 	})
 }
 
 // metadataInput is the decoded JSON body for UpdateMetadata and AdminUpdateMetadata.
 type metadataInput struct {
-	AltText  *string  `json:"alt_text"`
-	Caption  *string  `json:"caption"`
-	Width    *int32   `json:"width"`
-	Height   *int32   `json:"height"`
-	Duration *float64 `json:"duration_secs"`
+	AltText     *string  `json:"alt_text"`
+	Caption     *string  `json:"caption"`
+	Width       *int32   `json:"width"`
+	Height      *int32   `json:"height"`
+	Duration    *float64 `json:"duration_secs"`
+	UserGroupID *string  `json:"user_group_id"`
 }
 
 // updateMetadataHandler is a shared helper for PATCH /api/v1/media/{id} and
@@ -415,7 +504,15 @@ func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.UpdateMetadata(r.Context(), tenantID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration); err != nil {
+	var userGroupID pgtype.UUID
+	if input.UserGroupID != nil && *input.UserGroupID != "" {
+		if err := userGroupID.Scan(*input.UserGroupID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_user_group_id", "Invalid user_group_id format")
+			return
+		}
+	}
+
+	if err := h.service.UpdateMetadata(r.Context(), tenantID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
 		writeError(w, http.StatusInternalServerError, "update_error", err.Error())
 		return
 	}
@@ -501,7 +598,7 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	writeJSON(w, http.StatusOK, map[string]any{"data": toMediaResponses(items, h.service)})
 }
 
 // ListMyMedia handles GET /api/v1/me/media — the caller's own uploaded media,
@@ -536,7 +633,7 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	writeJSON(w, http.StatusOK, map[string]any{"data": toMediaResponses(items, h.service)})
 }
 
 // ---------------------------------------------------------------------------
@@ -565,7 +662,7 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	writeJSON(w, http.StatusOK, map[string]any{"data": toQuarantinedMediaResponses(items, h.service)})
 }
 
 // ApproveQuarantined handles POST /admin/media/{id}/approve.
@@ -604,6 +701,139 @@ func (h *Handlers) RejectQuarantined(w http.ResponseWriter, r *http.Request) {
 // Admin-level metadata update that does not enforce ownership.
 func (h *Handlers) AdminUpdateMetadata(w http.ResponseWriter, r *http.Request) {
 	h.updateMetadataHandler(w, r)
+}
+
+// AdminUpdateMediaStatus handles POST /admin/media/{id}/status.
+// Allows admin to change media status (approve/reject) for any item.
+func (h *Handlers) AdminUpdateMediaStatus(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
+
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	mediaID, ok := parseMediaID(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Status != "approved" && input.Status != "rejected" && input.Status != "quarantined" {
+		writeError(w, http.StatusBadRequest, "invalid_status", "Status must be approved, rejected, or quarantined")
+		return
+	}
+
+	confirmed := input.Status == "approved"
+	var quarantineReason *string
+	if input.Status == "quarantined" {
+		reason := "quarantined by admin"
+		quarantineReason = &reason
+	}
+
+	if err := h.service.AdminUpdateStatus(r.Context(), tenantID, mediaID, user.UserID, confirmed, quarantineReason); err != nil {
+		writeError(w, http.StatusInternalServerError, "status_update_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": input.Status}})
+}
+
+// AdminUpload handles POST /admin/media/upload — direct multipart upload for admin.
+// Stores the file locally under data/media/{bucket}/{path} so ServeMedia can serve it.
+func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxMediaUploadBody)
+
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if err := r.ParseMultipartForm(MaxMediaUploadBody); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_form", "Invalid multipart form")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing_file", "file is required")
+		return
+	}
+	defer file.Close()
+
+	if header.Size > MaxFileSizeBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds 50MB limit")
+		return
+	}
+
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if ext != "" {
+		if detected := mime.TypeByExtension(ext); detected != "" {
+			contentType = detected
+		}
+	}
+
+	storagePath := fmt.Sprintf("%s/%s/%s%s",
+		StoragePathTemp,
+		tenantID.String(),
+		uuid.New().String(),
+		ext)
+
+	localPath := filepath.Join("data", "media", DefaultBucket, storagePath)
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
+		return
+	}
+
+	dst, err := os.Create(localPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "file_error", "Failed to create file")
+		return
+	}
+	defer dst.Close()
+
+	written, err := io.Copy(dst, file)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
+		return
+	}
+
+	mediaID, err := h.service.DirectUpload(r.Context(), tenantID, user.UserID, header.Filename, contentType, written, localPath, storagePath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to save media record")
+		return
+	}
+
+	h.enqueueMediaTasks(r.Context(), tenantID, mediaID)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"media_id": mediaID.String(),
+			"url":      "/api/v1/media/serve/" + DefaultBucket + "/" + storagePath,
+		},
+	})
 }
 
 // BulkDelete handles POST /api/v1/media/bulk-delete.
@@ -664,4 +894,44 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int{"deleted": len(ids)},
 	})
+}
+
+// ServeMedia handles GET /api/v1/media/serve/{bucket}/{path}.
+// Serves media files from the local filesystem for development environments
+// where imgproxy and S3/SeaweedFS are not configured.
+func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
+	bucket := chi.URLParam(r, "bucket")
+	storagePath := chi.URLParam(r, "*") // catch-all for path
+
+	if bucket == "" || storagePath == "" {
+		writeError(w, http.StatusBadRequest, "invalid_path", "Invalid media path")
+		return
+	}
+
+	localPath := filepath.Join("data", "media", bucket, storagePath)
+
+	info, err := os.Stat(localPath)
+	if err != nil || info.IsDir() {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="#1a1a2e"/>
+  <text x="50%" y="50%" font-family="sans-serif" font-size="14" fill="#888" text-anchor="middle" dy=".3em">Media Placeholder</text>
+  <text x="50%" y="65%" font-family="sans-serif" font-size="10" fill="#666" text-anchor="middle" dy=".3em">` + filepath.Base(storagePath) + `</text>
+</svg>`))
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(storagePath))
+	contentType := mime.TypeByExtension(ext)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
+	http.ServeFile(w, r, localPath)
 }

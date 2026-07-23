@@ -91,11 +91,12 @@
 	let copiedToClipboard = $state(false);
 
 	let editModalOpen = $state(false);
-	let editForm = $state({ id: '', name: '', scopes: [] as string[] });
+	let editForm = $state({ id: '', name: '', scopes: [] as string[], rate_limit_tier: 'basic' });
 	let editLoading = $state(false);
 
 	const tierItems = $derived([
 		{ value: 'all', label: t('api_keys.tier_all') },
+		{ value: 'basic', label: t('api_keys.tier_basic') },
 		{ value: 'standard', label: t('api_keys.tier_standard') },
 		{ value: 'premium', label: t('api_keys.tier_premium') },
 		{ value: 'unlimited', label: t('api_keys.tier_unlimited') }
@@ -383,6 +384,9 @@
 		if (editForm.scopes.length > 0) {
 			body.scopes = [...editForm.scopes];
 		}
+		if (editForm.rate_limit_tier) {
+			body.rate_limit_tier = editForm.rate_limit_tier;
+		}
 
 		const result = await api<{ id: string }>(`/control/api-keys/${editForm.id}`, {
 			method: 'PATCH',
@@ -394,7 +398,7 @@
 		if (result.ok) {
 			keys = keys.map((k) =>
 				k.id === editForm.id
-					? { ...k, name: editForm.name.trim(), scopes: (body.scopes as string[]) || k.scopes }
+					? { ...k, name: editForm.name.trim(), scopes: (body.scopes as string[]) || k.scopes, rate_limit_tier: editForm.rate_limit_tier || k.rate_limit_tier }
 					: k
 			);
 			editModalOpen = false;
@@ -407,7 +411,8 @@
 		editForm = {
 			id: key.id,
 			name: key.name,
-			scopes: [...(key.scopes || [])]
+			scopes: [...(key.scopes || [])],
+			rate_limit_tier: key.rate_limit_tier || 'basic'
 		};
 		editModalOpen = true;
 	}
@@ -758,6 +763,13 @@
 								<Select.Viewport class="p-1">
 									<Select.Item
 										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+										value="basic"
+										label={t('api_keys.tier_basic')}
+									>
+										{t('api_keys.tier_basic')}
+									</Select.Item>
+									<Select.Item
+										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
 										value="standard"
 										label={t('api_keys.tier_standard')}
 									>
@@ -870,7 +882,7 @@
 	</Dialog.Portal>
 </Dialog.Root>
 
-<Dialog.Root bind:open={editModalOpen} onOpenChange={(isOpen) => { if (!isOpen) editForm = { id: '', name: '', scopes: [] }; }}>
+<Dialog.Root bind:open={editModalOpen} onOpenChange={(isOpen) => { if (!isOpen) editForm = { id: '', name: '', scopes: [], rate_limit_tier: 'basic' }; }}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
 		<Dialog.Content
@@ -943,6 +955,59 @@
 						</Select.Portal>
 					</Select.Root>
 					<p class="text-muted-foreground mt-1 text-xs">{t('api_keys.scopes_hint')}</p>
+				</div>
+
+				<div>
+					<label for="edit-tier" class="text-foreground block text-sm font-medium">
+						{t('api_keys.rate_limit_tier')}
+					</label>
+					<Select.Root
+						type="single"
+						value={editForm.rate_limit_tier}
+						onValueChange={(v) => {
+							if (v !== undefined) editForm.rate_limit_tier = v;
+						}}
+					>
+						<Select.Trigger
+							class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
+						>
+							<Select.Value placeholder={t('api_keys.tier')} />
+						</Select.Trigger>
+						<Select.Portal>
+							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
+								<Select.Viewport class="p-1">
+									<Select.Item
+										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+										value="basic"
+										label={t('api_keys.tier_basic')}
+									>
+										{t('api_keys.tier_basic')}
+									</Select.Item>
+									<Select.Item
+										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+										value="standard"
+										label={t('api_keys.tier_standard')}
+									>
+										{t('api_keys.tier_standard')}
+									</Select.Item>
+									<Select.Item
+										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+										value="premium"
+										label={t('api_keys.tier_premium')}
+									>
+										{t('api_keys.tier_premium')}
+									</Select.Item>
+									<Select.Item
+										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
+										value="unlimited"
+										label={t('api_keys.tier_unlimited')}
+									>
+										{t('api_keys.tier_unlimited')}
+									</Select.Item>
+								</Select.Viewport>
+							</Select.Content>
+						</Select.Portal>
+					</Select.Root>
 				</div>
 			</div>
 

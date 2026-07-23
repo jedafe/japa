@@ -59,7 +59,7 @@
 	});
 </script>
 
-{#snippet FormActionsCell(row: FormDef)}
+{#snippet FormActionsCell({ value, row }: { value: any; row: FormDef })}
 	<Button variant="ghost" size="sm" onclick={() => goto(`/spaces/${spaceId}/forms/${row.id}`)} style="color: var(--color-info)">
 		View
 	</Button>

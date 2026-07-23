@@ -225,7 +225,7 @@
 	<div class="flex h-14 items-center border-b px-4" style="border-color: var(--color-border)">
 		<a href="/" class="flex items-center gap-2">
 			{#if !collapsed}
-				<span class="text-lg font-semibold" style="color: var(--color-foreground)">{t('lib.components.layout.sidebar.svelte.admin')}</span>
+				<span class="text-lg font-semibold" style="color: var(--color-foreground)">{t('lib.components.Sidebar.svelte.admin')}</span>
 			{/if}
 		</a>
 	</div>
@@ -237,7 +237,7 @@
 				<Search class="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
 				<input
 					type="text"
-					placeholder="Search navigation..."
+					placeholder={t('common.search_nav', 'Search navigation...')}
 					class="w-full rounded-md border py-1.5 pl-7 pr-3 text-sm"
 					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 					bind:value={searchQuery}

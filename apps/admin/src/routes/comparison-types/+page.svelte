@@ -362,7 +362,7 @@
 	<p class="text-sm" style="color: var(--color-muted)">{t('comparison_types.delete_confirm')}</p>
 </Modal>
 
-{#snippet ComparisonTypeActionsCell(row: ComparisonType)}
+{#snippet ComparisonTypeActionsCell({ value, row }: { value: any; row: ComparisonType })}
 	<div class="flex items-center gap-2">
 		<button
 			class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10"

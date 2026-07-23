@@ -169,7 +169,7 @@
 	});
 </script>
 
-{#snippet ReportActionsCell(row: Report)}
+{#snippet ReportActionsCell({ value, row }: { value: any; row: Report })}
 	{#if canManage && row.status === 'pending'}
 		<div class="flex items-center gap-1">
 			<button
@@ -177,21 +177,21 @@
 				style="color: var(--color-muted)"
 				onclick={(e: MouseEvent) => { e.stopPropagation(); openAction(row, 'dismiss'); }}
 			>
-				Dismiss
+				{t('moderation.dismiss')}
 			</button>
 			<button
 				class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 				style="color: var(--color-warning)"
 				onclick={(e: MouseEvent) => { e.stopPropagation(); openAction(row, 'warn'); }}
 			>
-				Warn
+				{t('moderation.warn')}
 			</button>
 			<button
 				class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"
 				style="color: var(--color-danger)"
 				onclick={(e: MouseEvent) => { e.stopPropagation(); openAction(row, 'remove'); }}
 			>
-				Remove
+				{t('moderation.remove_content')}
 			</button>
 		</div>
 	{/if}
@@ -256,28 +256,28 @@
 							style="background-color: var(--color-surface); border: 1px solid var(--color-border)"
 							onclick={() => openAction(expanded, 'dismiss')}
 						>
-							Dismiss Report
+							{t('moderation.dismiss_report')}
 						</button>
 						<button
 							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
 							style="background-color: var(--color-warning)"
 							onclick={() => openAction(expanded, 'warn')}
 						>
-							Warn Reporter
+							{t('moderation.warn_reporter')}
 						</button>
 						<button
 							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
 							style="background-color: var(--color-danger)"
 							onclick={() => openAction(expanded, 'remove')}
 						>
-							Remove Content
+							{t('moderation.remove_content')}
 						</button>
 						<button
 							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
 							style="background-color: var(--color-danger)"
 							onclick={() => openAction(expanded, 'ban')}
 						>
-							Ban Target
+							{t('moderation.ban_target')}
 						</button>
 					</div>
 				{/if}
@@ -294,15 +294,7 @@
 	confirmLabel={acting ? t('common.saving') : actionLabel(actionType)}
 >
 	<p class="text-sm mb-3" style="color: var(--color-muted)">
-		{#if actionType === 'dismiss'}
-			Dismiss this report and mark it as reviewed.
-		{:else if actionType === 'warn'}
-			Send a warning to the reporter for misuse.
-		{:else if actionType === 'ban'}
-			Ban the reported user from the platform.
-		{:else}
-			Permanently remove the reported content.
-		{/if}
+		{t(`moderation.action_${actionType}_desc`)}
 	</p>
 	<textarea
 		class="w-full rounded-md border px-3 py-2 text-sm"
