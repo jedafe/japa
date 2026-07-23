@@ -3,7 +3,17 @@
 -- live database, causing INSERT/UPDATE/SELECT to fail.
 
 -- 1. Drop the existing PK (key only) and FK on reactions.reaction_key
+--
+-- On a database where migration 000010 already ran with tenant_id present
+-- (i.e. every from-scratch replay, as opposed to the drifted live database
+-- this migration was originally written to patch), the composite FK is
+-- auto-named reactions_tenant_id_reaction_key_fkey rather than
+-- reactions_reaction_key_fkey, so it must also be dropped explicitly here
+-- or the PK drop below fails with "other objects depend on it". Discovered
+-- while building the ADR-061 integration-test harness (Task A0), which is
+-- the first thing to replay every migration against a truly fresh database.
 ALTER TABLE reactions DROP CONSTRAINT IF EXISTS reactions_reaction_key_fkey;
+ALTER TABLE reactions DROP CONSTRAINT IF EXISTS reactions_tenant_id_reaction_key_fkey;
 ALTER TABLE reaction_types DROP CONSTRAINT IF EXISTS reaction_types_pkey;
 
 -- 2. Add tenant_id to reaction_types (nullable first for backfill)

@@ -12,6 +12,24 @@ CREATE TABLE IF NOT EXISTS newsletter_lists (
 );
 CREATE INDEX IF NOT EXISTS idx_newsletter_lists_tenant ON newsletter_lists(tenant_id);
 
+-- Newsletter subscribers (forward-created here, ahead of its home migration
+-- 000051_newsletter.sql, because newsletter_list_subscribers below needs the
+-- FK target to exist first. Column-for-column identical to 000051's
+-- definition so that migration's own `CREATE TABLE IF NOT EXISTS` is a
+-- true no-op on a database that ran this one first. Pre-existing ordering
+-- defect discovered while building the ADR-061 integration-test harness
+-- (Task A0): replaying every forward migration against a truly fresh
+-- database is the first thing that exercises this path end-to-end.
+CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id  uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    email      text NOT NULL,
+    user_id    uuid REFERENCES users(id) ON DELETE SET NULL,
+    status     text NOT NULL DEFAULT 'active',  -- 'active' | 'unsubscribed' | 'bounced'
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(tenant_id, email)
+);
+
 -- Newsletter list ↔ subscriber junction
 CREATE TABLE IF NOT EXISTS newsletter_list_subscribers (
     list_id uuid NOT NULL REFERENCES newsletter_lists(id) ON DELETE CASCADE,
