@@ -160,3 +160,24 @@ SELECT (SELECT count(*) FROM contents c
         WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL)
      + (SELECT count(*) FROM comments cm
         WHERE cm.tenant_id = $1 AND cm.author_user_id = $2 AND cm.deleted_at IS NULL) AS total;
+
+-- name: GetPublicProfileByUsername :one
+-- Public profile header for /u/[username]. NO PII (no email/status/last_login/groups).
+SELECT DISTINCT ON (u.id)
+       u.id AS user_id,
+       u.username,
+       u.profile_type,
+       u.follower_count,
+       up.display_name,
+       up.avatar_url,
+       up.bio,
+       COALESCE(up.created_at, u.created_at) AS created_at,
+       (SELECT COUNT(*)::int
+          FROM follows f
+         WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+WHERE u.tenant_id = @tenant_id
+  AND u.username = @username
+  AND u.status = 'active'
+ORDER BY u.id;

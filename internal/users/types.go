@@ -73,3 +73,17 @@ type UserListItem struct {
 	CreatedAt     string `json:"created_at"`
 	UpdatedAt     string `json:"updated_at"`
 }
+
+// PublicProfileResponse is the PII-safe API response for GET /users/{username}.
+// It deliberately omits email, status, last_login_at, and groups (Section 19
+// / ADR-014) and adds following_count alongside the existing follower_count
+// (Section 31 / ADR-031).
+type PublicProfileResponse struct {
+	ID             string  `json:"id"`
+	Username       string  `json:"username"`
+	DisplayName    *string `json:"display_name"`
+	AvatarURL      *string `json:"avatar_url"`
+	Bio            *string `json:"bio"`
+	ProfileType    string  `json:"profile_type"`
+	FollowerCount  int32   `json:"follower_count"`
+	FollowingCount int32   `json:"following_count"`
