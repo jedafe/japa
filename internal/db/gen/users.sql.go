@@ -78,6 +78,62 @@ func (q *Queries) DisconnectOAuthAccount(ctx context.Context, arg DisconnectOAut
 	return err
 }
 
+const getPublicProfileByUsername = `-- name: GetPublicProfileByUsername :one
+SELECT DISTINCT ON (u.id)
+       u.id AS user_id,
+       u.username,
+       u.profile_type,
+       u.follower_count,
+       up.display_name,
+       up.avatar_url,
+       up.bio,
+       COALESCE(up.created_at, u.created_at) AS created_at,
+       (SELECT COUNT(*)::int
+          FROM follows f
+         WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+WHERE u.tenant_id = $1
+  AND u.username = $2
+  AND u.status = 'active'
+ORDER BY u.id
+`
+
+type GetPublicProfileByUsernameParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Username string      `json:"username"`
+}
+
+type GetPublicProfileByUsernameRow struct {
+	UserID         pgtype.UUID        `json:"user_id"`
+	Username       string             `json:"username"`
+	ProfileType    string             `json:"profile_type"`
+	FollowerCount  int32              `json:"follower_count"`
+	DisplayName    *string            `json:"display_name"`
+	AvatarUrl      *string            `json:"avatar_url"`
+	Bio            *string            `json:"bio"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	FollowingCount int32              `json:"following_count"`
+}
+
+// Public profile header for /u/[username]. NO PII (no email/status/last_login/groups).
+func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicProfileByUsernameParams) (GetPublicProfileByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, getPublicProfileByUsername, arg.TenantID, arg.Username)
+	var i GetPublicProfileByUsernameRow
+	err := row.Scan(
+		&i.UserID,
+		&i.Username,
+		&i.ProfileType,
+		&i.FollowerCount,
+		&i.DisplayName,
+		&i.AvatarUrl,
+		&i.Bio,
+		&i.CreatedAt,
+		&i.FollowingCount,
+	)
+	return i, err
+}
+
 const getUserByID = `-- name: GetUserByID :one
 SELECT id, tenant_id, email, username, profile_type, status, follower_count, created_at, updated_at
 FROM users
