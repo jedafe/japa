@@ -46,6 +46,20 @@ func (s *Store) getUserByUsername(ctx context.Context, tenantID pgtype.UUID, use
 	return row, nil
 }
 
+// getPublicProfileByUsername returns the lean, PII-safe public profile row
+// (with following_count) for an active user, looked up by username.
+func (s *Store) getPublicProfileByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (gen.GetPublicProfileByUsernameRow, error) {
+	row, err := s.read.GetPublicProfileByUsername(ctx, gen.GetPublicProfileByUsernameParams{
+		TenantID: tenantID,
+		Username: username,
+	})
+	if err != nil {
+		return gen.GetPublicProfileByUsernameRow{}, fmt.Errorf("getting public profile by username: %w", err)
+	}
+
+	return row, nil
+}
+
 // upsertProfile inserts or updates the user profile.
 func (s *Store) upsertProfile(ctx context.Context, tenantID, userID pgtype.UUID, displayName, avatarURL, bio, timezone *string) error {
 	if err := s.write.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{

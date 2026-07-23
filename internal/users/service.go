@@ -88,6 +88,28 @@ func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID
 	}, nil
 }
 
+// GetPublicProfileByUsername returns the lean, PII-safe public profile for
+// the given username within a tenant, restricted to active users. It never
+// exposes email, status, last_login_at, or groups (Section 19 / ADR-014).
+func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (*PublicProfileResponse, error) {
+	p, err := s.store.getPublicProfileByUsername(ctx, tenantID, username)
+	if err != nil {
+		return nil, fmt.Errorf("getting public profile by username: %w", err)
+	}
+
+	return &PublicProfileResponse{
+		ID:             p.UserID.String(),
+		Username:       p.Username,
+		DisplayName:    p.DisplayName,
+		AvatarURL:      p.AvatarUrl,
+		Bio:            p.Bio,
+		ProfileType:    p.ProfileType,
+		FollowerCount:  p.FollowerCount,
+		FollowingCount: p.FollowingCount,
+		CreatedAt:      p.CreatedAt.Time.Format(time.RFC3339),
+	}, nil
+}
+
 // UpdateProfile updates the user profile fields. Only non-nil fields are
 // overwritten; nil fields are left unchanged via a read-then-merge strategy.
 func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateProfileRequest) error {

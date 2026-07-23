@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -62,6 +63,63 @@ func TestUserProfileResponseJSONTags(t *testing.T) {
 
 	if got["user_group_name"] != "members" {
 		t.Errorf("user_group_name = %v, want members", got["user_group_name"])
+	}
+}
+
+func TestPublicProfileResponseJSONTags(t *testing.T) {
+	t.Parallel()
+
+	r := PublicProfileResponse{
+		ID:             "550e8400-e29b-41d4-a716-446655440000",
+		Username:       "testuser",
+		DisplayName:    strPtr("Test User"),
+		AvatarURL:      strPtr("https://example.com/avatar.jpg"),
+		Bio:            strPtr("A bio"),
+		ProfileType:    "personal",
+		FollowerCount:  3,
+		FollowingCount: 2,
+		CreatedAt:      "2026-01-01T00:00:00Z",
+	}
+
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal PublicProfileResponse: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	wantKeys := map[string]any{
+		"id":              "550e8400-e29b-41d4-a716-446655440000",
+		"username":        "testuser",
+		"display_name":    "Test User",
+		"avatar_url":      "https://example.com/avatar.jpg",
+		"bio":             "A bio",
+		"profile_type":    "personal",
+		"follower_count":  float64(3),
+		"following_count": float64(2),
+		"created_at":      "2026-01-01T00:00:00Z",
+	}
+
+	for k, want := range wantKeys {
+		if got[k] != want {
+			t.Errorf("%s = %v, want %v", k, got[k], want)
+		}
+	}
+
+	if len(got) != len(wantKeys) {
+		t.Errorf("got %d keys %v, want exactly %d keys %v", len(got), got, len(wantKeys), wantKeys)
+	}
+
+	// PII rule (Section 19 / ADR-014): the public profile response must
+	// never expose email, status, last_login_at, or groups.
+	s := string(data)
+	for _, leaked := range []string{`"email"`, `"status"`, `"last_login_at"`, `"groups"`, `"user_group_name"`} {
+		if strings.Contains(s, leaked) {
+			t.Fatalf("PublicProfileResponse JSON leaked PII field %s: %s", leaked, s)
+		}
 	}
 }
 

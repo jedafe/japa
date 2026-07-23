@@ -149,7 +149,7 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.Service.GetProfileByUsername(r.Context(), tenantID, username)
+	profile, err := h.Service.GetPublicProfileByUsername(r.Context(), tenantID, username)
 	if err != nil {
 		handleServiceError(w, err)
 		return
