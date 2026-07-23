@@ -161,7 +161,7 @@
 	});
 </script>
 
-{#snippet ContentActionsCell(row: ContentItem)}
+{#snippet ContentActionsCell({ value, row }: { value: any; row: ContentItem })}
 	{#if canModerateContent}
 		<button
 			class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10"

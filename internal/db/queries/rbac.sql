@@ -55,6 +55,18 @@ SELECT id, name, slug
 FROM user_roles
 ORDER BY name;
 
+-- name: ListRolesPaginated :many
+SELECT id, name, slug
+FROM user_roles
+WHERE (@search::text = '' OR name ILIKE '%' || @search || '%')
+ORDER BY name
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountRoles :one
+SELECT COUNT(*)::int AS count
+FROM user_roles
+WHERE (@search::text = '' OR name ILIKE '%' || @search || '%');
+
 -- name: CreateUserRole :one
 INSERT INTO user_roles (tenant_id, name, slug)
 VALUES (@tenant_id, @name, @slug)

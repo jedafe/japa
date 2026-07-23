@@ -421,6 +421,14 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")
 		return
 	}
+	// Update users.status so the ban is reflected in list queries.
+	if err := h.Queries.UpdateUserStatus(ctx, gen.UpdateUserStatusParams{
+		Status: "banned",
+		ID:     uid,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
+		return
+	}
 	// Rule 6: invalidate caches after ban. 
 	if h.Valkey != nil {
 		_ = rbac.InvalidatePermCache(ctx, h.Valkey, uid)
@@ -437,9 +445,17 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
-	err := h.Queries.SoftDeleteUserBan(r.Context(), uid)
+	err := h.Queries.CreateUserUnban(r.Context(), uid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unban user")
+		return
+	}
+	// Restore users.status to active (the ban handler set it to "banned").
+	if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
+		Status: "active",
+		ID:     uid,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
 		return
 	}
 	// Rule 6: invalidate caches after unban. 
@@ -646,7 +662,7 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": orgID, "verified": true})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": true}})
 }
 
 // UnverifyOrganization handles DELETE /admin/organizations/:id/verify.
@@ -662,7 +678,7 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": false}})
 }
 
 // ─── Appeals ──────────────────────────────────────────────────────────────

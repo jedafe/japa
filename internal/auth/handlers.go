@@ -334,6 +334,14 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("reset login attempts", "error", err)
 	}
 
+	// Update last_login_at so analytics active-user counts work (§21).
+	if err := h.Queries.UpdateLastLoginAt(r.Context(), gen.UpdateLastLoginAtParams{
+		TenantID: user.TenantID,
+		ID:       user.ID,
+	}); err != nil {
+		slog.Warn("update last_login_at", "error", err)
+	}
+
 	// Check if 2FA is enabled — if so, require TOTP challenge before
 	// issuing a full session (AUDIT-BE-001).
 	hasTOTP, err := h.Queries.CheckTOTPEnabled(r.Context(), gen.CheckTOTPEnabledParams{
@@ -524,6 +532,14 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Update last_login_at so analytics active-user counts work (§21).
+	if err := h.Queries.UpdateLastLoginAt(r.Context(), gen.UpdateLastLoginAtParams{
+		TenantID: tenantID,
+		ID:       userID,
+	}); err != nil {
+		slog.Warn("update last_login_at", "error", err)
+	}
+
 	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
@@ -628,6 +644,14 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	if !matched {
 		writeError(w, http.StatusUnauthorized, "invalid_backup", "Invalid backup code")
 		return
+	}
+
+	// Update last_login_at so analytics active-user counts work (§21).
+	if err := h.Queries.UpdateLastLoginAt(r.Context(), gen.UpdateLastLoginAtParams{
+		TenantID: tenantID,
+		ID:       userID,
+	}); err != nil {
+		slog.Warn("update last_login_at", "error", err)
 	}
 
 	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenantID)

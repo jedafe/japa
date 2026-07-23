@@ -7,9 +7,10 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { RefreshCw, Eye, Pencil, Trash2, Ban, Play, UserPlus, Plus } from "lucide-svelte";
+	import { RefreshCw, Trash2, Plus, Trash } from "lucide-svelte";
 	import { userManagementApi, impersonationApi } from "$lib/api";
 	import type { UserDetail } from "$lib/api";
+	import UserActionsCell from "./UserActionsCell.svelte";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { goto, invalidateAll } from "$app/navigation";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -21,6 +22,7 @@
 		profile_type: string;
 		status: string;
 		follower_count: number;
+		groups: string[];
 		created_at: string;
 		updated_at: string;
 	};
@@ -41,6 +43,7 @@
 	let viewTarget = $state<User | null>(null);
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<User | null>(null);
+	let showBulkHardDeleteConfirm = $state(false);
 	let acting = $state(false);
 
 	// Create user modal
@@ -54,8 +57,11 @@
 	let impersonatingUsername = $state("");
 	let impersonateError = $state("");
 
-	const canManageUsers = $derived(hasPermission("users.manage"));
+	const canManageUsers = $derived(hasPermission("admin.users.manage"));
 	const canImpersonate = $derived(hasPermission("admin.impersonate"));
+	const hasDeletedSelected = $derived(
+		Array.from(selectedIds).some(id => users.find(u => u.id === id)?.status === "deleted")
+	);
 
 	const filterDefs = [
 		{
@@ -64,8 +70,10 @@
 			options: [
 				{ value: "active", label: t("users.status_active", "Active") },
 				{ value: "pending", label: t("users.status_pending", "Pending") },
+				{ value: "restricted", label: t("users.status_restricted", "Restricted") },
 				{ value: "suspended", label: t("users.status_suspended", "Suspended") },
-				{ value: "banned", label: t("users.status_banned", "Banned") }
+				{ value: "banned", label: t("users.status_banned", "Banned") },
+				{ value: "deleted", label: t("users.status_deleted", "Deleted") }
 			]
 		},
 		{
@@ -101,8 +109,17 @@
 			label: t("common.status", "Status"),
 			sortable: true,
 			render: (v: string) => {
-				const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : "bg-info/15 text-info dark:text-info";
+				const colors = v === "active" ? "bg-success/15 text-success dark:text-success" : v === "banned" ? "bg-danger/15 text-danger dark:text-danger" : v === "suspended" ? "bg-warning/15 text-warning dark:text-warning" : v === "deleted" ? "bg-muted/30 text-muted dark:text-muted" : v === "restricted" ? "bg-orange-500/15 text-orange-700 dark:text-orange-400" : "bg-info/15 text-info dark:text-info";
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
+			}
+		},
+		{
+			key: "groups",
+			label: t("users.groups", "Groups"),
+			sortable: true,
+			render: (v: string[]) => {
+				if (!v || v.length === 0) return `<span style="color: var(--color-muted)">—</span>`;
+				return v.map(g => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${g}</span>`).join(' ');
 			}
 		},
 		{
@@ -121,7 +138,8 @@
 			key: "actions",
 			label: t("common.actions", "Actions"),
 			class: "w-48",
-			component: UserActionsCell
+			component: UserActionsCell,
+			componentProps: { onchange: loadUsers }
 		}
 	];
 
@@ -130,17 +148,17 @@
 		error = "";
 		try {
 			const params = new URLSearchParams({
-				page: String(currentPage),
-				limit: String(pageSize)
+				page_size: String(pageSize),
+				page_offset: String(currentPage * pageSize)
 			});
-			if (searchQuery) params.set("q", searchQuery);
+			if (searchQuery) params.set("search", searchQuery);
 			if (filterValues.status) params.set("status", filterValues.status);
 			if (filterValues.group) params.set("group", filterValues.group);
 
 			const result = await userManagementApi.list(params.toString());
 			if (result.ok) {
-				const d = result.data as unknown as { users: User[]; total: number; page: number; total_pages: number };
-				users = d.users ?? [];
+				const d = result.data as unknown as { items: User[]; total: number; page: number; total_pages: number };
+				users = d.items ?? [];
 				totalItems = d.total ?? 0;
 				totalPages = d.total_pages ?? 1;
 			} else {
@@ -254,22 +272,6 @@
 		}
 	}
 
-	async function handleImpersonate(user: User) {
-		acting = true;
-		try {
-			const result = await impersonationApi.start(user.id);
-		if (result.ok) {
-			await invalidateAll();
-		} else {
-				error = result.error;
-			}
-		} catch {
-			error = t("common.error", "Failed to start impersonation");
-		} finally {
-			acting = false;
-		}
-	}
-
 	async function bulkDelete() {
 		const ids = Array.from(selectedIds);
 		if (ids.length === 0) return;
@@ -285,12 +287,27 @@
 		}
 	}
 
+	async function bulkHardDelete() {
+		const ids = Array.from(selectedIds).filter(id => users.find(u => u.id === id)?.status === "deleted");
+		if (ids.length === 0) return;
+		acting = true;
+		try {
+			await Promise.all(ids.map((id) => userManagementApi.hardDeleteUser(id)));
+			selectedIds = new Set();
+			loadUsers();
+		} catch {
+			error = t("common.error", "Failed to hard delete users");
+		} finally {
+			acting = false;
+		}
+	}
+
 	async function checkImpersonation() {
 		const result = await impersonationApi.status();
 		if (result.ok) {
-			const d = result.data as unknown as { active: boolean; target_id?: string };
-			impersonating = d.active;
-			impersonatingUsername = d.target_id ?? "";
+			const d = result.data as unknown as { impersonating: boolean; username?: string; user_id?: string };
+			impersonating = d.impersonating;
+			impersonatingUsername = d.username ?? "";
 		}
 	}
 
@@ -367,6 +384,11 @@
 			<Button variant="ghost" size="sm" onclick={bulkDelete} disabled={acting}>
 				<Trash2 class="mr-1 h-3.5 w-3.5" /> {t('users.bulk_delete', 'Delete Selected')}
 			</Button>
+			{#if hasDeletedSelected}
+				<Button variant="ghost" size="sm" onclick={() => { showBulkHardDeleteConfirm = true; }} disabled={acting}>
+					<Trash class="mr-1 h-3.5 w-3.5" /> {t('users.bulk_hard_delete', 'Hard Delete Selected')}
+				</Button>
+			{/if}
 		{/if}
 	</div>
 {/if}
@@ -452,6 +474,22 @@
 	</div>
 </Modal>
 
+<!-- Bulk Hard Delete Confirmation -->
+<Modal bind:open={showBulkHardDeleteConfirm} title={t("users.bulk_hard_delete_title", "Hard Delete Selected Users")} size="sm">
+	<p class="text-sm" style="color: var(--color-foreground)">
+		{t("users.bulk_hard_delete_confirm", "Permanently erase all selected deleted users?")}
+	</p>
+	<p class="mt-2 text-sm" style="color: var(--color-danger)">
+		{t("users.bulk_hard_delete_warning", "This will permanently delete all data for the selected users including posts, comments, payments, and sessions. This action cannot be undone.")}
+	</p>
+	<div class="mt-6 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showBulkHardDeleteConfirm = false)}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="destructive" onclick={async () => { showBulkHardDeleteConfirm = false; await bulkHardDelete(); }} disabled={acting}>
+			{acting ? t("common.deleting", "Deleting...") : t("users.bulk_hard_delete", "Hard Delete Selected")}
+		</Button>
+	</div>
+</Modal>
+
 <!-- Create User Modal -->
 <Modal bind:open={showCreateModal} title={t("users.create", "Create User")} size="default">
 	{#if createError}
@@ -491,44 +529,4 @@
 	</div>
 </Modal>
 
-<!-- UserActionsCell component -->
-{#snippet UserActionsCell(user: User)}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(user)}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canManageUsers}
-			<Button variant="ghost" size="sm" onclick={() => goto(`/users/${user.id}`)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canManageUsers}
-			{#if user.status === "active"}
-				<Button variant="ghost" size="sm" onclick={() => handleBan(user)} style="color: var(--color-danger)">
-					<Ban class="h-3.5 w-3.5" />
-				</Button>
-				<Button variant="ghost" size="sm" onclick={() => handleSuspend(user)} style="color: var(--color-warning)">
-					{t("users.suspend", "Suspend")}
-				</Button>
-			{:else if user.status === "banned"}
-				<Button variant="ghost" size="sm" onclick={() => handleBan(user)} style="color: var(--color-success)">
-					<Play class="h-3.5 w-3.5" />
-				</Button>
-			{:else if user.status === "suspended"}
-				<Button variant="ghost" size="sm" onclick={() => handleSuspend(user)} style="color: var(--color-success)">
-					{t("users.unsuspend", "Unsuspend")}
-				</Button>
-			{/if}
-		{/if}
-		{#if canImpersonate}
-			<Button variant="ghost" size="sm" onclick={() => handleImpersonate(user)}>
-				<UserPlus class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canManageUsers}
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(user)} style="color: var(--color-danger)">
-				<Trash2 class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
-{/snippet}
+

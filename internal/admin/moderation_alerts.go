@@ -153,27 +153,66 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	var claimID pgtype.UUID
-	err = h.DB.Reader.QueryRow(ctx,
-		`SELECT id FROM ownership_claims
-		 WHERE organization_id = $1 AND tenant_id = $2 AND status = 'pending'
-		 ORDER BY created_at DESC LIMIT 1`,
-		orgID, tenantID,
-	).Scan(&claimID)
+	claimID, err := h.Queries.GetPendingOwnershipClaim(ctx, gen.GetPendingOwnershipClaimParams{
+		OrganizationID: orgID,
+		TenantID:       tenantID,
+	})
 	if err != nil {
 		writeError(w, http.StatusNotFound, "no_pending_claim", "No pending ownership claim for this organization")
 		return
 	}
 
-	if _, err := h.DB.Writer.Exec(ctx,
-		`UPDATE ownership_claims
-		 SET status = 'approved', reviewed_by = $1, resolution_note = $2, reviewed_at = now()
-		 WHERE id = $3 AND tenant_id = $4`,
-		user.UserID, note, claimID, tenantID,
-	); err != nil {
+	if err := h.Queries.ApproveOwnershipClaim(ctx, gen.ApproveOwnershipClaimParams{
+		ID:             claimID,
+		TenantID:       tenantID,
+		ReviewedBy:     user.UserID,
+		ResolutionNote: &note,
+	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to approve ownership claim")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_id": claimID.String(), "status": "approved"}})
+}
+
+// ListPendingOwnershipClaims handles GET /api/v1/admin/organizations/pending-claims.
+// Returns all pending ownership claims with claimant and org details.
+func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	claims, err := h.Queries.GetPendingOwnershipClaims(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to fetch pending claims")
+		return
+	}
+
+	type claimResponse struct {
+		ID               string  `json:"id"`
+		OrganizationID   string  `json:"organization_id"`
+		ClaimantUserID   string  `json:"claimant_user_id"`
+		ClaimantUsername string  `json:"claimant_username"`
+		OrgName          string  `json:"org_name"`
+		EvidenceURL      *string `json:"evidence_url"`
+		Notes            *string `json:"notes"`
+		CreatedAt        string  `json:"created_at"`
+	}
+
+	items := make([]claimResponse, len(claims))
+	for i, c := range claims {
+		items[i] = claimResponse{
+			ID:               c.ID.String(),
+			OrganizationID:   c.OrganizationID.String(),
+			ClaimantUserID:   c.ClaimantUserID.String(),
+			ClaimantUsername: c.ClaimantUsername,
+			OrgName:          c.OrgName,
+			EvidenceURL:      c.EvidenceUrl,
+			Notes:            c.Notes,
+			CreatedAt:        c.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
 }

@@ -95,6 +95,15 @@ func (s *Store) deleteProfessionalProfileType(ctx context.Context, id, tenantID 
 // Professional Profiles
 // ---------------------------------------------------------------------------
 
+// getUserProfileType returns the user's profile_type (personal, business, organisation).
+func (s *Store) getUserProfileType(ctx context.Context, userID, tenantID pgtype.UUID) (string, error) {
+	row, err := s.read.GetUserByID(ctx, gen.GetUserByIDParams{UserID: userID, TenantID: tenantID})
+	if err != nil {
+		return "", fmt.Errorf("getting user profile type: %w", err)
+	}
+	return row.ProfileType, nil
+}
+
 // Reserved for future features.
 func (s *Store) createProfessionalProfile(ctx context.Context, p gen.CreateProfessionalProfileParams) (gen.ProfessionalProfile, error) {
 	row, err := s.write.CreateProfessionalProfile(ctx, p)

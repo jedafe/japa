@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -14,6 +15,7 @@ import (
 type OAuthHandlers struct {
 	Config       OAuthConfig
 	Store        OAuthStore
+	Queries      *gen.Queries
 	KeyRot       *KeyRotation
 	CookieDomain string // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
 }
@@ -155,6 +157,15 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 // issueToken mints a JWT and returns it as a JSON response.
 func (h *OAuthHandlers) issueToken(w http.ResponseWriter, r *http.Request, userID, tenantID pgtype.UUID) {
+	if h.Queries != nil {
+		if err := h.Queries.UpdateLastLoginAt(r.Context(), gen.UpdateLastLoginAtParams{
+			TenantID: tenantID,
+			ID:       userID,
+		}); err != nil {
+			slog.Warn("update last_login_at", "error", err)
+		}
+	}
+
 	token, err := h.KeyRot.MintAccessTokenWithContext(r.Context(), userID, tenantID)
 	if err != nil {
 		slog.Error("mint access token", "error", err)

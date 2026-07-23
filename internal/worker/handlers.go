@@ -3725,7 +3725,8 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID string `json:"tenant_id"`
+		TenantID   string `json:"tenant_id"`
+		InitiatedBy string `json:"initiated_by"`
 	}
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		return fmt.Errorf("tenant:cleanup_data: bad payload: %w", err)
@@ -3759,27 +3760,49 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	// Hard-delete the tenant. All tables with ON DELETE CASCADE will cascade.
-	// Tables without ON DELETE CASCADE (users, organizations, learning, etc.)
-	// must be cleaned explicitly — for now this is a stub that logs the intent.
-	// Full implementation will iterate all FK-referencing tables without CASCADE
-	// and hard-delete them first, then delete the tenant.
-	slog.Info("tenant:cleanup_data — tenant eligible for hard-delete, but cascade cleanup not yet implemented (stub)", "tenant_id", payload.TenantID)
+	slog.Info("tenant:cleanup_data — starting cascade cleanup", "tenant_id", payload.TenantID, "initiated_by", payload.InitiatedBy)
 
-	// TODO: Implement full cascade hard-delete for all tenant-scoped tables
-	// that reference tenants(id) without ON DELETE CASCADE:
-	// - users, profiles, user_preferences, onboarding
-	// - organizations (2 FKs)
-	// - doc_pages
-	// - webhooks, webhook_history
-	// - ai_templates
-	// - api_keys
-	// - learning tables (5)
-	// - search_events
-	// - trending_snapshots
-	// - affiliate_providers, affiliate_links
-	// - moderation_alerts
-	// Once all child rows are deleted, run: DELETE FROM tenants WHERE id = $1
+	// Delete from tables WITHOUT ON DELETE CASCADE (in dependency order).
+	// These tables reference tenants(id) but do not cascade on delete.
+	tables := []string{
+		"moderation_alerts",
+		"learning_certificates",
+		"learning_enrollments",
+		"learning_progress",
+		"learning_lessons",
+		"learning_tracks",
+		"search_events",
+		"trending_snapshots",
+		"organization_members",
+		"organizations",
+		"webhook_history",
+		"webhooks",
+		"ai_templates",
+		"doc_pages",
+		"onboarding",
+		"user_preferences",
+		"users",
+	}
+
+	totalDeleted := 0
+	for _, table := range tables {
+		result, err := dbPool.Writer.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE tenant_id = $1", table), tenantID)
+		if err != nil {
+			slog.Error("tenant:cleanup_data — failed to delete from table", "table", table, "error", err)
+			continue
+		}
+		count := result.RowsAffected()
+		totalDeleted += int(count)
+	}
+
+	// Hard delete the tenant itself.
+	result, err := dbPool.Writer.Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenantID)
+	if err != nil {
+		return fmt.Errorf("tenant:cleanup_data: delete tenant: %w", err)
+	}
+	rowsAffected := result.RowsAffected()
+
+	slog.Info("tenant:cleanup_data — cleanup complete", "tenant_id", payload.TenantID, "child_rows_deleted", totalDeleted, "tenant_deleted", rowsAffected > 0)
 
 	return nil
 }

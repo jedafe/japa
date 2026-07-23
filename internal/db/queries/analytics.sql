@@ -1,8 +1,10 @@
 -- Platform Analytics & Site Reports (Section 40)
--- Platform events, materialized view queries, and security scan results.
+-- Dashboard queries using real database tables (users, contents, spaces, space_members).
+-- platform_events and materialized views are kept for the events list and future
+-- event-tracking pipeline; dashboard aggregates bypass them so they work immediately.
 
 -- =====================
--- Platform Events
+-- Platform Events (write-optimised, future use)
 -- =====================
 
 -- name: CreatePlatformEvent :one
@@ -32,44 +34,42 @@ GROUP BY event_type
 ORDER BY count DESC;
 
 -- =====================
--- Materialized View: Daily Content Stats
+-- Materialized Views (refreshed by analytics:refresh_views Asynq task)
 -- =====================
 
 -- name: GetDailyContentStats :many
-SELECT day, tenant_id, content_id, views, reactions, comments, unique_viewers
-FROM mv_daily_content_stats
+SELECT date_trunc('day', created_at)::date AS day, tenant_id, id AS content_id,
+       view_count AS views, comment_count AS reactions, share_count AS comments, view_count AS unique_viewers
+FROM contents
 WHERE tenant_id = $1
-  AND ($2::date IS NULL OR day >= $2)
-  AND ($3::date IS NULL OR day <= $3)
-  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR content_id = $4)
+  AND status != 'draft'
+  AND ($2::date IS NULL OR created_at::date >= $2)
+  AND ($3::date IS NULL OR created_at::date <= $3)
+  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR id = $4)
 ORDER BY day DESC, views DESC;
 
 -- name: GetTopContentByViews :many
-SELECT content_id, SUM(views) AS total_views, SUM(reactions) AS total_reactions, SUM(comments) AS total_comments, SUM(unique_viewers) AS total_unique_viewers
-FROM mv_daily_content_stats
+SELECT id AS content_id, view_count AS total_views, comment_count AS total_comments, share_count AS total_reactions, view_count AS total_unique_viewers
+FROM contents
 WHERE tenant_id = $1
-  AND ($2::date IS NULL OR day >= $2)
-  AND ($3::date IS NULL OR day <= $3)
-GROUP BY content_id
+  AND status != 'draft'
+  AND view_count > 0
+  AND ($2::date IS NULL OR created_at::date >= $2)
+  AND ($3::date IS NULL OR created_at::date <= $3)
 ORDER BY total_views DESC
 LIMIT $4;
 
--- =====================
--- Materialized View: Daily Space Stats
--- =====================
-
 -- name: GetDailySpaceStats :many
-SELECT day, tenant_id, space_id, joins, posts, active_users
-FROM mv_daily_space_stats
-WHERE tenant_id = $1
-  AND ($2::date IS NULL OR day >= $2)
-  AND ($3::date IS NULL OR day <= $3)
-  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR space_id = $4)
+SELECT date_trunc('day', s.created_at)::date AS day, s.tenant_id, s.id AS space_id,
+       (SELECT COUNT(*)::bigint FROM space_members sm WHERE sm.space_id = s.id) AS joins,
+       (SELECT COUNT(*)::bigint FROM contents c WHERE c.space_id = s.id AND c.status != 'draft') AS posts,
+       (SELECT COUNT(DISTINCT sm2.user_id)::bigint FROM space_members sm2 WHERE sm2.space_id = s.id) AS active_users
+FROM spaces s
+WHERE s.tenant_id = $1
+  AND ($2::date IS NULL OR s.created_at::date >= $2)
+  AND ($3::date IS NULL OR s.created_at::date <= $3)
+  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR s.id = $4)
 ORDER BY day DESC;
-
--- =====================
--- Materialized View: User Engagement Stats
--- =====================
 
 -- name: GetUserEngagementStats :many
 SELECT day, tenant_id, user_id, posts_created, reactions_given, comments_made, views
@@ -79,15 +79,6 @@ WHERE tenant_id = $1
   AND ($3::date IS NULL OR day <= $3)
   AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR user_id = $4)
 ORDER BY day DESC;
-
--- name: GetUserGrowthOverTime :many
-SELECT date_trunc('day', created_at)::date AS day, COUNT(*) AS new_users
-FROM users
-WHERE tenant_id = $1
-  AND ($2::date IS NULL OR created_at::date >= $2)
-  AND ($3::date IS NULL OR created_at::date <= $3)
-GROUP BY 1
-ORDER BY 1 DESC;
 
 -- name: RefreshDailyContentStatsView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_content_stats;
@@ -99,21 +90,69 @@ REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_space_stats;
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_user_engagement_stats;
 
 -- =====================
--- Traffic Sources (from meta JSONB)
+-- Dashboard Aggregates (from real tables)
 -- =====================
 
--- name: GetTrafficSources :many
-SELECT meta->>'referrer' AS referrer, COUNT(*) AS visits
-FROM platform_events
+-- name: GetUserGrowthOverTime :many
+SELECT date_trunc('day', created_at)::date AS day, COUNT(*) AS new_users
+FROM users
 WHERE tenant_id = $1
-  AND event_type = 'content.viewed'
+  AND ($2::date IS NULL OR created_at::date >= $2)
+  AND ($3::date IS NULL OR created_at::date <= $3)
+GROUP BY 1
+ORDER BY 1 DESC;
+
+-- name: GetDailyActiveUsers :many
+SELECT date_trunc('day', last_login_at)::date AS day, COUNT(*) AS dau
+FROM users
+WHERE tenant_id = $1
+  AND last_login_at IS NOT NULL
+  AND ($2::timestamptz IS NULL OR last_login_at >= $2)
+  AND ($3::timestamptz IS NULL OR last_login_at <= $3)
+GROUP BY 1
+ORDER BY 1 DESC;
+
+-- name: GetMonthlyActiveUsers :many
+SELECT date_trunc('month', last_login_at)::date AS month, COUNT(*) AS mau
+FROM users
+WHERE tenant_id = $1
+  AND last_login_at IS NOT NULL
+  AND ($2::timestamptz IS NULL OR last_login_at >= $2)
+  AND ($3::timestamptz IS NULL OR last_login_at <= $3)
+GROUP BY 1
+ORDER BY 1 DESC;
+
+-- name: GetContentVolumeOverTime :many
+SELECT date_trunc('day', created_at)::date AS day, COUNT(*) AS content_count
+FROM contents
+WHERE tenant_id = $1
+  AND status != 'draft'
   AND ($2::timestamptz IS NULL OR created_at >= $2)
   AND ($3::timestamptz IS NULL OR created_at <= $3)
-  AND meta->>'referrer' IS NOT NULL
-  AND meta->>'referrer' != ''
-GROUP BY referrer
+GROUP BY 1
+ORDER BY 1 DESC;
+
+-- name: GetTrafficSources :many
+SELECT field_values->>'referrer' AS referrer, COUNT(*) AS visits
+FROM contents
+WHERE tenant_id = $1
+  AND status != 'draft'
+  AND field_values->>'referrer' IS NOT NULL
+  AND field_values->>'referrer' != ''
+  AND ($2::timestamptz IS NULL OR created_at >= $2)
+  AND ($3::timestamptz IS NULL OR created_at <= $3)
+GROUP BY field_values->>'referrer'
 ORDER BY visits DESC
 LIMIT $4;
+
+-- name: GetTotalUsers :one
+SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1;
+
+-- name: GetActiveUsers :one
+SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND last_login_at IS NOT NULL AND last_login_at >= NOW() - INTERVAL '30 days';
+
+-- name: GetNewUsersToday :one
+SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND created_at::date = CURRENT_DATE;
 
 -- =====================
 -- Security Scan Results
@@ -147,35 +186,27 @@ WHERE tenant_id = $1
 ORDER BY created_at DESC;
 
 -- =====================
--- Dashboard Aggregates
+-- Revenue Analytics (P5.6)
 -- =====================
 
--- name: GetDailyActiveUsers :many
-SELECT date_trunc('day', created_at)::date AS day, COUNT(DISTINCT user_id) AS dau
-FROM platform_events
-WHERE tenant_id = $1
-  AND user_id IS NOT NULL
-  AND ($2::timestamptz IS NULL OR created_at >= $2)
-  AND ($3::timestamptz IS NULL OR created_at <= $3)
-GROUP BY 1
-ORDER BY 1 DESC;
+-- name: GetRevenueSummary :one
+SELECT
+  COALESCE(SUM(p.amount), 0)::bigint AS total_revenue,
+  COALESCE(SUM(CASE WHEN p.created_at >= date_trunc('month', NOW()) THEN p.amount ELSE 0 END), 0)::bigint AS monthly_revenue,
+  (SELECT COUNT(*)::integer FROM subscriptions s WHERE s.tenant_id = $1 AND s.status = 'active') AS active_subscriptions
+FROM payments p
+WHERE p.tenant_id = $1
+  AND p.status = 'succeeded';
 
--- name: GetMonthlyActiveUsers :many
-SELECT date_trunc('month', created_at)::date AS month, COUNT(DISTINCT user_id) AS mau
-FROM platform_events
-WHERE tenant_id = $1
-  AND user_id IS NOT NULL
-  AND ($2::timestamptz IS NULL OR created_at >= $2)
-  AND ($3::timestamptz IS NULL OR created_at <= $3)
-GROUP BY 1
-ORDER BY 1 DESC;
-
--- name: GetContentVolumeOverTime :many
-SELECT date_trunc('day', created_at)::date AS day, COUNT(*) AS content_count
-FROM platform_events
-WHERE tenant_id = $1
-  AND event_type = 'content.created'
-  AND ($2::timestamptz IS NULL OR created_at >= $2)
-  AND ($3::timestamptz IS NULL OR created_at <= $3)
+-- name: GetRevenueByPeriod :many
+SELECT
+  to_char(date_trunc('month', p.created_at), 'YYYY-MM') AS period,
+  COALESCE(SUM(p.amount), 0)::bigint AS revenue,
+  COUNT(*)::integer AS transactions
+FROM payments p
+WHERE p.tenant_id = $1
+  AND p.status = 'succeeded'
+  AND ($2::timestamptz IS NULL OR p.created_at >= $2)
+  AND ($3::timestamptz IS NULL OR p.created_at <= $3)
 GROUP BY 1
 ORDER BY 1 DESC;

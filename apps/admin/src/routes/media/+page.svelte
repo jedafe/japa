@@ -26,8 +26,9 @@
     Eye,
     Pencil
   } from "lucide-svelte";
-  import { api, mediaAdminApi } from "$lib/api";
+  import { api, apiFetch, mediaAdminApi } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
+  import Pagination from "$lib/components/ui/Pagination.svelte";
 
   type MediaItem = {
     id: string;
@@ -38,6 +39,7 @@
     status: string;
     created_at: string;
     url?: string;
+    user_group_id?: string;
   };
 
   let { data } = $props();
@@ -49,6 +51,16 @@
   let filters = $state<Record<string, string>>({});
   let viewMode = $state<"grid" | "list">("grid");
   let selectedIds = $state<Set<string>>(new Set());
+
+  // Pagination
+  let currentPage = $state(0);
+  let pageSize = $state(20);
+  let totalItems = $derived(filteredItems.length);
+  let totalPages = $derived(Math.max(1, Math.ceil(totalItems / pageSize)));
+  let paginatedItems = $derived.by(() => {
+    const start = currentPage * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  });
 
   // View modal
   let showViewModal = $state(false);
@@ -64,8 +76,17 @@
   let deleteTargetId = $state("");
   let deleteTargetName = $state("");
 
-  // Backend gates media mutations on media.manage
-  const canManageMedia = $derived(hasPermission("media.manage"));
+  // Upload dialog
+  let showUploadModal = $state(false);
+  let uploadFiles = $state<File[]>([]);
+  let uploadUserGroupId = $state("");
+  let uploadAltText = $state("");
+  let uploadSubmitting = $state(false);
+  let uploadProgress = $state<{ current: number; total: number; filename: string } | null>(null);
+  let userGroups = $state<Array<{ id: string; name: string; slug: string }>>([]);
+
+  // Backend gates approve/reject/delete on media.quarantine.manage and media.delete_any
+  const canManageMedia = $derived(hasPermission("media.quarantine.manage") || hasPermission("media.delete_any"));
 
   function openView(item: MediaItem) {
     viewTarget = item;
@@ -80,9 +101,8 @@
 
   async function executeState() {
     if (!stateTarget) return;
-    const result = stateAction === "approve"
-      ? await mediaAdminApi.approve(stateTarget.id)
-      : await mediaAdminApi.reject(stateTarget.id);
+    const status = stateAction === "approve" ? "approved" : "rejected";
+    const result = await mediaAdminApi.updateStatus(stateTarget.id, status);
     if (result.ok) {
       showStateModal = false;
       stateTarget = null;
@@ -160,7 +180,7 @@
       key: "actions",
       label: "",
       class: "w-40",
-      component: MediaActionsCell
+      componentSnippet: MediaActionsCell
     }
   ];
 
@@ -239,10 +259,12 @@
 
   function handleSearch(searchFilters: Record<string, string>) {
     filters = searchFilters;
+    currentPage = 0;
   }
 
   function handleClear() {
     filters = {};
+    currentPage = 0;
   }
 
   async function executeDelete() {
@@ -277,6 +299,76 @@
     }
   }
 
+  async function loadUserGroups() {
+    try {
+      const result = await api<{ groups: Array<{ id: string; name: string; slug: string }>; total: number }>('/admin/user-groups');
+      if (result.ok) {
+        userGroups = result.data?.groups ?? [];
+      }
+    } catch {}
+  }
+
+  function openUploadModal() {
+    uploadFiles = [];
+    uploadUserGroupId = "";
+    uploadAltText = "";
+    uploadProgress = null;
+    showUploadModal = true;
+    loadUserGroups();
+  }
+
+  async function handleUpload() {
+    if (!uploadFiles.length) return;
+    uploadSubmitting = true;
+    errorMessage = "";
+    const total = uploadFiles.length;
+    let failed = 0;
+    try {
+      for (let i = 0; i < total; i++) {
+        const file = uploadFiles[i];
+        uploadProgress = { current: i + 1, total, filename: file.name };
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const result = await apiFetch<{ media_id: string; url: string }>(
+          "/admin/media/upload",
+          { method: "POST", body: formData }
+        );
+
+        if (result.error) {
+          failed++;
+          continue;
+        }
+
+        const mediaId = result.data?.media_id;
+        if (uploadUserGroupId && mediaId) {
+          await api(`/admin/media/${mediaId}`, {
+            method: "PATCH",
+            body: { user_group_id: uploadUserGroupId },
+          });
+        }
+        if (uploadAltText && mediaId) {
+          await api(`/admin/media/${mediaId}`, {
+            method: "PATCH",
+            body: { alt_text: uploadAltText },
+          });
+        }
+      }
+
+      if (failed === total) {
+        errorMessage = t("app.media.err_upload", "Failed to upload media");
+      }
+      showUploadModal = false;
+      await load();
+    } catch {
+      errorMessage = t("app.media.err_upload", "Failed to upload media");
+    } finally {
+      uploadSubmitting = false;
+      uploadProgress = null;
+    }
+  }
+
   $effect(() => {
     load();
   });
@@ -289,7 +381,6 @@
 <PageHeader
   title={t('app.media.page_title', 'Media Library')}
   description={t('app.media.page_desc', 'Manage uploaded files and media')}
-  actions={[{ label: t('app.media.action_upload', 'Upload'), icon: Upload, href: "/media/upload" }]}
 />
 
 <div class="space-y-6">
@@ -298,22 +389,38 @@
 
     <div class="flex items-center gap-2">
       <Button
-        variant={viewMode === "grid" ? "default" : "ghost"}
         size="icon"
+        variant={viewMode === 'grid' ? 'default' : 'ghost'}
+        class={viewMode === 'grid' ? '' : 'text-foreground-alt'}
         onclick={() => (viewMode = "grid")}
+        aria-label="Grid view"
       >
         <Grid class="h-4 w-4" />
       </Button>
       <Button
-        variant={viewMode === "list" ? "default" : "ghost"}
         size="icon"
+        variant={viewMode === 'list' ? 'default' : 'ghost'}
+        class={viewMode === 'list' ? '' : 'text-foreground-alt'}
         onclick={() => (viewMode = "list")}
+        aria-label="List view"
       >
         <List class="h-4 w-4" />
       </Button>
-      <Button variant="ghost" size="icon" onclick={load}>
+      <Button
+        size="icon"
+        variant="ghost"
+        class="text-foreground-alt"
+        onclick={load}
+        aria-label="Refresh"
+      >
         <RefreshCw class="h-4 w-4" />
       </Button>
+      {#if canManageMedia}
+        <Button variant="default" size="sm" onclick={openUploadModal}>
+          <Upload class="h-4 w-4 mr-1" />
+          {t('app.media.upload', 'Upload')}
+        </Button>
+      {/if}
     </div>
   </div>
 
@@ -358,8 +465,8 @@
     </div>
   {:else if viewMode === "grid"}
     <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-      {#each filteredItems as item (item.id)}
-        <Card class="cursor-pointer overflow-hidden transition-shadow hover:shadow-md">
+      {#each paginatedItems as item (item.id)}
+        <Card class="group relative cursor-pointer overflow-hidden transition-shadow hover:shadow-md">
           <div class="flex aspect-square items-center justify-center bg-surface">
             {#if item.mime_type?.startsWith("image/")}
               <img
@@ -371,10 +478,34 @@
               {@const Icon = getIcon(item.mime_type)}
               <Icon class="h-8 w-8 text-muted" />
             {/if}
+            <!-- Hover action overlay -->
+            <div class="absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+              <Button variant="secondary" size="icon" class="h-8 w-8" onclick={() => openView(item)}>
+                <Eye class="h-4 w-4" />
+              </Button>
+              {#if canManageMedia}
+                {#if item.status === "quarantined" || item.status === "pending"}
+                  <Button variant="secondary" size="icon" class="h-8 w-8" onclick={() => confirmState(item, "approve")} style="color: var(--color-success)">
+                    <CheckCircle class="h-4 w-4" />
+                  </Button>
+                  <Button variant="secondary" size="icon" class="h-8 w-8" onclick={() => confirmState(item, "reject")} style="color: var(--color-warning)">
+                    <XCircle class="h-4 w-4" />
+                  </Button>
+                {/if}
+                <Button variant="secondary" size="icon" class="h-8 w-8" onclick={() => confirmDelete(item)} style="color: var(--color-danger)">
+                  <Trash2 class="h-4 w-4" />
+                </Button>
+              {/if}
+            </div>
           </div>
           <CardContent class="p-3">
             <p class="truncate text-sm font-medium text-foreground">{item.filename}</p>
-            <p class="text-xs text-muted">{formatFileSize(item.file_size)}</p>
+            <div class="mt-1 flex items-center justify-between">
+              <p class="text-xs text-muted">{formatFileSize(item.file_size)}</p>
+              <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium {item.status === 'approved' ? 'bg-success/15 text-success' : item.status === 'pending' ? 'bg-warning/15 text-warning' : item.status === 'quarantined' ? 'bg-danger/15 text-danger' : 'bg-surface text-foreground-alt'}">
+                {item.status || 'pending'}
+              </span>
+            </div>
           </CardContent>
         </Card>
       {:else}
@@ -388,8 +519,8 @@
       <CardContent class="p-0">
         <DataTable
           {columns}
-          data={filteredItems}
-          pageSize={20}
+          data={paginatedItems}
+          pageSize={pageSize}
           selectable={true}
           bind:selectedIds
           emptyMessage={t('app.media.empty_table', 'No media files found')}
@@ -403,6 +534,15 @@
         </DataTable>
       </CardContent>
     </Card>
+  {/if}
+
+  {#if totalItems > pageSize}
+    <Pagination
+      bind:page={currentPage}
+      {totalPages}
+      {totalItems}
+      bind:pageSize
+    />
   {/if}
 </div>
 
@@ -475,8 +615,79 @@
   </div>
 </Modal>
 
+<!-- Upload Modal -->
+<Modal bind:open={showUploadModal} title={t('app.media.modal_upload_title', 'Upload Media')}>
+  <div class="space-y-4">
+    <div>
+      <label class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_files', 'Files')}</label>
+      <input
+        type="file"
+        multiple
+        accept="image/*,video/*,audio/*,application/pdf,.doc,.docx"
+        onchange={(e) => {
+          const files = e.currentTarget.files;
+          if (files) uploadFiles = [...uploadFiles, ...Array.from(files)];
+        }}
+        class="block w-full text-sm text-foreground file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary/80"
+      />
+    </div>
+    {#if uploadFiles.length > 0}
+      <div class="space-y-1 max-h-40 overflow-y-auto">
+        {#each uploadFiles as file, i}
+          <div class="flex items-center justify-between rounded-lg bg-surface px-3 py-1.5 text-sm">
+            <span class="truncate text-foreground">{file.name}</span>
+            <span class="ml-2 shrink-0 text-xs text-muted">{formatFileSize(file.size)}</span>
+            <button
+              type="button"
+              class="ml-2 shrink-0 text-muted hover:text-danger"
+              onclick={() => { uploadFiles = uploadFiles.filter((_, j) => j !== i); }}
+            >
+              ✕
+            </button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+    <div>
+      <label class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
+      <select
+        bind:value={uploadUserGroupId}
+        class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+      >
+        <option value="">{t('app.media.upload_universal', 'Universal (all users)')}</option>
+        {#each userGroups as group}
+          <option value={group.id}>{group.name}</option>
+        {/each}
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
+      <input
+        type="text"
+        bind:value={uploadAltText}
+        placeholder={t('app.media.upload_alt_placeholder', 'Describe the media...')}
+        class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+      />
+    </div>
+    {#if uploadProgress}
+      <div class="text-sm text-muted">
+        {t('app.media.upload_progress', 'Uploading {current} of {total}...').replace('{current}', String(uploadProgress.current)).replace('{total}', String(uploadProgress.total))}
+        <span class="text-foreground-alt">— {uploadProgress.filename}</span>
+      </div>
+    {/if}
+  </div>
+  <div class="mt-4 flex justify-end gap-2">
+    <Button variant="ghost" onclick={() => (showUploadModal = false)}>{t('media.cancel')}</Button>
+    <Button variant="default" onclick={handleUpload} disabled={!uploadFiles.length || uploadSubmitting}>
+      {uploadSubmitting
+        ? t('app.media.uploading', 'Uploading...')
+        : t('app.media.upload_n_files', 'Upload {n} files').replace('{n}', String(uploadFiles.length))}
+    </Button>
+  </div>
+</Modal>
+
 <!-- MediaActionsCell -->
-{#snippet MediaActionsCell(row: MediaItem)}
+{#snippet MediaActionsCell({ value, row }: { value: any; row: MediaItem })}
   <div class="flex items-center gap-1">
     <Button variant="ghost" size="sm" onclick={() => openView(row)}>
       <Eye class="h-3.5 w-3.5" />

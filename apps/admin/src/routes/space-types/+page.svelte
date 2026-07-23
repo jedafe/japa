@@ -81,8 +81,8 @@
 		const qs = params.toString();
 		const result = await spaceTypesApi.list(qs || undefined);
 		if (result.ok) {
-			const data = result.data as { items: SpaceType[]; total_pages: number };
-			spaceTypes = data.items ?? [];
+			const d = result.data as SpaceType[] | { items: SpaceType[]; total_pages: number };
+			spaceTypes = Array.isArray(d) ? d : (d.items ?? []);
 		} else {
 			errorMessage = result.error;
 		}
@@ -193,7 +193,7 @@
 			label: t('space-types.icon'),
 			render: (v: string) => `<span class="text-lg">${v || '—'}</span>`
 		},
-		{ key: 'actions', label: '', class: 'w-32', component: ActionsCell }
+		{ key: 'actions', label: '', class: 'w-32', componentSnippet: ActionsCell }
 	];
 
 	function handleRowClick(row: SpaceType) {
@@ -234,8 +234,6 @@
 		data={spaceTypes}
 		onrowclick={handleRowClick}
 		emptyMessage={t('space-types.no_space_types_configured')}
-		searchable
-		onsearch={(q) => { searchQuery = q; load(); }}
 		selectable
 		bind:selectedIds
 	>
@@ -332,7 +330,7 @@
 </Modal>
 
 <!-- ActionsCell snippet for DataTable -->
-{#snippet ActionsCell(row: SpaceType)}
+{#snippet ActionsCell({ value, row }: { value: any; row: SpaceType })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={(e: MouseEvent) => { e.stopPropagation(); openView(row); }}>
 			<Eye class="h-3.5 w-3.5" />

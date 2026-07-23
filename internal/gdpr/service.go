@@ -527,6 +527,14 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 	return nil
 }
 
+// HardDeleteUser is the public entry point for admin-triggered hard deletes.
+// It performs the full GDPR cascade (reassign content, nullify refs, physical delete)
+// in a single transaction. This is the same logic as the internal hardDeleteUser
+// but exposed for admin use on already-soft-deleted users.
+func (s *Service) HardDeleteUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+	return s.hardDeleteUser(ctx, userID, tenantID)
+}
+
 // ListPendingDeletionRequests returns pending deletion requests for the worker.
 func (s *Service) ListPendingDeletionRequests(ctx context.Context, limit int32) ([]gen.AccountDeletionRequest, error) {
 	return s.store.listPendingDeletionRequests(ctx, limit)

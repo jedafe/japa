@@ -142,6 +142,29 @@ func (s *Service) ListSpaces(ctx context.Context, tenantID pgtype.UUID) ([]gen.S
 	return spaces, nil
 }
 
+// AdminListSpaces returns paginated spaces for the admin view with owner and
+// space_type name resolved via JOINs.
+func (s *Service) AdminListSpaces(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.AdminListSpacesRow, error) {
+	rows, err := s.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
+		TenantID:  tenantID,
+		LimitVal:  limit,
+		OffsetVal: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("admin listing spaces: %w", err)
+	}
+	return rows, nil
+}
+
+// AdminListSpacesCount returns the total number of spaces for the tenant.
+func (s *Service) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	count, err := s.read.AdminListSpacesCount(ctx, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("admin counting spaces: %w", err)
+	}
+	return count, nil
+}
+
 // ListSpacesByMember returns every space the given user belongs to, most
 // recently joined first (catalog: GET /me/spaces).
 func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.Space, error) {

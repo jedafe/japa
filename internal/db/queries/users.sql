@@ -1,15 +1,22 @@
 -- name: GetUserProfile :one
-SELECT DISTINCT ON (up.user_id)
-       up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
-       up.timezone, up.created_at, up.updated_at,
-       u.email, u.username, u.profile_type, u.status, u.follower_count,
+SELECT DISTINCT ON (u.id)
+       COALESCE(up.id, gen_random_uuid()) AS id,
+       u.tenant_id,
+       u.id AS user_id,
+       up.display_name,
+       up.avatar_url,
+       up.bio,
+       up.timezone,
+       COALESCE(up.created_at, u.created_at) AS created_at,
+       COALESCE(up.updated_at, u.updated_at) AS updated_at,
+       u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
        ug.slug AS user_group_name
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
 LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
-WHERE up.tenant_id = @tenant_id AND up.user_id = @user_id
-ORDER BY up.user_id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
+WHERE u.tenant_id = @tenant_id AND u.id = @user_id
+ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
 -- name: GetUserByID :one
 SELECT id, tenant_id, email, username, profile_type, status, follower_count, created_at, updated_at
@@ -17,17 +24,24 @@ FROM users
 WHERE tenant_id = @tenant_id AND id = @user_id;
 
 -- name: GetUserByUsername :one
-SELECT DISTINCT ON (up.user_id)
-       up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
-       up.timezone, up.created_at, up.updated_at,
+SELECT DISTINCT ON (u.id)
+       COALESCE(up.id, gen_random_uuid()) AS id,
+       u.tenant_id,
+       u.id AS user_id,
+       up.display_name,
+       up.avatar_url,
+       up.bio,
+       up.timezone,
+       COALESCE(up.created_at, u.created_at) AS created_at,
+       COALESCE(up.updated_at, u.updated_at) AS updated_at,
        u.email, u.username, u.profile_type, u.status, u.follower_count,
        ug.slug AS user_group_name
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
 LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
-WHERE up.tenant_id = @tenant_id AND u.username = @username
-ORDER BY up.user_id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
+WHERE u.tenant_id = @tenant_id AND u.username = @username
+ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
 -- name: UpsertUserProfile :exec
 INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, bio, timezone)
@@ -53,18 +67,55 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     updated_at = now();
 
 -- name: ListUsers :many
-SELECT id, tenant_id, email, username, profile_type, status, follower_count, created_at, updated_at
-FROM users
-WHERE tenant_id = @tenant_id
-  AND (@search::text = '' OR username ILIKE '%' || @search || '%' OR email ILIKE '%' || @search || '%')
-ORDER BY created_at DESC
+SELECT u.id, u.tenant_id, u.email, u.username, u.profile_type,
+       CASE
+         WHEN EXISTS (
+           SELECT 1 FROM user_operation_bans uob
+           WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+             AND (uob.expires_at IS NULL OR uob.expires_at > now())
+         ) THEN 'restricted'
+         ELSE u.status
+       END AS status,
+       u.follower_count, u.created_at, u.updated_at,
+       (SELECT COALESCE(string_agg(ug.name, ', '), '')
+        FROM user_group_memberships ugm
+        JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = u.tenant_id
+        WHERE ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id) AS groups
+FROM users u
+WHERE u.tenant_id = @tenant_id
+  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.email ILIKE '%' || @search || '%')
+  AND (@status::text = '' OR
+       (@status = 'restricted' AND EXISTS (
+         SELECT 1 FROM user_operation_bans uob
+         WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+           AND (uob.expires_at IS NULL OR uob.expires_at > now())
+       )) OR
+       (@status != 'restricted' AND u.status = @status))
+  AND (@group_slug::text = '' OR EXISTS (
+    SELECT 1 FROM user_group_memberships ugm
+    JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = @tenant_id
+    WHERE ugm.user_id = u.id AND ugm.tenant_id = @tenant_id AND ug.slug = @group_slug
+  ))
+ORDER BY u.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountUsers :one
 SELECT COUNT(*)::int AS count
-FROM users
-WHERE tenant_id = @tenant_id
-  AND (@search::text = '' OR username ILIKE '%' || @search || '%' OR email ILIKE '%' || @search || '%');
+FROM users u
+WHERE u.tenant_id = @tenant_id
+  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.email ILIKE '%' || @search || '%')
+  AND (@status::text = '' OR
+       (@status = 'restricted' AND EXISTS (
+         SELECT 1 FROM user_operation_bans uob
+         WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+           AND (uob.expires_at IS NULL OR uob.expires_at > now())
+       )) OR
+       (@status != 'restricted' AND u.status = @status))
+  AND (@group_slug::text = '' OR EXISTS (
+    SELECT 1 FROM user_group_memberships ugm
+    JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = @tenant_id
+    WHERE ugm.user_id = u.id AND ugm.tenant_id = @tenant_id AND ug.slug = @group_slug
+  ));
 
 -- name: GetUserPrivacySettings :one
 SELECT user_id, dm_privacy, profile_visibility, search_indexable,
@@ -160,6 +211,12 @@ SELECT (SELECT count(*) FROM contents c
         WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL)
      + (SELECT count(*) FROM comments cm
         WHERE cm.tenant_id = $1 AND cm.author_user_id = $2 AND cm.deleted_at IS NULL) AS total;
+
+-- name: UpdateLastLoginAt :exec
+UPDATE users SET last_login_at = now() WHERE tenant_id = $1 AND id = $2;
+
+-- name: UpdateUserProfileType :exec
+UPDATE users SET profile_type = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2;
 
 -- name: GetPublicProfileByUsername :one
 -- Public profile header for /u/[username]. NO PII (no email/status/last_login/groups).

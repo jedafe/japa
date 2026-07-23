@@ -72,3 +72,10 @@ __pycache__/
 Untitled.md
 Prompts/* (Copy).md
 .password.md
+
+# Binaries
+main
+api
+meilisearch
+seed
+bin/japa-api

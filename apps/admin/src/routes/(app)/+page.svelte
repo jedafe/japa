@@ -75,10 +75,12 @@
 	let loading = $state(true);
 	let error = $state('');
 	let activeTab = $state('overview');
+	let totalContent = $state(0);
 	// Range controls are sourced from the URL so they survive navigation
 	let period = $state(page.url.searchParams.get('period') ?? '7d');
 	let from = $state(page.url.searchParams.get('from') ?? '');
 	let to = $state(page.url.searchParams.get('to') ?? '');
+	let loadAbortController: AbortController | null = null;
 
 	const periods = [
 		{ value: '24h', label: t('dashboard.period_24h', '24 Hours') },
@@ -125,17 +127,27 @@
 	);
 
 	async function load() {
+		// Abort any in-flight request to prevent race conditions
+		if (loadAbortController) loadAbortController.abort();
+		loadAbortController = new AbortController();
+		const signal = loadAbortController.signal;
+
 		loading = true;
 		error = '';
 		try {
+		const params = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join('&') || `period=${period}`;
 		const [overviewResult, usersResult] = await Promise.all([
 			// Prefer an explicit date range; fall back to the period selector
-			analyticsAdminApi.getOverview([from && `from=${from}`, to && `to=${to}`].filter(Boolean).join('&') || `period=${period}`),
+			analyticsAdminApi.getOverview(params),
 			analyticsAdminApi.getUsers()
 		]);
 
+			if (signal.aborted) return;
+
 			if (overviewResult.ok && overviewResult.data) {
-				overview = overviewResult.data as OverviewData;
+				const data = overviewResult.data as OverviewData;
+				overview = data;
+				totalContent = data.content_over_time?.reduce((sum, d) => sum + d.content_count, 0) ?? 0;
 			} else if (!overviewResult.ok) {
 				error = overviewResult.error ?? t('common.error', 'Failed to load data');
 			}
@@ -144,9 +156,10 @@
 				userStats = usersResult.data as UserAnalytics;
 			}
 		} catch (e) {
+			if (signal.aborted) return;
 			error = e instanceof Error ? e.message : t('common.error', 'Failed to load data');
 		} finally {
-			loading = false;
+			if (!signal.aborted) loading = false;
 		}
 	}
 
@@ -175,6 +188,10 @@
 		to = page.url.searchParams.get('to') ?? '';
 		period = page.url.searchParams.get('period') ?? '7d';
 		load();
+
+		return () => {
+			if (loadAbortController) loadAbortController.abort();
+		};
 	});
 </script>
 
@@ -197,6 +214,7 @@
 
 {#if error}
 	<div
+		role="alert"
 		class="mb-4 rounded-lg p-3 text-sm"
 		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
 	>
@@ -278,7 +296,7 @@
 				<a href="/content">
 					<StatCard
 						label={t('dashboard.total_content', 'Total Content')}
-						value={(contentActivityData.length).toLocaleString()}
+						value={totalContent.toLocaleString()}
 					/>
 				</a>
 			</div>
@@ -367,7 +385,7 @@
 									x="date"
 									y="count"
 									props={{
-										spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--color-success, #22c55e)' }
+										spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--color-success)' }
 									}}
 								/>
 							</div>
@@ -394,10 +412,10 @@
 								{#each trafficSources as source}
 									<div class="flex items-center justify-between rounded-lg px-3 py-2">
 										<span class="text-sm" style="color: var(--color-foreground)">
-											{source.referrer ?? 'Direct'}
+											{source.referrer ?? t('dashboard.direct', 'Direct')}
 										</span>
 										<span class="text-sm" style="color: var(--color-muted)">
-											{source.visits.toLocaleString()} visits
+											{source.visits.toLocaleString()} {t('dashboard.visits', 'visits')}
 										</span>
 									</div>
 								{/each}
@@ -433,10 +451,10 @@
 											{item.content_id.slice(0, 8)}...
 										</p>
 										<div class="mt-1 flex items-center gap-3 text-xs" style="color: var(--color-muted)">
-											<span>{item.total_views.toLocaleString()} views</span>
-											<span>{item.total_reactions.toLocaleString()} reactions</span>
-											<span>{item.total_comments.toLocaleString()} comments</span>
-											<span>{item.total_unique_viewers.toLocaleString()} viewers</span>
+											<span>{item.total_views.toLocaleString()} {t('dashboard.views', 'views')}</span>
+											<span>{item.total_reactions.toLocaleString()} {t('dashboard.reactions', 'reactions')}</span>
+											<span>{item.total_comments.toLocaleString()} {t('dashboard.comments', 'comments')}</span>
+											<span>{item.total_unique_viewers.toLocaleString()} {t('dashboard.viewers', 'viewers')}</span>
 										</div>
 									</div>
 								</a>
@@ -508,9 +526,9 @@
 							<div class="space-y-3">
 							{#each overview.space_stats.slice(0, 5) as space}
 								<div class="flex items-center justify-between rounded-lg px-3 py-2">
-									<span class="text-sm" style="color: var(--color-foreground)">{space.name ?? space.title ?? 'Space'}</span>
+									<span class="text-sm" style="color: var(--color-foreground)">{space.name ?? space.title ?? t('dashboard.space', 'Space')}</span>
 									{#if space.member_count !== undefined}
-										<span class="text-xs" style="color: var(--color-muted)">{space.member_count} members</span>
+										<span class="text-xs" style="color: var(--color-muted)">{space.member_count} {t('dashboard.members', 'members')}</span>
 									{/if}
 								</div>
 							{/each}

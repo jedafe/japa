@@ -189,6 +189,20 @@ func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tenant")
 		return
 	}
+
+	// Enqueue the tenant:cleanup_data task with a 30-day delay so all
+	// non-cascading child data is hard-deleted after the grace period.
+	if h.Client != nil {
+		payload, _ := json.Marshal(map[string]string{"tenant_id": tenant.ID.String(), "initiated_by": "system"})
+		task := asynq.NewTask(worker.TypeTenantCleanupData, payload)
+		if _, err := h.Client.Enqueue(task,
+			asynq.ProcessAt(time.Now().Add(30*24*time.Hour)),
+			asynq.Queue(worker.QueueForTask(worker.TypeTenantCleanupData)),
+		); err != nil {
+			slog.Error("control: enqueue cleanup task", "error", err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
@@ -424,6 +438,215 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	if tag.RowsAffected() == 0 {
 		// Setting didn't exist in DB (already at default). Return the default value.
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+}
+
+// ---------------------------------------------------------------------------
+// Per-Tenant Settings Handlers
+// ---------------------------------------------------------------------------
+
+// GetTenantSettings handles GET /control/tenants/:id/settings.
+func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		return
+	}
+	rows, err := h.DB.Reader.Query(r.Context(),
+		`SELECT id, key, value, is_public, created_at, updated_at FROM system_settings WHERE tenant_id = $1 ORDER BY key`,
+		tenantID,
+	)
+	if err != nil {
+		slog.Error("control: get tenant settings", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
+		return
+	}
+	defer rows.Close()
+
+	type enrichedSetting struct {
+		ID           pgtype.UUID `json:"id"`
+		Key          string      `json:"key"`
+		Value        string      `json:"value"`
+		IsPublic     bool        `json:"is_public"`
+		CreatedAt    time.Time   `json:"created_at"`
+		UpdatedAt    time.Time   `json:"updated_at"`
+		Type         string      `json:"type"`
+		DefaultValue string      `json:"default_value"`
+		Description  string      `json:"description"`
+		Namespace    string      `json:"namespace"`
+		Min          float64     `json:"min,omitempty"`
+		Max          float64     `json:"max,omitempty"`
+		Sensitive    bool        `json:"sensitive"`
+		Options      []any       `json:"options,omitempty"`
+	}
+	var settings []enrichedSetting
+	for rows.Next() {
+		var s enrichedSetting
+		if err := rows.Scan(&s.ID, &s.Key, &s.Value, &s.IsPublic, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			slog.Error("control: scan tenant setting", "error", err)
+			continue
+		}
+		meta := getSettingMeta(s.Key, s.Value)
+		s.Type = meta.Type
+		s.DefaultValue = meta.DefaultValue
+		s.Description = meta.Description
+		s.Sensitive = meta.Sensitive
+		s.Min = meta.Min
+		s.Max = meta.Max
+		if idx := strings.IndexByte(s.Key, '.'); idx >= 0 {
+			s.Namespace = s.Key[:idx]
+		}
+		if meta.Options != "" {
+			var opts []any
+			if err := json.Unmarshal([]byte(meta.Options), &opts); err == nil {
+				s.Options = opts
+			}
+		}
+		settings = append(settings, s)
+	}
+	// Include catalog entries not yet stored in DB.
+	storedKeys := make(map[string]bool, len(settings))
+	for _, s := range settings {
+		storedKeys[s.Key] = true
+	}
+	for key, meta := range settingsCatalog {
+		if storedKeys[key] {
+			continue
+		}
+		var ns string
+		if idx := strings.IndexByte(key, '.'); idx >= 0 {
+			ns = key[:idx]
+		}
+		var opts []any
+		if meta.Options != "" {
+			json.Unmarshal([]byte(meta.Options), &opts)
+		}
+		settings = append(settings, enrichedSetting{
+			Key:          key,
+			Value:        meta.DefaultValue,
+			Type:         meta.Type,
+			DefaultValue: meta.DefaultValue,
+			Description:  meta.Description,
+			Namespace:    ns,
+			Min:          meta.Min,
+			Max:          meta.Max,
+			Sensitive:    meta.Sensitive,
+			Options:      opts,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+}
+
+// UpdateTenantSettings handles PATCH /control/tenants/:id/settings (bulk).
+func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		return
+	}
+	var input map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	for key, value := range input {
+		data, _ := json.Marshal(value)
+		_, err := h.DB.Writer.Exec(r.Context(),
+			`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
+			tenantID, key, string(data),
+		)
+		if err != nil {
+			slog.Error("control: update tenant setting", "key", key, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
+			return
+		}
+	}
+	if h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+}
+
+// UpdateTenantSettingKey handles PATCH /control/tenants/:id/settings/:key.
+func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		return
+	}
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		return
+	}
+	var input struct {
+		Value    any  `json:"value"`
+		IsPublic *bool `json:"is_public"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	data, _ := json.Marshal(input.Value)
+	if input.IsPublic != nil {
+		_, err := h.DB.Writer.Exec(r.Context(),
+			`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, is_public = $4, updated_at = NOW()`,
+			tenantID, key, string(data), *input.IsPublic,
+		)
+		if err != nil {
+			slog.Error("control: update tenant setting key", "key", key, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+			return
+		}
+	} else {
+		_, err := h.DB.Writer.Exec(r.Context(),
+			`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
+			tenantID, key, string(data),
+		)
+		if err != nil {
+			slog.Error("control: update tenant setting key", "key", key, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+			return
+		}
+	}
+	if h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
+}
+
+// ResetTenantSetting handles POST /control/tenants/:id/settings/:key/reset.
+func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		return
+	}
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		return
+	}
+	tag, err := h.DB.Writer.Exec(r.Context(),
+		`DELETE FROM system_settings WHERE tenant_id = $1 AND key = $2`,
+		tenantID, key,
+	)
+	if err != nil {
+		slog.Error("control: reset tenant setting", "key", key, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
+		return
+	}
+	if h.Settings != nil {
+		h.Settings.InvalidateSettings(r.Context(), tenantID)
+	}
+	defaultValue := ""
+	if meta, ok := settingsCatalog[key]; ok {
+		defaultValue = meta.DefaultValue
+	}
+	if tag.RowsAffected() == 0 {
 		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
 		return
 	}

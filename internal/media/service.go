@@ -261,6 +261,21 @@ func (s *Service) RejectMedia(ctx context.Context, mediaID, tenantID, reviewerID
 	return s.store.RejectQuarantined(ctx, mediaID, tenantID, reviewerID)
 }
 
+// AdminUpdateStatus allows admin to change media status (approve/reject/quarantine) for any item.
+func (s *Service) AdminUpdateStatus(ctx context.Context, tenantID, mediaID, reviewerID pgtype.UUID, confirmed bool, quarantineReason *string) error {
+	var reason string
+	if quarantineReason != nil {
+		reason = *quarantineReason
+	}
+	return s.store.AdminUpdateStatus(ctx, gen.AdminUpdateMediaStatusParams{
+		ID:              mediaID,
+		TenantID:        tenantID,
+		Confirmed:       confirmed,
+		QuarantineReason: reason,
+		ReviewedBy:      reviewerID,
+	})
+}
+
 // ListQuarantined returns all quarantined media items for a tenant.
 func (s *Service) ListQuarantined(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]QuarantinedMedia, error) {
 	return s.store.ListQuarantined(ctx, tenantID, limit, offset)
@@ -276,8 +291,8 @@ func (s *Service) GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (
 	return s.store.GetMediaByID(ctx, mediaID, tenantID)
 }
 
-// UpdateMetadata updates alt_text, caption, dimensions on a media item.
-func (s *Service) UpdateMetadata(ctx context.Context, tenantID, mediaID pgtype.UUID, altText, caption *string, width, height *int32, duration *float64) error {
+// UpdateMetadata updates alt_text, caption, dimensions, and user_group_id on a media item.
+func (s *Service) UpdateMetadata(ctx context.Context, tenantID, mediaID pgtype.UUID, altText, caption *string, width, height *int32, duration *float64, userGroupID pgtype.UUID) error {
 	var durationNum pgtype.Numeric
 	if duration != nil {
 		_ = durationNum.Scan(fmt.Sprintf("%f", *duration))
@@ -291,6 +306,7 @@ func (s *Service) UpdateMetadata(ctx context.Context, tenantID, mediaID pgtype.U
 		WidthPx:      width,
 		HeightPx:     height,
 		DurationSecs: durationNum,
+		UserGroupID:  userGroupID,
 	})
 }
 
@@ -352,4 +368,26 @@ func IsAllowedMIMEType(mimeType string) bool {
 // NormalizeMIMEType normalizes a MIME type to a canonical form for comparison.
 func NormalizeMIMEType(mimeType string) string {
 	return strings.ToLower(strings.TrimSpace(mimeType))
+}
+
+// DirectUpload stores a file locally and creates the media record.
+func (s *Service) DirectUpload(ctx context.Context, tenantID, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64, localPath, storagePath string) (pgtype.UUID, error) {
+	m, err := s.store.InsertMedia(ctx, gen.InsertMediaParams{
+		TenantID:         tenantID,
+		UploaderUserID:   uploaderID,
+		OriginalFilename: filename,
+		MimeType:         mimeType,
+		FileSizeBytes:    fileSize,
+		StoragePath:      storagePath,
+		StorageBucket:    DefaultBucket,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("inserting media record: %w", err)
+	}
+
+	if err := s.store.ConfirmMedia(ctx, m.ID, tenantID); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("confirming media: %w", err)
+	}
+
+	return m.ID, nil
 }

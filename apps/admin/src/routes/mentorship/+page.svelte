@@ -426,7 +426,7 @@
 </Modal>
 
 <!-- Action Cell -->
-{#snippet ProgramActionsCell(row: Program)}
+{#snippet ProgramActionsCell({ value, row }: { value: any; row: Program })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			<Eye class="h-3.5 w-3.5" />

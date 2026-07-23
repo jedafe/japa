@@ -207,7 +207,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 
 	status := "active"
 	if !input.Verified {
-		status = "active"
+		status = "pending"
 	}
 
 	space, err := h.spaces.CreateSpace(r.Context(), gen.CreateSpaceParams{
@@ -323,8 +323,39 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = tenantID
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id"), "verified": true}})
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		return
+	}
+
+	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		return
+	}
+
+	space, err := h.spaces.UpdateSpace(r.Context(), gen.UpdateSpaceParams{
+		ID:             id,
+		TenantID:       tenantID,
+		Name:           existing.Name,
+		Description:    existing.Description,
+		WikiContent:    existing.WikiContent,
+		GeoCode:        existing.GeoCode,
+		Visibility:     existing.Visibility,
+		PostingPerm:    existing.PostingPerm,
+		ReplyingPerm:   existing.ReplyingPerm,
+		CommentingPerm: existing.CommentingPerm,
+		JoiningPerm:    existing.JoiningPerm,
+		Status:         "active",
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify university")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
 // CompareUniversities handles GET /universities/:id/compare.

@@ -11,6 +11,10 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
+// ErrUpgradeToBusinessRequired is returned when a personal profile type user
+// attempts to create a professional profile.
+var ErrUpgradeToBusinessRequired = errors.New("upgrade_to_business_required")
+
 // ---------------------------------------------------------------------------
 // Profile Type Definitions
 // ---------------------------------------------------------------------------
@@ -115,7 +119,17 @@ type CreateProfessionalProfileInput struct {
 }
 
 // CreateProfessionalProfile creates a new professional profile.
+// Only users with 'business' or 'organisation' profile type can create professional profiles.
 func (s *Service) CreateProfessionalProfile(ctx context.Context, tenantID, ownerUserID pgtype.UUID, input CreateProfessionalProfileInput) (gen.ProfessionalProfile, error) {
+	// Profile type gate: personal users cannot create professional profiles
+	profileType, err := s.store.getUserProfileType(ctx, ownerUserID, tenantID)
+	if err != nil {
+		return gen.ProfessionalProfile{}, fmt.Errorf("checking user profile type: %w", err)
+	}
+	if profileType == "personal" {
+		return gen.ProfessionalProfile{}, ErrUpgradeToBusinessRequired
+	}
+
 	if input.Name == "" {
 		return gen.ProfessionalProfile{}, errors.New("name is required")
 	}

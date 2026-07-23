@@ -32,14 +32,26 @@
 
 	let allPermissions = $state<string[]>([]);
 	let permSearch = $state('');
+	let permCategory = $state('');
 	let searchQuery = $state("");
 
 	const canManageGroups = $derived(hasPermission('admin.rbac.manage'));
 
+	const permissionCategories = $derived(() => {
+		const cats = new Set<string>();
+		for (const p of allPermissions) {
+			const dot = p.indexOf('.');
+			if (dot > 0) cats.add(p.slice(0, dot));
+		}
+		return [...cats].sort();
+	});
+
 	const filteredPermissions = $derived(
-		permSearch
-			? allPermissions.filter((p) => p.toLowerCase().includes(permSearch.toLowerCase()))
-			: allPermissions
+		allPermissions.filter((p) => {
+			if (permCategory && !p.startsWith(permCategory + '.') && !(permCategory === 'other' && !p.includes('.'))) return false;
+			if (permSearch && !p.toLowerCase().includes(permSearch.toLowerCase())) return false;
+			return true;
+		})
 	);
 
 	async function load() {
@@ -49,6 +61,7 @@
 				page: String(currentPage + 1),
 				limit: String(pageSize)
 			});
+			if (searchQuery) params.set('search', searchQuery);
 			const [groupsResult, permsResult] = await Promise.all([
 				userManagementApi.listGroups(params.toString()),
 				permissionsApi.list()
@@ -59,12 +72,10 @@
 				totalItems = d.total ?? 0;
 				totalPages = Math.ceil(totalItems / pageSize) || 1;
 			}
-			if (searchQuery) {
-				const q = searchQuery.toLowerCase();
-				groups = groups.filter((g: any) => g.name?.toLowerCase().includes(q) || g.description?.toLowerCase().includes(q));
-			}
 			if (permsResult.ok) allPermissions = permsResult.data;
-		} catch { /* ignore */ }
+		} catch (e) {
+			console.error('Failed to load groups:', e);
+		}
 		finally { loading = false; }
 	}
 
@@ -73,6 +84,8 @@
 		formDescription = '';
 		formPermissions = [];
 		saveError = '';
+		permSearch = '';
+		permCategory = '';
 		showModal = true;
 	}
 
@@ -95,12 +108,12 @@
 		if (selectedIds.size === 0) return;
 		bulkDeleting = true;
 		try {
-			for (const id of selectedIds) {
-				await userManagementApi.deleteGroup(id);
-			}
+			await Promise.all([...selectedIds].map((id) => userManagementApi.deleteGroup(id)));
 			selectedIds = new Set();
 			load();
-		} catch { /* ignore */ }
+		} catch (e) {
+			console.error('Bulk delete failed:', e);
+		}
 		bulkDeleting = false;
 	}
 
@@ -135,6 +148,7 @@
 	$effect(() => {
 		void currentPage;
 		void pageSize;
+		void searchQuery;
 		load();
 	});
 </script>
@@ -162,14 +176,14 @@
 				data={groups}
 				emptyMessage={t('users.groups.empty', 'No groups found')}
 				searchable
-				onsearch={(q) => { searchQuery = q; load(); }}
+				onsearch={(q) => { searchQuery = q; currentPage = 0; }}
 				selectable
 				bind:selectedIds
 			>
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
 						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedIds.size})
+						{bulkDeleting ? t('common.deleting', 'Deleting...') : t('users.groups.delete_selected', 'Delete Selected')} ({selectedIds.size})
 					</Button>
 				{/snippet}
 			</DataTable>
@@ -213,13 +227,26 @@
 		</div>
 		<div>
 			<p class="mb-2 text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.permissions', 'Permissions')}</p>
-			<input
-				type="text"
-				class="mb-2 w-full rounded-md border px-3 py-1.5 text-xs"
-				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-				placeholder={t('users.groups.search_permissions', 'Search permissions...')}
-				bind:value={permSearch}
-			/>
+			<div class="mb-2 flex gap-2">
+				<select
+					class="flex-1 rounded-md border px-2 py-1.5 text-xs"
+					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+					bind:value={permCategory}
+				>
+					<option value="">All categories</option>
+					{#each permissionCategories() as cat}
+						<option value={cat}>{cat}</option>
+					{/each}
+					<option value="other">Other</option>
+				</select>
+				<input
+					type="text"
+					class="flex-1 rounded-md border px-2 py-1.5 text-xs"
+					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+					placeholder={t('users.groups.search_permissions', 'Search permissions...')}
+					bind:value={permSearch}
+				/>
+			</div>
 			<div class="grid max-h-60 grid-cols-2 gap-2 overflow-y-auto">
 				{#each filteredPermissions as perm}
 					<label class="flex items-center gap-2 text-xs">

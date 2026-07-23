@@ -70,6 +70,7 @@
   "api_keys.tab_all": "Toutes les clés",
   "api_keys.tier": "Niveau",
   "api_keys.tier_all": "Tous les niveaux",
+  "api_keys.tier_basic": "Basique",
   "api_keys.tier_standard": "Standard",
   "api_keys.tier_premium": "Premium",
   "api_keys.tier_unlimited": "Illimité",

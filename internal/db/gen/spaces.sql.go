@@ -48,6 +48,119 @@ func (q *Queries) AddSpaceMember(ctx context.Context, arg AddSpaceMemberParams) 
 	return err
 }
 
+const adminListSpaces = `-- name: AdminListSpaces :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at,
+       COALESCE(u.username, '') AS owner,
+       COALESCE(u.id::text, '') AS owner_id,
+       COALESCE(st.name, '') AS space_type
+FROM spaces s
+LEFT JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id AND sm.role = 'owner'
+LEFT JOIN users u ON u.id = sm.user_id AND u.tenant_id = s.tenant_id
+LEFT JOIN space_types st ON st.id = s.space_type_id AND st.tenant_id = s.tenant_id
+WHERE s.tenant_id = $1
+ORDER BY s.created_at DESC, s.id DESC
+LIMIT $3 OFFSET $2
+`
+
+type AdminListSpacesParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	OffsetVal int32       `json:"offset_val"`
+	LimitVal  int32       `json:"limit_val"`
+}
+
+type AdminListSpacesRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	Owner          string             `json:"owner"`
+	OwnerID        interface{}        `json:"owner_id"`
+	SpaceType      string             `json:"space_type"`
+}
+
+func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams) ([]AdminListSpacesRow, error) {
+	rows, err := q.db.Query(ctx, adminListSpaces, arg.TenantID, arg.OffsetVal, arg.LimitVal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminListSpacesRow
+	for rows.Next() {
+		var i AdminListSpacesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Owner,
+			&i.OwnerID,
+			&i.SpaceType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminListSpacesCount = `-- name: AdminListSpacesCount :one
+SELECT COUNT(*) AS total
+FROM spaces s
+WHERE s.tenant_id = $1
+`
+
+func (q *Queries) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, adminListSpacesCount, tenantID)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const assignSpaceModerator = `-- name: AssignSpaceModerator :exec
 
 INSERT INTO space_moderators (tenant_id, space_id, user_id, assigned_by, assigned_by_user_id)
@@ -251,9 +364,9 @@ func (q *Queries) CreateSpaceRule(ctx context.Context, arg CreateSpaceRuleParams
 }
 
 const createSpaceType = `-- name: CreateSpaceType :one
-INSERT INTO space_types (tenant_id, name, slug, description, icon, field_group_id, is_system)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at
+INSERT INTO space_types (tenant_id, name, slug, description, icon, field_group_id, is_university, is_system)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
 `
 
 type CreateSpaceTypeParams struct {
@@ -263,6 +376,7 @@ type CreateSpaceTypeParams struct {
 	Description  *string     `json:"description"`
 	Icon         *string     `json:"icon"`
 	FieldGroupID pgtype.UUID `json:"field_group_id"`
+	IsUniversity bool        `json:"is_university"`
 	IsSystem     bool        `json:"is_system"`
 }
 
@@ -274,6 +388,7 @@ func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams
 		arg.Description,
 		arg.Icon,
 		arg.FieldGroupID,
+		arg.IsUniversity,
 		arg.IsSystem,
 	)
 	var i SpaceType
@@ -288,6 +403,7 @@ func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams
 		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsUniversity,
 	)
 	return i, err
 }
@@ -621,7 +737,7 @@ func (q *Queries) GetSpaceModerator(ctx context.Context, arg GetSpaceModeratorPa
 }
 
 const getSpaceTypeByID = `-- name: GetSpaceTypeByID :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
 FROM space_types
 WHERE id = $1 AND tenant_id = $2
 `
@@ -645,12 +761,13 @@ func (q *Queries) GetSpaceTypeByID(ctx context.Context, arg GetSpaceTypeByIDPara
 		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsUniversity,
 	)
 	return i, err
 }
 
 const getSpaceTypeBySlug = `-- name: GetSpaceTypeBySlug :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
 FROM space_types
 WHERE slug = $1 AND tenant_id = $2
 `
@@ -674,6 +791,7 @@ func (q *Queries) GetSpaceTypeBySlug(ctx context.Context, arg GetSpaceTypeBySlug
 		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsUniversity,
 	)
 	return i, err
 }
@@ -1144,7 +1262,7 @@ func (q *Queries) ListSpaceRulesBySpace(ctx context.Context, spaceID pgtype.UUID
 
 const listSpaceTypesByTenant = `-- name: ListSpaceTypesByTenant :many
 
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
 FROM space_types
 WHERE tenant_id = $1
 ORDER BY created_at ASC, id ASC
@@ -1173,6 +1291,7 @@ func (q *Queries) ListSpaceTypesByTenant(ctx context.Context, tenantID pgtype.UU
 			&i.IsSystem,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IsUniversity,
 		); err != nil {
 			return nil, err
 		}
@@ -1864,9 +1983,9 @@ func (q *Queries) UpdateSpaceStatus(ctx context.Context, arg UpdateSpaceStatusPa
 const updateSpaceType = `-- name: UpdateSpaceType :one
 UPDATE space_types
 SET name = $1, description = $2, icon = $3,
-    field_group_id = $4
-WHERE id = $5 AND tenant_id = $6 AND is_system = false
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at
+    field_group_id = $4, is_university = $5
+WHERE id = $6 AND tenant_id = $7 AND is_system = false
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
 `
 
 type UpdateSpaceTypeParams struct {
@@ -1874,6 +1993,7 @@ type UpdateSpaceTypeParams struct {
 	Description  *string     `json:"description"`
 	Icon         *string     `json:"icon"`
 	FieldGroupID pgtype.UUID `json:"field_group_id"`
+	IsUniversity bool        `json:"is_university"`
 	ID           pgtype.UUID `json:"id"`
 	TenantID     pgtype.UUID `json:"tenant_id"`
 }
@@ -1884,6 +2004,7 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 		arg.Description,
 		arg.Icon,
 		arg.FieldGroupID,
+		arg.IsUniversity,
 		arg.ID,
 		arg.TenantID,
 	)
@@ -1899,6 +2020,7 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 		&i.IsSystem,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsUniversity,
 	)
 	return i, err
 }

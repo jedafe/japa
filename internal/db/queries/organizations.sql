@@ -12,12 +12,24 @@ SELECT * FROM organizations
 WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL;
 
 -- name: ListOrganizations :many
-SELECT * FROM organizations
+SELECT o.*, u.username AS owner_username
+FROM organizations o
+LEFT JOIN users u ON u.id = o.owner_user_id
+WHERE o.tenant_id = $1 AND o.deleted_at IS NULL
+  AND ($2::text = '' OR o.org_type = $2)
+  AND ($3::text = '' OR o.country_code = $3)
+  AND ($4::text = '' OR o.name ILIKE '%' || $4 || '%' OR o.slug ILIKE '%' || $4 || '%')
+  AND ($5::text = '' OR o.verified = ($5 = 'true'))
+ORDER BY o.created_at DESC
+LIMIT $6 OFFSET $7;
+
+-- name: CountOrganizations :one
+SELECT COUNT(*) FROM organizations
 WHERE tenant_id = $1 AND deleted_at IS NULL
   AND ($2::text = '' OR org_type = $2)
   AND ($3::text = '' OR country_code = $3)
-ORDER BY created_at DESC
-LIMIT $4 OFFSET $5;
+  AND ($4::text = '' OR name ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
+  AND ($5::text = '' OR verified = ($5 = 'true'));
 
 -- name: UpdateOrganization :exec
 UPDATE organizations
@@ -85,6 +97,25 @@ WHERE oc.tenant_id = $1
   AND ($2::text = '' OR oc.status = $2)
 ORDER BY oc.created_at DESC
 LIMIT $3 OFFSET $4;
+
+-- name: GetPendingOwnershipClaim :one
+SELECT id FROM ownership_claims
+WHERE organization_id = $1 AND tenant_id = $2 AND status = 'pending'
+ORDER BY created_at DESC LIMIT 1;
+
+-- name: GetPendingOwnershipClaims :many
+SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at,
+       u.username AS claimant_username, o.name AS org_name
+FROM ownership_claims oc
+JOIN users u ON u.id = oc.claimant_user_id
+JOIN organizations o ON o.id = oc.organization_id
+WHERE oc.tenant_id = $1 AND oc.status = 'pending'
+ORDER BY oc.created_at DESC;
+
+-- name: ApproveOwnershipClaim :exec
+UPDATE ownership_claims
+SET status = 'approved', reviewed_by = $3, resolution_note = $4, reviewed_at = now()
+WHERE id = $1 AND tenant_id = $2;
 
 -- name: ReviewOwnershipClaim :exec
 UPDATE ownership_claims

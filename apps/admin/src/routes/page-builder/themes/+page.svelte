@@ -260,7 +260,7 @@
 </Modal>
 
 <!-- ThemeActionsCell -->
-{#snippet ThemeActionsCell(row: PageTheme)}
+{#snippet ThemeActionsCell({ value, row }: { value: any; row: PageTheme })}
 	<div class="flex items-center gap-1">
 		{#if canManageThemes}
 			{#if !row.is_default}

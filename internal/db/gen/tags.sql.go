@@ -46,6 +46,68 @@ func (q *Queries) AddTagModerator(ctx context.Context, arg AddTagModeratorParams
 	return i, err
 }
 
+const adminCountTags = `-- name: AdminCountTags :one
+SELECT COUNT(*)::int AS count
+FROM tags
+WHERE tenant_id = $1
+  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
+`
+
+type AdminCountTagsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Q        string      `json:"q"`
+}
+
+func (q *Queries) AdminCountTags(ctx context.Context, arg AdminCountTagsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, adminCountTags, arg.TenantID, arg.Q)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const adminListTags = `-- name: AdminListTags :many
+SELECT id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
+FROM tags
+WHERE tenant_id = $1
+  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
+ORDER BY name
+`
+
+type AdminListTagsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Q        string      `json:"q"`
+}
+
+func (q *Queries) AdminListTags(ctx context.Context, arg AdminListTagsParams) ([]Tag, error) {
+	rows, err := q.db.Query(ctx, adminListTags, arg.TenantID, arg.Q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Tag
+	for rows.Next() {
+		var i Tag
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.Color,
+			&i.FollowerCount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createTag = `-- name: CreateTag :one
 
 INSERT INTO tags (tenant_id, name, slug, description, color)

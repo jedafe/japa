@@ -715,8 +715,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 // GET /admin/ai/context/{user_id}.
 func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) {
 	if h.Honcho == nil {
-		writeError(w, http.StatusServiceUnavailable, "honcho_unavailable", "Honcho client not configured")
-
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 

@@ -68,11 +68,14 @@ async function dispatch<T>(
 		? { Authorization: `Bearer ${accessToken}` }
 		: {};
 
+	const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+	const jsonHeader = isFormData ? {} : { 'Content-Type': 'application/json' };
+
 	const res = await fetcher(url, {
 		...options,
 		credentials: 'include',
 		headers: {
-			'Content-Type': 'application/json',
+			...jsonHeader,
 			...authHeader,
 			...(headers ?? {}),
 		},
@@ -89,7 +92,7 @@ async function dispatch<T>(
 				...options,
 				credentials: 'include',
 				headers: {
-					'Content-Type': 'application/json',
+					...jsonHeader,
 					...retryAuth,
 					...csrfHeaders(options.method, headers),
 				},

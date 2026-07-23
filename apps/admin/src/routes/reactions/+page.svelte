@@ -296,16 +296,16 @@
 	</p>
 </Modal>
 
-{#snippet ReactionActionsCell(reaction: ReactionType)}
+{#snippet ReactionActionsCell({ value, row }: { value: any; row: ReactionType })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(reaction)}>
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			{t('common.view')}
 		</Button>
 		{#if canManageReactions}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(reaction)}>
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
 				{t('common.edit')}
 			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(reaction)} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 				{t('common.delete')}
 			</Button>
 		{/if}

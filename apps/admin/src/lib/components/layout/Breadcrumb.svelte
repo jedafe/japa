@@ -58,16 +58,16 @@
 					label = t('ai.generate.title');
 					break;
 				case 'learning':
-					label = 'Learning';
+					label = t('learning.title');
 					break;
 				case 'mentorship':
-					label = 'Mentorship';
+					label = t('mentorship.title');
 					break;
 				case 'webhooks':
-					label = 'Webhooks';
+					label = t('webhooks.title');
 					break;
 				case 'i18n':
-					label = 'Translations';
+					label = t('i18n.title');
 					break;
 				case 'spaces':
 					label = t('spaces.title');

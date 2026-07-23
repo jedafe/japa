@@ -180,7 +180,7 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListUsers handles GET /api/v1/users for admin user listing.
-// Query params: search, page_size (default 20, max 100), page_offset (default 0).
+// Query params: search, status, group, page_size (default 20, max 100), page_offset (default 0).
 func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -196,8 +196,10 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 	search := r.URL.Query().Get("search")
+	status := r.URL.Query().Get("status")
+	groupSlug := r.URL.Query().Get("group")
 
-	result, err := h.Service.ListUsers(r.Context(), tenantID, search, limit, offset)
+	result, err := h.Service.ListUsers(r.Context(), tenantID, search, status, groupSlug, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -230,6 +232,29 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": sessions})
+}
+
+// GetAdminUser handles GET /api/v1/admin/users/{id}.
+// Resolves the user by UUID (not username) for admin detail views.
+func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	profile, err := h.Service.GetProfile(r.Context(), tenantID, userID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // ListUserActivity handles GET /api/v1/admin/users/{id}/activity.
@@ -294,6 +319,46 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"id": userID.String(), "status": "deleted"})
+}
+
+// UpdateProfileType handles PATCH /api/v1/admin/users/{id}/profile-type.
+// Allows admins to change a user's profile_type (personal, business, organisation).
+func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	if user := auth.FromContext(r.Context()); user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	var req struct {
+		ProfileType string `json:"profile_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+
+	validTypes := map[string]bool{"personal": true, "business": true, "organisation": true}
+	if !validTypes[req.ProfileType] {
+		writeError(w, http.StatusBadRequest, "invalid_type", "profile_type must be personal, business, or organisation")
+		return
+	}
+
+	if err := h.Service.UpdateProfileType(r.Context(), tenantID, userID, req.ProfileType); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"id": userID.String(), "profile_type": req.ProfileType})
 }
 
 // ---------------------------------------------------------------------------

@@ -469,7 +469,7 @@
 </Modal>
 
 <!-- Action Cells -->
-{#snippet IpActionsCell(row: IpBlock)}
+{#snippet IpActionsCell({ value, row }: { value: any; row: IpBlock })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openView("ip-block", row)}>
 			<Eye class="h-3.5 w-3.5" />
@@ -482,7 +482,7 @@
 	</div>
 {/snippet}
 
-{#snippet CwActionsCell(row: CensoredWord)}
+{#snippet CwActionsCell({ value, row }: { value: any; row: CensoredWord })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openView("censored-word", row)}>
 			<Eye class="h-3.5 w-3.5" />
@@ -495,7 +495,7 @@
 	</div>
 {/snippet}
 
-{#snippet UbActionsCell(row: UserBlock)}
+{#snippet UbActionsCell({ value, row }: { value: any; row: UserBlock })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openView("user-block", row)}>
 			<Eye class="h-3.5 w-3.5" />

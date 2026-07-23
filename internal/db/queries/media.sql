@@ -33,7 +33,8 @@ SET alt_text = COALESCE(@alt_text, alt_text),
     caption = COALESCE(@caption, caption),
     width_px = COALESCE(@width_px, width_px),
     height_px = COALESCE(@height_px, height_px),
-    duration_secs = COALESCE(@duration_secs, duration_secs)
+    duration_secs = COALESCE(@duration_secs, duration_secs),
+    user_group_id = @user_group_id
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: UpdateMediaStoragePath :exec
@@ -75,7 +76,7 @@ SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
        file_size_bytes, width_px, height_px, duration_secs, storage_path,
        storage_bucket, alt_text, caption, confirmed, deleted_at,
        quarantine_reason, quarantined_at, reviewed_by, reviewed_at,
-       created_at
+       created_at, user_group_id
 FROM media
 WHERE tenant_id = @tenant_id
   AND quarantine_reason IS NOT NULL
@@ -130,3 +131,11 @@ WHERE tenant_id = @tenant_id AND uploader_user_id = @uploader_user_id AND delete
 -- name: BulkSoftDeleteMedia :exec
 UPDATE media SET deleted_at = now()
 WHERE id = ANY(@media_ids::uuid[]) AND tenant_id = @tenant_id;
+
+-- name: AdminUpdateMediaStatus :exec
+UPDATE media
+SET confirmed = @confirmed,
+    quarantine_reason = @quarantine_reason::text,
+    reviewed_by = @reviewed_by,
+    reviewed_at = CASE WHEN @quarantine_reason IS NULL AND @confirmed THEN now() ELSE reviewed_at END
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;

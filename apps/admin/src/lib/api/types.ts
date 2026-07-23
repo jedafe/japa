@@ -16,6 +16,7 @@ export interface User {
 	email: string;
 	groups: string[];
 	status: 'active' | 'suspended' | 'banned' | 'pending';
+	profile_type: 'personal' | 'business' | 'organisation';
 	created_at: string;
 	avatar_url?: string;
 	last_login_at?: string;
@@ -30,6 +31,7 @@ export interface UserDetail extends User {
 	ai_context_summary?: string;
 	wallet_balances?: { points: number; credits: number };
 	subscription_status?: string;
+	profile_type: 'personal' | 'business' | 'organisation';
 }
 
 export interface Ban {

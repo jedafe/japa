@@ -217,6 +217,7 @@ type QuarantinedMedia struct {
 	ReviewedBy       pgtype.UUID         `json:"reviewed_by,omitempty"`
 	ReviewedAt       pgtype.Timestamptz  `json:"reviewed_at,omitempty"`
 	CreatedAt        pgtype.Timestamptz  `json:"created_at"`
+	UserGroupID      pgtype.UUID         `json:"user_group_id,omitempty"`
 }
 
 // ScanMediaRow holds the minimal fields needed for virus scanning.
@@ -320,6 +321,14 @@ func (s *Store) RejectQuarantined(ctx context.Context, mediaID, tenantID, review
 		TenantID:   tenantID,
 	}); err != nil {
 		return fmt.Errorf("rejecting quarantined media: %w", err)
+	}
+	return nil
+}
+
+// AdminUpdateStatus allows admin to change media status for any item.
+func (s *Store) AdminUpdateStatus(ctx context.Context, params gen.AdminUpdateMediaStatusParams) error {
+	if err := s.write.AdminUpdateMediaStatus(ctx, params); err != nil {
+		return fmt.Errorf("updating media status: %w", err)
 	}
 	return nil
 }

@@ -246,13 +246,13 @@
 	</div>
 </Modal>
 
-{#snippet TemplateActionsCell(tpl: PageTemplate)}
+{#snippet TemplateActionsCell({ value, row }: { value: any; row: PageTemplate })}
 	{#if canManage}
 		<div class="flex items-center gap-1">
-			<Button variant="ghost" size="sm" onclick={() => openEdit(tpl)}>
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
 				<Pencil class="h-3 w-3" style="color: var(--color-primary)" />
 			</Button>
-			<Button variant="ghost" size="sm" onclick={() => deleteTemplate(tpl.id)} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => deleteTemplate(row.id)} style="color: var(--color-danger)">
 				<Trash2 class="h-3 w-3" />
 			</Button>
 		</div>

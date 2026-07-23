@@ -60,6 +60,19 @@ func (q *Queries) AssignRoleToGroup(ctx context.Context, arg AssignRoleToGroupPa
 	return err
 }
 
+const countRoles = `-- name: CountRoles :one
+SELECT COUNT(*)::int AS count
+FROM user_roles
+WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%')
+`
+
+func (q *Queries) CountRoles(ctx context.Context, search string) (int32, error) {
+	row := q.db.QueryRow(ctx, countRoles, search)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUserGroup = `-- name: CreateUserGroup :one
 INSERT INTO user_groups (tenant_id, name, slug)
 VALUES ($1, $2, $3)
@@ -390,6 +403,46 @@ func (q *Queries) ListRolePermissionsByKey(ctx context.Context, roleID pgtype.UU
 	for rows.Next() {
 		var i ListRolePermissionsByKeyRow
 		if err := rows.Scan(&i.Key, &i.Description); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRolesPaginated = `-- name: ListRolesPaginated :many
+SELECT id, name, slug
+FROM user_roles
+WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%')
+ORDER BY name
+LIMIT $3 OFFSET $2
+`
+
+type ListRolesPaginatedParams struct {
+	Search     string `json:"search"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
+}
+
+type ListRolesPaginatedRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+	Slug string      `json:"slug"`
+}
+
+func (q *Queries) ListRolesPaginated(ctx context.Context, arg ListRolesPaginatedParams) ([]ListRolesPaginatedRow, error) {
+	rows, err := q.db.Query(ctx, listRolesPaginated, arg.Search, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRolesPaginatedRow
+	for rows.Next() {
+		var i ListRolesPaginatedRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -3,11 +3,12 @@
   import { Select } from "$lib/components/ui/select";
   import { Search, X } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
+  import { t } from "$lib/stores/i18n.svelte";
   
   let {
     filters = [],
     value = $bindable({}),
-    searchPlaceholder = "Search...",
+    searchPlaceholder,
     onsearch,
     onclear,
     class: className
@@ -49,7 +50,7 @@
     <input
       type="text"
       bind:value={searchQuery}
-      placeholder={searchPlaceholder}
+      placeholder={searchPlaceholder ?? t("common.search_placeholder", "Search...")}
       class="h-10 w-full rounded-lg border border bg-surface pl-10 pr-4 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
       onkeydown={handleKeydown}
     />
@@ -67,11 +68,11 @@
   
   <Button variant="default" onclick={handleSearch}>
     <Search class="h-4 w-4 mr-2" />
-    Search
+    {t("common.search", "Search")}
   </Button>
   
   <Button variant="ghost" onclick={handleClear}>
     <X class="h-4 w-4 mr-2" />
-    Clear
+    {t("common.clear", "Clear")}
   </Button>
 </div>
