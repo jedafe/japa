@@ -416,16 +416,16 @@
 </Modal>
 
 <!-- FieldGroupActionsCell snippet for DataTable -->
-{#snippet FieldGroupActionsCell(group: FieldGroup)}
+{#snippet FieldGroupActionsCell({ value, row }: { value: any; row: FieldGroup })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openPermissions(group)} title={t('fieldGroups.permissions')}>
+		<Button variant="ghost" size="sm" onclick={() => openPermissions(row)} title={t('fieldGroups.permissions')}>
 			<Shield class="h-3.5 w-3.5" style="color: var(--color-primary)" />
 		</Button>
 		{#if canManageFields}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(group)}>
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(group)} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 				<Trash2 class="h-3.5 w-3.5" />
 			</Button>
 		{/if}

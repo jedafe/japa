@@ -158,7 +158,7 @@
 	});
 </script>
 
-{#snippet AppealActionsCell(row: Appeal)}
+{#snippet AppealActionsCell({ value, row }: { value: any; row: Appeal })}
 	{#if canManage && row.status === 'pending'}
 		<div class="flex items-center gap-1">
 			<button
@@ -232,14 +232,14 @@
 							style="background-color: var(--color-success)"
 							onclick={() => openAction(expanded, 'approve')}
 						>
-							Approve Appeal (Reverse Action)
+							{t('moderation.approve_appeal')}
 						</button>
 						<button
 							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
 							style="background-color: var(--color-danger)"
 							onclick={() => openAction(expanded, 'deny')}
 						>
-							Deny Appeal
+							{t('moderation.deny_appeal')}
 						</button>
 					</div>
 				{/if}
@@ -251,14 +251,14 @@
 <!-- Action Modal -->
 <Modal
 	bind:open={showActionModal}
-	title={actionType === 'approve' ? 'Approve Appeal' : 'Deny Appeal'}
+	title={actionType === 'approve' ? t('moderation.approve_appeal') : t('moderation.deny_appeal')}
 	onConfirm={executeAction}
-	confirmLabel={acting ? t('common.saving') : actionType === 'approve' ? 'Approve' : 'Deny'}
+	confirmLabel={acting ? t('common.saving') : actionType === 'approve' ? t('moderation.approve') : t('moderation.deny')}
 >
 	<p class="text-sm mb-3" style="color: var(--color-muted)">
 		{actionType === 'approve'
-			? 'This will reverse the original action and restore the user\'s access.'
-			: 'This will deny the appeal and keep the original action in place.'}
+			? t('moderation.approve_appeal_desc')
+			: t('moderation.deny_appeal_desc')}
 	</p>
 	<textarea
 		class="w-full rounded-md border px-3 py-2 text-sm"

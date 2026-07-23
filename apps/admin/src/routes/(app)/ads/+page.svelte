@@ -498,7 +498,7 @@
 </Modal>
 
 <!-- CampaignActionsCell component -->
-{#snippet CampaignActionsCell(row: Campaign)}
+{#snippet CampaignActionsCell({ value, row }: { value: any; row: Campaign })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => viewStats(row.id)} title={t('ads.stats')}>
 			<Eye class="h-3.5 w-3.5" />
@@ -515,7 +515,7 @@
 {/snippet}
 
 <!-- BoostActionsCell component -->
-{#snippet BoostActionsCell(row: ActiveBoost)}
+{#snippet BoostActionsCell({ value, row }: { value: any; row: ActiveBoost })}
 	<div class="flex items-center gap-1">
 		{#if canManageAds && row.status === 'active'}
 			<Button variant="ghost" size="sm" onclick={() => confirmEndBoost(row)} style="color: var(--color-danger)" title={t('ads.end')}>

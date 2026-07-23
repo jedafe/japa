@@ -576,7 +576,7 @@
 	{/if}
 </Modal>
 
-{#snippet SubscriberActionsCell(row: Subscriber)}
+{#snippet SubscriberActionsCell({ value, row }: { value: any; row: Subscriber })}
 	<div class="flex items-center gap-1">
 		{#if canManageNewsletter}
 		<Button variant="ghost" size="sm" onclick={() => openEditSubscriber(row)}>
@@ -589,7 +589,7 @@
 	</div>
 {/snippet}
 
-{#snippet CampaignActionsCell(row: Campaign)}
+{#snippet CampaignActionsCell({ value, row }: { value: any; row: Campaign })}
 	<div class="flex items-center gap-1">
 		<Button variant="ghost" size="sm" onclick={() => openViewCampaign(row)}>
 			<Eye class="h-3.5 w-3.5" />

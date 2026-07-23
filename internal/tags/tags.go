@@ -35,6 +35,24 @@ func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID) ([]gen.Tag
 	return tags, nil
 }
 
+// AdminListTags returns tags filtered by a search query for admin listing.
+func (s *Service) AdminListTags(ctx context.Context, tenantID pgtype.UUID, q string) ([]gen.Tag, error) {
+	tags, err := s.read.AdminListTags(ctx, gen.AdminListTagsParams{TenantID: tenantID, Q: q})
+	if err != nil {
+		return nil, fmt.Errorf("admin listing tags: %w", err)
+	}
+	return tags, nil
+}
+
+// AdminCountTags returns the count of tags matching a search query.
+func (s *Service) AdminCountTags(ctx context.Context, tenantID pgtype.UUID, q string) (int, error) {
+	count, err := s.read.AdminCountTags(ctx, gen.AdminCountTagsParams{TenantID: tenantID, Q: q})
+	if err != nil {
+		return 0, fmt.Errorf("admin counting tags: %w", err)
+	}
+	return int(count), nil
+}
+
 // GetTagBySlug returns a single tag by its slug.
 func (s *Service) GetTagBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.Tag, error) {
 	tag, err := s.read.GetTagBySlug(ctx, gen.GetTagBySlugParams{TenantID: tenantID, Slug: slug})

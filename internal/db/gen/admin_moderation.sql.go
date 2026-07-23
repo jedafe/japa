@@ -149,6 +149,16 @@ func (q *Queries) CreateUserBan(ctx context.Context, arg CreateUserBanParams) er
 	return err
 }
 
+const createUserUnban = `-- name: CreateUserUnban :exec
+INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, created_at)
+VALUES ($1, (SELECT tenant_id FROM users WHERE id = $1), 'unban', 'Admin unbanned', now())
+`
+
+func (q *Queries) CreateUserUnban(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, createUserUnban, userID)
+	return err
+}
+
 const createUserWarning = `-- name: CreateUserWarning :exec
 INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, created_at)
 VALUES ($1, (SELECT tenant_id FROM users WHERE id = $1), 'warning', $2, now())

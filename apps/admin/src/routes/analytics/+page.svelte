@@ -16,6 +16,7 @@
 	import { analyticsAdminApi } from "$lib/api";
 	import { LineChart, AreaChart } from "layerchart";
 	import StatCard from "$lib/components/ui/StatCard.svelte";
+	import { CardSkeleton } from "$lib/components/ui/skeleton";
 	
 	let activeTab = $state("overview");
 	let flushModalOpen = $state(false);
@@ -46,8 +47,13 @@
 	let spaceAnalytics = $state<Array<Record<string, unknown>> | null>(null);
 	let revenueAnalytics = $state<Array<Record<string, unknown>> | null>(null);
 	let searchAnalytics = $state<Array<Record<string, unknown>> | null>(null);
+	let loadAbortController: AbortController | null = null;
 	
 	async function loadAnalytics() {
+		if (loadAbortController) loadAbortController.abort();
+		loadAbortController = new AbortController();
+		const signal = loadAbortController.signal;
+
 		loading = true;
 		error = "";
 		try {
@@ -62,6 +68,8 @@
 				analyticsAdminApi.getSearch()
 			]);
 			
+			if (signal.aborted) return;
+
 			overview = overviewRes.status === 'fulfilled' && overviewRes.value.ok ? (overviewRes.value.data as OverviewData) : null;
 			security = securityRes.status === 'fulfilled' && securityRes.value.ok ? (securityRes.value.data as { scans?: Array<Record<string, unknown>> }) : null;
 			userAnalytics = usersRes.status === 'fulfilled' && usersRes.value.ok ? (usersRes.value.data as Array<Record<string, unknown>>) : null;
@@ -70,9 +78,10 @@
 			revenueAnalytics = revenueRes.status === 'fulfilled' && revenueRes.value.ok ? (revenueRes.value.data as Array<Record<string, unknown>>) : null;
 			searchAnalytics = searchRes.status === 'fulfilled' && searchRes.value.ok ? (searchRes.value.data as Array<Record<string, unknown>>) : null;
 		} catch (e) {
+			if (signal.aborted) return;
 			error = e instanceof Error ? e.message : t('analytics.failed_to_load', 'Failed to load analytics');
 		} finally {
-			loading = false;
+			if (!signal.aborted) loading = false;
 		}
 	}
 	
@@ -91,6 +100,10 @@
 		from = page.url.searchParams.get("from") ?? "";
 		to = page.url.searchParams.get("to") ?? "";
 		loadAnalytics();
+
+		return () => {
+			if (loadAbortController) loadAbortController.abort();
+		};
 	});
 	
 	const tabs = [
@@ -127,14 +140,14 @@
 		},
 		{ 
 			label: t('analytics.total_spaces', 'Total Spaces'), 
-			value: (overview?.space_stats as unknown as { total_spaces?: number })?.total_spaces ?? 0, 
+			value: overview?.space_stats ? new Set(overview.space_stats.map((s: any) => s.space_id)).size : 0, 
 			change: 0,
 			icon: Eye, 
 			color: "warning" 
 		},
 		{ 
 			label: t('analytics.content_count', 'Content Items'), 
-			value: overview?.content_over_time?.length ?? 0, 
+			value: overview?.content_over_time?.reduce((sum, d) => sum + d.content_count, 0) ?? 0, 
 			change: 0,
 			icon: MessageSquare, 
 			color: "primary" 
@@ -174,7 +187,7 @@
 		try {
 			await analyticsAdminApi.flushCache({ scope: "all" });
 			flushModalOpen = false;
-			goto("", { invalidateAll: true });
+			await goto('/analytics', { invalidateAll: true });
 		} catch {
 			error = t('analytics.failed_to_flush_cache', 'Failed to flush cache');
 		} finally {
@@ -183,7 +196,36 @@
 	}
 	
 	function handleExport() {
-		// TODO: Implement analytics export
+		// Build CSV from overview data
+		const rows: string[] = ['Metric,Value'];
+		if (overview?.daily_active_users?.length) {
+			const latest = overview.daily_active_users[overview.daily_active_users.length - 1];
+			rows.push(`Daily Active Users,${latest.dau}`);
+		}
+		if (overview?.monthly_active_users?.length) {
+			const latest = overview.monthly_active_users[overview.monthly_active_users.length - 1];
+			rows.push(`Monthly Active Users,${latest.mau}`);
+		}
+		if (overview?.user_growth?.length) {
+			const latest = overview.user_growth[overview.user_growth.length - 1];
+			rows.push(`New Signups (Latest),${latest.new_users}`);
+		}
+		if (overview?.content_over_time?.length) {
+			const total = overview.content_over_time.reduce((sum, d) => sum + d.content_count, 0);
+			rows.push(`Total Content Items,${total}`);
+		}
+		if (overview?.event_counts?.length) {
+			const total = overview.event_counts.reduce((sum, e) => sum + e.count, 0);
+			rows.push(`Total Events,${total}`);
+		}
+		const csv = rows.join('\n');
+		const blob = new Blob([csv], { type: 'text/csv' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `analytics-report-${new Date().toISOString().slice(0, 10)}.csv`;
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 </script>
 
@@ -224,7 +266,25 @@
 
 	<Tabs {tabs} bind:value={activeTab} />
 	
-	{#if activeTab === "overview"}
+	{#if loading}
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			{#each Array(6) as _}
+				<CardSkeleton />
+			{/each}
+		</div>
+		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+			{#each Array(2) as _}
+				<Card>
+					<CardHeader>
+						<div class="h-4 w-32 animate-pulse rounded" style="background: var(--color-surface)"></div>
+					</CardHeader>
+					<CardContent>
+						<div class="h-64 animate-pulse rounded-lg" style="background: var(--color-surface)"></div>
+					</CardContent>
+				</Card>
+			{/each}
+		</div>
+	{:else if activeTab === "overview"}
 		<!-- Stats Grid -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each overviewCards as card}

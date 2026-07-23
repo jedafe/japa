@@ -32,18 +32,37 @@ func (q *Queries) CountUserActivity(ctx context.Context, arg CountUserActivityPa
 
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*)::int AS count
-FROM users
-WHERE tenant_id = $1
-  AND ($2::text = '' OR username ILIKE '%' || $2 || '%' OR email ILIKE '%' || $2 || '%')
+FROM users u
+WHERE u.tenant_id = $1
+  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR u.email ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR
+       ($3 = 'restricted' AND EXISTS (
+         SELECT 1 FROM user_operation_bans uob
+         WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+           AND (uob.expires_at IS NULL OR uob.expires_at > now())
+       )) OR
+       ($3 != 'restricted' AND u.status = $3))
+  AND ($4::text = '' OR EXISTS (
+    SELECT 1 FROM user_group_memberships ugm
+    JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = $1
+    WHERE ugm.user_id = u.id AND ugm.tenant_id = $1 AND ug.slug = $4
+  ))
 `
 
 type CountUsersParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Search   string      `json:"search"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Search    string      `json:"search"`
+	Status    string      `json:"status"`
+	GroupSlug string      `json:"group_slug"`
 }
 
 func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countUsers, arg.TenantID, arg.Search)
+	row := q.db.QueryRow(ctx, countUsers,
+		arg.TenantID,
+		arg.Search,
+		arg.Status,
+		arg.GroupSlug,
+	)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -175,17 +194,24 @@ func (q *Queries) GetUserByID(ctx context.Context, arg GetUserByIDParams) (GetUs
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT DISTINCT ON (up.user_id)
-       up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
-       up.timezone, up.created_at, up.updated_at,
+SELECT DISTINCT ON (u.id)
+       COALESCE(up.id, gen_random_uuid()) AS id,
+       u.tenant_id,
+       u.id AS user_id,
+       up.display_name,
+       up.avatar_url,
+       up.bio,
+       up.timezone,
+       COALESCE(up.created_at, u.created_at) AS created_at,
+       COALESCE(up.updated_at, u.updated_at) AS updated_at,
        u.email, u.username, u.profile_type, u.status, u.follower_count,
        ug.slug AS user_group_name
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
 LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
-WHERE up.tenant_id = $1 AND u.username = $2
-ORDER BY up.user_id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END
+WHERE u.tenant_id = $1 AND u.username = $2
+ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END
 `
 
 type GetUserByUsernameParams struct {
@@ -305,17 +331,24 @@ func (q *Queries) GetUserPrivacySettings(ctx context.Context, userID pgtype.UUID
 }
 
 const getUserProfile = `-- name: GetUserProfile :one
-SELECT DISTINCT ON (up.user_id)
-       up.id, up.tenant_id, up.user_id, up.display_name, up.avatar_url, up.bio,
-       up.timezone, up.created_at, up.updated_at,
-       u.email, u.username, u.profile_type, u.status, u.follower_count,
+SELECT DISTINCT ON (u.id)
+       COALESCE(up.id, gen_random_uuid()) AS id,
+       u.tenant_id,
+       u.id AS user_id,
+       up.display_name,
+       up.avatar_url,
+       up.bio,
+       up.timezone,
+       COALESCE(up.created_at, u.created_at) AS created_at,
+       COALESCE(up.updated_at, u.updated_at) AS updated_at,
+       u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
        ug.slug AS user_group_name
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+FROM users u
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
 LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
-WHERE up.tenant_id = $1 AND up.user_id = $2
-ORDER BY up.user_id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END
+WHERE u.tenant_id = $1 AND u.id = $2
+ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END
 `
 
 type GetUserProfileParams struct {
@@ -338,6 +371,7 @@ type GetUserProfileRow struct {
 	ProfileType   string             `json:"profile_type"`
 	Status        string             `json:"status"`
 	FollowerCount int32              `json:"follower_count"`
+	LastLoginAt   pgtype.Timestamptz `json:"last_login_at"`
 	UserGroupName *string            `json:"user_group_name"`
 }
 
@@ -359,6 +393,7 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 		&i.ProfileType,
 		&i.Status,
 		&i.FollowerCount,
+		&i.LastLoginAt,
 		&i.UserGroupName,
 	)
 	return i, err
@@ -617,17 +652,44 @@ func (q *Queries) ListUserSessions(ctx context.Context, userID pgtype.UUID) ([]L
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, tenant_id, email, username, profile_type, status, follower_count, created_at, updated_at
-FROM users
-WHERE tenant_id = $1
-  AND ($2::text = '' OR username ILIKE '%' || $2 || '%' OR email ILIKE '%' || $2 || '%')
-ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+SELECT u.id, u.tenant_id, u.email, u.username, u.profile_type,
+       CASE
+         WHEN EXISTS (
+           SELECT 1 FROM user_operation_bans uob
+           WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+             AND (uob.expires_at IS NULL OR uob.expires_at > now())
+         ) THEN 'restricted'
+         ELSE u.status
+       END AS status,
+       u.follower_count, u.created_at, u.updated_at,
+       (SELECT COALESCE(string_agg(ug.name, ', '), '')
+        FROM user_group_memberships ugm
+        JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = u.tenant_id
+        WHERE ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id) AS groups
+FROM users u
+WHERE u.tenant_id = $1
+  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR u.email ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR
+       ($3 = 'restricted' AND EXISTS (
+         SELECT 1 FROM user_operation_bans uob
+         WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+           AND (uob.expires_at IS NULL OR uob.expires_at > now())
+       )) OR
+       ($3 != 'restricted' AND u.status = $3))
+  AND ($4::text = '' OR EXISTS (
+    SELECT 1 FROM user_group_memberships ugm
+    JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = $1
+    WHERE ugm.user_id = u.id AND ugm.tenant_id = $1 AND ug.slug = $4
+  ))
+ORDER BY u.created_at DESC
+LIMIT $6 OFFSET $5
 `
 
 type ListUsersParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Search     string      `json:"search"`
+	Status     string      `json:"status"`
+	GroupSlug  string      `json:"group_slug"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -638,16 +700,19 @@ type ListUsersRow struct {
 	Email         string             `json:"email"`
 	Username      string             `json:"username"`
 	ProfileType   string             `json:"profile_type"`
-	Status        string             `json:"status"`
+	Status        interface{}        `json:"status"`
 	FollowerCount int32              `json:"follower_count"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Groups        interface{}        `json:"groups"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
 	rows, err := q.db.Query(ctx, listUsers,
 		arg.TenantID,
 		arg.Search,
+		arg.Status,
+		arg.GroupSlug,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -668,6 +733,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 			&i.FollowerCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Groups,
 		); err != nil {
 			return nil, err
 		}
@@ -721,6 +787,20 @@ func (q *Queries) SoftDeleteUser(ctx context.Context, arg SoftDeleteUserParams) 
 	return err
 }
 
+const updateLastLoginAt = `-- name: UpdateLastLoginAt :exec
+UPDATE users SET last_login_at = now() WHERE tenant_id = $1 AND id = $2
+`
+
+type UpdateLastLoginAtParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateLastLoginAt(ctx context.Context, arg UpdateLastLoginAtParams) error {
+	_, err := q.db.Exec(ctx, updateLastLoginAt, arg.TenantID, arg.ID)
+	return err
+}
+
 const updateUserPassword = `-- name: UpdateUserPassword :exec
 UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1
 `
@@ -732,6 +812,21 @@ type UpdateUserPasswordParams struct {
 
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
 	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
+	return err
+}
+
+const updateUserProfileType = `-- name: UpdateUserProfileType :exec
+UPDATE users SET profile_type = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2
+`
+
+type UpdateUserProfileTypeParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	ID          pgtype.UUID `json:"id"`
+	ProfileType string      `json:"profile_type"`
+}
+
+func (q *Queries) UpdateUserProfileType(ctx context.Context, arg UpdateUserProfileTypeParams) error {
+	_, err := q.db.Exec(ctx, updateUserProfileType, arg.TenantID, arg.ID, arg.ProfileType)
 	return err
 }
 

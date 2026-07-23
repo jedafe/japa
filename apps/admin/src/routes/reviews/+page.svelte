@@ -249,19 +249,19 @@
 	</div>
 </Modal>
 
-{#snippet ReviewActionsCell(review: Review)}
+{#snippet ReviewActionsCell({ value, row }: { value: any; row: Review })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(review)}>
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			{t('common.view', 'View')}
 		</Button>
 		{#if canModerate}
-			<Button variant="ghost" size="sm" onclick={() => openModerate(review)} style="color: var(--color-primary)">
+			<Button variant="ghost" size="sm" onclick={() => openModerate(row)} style="color: var(--color-primary)">
 				<Shield class="inline h-3 w-3" />
 				{t('reviews.moderate', 'Moderate')}
 			</Button>
 		{/if}
 		{#if canDelete}
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(review)} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 				<Trash2 class="inline h-3 w-3" />
 				{t('common.delete', 'Delete')}
 			</Button>

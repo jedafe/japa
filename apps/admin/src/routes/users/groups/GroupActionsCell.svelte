@@ -5,7 +5,7 @@
 	import { Pencil, Trash2 } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { userManagementApi } from '$lib/api';
+	import { userManagementApi, permissionsApi } from '$lib/api';
 	import type { Component } from 'svelte';
 	import type { UserGroup } from '$lib/api';
 
@@ -18,14 +18,38 @@
 	let editError = $state('');
 	let editSaving = $state(false);
 	let showDeleteConfirm = $state(false);
+	let allPermissions = $state<string[]>([]);
+	let permSearch = $state('');
+	let permCategory = $state('');
 
 	const canManage = hasPermission('admin.rbac.manage');
 
-	function openEditModal() {
+	const permissionCategories = $derived(() => {
+		const cats = new Set<string>();
+		for (const p of allPermissions) {
+			const dot = p.indexOf('.');
+			if (dot > 0) cats.add(p.slice(0, dot));
+		}
+		return [...cats].sort();
+	});
+
+	const filteredPermissions = $derived(
+		allPermissions.filter((p) => {
+			if (permCategory && !p.startsWith(permCategory + '.') && !(permCategory === 'other' && !p.includes('.'))) return false;
+			if (permSearch && !p.toLowerCase().includes(permSearch.toLowerCase())) return false;
+			return true;
+		})
+	);
+
+	async function openEditModal() {
 		editName = row.name;
 		editDescription = row.description;
-		editPermissions = [...row.permissions];
+		editPermissions = [...(row.permissions ?? [])];
 		editError = '';
+		permSearch = '';
+		permCategory = '';
+		const permsResult = await permissionsApi.list();
+		if (permsResult.ok) allPermissions = permsResult.data;
 		showEditModal = true;
 	}
 
@@ -85,6 +109,37 @@
 				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 				bind:value={editDescription}
 			></textarea>
+		</div>
+		<div>
+			<p class="mb-2 text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.permissions', 'Permissions')}</p>
+			<div class="mb-2 flex gap-2">
+				<select
+					class="flex-1 rounded-md border px-2 py-1.5 text-xs"
+					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+					bind:value={permCategory}
+				>
+					<option value="">All categories</option>
+					{#each permissionCategories() as cat}
+						<option value={cat}>{cat}</option>
+					{/each}
+					<option value="other">Other</option>
+				</select>
+				<input
+					type="text"
+					class="flex-1 rounded-md border px-2 py-1.5 text-xs"
+					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+					placeholder={t('users.groups.search_permissions', 'Search permissions...')}
+					bind:value={permSearch}
+				/>
+			</div>
+			<div class="grid max-h-60 grid-cols-2 gap-2 overflow-y-auto">
+				{#each filteredPermissions as perm}
+					<label class="flex items-center gap-2 text-xs">
+						<input type="checkbox" value={perm} bind:group={editPermissions} class="rounded" />
+						{perm}
+					</label>
+				{/each}
+			</div>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">

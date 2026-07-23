@@ -1,11 +1,17 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { blogAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { DataTable } from '$lib/components/ui/data-table';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
+	import { TableSkeleton } from '$lib/components/ui/skeleton';
+	import { RefreshCw, CheckCircle, XCircle, ExternalLink } from 'lucide-svelte';
 
 	const canManage = $derived(hasPermission('blog.review.manage'));
-	import { CheckCircle, XCircle, RefreshCw, ExternalLink } from 'lucide-svelte';
-	import Modal from '$lib/components/Modal.svelte';
 
 	type ReviewItem = {
 		id: string;
@@ -16,11 +22,12 @@
 		status: string;
 		submitted_at: string;
 		excerpt?: string;
+		url?: string;
 	};
 
 	let items = $state<ReviewItem[]>([]);
 	let loading = $state(true);
-	let errorMessage = $state('');
+	let error = $state('');
 
 	// Reject modal
 	let showRejectModal = $state(false);
@@ -28,24 +35,58 @@
 	let rejectReason = $state('');
 	let acting = $state(false);
 
+	const columns = $derived([
+		{
+			key: 'title',
+			label: t('app.blog.col_title', 'Title'),
+			sortable: true
+		},
+		{
+			key: 'author_name',
+			label: t('app.blog.col_author', 'Author'),
+			sortable: true,
+			render: (value: string) => value || t('app.blog.unknown', 'Unknown')
+		},
+		{
+			key: 'submitted_at',
+			label: t('app.blog.review_submitted_at', 'Submitted'),
+			sortable: true,
+			render: (value: string) => value ? new Date(value).toLocaleDateString() : '—'
+		},
+		{
+			key: 'excerpt',
+			label: t('app.blog.detail_excerpt', 'Excerpt'),
+			render: (value: string) => {
+				if (!value) return '—';
+				return value.length > 80 ? value.substring(0, 80) + '…' : value;
+			}
+		},
+		{
+			key: 'actions',
+			label: t('app.blog.col_actions', 'Actions'),
+			class: 'w-32',
+			componentSnippet: ReviewActionsCell
+		}
+	]);
+
 	async function refresh() {
 		loading = true;
-		errorMessage = '';
+		error = '';
 		try {
 			const result = await blogAdminApi.getReviewQueue();
+			loading = false;
 			if (result.ok) {
 				items = (result.data as ReviewItem[]) ?? [];
 			} else {
-				errorMessage = result.error;
+				error = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
-		} finally {
 			loading = false;
+			error = t('common.error', 'An error occurred');
 		}
 	}
-	
-	$effect(() => {
+
+	onMount(() => {
 		refresh();
 	});
 
@@ -56,10 +97,10 @@
 			if (result.ok) {
 				items = items.filter((i) => i.id !== id);
 			} else {
-				errorMessage = result.error;
+				error = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
+			error = t('common.error', 'An error occurred');
 		} finally {
 			acting = false;
 		}
@@ -80,100 +121,110 @@
 				items = items.filter((i) => i.id !== rejectItem!.id);
 				showRejectModal = false;
 			} else {
-				errorMessage = result.error;
+				error = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
+			error = t('common.error', 'An error occurred');
 		} finally {
 			acting = false;
+		}
+	}
+
+	function openExternal(item: ReviewItem) {
+		if (item.url) {
+			window.open(item.url, '_blank');
 		}
 	}
 </script>
 
 <svelte:head>
-	<title>Blog Review Queue — Admin</title>
+	<title>{t('app.blog.review_queue_page_title', 'Blog Review Queue — JapaConnect Admin')}</title>
 </svelte:head>
 
+<PageHeader
+	title={t('app.blog.review_queue_heading', 'Blog Review Queue')}
+	description={t('app.blog.review_queue_desc', 'Review and approve pending blog submissions')}
+	actions={[
+		{ label: t('app.blog.refresh', 'Refresh'), icon: RefreshCw, variant: 'ghost', onclick: refresh }
+	]}
+/>
+
 <div class="space-y-6">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold">{t('blog.review-queue.blog_review_queue')}</h1>
-		<button class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-surface dark:hover:bg-surface" onclick={refresh}>
-			<RefreshCw class="h-4 w-4" />
-			Refresh
-		</button>
-	</div>
-
-	{#if errorMessage}
-		<div class="rounded-md bg-danger p-4 text-sm text-danger dark:bg-danger/20 dark:text-danger">{errorMessage}</div>
+	{#if error}
+		<div class="rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+			{error}
+		</div>
 	{/if}
 
-	{#if loading}
-		<div class="py-12 text-center text-sm text-muted">{t('blog.review-queue.loading')}</div>
-	{:else if items.length === 0}
-		<div class="rounded-md border p-8 text-center text-sm text-muted" style="border-color: var(--color-border)">
-			No posts pending review.
-		</div>
-	{:else}
-		<div class="space-y-3">
-			{#each items as item (item.id)}
-				<div class="rounded-md border p-4" style="border-color: var(--color-border)">
-					<div class="flex items-start justify-between gap-4">
-						<div class="min-w-0 flex-1">
-							<div class="flex items-center gap-2">
-								<h3 class="font-semibold">{item.title}</h3>
-								<a href="/blog/{item.slug}" target="_blank" class="text-muted hover:text-foreground-alt">
-									<ExternalLink class="h-3.5 w-3.5" />
-								</a>
-							</div>
-							<p class="mt-1 text-xs text-muted">
-								By {item.author_name} — submitted {new Date(item.submitted_at).toLocaleDateString()}
-							</p>
-							{#if item.excerpt}
-								<p class="mt-2 text-sm text-foreground-alt line-clamp-2 dark:text-muted">{item.excerpt}</p>
-							{/if}
-						</div>
-						<div class="flex items-center gap-2">
-							{#if canManage}
-							<button
-								class="flex items-center gap-1 rounded-md bg-success px-3 py-1.5 text-sm font-medium text-white hover:bg-success disabled:opacity-50"
-								onclick={() => approve(item.id)}
-								disabled={acting}
-							>
-								<CheckCircle class="h-4 w-4" />
-								Approve
-							</button>
-							<button
-								class="flex items-center gap-1 rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-white hover:bg-danger disabled:opacity-50"
-								onclick={() => openReject(item)}
-								disabled={acting}
-							>
-								<XCircle class="h-4 w-4" />
-								Reject
-							</button>
-							{/if}
-						</div>
-					</div>
+	<Card>
+		<CardContent class="p-0">
+			{#if loading}
+				<TableSkeleton rows={5} columns={columns.length} />
+			{:else}
+				<div aria-live="polite">
+					<DataTable
+						{columns}
+						data={items}
+						pageSize={25}
+						emptyMessage={t('app.blog.review_queue_empty', 'No posts pending review.')}
+					/>
 				</div>
-			{/each}
-		</div>
-	{/if}
+			{/if}
+		</CardContent>
+	</Card>
 </div>
 
-<Modal bind:open={showRejectModal} title="Reject Post" onConfirm={confirmReject} confirmLabel="Reject">
+<Modal bind:open={showRejectModal} title={t('app.blog.modal_reject_post', 'Reject Post')}>
 	<div class="space-y-4">
-		<p class="text-sm text-foreground-alt dark:text-muted">
-			Are you sure you want to reject "{rejectItem?.title}"?
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('app.blog.reject_confirm', 'Are you sure you want to reject "{title}"? The author will be notified.').replace('{title}', rejectItem?.title ?? '')}
 		</p>
 		<div>
-			<label for="reject-reason" class="mb-1 block text-sm font-medium">{t('blog.review-queue.reason_optional')}</label>
+			<label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.blog.reason_optional', 'Reason (optional)')}</label>
 			<textarea
 				id="reject-reason"
-				class="w-full rounded-md border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface)"
+				class="w-full rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				rows="3"
 				bind:value={rejectReason}
-				placeholder="Explain why this post was rejected..."
+				placeholder={t('app.blog.reject_placeholder', 'Explain why this post was rejected...')}
 			></textarea>
 		</div>
 	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showRejectModal = false)}>{t('app.blog.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={confirmReject} disabled={acting}>
+			{acting ? t('app.blog.rejecting', 'Rejecting...') : t('app.blog.reject', 'Reject')}
+		</Button>
+	</div>
 </Modal>
+
+{#snippet ReviewActionsCell({ row }: { value: any; row: ReviewItem })}
+	<div class="flex items-center gap-1">
+		{#if canManage}
+			<Button
+				variant="ghost"
+				size="sm"
+				onclick={() => approve(row.id)}
+				disabled={acting}
+				style="color: var(--color-success)"
+			>
+				<CheckCircle class="h-3.5 w-3.5" />
+			</Button>
+			<Button
+				variant="ghost"
+				size="sm"
+				onclick={() => openReject(row)}
+				disabled={acting}
+				style="color: var(--color-danger)"
+			>
+				<XCircle class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+		{#if row.url}
+			<Button variant="ghost" size="sm" onclick={() => openExternal(row)}>
+				<ExternalLink class="h-3.5 w-3.5" />
+			</Button>
+		{/if}
+	</div>
+{/snippet}

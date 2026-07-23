@@ -322,7 +322,7 @@
 </Modal>
 
 <!-- WebhookActionsCell component -->
-{#snippet WebhookActionsCell(row: WebhookEndpoint)}
+{#snippet WebhookActionsCell({ value, row }: { value: any; row: WebhookEndpoint })}
 	<div class="flex items-center gap-1">
 		{#if canManageWebhooks}
 			<Button variant="ghost" size="sm" onclick={() => openTest(row)} style="color: var(--color-primary)" title={t("webhooks.test", "Test")}>

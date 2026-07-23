@@ -152,7 +152,7 @@
 	}
 </script>
 
-{#snippet BroadcastActionsCell(row: Broadcast)}
+{#snippet BroadcastActionsCell({ value, row }: { value: any; row: Broadcast })}
 	{#if canManage}
 		<Button variant="ghost" size="sm" onclick={(e: MouseEvent) => { e.stopPropagation(); confirmDelete(row); }} style="color: var(--color-danger)">
 			{t('common.delete')}

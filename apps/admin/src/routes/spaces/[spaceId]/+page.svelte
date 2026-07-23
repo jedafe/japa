@@ -57,7 +57,7 @@
 			render: (v: string) => new Date(v).toLocaleDateString()
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			component: ModeratorActionsCell
+			componentSnippet: ModeratorActionsCell
 		}
 	];
 
@@ -67,7 +67,9 @@
 		try {
 			const result = await spacesAdminApi.get(spaceId);
 			if (result.ok) {
-				space = (result.data as SpaceDetail) ?? null;
+				const d = result.data as any;
+				// Handler returns { space: {...}, rules: [...] } or just the space object
+				space = d?.space ?? d ?? null;
 			} else {
 				error = result.error ?? t("common.error", "Failed to load space");
 			}
@@ -81,7 +83,7 @@
 	async function loadModerators() {
 		loadingModerators = true;
 		try {
-			const result = await spacesAdminApi.get(`${spaceId}/moderators`);
+			const result = await spacesAdminApi.getModerators(spaceId);
 			if (result.ok) {
 				let items = (result.data as Moderator[]) ?? [];
 				if (searchQuery) {
@@ -136,20 +138,25 @@
 		bulkDeleting = true;
 		error = "";
 		try {
-			for (const userId of selectedIds) {
-				await spacesModeratorsAdminApi.remove(spaceId, userId);
-			}
+			const ids = Array.from(selectedIds);
+			await Promise.all(ids.map((userId) => spacesModeratorsAdminApi.remove(spaceId, userId)));
 			selectedIds = new Set();
 			success = t("spaces.moderators_removed", "Moderators removed");
 			await loadModerators();
 		} catch {
 			error = t("common.error", "Failed to remove moderators");
+		} finally {
+			bulkDeleting = false;
 		}
-		bulkDeleting = false;
 	}
 
-	loadSpace();
-	loadModerators();
+	$effect(() => {
+		const id = spaceId;
+		if (id) {
+			loadSpace();
+			loadModerators();
+		}
+	});
 </script>
 
 <svelte:head>
@@ -223,7 +230,7 @@
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting || selectedIds.size === 0}>
 						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? t("common.deleting", "Removing...") : t("common.deleteSelected", "Remove Selected")} ({selectedIds.size})
+						{bulkDeleting ? t("common.deleting", "Removing...") : t("common.delete_selected", "Remove Selected")} ({selectedIds.size})
 					</Button>
 				{/snippet}
 			</DataTable>
@@ -258,7 +265,7 @@
 	</div>
 </Modal>
 
-{#snippet ModeratorActionsCell(row: Moderator)}
+{#snippet ModeratorActionsCell({ value, row }: { value: any; row: Moderator })}
 	<div class="flex items-center gap-1">
 		{#if canManageModerators}
 			<Button variant="ghost" size="sm" onclick={() => { removeTarget = row; showRemoveConfirm = true; }} style="color: var(--color-danger)">

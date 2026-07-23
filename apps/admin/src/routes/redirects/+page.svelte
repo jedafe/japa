@@ -291,7 +291,7 @@
 </Modal>
 
 <!-- RedirectActionsCell -->
-{#snippet RedirectActionsCell(row: Redirect)}
+{#snippet RedirectActionsCell({ value, row }: { value: any; row: Redirect })}
 	<div class="flex items-center gap-1">
 		{#if canManageRedirects}
 			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>

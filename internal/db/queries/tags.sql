@@ -14,6 +14,19 @@ SELECT id, tenant_id, name, slug, description, color, follower_count, created_at
 FROM tags
 WHERE tenant_id = @tenant_id AND slug = @slug;
 
+-- name: AdminListTags :many
+SELECT id, tenant_id, name, slug, description, color, follower_count, created_at, updated_at
+FROM tags
+WHERE tenant_id = @tenant_id
+  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%')
+ORDER BY name;
+
+-- name: AdminCountTags :one
+SELECT COUNT(*)::int AS count
+FROM tags
+WHERE tenant_id = @tenant_id
+  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%');
+
 -- Admin CRUD (catalog: POST/PATCH/DELETE /admin/tags).
 
 -- name: CreateTag :one

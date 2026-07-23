@@ -50,6 +50,59 @@ func (q *Queries) AddOrganizationMember(ctx context.Context, arg AddOrganization
 	return err
 }
 
+const approveOwnershipClaim = `-- name: ApproveOwnershipClaim :exec
+UPDATE ownership_claims
+SET status = 'approved', reviewed_by = $3, resolution_note = $4, reviewed_at = now()
+WHERE id = $1 AND tenant_id = $2
+`
+
+type ApproveOwnershipClaimParams struct {
+	ID             pgtype.UUID `json:"id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	ReviewedBy     pgtype.UUID `json:"reviewed_by"`
+	ResolutionNote *string     `json:"resolution_note"`
+}
+
+func (q *Queries) ApproveOwnershipClaim(ctx context.Context, arg ApproveOwnershipClaimParams) error {
+	_, err := q.db.Exec(ctx, approveOwnershipClaim,
+		arg.ID,
+		arg.TenantID,
+		arg.ReviewedBy,
+		arg.ResolutionNote,
+	)
+	return err
+}
+
+const countOrganizations = `-- name: CountOrganizations :one
+SELECT COUNT(*) FROM organizations
+WHERE tenant_id = $1 AND deleted_at IS NULL
+  AND ($2::text = '' OR org_type = $2)
+  AND ($3::text = '' OR country_code = $3)
+  AND ($4::text = '' OR name ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
+  AND ($5::text = '' OR verified = ($5 = 'true'))
+`
+
+type CountOrganizationsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Column2  string      `json:"column_2"`
+	Column3  string      `json:"column_3"`
+	Column4  string      `json:"column_4"`
+	Column5  string      `json:"column_5"`
+}
+
+func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrganizations,
+		arg.TenantID,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations (tenant_id, owner_user_id, name, slug, tagline, description, website_url, country_code, geo_space_id, org_type)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -305,6 +358,74 @@ func (q *Queries) GetOrganizationMemberRole(ctx context.Context, arg GetOrganiza
 	return role, err
 }
 
+const getPendingOwnershipClaim = `-- name: GetPendingOwnershipClaim :one
+SELECT id FROM ownership_claims
+WHERE organization_id = $1 AND tenant_id = $2 AND status = 'pending'
+ORDER BY created_at DESC LIMIT 1
+`
+
+type GetPendingOwnershipClaimParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetPendingOwnershipClaim(ctx context.Context, arg GetPendingOwnershipClaimParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getPendingOwnershipClaim, arg.OrganizationID, arg.TenantID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getPendingOwnershipClaims = `-- name: GetPendingOwnershipClaims :many
+SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at,
+       u.username AS claimant_username, o.name AS org_name
+FROM ownership_claims oc
+JOIN users u ON u.id = oc.claimant_user_id
+JOIN organizations o ON o.id = oc.organization_id
+WHERE oc.tenant_id = $1 AND oc.status = 'pending'
+ORDER BY oc.created_at DESC
+`
+
+type GetPendingOwnershipClaimsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	ClaimantUserID   pgtype.UUID        `json:"claimant_user_id"`
+	EvidenceUrl      *string            `json:"evidence_url"`
+	Notes            *string            `json:"notes"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ClaimantUsername string             `json:"claimant_username"`
+	OrgName          string             `json:"org_name"`
+}
+
+func (q *Queries) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype.UUID) ([]GetPendingOwnershipClaimsRow, error) {
+	rows, err := q.db.Query(ctx, getPendingOwnershipClaims, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPendingOwnershipClaimsRow
+	for rows.Next() {
+		var i GetPendingOwnershipClaimsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.ClaimantUserID,
+			&i.EvidenceUrl,
+			&i.Notes,
+			&i.CreatedAt,
+			&i.ClaimantUsername,
+			&i.OrgName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const incrementOrganizationMemberCount = `-- name: IncrementOrganizationMemberCount :exec
 UPDATE organizations
 SET member_count = member_count + $2, updated_at = now()
@@ -426,27 +547,61 @@ func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID pg
 }
 
 const listOrganizations = `-- name: ListOrganizations :many
-SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at FROM organizations
-WHERE tenant_id = $1 AND deleted_at IS NULL
-  AND ($2::text = '' OR org_type = $2)
-  AND ($3::text = '' OR country_code = $3)
-ORDER BY created_at DESC
-LIMIT $4 OFFSET $5
+SELECT o.id, o.tenant_id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, u.username AS owner_username
+FROM organizations o
+LEFT JOIN users u ON u.id = o.owner_user_id
+WHERE o.tenant_id = $1 AND o.deleted_at IS NULL
+  AND ($2::text = '' OR o.org_type = $2)
+  AND ($3::text = '' OR o.country_code = $3)
+  AND ($4::text = '' OR o.name ILIKE '%' || $4 || '%' OR o.slug ILIKE '%' || $4 || '%')
+  AND ($5::text = '' OR o.verified = ($5 = 'true'))
+ORDER BY o.created_at DESC
+LIMIT $6 OFFSET $7
 `
 
 type ListOrganizationsParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	Column2  string      `json:"column_2"`
 	Column3  string      `json:"column_3"`
+	Column4  string      `json:"column_4"`
+	Column5  string      `json:"column_5"`
 	Limit    int32       `json:"limit"`
 	Offset   int32       `json:"offset"`
 }
 
-func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error) {
+type ListOrganizationsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	OwnerUserID      pgtype.UUID        `json:"owner_user_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Tagline          *string            `json:"tagline"`
+	Description      *string            `json:"description"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderMediaID    pgtype.UUID        `json:"header_media_id"`
+	WebsiteUrl       *string            `json:"website_url"`
+	CountryCode      *string            `json:"country_code"`
+	GeoSpaceID       pgtype.UUID        `json:"geo_space_id"`
+	OrgType          string             `json:"org_type"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	FollowerCount    int32              `json:"follower_count"`
+	MemberCount      int32              `json:"member_count"`
+	Status           string             `json:"status"`
+	FieldValues      []byte             `json:"field_values"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	OwnerUsername    *string            `json:"owner_username"`
+}
+
+func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]ListOrganizationsRow, error) {
 	rows, err := q.db.Query(ctx, listOrganizations,
 		arg.TenantID,
 		arg.Column2,
 		arg.Column3,
+		arg.Column4,
+		arg.Column5,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -454,9 +609,9 @@ func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsPa
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Organization
+	var items []ListOrganizationsRow
 	for rows.Next() {
-		var i Organization
+		var i ListOrganizationsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -480,6 +635,7 @@ func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsPa
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.OwnerUsername,
 		); err != nil {
 			return nil, err
 		}

@@ -15,6 +15,32 @@ asynq-tasks, api-response-format, database-migration-naming, feature-flag-naming
 svelte-component-patterns), the 60 ADRs, and `AGENTS.md` **17 Golden Rules**. Any code that
 contradicts JEOS is a bug even if it compiles.
 
+## Critical Environment Notes (Always Add these to context)
+
+**These must be followed every time this skill is loaded:**
+
+1. **Always use Playwright** whenever a page URL or link is supplied. This is mandatory for all
+   frontend testing, screenshot capture, and browser interaction. Never skip browser automation.
+
+2. **Chrome is already installed** on this system. Do NOT attempt to install Chromium — it is
+   unnecessary and will waste time. Use the existing Chrome installation.
+
+3. **Playwright is already installed** on this system. Do NOT run `npx playwright install` or any
+   similar installation command. The system is pre-configured and ready to use.
+
+4. **Super admin credentials:** `admin@japaconnect.com` / `Admin123!` — use these when login is
+   required to test authenticated pages or admin features.
+
+5. **Always use `bun`** to start dev servers, install packages, or run any app commands. Never use
+   `npm` or `pnpm` — this project uses Bun as its runtime and package manager. When a server or
+   app is down and needs to be started for testing, use `bun dev` (or `bun run dev`) in the
+   relevant app directory, never `npm run dev` or `pnpm dev`.
+
+6. **Always ask the user before closing the browser.** Before running `agent-browser close` or
+   ending the browser session, ask the user to verify whether the issue is fully resolved or if
+   there are remaining bugs to fix. Never close the browser unilaterally — the user may want to
+   test additional scenarios or see the fix in action first.
+
 ## Step 0 — On Load: Present the Menu
 
 Immediately after this skill loads, use the **`question`** tool to present these options and let the

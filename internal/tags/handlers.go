@@ -83,20 +83,29 @@ func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request, tenantID p
 	return tag, true
 }
 
-// ListTags handles GET /api/v1/tags. [public]
+// ListTags handles GET /api/v1/tags and GET /api/v1/admin/tags. [public + admin]
+// The admin route uses the q parameter for search filtering.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	tags, err := h.service.ListTags(r.Context(), tenantID)
+	q := r.URL.Query().Get("q")
+
+	tags, err := h.service.AdminListTags(r.Context(), tenantID, q)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tags")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tags})
+	count, err := h.service.AdminCountTags(r.Context(), tenantID, q)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count tags")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": tags, "total": count})
 }
 
 // GetTag handles GET /api/v1/tags/{slug}. [public]

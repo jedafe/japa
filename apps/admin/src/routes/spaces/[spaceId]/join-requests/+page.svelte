@@ -76,7 +76,7 @@
 	});
 </script>
 
-{#snippet JoinRequestActionsCell(row: JoinRequest)}
+{#snippet JoinRequestActionsCell({ value, row }: { value: any; row: JoinRequest })}
 	{#if row.status === 'pending'}
 		<div class="flex items-center justify-end gap-1">
 			<Button variant="ghost" size="sm" onclick={() => updateRequest(row.id, 'approved')}>

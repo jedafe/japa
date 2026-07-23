@@ -43,13 +43,26 @@ func (s *Store) GetOrganizationBySlug(ctx context.Context, slug string, tenantID
 }
 
 // ListOrganizations returns paginated organizations.
-func (s *Store) ListOrganizations(ctx context.Context, tenantID pgtype.UUID, orgType, countryCode string, limit, offset int32) ([]gen.Organization, error) {
+func (s *Store) ListOrganizations(ctx context.Context, tenantID pgtype.UUID, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, error) {
 	return s.read.ListOrganizations(ctx, gen.ListOrganizationsParams{
 		TenantID: tenantID,
 		Column2:  orgType,
 		Column3:  countryCode,
+		Column4:  search,
+		Column5:  verified,
 		Limit:    clampLimit(limit),
 		Offset:   offset,
+	})
+}
+
+// CountOrganizations returns the total count of matching organizations.
+func (s *Store) CountOrganizations(ctx context.Context, tenantID pgtype.UUID, orgType, countryCode, search, verified string) (int64, error) {
+	return s.read.CountOrganizations(ctx, gen.CountOrganizationsParams{
+		TenantID: tenantID,
+		Column2:  orgType,
+		Column3:  countryCode,
+		Column4:  search,
+		Column5:  verified,
 	})
 }
 
@@ -143,6 +156,29 @@ func (s *Store) ListOwnershipClaims(ctx context.Context, tenantID pgtype.UUID, s
 // ReviewOwnershipClaim reviews an ownership claim.
 func (s *Store) ReviewOwnershipClaim(ctx context.Context, params gen.ReviewOwnershipClaimParams) error {
 	return s.write.ReviewOwnershipClaim(ctx, params)
+}
+
+// GetPendingOwnershipClaim returns the most recent pending claim for an org.
+func (s *Store) GetPendingOwnershipClaim(ctx context.Context, orgID, tenantID pgtype.UUID) (pgtype.UUID, error) {
+	return s.read.GetPendingOwnershipClaim(ctx, gen.GetPendingOwnershipClaimParams{
+		OrganizationID: orgID,
+		TenantID:       tenantID,
+	})
+}
+
+// GetPendingOwnershipClaims returns all pending ownership claims with details.
+func (s *Store) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetPendingOwnershipClaimsRow, error) {
+	return s.read.GetPendingOwnershipClaims(ctx, tenantID)
+}
+
+// ApproveOwnershipClaim approves a pending ownership claim.
+func (s *Store) ApproveOwnershipClaim(ctx context.Context, claimID, tenantID, reviewedBy pgtype.UUID, note string) error {
+	return s.write.ApproveOwnershipClaim(ctx, gen.ApproveOwnershipClaimParams{
+		ID:             claimID,
+		TenantID:       tenantID,
+		ReviewedBy:     reviewedBy,
+		ResolutionNote: &note,
+	})
 }
 
 // IncrementMemberCount atomically increments/decrements member count.

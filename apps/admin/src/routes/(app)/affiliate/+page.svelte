@@ -587,7 +587,7 @@
 </Modal>
 
 <!-- ProviderActionsCell component -->
-{#snippet ProviderActionsCell(row: AffiliateProvider)}
+{#snippet ProviderActionsCell({ value, row }: { value: any; row: AffiliateProvider })}
 	<div class="flex items-center gap-1">
 		{#if canManageAffiliate}
 			<Button variant="ghost" size="sm" onclick={() => confirmDeleteProvider(row)} style="color: var(--color-danger)" title={t('common.delete')}>
@@ -598,7 +598,7 @@
 {/snippet}
 
 <!-- MemberActionsCell component -->
-{#snippet MemberActionsCell(row: AffiliateMember)}
+{#snippet MemberActionsCell({ value, row }: { value: any; row: AffiliateMember })}
 	<div class="flex items-center gap-1">
 		{#if canManageAffiliate}
 			<Button variant="ghost" size="sm" onclick={() => confirmMemberStatus(row, row.status === 'active' ? 'suspended' : 'active')} style={row.status === 'active' ? 'color: var(--color-danger)' : 'color: var(--color-success)'} title={row.status === 'active' ? t('common.suspend') : t('common.activate')}>

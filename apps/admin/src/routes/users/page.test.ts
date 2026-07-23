@@ -4,7 +4,7 @@ import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
 	userManagementApi: {
-		list: vi.fn().mockResolvedValue({ ok: true, data: { users: [], total: 0, page: 1, total_pages: 1 } }),
+		list: vi.fn().mockResolvedValue({ ok: true, data: { items: [], total: 0, page: 1, total_pages: 1 } }),
 		issueWarning: vi.fn(),
 		banUser: vi.fn(),
 		deleteUser: vi.fn(),

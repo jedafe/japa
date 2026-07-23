@@ -19,11 +19,11 @@
 		title: string;
 		content_type: string;
 		status: string;
-		author_name: string;
-		space_name?: string;
+		author_id?: string;
+		space_id?: string;
 		created_at: string;
 		removed_at?: string;
-		views?: number;
+		view_count?: number;
 		url?: string;
 		slug?: string;
 		body?: string;
@@ -32,6 +32,7 @@
 	let items = $state<ContentItem[]>([]);
 	let currentPage = $state(0);
 	let totalItems = $state(0);
+	let serverTotal = $state(0);
 	let pageSize = $state(25);
 	let loading = $state(true);
 	let error = $state("");
@@ -77,10 +78,10 @@
 			key: "content_type",
 			label: t("content.type", "Type"),
 			options: [
-				{ value: "post", label: t("content.type.post", "Post") },
-				{ value: "comment", label: t("content.type.comment", "Comment") },
-				{ value: "blog", label: t("content.type.blog", "Blog") },
-				{ value: "forum", label: t("content.type.forum", "Forum") }
+				{ value: "blog_post", label: t("content.type.blog_post", "Blog Post") },
+				{ value: "comparison", label: t("content.type.comparison", "Comparison") },
+				{ value: "discussion", label: t("content.type.discussion", "Discussion") },
+				{ value: "page", label: t("content.type.page", "Page") }
 			]
 		},
 		{
@@ -98,31 +99,35 @@
 	const columns = [
 		{
 			key: "title",
-			label: t("content.title", "Title"),
+			label: t("content.column.title", "Title"),
 			sortable: true
 		},
 		{
 			key: "content_type",
 			label: t("content.type", "Type"),
-			sortable: true
+			sortable: true,
+			render: (v: string) => v ? v.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : "—"
 		},
 		{
 			key: "status",
 			label: t("common.status", "Status"),
-			sortable: true
+			sortable: true,
+			render: (v: string) => v ? v.charAt(0).toUpperCase() + v.slice(1) : "—"
 		},
 		{
-			key: "author_name",
+			key: "author_id",
 			label: t("content.author", "Author"),
-			sortable: true
+			sortable: true,
+			render: (v: string) => v ? v.substring(0, 8) + "..." : "—"
 		},
 		{
-			key: "space_name",
+			key: "space_id",
 			label: t("content.space", "Space"),
-			render: (v: string) => v || "—"
+			sortable: true,
+			render: (v: string) => v ? v.substring(0, 8) + "..." : "—"
 		},
 		{
-			key: "views",
+			key: "view_count",
 			label: t("content.views", "Views"),
 			sortable: true,
 			render: (v: number) => (v ?? 0).toLocaleString()
@@ -133,8 +138,8 @@
 			sortable: true,
 			render: (v: string) => new Date(v).toLocaleDateString()
 		},
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			component: ContentActionsCell
+		{ key: "actions", label: t("common.actions", "Actions"),
+			componentSnippet: ContentActionsCell
 		}
 	];
 
@@ -147,14 +152,27 @@
 				limit: String(pageSize)
 			});
 			if (searchQuery) params.set("q", searchQuery);
-			if (filterValues.content_type) params.set("content_type", filterValues.content_type);
+			if (filterValues.content_type) params.set("type", filterValues.content_type);
 			if (filterValues.status) params.set("status", filterValues.status);
 
 			const result = await contentAdminApi.list(params.toString());
 			if (result.ok) {
-				const d = result.data as { items: ContentItem[]; total: number };
-				items = d.items ?? (Array.isArray(result.data) ? result.data : []);
-				totalItems = d.total ?? items.length;
+				const d = result.data as any;
+				// API returns null when no items match the filter
+				const allItems = d?.items ?? (Array.isArray(d) ? d : []) ?? [];
+				// Backend doesn't filter by status. Filter client-side:
+				// - If status filter is set, show only that status
+				// - If no status filter, show all except removed
+				if (filterValues.status) {
+					items = allItems.filter((i: ContentItem) => i.status === filterValues.status);
+				} else {
+					items = allItems.filter((i: ContentItem) => i.status !== "removed");
+				}
+				// Use server-side total when available, fallback to client count
+				serverTotal = d?.total ?? allItems.length;
+				totalItems = filterValues.status
+					? items.length
+					: serverTotal;
 			} else {
 				error = result.error ?? t("common.error", "Failed to load content");
 			}
@@ -187,13 +205,17 @@
 
 	async function confirmRemove() {
 		if (!removeTarget) return;
-		const result = await contentAdminApi.remove(removeTarget.id, { reason: removeReason || undefined });
-		if (result.ok) {
-			showRemoveModal = false;
-			success = t("content.removed", "Content removed successfully");
-			loadItems();
-		} else {
-			error = result.error ?? t("common.error", "Failed to remove content");
+		try {
+			const result = await contentAdminApi.remove(removeTarget.id, { reason: removeReason || undefined });
+			if (result.ok) {
+				showRemoveModal = false;
+				success = t("content.removed", "Content removed successfully");
+				loadItems();
+			} else {
+				error = result.error ?? t("common.error", "Failed to remove content");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to remove content");
 		}
 	}
 
@@ -204,13 +226,17 @@
 
 	async function confirmRestore() {
 		if (!restoreTarget) return;
-		const result = await contentAdminApi.restore(restoreTarget.id);
-		if (result.ok) {
-			showRestoreModal = false;
-			success = t("content.restored", "Content restored successfully");
-			loadItems();
-		} else {
-			error = result.error ?? t("common.error", "Failed to restore content");
+		try {
+			const result = await contentAdminApi.restore(restoreTarget.id);
+			if (result.ok) {
+				showRestoreModal = false;
+				success = t("content.restored", "Content restored successfully");
+				loadItems();
+			} else {
+				error = result.error ?? t("common.error", "Failed to restore content");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to restore content");
 		}
 	}
 
@@ -226,19 +252,32 @@
 	async function confirmEdit() {
 		if (!editTarget) return;
 		const body: Record<string, unknown> = {};
-		if (editTitle.trim()) body.title = editTitle.trim();
-		if (editSlug.trim()) body.slug = editSlug.trim();
-		if (editStatus) body.status = editStatus;
-		if (editBody.trim()) body.body = editBody.trim();
-		const result = await contentAdminApi.update(editTarget.id, body);
-		if (result.ok) {
+		if (editTitle.trim() && editTitle.trim() !== editTarget.title) body.title = editTitle.trim();
+		if (editSlug.trim() && editSlug.trim() !== editTarget.slug) body.slug = editSlug.trim();
+		if (editStatus && editStatus !== editTarget.status) body.status = editStatus;
+		if (editBody.trim() && editBody.trim() !== (editTarget.body ?? "")) body.body = editBody.trim();
+		if (Object.keys(body).length === 0) {
 			showEditModal = false;
-			success = t("content.updated", "Content updated successfully");
-			loadItems();
-		} else {
-			error = result.error ?? t("common.error", "Failed to update content");
+			return;
+		}
+		try {
+			const result = await contentAdminApi.update(editTarget.id, body);
+			if (result.ok) {
+				showEditModal = false;
+				success = t("content.updated", "Content updated successfully");
+				loadItems();
+			} else {
+				error = result.error ?? t("common.error", "Failed to update content");
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t("common.error", "Failed to update content");
 		}
 	}
+
+	// Load initial data on mount
+	$effect(() => {
+		loadItems();
+	});
 
 	let bulkRemoving = $state(false);
 	async function bulkRemove() {
@@ -265,8 +304,8 @@
 </svelte:head>
 
 <PageHeader
-	title={t("content.title", "Content")}
-	description={t("content.description", "Manage all platform content")}
+	title={t("content.all", "All Content")}
+	description={t("content.manage", "Manage all platform content")}
 	actions={[
 		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost", onclick: loadItems }
 	]}
@@ -285,13 +324,13 @@
 
 <Card>
 	<CardHeader>
-		<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+		<FilterBar filters={filterDefs} bind:value={filterValues} onsearch={handleSearch} onclear={handleClear} />
 	</CardHeader>
 	<CardContent>
 		{#if loading}
 			<TableSkeleton rows={8} columns={columns.length} />
 		{:else}
-			<DataTable {columns} data={items} pageSize={10} selectable bind:selectedIds>
+			<DataTable {columns} data={items} selectable bind:selectedIds emptyMessage={t("content.empty", "No content found")}>
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkRemove} disabled={bulkRemoving}>
 						<Trash2 class="mr-1 h-3.5 w-3.5" />
@@ -324,39 +363,58 @@
 	</div>
 </Modal>
 
+<!-- Restore Modal -->
+<Modal bind:open={showRestoreModal} title={t("content.restore_title", "Restore Content")}>
+	{#if restoreTarget}
+		<p class="mb-2 text-sm" style="color: var(--color-foreground)">
+			{t("content.restore_confirm", "Restore this content?")} <strong>{restoreTarget.title || "Untitled"}</strong>
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => showRestoreModal = false}>{t("common.cancel", "Cancel")}</Button>
+		<Button variant="default" onclick={confirmRestore}>{t("content.restore", "Restore")}</Button>
+	</div>
+</Modal>
+
 <!-- View Modal -->
 <Modal bind:open={showViewModal} title={t("content.details", "Content Details")} size="lg">
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.title", "Title")}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.column.title", "Title")}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.title || "Untitled"}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.type", "Type")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.content_type}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.content_type ? viewTarget.content_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : "—"}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.author", "Author")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.author_name}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.author_id ? viewTarget.author_id.substring(0, 8) + "..." : "—"}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.status", "Status")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status ? viewTarget.status.charAt(0).toUpperCase() + viewTarget.status.slice(1) : "—"}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.views", "Views")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.views ?? 0).toLocaleString()}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{(viewTarget.view_count ?? 0).toLocaleString()}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.created", "Created")}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
 				</div>
-				{#if viewTarget.url}
+				{#if viewTarget.slug}
 					<div class="col-span-2">
-						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">URL</p>
-						<a class="mt-1 block break-all text-sm font-mono" style="color: var(--color-primary)" href={viewTarget.url} target="_blank" rel="noreferrer">{viewTarget.url}</a>
+						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.slug", "Slug")}</p>
+						<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.slug}</p>
+					</div>
+				{/if}
+				{#if viewTarget.body}
+					<div class="col-span-2">
+						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.body", "Body")}</p>
+						<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.body.substring(0, 200)}{viewTarget.body.length > 200 ? "..." : ""}</p>
 					</div>
 				{/if}
 			</div>
@@ -405,26 +463,22 @@
 </Modal>
 
 <!-- ContentActionsCell -->
-{#snippet ContentActionsCell(row: ContentItem)}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canEditContent}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
-				<Pencil class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-		{#if canManageContent}
-			{#if row.status === "removed" || !!row.removed_at}
-				<Button variant="ghost" size="sm" onclick={() => openRestore(row)} style="color: var(--color-success)">
-					<RotateCcw class="h-3.5 w-3.5" />
-				</Button>
-			{:else}
-				<Button variant="ghost" size="sm" onclick={() => openRemove(row)} style="color: var(--color-danger)">
-					<Trash2 class="h-3.5 w-3.5" />
-				</Button>
-			{/if}
+{#snippet ContentActionsCell({ value, row }: { value: any; row: ContentItem })}
+	<div class="flex items-center gap-1 whitespace-nowrap">
+		<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openView(row)}>
+			<Eye class="h-4 w-4" />
+		</button>
+		<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openEdit(row)}>
+			<Pencil class="h-4 w-4" />
+		</button>
+		{#if row.status === "removed" || !!row.removed_at}
+			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openRestore(row)} style="color: var(--color-success)">
+				<RotateCcw class="h-4 w-4" />
+			</button>
+		{:else}
+			<button class="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-black/5 dark:hover:bg-white/5" onclick={() => openRemove(row)} style="color: var(--color-danger)">
+				<Trash2 class="h-4 w-4" />
+			</button>
 		{/if}
 	</div>
 {/snippet}

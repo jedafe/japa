@@ -8,7 +8,8 @@
 	import { professionalAdminApi, type ProfileType } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Plus, RefreshCw, Settings2, Eye, Pencil, Trash2 } from 'lucide-svelte';
+	import { user } from '$lib/stores/auth.svelte';
+	import { Plus, RefreshCw, Settings2, Eye, Pencil, Trash2, ArrowUpRight } from 'lucide-svelte';
 
 	let types = $state<ProfileType[]>([]);
 	let loading = $state(true);
@@ -55,17 +56,17 @@
 		loading = false;
 	}
 
-	async function toggleExpand(id: string) {
-		if (expandedId === id) {
+	async function toggleExpand(pt: ProfileType) {
+		if (expandedId === pt.id) {
 			expandedId = null;
 			detailFields = [];
 			return;
 		}
-		expandedId = id;
+		expandedId = pt.id;
 		detailLoading = true;
 		detailFields = [];
 
-		const result = await professionalAdminApi.getType(id);
+		const result = await professionalAdminApi.getType(pt.slug);
 		if (result.ok && result.data) {
 			detailFields = (result.data as { fields?: Array<{ name: string; field_type: string; required: boolean }> })?.fields ?? [];
 		}
@@ -151,18 +152,27 @@
 	const columns = [
 		{ key: 'name', label: t('professional_types.name', 'Name'), sortable: true },
 		{ key: 'slug', label: t('professional_types.slug', 'Slug'), class: 'font-mono text-xs' },
-		{ key: 'description', label: t('professional_types.description', 'Description'), render: (v: string) => v || '—' },
+		{ key: 'description', label: t('professional_types.description_label', 'Description'), render: (v: string) => v || '—' },
 		{ key: 'profiles', label: t('professional_types.profiles', 'Profiles'), render: () => '—' },
-		{ key: 'actions', label: t('common.actions', 'Actions'), class: 'w-32', component: TypeActionsCell }
+		{ key: 'actions', label: t('common.actions', 'Actions'), class: 'w-32', componentSnippet: TypeActionsCell }
 	];
 
 	function handleRowClick(row: ProfileType) {
-		toggleExpand(row.id);
+		toggleExpand(row);
 	}
+
+	$effect(() => {
+		void searchQuery;
+		load();
+	});
 </script>
 
+<svelte:head>
+	<title>{t('professional_types.title', 'Professional Types')} — JapaConnect Admin</title>
+</svelte:head>
+
 <PageHeader
-	title={t('professional_types.title', 'Profile Types')}
+	title={t('professional_types.title', 'Professional Types')}
 	description={t('professional_types.description', 'Manage professional profile types, members, and invitations')}
 	actions={[
 		...(canManageTypes ? [{ label: t('professional_types.add', 'Add Profile Type'), icon: Plus, onclick: openCreate }] : []),
@@ -174,6 +184,29 @@
 	<div class="mb-4 rounded-lg border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
 		{error}
 	</div>
+{/if}
+
+{#if user.current?.profile_type === 'personal'}
+	<Card class="mb-4">
+		<CardContent class="p-6">
+			<div class="flex items-start gap-4">
+				<div class="rounded-lg p-2" style="background-color: color-mix(in srgb, var(--color-primary) 15%, transparent)">
+					<ArrowUpRight class="h-5 w-5" style="color: var(--color-primary)" />
+				</div>
+				<div class="flex-1">
+					<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
+						{t('professional_types.upgrade_title', 'Upgrade to Business Profile')}
+					</h3>
+					<p class="mt-1 text-sm" style="color: var(--color-muted)">
+						{t('professional_types.upgrade_description', 'You need a business profile to create professional profiles. Upgrade your account to access this feature.')}
+					</p>
+					<Button variant="outline" size="sm" class="mt-3" href="/settings/profile">
+						{t('professional_types.upgrade_action', 'Upgrade Now')}
+					</Button>
+				</div>
+			</div>
+		</CardContent>
+	</Card>
 {/if}
 
 <Card>
@@ -242,7 +275,7 @@
 {/if}
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title={t('professional_types.details', 'Profile Type Details')} size="sm">
+<Modal bind:open={showViewModal} title={t('professional_types.details', 'Professional Type Details')} size="sm">
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
@@ -254,7 +287,7 @@
 				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.slug}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('professional_types.description', 'Description')}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('professional_types.description_label', 'Description')}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.description || '—'}</p>
 			</div>
 		</div>
@@ -319,16 +352,16 @@
 </Modal>
 
 <!-- TypeActionsCell component -->
-{#snippet TypeActionsCell(pt: ProfileType)}
+{#snippet TypeActionsCell({ value, row }: { value: any; row: ProfileType })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(pt)}>
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
 		{#if canManageTypes}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(pt)}>
+			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
 				<Pencil class="h-3.5 w-3.5" />
 			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(pt)} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 				<Trash2 class="h-3.5 w-3.5" />
 			</Button>
 		{/if}

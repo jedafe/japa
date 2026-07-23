@@ -216,6 +216,7 @@ export interface UserDetail {
 	email: string;
 	groups: string[];
 	status: string;
+	profile_type: 'personal' | 'business' | 'organisation';
 	avatar_url?: string;
 	created_at: string;
 	last_login_at?: string;
@@ -262,8 +263,8 @@ export const permissionsApi = {
 
 export const userManagementApi = {
 	list: (params?: string) =>
-		api<{ users: UserDetail[]; total: number; page: number; total_pages: number }>(`/admin/users${params ? `?${params}` : ''}`),
-	getUser: (userId: string) => api<UserDetail>(`/users/${userId}`),
+		api<{ items: UserDetail[]; total: number; page: number; total_pages: number }>(`/admin/users${params ? `?${params}` : ''}`),
+	getUser: (userId: string) => api<UserDetail>(`/admin/users/${userId}`),
 	getUserActivity: (userId: string, params?: string) =>
 		api<{ activities: UserActivity[]; total: number }>(`/admin/users/${userId}/activity${params ? `?${params}` : ''}`),
 
@@ -278,11 +279,26 @@ export const userManagementApi = {
 	issueWarning: (userId: string, body: { reason: string }) =>
 		api(`/admin/users/${userId}/warn`, { method: 'POST', body }),
 	banUser: (userId: string) =>
-		api(`/admin/users/${userId}/ban`, { method: 'POST' }),
+		api(`/admin/users/${userId}/ban`, { method: 'POST', body: {} }),
 	unbanUser: (userId: string) =>
 		api(`/admin/users/${userId}/ban`, { method: 'DELETE' }),
 	suspendUser: (userId: string, body: { status: string; reason?: string }) =>
 		api(`/admin/users/${userId}/status`, { method: 'PATCH', body }),
+	updateProfileType: (userId: string, body: { profile_type: string }) =>
+		api(`/admin/users/${userId}/profile-type`, { method: 'PATCH', body }),
+	// Granular ban system
+	restrictUser: (userId: string, body: { operations: string[]; reason: string; duration: string }) =>
+		api(`/admin/users/${userId}/restrict`, { method: 'POST', body }),
+	liftRestriction: (userId: string, operation: string) =>
+		api(`/admin/users/${userId}/restrict/${operation}`, { method: 'DELETE' }),
+	liftAllRestrictions: (userId: string) =>
+		api(`/admin/users/${userId}/restrict`, { method: 'DELETE' }),
+	listRestrictions: (userId: string) =>
+		api<{ data: Array<{ id: string; operation: string; reason: string | null; expires_at: string | null; created_at: string }> }>(`/admin/users/${userId}/restrictions`),
+	suspendUserFull: (userId: string, body: { reason: string }) =>
+		api(`/admin/users/${userId}/suspend`, { method: 'POST', body }),
+	warnUserTyped: (userId: string, body: { reason: string; violation_type: string }) =>
+		api<{ user_id: string; violation_type: string; warning_count: number; auto_restricted: boolean }>(`/admin/users/${userId}/warn-typed`, { method: 'POST', body }),
 	// Group membership is managed via the RBAC user-group routes; the backend
 	// PATCH /admin/users/{id}/group endpoint only ADDS one membership by
 	// group_id and cannot remove, so a set-style "change groups" must diff
@@ -295,6 +311,8 @@ export const userManagementApi = {
 		api<{ id: string; email: string; username: string }>('/admin/users', { method: 'POST', body }),
 	deleteUser: (userId: string) =>
 		api(`/admin/users/${userId}`, { method: 'DELETE' }),
+	hardDeleteUser: (userId: string) =>
+		api(`/admin/users/${userId}/hard`, { method: 'DELETE' }),
 
 	listGroups: (params?: string) =>
 		api<{ groups: UserGroup[]; total: number }>(`/admin/user-groups${params ? `?${params}` : ''}`),
@@ -306,7 +324,7 @@ export const userManagementApi = {
 		api<{ deleted: boolean }>(`/admin/user-groups/${id}`, { method: 'DELETE' }),
 
 	listRoles: (params?: string) =>
-		api<{ roles: UserRole[]; total: number }>(`/admin/roles${params ? `?${params}` : ''}`),
+		api<{ roles: UserRole[]; total: number; page: number; total_pages: number }>(`/admin/roles${params ? `?${params}` : ''}`),
 	createRole: (body: { name: string; permissions: string[] }) =>
 		api<UserRole>('/admin/roles', { method: 'POST', body }),
 	updateRole: (id: string, body: { name?: string; permissions?: string[] }) =>
@@ -390,9 +408,10 @@ export const pageBuilderApi = {
 export const spacesAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/spaces${params ? `?${params}` : ''}`),
 	get: (id: string) => api<unknown>(`/admin/spaces/${id}`),
-	create: (body: { name: string; space_type: string; owner_id?: string }) =>
+	getModerators: (id: string) => api<unknown>(`/admin/spaces/${id}/moderators`),
+	create: (body: { name: string; slug: string; space_type_id: string; level: string; description?: string; parent_id?: string; preset_name?: string }) =>
 		api('/admin/spaces', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; space_type?: string; status?: string }) =>
+	update: (id: string, body: { name?: string; visibility?: string; status?: string }) =>
 		api(`/admin/spaces/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/spaces/${id}`, { method: 'DELETE' }),
@@ -428,6 +447,8 @@ export const organisationsAdminApi = {
 		api(`/admin/organizations/${id}/verify`, { method: 'DELETE' }),
 	claim: (id: string, body: { note?: string }) =>
 		api(`/admin/organizations/${id}/claim`, { method: 'POST', body }),
+	pendingClaims: () =>
+		api<{ id: string; organization_id: string; claimant_username: string; org_name: string; evidence_url?: string; notes?: string; created_at: string }[]>('/admin/organizations/pending-claims'),
 };
 
 export const reactionsAdminApi = {
@@ -442,12 +463,14 @@ export const reactionsAdminApi = {
 
 export const universitiesAdminApi = {
 	list: (params?: string) => api<unknown>(`/universities${params ? `?${params}` : ''}`),
-	create: (body: { name: string; domain: string; verified: boolean }) =>
+	create: (body: { name: string; slug: string; verified: boolean }) =>
 		api('/admin/universities', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; domain?: string; verified?: boolean }) =>
+	update: (id: string, body: { name?: string; slug?: string; verified?: boolean }) =>
 		api(`/admin/universities/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
 		api(`/admin/universities/${id}`, { method: 'DELETE' }),
+	verify: (id: string) =>
+		api(`/admin/universities/${id}/verify`, { method: 'POST' }),
 };
 
 // --- Unconsumed route methods (490 route initiative) ---
@@ -497,6 +520,18 @@ export const blogAdminApi = {
 	approvePost: (id: string) => api<unknown>(`/admin/blog/review-queue/${id}/approve`, { method: 'POST', body: {} }),
 	rejectPost: (id: string, body: { reason?: string }) =>
 		api<unknown>(`/admin/blog/review-queue/${id}/reject`, { method: 'POST', body }),
+	createPost: (body: { title: string; slug?: string; body?: string; body_html?: string; status?: string; visibility?: string }) =>
+		api<unknown>('/blog', { method: 'POST', body }),
+	updatePost: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/blog/${id}`, { method: 'PATCH', body }),
+	publishPost: (id: string) =>
+		api<unknown>(`/content/${id}/publish`, { method: 'POST', body: {} }),
+	unpublishPost: (id: string) =>
+		api<unknown>(`/blog/${id}`, { method: 'PATCH', body: { status: 'draft' } }),
+	restorePost: (id: string) =>
+		api<unknown>(`/blog/${id}`, { method: 'PATCH', body: { status: 'draft' } }),
+	deletePost: (id: string) =>
+		api<unknown>(`/admin/blog/${id}`, { method: 'DELETE' }),
 };
 
 export const contentAdminApi = {
@@ -513,6 +548,7 @@ export const mediaAdminApi = {
 	listQuarantined: (params?: string) => api<unknown>(`/admin/media/quarantined${params ? `?${params}` : ''}`),
 	approve: (id: string) => api<unknown>(`/admin/media/${id}/approve`, { method: 'POST', body: {} }),
 	reject: (id: string) => api<unknown>(`/admin/media/${id}/reject`, { method: 'POST', body: {} }),
+	updateStatus: (id: string, status: string) => api<unknown>(`/admin/media/${id}/status`, { method: 'POST', body: { status } }),
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/media/${id}`, { method: 'DELETE' }),
 };
 

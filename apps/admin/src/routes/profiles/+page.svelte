@@ -195,19 +195,19 @@
 	</div>
 </Modal>
 
-{#snippet ProfileActionsCell(profile: Profile)}
+{#snippet ProfileActionsCell({ value, row }: { value: any; row: Profile })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(profile)}>
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			<Eye class="h-3 w-3 inline mr-1" />
 			{t('common.view')}
 		</Button>
-		{#if canModerate && !profile.is_verified}
-			<Button variant="ghost" size="sm" onclick={() => verifyProfile(profile.id)}>
+		{#if canModerate && !row.is_verified}
+			<Button variant="ghost" size="sm" onclick={() => verifyProfile(row.id)}>
 				<CheckCircle class="h-3 w-3 inline mr-1" style="color: var(--color-success)" />
 				{t('profiles.verify')}
 			</Button>
 		{:else if canModerate}
-			<Button variant="ghost" size="sm" onclick={() => unverifyProfile(profile.id)} style="color: var(--color-danger)">
+			<Button variant="ghost" size="sm" onclick={() => unverifyProfile(row.id)} style="color: var(--color-danger)">
 				{t('profiles.unverify')}
 			</Button>
 		{/if}

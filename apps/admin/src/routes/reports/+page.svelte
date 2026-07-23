@@ -307,17 +307,17 @@
 </Modal>
 
 <!-- ReportActionsCell component -->
-{#snippet ReportActionsCell(report: Report)}
+{#snippet ReportActionsCell({ value, row }: { value: any; row: Report })}
 	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(report)}>
+		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>
-		{#if report.file_url}
-			<Button variant="ghost" size="sm" onclick={() => downloadReport(report)}>
+		{#if row.file_url}
+			<Button variant="ghost" size="sm" onclick={() => downloadReport(row)}>
 				<Download class="h-3.5 w-3.5" />
 			</Button>
 		{/if}
-		<Button variant="ghost" size="sm" onclick={() => confirmDelete(report)} style="color: var(--color-danger)">
+		<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
 			<Trash2 class="h-3.5 w-3.5" />
 		</Button>
 	</div>

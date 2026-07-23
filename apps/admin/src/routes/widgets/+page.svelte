@@ -224,7 +224,7 @@
 	</div>
 </Modal>
 
-{#snippet WidgetActionsCell(row: Widget)}
+{#snippet WidgetActionsCell({ value, row }: { value: any; row: Widget })}
 	<div class="flex items-center justify-end gap-1">
 		<button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" onclick={() => openEdit(row)}>
 			<Pencil class="h-3 w-3" style="color: var(--color-primary)" />

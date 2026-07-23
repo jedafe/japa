@@ -58,8 +58,8 @@ func (s *Store) GetEventCountsByType(ctx context.Context, tenantID pgtype.UUID, 
 	})
 }
 
-// GetDailyContentStats returns materialized view data for content stats.
-func (s *Store) GetDailyContentStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date, contentID pgtype.UUID) ([]gen.MvDailyContentStat, error) {
+// GetDailyContentStats returns per-content daily stats.
+func (s *Store) GetDailyContentStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date, contentID pgtype.UUID) ([]gen.GetDailyContentStatsRow, error) {
 	return s.queries.GetDailyContentStats(ctx, gen.GetDailyContentStatsParams{
 		TenantID: tenantID,
 		Column2:  nullableDate(startDate),
@@ -78,8 +78,8 @@ func (s *Store) GetTopContentByViews(ctx context.Context, tenantID pgtype.UUID, 
 	})
 }
 
-// GetDailySpaceStats returns materialized view data for space stats.
-func (s *Store) GetDailySpaceStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date, spaceID pgtype.UUID) ([]gen.MvDailySpaceStat, error) {
+// GetDailySpaceStats returns per-space daily stats.
+func (s *Store) GetDailySpaceStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date, spaceID pgtype.UUID) ([]gen.GetDailySpaceStatsRow, error) {
 	return s.queries.GetDailySpaceStats(ctx, gen.GetDailySpaceStatsParams{
 		TenantID: tenantID,
 		Column2:  nullableDate(startDate),
@@ -188,6 +188,21 @@ func (s *Store) GetContentVolumeOverTime(ctx context.Context, tenantID pgtype.UU
 	})
 }
 
+// GetTotalUsers returns the total number of users for a tenant.
+func (s *Store) GetTotalUsers(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.queries.GetTotalUsers(ctx, tenantID)
+}
+
+// GetActiveUsers returns the number of active users (logged in within 30 days).
+func (s *Store) GetActiveUsers(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.queries.GetActiveUsers(ctx, tenantID)
+}
+
+// GetNewUsersToday returns the number of users registered today.
+func (s *Store) GetNewUsersToday(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.queries.GetNewUsersToday(ctx, tenantID)
+}
+
 // nullableTimestamptz converts a *time.Time to a pgtype.Timestamptz.
 func nullableTimestamptz(t *time.Time) pgtype.Timestamptz {
 	if t == nil {
@@ -214,4 +229,29 @@ func nullableDate(d *pgtype.Date) pgtype.Date {
 	}
 
 	return *d
+}
+
+// GetSearchAnalytics returns search analytics summary for the given time window.
+func (s *Store) GetSearchAnalytics(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *time.Time, limit int32) ([]gen.GetSearchAnalyticsSummaryRow, error) {
+	return s.queries.GetSearchAnalyticsSummary(ctx, gen.GetSearchAnalyticsSummaryParams{
+		TenantID: tenantID,
+		Column2:  nullableTimestamptz(startDate),
+		Column3:  nullableTimestamptz(endDate),
+		Limit:    limit,
+		Offset:   0,
+	})
+}
+
+// GetRevenueSummary returns total revenue, monthly revenue, and active subscription count.
+func (s *Store) GetRevenueSummary(ctx context.Context, tenantID pgtype.UUID) (gen.GetRevenueSummaryRow, error) {
+	return s.queries.GetRevenueSummary(ctx, tenantID)
+}
+
+// GetRevenueByPeriod returns revenue aggregated by month for the given time window.
+func (s *Store) GetRevenueByPeriod(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *time.Time) ([]gen.GetRevenueByPeriodRow, error) {
+	return s.queries.GetRevenueByPeriod(ctx, gen.GetRevenueByPeriodParams{
+		TenantID: tenantID,
+		Column2:  nullableTimestamptz(startDate),
+		Column3:  nullableTimestamptz(endDate),
+	})
 }

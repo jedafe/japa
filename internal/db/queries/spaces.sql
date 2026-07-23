@@ -27,32 +27,32 @@ RETURNING id, tenant_id, name, visibility, posting_perm, replying_perm, commenti
 -- =====================
 
 -- name: ListSpaceTypesByTenant :many
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
 FROM space_types
 WHERE tenant_id = @tenant_id
 ORDER BY created_at ASC, id ASC;
 
 -- name: GetSpaceTypeByID :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
 FROM space_types
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: GetSpaceTypeBySlug :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university
 FROM space_types
 WHERE slug = @slug AND tenant_id = @tenant_id;
 
 -- name: CreateSpaceType :one
-INSERT INTO space_types (tenant_id, name, slug, description, icon, field_group_id, is_system)
-VALUES (@tenant_id, @name, @slug, sqlc.narg(description), sqlc.narg(icon), sqlc.narg(field_group_id), @is_system)
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at;
+INSERT INTO space_types (tenant_id, name, slug, description, icon, field_group_id, is_university, is_system)
+VALUES (@tenant_id, @name, @slug, sqlc.narg(description), sqlc.narg(icon), sqlc.narg(field_group_id), @is_university, @is_system)
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university;
 
 -- name: UpdateSpaceType :one
 UPDATE space_types
 SET name = @name, description = sqlc.narg(description), icon = sqlc.narg(icon),
-    field_group_id = sqlc.narg(field_group_id)
+    field_group_id = sqlc.narg(field_group_id), is_university = @is_university
 WHERE id = @id AND tenant_id = @tenant_id AND is_system = false
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at;
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, is_university;
 
 -- name: DeleteSpaceType :exec
 DELETE FROM space_types
@@ -97,6 +97,28 @@ SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_co
 FROM spaces
 WHERE parent_id = @parent_id AND tenant_id = @tenant_id
 ORDER BY created_at ASC, id ASC;
+
+-- name: AdminListSpaces :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at,
+       COALESCE(u.username, '') AS owner,
+       COALESCE(u.id::text, '') AS owner_id,
+       COALESCE(st.name, '') AS space_type
+FROM spaces s
+LEFT JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id AND sm.role = 'owner'
+LEFT JOIN users u ON u.id = sm.user_id AND u.tenant_id = s.tenant_id
+LEFT JOIN space_types st ON st.id = s.space_type_id AND st.tenant_id = s.tenant_id
+WHERE s.tenant_id = @tenant_id
+ORDER BY s.created_at DESC, s.id DESC
+LIMIT @limit_val OFFSET @offset_val;
+
+-- name: AdminListSpacesCount :one
+SELECT COUNT(*) AS total
+FROM spaces s
+WHERE s.tenant_id = @tenant_id;
 
 -- name: ListSpacesByMemberUser :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,

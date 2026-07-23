@@ -110,11 +110,7 @@ export interface Tenant {
 	name: string;
 	slug: string;
 	domain: string | null;
-	plan: string;
 	status: string;
-	user_count: number;
-	content_count: number;
-	storage_used: number;
 	created_at: string;
 	updated_at: string;
 }

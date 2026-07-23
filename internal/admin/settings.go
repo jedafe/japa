@@ -56,6 +56,12 @@ type Handlers struct {
 	RBAC     *rbac.RBAC
 	Valkey   valkeycompat.Cmdable
 	Settings *config.Settings
+	GDPR     GDPRService
+}
+
+// GDPRService is the interface the admin hard-delete handler needs from the GDPR service.
+type GDPRService interface {
+	HardDeleteUser(ctx context.Context, userID, tenantID pgtype.UUID) error
 }
 
 // NewHandlers creates Handlers with the given database pool.
@@ -76,6 +82,11 @@ func (h *Handlers) SetValkey(v valkeycompat.Cmdable) {
 // SetSettings injects the hot-reloadable settings reader for cache invalidation.
 func (h *Handlers) SetSettings(s *config.Settings) {
 	h.Settings = s
+}
+
+// SetGDPR injects the GDPR service for admin hard-delete operations.
+func (h *Handlers) SetGDPR(g GDPRService) {
+	h.GDPR = g
 }
 
 // defaultSettings defines every available setting with its metadata.

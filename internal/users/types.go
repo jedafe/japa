@@ -19,19 +19,21 @@ type UpdatePreferencesRequest struct {
 
 // UserProfileResponse is the API response for a user profile.
 type UserProfileResponse struct {
-	ID            string  `json:"id"`
-	Email         string  `json:"email"`
-	Username      string  `json:"username"`
-	DisplayName   *string `json:"display_name"`
-	AvatarURL     *string `json:"avatar_url"`
-	Bio           *string `json:"bio"`
-	Timezone      *string `json:"timezone"`
-	ProfileType   string  `json:"profile_type"`
-	Status        string  `json:"status"`
-	FollowerCount int32   `json:"follower_count"`
-	UserGroupName string  `json:"user_group_name"`
-	CreatedAt     string  `json:"created_at"`
-	UpdatedAt     string  `json:"updated_at"`
+	ID            string   `json:"id"`
+	Email         string   `json:"email"`
+	Username      string   `json:"username"`
+	DisplayName   *string  `json:"display_name"`
+	AvatarURL     *string  `json:"avatar_url"`
+	Bio           *string  `json:"bio"`
+	Timezone      *string  `json:"timezone"`
+	ProfileType   string   `json:"profile_type"`
+	Status        string   `json:"status"`
+	FollowerCount int32    `json:"follower_count"`
+	UserGroupName string   `json:"user_group_name"`
+	Groups        []string `json:"groups"`
+	LastLoginAt   *string  `json:"last_login_at"`
+	CreatedAt     string   `json:"created_at"`
+	UpdatedAt     string   `json:"updated_at"`
 }
 
 // UserPreferencesResponse is the API response for user preferences.
@@ -45,6 +47,7 @@ type ListUsersResponse struct {
 	Items      []UserListItem `json:"items"`
 	Page       int32          `json:"page"`
 	TotalPages int32          `json:"total_pages"`
+	Total      int32          `json:"total"`
 }
 
 // UserActivityItem is one row in the admin user-activity feed: a content
@@ -64,14 +67,15 @@ type UserActivityResponse struct {
 
 // UserListItem is a condensed user record for list endpoints.
 type UserListItem struct {
-	ID            string `json:"id"`
-	Email         string `json:"email"`
-	Username      string `json:"username"`
-	ProfileType   string `json:"profile_type"`
-	Status        string `json:"status"`
-	FollowerCount int32  `json:"follower_count"`
-	CreatedAt     string `json:"created_at"`
-	UpdatedAt     string `json:"updated_at"`
+	ID            string   `json:"id"`
+	Email         string   `json:"email"`
+	Username      string   `json:"username"`
+	ProfileType   string   `json:"profile_type"`
+	Status        string   `json:"status"`
+	FollowerCount int32    `json:"follower_count"`
+	Groups        []string `json:"groups"`
+	CreatedAt     string   `json:"created_at"`
+	UpdatedAt     string   `json:"updated_at"`
 }
 
 // PublicProfileResponse is the PII-safe API response for GET /users/{username}.
@@ -87,3 +91,5 @@ type PublicProfileResponse struct {
 	ProfileType    string  `json:"profile_type"`
 	FollowerCount  int32   `json:"follower_count"`
 	FollowingCount int32   `json:"following_count"`
+	CreatedAt      string  `json:"created_at"`
+}

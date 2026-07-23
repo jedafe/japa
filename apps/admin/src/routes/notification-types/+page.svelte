@@ -235,7 +235,7 @@
 	</Modal>
 {/if}
 
-{#snippet NtActionsCell(row: NotificationType)}
+{#snippet NtActionsCell({ value, row }: { value: any; row: NotificationType })}
 	<div class="flex items-center justify-end gap-2">
 		{#if canManageNotificationTypes}
 			<button class="text-xs" style="color: var(--color-primary)" onclick={() => openEdit(row)}>

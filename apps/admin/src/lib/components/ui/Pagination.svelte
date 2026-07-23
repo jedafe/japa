@@ -29,7 +29,7 @@
 
 <div class="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3" style="border-color: var(--color-border)">
 	<div class="flex items-center gap-3 text-sm" style="color: var(--color-muted)">
-		<span>{totalItems} item{totalItems !== 1 ? 's' : ''}</span>
+		<span>{t('pagination.items', '{n} items').replace('{n}', String(totalItems))}</span>
 
 		<div class="flex items-center gap-1.5">
 			<span class="text-xs">{t('lib.components.ui.Pagination.svelte.per_page')}</span>
@@ -61,7 +61,7 @@
 		</button>
 
 		<span class="px-2 text-xs font-medium" style="color: var(--color-foreground)">
-			Page {page + 1} of {totalPages}
+			{t('pagination.page_of', 'Page {current} of {total}').replace('{current}', String(page + 1)).replace('{total}', String(totalPages))}
 		</span>
 
 		<button

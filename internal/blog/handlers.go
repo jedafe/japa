@@ -1022,6 +1022,7 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 		Visibility:  input.Visibility,
 	})
 	if err != nil {
+		slog.Error("failed to create blog post", "error", err, "title", input.Title, "slug", input.Slug)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
 		return
 	}

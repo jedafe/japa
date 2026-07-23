@@ -194,10 +194,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		RedirectBase:       cfg.OAuthRedirectBase,
 	}
 	oauthStore := auth.NewOAuthStore(database)
+	authQueries := gen.New(database.Writer)
 	oauthHandlers := &auth.OAuthHandlers{
-		Config: oauthCfg,
-		Store:  oauthStore,
-		KeyRot: kr,
+		Config:  oauthCfg,
+		Store:   oauthStore,
+		Queries: authQueries,
+		KeyRot:  kr,
 	}
 
 	// Feature flag checker
@@ -492,6 +494,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers.SetRBAC(rbacResolver)
 	adminHandlers.SetValkey(vkClient.Redis())
 	adminHandlers.SetSettings(settingsService)
+	adminHandlers.SetGDPR(gdprService)
 
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
@@ -699,7 +702,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				err := database.Reader.QueryRow(ctx,
 					`SELECT EXISTS(
 						SELECT 1 FROM user_moderation_actions
-						WHERE user_id = $1 AND action = 'ban'
+						WHERE user_id = $1 AND action IN ('ban', 'suspension')
 						AND (expires_at IS NULL OR expires_at > now())
 					)`, userID).Scan(&banned)
 				if err != nil || !banned {
@@ -708,9 +711,34 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				_ = database.Reader.QueryRow(ctx,
 					`SELECT expires_at FROM user_moderation_actions
-					WHERE user_id = $1 AND action = 'ban'
+					WHERE user_id = $1 AND action IN ('ban', 'suspension')
 					AND (expires_at IS NULL OR expires_at > now())
 					ORDER BY created_at DESC LIMIT 1`, userID).Scan(&expiresAt)
+
+				return true, expiresAt
+			}))
+
+			// Operation-level ban enforcement — checks user_operation_bans
+			// for per-operation restrictions (post, comment, discussion, blog, message).
+			r.Use(mw.OperationBanEnforcement(vkClient.Redis(), func(ctx context.Context, userID string, op string) (bool, *time.Time) {
+				var restricted bool
+				var expiresAt *time.Time
+
+				err := database.Reader.QueryRow(ctx,
+					`SELECT EXISTS(
+						SELECT 1 FROM user_operation_bans
+						WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
+						AND (expires_at IS NULL OR expires_at > now())
+					)`, userID, op).Scan(&restricted)
+				if err != nil || !restricted {
+					return false, nil
+				}
+
+				_ = database.Reader.QueryRow(ctx,
+					`SELECT expires_at FROM user_operation_bans
+					WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
+					AND (expires_at IS NULL OR expires_at > now())
+					ORDER BY created_at DESC LIMIT 1`, userID, op).Scan(&expiresAt)
 
 				return true, expiresAt
 			}))
@@ -885,6 +913,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// catalog (management of the type definitions themselves is admin-only).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/space-types", spaceHandlers.ListSpaceTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/space-types/{id}", spaceHandlers.GetSpaceType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.create")).
+				Get("/admin/space-types", spaceHandlers.ListSpaceTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.create")).
 				Post("/admin/space-types", spaceHandlers.CreateSpaceType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "space_types.edit")).
@@ -1216,6 +1246,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			mediaHandlers := media.NewHandlers(mediaService)
 			mediaHandlers.AsynqClient = asynqClient
 
+			// Media serving endpoint (no auth required for serving files)
+			r.Get("/media/serve/{bucket}/*", mediaHandlers.ServeMedia)
+
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.upload")).Post("/media/upload", mediaHandlers.InitiateUpload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/media/confirm/{id}", mediaHandlers.ConfirmUpload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/media/{id}", mediaHandlers.GetMedia)
@@ -1240,6 +1273,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/media/{id}", mediaHandlers.DeleteMedia)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.edit_any")).
 				Patch("/admin/media/{id}", mediaHandlers.AdminUpdateMetadata)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.quarantine.manage")).
+				Post("/admin/media/{id}/status", mediaHandlers.AdminUpdateMediaStatus)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.upload")).
+				Post("/admin/media/upload", mediaHandlers.AdminUpload)
 
 			// Forum Q&A / Solved routes — gated by feature.forum (Section 08)
 			forumService := forum.NewService(database)
@@ -1902,10 +1939,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Admin user routes (catalog: /admin/users)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Post("/admin/users", adminHandlers.CreateUser)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users/{id}", usersHandlers.GetUserByUsername)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users/{id}", usersHandlers.GetAdminUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Get("/admin/users/{id}/sessions", usersHandlers.ListUserSessions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Get("/admin/users/{id}/activity", usersHandlers.ListUserActivity)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.delete")).Delete("/admin/users/{id}", usersHandlers.DeleteUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.delete")).Delete("/admin/users/{id}/hard", adminHandlers.HardDeleteUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Patch("/admin/users/{id}/profile-type", usersHandlers.UpdateProfileType)
 
 			// Onboarding routes (Section 09)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/onboarding/status", onboardingHandlers.GetStatus)
@@ -2477,14 +2516,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/organizations/{id}/verify", adminHandlers.UnverifyOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Post("/admin/organizations/{id}/claim", adminHandlers.ClaimOrganization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/organizations/pending-claims", adminHandlers.ListPendingOwnershipClaims)
 
 			// Task 12: Spaces admin extras
 			// Admin spaces CRUD (reuses the tenant-scoped space handlers; the
 			// admin's resolved tenant scopes the listing).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
-				Get("/admin/spaces", spaceHandlers.ListSpaces)
+				Get("/admin/spaces", spaceHandlers.AdminListSpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
-				Get("/admin/spaces/{id}", spaceHandlers.GetSpace)
+				Get("/admin/spaces/{id}", spaceHandlers.AdminGetSpace)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
+				Get("/admin/spaces/{id}/moderators", spaceHandlers.AdminListModerators)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
 				Post("/admin/spaces", spaceHandlers.CreateSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.admin")).
@@ -2568,7 +2611,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Task 19: Analytics admin — domain-specific
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
-				Get("/admin/analytics/content", analyticsHandlers.GetAdminOverview)
+				Get("/admin/analytics/content", analyticsHandlers.GetAdminContentAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
 				Get("/admin/analytics/revenue", analyticsHandlers.GetRevenueAnalytics)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "analytics.admin")).
@@ -2607,6 +2650,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/users/{id}/warnings", adminHandlers.ListUserWarnings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Delete("/admin/users/{id}/warnings/{warningId}", adminHandlers.DeleteUserWarning)
+
+			// Granular ban system
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/users/{id}/restrict", adminHandlers.RestrictUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Delete("/admin/users/{id}/restrict/{operation}", adminHandlers.LiftRestriction)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Delete("/admin/users/{id}/restrict", adminHandlers.LiftAllRestrictions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Get("/admin/users/{id}/restrictions", adminHandlers.ListRestrictions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/users/{id}/suspend", adminHandlers.SuspendUser)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/users/{id}/warn-typed", adminHandlers.WarnUserTyped)
 
 			// Task 22: Appeals admin
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
@@ -2762,6 +2819,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Delete("/tenants/{id}", controlHandlers.DeleteTenant)
 			r.Post("/tenants/{id}/suspend", controlHandlers.SuspendTenant)
 			r.Post("/tenants/{id}/unsuspend", controlHandlers.UnsuspendTenant)
+
+			// Per-tenant Settings
+			r.Get("/tenants/{id}/settings", controlHandlers.GetTenantSettings)
+			r.Patch("/tenants/{id}/settings", controlHandlers.UpdateTenantSettings)
+			r.Patch("/tenants/{id}/settings/{key}", controlHandlers.UpdateTenantSettingKey)
+			r.Post("/tenants/{id}/settings/{key}/reset", controlHandlers.ResetTenantSetting)
 
 			// System Settings
 			r.Get("/system-settings", controlHandlers.ListSystemSettings)

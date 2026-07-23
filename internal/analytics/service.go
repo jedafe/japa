@@ -225,8 +225,15 @@ type AdminDashboard struct {
 	UserGrowth         []gen.GetUserGrowthOverTimeRow    `json:"user_growth"`
 	TrafficSources     []gen.GetTrafficSourcesRow        `json:"traffic_sources"`
 	TopContent         []gen.GetTopContentByViewsRow     `json:"top_content"`
-	ContentStats       []gen.MvDailyContentStat          `json:"content_stats"`
-	SpaceStats         []gen.MvDailySpaceStat            `json:"space_stats"`
+	ContentStats       []gen.GetDailyContentStatsRow     `json:"content_stats"`
+	SpaceStats         []gen.GetDailySpaceStatsRow       `json:"space_stats"`
+}
+
+// UserAnalytics holds the admin user analytics response.
+type UserAnalytics struct {
+	TotalUsers    int32 `json:"total_users"`
+	ActiveUsers   int32 `json:"active_users"`
+	NewUsersToday int32 `json:"new_users_today"`
 }
 
 // GetAdminDashboardData returns the admin analytics dashboard data for the
@@ -308,6 +315,23 @@ func (s *Service) GetAdminDashboardData(ctx context.Context, tenantID pgtype.UUI
 	}, nil
 }
 
+// GetUserAnalytics returns aggregate user counts for the admin dashboard.
+func (s *Service) GetUserAnalytics(ctx context.Context, tenantID pgtype.UUID) (UserAnalytics, error) {
+	total, err := s.store.GetTotalUsers(ctx, tenantID)
+	if err != nil {
+		return UserAnalytics{}, fmt.Errorf("fetching total users: %w", err)
+	}
+	active, err := s.store.GetActiveUsers(ctx, tenantID)
+	if err != nil {
+		return UserAnalytics{}, fmt.Errorf("fetching active users: %w", err)
+	}
+	newToday, err := s.store.GetNewUsersToday(ctx, tenantID)
+	if err != nil {
+		return UserAnalytics{}, fmt.Errorf("fetching new users today: %w", err)
+	}
+	return UserAnalytics{TotalUsers: total, ActiveUsers: active, NewUsersToday: newToday}, nil
+}
+
 // ---------------------------------------------------------------------------
 // Security Scans
 // ---------------------------------------------------------------------------
@@ -374,4 +398,32 @@ func (s *Service) ResolveScanResult(ctx context.Context, id, tenantID pgtype.UUI
 // GetUnresolvedCriticalFindings returns unresolved critical findings.
 func (s *Service) GetUnresolvedCriticalFindings(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetUnresolvedCriticalFindingsRow, error) {
 	return s.store.GetUnresolvedCriticalFindings(ctx, tenantID)
+}
+
+// RevenueAnalytics holds the admin revenue analytics response.
+type RevenueAnalytics struct {
+	TotalRevenue        int64                      `json:"total_revenue"`
+	MonthlyRevenue      int64                      `json:"monthly_revenue"`
+	ActiveSubscriptions int32                      `json:"active_subscriptions"`
+	Periods             []gen.GetRevenueByPeriodRow `json:"periods"`
+}
+
+// GetRevenueAnalytics returns aggregated revenue data for the admin dashboard.
+func (s *Service) GetRevenueAnalytics(ctx context.Context, tenantID pgtype.UUID, from time.Time, to *time.Time) (RevenueAnalytics, error) {
+	summary, err := s.store.GetRevenueSummary(ctx, tenantID)
+	if err != nil {
+		return RevenueAnalytics{}, fmt.Errorf("fetching revenue summary: %w", err)
+	}
+
+	periods, err := s.store.GetRevenueByPeriod(ctx, tenantID, &from, to)
+	if err != nil {
+		return RevenueAnalytics{}, fmt.Errorf("fetching revenue by period: %w", err)
+	}
+
+	return RevenueAnalytics{
+		TotalRevenue:        summary.TotalRevenue,
+		MonthlyRevenue:      summary.MonthlyRevenue,
+		ActiveSubscriptions: summary.ActiveSubscriptions,
+		Periods:             periods,
+	}, nil
 }

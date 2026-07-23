@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { apiFetch } from '$lib/api/client';
 
 export interface AdminNotification {
 	id: string;
@@ -36,12 +36,9 @@ export function initNotifications(): (() => void) | void {
 
 async function fetchNotifications() {
 	try {
-		const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/me/notifications?limit=20`, {
-			credentials: 'include'
-		});
-		if (res.ok) {
-			const { data } = await res.json();
-			_notifications = data ?? [];
+		const result = await apiFetch<AdminNotification[]>('/me/notifications?limit=20');
+		if (!result.error && result.data) {
+			_notifications = result.data;
 		}
 	} catch {
 		// degrade gracefully
@@ -62,10 +59,7 @@ export function addNotification(notification: Omit<AdminNotification, 'id' | 're
 export async function markRead(id: string) {
 	_notifications = _notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
 	try {
-		await fetch(`${PUBLIC_JC_API_URL}/api/v1/me/notifications/${id}/read`, {
-			method: 'POST',
-			credentials: 'include'
-		});
+		await apiFetch(`/me/notifications/${id}/read`, { method: 'POST' });
 	} catch {
 		// best effort
 	}
@@ -74,10 +68,7 @@ export async function markRead(id: string) {
 export async function markAllRead() {
 	_notifications = _notifications.map((n) => ({ ...n, read: true }));
 	try {
-		await fetch(`${PUBLIC_JC_API_URL}/api/v1/me/notifications/read-all`, {
-			method: 'POST',
-			credentials: 'include'
-		});
+		await apiFetch('/me/notifications/read-all', { method: 'POST' });
 	} catch {
 		// best effort
 	}

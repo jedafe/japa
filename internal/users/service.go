@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -42,6 +43,24 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 		groupName = *p.UserGroupName
 	}
 
+	// Fetch all groups for this user.
+	groupRows, err := s.store.read.ResolveUserGroups(ctx, gen.ResolveUserGroupsParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	groups := make([]string, 0, len(groupRows))
+	if err == nil {
+		for _, g := range groupRows {
+			groups = append(groups, g.Name)
+		}
+	}
+
+	var lastLogin *string
+	if p.LastLoginAt.Valid {
+		s := p.LastLoginAt.Time.Format(time.RFC3339)
+		lastLogin = &s
+	}
+
 	return &UserProfileResponse{
 		ID:            p.UserID.String(),
 		Email:         p.Email,
@@ -54,6 +73,8 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 		Status:        p.Status,
 		FollowerCount: p.FollowerCount,
 		UserGroupName: groupName,
+		Groups:        groups,
+		LastLoginAt:   lastLogin,
 		CreatedAt:     p.CreatedAt.Time.Format(time.RFC3339),
 		UpdatedAt:     p.UpdatedAt.Time.Format(time.RFC3339),
 	}, nil
@@ -195,8 +216,8 @@ func (s *Service) UpdatePreferences(ctx context.Context, tenantID, userID pgtype
 }
 
 // ListUsers returns a paginated list of users for admin use, with optional
-// search filtering by username or email.
-func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search string, limit, offset int32) (*ListUsersResponse, error) {
+// search filtering by username/email, status filter, and group slug filter.
+func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search, status, groupSlug string, limit, offset int32) (*ListUsersResponse, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -205,25 +226,27 @@ func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search st
 		offset = 0
 	}
 
-	users, err := s.store.listUsers(ctx, tenantID, search, limit, offset)
+	users, err := s.store.listUsers(ctx, tenantID, search, status, groupSlug, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing users: %w", err)
 	}
 
-	total, err := s.store.countUsers(ctx, tenantID, search)
+	total, err := s.store.countUsers(ctx, tenantID, search, status, groupSlug)
 	if err != nil {
 		return nil, fmt.Errorf("counting users: %w", err)
 	}
 
 	items := make([]UserListItem, len(users))
 	for i, u := range users {
+		groups := parseGroups(u.Groups)
 		items[i] = UserListItem{
 			ID:            u.ID.String(),
 			Email:         u.Email,
 			Username:      u.Username,
 			ProfileType:   u.ProfileType,
-			Status:        u.Status,
+			Status:        parseString(u.Status),
 			FollowerCount: u.FollowerCount,
+			Groups:        groups,
 			CreatedAt:     u.CreatedAt.Time.Format(time.RFC3339),
 			UpdatedAt:     u.UpdatedAt.Time.Format(time.RFC3339),
 		}
@@ -238,7 +261,30 @@ func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search st
 		Items:      items,
 		Page:       offset / limit,
 		TotalPages: totalPages,
+		Total:      total,
 	}, nil
+}
+
+// parseGroups extracts group names from the string_agg result.
+// The SQL COALESCE returns "" for users with no groups.
+func parseGroups(v interface{}) []string {
+	if v == nil {
+		return []string{}
+	}
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return []string{}
+	}
+	return strings.Split(s, ", ")
+}
+
+// parseString converts an interface{} to string (for CASE expressions).
+func parseString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
 }
 
 // GetPrivacySettings returns the user's privacy settings.
@@ -477,4 +523,13 @@ func (s *Service) DeactivateAccount(ctx context.Context, tenantID, userID pgtype
 // SoftDeleteUser soft-deletes a user account (status = 'deleted').
 func (s *Service) SoftDeleteUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
 	return s.store.SoftDeleteUser(ctx, tenantID, userID)
+}
+
+// UpdateProfileType changes a user's profile_type (personal, business, organisation).
+func (s *Service) UpdateProfileType(ctx context.Context, tenantID, userID pgtype.UUID, profileType string) error {
+	return s.store.read.UpdateUserProfileType(ctx, gen.UpdateUserProfileTypeParams{
+		TenantID:    tenantID,
+		ID:          userID,
+		ProfileType: profileType,
+	})
 }

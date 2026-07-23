@@ -130,6 +130,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "Invalid or expired invitation")
 	case errors.Is(err, errpkg.ErrExpired):
 		writeError(w, http.StatusGone, "expired", "Invitation has expired")
+	case errors.Is(err, ErrUpgradeToBusinessRequired):
+		writeError(w, http.StatusForbidden, "upgrade_to_business_required", "You must upgrade to a business profile to create professional profiles")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}

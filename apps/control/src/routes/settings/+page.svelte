@@ -440,9 +440,20 @@
 		return '•'.repeat(Math.min(value.length, 16));
 	}
 
-	async function handleFileUpload(setting: SystemSetting, file: File) {
+	const MAX_UPLOAD_SIZE_MB = 50;
+
+	async function handleFileUpload(setting: SystemSetting, file: File, inputEl?: HTMLInputElement) {
 		uploadingKey = setting.key;
 		uploadError = '';
+
+		// Client-side file size check — fail fast instead of waiting for the backend.
+		const maxBytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+		if (file.size > maxBytes) {
+			uploadError = `File is ${(file.size / 1024 / 1024).toFixed(1)}MB — max is ${MAX_UPLOAD_SIZE_MB}MB`;
+			uploadingKey = '';
+			return;
+		}
+
 		try {
 			const initiateRes = await api<{
 				media_id: string;
@@ -481,6 +492,8 @@
 			uploadError = e instanceof Error ? e.message : 'Upload failed';
 		} finally {
 			uploadingKey = '';
+			// Reset file input so the same file can be re-uploaded.
+			if (inputEl) inputEl.value = '';
 		}
 	}
 
@@ -837,14 +850,21 @@
 											placeholder="https://..."
 											class="{inputClasses} w-44"
 										/>
-										<label class="border-border-input bg-background-alt hover:bg-muted text-muted-foreground flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors">
+											<button
+											type="button"
+											class="border-border-input bg-background-alt hover:bg-muted text-muted-foreground flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors"
+											aria-label={t('settings.upload_image', 'Upload image')}
+											onclick={(e) => { (e.currentTarget as HTMLButtonElement).querySelector<HTMLInputElement>('input[type=file]')?.click(); }}
+											disabled={uploadingKey === setting.key}
+										>
 											<input
 												type="file"
 												class="hidden"
-												accept="image/*"
+												accept="image/*,.svg"
 												onchange={(e) => {
-													const file = e.currentTarget.files?.[0];
-													if (file) handleFileUpload(setting, file);
+													const input = e.currentTarget;
+													const file = input.files?.[0];
+													if (file) handleFileUpload(setting, file, input);
 												}}
 											/>
 											{#if uploadingKey === setting.key}
@@ -852,7 +872,7 @@
 											{:else}
 												<Upload class="size-3" />
 											{/if}
-										</label>
+										</button>
 										{#if getDisplayValue(setting)}
 											<img
 												src={getDisplayValue(setting)}
@@ -1098,14 +1118,20 @@
 										{:else if componentType === 'upload'}
 										<div class="flex items-center gap-2">
 											<input id="setting-{setting.key}" type="text" value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} placeholder="https://..." class="{inputClasses} w-44" />
-											<label class="border-border-input bg-background-alt hover:bg-muted text-muted-foreground flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors">
-												<input type="file" class="hidden" accept="image/*" onchange={(e) => { const file = e.currentTarget.files?.[0]; if (file) handleFileUpload(setting, file); }} />
+											<button
+												type="button"
+												class="border-border-input bg-background-alt hover:bg-muted text-muted-foreground flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors"
+												aria-label={t('settings.upload_image', 'Upload image')}
+												onclick={(e) => { (e.currentTarget as HTMLButtonElement).querySelector<HTMLInputElement>('input[type=file]')?.click(); }}
+												disabled={uploadingKey === setting.key}
+											>
+												<input type="file" class="hidden" accept="image/*,.svg" onchange={(e) => { const input = e.currentTarget; const file = input.files?.[0]; if (file) handleFileUpload(setting, file, input); }} />
 												{#if uploadingKey === setting.key}
 													<Loader2 class="size-3 animate-spin" />
 												{:else}
 													<Upload class="size-3" />
 												{/if}
-											</label>
+											</button>
 											{#if getDisplayValue(setting)}
 												<img src={getDisplayValue(setting)} alt="" class="size-6 rounded border border-border-input object-cover" onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
 											{/if}

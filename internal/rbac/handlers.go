@@ -3,6 +3,7 @@ package rbac
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -63,13 +64,18 @@ func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"groups": groups,
+		"total":  len(groups),
+	}})
 }
 
 // CreateGroupInput is the request body for creating a group.
 type CreateGroupInput struct {
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+	Slug        string   `json:"slug"`
 }
 
 // CreateGroup handles POST /api/v1/admin/rbac/groups.
@@ -86,23 +92,52 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Name == "" || input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "invalid_input", "name and slug are required")
+	if input.Name == "" {
+		writeError(w, http.StatusBadRequest, "invalid_input", "name is required")
 		return
 	}
 
-	if IsSystemGroup(input.Slug) {
+	slug := input.Slug
+	if slug == "" {
+		slug = slugify(input.Name)
+	}
+
+	if IsSystemGroup(slug) {
 		writeError(w, http.StatusForbidden, "forbidden", "Cannot create system groups via API")
 		return
 	}
 
-	id, err := h.store.CreateGroup(r.Context(), tenantID, input.Name, input.Slug)
+	id, err := h.store.CreateGroup(r.Context(), tenantID, input.Name, slug)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create group")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": input.Name, "slug": input.Slug})
+	// Create a role for this group and assign permissions
+	if len(input.Permissions) > 0 {
+		roleName := input.Name + " Role"
+		roleID, err := h.store.CreateRole(r.Context(), tenantID, roleName)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create role for group")
+			return
+		}
+		if err := h.store.SetRolePermissions(r.Context(), roleID, input.Permissions); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to set role permissions")
+			return
+		}
+		if err := h.store.AssignRoleToGroup(r.Context(), id, roleID); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to assign role to group")
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+		"id":          id,
+		"name":        input.Name,
+		"slug":        slug,
+		"description": input.Description,
+		"permissions": input.Permissions,
+	}})
 }
 
 // DeleteGroup handles DELETE /api/v1/admin/rbac/groups/{id}.
@@ -230,7 +265,12 @@ func (h *Handlers) ListPermissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"permissions": perms})
+	keys := make([]string, 0, len(perms))
+	for _, p := range perms {
+		keys = append(keys, p.Key)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": keys})
 }
 
 // GetUserPermissions handles GET /api/v1/admin/rbac/user-permissions.
@@ -261,13 +301,42 @@ func (h *Handlers) GetUserPermissions(w http.ResponseWriter, r *http.Request) {
 
 // ListRoles handles GET /api/v1/admin/rbac/roles.
 func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
-	roles, err := h.store.ListRoles(r.Context())
+	limit := int32(25)
+	offset := int32(0)
+	search := r.URL.Query().Get("search")
+
+	if s := r.URL.Query().Get("page_size"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n > 0 {
+			limit = int32(n)
+			if limit > 100 {
+				limit = 100
+			}
+		}
+	}
+
+	if s := r.URL.Query().Get("page_offset"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n >= 0 {
+			offset = int32(n)
+		}
+	}
+
+	roles, total, err := h.store.ListRolesPaginated(r.Context(), search, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list roles")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"roles": roles})
+	totalPages := total / limit
+	if total%limit > 0 {
+		totalPages++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"roles":       roles,
+		"total":       total,
+		"page":        offset / limit,
+		"total_pages": totalPages,
+	})
 }
 
 // CreateRoleInput is the request body for creating a role.
@@ -481,18 +550,49 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name string `json:"name"`
-		Slug string `json:"slug"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Permissions []string `json:"permissions"`
+		Slug        string   `json:"slug"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
 		return
 	}
-	if err := h.store.UpdateGroup(r.Context(), groupID, input.Name, input.Slug); err != nil {
+
+	slug := input.Slug
+	if slug == "" && input.Name != "" {
+		slug = slugify(input.Name)
+	}
+
+	if err := h.store.UpdateGroup(r.Context(), groupID, input.Name, slug); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update group")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": groupID.String()})
+
+	// Update permissions: find the group's role and update its permissions
+	if input.Permissions != nil {
+		roles, err := h.store.ListGroupRoles(r.Context(), groupID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list group roles")
+			return
+		}
+		if len(roles) > 0 {
+			// Update the first role's permissions
+			if err := h.store.SetRolePermissions(r.Context(), roles[0].ID, input.Permissions); err != nil {
+				writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update role permissions")
+				return
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"id":          groupID.String(),
+		"name":        input.Name,
+		"slug":        slug,
+		"description": input.Description,
+		"permissions": input.Permissions,
+	}})
 }
 
 // ListScopes handles GET /developer/scopes — returns available API scopes.
