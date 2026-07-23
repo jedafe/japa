@@ -341,6 +341,26 @@ func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderI
 	return s.store.ListMediaByTenant(ctx, tenantID, limit, offset)
 }
 
+// ListByUser returns a user's non-deleted media (newest first) plus the total
+// count, both tenant-scoped. Powers the public profile Media tab.
+func (s *Service) ListByUser(ctx context.Context, tenantID, uploaderID pgtype.UUID, limit, offset int32) ([]gen.Medium, int32, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	items, err := s.store.ListMediaByUploader(ctx, tenantID, uploaderID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing media by uploader: %w", err)
+	}
+	total, err := s.store.CountMediaByUploader(ctx, tenantID, uploaderID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting media by uploader: %w", err)
+	}
+	return items, total, nil
+}
+
 // GetMediaURL generates an imgproxy signed URL for the media item.
 // NEVER cached in DB — generated on every serialization.
 func (s *Service) GetMediaURL(m *gen.Medium, opts ImageProxyOpts) string {
