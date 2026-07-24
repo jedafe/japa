@@ -304,8 +304,12 @@
       const result = await api<{ groups: Array<{ id: string; name: string; slug: string }>; total: number }>('/admin/user-groups');
       if (result.ok) {
         userGroups = result.data?.groups ?? [];
+      } else {
+        errorMessage = result.error;
       }
-    } catch {}
+    } catch {
+      errorMessage = t('app.media.err_load_user_groups', 'Failed to load user groups');
+    }
   }
 
   function openUploadModal() {
