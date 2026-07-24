@@ -11,6 +11,10 @@
 //	Any state → spam (admin action)
 package tickets
 
+import (
+	"github.com/jedafe/japa/internal/db/gen"
+)
+
 // TicketStatus represents the lifecycle state of a ticket.
 type TicketStatus string
 
@@ -100,3 +104,19 @@ const (
 	DefaultPageSize = 20
 	MaxPageSize     = 100
 )
+
+// ListTicketsResponse is the paginated response for listing tickets.
+type ListTicketsResponse struct {
+	Tickets     []gen.ListTicketsByTenantRow `json:"tickets"`
+	Total       int64                        `json:"total"`
+	Page        int32                        `json:"page"`
+	TotalPages  int32                        `json:"total_pages"`
+}
+
+// ListTicketTypesResponse is the paginated response for listing ticket types.
+type ListTicketTypesResponse struct {
+	Items      []gen.TicketType `json:"items"`
+	Total      int64            `json:"total"`
+	Page       int32            `json:"page"`
+	TotalPages int32            `json:"total_pages"`
+}

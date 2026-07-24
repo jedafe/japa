@@ -1,6 +1,6 @@
 // Package content — Block Template Registry for the Page Builder (Section 16).
 //
-// The registry defines the 11 block types available in the page builder
+// The registry defines the 15 block types available in the page builder
 // front-end. Each block carries sensible default props so the editor can
 // instantiate a new block without a round-trip. Categories group blocks
 // in the picker UI.
@@ -38,11 +38,11 @@ type BlockTemplateRegistry struct {
 	templates []BlockTemplate
 }
 
-// defaultRegistry is the package-level registry initialised with all 11 block
+// defaultRegistry is the package-level registry initialised with all 15 block
 // types. Constructed via newDefaultRegistry at package init time.
 var defaultRegistry = newDefaultRegistry()
 
-// newDefaultRegistry builds the registry with all 11 block types and their
+// newDefaultRegistry builds the registry with all 15 block types and their
 // default props.
 func newDefaultRegistry() *BlockTemplateRegistry {
 	return &BlockTemplateRegistry{
@@ -179,6 +179,74 @@ func newDefaultRegistry() *BlockTemplateRegistry {
 					"sort_order":   "desc",
 				},
 				Category: BlockCategoryData,
+			},
+			{
+				Type:        "table",
+				Name:        "Content Table",
+				Description: "Simple content table with headers, rows, and optional caption",
+				Icon:        "table",
+				DefaultProps: map[string]any{
+					"headers":    []any{},
+					"rows":       []any{},
+					"caption":    "",
+					"responsive": true,
+				},
+				Category: BlockCategoryContent,
+			},
+			{
+				Type:        "table_of_contents",
+				Name:        "Table of Contents",
+				Description: "Auto-extracted table of contents from sibling rich text and heading blocks",
+				Icon:        "list-tree",
+				DefaultProps: map[string]any{
+					"heading_levels": []any{"h2", "h3"},
+					"sticky":         false,
+					"title":          "",
+				},
+				Category: BlockCategoryContent,
+			},
+			{
+				Type:        "countdown",
+				Name:        "Countdown Timer",
+				Description: "Live countdown timer with days, hours, minutes, and seconds display",
+				Icon:        "timer",
+				DefaultProps: map[string]any{
+					"target_datetime":  "",
+					"title":            "",
+					"show_days":        true,
+					"show_hours":       true,
+					"show_minutes":     true,
+					"show_seconds":     true,
+					"expired_message":  "Event has started!",
+				},
+				Category: BlockCategoryInteractive,
+			},
+			{
+				Type:        "slider",
+				Name:        "Slider / Carousel",
+				Description: "Carousel/slider with slides, autoplay, dots, and arrow navigation",
+				Icon:        "presentation",
+				DefaultProps: map[string]any{
+					"slides":      []any{},
+					"autoplay_ms": 5000,
+					"show_dots":   true,
+					"show_arrows": true,
+				},
+				Category: BlockCategoryMedia,
+			},
+			{
+				Type:        "grid_row",
+				Name:        "Grid / Row",
+				Description: "Arrange blocks side-by-side in a responsive multi-column grid layout",
+				Icon:        "layout-grid",
+				DefaultProps: map[string]any{
+					"columns": 2,
+					"gap":     16,
+					"align":   "start",
+					"stack":   true,
+					"children": []any{},
+				},
+				Category: BlockCategoryLayout,
 			},
 		},
 	}

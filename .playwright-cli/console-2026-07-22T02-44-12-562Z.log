@@ -1,0 +1,18 @@
+[      23ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/dashboard:0
+[     186ms] [ERROR] SvelteKitError: Not found: /dashboard
+    at navigate (http://localhost:3001/node_modules/.pnpm/@sveltejs+kit@2.69.3_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@7.2.0_svelte_f8c948d2db8cf210f0c2f6e9ff569557/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=50c01b90:1793:24)
+    at async Module.start (http://localhost:3001/node_modules/.pnpm/@sveltejs+kit@2.69.3_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@7.2.0_svelte_f8c948d2db8cf210f0c2f6e9ff569557/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=50c01b90:405:3) @ http://localhost:3001/node_modules/.vite/deps/@sentry_sveltekit.js?v=50c01b90:25774
+[     605ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0
+[     610ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0
+[     615ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/me:0
+[     619ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0
+[     626ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/me/notifications?limit=20:0
+[     639ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0
+[     691ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3001/login:0
+[   60631ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/me/notifications?limit=20:0
+[   60639ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0
+[  120631ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/me/notifications?limit=20:0
+[  120640ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0
+[  174700ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/login:0
+[  180633ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/me/notifications?limit=20:0
+[  180646ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0

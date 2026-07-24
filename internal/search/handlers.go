@@ -620,10 +620,16 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 
 	var since time.Time
 	switch period {
+	case "24h":
+		since = time.Now().Add(-24 * time.Hour)
 	case "7d":
 		since = time.Now().AddDate(0, 0, -7)
 	case "30d":
 		since = time.Now().AddDate(0, 0, -30)
+	case "90d":
+		since = time.Now().AddDate(0, 0, -90)
+	case "1y":
+		since = time.Now().AddDate(-1, 0, 0)
 	default:
 		since = time.Now().AddDate(0, 0, -7)
 	}

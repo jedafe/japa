@@ -614,14 +614,53 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetContentAnalytics handles GET /content/:id/analytics (P5.6).
+// It aggregates the per-content daily engagement stats for the requested
+// content item over the requested window (default 30 days).
 func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
-	_ = tenantID
+
+	var contentID pgtype.UUID
+	if err := contentID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		return
+	}
+
+	from, to, err := resolveWindow(r, 30)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		return
+	}
+
+	startDate := pgtype.Date{Time: from, Valid: true}
+	var endDate *pgtype.Date
+	if to != nil {
+		endDate = &pgtype.Date{Time: *to, Valid: true}
+	}
+
+	stats, err := h.Service.store.GetDailyContentStats(r.Context(), tenantID, &startDate, endDate, contentID)
+	if err != nil {
+		slog.Error("get content analytics", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve content analytics")
+		return
+	}
+
+	var views, reactions, comments, uniqueViewers int64
+	for _, s := range stats {
+		views += int64(s.Views)
+		reactions += int64(s.Reactions)
+		comments += int64(s.Comments)
+		uniqueViewers += int64(s.UniqueViewers)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"views": 0, "reactions": 0, "comments": 0, "shares": 0,
+		"views":          views,
+		"reactions":      reactions,
+		"comments":       comments,
+		"shares":         0,
+		"unique_viewers": uniqueViewers,
 	}})
 }
 
@@ -651,17 +690,27 @@ func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Aggregate by content type
-	typeByCount := make(map[string]int64)
+	// Aggregate real content engagement totals across the window. The daily
+	// content stats are per-content-per-day rows; dedupe by content_id for the
+	// unique content count and sum the engagement metrics.
+	contentIDs := make(map[string]struct{}, len(contentStats))
+	var totalViews, totalReactions, totalComments, totalUniqueViewers int64
 	for _, cs := range contentStats {
-		typeByCount["daily_stats"]++
-		_ = cs
+		contentIDs[cs.ContentID.String()] = struct{}{}
+		totalViews += int64(cs.Views)
+		totalReactions += int64(cs.Reactions)
+		totalComments += int64(cs.Comments)
+		totalUniqueViewers += int64(cs.UniqueViewers)
 	}
 
-	// Build response with aggregated content data
+	// Build response with per-content-per-day engagement stats and totals.
 	result := map[string]any{
-		"content_over_time": contentStats,
-		"total_content":     len(contentStats),
+		"content_stats":        contentStats,
+		"total_content":        len(contentIDs),
+		"total_views":          totalViews,
+		"total_reactions":      totalReactions,
+		"total_comments":       totalComments,
+		"total_unique_viewers": totalUniqueViewers,
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})

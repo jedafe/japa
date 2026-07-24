@@ -99,6 +99,34 @@ func (s *Service) ListAllDocPagesByAudience(ctx context.Context, tenantID pgtype
 	return pages, nil
 }
 
+// ListAllDocPages returns all pages (any status, any audience) for admin listing.
+func (s *Service) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]DocPage, error) {
+	rows, err := s.store.listAll(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	pages := make([]DocPage, len(rows))
+	for i, r := range rows {
+		pages[i] = DocPage{
+			ID:             r.ID.String(),
+			Title:          r.Title,
+			Slug:           r.Slug,
+			Audience:       r.Audience,
+			AIGenerated:    r.AiGenerated,
+			ReviewStatus:   r.ReviewStatus,
+			LastReviewedBy: uuidPtr(r.LastReviewedBy),
+			LastReviewedAt: timestamptzPtr(r.LastReviewedAt),
+			ParentID:       uuidPtr(r.ParentID),
+			Position:       r.Position,
+			CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt:      r.UpdatedAt.Time.Format(time.RFC3339),
+		}
+	}
+
+	return pages, nil
+}
+
 // GetDocNav returns the published-pages navigation tree grouped by audience.
 func (s *Service) GetDocNav(ctx context.Context, tenantID pgtype.UUID) ([]DocNavTree, error) {
 	rows, err := s.store.listPublished(ctx, tenantID)
@@ -253,9 +281,9 @@ func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req C
 		return fmt.Errorf("invalid review_status: %s", status)
 	}
 
-	contentBytes, err := json.Marshal(req.Content)
-	if err != nil {
-		return fmt.Errorf("marshaling content: %w", err)
+	contentBytes := []byte(req.Content)
+	if len(contentBytes) == 0 {
+		contentBytes = []byte(`""`)
 	}
 
 	var parentID pgtype.UUID
@@ -287,9 +315,20 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 		return fmt.Errorf("invalid review_status: %s", status)
 	}
 
-	contentBytes, err := json.Marshal(req.Content)
-	if err != nil {
-		return fmt.Errorf("marshaling content: %w", err)
+	// Preserve existing content when the request doesn't include it (e.g. status-only toggle).
+	contentBytes := req.Content
+	if contentBytes == nil {
+		existing, err := s.store.getByID(ctx, tenantID, id)
+		if err != nil {
+			return fmt.Errorf("fetching existing page for content merge: %w", err)
+		}
+		contentBytes = existing.Content
+	} else {
+		var err error
+		contentBytes, err = json.Marshal(string(req.Content))
+		if err != nil {
+			return fmt.Errorf("marshaling content: %w", err)
+		}
 	}
 
 	return s.store.update(ctx, gen.UpdateDocPageParams{

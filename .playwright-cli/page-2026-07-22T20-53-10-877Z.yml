@@ -1,0 +1,241 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - link "Admin":
+            - /url: /
+            - generic: Admin
+        - generic:
+          - generic:
+            - img
+            - textbox "Search navigation..."
+        - navigation:
+          - generic:
+            - button "Dashboard":
+              - generic: Dashboard
+              - img
+            - generic:
+              - link "Overview":
+                - /url: /
+                - img
+                - generic: Overview
+          - generic:
+            - button "User Management":
+              - generic: User Management
+              - img
+            - generic:
+              - link "Users":
+                - /url: /users
+                - img
+                - generic: Users
+              - link "Organisations":
+                - /url: /organisations
+                - img
+                - generic: Organisations
+              - link "Universities":
+                - /url: /universities
+                - img
+                - generic: Universities
+              - link "Professional Types":
+                - /url: /professional-types
+                - img
+                - generic: Professional Types
+              - link "Groups":
+                - /url: /users/groups
+                - img
+                - generic: Groups
+          - generic:
+            - button "Content":
+              - generic: Content
+              - img
+            - generic:
+              - link "All Content":
+                - /url: /content
+                - img
+                - generic: All Content
+              - link "Blog Posts":
+                - /url: /blog/review-queue
+                - img
+                - generic: Blog Posts
+              - link "Documentation":
+                - /url: /docs
+                - img
+                - generic: Documentation
+              - link "Media":
+                - /url: /media
+                - img
+                - generic: Media
+              - link "Spaces":
+                - /url: /spaces
+                - img
+                - generic: Spaces
+              - link "Space Types":
+                - /url: /space-types
+                - img
+                - generic: Space Types
+              - link "Tags":
+                - /url: /tags
+                - img
+                - generic: Tags
+              - link "Reactions":
+                - /url: /reactions
+                - img
+                - generic: Reactions
+          - generic:
+            - button "Moderation":
+              - generic: Moderation
+              - img
+            - generic:
+              - link "Queue":
+                - /url: /moderation
+                - img
+                - generic: Queue
+              - link "Review Queue":
+                - /url: /moderation-queue
+                - img
+                - generic: Review Queue
+              - link "Spam Management":
+                - /url: /spam
+                - img
+                - generic: Spam Management
+              - link "Support Tickets":
+                - /url: /tickets
+                - img
+                - generic: Support Tickets
+              - link "Reviews":
+                - /url: /reviews
+                - img
+                - generic: Reviews
+          - generic:
+            - button "Analytics & Reports":
+              - generic: Analytics & Reports
+              - img
+          - generic:
+            - button "Engagement":
+              - generic: Engagement
+              - img
+          - generic:
+            - button "Monetization":
+              - generic: Monetization
+              - img
+          - generic:
+            - button "Automation":
+              - generic: Automation
+              - img
+          - generic:
+            - button "Customization":
+              - generic: Customization
+              - img
+          - generic:
+            - button "System":
+              - generic: System
+              - img
+        - generic:
+          - generic:
+            - generic:
+              - generic: A
+            - generic:
+              - paragraph: Admin
+              - paragraph
+            - link "Logout":
+              - /url: /logout
+              - img
+      - generic:
+        - banner:
+          - generic:
+            - link "JapaConnect Admin":
+              - /url: /
+          - generic:
+            - generic:
+              - button:
+                - img
+            - button:
+              - img
+            - link "JC":
+              - /url: /
+              - generic:
+                - generic: JC
+        - main:
+          - generic:
+            - navigation "Breadcrumb":
+              - link:
+                - /url: /
+                - img
+              - img
+              - generic: Professional Types
+            - generic:
+              - generic:
+                - heading "Professional Types" [level=1]
+                - paragraph: Manage professional profile types, members, and invitations
+              - generic:
+                - button "Add Profile Type":
+                  - img
+                  - text: Add Profile Type
+                - button "Refresh":
+                  - img
+                  - text: Refresh
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - searchbox "Search"
+                  - generic:
+                    - table:
+                      - rowgroup:
+                        - row "Select all rows Name Slug Description Profiles Actions":
+                          - columnheader "Select all rows":
+                            - checkbox "Select all rows"
+                          - columnheader "Name":
+                            - generic:
+                              - text: Name
+                              - img
+                          - columnheader "Slug":
+                            - generic: Slug
+                          - columnheader "Description":
+                            - generic: Description
+                          - columnheader "Profiles":
+                            - generic: Profiles
+                          - columnheader "Actions":
+                            - generic: Actions
+                      - rowgroup:
+                        - row "Select row 36d907a7-82e8-4f84-8bdc-07b390cd1dec Student student — —":
+                          - cell "Select row 36d907a7-82e8-4f84-8bdc-07b390cd1dec":
+                            - checkbox "Select row 36d907a7-82e8-4f84-8bdc-07b390cd1dec"
+                          - cell "Student"
+                          - cell "student"
+                          - cell "—"
+                          - cell "—"
+                          - cell:
+                            - generic:
+                              - button:
+                                - img
+                              - button:
+                                - img
+                              - button:
+                                - img
+            - generic:
+              - generic:
+                - generic:
+                  - heading "Student" [level=3]:
+                    - img
+                    - text: Student
+                  - button "Close"
+              - generic:
+                - paragraph: No custom fields defined
+  - dialog "Profile Type Details" [ref=e193]:
+    - heading "Profile Type Details" [level=2] [ref=e195]
+    - generic [ref=e196]:
+      - generic [ref=e197]:
+        - paragraph [ref=e198]: Name
+        - paragraph [ref=e199]: Student
+      - generic [ref=e200]:
+        - paragraph [ref=e201]: Slug
+        - paragraph [ref=e202]: student
+      - generic [ref=e203]:
+        - paragraph [ref=e204]: Manage professional profile types, members, and invitations
+        - paragraph [ref=e205]: —
+    - button "Close" [active] [ref=e207]
+    - button "Close" [ref=e208]:
+      - img [ref=e209]
+      - generic [ref=e210]: Close

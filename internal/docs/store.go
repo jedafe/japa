@@ -72,6 +72,16 @@ func (s *Store) listAllByAudience(ctx context.Context, tenantID pgtype.UUID, aud
 	return rows, nil
 }
 
+// listAll returns all doc pages (any status, any audience) for admin listing.
+func (s *Store) listAll(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListAllDocPagesRow, error) {
+	rows, err := s.read.ListAllDocPages(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing all doc pages: %w", err)
+	}
+
+	return rows, nil
+}
+
 // listPublished returns all published doc pages across audiences.
 func (s *Store) listPublished(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListPublishedDocPagesRow, error) {
 	rows, err := s.read.ListPublishedDocPages(ctx, tenantID)

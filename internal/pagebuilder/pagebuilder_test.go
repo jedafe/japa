@@ -56,13 +56,19 @@ func TestCreateTemplateInputValidation(t *testing.T) {
 		t.Error("expected error for empty name")
 	}
 
-	_, err = svc.CreateTemplate(t.Context(), testTenantID(), CreateTemplateInput{
-		Name: "Test",
-		Slug: "",
-	})
-	if err == nil {
-		t.Error("expected error for empty slug")
-	}
+	// Empty slug should be auto-generated from name (no validation error).
+	// The store is nil so the call will panic after validation passes;
+	// we verify that no *validation* error is returned.
+	func() {
+		defer func() { recover() }() // swallow the nil-store panic
+		_, err = svc.CreateTemplate(t.Context(), testTenantID(), CreateTemplateInput{
+			Name: "Test",
+			Slug: "",
+		})
+		if err != nil {
+			t.Errorf("expected no validation error for empty slug (auto-generated), got: %v", err)
+		}
+	}()
 }
 
 func TestCreateThemeInputValidation(t *testing.T) {
@@ -100,13 +106,19 @@ func TestCreatePageInputValidation(t *testing.T) {
 		t.Error("expected error for empty title")
 	}
 
-	_, err = svc.CreatePage(t.Context(), testTenantID(), testUserID(), CreatePageInput{
-		Title: "Test",
-		Slug:  "",
-	})
-	if err == nil {
-		t.Error("expected error for empty slug")
-	}
+	// Empty slug should be auto-generated from title (no validation error).
+	// The store is nil so the call will panic after validation passes;
+	// we verify that no *validation* error is returned.
+	func() {
+		defer func() { recover() }() // swallow the nil-store panic
+		_, err = svc.CreatePage(t.Context(), testTenantID(), testUserID(), CreatePageInput{
+			Title: "Test",
+			Slug:  "",
+		})
+		if err != nil {
+			t.Errorf("expected no validation error for empty slug (auto-generated), got: %v", err)
+		}
+	}()
 }
 
 func TestUpdateBlockInputValidation(t *testing.T) {

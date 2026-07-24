@@ -3,12 +3,12 @@ package pagebuilder
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Store provides pagebuilder data access with reader/writer pool separation.
@@ -173,7 +173,7 @@ func (s *Store) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) error
 	}
 
 	if tag.RowsAffected() == 0 {
-		return errors.New("block not found or is a system block")
+		return fmt.Errorf("%w: block not found or is a system block", errpkg.ErrForbidden)
 	}
 
 	return nil
@@ -183,15 +183,17 @@ func (s *Store) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) error
 // Templates CRUD
 // ---------------------------------------------------------------------------
 
-// ListTemplates returns all templates for a tenant, ordered by name.
-func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID) ([]Template, error) {
+// ListTemplates returns all templates for a tenant, optionally filtered by q and category.
+func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, category string) ([]Template, error) {
 	rows, err := s.reader.Query(ctx, `
 		SELECT id, tenant_id, name, slug, description, page_type,
 		       COALESCE(blocks, '[]'::jsonb), is_system, created_at, updated_at
 		FROM pagebuilder_templates
 		WHERE tenant_id = $1
+		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
+		  AND ($3 = '' OR page_type = $3)
 		ORDER BY name
-	`, tenantID)
+	`, tenantID, q, category)
 	if err != nil {
 		return nil, fmt.Errorf("listing templates: %w", err)
 	}
@@ -301,7 +303,7 @@ func (s *Store) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) er
 	}
 
 	if tag.RowsAffected() == 0 {
-		return errors.New("template not found or is a system template")
+		return fmt.Errorf("%w: template not found or is a system template", errpkg.ErrForbidden)
 	}
 
 	return nil
@@ -466,7 +468,7 @@ func (s *Store) DeleteTheme(ctx context.Context, id, tenantID pgtype.UUID) error
 	}
 
 	if tag.RowsAffected() == 0 {
-		return errors.New("theme not found")
+		return fmt.Errorf("%w: theme not found", errpkg.ErrNotFound)
 	}
 
 	return nil
@@ -497,7 +499,7 @@ func (s *Store) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID) e
 	}
 
 	if tag.RowsAffected() == 0 {
-		return errors.New("theme not found")
+		return fmt.Errorf("%w: theme not found", errpkg.ErrNotFound)
 	}
 
 	return tx.Commit(ctx)
@@ -711,7 +713,7 @@ func (s *Store) DeletePage(ctx context.Context, id, tenantID pgtype.UUID) error 
 	}
 
 	if tag.RowsAffected() == 0 {
-		return errors.New("page not found")
+		return fmt.Errorf("%w: page not found", errpkg.ErrNotFound)
 	}
 
 	return nil

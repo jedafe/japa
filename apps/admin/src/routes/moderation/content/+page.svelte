@@ -113,7 +113,7 @@
 			const result = await contentAdminApi.list(params.toString());
 			if (result.ok) {
 				const d = result.data as { items: ContentItem[] };
-				items = d.items;
+				items = d?.items ?? [];
 			} else {
 				errorMessage = result.error;
 			}

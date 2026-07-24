@@ -1,24 +1,22 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
-	import Modal from '$lib/components/Modal.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import { Select } from '$lib/components/ui/select';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { docsApi } from '$lib/api';
+	import { Dialog } from 'bits-ui';
 
 	type DocPage = {
 		id: string;
 		title: string;
 		slug: string;
 		audience: string;
-		status: 'draft' | 'published';
+		status: 'draft' | 'in_review' | 'approved' | 'published';
 		body: string;
 		updated_at: string;
 	};
 
 	let docs = $state<DocPage[]>([]);
-	let page = $state(0);
-	let totalPages = $state(1);
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let filterAudience = $state('');
@@ -33,14 +31,15 @@
 	let form = $state({
 		title: '',
 		slug: '',
-		audience: 'public',
+		audience: 'users',
+		status: 'draft' as string,
 		body: ''
 	});
 
-	const audiences = ['developer', 'user', 'admin', 'public'];
+	const audiences = ['users', 'premium', 'organizations', 'moderators', 'api', 'admin', 'superadmin'];
 
 	const filterDefs = [
-		{ key: 'audience', label: 'Audience', type: 'select' as const, options: audiences }
+		{ key: 'audience', label: t('docs.audience'), type: 'select' as const, options: audiences }
 	];
 
 	const columns = [
@@ -51,7 +50,7 @@
 		{ key: 'updated_at', label: t('docs.updated'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>` },
 		{ key: 'actions', label: '', class: 'w-48', render: (_: any, row: DocPage) => {
 			const unpublishStyle = row.status === 'published' ? 'var(--color-warning)' : 'var(--color-success)';
-			const unpublishLabel = row.status === 'published' ? 'Unpublish' : 'Publish';
+			const unpublishLabel = row.status === 'published' ? t('docs.unpublish') : t('docs.publish');
 			return `<div class="flex items-center gap-2"><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-info)" onclick="window.__editDoc('${row.id}')">Edit</button><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: ${unpublishStyle}" onclick="window.__toggleDoc('${row.id}')">${unpublishLabel}</button><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-danger)" onclick="window.__deleteDoc('${row.id}')">Delete</button></div>`;
 		}}
 	];
@@ -69,16 +68,20 @@
 			.replace(/^-|-$/g, '');
 	}
 
-	async function load() {
+	async function loadDocs() {
 		loading = true;
 		errorMessage = '';
-		const params = new URLSearchParams({ page: String(page) });
+		const params = new URLSearchParams();
 		if (filterAudience) params.set('audience', filterAudience);
 		const result = await docsApi.list(params.toString());
 		if (result.ok) {
-			const data = result.data as { items: DocPage[]; total_pages: number };
-			docs = data.items ?? [];
-			totalPages = data.total_pages ?? 1;
+			const raw = result.data as any[] | { data: any[] };
+			const rows = Array.isArray(raw) ? raw : (raw?.data ?? []);
+			docs = rows.map((d: any) => ({
+				...d,
+				status: d.review_status ?? d.status ?? 'draft',
+				body: d.body ?? d.content ?? ''
+			}));
 		} else {
 			errorMessage = result.error;
 		}
@@ -87,13 +90,12 @@
 
 	function handleFilter(values: Record<string, string>) {
 		filterAudience = values.audience ?? '';
-		page = 0;
-		load();
+		loadDocs();
 	}
 
 	function openCreate() {
 		editingId = null;
-		form = { title: '', slug: '', audience: 'public', body: '' };
+		form = { title: '', slug: '', audience: 'users', status: 'draft', body: '' };
 		showModal = true;
 	}
 
@@ -103,6 +105,7 @@
 			title: item.title,
 			slug: item.slug,
 			audience: item.audience,
+			status: item.status,
 			body: item.body ?? ''
 		};
 		showModal = true;
@@ -114,20 +117,21 @@
 		errorMessage = '';
 
 		const slug = form.slug.trim() || slugify(form.title);
-		const body = {
+		const payload = {
 			title: form.title.trim(),
 			slug,
 			audience: form.audience,
-			body: form.body
+			review_status: form.status,
+			content: form.body
 		};
 
 		const result = editingId
-			? await docsApi.update(editingId, body)
-			: await docsApi.create(body);
+			? await docsApi.update(editingId, payload)
+			: await docsApi.create(payload);
 
 		if (result.ok) {
 			showModal = false;
-			load();
+			loadDocs();
 		} else {
 			errorMessage = result.error;
 		}
@@ -137,9 +141,9 @@
 	async function togglePublish(item: DocPage) {
 		errorMessage = '';
 		const newStatus = item.status === 'published' ? 'draft' : 'published';
-		const result = await docsApi.update(item.id, { status: newStatus });
+		const result = await docsApi.update(item.id, { title: item.title, review_status: newStatus });
 		if (result.ok) {
-			load();
+			loadDocs();
 		} else {
 			errorMessage = result.error;
 		}
@@ -157,19 +161,17 @@
 		if (result.ok) {
 			showDeleteConfirm = false;
 			deleteTargetId = null;
-			load();
+			loadDocs();
 		} else {
 			errorMessage = result.error;
 		}
 	}
 
-	function handlePageChange(p: number) {
-		page = p;
-		load();
-	}
+	$effect(() => {
+		loadDocs();
+	});
 
 	$effect(() => {
-		load();
 		(window as any).__editDoc = (id: string) => {
 			const doc = docs.find((d) => d.id === id);
 			if (doc) openEdit(doc);
@@ -183,7 +185,7 @@
 </script>
 
 <svelte:head>
-	<title>Documentation — JapaConnect Admin</title>
+	<title>{t('docs.documentation')} — JapaConnect Admin</title>
 </svelte:head>
 
 <h1 class="mb-1 text-2xl font-bold tracking-tight">{t('docs.documentation')}</h1>
@@ -203,7 +205,7 @@
 		style="background-color: var(--color-primary)"
 		onclick={openCreate}
 	>
-		New Doc Page
+		{t('docs.new_doc_page')}
 	</button>
 </div>
 
@@ -215,30 +217,20 @@
 		data={filteredDocs}
 		searchable={true}
 		onsearch={(q: string) => { searchQuery = q; }}
+		onrowclick={(row: DocPage) => openEdit(row)}
 		pageSize={25}
 		emptyMessage={t('docs.no_documentation_pages_found')}
 		showPagination={false}
 	/>
-
-	<div class="mt-3 flex items-center justify-between">
-		<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
-		<div class="flex gap-1">
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => handlePageChange(page - 1)}>&larr;</button>
-			<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page >= totalPages - 1} onclick={() => handlePageChange(page + 1)}>&rarr;</button>
-		</div>
-	</div>
 {/if}
 
-<!-- Create/Edit Modal (wide for body textarea) -->
+<!-- Create/Edit Modal -->
 {#if showModal}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-		onclick={(e) => { if (e.target === e.currentTarget) showModal = false; }}
-		onkeydown={(e) => { if (e.key === 'Escape') showModal = false; }}
-	>
-		<div class="w-full max-w-2xl rounded-lg border p-6 shadow-lg" style="border-color: var(--color-border); background-color: var(--color-background)">
-			<h2 class="text-lg font-semibold">{editingId ? 'Edit Doc Page' : 'New Doc Page'}</h2>
+<Dialog.Root open={true}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
+		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95" style="border-color: var(--color-border); background-color: var(--color-background)" oninteractOutside={() => { showModal = false; }}>
+			<Dialog.Title class="text-lg font-semibold">{editingId ? t('docs.edit_doc_page') : t('docs.new_doc_page')}</Dialog.Title>
 			<div class="mt-4 space-y-3">
 				<div class="grid gap-3 sm:grid-cols-2">
 					<div>
@@ -250,12 +242,21 @@
 						<input id="doc-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={form.slug} />
 					</div>
 				</div>
-				<div>
-					<label for="doc-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}</label>
-					<Select
-						options={audiences.map(a => ({ value: a, label: a }))}
-						bind:value={form.audience}
-					/>
+				<div class="grid gap-3 sm:grid-cols-2">
+					<div>
+						<label for="doc-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}</label>
+						<Select
+							options={audiences.map(a => ({ value: a, label: a }))}
+							bind:value={form.audience}
+						/>
+					</div>
+					<div>
+						<label for="doc-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.status')}</label>
+						<Select
+							options={[{ value: 'draft', label: 'Draft' }, { value: 'published', label: 'Published' }]}
+							bind:value={form.status}
+						/>
+					</div>
 				</div>
 				<div>
 					<label for="doc-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_markdown')}</label>
@@ -266,9 +267,9 @@
 				<button
 					class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
 					style="border-color: var(--color-border)"
-					onclick={() => (showModal = false)}
+					onclick={() => { showModal = false; }}
 				>
-					Cancel
+					{t('docs.cancel')}
 				</button>
 				<button
 					class="rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
@@ -276,14 +277,49 @@
 					disabled={saving}
 					onclick={submit}
 				>
-					{saving ? 'Saving...' : (editingId ? 'Update' : 'Create')}
+					{saving ? t('docs.saving') : (editingId ? t('docs.update') : t('docs.create'))}
 				</button>
 			</div>
-		</div>
-	</div>
+			<button
+				class="absolute right-4 top-4 rounded-md p-1 hover:bg-black/5 dark:hover:bg-surface/10"
+				style="color: var(--color-muted)"
+				aria-label={t('common.close')}
+				onclick={() => { showModal = false; }}
+			>
+				×
+			</button>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
 {/if}
 
 <!-- Delete Confirmation -->
-<Modal bind:open={showDeleteConfirm} title="Confirm Delete" onConfirm={executeDelete} confirmLabel="Delete">
-	<p class="text-sm" style="color: var(--color-muted)">{t('docs.are_you_sure_you_want_to_delete_this_doc')}</p>
-</Modal>
+{#if showDeleteConfirm}
+<Dialog.Root open={true}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
+		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95" style="border-color: var(--color-border); background-color: var(--color-background)">
+			<Dialog.Title class="text-lg font-semibold">{t('docs.confirm_delete')}</Dialog.Title>
+			<div class="mt-4">
+				<p class="text-sm" style="color: var(--color-muted)">{t('docs.are_you_sure_you_want_to_delete_this_doc')}</p>
+			</div>
+			<div class="mt-6 flex justify-end gap-2">
+				<button
+					class="rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
+					style="border-color: var(--color-border)"
+					onclick={() => { showDeleteConfirm = false; }}
+				>
+					{t('docs.cancel')}
+				</button>
+				<button
+					class="rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
+					style="background-color: var(--color-danger)"
+					onclick={executeDelete}
+				>
+				{t('docs.confirm_delete')}
+			</button>
+		</div>
+	</Dialog.Content>
+</Dialog.Portal>
+</Dialog.Root>
+{/if}

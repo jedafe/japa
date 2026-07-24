@@ -95,6 +95,27 @@ func (s *Service) ListReviews(ctx context.Context, tenantID pgtype.UUID, limit, 
 	return s.store.listReviews(ctx, tenantID, limit, offset)
 }
 
+// ListAdminReviews returns all reviews for a tenant (admin moderation view)
+// with resolved entity names.
+func (s *Service) ListAdminReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListAdminReviewsRow, error) {
+	return s.store.listAdminReviews(ctx, tenantID, limit, offset)
+}
+
+// ListAdminReviewsFiltered returns filtered reviews with entity names.
+func (s *Service) ListAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UUID, status, entityType string, limit, offset int32) ([]gen.ListAdminReviewsFilteredRow, error) {
+	return s.store.listAdminReviewsFiltered(ctx, tenantID, status, entityType, limit, offset)
+}
+
+// CountAdminReviews returns the total review count for a tenant.
+func (s *Service) CountAdminReviews(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.store.countAdminReviews(ctx, tenantID)
+}
+
+// CountAdminReviewsFiltered returns the filtered review count.
+func (s *Service) CountAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UUID, status, entityType string) (int32, error) {
+	return s.store.countAdminReviewsFiltered(ctx, tenantID, status, entityType)
+}
+
 // UpdateReview updates an existing review (owner only).
 func (s *Service) UpdateReview(ctx context.Context, id, tenantID, reviewerUserID pgtype.UUID, rating int16, title, body string) (gen.Review, error) {
 	if rating < RatingMin || rating > RatingMax {
@@ -149,6 +170,29 @@ func (s *Service) DeleteReview(ctx context.Context, id, tenantID pgtype.UUID) er
 	})
 	if err != nil {
 		return fmt.Errorf("update review status: %w", err)
+	}
+
+	// Best-effort aggregate update.
+	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
+		TenantID:   tenantID,
+		EntityType: review.EntityType,
+		EntityID:   review.EntityID,
+	}); err != nil {
+		slog.Error("upsert review aggregate", "entity_type", review.EntityType, "error", err)
+	}
+
+	return nil
+}
+
+// HardDeleteReview permanently removes a review from the database (admin only).
+func (s *Service) HardDeleteReview(ctx context.Context, id, tenantID pgtype.UUID) error {
+	review, err := s.store.getReviewByID(ctx, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("get review for hard delete: %w", err)
+	}
+
+	if err := s.store.deleteReview(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("hard delete review: %w", err)
 	}
 
 	// Best-effort aggregate update.

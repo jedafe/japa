@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { reactionsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
 	import { FilterBar } from '$lib/components/ui/filter-bar';
 	import { Button } from '$lib/components/ui/button';
 
@@ -56,23 +56,6 @@
 				)
 			: reactions
 	);
-
-	const columns = [
-		{ key: 'emoji', label: t('reactions.emoji'), sortable: true,
-			render: (v: string) => `<span class="text-2xl">${v}</span>`
-		},
-		{ key: 'label', label: t('reactions.name'), sortable: true,
-			render: (v: string) => `<span class="font-medium">${v}</span>`
-		},
-		{ key: 'enabled', label: t('reactions.active'), sortable: true,
-			render: (v: boolean) => {
-				const cls = v ? 'bg-success/15 text-success' : 'bg-muted/15 text-muted';
-				const text = v ? 'Active' : 'Inactive';
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${cls}">${text}</span>`;
-			}
-		},
-		{ key: 'actions', label: '', class: 'w-24', component: ReactionActionsCell }
-	];
 
 	function openView(reaction: ReactionType) {
 		viewTarget = reaction;
@@ -167,7 +150,7 @@
 		}
 	}
 
-	$effect(() => {
+	onMount(() => {
 		load();
 	});
 </script>
@@ -199,18 +182,47 @@
 
 <FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
 
-{#if loading}
+{#if loading && reactions.length === 0}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<DataTable
-		{columns}
-		data={filteredReactions}
-		pageSize={25}
-		searchable
-		searchPlaceholder={t('reactions.search', 'Search reactions...')}
-		onsearch={(q) => { searchQuery = q; }}
-		emptyMessage="No reaction types found"
-	/>
+	{#if reactions.length === 0}
+		<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('reactions.no_reaction_types', 'No reaction types found')}</p>
+	{:else}
+		<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
+			<table class="w-full caption-bottom text-sm">
+				<thead>
+					<tr style="border-color: var(--color-border)">
+						<th class="h-12 px-4 text-left align-middle font-medium" style="color: var(--color-foreground-alt); background-color: var(--color-surface)">{t('reactions.emoji')}</th>
+						<th class="h-12 px-4 text-left align-middle font-medium" style="color: var(--color-foreground-alt); background-color: var(--color-surface)">{t('reactions.name')}</th>
+						<th class="h-12 px-4 text-left align-middle font-medium" style="color: var(--color-foreground-alt); background-color: var(--color-surface)">{t('reactions.active')}</th>
+						<th class="h-12 px-4 text-left align-middle font-medium w-24" style="color: var(--color-foreground-alt); background-color: var(--color-surface)"></th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each filteredReactions as reaction (reaction.key)}
+						<tr style="border-color: var(--color-border)">
+							<td class="p-4 align-middle"><span class="text-2xl">{reaction.emoji}</span></td>
+							<td class="p-4 align-middle"><span class="font-medium">{reaction.label}</span></td>
+							<td class="p-4 align-middle">
+								<span class="inline-block rounded-full px-2 py-0.5 text-xs {reaction.enabled ? 'bg-success/15 text-success' : 'bg-muted/15 text-muted'}">
+									{reaction.enabled ? t('reactions.active') : t('reactions.inactive')}
+								</span>
+							</td>
+							<td class="p-4 align-middle">
+								<div class="flex items-center gap-1">
+									<Button variant="ghost" size="sm" onclick={() => openView(reaction)}>{t('common.view')}</Button>
+									{#if canManageReactions}
+										<Button variant="ghost" size="sm" onclick={() => openEdit(reaction)}>{t('common.edit')}</Button>
+										<Button variant="ghost" size="sm" onclick={() => confirmDelete(reaction)} style="color: var(--color-danger)">{t('common.delete')}</Button>
+									{/if}
+								</div>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
 {/if}
 
 <!-- View Modal -->
@@ -226,7 +238,7 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.label}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">Key</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('reactions.key', 'Key')}</p>
 				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{viewTarget.key}</p>
 			</div>
 			<div>
@@ -249,7 +261,7 @@
 >
 	<div class="space-y-3">
 		<div>
-			<label for="rx-key" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">Key</label>
+			<label for="rx-key" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('reactions.key', 'Key')}</label>
 			<input
 				id="rx-key"
 				type="text"
@@ -292,22 +304,6 @@
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteModal} title={t('common.confirm')} onConfirm={executeDelete} confirmLabel={t('common.delete')}>
 	<p class="text-sm" style="color: var(--color-muted)">
-		Are you sure you want to delete the reaction type <strong>{deleteTarget?.emoji} {deleteTarget?.label}</strong>?
+		{t('reactions.delete_confirm', 'Are you sure you want to delete the reaction type')} <strong>{deleteTarget?.emoji} {deleteTarget?.label}</strong>?
 	</p>
 </Modal>
-
-{#snippet ReactionActionsCell({ value, row }: { value: any; row: ReactionType })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
-			{t('common.view')}
-		</Button>
-		{#if canManageReactions}
-			<Button variant="ghost" size="sm" onclick={() => openEdit(row)}>
-				{t('common.edit')}
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => confirmDelete(row)} style="color: var(--color-danger)">
-				{t('common.delete')}
-			</Button>
-		{/if}
-	</div>
-{/snippet}

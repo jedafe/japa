@@ -70,10 +70,14 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
+	case errors.Is(err, pgx.ErrNoRows), errors.Is(err, errpkg.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
-	case errors.Is(err, errpkg.ErrDuplicate):
+	case errors.Is(err, errpkg.ErrDuplicate), errors.Is(err, errpkg.ErrAlreadyExists):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	case errors.Is(err, errpkg.ErrRequired), errors.Is(err, errpkg.ErrInvalid):
+		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+	case errors.Is(err, errpkg.ErrForbidden):
+		writeError(w, http.StatusForbidden, "forbidden", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
@@ -220,7 +224,10 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	templates, err := h.Service.ListTemplates(r.Context(), tenantID)
+	q := r.URL.Query().Get("q")
+	category := r.URL.Query().Get("category")
+
+	templates, err := h.Service.ListTemplates(r.Context(), tenantID, q, category)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -679,6 +686,8 @@ func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 // ─── P5.6 Pagebuilder Extras ─────────────────────────────────────────────
 
 // SaveAsTemplate handles POST /admin/pages/:id/save-as-template.
+// It snapshots the page's current block array into a new page template
+// (Section 16: "save-as-template" preserves the page's blocks).
 func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -690,7 +699,8 @@ func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name string `json:"name"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -700,17 +710,33 @@ func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_name", "Template name is required")
 		return
 	}
+
+	// Fetch the source page so its block array is copied into the template.
+	// The prior implementation discarded pageID and saved an empty block
+	// array (§21 stub) — that lost all page content on save-as-template.
+	page, err := h.Service.GetPage(r.Context(), pageID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var description *string
+	if input.Description != "" {
+		description = &input.Description
+	}
+
 	template, err := h.Service.CreateTemplate(r.Context(), tenantID, CreateTemplateInput{
-		Name:     input.Name,
-		Slug:     slugify(input.Name),
-		PageType: "page",
-		Blocks:   json.RawMessage(`[]`),
+		Name:        input.Name,
+		Slug:        slugify(input.Name),
+		Description: description,
+		PageType:    "page",
+		Blocks:      page.Blocks,
 	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	_ = pageID
+
 	writeJSON(w, http.StatusCreated, map[string]any{"data": template})
 }
 
