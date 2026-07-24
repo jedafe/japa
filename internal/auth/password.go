@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"unicode"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -130,8 +131,7 @@ func ValidatePassword(password string, policy PasswordPolicy) error {
 		if err != nil {
 			// Log but do not block — third-party failure must not prevent registration.
 			// BreachCheckError means the API call failed, not that the password is breached.
-			// Allow the password through — logged upstream by the breach checker.
-			_ = err //nolint:staticcheck // SA9003: intentional empty branch — error is non-blocking
+			slog.Warn("password breach check unavailable, allowing password", "error", err)
 		}
 
 		if breached {

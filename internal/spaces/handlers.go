@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1856,18 +1857,39 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	memberCount, _ := h.Service.read.CountSpaceMembers(r.Context(), gen.CountSpaceMembersParams{
+	memberCount, err := h.Service.read.CountSpaceMembers(r.Context(), gen.CountSpaceMembersParams{
 		SpaceID:  spaceID,
 		TenantID: tenantID,
 	})
-	contentCount, _ := h.Service.read.CountSpacePublishedContent(r.Context(), gen.CountSpacePublishedContentParams{
+	if err != nil {
+		slog.Error("space stats: counting members", "error", err, "space_id", spaceID.String())
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
+
+		return
+	}
+
+	contentCount, err := h.Service.read.CountSpacePublishedContent(r.Context(), gen.CountSpacePublishedContentParams{
 		SpaceID:  spaceID,
 		TenantID: tenantID,
 	})
-	viewCount, _ := h.Service.read.SumSpaceContentViews(r.Context(), gen.SumSpaceContentViewsParams{
+	if err != nil {
+		slog.Error("space stats: counting published content", "error", err, "space_id", spaceID.String())
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
+
+		return
+	}
+
+	viewCount, err := h.Service.read.SumSpaceContentViews(r.Context(), gen.SumSpaceContentViewsParams{
 		SpaceID:  spaceID,
 		TenantID: tenantID,
 	})
+	if err != nil {
+		slog.Error("space stats: summing content views", "error", err, "space_id", spaceID.String())
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
+
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"member_count": memberCount, "content_count": contentCount, "view_count": viewCount,
 	}})
@@ -1890,13 +1912,20 @@ func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
 	for i, contentIDStr := range input.Order {
 		var contentID pgtype.UUID
 		if scanErr := contentID.Scan(contentIDStr); scanErr != nil {
-			continue
+			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content ID: "+contentIDStr)
+			return
 		}
-		_ = h.Service.write.UpdateSpacePinPosition(r.Context(), gen.UpdateSpacePinPositionParams{
+		if err := h.Service.write.UpdateSpacePinPosition(r.Context(), gen.UpdateSpacePinPositionParams{
 			SpaceID:   spaceID,
 			ContentID: contentID,
 			Position:  int32(i),
-		})
+		}); err != nil {
+			slog.Error("reordering pinned content", "error", err,
+				"space_id", spaceID.String(), "content_id", contentID.String())
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reorder pinned content")
+
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 }
