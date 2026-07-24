@@ -382,6 +382,33 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
+// ListByMemberUser handles GET /users/{id}/spaces — the public profile Spaces
+// tab. Public-safe: only public+active spaces of the {id} user. Non-active
+// users are already 404'd by the requireActiveProfileUser gate on the route.
+func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	spaces, err := h.Service.ListPublicByMemberUser(r.Context(), tenantID, userID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+}
+
 // ListMyModeratedSpaces handles GET /api/v1/me/spaces/moderated — every space
 // the caller moderates.
 func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request) {
