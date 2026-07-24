@@ -2,14 +2,13 @@ package spaces
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -39,23 +38,6 @@ type errorBody struct {
 	Message string `json:"message"`
 }
 
-// writeJSON serializes v as JSON and writes it with the given status code.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response in the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, errorResponse{
-		Error: errorBody{Code: code, Message: message},
-	})
-}
-
 // SpaceResolver resolves a space from the {slug} URL parameter and stores
 // it in the request context. It must run after tenant and auth middleware.
 // If the space is not found, it returns 404. Use this on routes that
@@ -71,18 +53,18 @@ func SpaceResolver(service *Service) func(http.Handler) http.Handler {
 
 			t := tenant.FromContext(r.Context())
 			if t == nil {
-				writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+				httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 				return
 			}
 
 			space, err := service.GetSpaceBySlug(r.Context(), slug, t.ID)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
-					writeError(w, http.StatusNotFound, "space_not_found", "Space not found")
+					httpx.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 					return
 				}
 
-				writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+				httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 
 				return
 			}

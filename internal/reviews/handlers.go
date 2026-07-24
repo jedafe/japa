@@ -18,8 +18,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -72,21 +73,11 @@ func (h *Handlers) enqueueReviewAggregateRecalc(tenantID pgtype.UUID, entityType
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-// parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, err
-	}
-
-	return id, nil
-}
-
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -97,7 +88,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -108,29 +99,12 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -195,28 +169,28 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if entityType == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
 
 	if entityIDStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
 	}
 
 	if input.Rating < RatingMin || input.Rating > RatingMax {
-		writeError(w, http.StatusBadRequest, "invalid_rating", "Rating must be between 1 and 5")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_rating", "Rating must be between 1 and 5")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(entityIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 		return
 	}
 
@@ -235,7 +209,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	// Enqueue async review aggregate recalculation — fire-and-forget.
 	h.enqueueReviewAggregateRecalc(tenantID, entityType, entityID)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": review})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
 // ListReviews handles GET /api/v1/reviews.
@@ -260,7 +234,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	if entityType != "" && entityIDStr != "" {
 		var entityID pgtype.UUID
 		if err := entityID.Scan(entityIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 			return
 		}
 
@@ -270,7 +244,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": reviews})
 
 		return
 	}
@@ -279,7 +253,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	if reviewerIDStr != "" {
 		var reviewerID pgtype.UUID
 		if err := reviewerID.Scan(reviewerIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_reviewer_id", "Invalid reviewer_id")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_reviewer_id", "Invalid reviewer_id")
 			return
 		}
 
@@ -289,12 +263,12 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": reviews})
 
 		return
 	}
 
-	writeError(w, http.StatusBadRequest, "missing_params", "entity_type+entity_id or reviewer_id required")
+	httpx.WriteError(w, http.StatusBadRequest, "missing_params", "entity_type+entity_id or reviewer_id required")
 }
 
 // ListAllReviews handles GET /api/v1/admin/reviews.
@@ -316,7 +290,7 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": reviews})
 }
 
 // GetReview handles GET /api/v1/reviews/{id}.
@@ -326,9 +300,9 @@ func (h *Handlers) GetReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
 		return
 	}
 
@@ -338,7 +312,7 @@ func (h *Handlers) GetReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": review})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }
 
 // UpdateReview handles PATCH /api/v1/reviews/{id}.
@@ -353,9 +327,9 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
 		return
 	}
 
@@ -366,12 +340,12 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Rating < RatingMin || input.Rating > RatingMax {
-		writeError(w, http.StatusBadRequest, "invalid_rating", "Rating must be between 1 and 5")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_rating", "Rating must be between 1 and 5")
 		return
 	}
 
@@ -384,7 +358,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	// Enqueue async review aggregate recalculation — fire-and-forget.
 	h.enqueueReviewAggregateRecalc(tenantID, review.EntityType, review.EntityID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": review})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }
 
 // DeleteReview handles DELETE /api/v1/reviews/{id}.
@@ -399,9 +373,9 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
 		return
 	}
 
@@ -420,7 +394,7 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	// Enqueue async review aggregate recalculation — fire-and-forget.
 	h.enqueueReviewAggregateRecalc(tenantID, review.EntityType, review.EntityID)
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // FlagReview handles POST /api/v1/reviews/{id}/flag.
@@ -435,9 +409,9 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
 		return
 	}
 
@@ -446,7 +420,7 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "flagged"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "flagged"}})
 }
 
 // GetAggregate handles GET /api/v1/reviews/aggregate.
@@ -462,13 +436,13 @@ func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
 	entityIDStr := chi.URLParam(r, "entity_id")
 
 	if entityType == "" || entityIDStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "entity_type and entity_id required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_params", "entity_type and entity_id required")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(entityIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 		return
 	}
 
@@ -478,7 +452,7 @@ func (h *Handlers) GetAggregate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": aggregate})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": aggregate})
 }
 
 // ModerateReview handles PATCH /api/v1/admin/reviews/:id.
@@ -494,9 +468,9 @@ func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
 		return
 	}
 
@@ -506,12 +480,12 @@ func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Status == "" {
-		writeError(w, http.StatusBadRequest, "missing_status", "status is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_status", "status is required")
 		return
 	}
 
@@ -521,5 +495,5 @@ func (h *Handlers) ModerateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": review})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -78,7 +79,7 @@ func SlidingWindowRateLimit(rdb valkeycompat.Cmdable) func(http.Handler) http.Ha
 			if count > int64(limit) {
 				retryAfter := strconv.FormatInt(int64(windowSize.Seconds()), 10)
 				w.Header().Set("Retry-After", retryAfter)
-				writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+				httpx.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
 					"Rate limit exceeded. Please retry after "+retryAfter+" seconds.")
 
 				return

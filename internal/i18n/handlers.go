@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -71,19 +72,10 @@ func (h *Handlers) enqueueTranslatePack(packID, sourceLang, targetLang string, t
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, errors.New("invalid " + param)
-	}
-
-	return id, nil
-}
-
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -93,31 +85,14 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		httpx.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, errpkg.ErrRequired):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +109,7 @@ func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 
 	locale := r.URL.Query().Get("locale")
 	if locale == "" {
-		writeError(w, http.StatusBadRequest, "missing_locale", "locale query parameter is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_locale", "locale query parameter is required")
 		return
 	}
 
@@ -167,7 +142,7 @@ func (h *Handlers) ListByLocale(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // ListLocales returns distinct locales with counts.
@@ -184,7 +159,7 @@ func (h *Handlers) ListLocales(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": counts})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": counts})
 }
 
 // Upsert handles create/update of a single translation.
@@ -203,22 +178,22 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Locale == "" {
-		writeError(w, http.StatusBadRequest, "missing_locale", "locale is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_locale", "locale is required")
 		return
 	}
 
 	if input.Key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "key is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_key", "key is required")
 		return
 	}
 
 	if input.Value == "" {
-		writeError(w, http.StatusBadRequest, "missing_value", "value is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_value", "value is required")
 		return
 	}
 
@@ -227,7 +202,7 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
 		"locale": input.Locale,
 		"key":    input.Key,
 		"value":  input.Value,
@@ -252,12 +227,12 @@ func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Translations) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_translations", "translations array is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_translations", "translations array is required")
 		return
 	}
 
@@ -276,7 +251,7 @@ func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int{"upserted": len(items)},
 	})
 }
@@ -289,9 +264,9 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid translation ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid translation ID")
 		return
 	}
 
@@ -300,7 +275,7 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	// the locale alongside the ID in the request path.
 	locale := r.URL.Query().Get("locale")
 	if locale == "" {
-		writeError(w, http.StatusBadRequest, "missing_locale", "locale query parameter is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_locale", "locale query parameter is required")
 		return
 	}
 
@@ -327,7 +302,7 @@ func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request)
 	// Catalog route param is :lang_code (was :locale).
 	locale := chi.URLParam(r, "lang_code")
 	if locale == "" {
-		writeError(w, http.StatusBadRequest, "missing_locale", "locale is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_locale", "locale is required")
 		return
 	}
 
@@ -337,7 +312,7 @@ func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"locale": locale,
 		"data":   data,
 	})
@@ -357,5 +332,5 @@ func (h *Handlers) HandleListPublicLocales(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": locales})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": locales})
 }

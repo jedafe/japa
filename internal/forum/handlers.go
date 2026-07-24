@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -19,8 +18,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -40,21 +40,11 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-// parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, err
-	}
-
-	return id, nil
-}
-
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -65,7 +55,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -76,29 +66,12 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -163,38 +136,38 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
 	var spaceID, contentID, parentReplyID pgtype.UUID
 	if input.SpaceID != nil {
 		if err := spaceID.Scan(*input.SpaceID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
 			return
 		}
 	}
 
 	if input.ContentID != nil {
 		if err := contentID.Scan(*input.ContentID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id format")
 			return
 		}
 	}
 
 	if input.ParentReplyID != nil {
 		if err := parentReplyID.Scan(*input.ParentReplyID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_parent_reply_id", "Invalid parent_reply_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_parent_reply_id", "Invalid parent_reply_id format")
 			return
 		}
 	}
@@ -221,7 +194,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": thread})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": thread})
 }
 
 // ListThreads handles GET /api/v1/forum/threads.
@@ -244,7 +217,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 	case spaceIDStr != "":
 		var spaceID pgtype.UUID
 		if err := spaceID.Scan(spaceIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
 			return
 		}
 
@@ -254,12 +227,12 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	case authorIDStr != "":
 		var authorID pgtype.UUID
 		if err := authorID.Scan(authorIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_author_id", "Invalid author_id")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_author_id", "Invalid author_id")
 			return
 		}
 
@@ -269,12 +242,12 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	case tagIDStr != "":
 		var tagID pgtype.UUID
 		if err := tagID.Scan(tagIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id")
 			return
 		}
 
@@ -284,7 +257,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
 	default:
 		// List all public threads for the tenant regardless of auth — the
@@ -296,7 +269,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": threads})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 	}
 }
 
@@ -309,7 +282,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -326,7 +299,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		h.Service.IncrementThreadView(bgCtx, thread.ID, tenantID)
 	}()
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": thread})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
 // UpdateThread handles PATCH /api/v1/forum/threads/{id}.
@@ -341,9 +314,9 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
 		return
 	}
 
@@ -354,7 +327,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -364,7 +337,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": thread})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
 // DeleteThread handles DELETE /api/v1/forum/threads/{id}.
@@ -379,9 +352,9 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
 		return
 	}
 
@@ -390,7 +363,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // SolveThread handles POST /api/v1/forum/threads/{id}/solve.
@@ -405,9 +378,9 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid thread ID")
 		return
 	}
 
@@ -416,7 +389,7 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -435,9 +408,9 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	threadID, err := parseUUIDParam(r, "id")
+	threadID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
@@ -448,14 +421,14 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	var parentReplyID pgtype.UUID
 	if input.ParentReplyID != nil {
 		if err := parentReplyID.Scan(*input.ParentReplyID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_parent_reply_id", "Invalid parent_reply_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_parent_reply_id", "Invalid parent_reply_id format")
 			return
 		}
 	}
@@ -470,7 +443,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": reply})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": reply})
 }
 
 // ListReplies handles GET /api/v1/forum/threads/{id}/replies.
@@ -480,9 +453,9 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	threadID, err := parseUUIDParam(r, "id")
+	threadID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
@@ -492,7 +465,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": replies})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": replies})
 }
 
 // UpdateReply handles PATCH /api/v1/forum/replies/{id}.
@@ -507,9 +480,9 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
 		return
 	}
 
@@ -518,7 +491,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -528,7 +501,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": reply})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": reply})
 }
 
 // DeleteReply handles DELETE /api/v1/forum/replies/{id}.
@@ -543,9 +516,9 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
 		return
 	}
 
@@ -554,7 +527,7 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -580,28 +553,28 @@ func (h *Handlers) Vote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.EntityType == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
 
 	if input.EntityID == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
 	}
 
 	if input.Value != VoteDown && input.Value != VoteUp {
-		writeError(w, http.StatusBadRequest, "invalid_vote_value", "value must be -1 or 1")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_vote_value", "value must be -1 or 1")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(input.EntityID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 		return
 	}
 
@@ -615,7 +588,7 @@ func (h *Handlers) Vote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": vote})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": vote})
 }
 
 // ---------------------------------------------------------------------------
@@ -641,23 +614,23 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.EntityType == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
 
 	if input.EntityID == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(input.EntityID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 		return
 	}
 
@@ -667,7 +640,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": bm})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": bm})
 }
 
 // RemoveBookmark handles DELETE /api/v1/forum/bookmarks/{id}.
@@ -682,8 +655,8 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := parseUUIDParam(r, "id"); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid bookmark ID")
+	if _, err := httpx.ParseUUIDParam(r, "id"); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid bookmark ID")
 		return
 	}
 
@@ -693,13 +666,13 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	entityIDStr := r.URL.Query().Get("entity_id")
 
 	if entityType == "" || entityIDStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "entity_type and entity_id query params required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_params", "entity_type and entity_id query params required")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(entityIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
 		return
 	}
 
@@ -708,7 +681,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ListBookmarks handles GET /api/v1/forum/bookmarks.
@@ -732,7 +705,7 @@ func (h *Handlers) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
 }
 
 // parsePageSizeOffset extracts the page_offset query parameter.
@@ -773,35 +746,35 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ThreadID == "" {
-		writeError(w, http.StatusBadRequest, "missing_thread_id", "thread_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_thread_id", "thread_id is required")
 		return
 	}
 
 	if input.Question == "" {
-		writeError(w, http.StatusBadRequest, "missing_question", "question is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_question", "question is required")
 		return
 	}
 
 	if len(input.Options) < 2 {
-		writeError(w, http.StatusBadRequest, "insufficient_options", "At least 2 options required")
+		httpx.WriteError(w, http.StatusBadRequest, "insufficient_options", "At least 2 options required")
 		return
 	}
 
 	var threadID pgtype.UUID
 	if err := threadID.Scan(input.ThreadID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread_id")
 		return
 	}
 
 	var closeAt pgtype.Timestamptz
 	if input.CloseAt != nil {
 		if err := closeAt.Scan(*input.CloseAt); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_close_at", "Invalid close_at date format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_close_at", "Invalid close_at date format")
 			return
 		}
 	}
@@ -823,7 +796,7 @@ func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": poll})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": poll})
 }
 
 // VotePoll handles POST /api/v1/forum/polls/{id}/vote.
@@ -833,9 +806,9 @@ func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pollID, err := parseUUIDParam(r, "id")
+	pollID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_poll_id", "Invalid poll ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_poll_id", "Invalid poll ID")
 		return
 	}
 
@@ -844,18 +817,18 @@ func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.OptionID == "" {
-		writeError(w, http.StatusBadRequest, "missing_option_id", "option_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_option_id", "option_id is required")
 		return
 	}
 
 	var optionID pgtype.UUID
 	if err := optionID.Scan(input.OptionID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_option_id", "Invalid option_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_option_id", "Invalid option_id")
 		return
 	}
 
@@ -864,14 +837,14 @@ func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "voted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "voted"}})
 }
 
 // GetPoll handles GET /api/v1/forum/polls/{id}.
 func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
-	pollID, err := parseUUIDParam(r, "id")
+	pollID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_poll_id", "Invalid poll ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_poll_id", "Invalid poll ID")
 		return
 	}
 
@@ -887,7 +860,7 @@ func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"poll":    poll,
 			"results": results,
@@ -921,31 +894,31 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "Name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
 	var coverImageID, moderatorUserID pgtype.UUID
 	if input.CoverImageID != nil {
 		if err := coverImageID.Scan(*input.CoverImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
 			return
 		}
 	}
 
 	if input.ModeratorUserID != nil {
 		if err := moderatorUserID.Scan(*input.ModeratorUserID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_moderator_user_id", "Invalid moderator_user_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_moderator_user_id", "Invalid moderator_user_id format")
 			return
 		}
 	}
@@ -963,7 +936,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": tag})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": tag})
 }
 
 // ListTags handles GET /api/v1/forum/tags.
@@ -982,7 +955,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tags})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tags})
 }
 
 // GetTagBySlug handles GET /api/v1/forum/tags/{slug}.
@@ -994,7 +967,7 @@ func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -1004,7 +977,7 @@ func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
 // UpdateTag handles PATCH /api/v1/forum/tags/{id}.
@@ -1019,9 +992,9 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
 
@@ -1035,7 +1008,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -1061,7 +1034,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
 // DeleteTag handles DELETE /api/v1/forum/tags/{id}.
@@ -1076,9 +1049,9 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
 
@@ -1087,7 +1060,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // AddThreadTag handles POST /api/v1/forum/threads/{id}/tags/{tagId}.
@@ -1097,15 +1070,15 @@ func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	threadID, err := parseUUIDParam(r, "id")
+	threadID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
-	tagID, err := parseUUIDParam(r, "tagId")
+	tagID, err := httpx.ParseUUIDParam(r, "tagId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID")
 		return
 	}
 
@@ -1114,7 +1087,7 @@ func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
 // RemoveThreadTag handles DELETE /api/v1/forum/threads/{id}/tags/{tagId}.
@@ -1124,15 +1097,15 @@ func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	threadID, err := parseUUIDParam(r, "id")
+	threadID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
 		return
 	}
 
-	tagID, err := parseUUIDParam(r, "tagId")
+	tagID, err := httpx.ParseUUIDParam(r, "tagId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID")
 		return
 	}
 
@@ -1141,5 +1114,5 @@ func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }

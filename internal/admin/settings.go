@@ -17,11 +17,11 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
-
 
 // SettingDef defines the metadata for a single setting within a category.
 type SettingDef struct {
@@ -400,21 +400,6 @@ var settingCategoryOrder = []string{
 // Helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 // invalidateLinkPreviewCache removes all cached link previews so that an
 // updated domain blacklist takes effect immediately instead of after the 24h TTL.
 func invalidateLinkPreviewCache(ctx context.Context, vk valkeycompat.Cmdable) {
@@ -439,7 +424,7 @@ func invalidateLinkPreviewCache(ctx context.Context, vk valkeycompat.Cmdable) {
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -450,7 +435,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -484,7 +469,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 		tenantID,
 	)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to load settings")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load settings")
 		return
 	}
 	defer rows.Close()
@@ -536,7 +521,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ---------------------------------------------------------------------------
@@ -559,26 +544,26 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	category := chi.URLParam(r, "category")
 	if category == "" {
-		writeError(w, http.StatusBadRequest, "missing_category", "Category is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_category", "Category is required")
 		return
 	}
 
 	// Validate that the category exists in our schema.
 	def, ok := defaultSettings[category]
 	if !ok {
-		writeError(w, http.StatusNotFound, "invalid_category", "Unknown settings category: "+category)
+		httpx.WriteError(w, http.StatusNotFound, "invalid_category", "Unknown settings category: "+category)
 		return
 	}
 
 	// Parse the request body as key-value pairs.
 	var updates map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	if len(updates) == 0 {
-		writeError(w, http.StatusBadRequest, "empty_body", "No settings provided")
+		httpx.WriteError(w, http.StatusBadRequest, "empty_body", "No settings provided")
 		return
 	}
 
@@ -592,7 +577,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.Writer.Begin(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "tx_error", "Failed to start transaction")
+		httpx.WriteError(w, http.StatusInternalServerError, "tx_error", "Failed to start transaction")
 		return
 	}
 
@@ -603,7 +588,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	for key, value := range updates {
 		if !validKeys[key] {
-			writeError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
 			return
 		}
 
@@ -611,7 +596,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 		valueJSON, err = json.Marshal(value)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
 			return
 		}
 
@@ -622,13 +607,13 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			DO UPDATE SET value = EXCLUDED.value, updated_at = now()
 		`, tenantID, fullKey, string(valueJSON))
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "db_error", "Failed to save setting: "+key)
+			httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save setting: "+key)
 			return
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		writeError(w, http.StatusInternalServerError, "commit_error", "Failed to save settings")
+		httpx.WriteError(w, http.StatusInternalServerError, "commit_error", "Failed to save settings")
 		return
 	}
 
@@ -644,7 +629,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		invalidateLinkPreviewCache(r.Context(), h.Valkey)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{
 			"status":   "saved",
 			"category": category,

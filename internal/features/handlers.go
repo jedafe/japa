@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -30,12 +31,12 @@ func NewHandlers(checker *Checker) *Handlers {
 func (h *Handlers) HandleGetFeatures(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	flags := h.checker.GetAllEnabled(r.Context(), t.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"data": flags})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": flags})
 }
 
 // HandleSetFeatureFlag handles PATCH /admin/feature-flags/{flag_name}.
@@ -44,13 +45,13 @@ func (h *Handlers) HandleGetFeatures(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
-		writeError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
 		return
 	}
 
@@ -59,25 +60,25 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	if err := h.checker.SetEnabled(r.Context(), t.ID, flagName, input.Enabled, user.UserID); err != nil {
 		slog.Error("features: set enabled failed", "flag", flagName, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
 		return
 	}
 
 	h.checker.ClearCache()
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"key":     flagName,
 			"enabled": input.Enabled,
@@ -109,14 +110,14 @@ type FeatureFlag struct {
 func (h *Handlers) ListFeatureFlags(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	rows, err := h.checker.ListFlagRows(r.Context(), t.ID)
 	if err != nil {
 		slog.Error("features: list rows failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list feature flags")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list feature flags")
 		return
 	}
 
@@ -151,7 +152,7 @@ func (h *Handlers) ListFeatureFlags(w http.ResponseWriter, r *http.Request) {
 
 	sort.Slice(flags, func(i, j int) bool { return flags[i].Key < flags[j].Key })
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": flags})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": flags})
 }
 
 // applyFlagConfig overlays the jsonb config blob onto a FeatureFlag, falling
@@ -186,25 +187,25 @@ func applyFlagConfig(flag *FeatureFlag, raw []byte) {
 func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	var input FeatureFlagInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	key := strings.TrimSpace(input.Key)
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "key is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_key", "key is required")
 		return
 	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -223,12 +224,12 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.checker.UpdateFlag(r.Context(), t.ID, key, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: create failed", "key", key, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create feature flag")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create feature flag")
 		return
 	}
 
 	h.checker.ClearCache()
-	writeJSON(w, http.StatusCreated, map[string]any{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": FeatureFlag{
 			ID:                key,
 			Key:               key,
@@ -248,25 +249,25 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
-		writeError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
 		return
 	}
 
 	var input FeatureFlagInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -285,12 +286,12 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.checker.UpdateFlag(r.Context(), t.ID, flagName, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: update failed", "key", flagName, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
 		return
 	}
 
 	h.checker.ClearCache()
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": FeatureFlag{
 			ID:                flagName,
 			Key:               flagName,
@@ -309,24 +310,24 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
-		writeError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
 		return
 	}
 
 	if err := h.checker.DeleteFlag(r.Context(), t.ID, flagName); err != nil {
 		slog.Error("features: delete failed", "key", flagName, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete feature flag")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete feature flag")
 		return
 	}
 
 	h.checker.ClearCache()
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"key": flagName, "deleted": true},
 	})
 }
@@ -351,21 +352,4 @@ func humanizeFlagName(name string) string {
 		parts[i] = strings.ToUpper(p[:1]) + p[1:]
 	}
 	return strings.Join(parts, " ")
-}
-
-// writeJSON serializes v as JSON and writes it with the given status code.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("features: json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response in the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }

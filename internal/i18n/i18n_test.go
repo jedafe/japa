@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // ---------------------------------------------------------------------------
@@ -100,7 +101,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
@@ -124,7 +125,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	writeError(w, http.StatusBadRequest, "missing_locale", "locale is required")
+	httpx.WriteError(w, http.StatusBadRequest, "missing_locale", "locale is required")
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)

@@ -10,7 +10,6 @@ package universities
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -61,7 +61,7 @@ func NewHandlers(spacesService SpacesService, customFieldsService CustomFieldsSe
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -85,17 +85,17 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
 		return
 	}
 
 	universities, err := h.spaces.ListSpacesByType(r.Context(), tenantID, spaceType.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": universities})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": universities})
 }
 
 // GetUniversity handles GET /api/v1/universities/{slug} — a single university
@@ -108,59 +108,42 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "University slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "University slug is required")
 		return
 	}
 
 	space, err := h.spaces.GetSpaceBySlug(r.Context(), slug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
 		return
 	}
 
 	if space.SpaceTypeID != spaceType.ID {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
 	fields, err := h.customFields.ListFieldValuesByEntity(r.Context(), customFieldEntityTypeSpace, space.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load university fields")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load university fields")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": universityDetail{Space: space, Fields: fields}})
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": universityDetail{Space: space, Fields: fields}})
 }
 
 // ─── Admin University CRUD (P5.6 — Task 11) ──────────────────────────────
 
 var (
-	invalidSlugChars  = regexp.MustCompile(`[^a-z0-9-]+`)
-	multipleHyphens   = regexp.MustCompile(`-{2,}`)
-	trimHyphens       = regexp.MustCompile(`^-+|-+$`)
+	invalidSlugChars = regexp.MustCompile(`[^a-z0-9-]+`)
+	multipleHyphens  = regexp.MustCompile(`-{2,}`)
+	trimHyphens      = regexp.MustCompile(`^-+|-+$`)
 )
 
 func slugify(s string) string {
@@ -186,17 +169,17 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		Verified bool   `json:"verified"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
 		return
 	}
 	if strings.TrimSpace(input.Name) == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "Name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
 
 	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load university space type")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load university space type")
 		return
 	}
 
@@ -224,11 +207,11 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		Status:         status,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create university")
+		httpx.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create university")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": space})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
 
 // UpdateUniversity handles PATCH /admin/universities/:id.
@@ -240,13 +223,13 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
 		return
 	}
 
 	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
@@ -256,7 +239,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		Verified *bool   `json:"verified"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
 		return
 	}
 
@@ -289,11 +272,11 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		Status:         status,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update university")
+		httpx.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update university")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
 // DeleteUniversity handles DELETE /admin/universities/:id.
@@ -305,12 +288,12 @@ func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
 		return
 	}
 
 	if err := h.spaces.DeleteSpace(r.Context(), id, tenantID); err != nil {
-		writeError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete university")
+		httpx.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete university")
 		return
 	}
 
@@ -326,13 +309,13 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
 		return
 	}
 
 	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
@@ -351,11 +334,11 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 		Status:         "active",
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify university")
+		httpx.WriteError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify university")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
 // CompareUniversities handles GET /universities/:id/compare.
@@ -366,9 +349,9 @@ func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 	}
 	space, err := h.spaces.GetSpaceBySlug(r.Context(), chi.URLParam(r, "id"), tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "University not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 	fields, _ := h.customFields.ListFieldValuesByEntity(r.Context(), customFieldEntityTypeSpace, space.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"space": space, "fields": fields}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"space": space, "fields": fields}})
 }

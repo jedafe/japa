@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -26,14 +27,14 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	// Check if 2FA is already enabled — refuse to re-setup
 	existing, err := h.Store.GetTOTPSecret(r.Context(), user.UserID)
 	if err == nil && existing != nil && existing.Enabled {
-		writeError(w, http.StatusConflict, "totp_enabled", "2FA is already enabled. Disable it first.")
+		httpx.WriteError(w, http.StatusConflict, "totp_enabled", "2FA is already enabled. Disable it first.")
 		return
 	}
 
@@ -42,7 +43,7 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	secret, qrURL, err := GenerateTOTPSecret(user.UserID.String(), "user@"+user.UserID.String()+".local", h.SiteName)
 	if err != nil {
 		slog.Error("generate TOTP secret", "error", err)
-		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to generate 2FA secret")
+		httpx.WriteError(w, http.StatusInternalServerError, "totp_error", "Failed to generate 2FA secret")
 
 		return
 	}
@@ -51,19 +52,19 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	encrypted, err := encryptSecret(secret)
 	if err != nil {
 		slog.Error("encrypt TOTP secret", "error", err)
-		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to encrypt 2FA secret")
+		httpx.WriteError(w, http.StatusInternalServerError, "totp_error", "Failed to encrypt 2FA secret")
 
 		return
 	}
 
 	if err := h.Store.UpsertTOTPSecret(r.Context(), user.UserID, encrypted); err != nil {
 		slog.Error("store TOTP secret", "error", err)
-		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to save 2FA secret")
+		httpx.WriteError(w, http.StatusInternalServerError, "totp_error", "Failed to save 2FA secret")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"secret": secret,
 			"qr_url": qrURL,
@@ -86,24 +87,24 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	req.Code = sanitizeCode(req.Code)
 	if req.Code == "" {
-		writeError(w, http.StatusBadRequest, "missing_code", "Verification code is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_code", "Verification code is required")
 		return
 	}
 
 	if err := EnableTOTP(r.Context(), h.Store, user.UserID, req.Code); err != nil {
 		slog.Warn("TOTP verify failed", "user_id", user.UserID.String(), "error", err)
-		writeError(w, http.StatusBadRequest, "totp_verify_failed", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "totp_verify_failed", err.Error())
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"enabled": true,
 			"message": "2FA has been enabled",
@@ -125,24 +126,24 @@ func (h *TOTPHandlers) HandleDisable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	req.Code = sanitizeCode(req.Code)
 	if req.Code == "" {
-		writeError(w, http.StatusBadRequest, "missing_code", "Verification code is required to disable 2FA")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_code", "Verification code is required to disable 2FA")
 		return
 	}
 
 	if err := DisableTOTP(r.Context(), h.Store, user.UserID, req.Code); err != nil {
 		slog.Warn("TOTP disable failed", "user_id", user.UserID.String(), "error", err)
-		writeError(w, http.StatusBadRequest, "totp_disable_failed", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "totp_disable_failed", err.Error())
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"enabled": false,
 			"message": "2FA has been disabled",
@@ -160,14 +161,14 @@ func (h *TOTPHandlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	record, err := h.Store.GetTOTPSecret(r.Context(), user.UserID)
 	if err != nil || record == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]interface{}{"enabled": false},
 		})
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{"enabled": record.Enabled},
 	})
 }
@@ -177,7 +178,7 @@ func (h *TOTPHandlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 func authUserFromContext(w http.ResponseWriter, r *http.Request) *AuthenticatedUser {
 	user := FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return nil
 	}
 

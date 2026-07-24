@@ -12,7 +12,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -49,23 +49,13 @@ func NewHandlers(service *Service, unread *UnreadCounter, contentService Content
 	return &Handlers{Service: service, Unread: unread, content: contentService}
 }
 
-// parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, fmt.Errorf("invalid %s: %w", param, err)
-	}
-
-	return id, nil
-}
-
 // requireTenant resolves the tenant from the request context and writes a 503
 // error when none is available. The boolean return is false when the caller
 // should abort (the error has already been written).
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -78,11 +68,11 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
 }
 
@@ -92,7 +82,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func spaceFromContext(w http.ResponseWriter, r *http.Request) (*gen.Space, bool) {
 	space := FromContext(r.Context())
 	if space == nil {
-		writeError(w, http.StatusNotFound, "space_not_found", "Space not found")
+		httpx.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 		return nil, false
 	}
 
@@ -116,14 +106,14 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": types})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
 // GetSpaceType handles GET /api/v1/space-types/{id}.
 func (h *Handlers) GetSpaceType(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -138,7 +128,7 @@ func (h *Handlers) GetSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": st})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // CreateSpaceType handles POST /api/v1/space-types. API-created types are
@@ -154,12 +144,12 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "Name and slug are required")
 		return
 	}
 
@@ -171,7 +161,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 	var fieldGroupID pgtype.UUID
 	if req.FieldGroupID != "" {
 		if err := fieldGroupID.Scan(req.FieldGroupID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid field_group_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid field_group_id format")
 			return
 		}
 	}
@@ -191,15 +181,15 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": st})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": st})
 }
 
 // UpdateSpaceType handles PATCH /api/v1/space-types/{id}. Slug is immutable
 // and therefore not accepted in the request body.
 func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -212,12 +202,12 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "Name is required")
 		return
 	}
 
@@ -229,7 +219,7 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 	var fieldGroupID pgtype.UUID
 	if req.FieldGroupID != "" {
 		if err := fieldGroupID.Scan(req.FieldGroupID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid field_group_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid field_group_id format")
 			return
 		}
 	}
@@ -248,14 +238,14 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": st})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
 }
 
 // DeleteSpaceType handles DELETE /api/v1/space-types/{id}.
 func (h *Handlers) DeleteSpaceType(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -269,7 +259,7 @@ func (h *Handlers) DeleteSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -298,7 +288,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	case q.Get("type") != "":
 		var spaceTypeID pgtype.UUID
 		if scanErr := spaceTypeID.Scan(q.Get("type")); scanErr != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
 			return
 		}
 
@@ -306,7 +296,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	case q.Get("parent") != "":
 		var parentID pgtype.UUID
 		if scanErr := parentID.Scan(q.Get("parent")); scanErr != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent filter format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent filter format")
 			return
 		}
 
@@ -320,7 +310,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
 // AdminListSpaces handles GET /api/v1/admin/spaces — paginated spaces for the
@@ -351,7 +341,7 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 		totalPages = int32((total + int64(limit) - 1) / int64(limit))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"items":       spaces,
 			"total":       total,
@@ -369,7 +359,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -379,7 +369,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
 // ListMyModeratedSpaces handles GET /api/v1/me/spaces/moderated — every space
@@ -392,7 +382,7 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -402,7 +392,7 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
 // GetSpace handles GET /api/v1/spaces/{slug}. It returns the space together
@@ -410,7 +400,7 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
 		return
 	}
 
@@ -431,7 +421,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"space": space, "rules": rules},
 	})
 }
@@ -439,9 +429,9 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 // AdminGetSpace handles GET /api/v1/admin/spaces/{id} — returns a single space
 // by UUID (not slug) for the admin panel.
 func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -462,7 +452,7 @@ func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"space": space, "rules": rules},
 	})
 }
@@ -483,18 +473,18 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" ||
 		strings.TrimSpace(req.SpaceTypeID) == "" || strings.TrimSpace(req.Level) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Name, slug, space_type_id, and level are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "Name, slug, space_type_id, and level are required")
 		return
 	}
 
 	if !IsValidLevel(req.Level) {
-		writeError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, or custom")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, or custom")
 		return
 	}
 
@@ -505,14 +495,14 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 
 	var spaceTypeID pgtype.UUID
 	if err := spaceTypeID.Scan(req.SpaceTypeID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space_type_id format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space_type_id format")
 		return
 	}
 
 	var parentID pgtype.UUID
 	if req.ParentID != "" {
 		if err := parentID.Scan(req.ParentID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_id format")
 			return
 		}
 	}
@@ -523,7 +513,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	if req.PresetName != "" {
 		preset, err := h.Service.GetPermissionPreset(r.Context(), req.PresetName, tenantID)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_preset", "Preset not found")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_preset", "Preset not found")
 			return
 		}
 
@@ -560,16 +550,16 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	// Enqueue async auto-population (Wikipedia summary, flag image, etc.).
 	h.Service.EnqueueAutoPopulate(r.Context(), space.ID, tenantID)
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": space})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
 
 // UpdateSpace handles PATCH /api/v1/spaces/{id}. It loads the existing space
 // first so unspecified fields keep their current values (true PATCH
 // semantics), then validates any provided permission axes before saving.
 func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -598,32 +588,32 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 	// Validate each provided permission axis individually.
 	if req.Visibility != "" && !validVisibility[req.Visibility] {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid visibility value")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid visibility value")
 		return
 	}
 
 	if req.PostingPerm != "" && !validPostingPerm[req.PostingPerm] {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid posting_perm value")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid posting_perm value")
 		return
 	}
 
 	if req.ReplyingPerm != "" && !validPostingPerm[req.ReplyingPerm] {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid replying_perm value")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid replying_perm value")
 		return
 	}
 
 	if req.CommentingPerm != "" && !validPostingPerm[req.CommentingPerm] {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid commenting_perm value")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid commenting_perm value")
 		return
 	}
 
 	if req.JoiningPerm != "" && !validJoiningPerm[req.JoiningPerm] {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid joining_perm value")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid joining_perm value")
 		return
 	}
 
@@ -698,14 +688,14 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": space})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": space})
 }
 
 // DeleteSpace handles DELETE /api/v1/spaces/{id}.
 func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -719,7 +709,7 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -740,7 +730,7 @@ func (h *Handlers) ListSpaceRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rules})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": rules})
 }
 
 // CreateSpaceRule handles POST /api/v1/spaces/{slug}/rules.
@@ -757,12 +747,12 @@ func (h *Handlers) CreateSpaceRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Body) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Title and body are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "Title and body are required")
 		return
 	}
 
@@ -777,7 +767,7 @@ func (h *Handlers) CreateSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": rule})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": rule})
 }
 
 // UpdateSpaceRule handles PATCH /api/v1/spaces/{slug}/rules/{ruleId}.
@@ -787,9 +777,9 @@ func (h *Handlers) UpdateSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ruleID, err := parseUUIDParam(r, "ruleId")
+	ruleID, err := httpx.ParseUUIDParam(r, "ruleId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID format")
 		return
 	}
 
@@ -800,12 +790,12 @@ func (h *Handlers) UpdateSpaceRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Body) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Title and body are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "Title and body are required")
 		return
 	}
 
@@ -821,7 +811,7 @@ func (h *Handlers) UpdateSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rule})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": rule})
 }
 
 // DeleteSpaceRule handles DELETE /api/v1/spaces/{slug}/rules/{ruleId}.
@@ -831,9 +821,9 @@ func (h *Handlers) DeleteSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ruleID, err := parseUUIDParam(r, "ruleId")
+	ruleID, err := httpx.ParseUUIDParam(r, "ruleId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID format")
 		return
 	}
 
@@ -842,7 +832,7 @@ func (h *Handlers) DeleteSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -859,7 +849,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -902,7 +892,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"joined":       !isMember,
 			"member_count": memberCount,
@@ -927,7 +917,7 @@ func (h *Handlers) ListPermissionPresets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": presets})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": presets})
 }
 
 // UpdatePermissionPreset handles PUT /api/v1/space-permission-presets/{name}.
@@ -936,7 +926,7 @@ func (h *Handlers) ListPermissionPresets(w http.ResponseWriter, r *http.Request)
 func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "Preset name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_name", "Preset name is required")
 		return
 	}
 
@@ -960,7 +950,7 @@ func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -972,7 +962,7 @@ func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request
 		Joining:    req.JoiningPerm,
 	}
 	if !ValidPermissionAxes(axes) {
-		writeError(w, http.StatusBadRequest, "invalid_permission_axes", "One or more permission axes are invalid")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "One or more permission axes are invalid")
 		return
 	}
 
@@ -990,7 +980,7 @@ func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": preset})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": preset})
 }
 
 // ---------------------------------------------------------------------------
@@ -1012,7 +1002,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -1021,18 +1011,18 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.UserID) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "user_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "user_id is required")
 		return
 	}
 
 	var targetUserID pgtype.UUID
 	if err := targetUserID.Scan(req.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
 		return
 	}
 
@@ -1051,7 +1041,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"space_id":    space.ID,
 			"user_id":     targetUserID,
@@ -1068,9 +1058,9 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := parseUUIDParam(r, "userId")
+	userID, err := httpx.ParseUUIDParam(r, "userId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID format")
 		return
 	}
 
@@ -1079,7 +1069,7 @@ func (h *Handlers) RemoveModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
 }
 
 // ListModerators handles GET /api/v1/spaces/{slug}/moderators.
@@ -1096,7 +1086,7 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": mods})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": mods})
 }
 
 // AdminListModerators handles GET /api/v1/admin/spaces/{id}/moderators.
@@ -1106,9 +1096,9 @@ func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaceID, err := parseUUIDParam(r, "id")
+	spaceID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
 		return
 	}
 
@@ -1124,7 +1114,7 @@ func (h *Handlers) AdminListModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": mods})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": mods})
 }
 
 // AdminAssignModerator handles POST /api/v1/admin/spaces/{id}/moderators.
@@ -1137,13 +1127,13 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 	}
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
-	spaceID, err := parseUUIDParam(r, "id")
+	spaceID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
 		return
 	}
 
@@ -1158,7 +1148,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 		Username string `json:"username"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -1166,7 +1156,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case req.UserID != "":
 		if err := targetUserID.Scan(req.UserID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
 			return
 		}
 	case req.Username != "":
@@ -1176,7 +1166,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	default:
-		writeError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
 		return
 	}
 
@@ -1191,7 +1181,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"space_id": space.ID.String(),
 			"user_id":  targetUserID.String(),
@@ -1206,13 +1196,13 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
-	spaceID, err := parseUUIDParam(r, "id")
+	spaceID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
 		return
 	}
 
@@ -1226,7 +1216,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case chi.URLParam(r, "userId") != "":
 		if err := targetUserID.Scan(chi.URLParam(r, "userId")); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid userId format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid userId format")
 			return
 		}
 	case chi.URLParam(r, "username") != "":
@@ -1236,7 +1226,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	default:
-		writeError(w, http.StatusBadRequest, "missing_fields", "userId or username is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "userId or username is required")
 		return
 	}
 
@@ -1245,7 +1235,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"space_id": space.ID.String(),
 			"user_id":  targetUserID.String(),
@@ -1275,18 +1265,18 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if strings.TrimSpace(req.ParentSpaceID) == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "parent_space_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "parent_space_id is required")
 		return
 	}
 
 	var parentID pgtype.UUID
 	if err := parentID.Scan(req.ParentSpaceID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
 		return
 	}
 	// Verify the parent space exists and belongs to the same tenant.
@@ -1300,7 +1290,7 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"space_id":        space.ID,
 			"parent_space_id": parentID,
@@ -1316,15 +1306,15 @@ func (h *Handlers) RemoveParentSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	parentID, err := parseUUIDParam(r, "parentId")
+	parentID, err := httpx.ParseUUIDParam(r, "parentId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid parent ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent ID format")
 		return
 	}
 
 	if err := h.Service.RemoveParentSpace(r.Context(), space.ID, parentID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not_found", "Parent relationship not found")
+			httpx.WriteError(w, http.StatusNotFound, "not_found", "Parent relationship not found")
 			return
 		}
 
@@ -1333,7 +1323,7 @@ func (h *Handlers) RemoveParentSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "removed"}})
 }
 
 // ListParentSpaces handles GET /api/v1/spaces/{slug}/parents.
@@ -1355,7 +1345,7 @@ func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": parents})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": parents})
 }
 
 // ---------------------------------------------------------------------------
@@ -1384,7 +1374,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": members})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": members})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -1440,7 +1430,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -1451,11 +1441,11 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodDelete {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": false}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": false}})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": followed}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": followed}})
 }
 
 // =====================
@@ -1476,7 +1466,7 @@ func (h *Handlers) MuteSpace(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -1485,7 +1475,7 @@ func (h *Handlers) MuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": true}})
 }
 
 // UnmuteSpace handles DELETE /api/v1/spaces/{slug}/mute.
@@ -1502,7 +1492,7 @@ func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -1511,7 +1501,7 @@ func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": false}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": false}})
 }
 
 // GetMuteStatus handles GET /api/v1/spaces/{slug}/mute-status.
@@ -1528,7 +1518,7 @@ func (h *Handlers) GetMuteStatus(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": false}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": false}})
 		return
 	}
 
@@ -1538,7 +1528,7 @@ func (h *Handlers) GetMuteStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": muted}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"muted": muted}})
 }
 
 // ListSpaceContent handles GET /api/v1/spaces/{slug}/content — content
@@ -1559,18 +1549,18 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	var cursor pgtype.Timestamptz
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
 		if err := cursor.Scan(cs); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
 			return
 		}
 	}
 
 	items, err := h.content.ListContentsBySpace(r.Context(), tenantID, space.ID, cursor, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list space content")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list space content")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // ListPinned handles GET /api/v1/spaces/{slug}/pinned.
@@ -1582,11 +1572,11 @@ func (h *Handlers) ListPinned(w http.ResponseWriter, r *http.Request) {
 
 	pins, err := h.content.ListPinnedContent(r.Context(), space.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list pinned content")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list pinned content")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pins})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": pins})
 }
 
 // AddPinned handles POST /api/v1/spaces/{slug}/pinned — pins a content item
@@ -1599,7 +1589,7 @@ func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -1609,28 +1599,28 @@ func (h *Handlers) AddPinned(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ContentID == "" {
-		writeError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
 		return
 	}
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan(input.ContentID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
 		return
 	}
 
 	pin, err := h.content.PinContent(r.Context(), space.ID, contentID, user.UserID, input.Position)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to pin content")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to pin content")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": pin})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": pin})
 }
 
 // RemovePinned handles DELETE /api/v1/spaces/{slug}/pinned/{content_id}.
@@ -1642,16 +1632,16 @@ func (h *Handlers) RemovePinned(w http.ResponseWriter, r *http.Request) {
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan(chi.URLParam(r, "content_id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
 		return
 	}
 
 	if err := h.content.UnpinContent(r.Context(), space.ID, contentID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unpin content")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unpin content")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unpinned": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unpinned": true}})
 }
 
 // Leave handles DELETE /api/v1/spaces/{slug}/leave — dedicated leave action,
@@ -1664,7 +1654,7 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -1683,16 +1673,16 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"left": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"left": true}})
 }
 
 // ─── Admin Space Extras (P5.6 — Task 12) ─────────────────────────────────
 
 // ListJoinRequests handles GET /admin/spaces/:id/join-requests.
 func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
-	spaceID, err := parseUUIDParam(r, "id")
+	spaceID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
 	tenantID, ok := h.requireTenant(w, r)
@@ -1704,7 +1694,7 @@ func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 		TenantID: tenantID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
 		return
 	}
 	requests := make([]map[string]any, 0, len(rows))
@@ -1713,26 +1703,26 @@ func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 			"user_id": r.UserID, "username": r.Username, "display_name": r.DisplayName, "avatar_url": r.AvatarUrl, "joined_at": r.JoinedAt, "status": r.Status,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": requests})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": requests})
 }
 
 // UpdateJoinRequest handles PATCH /admin/spaces/:id/join-requests/:requestId.
 func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
-	spaceID, err := parseUUIDParam(r, "id")
+	spaceID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
-	requestID, err := parseUUIDParam(r, "requestId")
+	requestID, err := httpx.ParseUUIDParam(r, "requestId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request_id", "Invalid request ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request_id", "Invalid request ID")
 		return
 	}
 	var input struct {
 		Status string `json:"status"` // "approved" or "rejected"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	tenantID, ok := h.requireTenant(w, r)
@@ -1746,24 +1736,24 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 		TenantID: tenantID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": requestID.String(), "status": input.Status})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": requestID.String(), "status": input.Status})
 }
 
 // UpdateSpaceStatus handles PATCH /admin/spaces/:id/status.
 func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
-	spaceID, err := parseUUIDParam(r, "id")
+	spaceID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
 	var input struct {
 		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	tenantID, ok := h.requireTenant(w, r)
@@ -1776,17 +1766,17 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 		Status:   input.Status,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update space status")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update space status")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": spaceID.String(), "status": input.Status})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": spaceID.String(), "status": input.Status})
 }
 
 // GetSpaceAnalytics handles GET /admin/spaces/:id/analytics.
 func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
-	spaceID, err := parseUUIDParam(r, "id")
+	spaceID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
 	tenantID, ok := h.requireTenant(w, r)
@@ -1805,23 +1795,23 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		SpaceID:  spaceID,
 		TenantID: tenantID,
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"member_count": memberCount, "content_count": contentCount, "view_count": viewCount,
 	}})
 }
 
 // ReorderPinned handles POST /admin/spaces/:id/pinned/reorder.
 func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
-	spaceID, err := parseUUIDParam(r, "id")
+	spaceID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
 	var input struct {
 		Order []string `json:"order"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	for i, contentIDStr := range input.Order {
@@ -1835,7 +1825,7 @@ func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
 			Position:  int32(i),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 }
 
 // SuggestParentSpaces handles GET /spaces/suggest-parents.
@@ -1846,14 +1836,14 @@ func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.Service.read.SuggestParentSpaces(r.Context(), tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to suggest parents")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suggest parents")
 		return
 	}
 	spaces := make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
 		spaces = append(spaces, map[string]any{"id": r.ID, "name": r.Name, "slug": r.Slug})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }
 
 // AdminListJoinRequests handles GET /api/v1/admin/join-requests — all
@@ -1868,7 +1858,7 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 
 	rows, err := h.Service.read.ListAllSpaceJoinRequests(r.Context(), tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
 		return
 	}
 
@@ -1887,7 +1877,7 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": requests})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": requests})
 }
 
 // AdminResolveJoinRequest is the shared approve/reject implementation behind
@@ -1903,17 +1893,17 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 	composite := chi.URLParam(r, "id")
 	parts := strings.Split(composite, "::")
 	if len(parts) != 2 {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid composite request id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid composite request id")
 		return
 	}
 
 	var spaceID, userID pgtype.UUID
 	if err := spaceID.Scan(parts[0]); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid space id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space id")
 		return
 	}
 	if err := userID.Scan(parts[1]); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user id")
 		return
 	}
 
@@ -1923,11 +1913,11 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 		Status:   status,
 		TenantID: tenantID,
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"id": composite, "status": status})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": composite, "status": status})
 }
 
 // AdminApproveJoinRequest handles POST /api/v1/admin/join-requests/{id}/approve.

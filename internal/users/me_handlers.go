@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -34,17 +35,17 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	var req ChangePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if req.CurrentPassword == "" || req.NewPassword == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "current_password and new_password are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "current_password and new_password are required")
 		return
 	}
 
 	if len(req.NewPassword) < 8 {
-		writeError(w, http.StatusBadRequest, "password_too_short", "Password must be at least 8 characters")
+		httpx.WriteError(w, http.StatusBadRequest, "password_too_short", "Password must be at least 8 characters")
 		return
 	}
 
@@ -52,7 +53,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	hashRow, err := h.Service.store.getUserPasswordHash(r.Context(), user.UserID, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "user_not_found", "User not found")
+			httpx.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 			return
 		}
 		handleServiceError(w, err)
@@ -62,7 +63,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	// Verify current password.
 	if hashRow.PasswordHash != nil {
 		if err := bcrypt.CompareHashAndPassword([]byte(*hashRow.PasswordHash), []byte(req.CurrentPassword)); err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid_password", "Current password is incorrect")
+			httpx.WriteError(w, http.StatusUnauthorized, "invalid_password", "Current password is incorrect")
 			return
 		}
 	}
@@ -70,7 +71,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	// Hash new password.
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to hash password")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to hash password")
 		return
 	}
 
@@ -80,7 +81,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // PrivacySettings represents user privacy settings.
@@ -105,7 +106,7 @@ func (h *Handlers) GetPrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
 }
 
 // UpdatePrivacyRequest is the input for updating privacy settings.
@@ -126,7 +127,7 @@ func (h *Handlers) UpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdatePrivacyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -135,7 +136,7 @@ func (h *Handlers) UpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // SessionInfo represents a user session.
@@ -158,7 +159,7 @@ func (h *Handlers) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": sessions})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": sessions})
 }
 
 // RevokeSession handles DELETE /api/v1/me/sessions/{id}.
@@ -171,7 +172,7 @@ func (h *Handlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	var id pgtype.UUID
 	if err := id.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid session ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid session ID format")
 		return
 	}
 
@@ -180,7 +181,7 @@ func (h *Handlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "revoked"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "revoked"}})
 }
 
 // RevokeAllSessionsRequest is the input for revoking all sessions.
@@ -205,7 +206,7 @@ func (h *Handlers) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "revoked"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "revoked"}})
 }
 
 // ConnectedAccountInfo represents a linked OAuth account.
@@ -232,7 +233,7 @@ func (h *Handlers) ListConnectedAccounts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": accounts})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": accounts})
 }
 
 // DisconnectAccount handles DELETE /api/v1/me/connected-accounts/{provider}.
@@ -249,7 +250,7 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 
 	provider := chi.URLParam(r, "provider")
 	if provider == "" {
-		writeError(w, http.StatusBadRequest, "missing_provider", "Provider is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_provider", "Provider is required")
 		return
 	}
 
@@ -261,7 +262,7 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !hasPassword {
-		writeError(w, http.StatusBadRequest, "cannot_disconnect", "Cannot disconnect the only login method. Set a password first.")
+		httpx.WriteError(w, http.StatusBadRequest, "cannot_disconnect", "Cannot disconnect the only login method. Set a password first.")
 		return
 	}
 
@@ -270,7 +271,7 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "disconnected"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "disconnected"}})
 }
 
 // ContentListItem represents a content item in list responses.
@@ -304,7 +305,7 @@ func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": content})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
 // ListMyDrafts handles GET /api/v1/me/drafts.
@@ -328,7 +329,7 @@ func (h *Handlers) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": content})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
 // ListMyScheduled handles GET /api/v1/me/scheduled.
@@ -352,7 +353,7 @@ func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": content})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
 // BookmarkListItem represents a bookmark in list responses.
@@ -380,7 +381,7 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
 }
 
 // GetMyAnalytics handles GET /api/v1/me/analytics.
@@ -401,7 +402,7 @@ func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": analytics})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": analytics})
 }
 
 // DeactivateAccountRequest is the input for account deactivation.
@@ -423,12 +424,12 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 
 	var req DeactivateAccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if req.Password == "" {
-		writeError(w, http.StatusBadRequest, "missing_password", "Password is required to deactivate account")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_password", "Password is required to deactivate account")
 		return
 	}
 
@@ -441,7 +442,7 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 
 	if hashRow.PasswordHash != nil {
 		if err := bcrypt.CompareHashAndPassword([]byte(*hashRow.PasswordHash), []byte(req.Password)); err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid_password", "Password is incorrect")
+			httpx.WriteError(w, http.StatusUnauthorized, "invalid_password", "Password is incorrect")
 			return
 		}
 	}
@@ -451,7 +452,7 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deactivated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deactivated"}})
 }
 
 // RequestDataExportRequest is the input for requesting data export.
@@ -468,14 +469,13 @@ func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
 
 	_ = user
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]string{
 			"status":  "export_requested",
 			"message": "Your data export has been requested. You will receive a download link via email when ready.",
 		},
 	})
 }
-
 
 // Ensure pgx.ErrNoRows is referenced to avoid import cycle.
 var _ = pgx.ErrNoRows

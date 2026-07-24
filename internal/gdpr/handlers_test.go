@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // ---------------------------------------------------------------------------
@@ -20,7 +21,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
@@ -44,7 +45,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	writeError(w, http.StatusBadRequest, "invalid_input", "Bad request")
+	httpx.WriteError(w, http.StatusBadRequest, "invalid_input", "Bad request")
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status 400, got %d", w.Code)
@@ -95,19 +96,19 @@ func TestParseOffset(t *testing.T) {
 	t.Parallel()
 	// Default offset.
 	r := httptest.NewRequest(http.MethodGet, "/audit-logs", nil)
-	if o := parseOffset(r); o != 0 {
+	if o := httpx.ParseOffset(r); o != 0 {
 		t.Errorf("expected default offset 0, got %d", o)
 	}
 
 	// Custom offset.
 	r2 := httptest.NewRequest(http.MethodGet, "/audit-logs?offset=10", nil)
-	if o := parseOffset(r2); o != 10 {
+	if o := httpx.ParseOffset(r2); o != 10 {
 		t.Errorf("expected offset 10, got %d", o)
 	}
 
 	// Invalid offset.
 	r3 := httptest.NewRequest(http.MethodGet, "/audit-logs?offset=abc", nil)
-	if o := parseOffset(r3); o != 0 {
+	if o := httpx.ParseOffset(r3); o != 0 {
 		t.Errorf("expected default offset for invalid input, got %d", o)
 	}
 }

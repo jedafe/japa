@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/spam"
 )
 
@@ -68,7 +69,7 @@ func requireUserFromContext(r *http.Request) (*auth.AuthenticatedUser, bool) {
 func requireTenantFromContext(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
 
@@ -79,7 +80,7 @@ func requireTenantFromContext(w http.ResponseWriter, r *http.Request) (pgtype.UU
 func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -93,11 +94,11 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 
 	conversations, err := h.dmService.GetConversations(r.Context(), tenantID, user.UserID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get conversations")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get conversations")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": conversations})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": conversations})
 }
 
 // InitiateConversation handles POST /api/v1/dm/conversations.
@@ -107,7 +108,7 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -121,28 +122,28 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := parseJSONBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if req.RecipientID == "" {
-		writeError(w, http.StatusBadRequest, "missing_recipient_id", "recipient_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_recipient_id", "recipient_id is required")
 		return
 	}
 
 	var recipientID pgtype.UUID
 	if err := recipientID.Scan(req.RecipientID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_recipient_id", "Invalid recipient ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_recipient_id", "Invalid recipient ID format")
 		return
 	}
 
 	result, err := h.dmService.GetOrCreateConversationForInitiator(r.Context(), tenantID, user.UserID, recipientID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to initiate conversation")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to initiate conversation")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"conversation_id": result.Conversation.ID.String(),
 			"is_new":          result.IsNew,
@@ -154,7 +155,7 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -168,7 +169,7 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 	var conversationID pgtype.UUID
 
 	if err := conversationID.Scan(conversationIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
 	}
 
@@ -177,18 +178,18 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 	messages, err := h.dmService.GetMessages(r.Context(), tenantID, conversationID, user.UserID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get messages")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get messages")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": messages})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": messages})
 }
 
 // SendMessage handles POST /api/v1/dm/conversations/{id}/messages.
 func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -202,7 +203,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	var conversationID pgtype.UUID
 
 	if err := conversationID.Scan(conversationIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
 	}
 
@@ -211,12 +212,12 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := parseJSONBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if req.Body == "" {
-		writeError(w, http.StatusBadRequest, "empty_body", "Message body cannot be empty")
+		httpx.WriteError(w, http.StatusBadRequest, "empty_body", "Message body cannot be empty")
 		return
 	}
 
@@ -236,24 +237,24 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Warn("spam check failed", "error", err)
 		} else if spamResult.Blocked {
-			writeError(w, http.StatusForbidden, "message_blocked", "Message blocked by safety filters")
+			httpx.WriteError(w, http.StatusForbidden, "message_blocked", "Message blocked by safety filters")
 			return
 		}
 	}
 
 	if err := h.dmService.SendMessage(r.Context(), tenantID, conversationID, user.UserID, req.Body); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to send message")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to send message")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // MarkAsRead handles POST /api/v1/dm/conversations/{id}/read.
 func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -262,23 +263,23 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	var conversationID pgtype.UUID
 
 	if err := conversationID.Scan(conversationIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
 	}
 
 	if err := h.dmService.MarkAsRead(r.Context(), conversationID, user.UserID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to mark messages as read")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark messages as read")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // AcceptMessageRequest handles POST /api/v1/dm/requests/{id}/accept.
 func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -292,23 +293,23 @@ func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) 
 	var conversationID pgtype.UUID
 
 	if err := conversationID.Scan(conversationIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
 	}
 
 	if err := h.dmService.HandleMessageRequest(r.Context(), tenantID, conversationID, user.UserID, MessageRequestAccepted); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to accept message request")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to accept message request")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // DeclineMessageRequest handles POST /api/v1/dm/requests/{id}/decline.
 func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -322,23 +323,23 @@ func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request)
 	var conversationID pgtype.UUID
 
 	if err := conversationID.Scan(conversationIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
 	}
 
 	if err := h.dmService.HandleMessageRequest(r.Context(), tenantID, conversationID, user.UserID, MessageRequestDeclined); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to decline message request")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decline message request")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // BlockMessageRequest handles POST /api/v1/dm/requests/{id}/block.
 func (h *Handlers) BlockMessageRequest(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -352,23 +353,23 @@ func (h *Handlers) BlockMessageRequest(w http.ResponseWriter, r *http.Request) {
 	var conversationID pgtype.UUID
 
 	if err := conversationID.Scan(conversationIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
 	}
 
 	if err := h.dmService.HandleMessageRequest(r.Context(), tenantID, conversationID, user.UserID, MessageRequestBlocked); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to block message request")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to block message request")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // UpdateDMPrivacy handles PUT /api/v1/dm/privacy.
 func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -377,16 +378,16 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := parseJSONBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if err := h.dmService.UpdateDMPrivacy(r.Context(), user.UserID, req.Privacy); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_privacy", "Invalid privacy setting")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_privacy", "Invalid privacy setting")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // EditMessage handles PATCH /api/v1/dm/conversations/{id}/messages/{mid}.
@@ -395,7 +396,7 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -407,14 +408,14 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 	conversationIDStr := chi.URLParam(r, "id")
 	var conversationID pgtype.UUID
 	if err := conversationID.Scan(conversationIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
 	}
 
 	messageIDStr := chi.URLParam(r, "mid")
 	var messageID pgtype.UUID
 	if err := messageID.Scan(messageIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_message_id", "Invalid message ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_message_id", "Invalid message ID format")
 		return
 	}
 
@@ -422,21 +423,21 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 		Body string `json:"body"`
 	}
 	if err := parseJSONBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
 
 	if req.Body == "" {
-		writeError(w, http.StatusBadRequest, "empty_body", "Message body cannot be empty")
+		httpx.WriteError(w, http.StatusBadRequest, "empty_body", "Message body cannot be empty")
 		return
 	}
 
 	if err := h.dmService.EditMessage(r.Context(), tenantID, conversationID, messageID, user.UserID, req.Body); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to edit message")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to edit message")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }
 
 // DeleteMessage handles DELETE /api/v1/dm/conversations/{id}/messages/{mid}.
@@ -445,7 +446,7 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -457,23 +458,23 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	conversationIDStr := chi.URLParam(r, "id")
 	var conversationID pgtype.UUID
 	if err := conversationID.Scan(conversationIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
 	}
 
 	messageIDStr := chi.URLParam(r, "mid")
 	var messageID pgtype.UUID
 	if err := messageID.Scan(messageIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_message_id", "Invalid message ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_message_id", "Invalid message ID format")
 		return
 	}
 
 	if err := h.dmService.DeleteMessage(r.Context(), tenantID, conversationID, messageID, user.UserID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete message")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete message")
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ─── P5.6 DM Requests List ───────────────────────────────────────────────
@@ -483,7 +484,7 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 	tenantID, ok := requireTenantFromContext(w, r)
@@ -493,8 +494,8 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 	// Use existing conversation listing — filter for pending requests
 	conversations, err := h.dmService.GetConversations(r.Context(), tenantID, user.UserID, 50, 0)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list message requests")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list message requests")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": conversations})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": conversations})
 }

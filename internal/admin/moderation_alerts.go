@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // ListModerationAlerts handles GET /api/v1/admin/moderation/alerts.
@@ -16,7 +17,7 @@ import (
 func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -30,7 +31,7 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 		Status:   status,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation alerts")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation alerts")
 		return
 	}
 
@@ -45,7 +46,7 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 		slog.Warn("moderation: counting alerts", "error", countErr)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": alerts,
 		"meta": map[string]any{"total": total},
 	})
@@ -55,7 +56,7 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 func (h *Handlers) AcknowledgeModerationAlert(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -65,28 +66,28 @@ func (h *Handlers) AcknowledgeModerationAlert(w http.ResponseWriter, r *http.Req
 
 	id, err := scanUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid alert ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid alert ID")
 		return
 	}
 
 	alert, err := gen.New(h.DB.Writer).AcknowledgeModerationAlert(r.Context(), gen.AcknowledgeModerationAlertParams{
-		ID:           id,
-		TenantID:     tenantID,
+		ID:             id,
+		TenantID:       tenantID,
 		AcknowledgedBy: user.UserID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to acknowledge alert")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to acknowledge alert")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": alert})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": alert})
 }
 
 // ResolveModerationAlert handles POST /api/v1/admin/moderation/alerts/{id}/resolve.
 func (h *Handlers) ResolveModerationAlert(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -96,21 +97,21 @@ func (h *Handlers) ResolveModerationAlert(w http.ResponseWriter, r *http.Request
 
 	id, err := scanUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid alert ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid alert ID")
 		return
 	}
 
 	alert, err := gen.New(h.DB.Writer).ResolveModerationAlert(r.Context(), gen.ResolveModerationAlertParams{
-		ID:        id,
-		TenantID:  tenantID,
+		ID:         id,
+		TenantID:   tenantID,
 		ResolvedBy: user.UserID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to resolve alert")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to resolve alert")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": alert})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": alert})
 }
 
 // scanUUIDParam reads a URL parameter and scans it into a pgtype.UUID.
@@ -128,7 +129,7 @@ func scanUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 	tenantID, ok := requireTenant(w, r)
@@ -138,7 +139,7 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 
 	orgID, err := scanUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
@@ -158,7 +159,7 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 		TenantID:       tenantID,
 	})
 	if err != nil {
-		writeError(w, http.StatusNotFound, "no_pending_claim", "No pending ownership claim for this organization")
+		httpx.WriteError(w, http.StatusNotFound, "no_pending_claim", "No pending ownership claim for this organization")
 		return
 	}
 
@@ -168,11 +169,11 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 		ReviewedBy:     user.UserID,
 		ResolutionNote: &note,
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to approve ownership claim")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to approve ownership claim")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_id": claimID.String(), "status": "approved"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_id": claimID.String(), "status": "approved"}})
 }
 
 // ListPendingOwnershipClaims handles GET /api/v1/admin/organizations/pending-claims.
@@ -185,7 +186,7 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 
 	claims, err := h.Queries.GetPendingOwnershipClaims(r.Context(), tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to fetch pending claims")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to fetch pending claims")
 		return
 	}
 
@@ -214,5 +215,5 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }

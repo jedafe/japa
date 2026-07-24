@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // ---------------------------------------------------------------------------
@@ -220,7 +222,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeJSON(rr, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(rr, http.StatusOK, map[string]string{"status": "ok"})
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
@@ -235,7 +237,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeError(rr, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+	httpx.WriteError(rr, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)

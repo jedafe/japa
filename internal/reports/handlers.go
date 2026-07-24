@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -42,7 +42,7 @@ func (h *Handlers) SetEnqueuer(e TaskEnqueuer) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -53,7 +53,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -81,15 +81,15 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 		return
 	}
 
-	entityID, err := parseUUIDParam(r, idParam)
+	entityID, err := httpx.ParseUUIDParam(r, idParam)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	var body reportRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -119,7 +119,7 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 		}
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": report})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": report})
 }
 
 // ReportContent handles POST /api/v1/content/{id}/report.
@@ -164,11 +164,11 @@ func (h *Handlers) ListMyReports(w http.ResponseWriter, r *http.Request) {
 
 	myReports, err := h.service.ListMyReports(r.Context(), tenantID, user.UserID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list your reports")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list your reports")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": myReports})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": myReports})
 }
 
 // ListReports handles GET /api/v1/admin/reports. Supports ?status= and
@@ -204,13 +204,13 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 
 	allReports, err := h.service.ListReports(r.Context(), tenantID, status, entityType, q, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list reports")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list reports")
 		return
 	}
 
 	total, err := h.service.CountReports(r.Context(), tenantID, status, q)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count reports")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count reports")
 		return
 	}
 	totalPages := int32(0)
@@ -218,7 +218,7 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 		totalPages = (total + limit - 1) / limit
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"items":       allReports,
 			"page":        page,
@@ -234,9 +234,9 @@ func (h *Handlers) DeleteReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -245,7 +245,7 @@ func (h *Handlers) DeleteReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }
 
 // GetReport handles GET /api/v1/admin/reports/{id}.
@@ -255,9 +255,9 @@ func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -267,7 +267,7 @@ func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": report})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": report})
 }
 
 // UpdateReport handles PATCH /api/v1/admin/reports/{id}.
@@ -284,9 +284,9 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -296,12 +296,12 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Action == "" {
-		writeError(w, http.StatusBadRequest, "missing_action", "action is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_action", "action is required")
 		return
 	}
 
@@ -348,29 +348,21 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": updated})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
 // writeServiceError maps Service sentinel errors to HTTP status codes.
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidEntityType), errors.Is(err, ErrInvalidReason), errors.Is(err, ErrInvalidStatus):
-		writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 	case errors.Is(err, ErrAlreadyReported):
-		writeError(w, http.StatusConflict, "already_reported", err.Error())
+		httpx.WriteError(w, http.StatusConflict, "already_reported", err.Error())
 	case errors.Is(err, ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found", "Report not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Report not found")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Report operation failed")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Report operation failed")
 	}
-}
-
-// parseUUIDParam extracts a chi URL param and scans it into a pgtype.UUID.
-func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	err := id.Scan(chi.URLParam(r, name))
-
-	return id, err
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -401,23 +393,4 @@ func parsePageOffset(r *http.Request) int32 {
 	}
 
 	return int32(v)
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }

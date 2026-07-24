@@ -15,11 +15,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
+	"github.com/jedafe/japa/internal/csrf"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/email"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/csrf"
-	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
@@ -27,19 +28,19 @@ import (
 
 // AuthHandlers holds dependencies for auth HTTP handlers.
 type AuthHandlers struct { //nolint:revive // stuttering type name preserved for API compatibility
-	DB           Querier
-	Queries      *gen.Queries
-	Database     *db.DB         // Raw DB access for operations not yet in sqlc (e.g., backup code update)
-	KeyRotation  *KeyRotation
-	BruteForce   BruteForceStore
-	Policy       PasswordPolicy
-	AsynqClient  *asynq.Client
-	VKClient     *valkey.Client   // Valkey client for per-email rate limiting
-	Settings     SettingsReader   // Hot-reloadable system settings for auth token TTLs
-	SiteName     string           // Brand name for email templates (e.g. "JapaConnect")
-	SupportURL   string           // Support page URL for email footers
-	CookieDomain  string // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
-	SecureCookies bool   // When true, session/CSRF cookies are marked Secure (production / TLS)
+	DB            Querier
+	Queries       *gen.Queries
+	Database      *db.DB // Raw DB access for operations not yet in sqlc (e.g., backup code update)
+	KeyRotation   *KeyRotation
+	BruteForce    BruteForceStore
+	Policy        PasswordPolicy
+	AsynqClient   *asynq.Client
+	VKClient      *valkey.Client // Valkey client for per-email rate limiting
+	Settings      SettingsReader // Hot-reloadable system settings for auth token TTLs
+	SiteName      string         // Brand name for email templates (e.g. "JapaConnect")
+	SupportURL    string         // Support page URL for email footers
+	CookieDomain  string         // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
+	SecureCookies bool           // When true, session/CSRF cookies are marked Secure (production / TLS)
 }
 
 // Querier is the interface for database operations needed by auth handlers.
@@ -86,26 +87,6 @@ type RefreshToken struct {
 	RevokedAt pgtype.Timestamptz
 }
 
-// writeJSON writes a JSON response with the given status code.
-func writeJSON(w http.ResponseWriter, code int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("json encode response", "error", err)
-	}
-}
-
-// writeError writes a standardized error response.
-func writeError(w http.ResponseWriter, code int, errCode, message string) {
-	writeJSON(w, code, map[string]interface{}{
-		"error": map[string]string{
-			"code":    errCode,
-			"message": message,
-		},
-	})
-}
-
 // Register handles POST /api/v1/auth/register.
 // Creates a new user with email, username, and password.
 func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +97,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -124,7 +105,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	req.Username = strings.TrimSpace(req.Username)
 
 	if req.Email == "" || req.Username == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Email, username, and password are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "Email, username, and password are required")
 		return
 	}
 
@@ -136,26 +117,26 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 				"registration blocked: breached password",
 				"breach_count", breached.Count,
 			)
-			writeError(w, http.StatusBadRequest, "password_breached",
+			httpx.WriteError(w, http.StatusBadRequest, "password_breached",
 				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
 
 			return
 		}
 
-		writeError(w, http.StatusBadRequest, "weak_password", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "weak_password", err.Error())
 
 		return
 	}
 
 	tenant := tenant.FromContext(r.Context())
 	if tenant == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	passwordHash, err := HashPassword(req.Password)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "hash_error", "Failed to secure password")
+		httpx.WriteError(w, http.StatusInternalServerError, "hash_error", "Failed to secure password")
 		return
 	}
 
@@ -167,11 +148,11 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, errpkg.ErrDuplicate) {
-			writeError(w, http.StatusConflict, "email_exists", "Email or username already in use")
+			httpx.WriteError(w, http.StatusConflict, "email_exists", "Email or username already in use")
 			return
 		}
 
-		writeError(w, http.StatusInternalServerError, "create_failed", "Failed to create user")
+		httpx.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create user")
 
 		return
 	}
@@ -187,13 +168,13 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenant.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
 	refreshToken, err := generateRefreshToken()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
@@ -207,7 +188,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		TokenHash: tokenHash,
 		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
@@ -222,7 +203,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": map[string]interface{}{
 			"access_token": accessToken,
 			"user": map[string]interface{}{
@@ -242,19 +223,19 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 	if req.Email == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Email and password are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "Email and password are required")
 		return
 	}
 
 	tenant := tenant.FromContext(r.Context())
 	if tenant == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -270,7 +251,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	allowed, retryAfter := CheckLoginAttempt(r.Context(), h.BruteForce, bruteKey, maxAttempts)
 	if !allowed {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
-		writeError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed login attempts. Please try again later.")
+		httpx.WriteError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed login attempts. Please try again later.")
 
 		return
 	}
@@ -281,7 +262,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("record failed login", "error", err)
 		}
 
-		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
 		return
 	}
@@ -291,7 +272,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("record failed login", "error", err)
 		}
 
-		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
 		return
 	}
@@ -301,13 +282,13 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("record failed login", "error", err)
 		}
 
-		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
 		return
 	}
 
 	if user.Status != "active" {
-		writeError(w, http.StatusForbidden, "account_inactive", "Account is not active")
+		httpx.WriteError(w, http.StatusForbidden, "account_inactive", "Account is not active")
 		return
 	}
 
@@ -316,7 +297,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	if EmailVerifyRequired(r.Context(), h.Settings, tenant.ID) && !user.EmailVerifiedAt.Valid {
 		isSuperAdmin, err := h.DB.IsUserInGroup(r.Context(), gen.IsUserInGroupParams{
 			TenantID:  tenant.ID,
-			UserID:   user.ID,
+			UserID:    user.ID,
 			GroupSlug: "super_admin",
 		})
 		if err != nil {
@@ -324,7 +305,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !isSuperAdmin {
-			writeError(w, http.StatusForbidden, "email_not_verified", "Email verification is required before login")
+			httpx.WriteError(w, http.StatusForbidden, "email_not_verified", "Email verification is required before login")
 			return
 		}
 	}
@@ -356,11 +337,11 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	if hasTOTP {
 		challengeToken, err := h.KeyRotation.MintTOTPChallengeToken(user.ID, user.TenantID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "token_error", "Failed to create challenge token")
+			httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create challenge token")
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]interface{}{
 				"totp_required":   true,
 				"challenge_token": challengeToken,
@@ -377,13 +358,13 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 	accessToken, err := h.KeyRotation.MintAccessToken(user.ID, user.TenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
 	refreshToken, err := generateRefreshToken()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
@@ -397,7 +378,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		TokenHash: tokenHash,
 		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
@@ -416,7 +397,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	// X-CSRF-Token header on subsequent mutating requests (audit finding C1).
 	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"access_token": accessToken,
 			"user": map[string]interface{}{
@@ -433,7 +414,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("jc_refresh")
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "no_refresh_token", "Refresh token cookie is required")
+		httpx.WriteError(w, http.StatusUnauthorized, "no_refresh_token", "Refresh token cookie is required")
 		return
 	}
 
@@ -441,27 +422,27 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	stored, err := h.DB.GetRefreshToken(r.Context(), tokenHash)
 	if err != nil || stored == nil {
-		writeError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token is invalid or expired")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token is invalid or expired")
 		return
 	}
 
 	if stored.RevokedAt.Valid {
-		writeError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
 		return
 	}
 
 	if time.Now().After(stored.ExpiresAt) {
-		writeError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has expired")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has expired")
 		return
 	}
 
 	accessToken, err := h.KeyRotation.MintAccessToken(stored.UserID, stored.TenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"access_token": accessToken,
 		},
@@ -478,36 +459,36 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if req.ChallengeToken == "" || req.Code == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "challenge_token and code are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "challenge_token and code are required")
 		return
 	}
 
 	claims, err := h.KeyRotation.ValidateChallengeToken(req.ChallengeToken)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid or expired challenge token")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid or expired challenge token")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(claims.UserID); err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
 	}
 
 	var tenantID pgtype.UUID
 	if err := tenantID.Scan(claims.TenantID); err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
 	}
 
 	req.Code = sanitizeCode(req.Code)
 	if req.Code == "" {
-		writeError(w, http.StatusBadRequest, "missing_code", "Verification code is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_code", "Verification code is required")
 		return
 	}
 
@@ -516,19 +497,19 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		UserID:   userID,
 	})
 	if err != nil || !totpRecord.EnabledAt.Valid {
-		writeError(w, http.StatusBadRequest, "totp_error", "2FA not set up")
+		httpx.WriteError(w, http.StatusBadRequest, "totp_error", "2FA not set up")
 		return
 	}
 
 	plaintext, err := decryptSecret(totpRecord.SecretEncrypted)
 	if err != nil {
 		slog.Error("decrypt TOTP secret", "error", err)
-		writeError(w, http.StatusInternalServerError, "totp_error", "Failed to verify 2FA")
+		httpx.WriteError(w, http.StatusInternalServerError, "totp_error", "Failed to verify 2FA")
 		return
 	}
 
 	if !VerifyTOTP(plaintext, req.Code) {
-		writeError(w, http.StatusUnauthorized, "invalid_totp", "Invalid verification code")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_totp", "Invalid verification code")
 		return
 	}
 
@@ -542,13 +523,13 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 
 	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
 	refreshToken, err := generateRefreshToken()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
@@ -562,7 +543,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		TokenHash: tokenHash,
 		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
@@ -579,7 +560,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 
 	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"access_token": accessToken,
 		},
@@ -596,30 +577,30 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if req.ChallengeToken == "" || req.BackupCode == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "challenge_token and backup_code are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "challenge_token and backup_code are required")
 		return
 	}
 
 	claims, err := h.KeyRotation.ValidateChallengeToken(req.ChallengeToken)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid or expired challenge token")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid or expired challenge token")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(claims.UserID); err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
 	}
 
 	var tenantID pgtype.UUID
 	if err := tenantID.Scan(claims.TenantID); err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
 	}
 
@@ -630,19 +611,19 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 		UserID:   userID,
 	})
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "no_backup_codes", "No backup codes found")
+		httpx.WriteError(w, http.StatusUnauthorized, "no_backup_codes", "No backup codes found")
 		return
 	}
 
 	matched, remaining, err := consumeBackupCode(r.Context(), h.Database, &backupRecord, req.BackupCode, tenantID, userID)
 	if err != nil {
 		slog.Error("consume backup code", "error", err)
-		writeError(w, http.StatusInternalServerError, "backup_error", "Failed to verify backup code")
+		httpx.WriteError(w, http.StatusInternalServerError, "backup_error", "Failed to verify backup code")
 		return
 	}
 
 	if !matched {
-		writeError(w, http.StatusUnauthorized, "invalid_backup", "Invalid backup code")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_backup", "Invalid backup code")
 		return
 	}
 
@@ -656,13 +637,13 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 
 	accessToken, err := h.KeyRotation.MintAccessToken(userID, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
 	refreshToken, err := generateRefreshToken()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
@@ -676,7 +657,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 		TokenHash: tokenHash,
 		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
@@ -693,7 +674,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 
 	csrf.SetCookie(w, h.CookieDomain, h.SecureCookies)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"access_token":    accessToken,
 			"codes_remaining": remaining,
@@ -738,7 +719,7 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{"status": "logged_out"},
 	})
 }
@@ -793,13 +774,13 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 	if req.Email == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Email is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "Email is required")
 		return
 	}
 
@@ -810,20 +791,20 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 
 		ok, _ := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 3, 10*time.Minute)
 		if !ok {
-			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many password reset requests. Please try again later.")
+			httpx.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many password reset requests. Please try again later.")
 			return
 		}
 	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	// Always return 200 to prevent email enumeration — whether the user exists or not.
 	defer func() {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]string{
 				"message": "If an account with that email exists, a reset link has been sent.",
 			},
@@ -899,7 +880,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 func (h *AuthHandlers) HandleResetPasswordPage(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		writeError(w, http.StatusBadRequest, "missing_token", "Token query parameter is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_token", "Token query parameter is required")
 		return
 	}
 
@@ -907,7 +888,7 @@ func (h *AuthHandlers) HandleResetPasswordPage(w http.ResponseWriter, r *http.Re
 
 	rec, err := h.DB.GetValidResetToken(r.Context(), tokenHash)
 	if err != nil || rec == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]interface{}{"valid": false},
 		})
 
@@ -916,14 +897,14 @@ func (h *AuthHandlers) HandleResetPasswordPage(w http.ResponseWriter, r *http.Re
 
 	// Check expiry and whether it's been used.
 	if time.Now().After(rec.ExpiresAt) || rec.UsedAt.Valid {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]interface{}{"valid": false},
 		})
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{"valid": true},
 	})
 }
@@ -937,12 +918,12 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if req.Token == "" || req.NewPassword == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Token and new_password are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "Token and new_password are required")
 		return
 	}
 
@@ -955,13 +936,13 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 				"token_prefix", req.Token[:min(8, len(req.Token))],
 				"breach_count", breached.Count,
 			)
-			writeError(w, http.StatusBadRequest, "password_breached",
+			httpx.WriteError(w, http.StatusBadRequest, "password_breached",
 				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
 
 			return
 		}
 
-		writeError(w, http.StatusBadRequest, "weak_password", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "weak_password", err.Error())
 
 		return
 	}
@@ -970,17 +951,17 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 
 	rec, err := h.DB.GetValidResetToken(r.Context(), tokenHash)
 	if err != nil || rec == nil {
-		writeError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired reset token")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired reset token")
 		return
 	}
 
 	if time.Now().After(rec.ExpiresAt) {
-		writeError(w, http.StatusUnauthorized, "expired_token", "Reset token has expired")
+		httpx.WriteError(w, http.StatusUnauthorized, "expired_token", "Reset token has expired")
 		return
 	}
 
 	if rec.UsedAt.Valid {
-		writeError(w, http.StatusUnauthorized, "used_token", "Reset token has already been used")
+		httpx.WriteError(w, http.StatusUnauthorized, "used_token", "Reset token has already been used")
 		return
 	}
 
@@ -992,7 +973,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 				"password reset blocked: reused password",
 				"token_prefix", req.Token[:min(8, len(req.Token))],
 			)
-			writeError(w, http.StatusBadRequest, "password_reused",
+			httpx.WriteError(w, http.StatusBadRequest, "password_reused",
 				"New password cannot be the same as a recent password. Please choose a different password.")
 
 			return
@@ -1002,20 +983,20 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	// Mark the token as used before updating the password.
 	if err := h.DB.MarkResetTokenUsed(r.Context(), tokenHash); err != nil {
 		slog.Error("reset-password: failed to mark token used", "error", err)
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to process reset token")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to process reset token")
 
 		return
 	}
 
 	passwordHash, err := HashPassword(req.NewPassword)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "hash_error", "Failed to secure password")
+		httpx.WriteError(w, http.StatusInternalServerError, "hash_error", "Failed to secure password")
 		return
 	}
 
 	if err := h.DB.UpdateUserPassword(r.Context(), rec.UserID, passwordHash); err != nil {
 		slog.Error("reset-password: failed to update password", "error", err)
-		writeError(w, http.StatusInternalServerError, "update_failed", "Failed to update password")
+		httpx.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update password")
 
 		return
 	}
@@ -1034,7 +1015,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		slog.Error("reset-password: failed to invalidate sessions", "user_id", rec.UserID.String(), "error", err)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{
 			"message": "Password has been reset. Please log in with your new password.",
 		},
@@ -1046,7 +1027,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 func (h *AuthHandlers) HandleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		writeError(w, http.StatusBadRequest, "missing_token", "Token query parameter is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_token", "Token query parameter is required")
 		return
 	}
 
@@ -1054,17 +1035,17 @@ func (h *AuthHandlers) HandleVerifyEmail(w http.ResponseWriter, r *http.Request)
 
 	rec, err := h.DB.GetValidVerificationToken(r.Context(), tokenHash)
 	if err != nil || rec == nil {
-		writeError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired verification token")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired verification token")
 		return
 	}
 
 	if time.Now().After(rec.ExpiresAt) {
-		writeError(w, http.StatusUnauthorized, "expired_token", "Verification token has expired")
+		httpx.WriteError(w, http.StatusUnauthorized, "expired_token", "Verification token has expired")
 		return
 	}
 
 	if rec.VerifiedAt.Valid {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]string{
 				"message": "Email has already been verified.",
 			},
@@ -1075,12 +1056,12 @@ func (h *AuthHandlers) HandleVerifyEmail(w http.ResponseWriter, r *http.Request)
 
 	if err := h.DB.MarkEmailVerified(r.Context(), rec.UserID); err != nil {
 		slog.Error("verify-email: failed to mark verified", "error", err)
-		writeError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify email")
+		httpx.WriteError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify email")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{
 			"message": "Email has been verified successfully.",
 		},
@@ -1095,13 +1076,13 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 	if req.Email == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "Email is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "Email is required")
 		return
 	}
 
@@ -1112,20 +1093,20 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 
 		ok, _ := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 1, 5*time.Minute)
 		if !ok {
-			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many verification email requests. Please try again later.")
+			httpx.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many verification email requests. Please try again later.")
 			return
 		}
 	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	// Always return 200 to prevent email enumeration.
 	defer func() {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]string{
 				"message": "If an account with that email exists and is unverified, a new verification link has been sent.",
 			},

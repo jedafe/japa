@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -39,7 +39,7 @@ func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -50,26 +50,11 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
 	return user, true
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 func parsePageSize(r *http.Request) int32 {
@@ -90,15 +75,6 @@ func parsePageSize(r *http.Request) int32 {
 	return int32(n) //nolint:gosec // G109: bounded by max check above
 }
 
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, err
-	}
-
-	return id, nil
-}
-
 // ---------------------------------------------------------------------------
 // Comment Handlers
 // ---------------------------------------------------------------------------
@@ -110,9 +86,9 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentID, err := parseUUIDParam(r, "id")
+	contentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -131,7 +107,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	if parentIDStr != "" {
 		var parentID pgtype.UUID
 		if err := parentID.Scan(parentIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_parent_id", "Invalid parent_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_parent_id", "Invalid parent_id format")
 			return
 		}
 
@@ -141,7 +117,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": replies})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": replies})
 
 		return
 	}
@@ -152,7 +128,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": comments})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": comments})
 }
 
 // GetComment handles GET /api/v1/comments/{id}.
@@ -162,9 +138,9 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentID, err := parseUUIDParam(r, "id")
+	commentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid comment ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comment ID")
 		return
 	}
 
@@ -174,7 +150,7 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": comment})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": comment})
 }
 
 // CreateComment handles POST /api/v1/content/{id}/comments.
@@ -189,9 +165,9 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentID, err := parseUUIDParam(r, "id")
+	contentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -201,12 +177,12 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Body == "" {
-		writeError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
 		return
 	}
 
@@ -217,7 +193,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 	if input.ParentID != nil && *input.ParentID != "" {
 		if err := createInput.ParentID.Scan(*input.ParentID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_parent_id", "Invalid parent_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_parent_id", "Invalid parent_id format")
 			return
 		}
 	}
@@ -238,7 +214,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Warn("spam check failed", "error", err)
 		} else if spamResult.Blocked {
-			writeError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
+			httpx.WriteError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
 			return
 		}
 	}
@@ -249,7 +225,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": comment})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": comment})
 }
 
 // UpdateComment handles PATCH /api/v1/comments/{id}.
@@ -264,9 +240,9 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentID, err := parseUUIDParam(r, "id")
+	commentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -275,12 +251,12 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Body == "" {
-		writeError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
 		return
 	}
 
@@ -290,7 +266,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": comment})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": comment})
 }
 
 // DeleteComment handles DELETE /api/v1/comments/{id}.
@@ -300,9 +276,9 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentID, err := parseUUIDParam(r, "id")
+	commentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -311,7 +287,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // VoteComment handles POST /api/v1/comments/{id}/vote.
@@ -326,9 +302,9 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentID, err := parseUUIDParam(r, "id")
+	commentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -337,7 +313,7 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -346,7 +322,7 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"voted": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"voted": true}})
 }
 
 // RemoveVote handles DELETE /api/v1/comments/{id}/vote.
@@ -356,9 +332,9 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentID, err := parseUUIDParam(r, "id")
+	commentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -367,7 +343,7 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // PinComment handles POST /api/v1/comments/{id}/pin.
@@ -377,9 +353,9 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentID, err := parseUUIDParam(r, "id")
+	commentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -388,7 +364,7 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"pinned": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"pinned": true}})
 }
 
 // UnpinComment handles DELETE /api/v1/comments/{id}/pin.
@@ -398,9 +374,9 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentID, err := parseUUIDParam(r, "id")
+	commentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -409,7 +385,7 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP
@@ -417,12 +393,12 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case errors.Is(err, errpkg.ErrMaxDepth):
-		writeError(w, http.StatusBadRequest, "depth_exceeded", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "depth_exceeded", err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
 }

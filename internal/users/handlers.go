@@ -3,7 +3,6 @@ package users
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -29,7 +29,7 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -40,28 +40,11 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
 	return user, true
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // handleServiceError translates a Service-layer error into the appropriate
@@ -69,11 +52,11 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
 }
 
@@ -133,7 +116,7 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // GetUserByUsername handles GET /api/v1/users/{username}.
@@ -145,7 +128,7 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 
 	username := chi.URLParam(r, "username")
 	if username == "" {
-		writeError(w, http.StatusBadRequest, "missing_username", "Username is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
 		return
 	}
 
@@ -155,7 +138,7 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // UpdateMyProfile handles PATCH /api/v1/users/me.
@@ -167,7 +150,7 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -176,7 +159,7 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // ListUsers handles GET /api/v1/users for admin user listing.
@@ -189,7 +172,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	// Admin-only: only super_admin group members may list users.
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -205,7 +188,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ListUserSessions handles GET /api/v1/admin/users/{id}/sessions.
@@ -215,13 +198,13 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -231,7 +214,7 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": sessions})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": sessions})
 }
 
 // GetAdminUser handles GET /api/v1/admin/users/{id}.
@@ -244,7 +227,7 @@ func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -254,7 +237,7 @@ func (h *Handlers) GetAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": profile})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": profile})
 }
 
 // ListUserActivity handles GET /api/v1/admin/users/{id}/activity.
@@ -265,13 +248,13 @@ func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -291,7 +274,7 @@ func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": activity})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": activity})
 }
 
 // DeleteUser handles DELETE /api/v1/admin/users/{id}.
@@ -303,13 +286,13 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -318,7 +301,7 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"id": userID.String(), "status": "deleted"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": userID.String(), "status": "deleted"})
 }
 
 // UpdateProfileType handles PATCH /api/v1/admin/users/{id}/profile-type.
@@ -329,13 +312,13 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user := auth.FromContext(r.Context()); user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -343,13 +326,13 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 		ProfileType string `json:"profile_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	validTypes := map[string]bool{"personal": true, "business": true, "organisation": true}
 	if !validTypes[req.ProfileType] {
-		writeError(w, http.StatusBadRequest, "invalid_type", "profile_type must be personal, business, or organisation")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_type", "profile_type must be personal, business, or organisation")
 		return
 	}
 
@@ -358,7 +341,7 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"id": userID.String(), "profile_type": req.ProfileType})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": userID.String(), "profile_type": req.ProfileType})
 }
 
 // ---------------------------------------------------------------------------
@@ -378,7 +361,7 @@ func (h *Handlers) GetMyPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": prefs})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": prefs})
 }
 
 // UpdateMyPreferences handles PUT /api/v1/users/me/preferences.
@@ -390,7 +373,7 @@ func (h *Handlers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdatePreferencesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
@@ -399,5 +382,5 @@ func (h *Handlers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }

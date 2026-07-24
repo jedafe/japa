@@ -23,6 +23,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	errtracking "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // RegisterMiddleware attaches the standard middleware stack to the router.
@@ -68,7 +69,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 
 				errtracking.CaptureException(panicErr)
 
-				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+				httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "internal server error")
 			}
 		}()
 

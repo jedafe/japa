@@ -16,12 +16,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -75,21 +75,11 @@ func (h *Handlers) enqueueAdEventIngest(tenantID, campaignID, userID pgtype.UUID
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-// parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, err
-	}
-
-	return id, nil
-}
-
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -100,7 +90,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -111,29 +101,12 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -199,22 +172,22 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
 	if input.SlotTypeName == "" {
-		writeError(w, http.StatusBadRequest, "missing_slot_type_name", "slot_type_name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slot_type_name", "slot_type_name is required")
 		return
 	}
 
 	if input.Content == nil {
-		writeError(w, http.StatusBadRequest, "missing_content", "content is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_content", "content is required")
 		return
 	}
 
@@ -225,7 +198,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 
 		startDate, err = time.Parse(time.RFC3339, input.StartDate)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
 			return
 		}
 	}
@@ -235,7 +208,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	if input.EndDate != "" {
 		t, err := time.Parse(time.RFC3339, input.EndDate)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
 			return
 		}
 
@@ -258,7 +231,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": campaign})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": campaign})
 }
 
 // GetCampaign handles GET /api/v1/admin/advertising/campaigns/{id}.
@@ -273,9 +246,9 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -285,7 +258,7 @@ func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // ListCampaigns handles GET /api/v1/admin/advertising/campaigns.
@@ -309,7 +282,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaigns})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": campaigns})
 }
 
 // ActivateCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/activate.
@@ -324,9 +297,9 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -336,7 +309,7 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // PauseCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/pause.
@@ -351,9 +324,9 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -363,7 +336,7 @@ func (h *Handlers) PauseCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // EndCampaign handles POST /api/v1/admin/advertising/campaigns/{id}/end.
@@ -378,9 +351,9 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -390,7 +363,7 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // ---------------------------------------------------------------------------
@@ -410,7 +383,7 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 
 	slotName := r.URL.Query().Get("slot")
 	if slotName == "" {
-		writeError(w, http.StatusBadRequest, "missing_slot", "slot query parameter is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slot", "slot query parameter is required")
 		return
 	}
 
@@ -428,7 +401,7 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaigns})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": campaigns})
 }
 
 // ---------------------------------------------------------------------------
@@ -454,12 +427,12 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Events) == 0 {
-		writeError(w, http.StatusBadRequest, "empty_events", "events array is empty")
+		httpx.WriteError(w, http.StatusBadRequest, "empty_events", "events array is empty")
 		return
 	}
 
@@ -507,7 +480,7 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 		h.enqueueAdEventIngest(tenantID, campaignID, userID, e.EventType)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"ingested": ingested,
 			"total":    len(input.Events),
@@ -540,7 +513,7 @@ func (h *Handlers) ListSlotTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": slotTypes})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": slotTypes})
 }
 
 // CreateSlotType handles POST /api/v1/admin/advertising/slot-types.
@@ -565,12 +538,12 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
@@ -587,7 +560,7 @@ func (h *Handlers) CreateSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": slotType})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": slotType})
 }
 
 // UpdateSlotType handles PUT /api/v1/admin/advertising/slot-types/{id}.
@@ -602,9 +575,9 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
 		return
 	}
 
@@ -618,7 +591,7 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -635,7 +608,7 @@ func (h *Handlers) UpdateSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": slotType})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": slotType})
 }
 
 // DeleteSlotType handles DELETE /api/v1/admin/advertising/slot-types/{id}.
@@ -650,9 +623,9 @@ func (h *Handlers) DeleteSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
 		return
 	}
 
@@ -661,7 +634,7 @@ func (h *Handlers) DeleteSlotType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // DeleteCampaign handles DELETE /api/v1/admin/advertising/campaigns/{id}.
@@ -676,9 +649,9 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -687,7 +660,7 @@ func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // GetCampaignStats handles GET /api/v1/admin/advertising/campaigns/{id}/stats.
@@ -702,9 +675,9 @@ func (h *Handlers) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -714,7 +687,7 @@ func (h *Handlers) GetCampaignStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // ---------------------------------------------------------------------------
@@ -742,29 +715,29 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.OrganizationID == "" {
-		writeError(w, http.StatusBadRequest, "missing_organization_id", "organization_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_organization_id", "organization_id is required")
 		return
 	}
 
 	if input.CampaignID == "" {
-		writeError(w, http.StatusBadRequest, "missing_campaign_id", "campaign_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_campaign_id", "campaign_id is required")
 		return
 	}
 
 	var organizationID pgtype.UUID
 	if err := organizationID.Scan(input.OrganizationID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
 		return
 	}
 
 	var campaignID pgtype.UUID
 	if err := campaignID.Scan(input.CampaignID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_campaign_id", "Invalid campaign_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_campaign_id", "Invalid campaign_id")
 		return
 	}
 
@@ -775,7 +748,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 
 		startDate, err = time.Parse(time.RFC3339, input.StartDate)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_start_date", "Invalid start_date format")
 			return
 		}
 	}
@@ -785,7 +758,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 	if input.EndDate != "" {
 		t, err := time.Parse(time.RFC3339, input.EndDate)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
 			return
 		}
 
@@ -804,7 +777,7 @@ func (h *Handlers) CreateBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": boost})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": boost})
 }
 
 // ListBoosts handles GET /api/v1/admin/advertising/boosts?organization_id={id}.
@@ -821,13 +794,13 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 
 	orgIDStr := r.URL.Query().Get("organization_id")
 	if orgIDStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_organization_id", "organization_id query parameter is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_organization_id", "organization_id query parameter is required")
 		return
 	}
 
 	var organizationID pgtype.UUID
 	if err := organizationID.Scan(orgIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id")
 		return
 	}
 
@@ -837,7 +810,7 @@ func (h *Handlers) ListBoosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": boosts})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": boosts})
 }
 
 // ListActiveBoosts handles GET /api/v1/admin/advertising/boosts/active.
@@ -858,7 +831,7 @@ func (h *Handlers) ListActiveBoosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": boosts})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": boosts})
 }
 
 // EndBoost handles POST /api/v1/admin/advertising/boosts/{id}/end.
@@ -873,9 +846,9 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
 		return
 	}
 
@@ -885,7 +858,7 @@ func (h *Handlers) EndBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": boost})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": boost})
 }
 
 // UpdateBoost handles PATCH /api/v1/admin/ads/boosts/{id}.
@@ -900,18 +873,18 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
 		return
 	}
 
 	var input struct {
-		Status   *string `json:"status"`
-		EndDate  *string `json:"end_date"`
+		Status  *string `json:"status"`
+		EndDate *string `json:"end_date"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -919,7 +892,7 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 	if input.EndDate != nil && *input.EndDate != "" {
 		t, perr := time.Parse(time.RFC3339, *input.EndDate)
 		if perr != nil {
-			writeError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
 			return
 		}
 		endDate = &t
@@ -931,7 +904,7 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": boost})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": boost})
 }
 
 // DeleteBoost handles DELETE /api/v1/admin/ads/boosts/{id}.
@@ -946,9 +919,9 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid boost ID")
 		return
 	}
 
@@ -957,7 +930,7 @@ func (h *Handlers) DeleteBoost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ─── P5.6 Advertising Extras ─────────────────────────────────────────────
@@ -968,9 +941,9 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 	var input struct {
@@ -979,7 +952,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		Budget      *int64 `json:"budget"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	_, err = h.Service.db.Writer.Exec(r.Context(),
@@ -991,7 +964,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id.String()}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": id.String()}})
 }
 
 // GetSlotType handles GET /admin/ads/slot-types/:id.
@@ -1000,9 +973,9 @@ func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
 		return
 	}
 	var slotType struct {
@@ -1017,8 +990,8 @@ func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
 		 FROM ad_slot_types WHERE id = $1 AND tenant_id = $2`, id, tenantID).
 		Scan(&slotType.ID, &slotType.Name, &slotType.Description, &slotType.Width, &slotType.Height)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Slot type not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Slot type not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": slotType})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": slotType})
 }

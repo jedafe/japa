@@ -1,8 +1,6 @@
 package feed
 
 import (
-	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -10,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -35,7 +34,7 @@ func (h *Handlers) SetSettings(s *config.Settings) {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -45,23 +44,6 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 // optionalUser resolves the authenticated user from the request context, if present.
 func (h *Handlers) optionalUser(r *http.Request) *auth.AuthenticatedUser {
 	return auth.FromContext(r.Context())
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -126,18 +108,18 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.GetFeed(r.Context(), tenantID, "explore", nil, nil, nil, sort, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get explore feed")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get explore feed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // GetPrimaryFeed handles GET /api/v1/feed/primary — personalized feed.
 func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 	user := h.optionalUser(r)
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -152,18 +134,18 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.GetFeed(r.Context(), tenantID, "primary", &user.UserID, nil, nil, sort, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get primary feed")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get primary feed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // GetForYouFeed handles GET /api/v1/feed/for-you — personalized ranked feed.
 func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 	user := h.optionalUser(r)
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -178,18 +160,18 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.GetForYouFeed(r.Context(), tenantID, user.UserID, sortMode, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get For-You feed")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get For-You feed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // GetSpaceFeed handles GET /api/v1/feed/space/{space_id}.
 func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	user := h.optionalUser(r)
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -203,7 +185,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	var spaceID pgtype.UUID
 
 	if err := spaceID.Scan(spaceIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
 		return
 	}
 
@@ -213,18 +195,18 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.GetFeed(r.Context(), tenantID, "space", nil, &spaceID, nil, sort, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get space feed")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get space feed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // GetProfileFeed handles GET /api/v1/feed/profile/{user_id}.
 func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 	user := h.optionalUser(r)
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -238,7 +220,7 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 	var authorID pgtype.UUID
 
 	if err := authorID.Scan(authorIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
 		return
 	}
 
@@ -248,11 +230,11 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.GetFeed(r.Context(), tenantID, "profile", nil, nil, &authorID, sort, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get profile feed")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get profile feed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // GetCardStyle handles GET /api/v1/feed/card-style — public endpoint.
@@ -261,7 +243,7 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetCardStyle(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -274,7 +256,7 @@ func (h *Handlers) GetCardStyle(w http.ResponseWriter, r *http.Request) {
 
 	cfg := resolveCardStyleConfig(raw)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": cfg,
 	})
 }

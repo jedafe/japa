@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/rbac"
 )
 
@@ -39,7 +40,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.DB == nil {
-		writeError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
 		return
 	}
 
@@ -71,7 +72,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("moderation: querying flagged reviews", "error", err)
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation queue")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation queue")
 		return
 	}
 
@@ -113,7 +114,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"items":       items,
 			"page":        offset / limit,
@@ -144,22 +145,22 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if len(req.Actions) == 0 {
-		writeError(w, http.StatusBadRequest, "empty_actions", "At least one action is required")
+		httpx.WriteError(w, http.StatusBadRequest, "empty_actions", "At least one action is required")
 		return
 	}
 
 	if len(req.Actions) > 100 {
-		writeError(w, http.StatusBadRequest, "too_many_actions", "Maximum 100 actions per request")
+		httpx.WriteError(w, http.StatusBadRequest, "too_many_actions", "Maximum 100 actions per request")
 		return
 	}
 
 	if h.DB == nil {
-		writeError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
 		return
 	}
 
@@ -204,7 +205,7 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 		"total_actions", len(req.Actions),
 		"processed", processed)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"processed": processed,
 		},
@@ -230,23 +231,23 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if req.ID == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "Item ID is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_id", "Item ID is required")
 		return
 	}
 
 	if h.DB == nil {
-		writeError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
 		return
 	}
 
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(req.ID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID format")
 		return
 	}
 
@@ -256,16 +257,16 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("moderation: appeal failed", "id", req.ID, "error", err)
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to process appeal")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to process appeal")
 		return
 	}
 
 	if tag == 0 {
-		writeError(w, http.StatusNotFound, "not_found", "Item not found or not eligible for appeal")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Item not found or not eligible for appeal")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"status":  "submitted",
 			"message": "Appeal recorded — item returned to moderation queue",
@@ -296,22 +297,22 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 
 	var req BroadcastRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	if req.Subject == "" {
-		writeError(w, http.StatusBadRequest, "missing_subject", "subject is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_subject", "subject is required")
 		return
 	}
 
 	if req.Body == "" {
-		writeError(w, http.StatusBadRequest, "missing_body", "body is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_body", "body is required")
 		return
 	}
 
 	if h.DB == nil {
-		writeError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "db_unavailable", "Database not available")
 		return
 	}
 
@@ -319,7 +320,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 
 	// If scheduled for later, store as a pending broadcast task.
 	if req.Schedule != "" {
-		writeJSON(w, http.StatusOK, map[string]any{
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"sent":         0,
 				"scheduled":    true,
@@ -334,7 +335,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 	sent, err := h.broadcastToAllUsers(ctx, tenantID, user.UserID, req.Subject, req.Body)
 	if err != nil {
 		slog.Error("broadcast: failed to send", "error", err)
-		writeError(w, http.StatusInternalServerError, "broadcast_error", "Failed to send broadcast")
+		httpx.WriteError(w, http.StatusInternalServerError, "broadcast_error", "Failed to send broadcast")
 		return
 	}
 
@@ -344,7 +345,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 		"recipients", sent,
 		"subject", req.Subject)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"sent":      sent,
 			"scheduled": false,
@@ -367,11 +368,11 @@ func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID p
 
 	// Batch insert notifications using unnest for a single round-trip.
 	err = h.Queries.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
-		TenantID:   tenantID,
-		Column2:    rows,
-		ActorID:    senderID,
-		Title:      title,
-		Body:       &body,
+		TenantID: tenantID,
+		Column2:  rows,
+		ActorID:  senderID,
+		Title:    title,
+		Body:     &body,
 	})
 	if err != nil {
 		return 0, err
@@ -401,14 +402,14 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		Days   int    `json:"days"` // 0 = permanent
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	ctx := r.Context()
 
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 
@@ -418,7 +419,7 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		Column3: int32(input.Days),
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")
 		return
 	}
 	// Update users.status so the ban is reflected in list queries.
@@ -426,15 +427,15 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		Status: "banned",
 		ID:     uid,
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
 		return
 	}
-	// Rule 6: invalidate caches after ban. 
+	// Rule 6: invalidate caches after ban.
 	if h.Valkey != nil {
 		_ = rbac.InvalidatePermCache(ctx, h.Valkey, uid)
 		_ = h.Valkey.Del(ctx, "jc:ban:"+userID)
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "banned"})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "banned"})
 }
 
 // UnbanUser handles DELETE /admin/users/:id/ban.
@@ -442,12 +443,12 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 	err := h.Queries.CreateUserUnban(r.Context(), uid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unban user")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unban user")
 		return
 	}
 	// Restore users.status to active (the ban handler set it to "banned").
@@ -455,15 +456,15 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 		Status: "active",
 		ID:     uid,
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
 		return
 	}
-	// Rule 6: invalidate caches after unban. 
+	// Rule 6: invalidate caches after unban.
 	if h.Valkey != nil {
 		_ = rbac.InvalidatePermCache(r.Context(), h.Valkey, uid)
 		_ = h.Valkey.Del(r.Context(), "jc:ban:"+userID)
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ListUserBans handles GET /admin/users/:id/bans.
@@ -471,12 +472,12 @@ func (h *Handlers) ListUserBans(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 	rows, err := h.Queries.ListActiveUserBans(r.Context(), uid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list bans")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list bans")
 		return
 	}
 	type banRow struct {
@@ -505,7 +506,7 @@ func (h *Handlers) ListUserBans(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: b.CreatedAt.Time.Format(time.RFC3339),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": bans})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": bans})
 }
 
 // WarnUser handles POST /admin/users/:id/warn.
@@ -515,12 +516,12 @@ func (h *Handlers) WarnUser(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 	err := h.Queries.CreateUserWarning(r.Context(), gen.CreateUserWarningParams{
@@ -528,10 +529,10 @@ func (h *Handlers) WarnUser(w http.ResponseWriter, r *http.Request) {
 		Reason: &input.Reason,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to warn user")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to warn user")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "warned"})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "warned"})
 }
 
 // ListUserWarnings handles GET /admin/users/:id/warnings.
@@ -539,12 +540,12 @@ func (h *Handlers) ListUserWarnings(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 	rows, err := h.Queries.ListUserWarnings(r.Context(), uid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list warnings")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list warnings")
 		return
 	}
 	type warnRow struct {
@@ -564,7 +565,7 @@ func (h *Handlers) ListUserWarnings(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: w.CreatedAt.Time.Format(time.RFC3339),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": warnings})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": warnings})
 }
 
 // DeleteUserWarning handles DELETE /admin/users/:id/warnings/:warningId.
@@ -572,15 +573,15 @@ func (h *Handlers) DeleteUserWarning(w http.ResponseWriter, r *http.Request) {
 	warningID := chi.URLParam(r, "warningId")
 	var wid pgtype.UUID
 	if err := wid.Scan(warningID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid warning ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid warning ID")
 		return
 	}
 	err := h.Queries.SoftDeleteUserWarning(r.Context(), wid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete warning")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete warning")
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // UpdateUserStatus handles PATCH /admin/users/:id/status.
@@ -590,12 +591,12 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 	err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
@@ -603,10 +604,10 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		ID:     uid,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user_id": userID, "status": input.Status})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"user_id": userID, "status": input.Status})
 }
 
 // UpdateUserGroup handles PATCH /admin/users/:id/group.
@@ -616,17 +617,17 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 		GroupID string `json:"group_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
 	var gid pgtype.UUID
 	if err := gid.Scan(input.GroupID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
 		return
 	}
 	err := h.Queries.AddUserGroupMembership(r.Context(), gen.AddUserGroupMembershipParams{
@@ -634,7 +635,7 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 		GroupID: gid,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user group")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update user group")
 		return
 	}
 
@@ -644,7 +645,7 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 		h.RBAC.InvalidateUserCache(r.Context(), uid)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"user_id": userID})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"user_id": userID})
 }
 
 // ─── Organization Verify ─────────────────────────────────────────────────
@@ -654,15 +655,15 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
 	var oid pgtype.UUID
 	if err := oid.Scan(orgID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 	err := h.Queries.VerifyOrganization(r.Context(), oid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": true}})
 }
 
 // UnverifyOrganization handles DELETE /admin/organizations/:id/verify.
@@ -670,15 +671,15 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 	orgID := chi.URLParam(r, "id")
 	var oid pgtype.UUID
 	if err := oid.Scan(orgID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 	err := h.Queries.UnverifyOrganization(r.Context(), oid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": false}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": false}})
 }
 
 // ─── Appeals ──────────────────────────────────────────────────────────────
@@ -692,7 +693,7 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.Queries.ListModerationAppeals(r.Context(), search)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list appeals")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list appeals")
 		return
 	}
 	appeals := make([]map[string]any, 0, len(rows))
@@ -702,7 +703,7 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 			"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format(time.RFC3339),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": appeals})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": appeals})
 }
 
 // GetAppeal handles GET /admin/appeals/:id.
@@ -710,15 +711,15 @@ func (h *Handlers) GetAppeal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var aid pgtype.UUID
 	if err := aid.Scan(id); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid appeal ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid appeal ID")
 		return
 	}
 	a, err := h.Queries.GetModerationAppeal(r.Context(), aid)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Appeal not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Appeal not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"id": a.ID.String(), "user_id": a.UserID.String(), "entity_type": a.EntityType,
 		"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format(time.RFC3339),
 	}})
@@ -731,12 +732,12 @@ func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	var aid pgtype.UUID
 	if err := aid.Scan(id); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid appeal ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid appeal ID")
 		return
 	}
 	err := h.Queries.UpdateAppealStatus(r.Context(), gen.UpdateAppealStatusParams{
@@ -744,10 +745,10 @@ func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 		ID:     aid,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update appeal")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update appeal")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": input.Status})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": input.Status})
 }
 
 // ─── Moderation Queue Assign ──────────────────────────────────────────────
@@ -759,17 +760,17 @@ func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) 
 		AssigneeID string `json:"assignee_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	var rid pgtype.UUID
 	if err := rid.Scan(id); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid report ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid report ID")
 		return
 	}
 	var assigneeID pgtype.UUID
 	if err := assigneeID.Scan(input.AssigneeID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid assignee ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid assignee ID")
 		return
 	}
 	err := h.Queries.AssignContentReport(r.Context(), gen.AssignContentReportParams{
@@ -777,10 +778,10 @@ func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) 
 		ID:         rid,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to assign moderation item")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to assign moderation item")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "assignee_id": input.AssigneeID})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "assignee_id": input.AssigneeID})
 }
 
 // ModerateItem handles PATCH /admin/moderation-queue/:id.
@@ -802,12 +803,12 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Action == "" {
-		writeError(w, http.StatusBadRequest, "missing_action", "action is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_action", "action is required")
 		return
 	}
 
@@ -820,14 +821,14 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	case "reject", "delete":
 		newStatus = "removed"
 	default:
-		writeError(w, http.StatusBadRequest, "invalid_action", "action must be approve, reject, or delete")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_action", "action must be approve, reject, or delete")
 		return
 	}
 
 	// Try updating as a review first
 	var rid pgtype.UUID
 	if err := rid.Scan(id); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
 		return
 	}
 
@@ -838,17 +839,17 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("moderation: updating item", "id", id, "error", err)
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to update moderation item")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update moderation item")
 		return
 	}
 
 	// Try as a content report if review update didn't match
 	err = h.Queries.ModerateContentReport(ctx, gen.ModerateContentReportParams{
-		Status:       newStatus,
-		ReviewedBy:   user.UserID,
+		Status:         newStatus,
+		ReviewedBy:     user.UserID,
 		ResolutionNote: &input.Reason,
-		ID:           rid,
-		TenantID:     tenantID,
+		ID:             rid,
+		TenantID:       tenantID,
 	})
 	if err != nil {
 		slog.Error("moderation: updating content report", "id", id, "error", err)
@@ -859,7 +860,7 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 		"item_id", id,
 		"action", input.Action)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"id":     id,
 			"action": input.Action,
@@ -879,7 +880,7 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var cid pgtype.UUID
 	if err := cid.Scan(id); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
 		return
 	}
 	err := h.Queries.RemoveContentByAdmin(r.Context(), gen.RemoveContentByAdminParams{
@@ -887,10 +888,10 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 		TenantID: tenantID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to remove content")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove content")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": "removed"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "removed"})
 }
 
 // RestoreContent handles POST /admin/content/:id/restore.
@@ -902,7 +903,7 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var cid pgtype.UUID
 	if err := cid.Scan(id); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
 		return
 	}
 	err := h.Queries.RestoreContentByAdmin(r.Context(), gen.RestoreContentByAdminParams{
@@ -910,10 +911,10 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 		TenantID: tenantID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to restore content")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restore content")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": "restored"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "restored"})
 }
 
 // ─── Broadcasts ───────────────────────────────────────────────────────────
@@ -926,7 +927,7 @@ func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.Queries.ListAdminBroadcasts(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list broadcasts")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list broadcasts")
 		return
 	}
 
@@ -943,7 +944,7 @@ func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
 			"sent_at": b.SentAt.Time.Format(time.RFC3339), "recipient_count": b.RecipientCount,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": broadcasts,
 		"meta": map[string]any{"total": total},
 	})
@@ -954,13 +955,13 @@ func (h *Handlers) DeleteBroadcast(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var bid pgtype.UUID
 	if err := bid.Scan(id); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid broadcast ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid broadcast ID")
 		return
 	}
 	err := h.Queries.DeleteAdminBroadcast(r.Context(), bid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete broadcast")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete broadcast")
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }

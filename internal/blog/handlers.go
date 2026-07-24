@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -39,9 +40,9 @@ func deleteEntity(w http.ResponseWriter, r *http.Request, h *Handlers, paramName
 		return
 	}
 
-	id, err := parseUUIDParam(r, paramName)
+	id, err := httpx.ParseUUIDParam(r, paramName)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
 		return
 	}
 
@@ -50,7 +51,7 @@ func deleteEntity(w http.ResponseWriter, r *http.Request, h *Handlers, paramName
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 const defaultPageSize int32 = 20
@@ -90,21 +91,11 @@ func NewHandlers(service *Service, contentService ContentService, siteURL string
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-// parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, err
-	}
-
-	return id, nil
-}
-
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -115,7 +106,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -126,29 +117,12 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -209,24 +183,24 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
 	var coverImageID pgtype.UUID
 	if input.CoverImageID != nil {
 		if err := coverImageID.Scan(*input.CoverImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
 			return
 		}
 	}
@@ -242,7 +216,7 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": series})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": series})
 }
 
 // ListSeries handles GET /api/v1/blog/series.
@@ -260,7 +234,7 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 	if authorIDStr != "" {
 		var authorID pgtype.UUID
 		if err := authorID.Scan(authorIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_author_id", "Invalid author_id")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_author_id", "Invalid author_id")
 			return
 		}
 
@@ -270,7 +244,7 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": series})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": series})
 
 		return
 	}
@@ -281,7 +255,7 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": series})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": series})
 }
 
 // GetSeries handles GET /api/v1/blog/series/{slug}.
@@ -293,7 +267,7 @@ func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -303,7 +277,7 @@ func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": series})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": series})
 }
 
 // ListSeriesPosts handles GET /api/v1/blog/series/{id}/posts — lists all posts in a series.
@@ -313,9 +287,9 @@ func (h *Handlers) ListSeriesPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid series ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid series ID")
 		return
 	}
 
@@ -332,7 +306,7 @@ func (h *Handlers) ListSeriesPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": posts})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": posts})
 }
 
 // UpdateSeries handles PATCH /api/v1/blog/series/{id}.
@@ -347,9 +321,9 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid series ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid series ID")
 		return
 	}
 
@@ -361,19 +335,19 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
 	var coverImageID pgtype.UUID
 	if input.CoverImageID != nil {
 		if err := coverImageID.Scan(*input.CoverImageID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover_image_id format")
 			return
 		}
 	}
@@ -384,7 +358,7 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": series})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": series})
 }
 
 // DeleteSeries handles DELETE /api/v1/blog/series/{id}.
@@ -405,9 +379,9 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	seriesID, err := parseUUIDParam(r, "id")
+	seriesID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series ID")
 		return
 	}
 
@@ -417,18 +391,18 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ContentID == "" {
-		writeError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
 		return
 	}
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan(input.ContentID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
 		return
 	}
 
@@ -437,7 +411,7 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
 // RemovePostFromSeries handles DELETE /api/v1/blog/series/{id}/posts/{postId}.
@@ -447,15 +421,15 @@ func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	seriesID, err := parseUUIDParam(r, "id")
+	seriesID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series ID")
 		return
 	}
 
-	contentID, err := parseUUIDParam(r, "postId")
+	contentID, err := httpx.ParseUUIDParam(r, "postId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid post ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid post ID")
 		return
 	}
 
@@ -464,7 +438,7 @@ func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ReorderSeriesPosts handles PATCH /api/v1/blog/series/{id}/posts/reorder.
@@ -474,9 +448,9 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	seriesID, err := parseUUIDParam(r, "id")
+	seriesID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series ID")
 		return
 	}
 
@@ -488,12 +462,12 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Posts) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_posts", "At least one post required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_posts", "At least one post required")
 		return
 	}
 
@@ -503,7 +477,7 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	}, len(input.Posts))
 	for i, p := range input.Posts {
 		if err := posts[i].ContentID.Scan(p.ContentID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id in posts array")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id in posts array")
 			return
 		}
 
@@ -515,7 +489,7 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -541,18 +515,18 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ContentID == "" {
-		writeError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
 		return
 	}
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan(input.ContentID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
 		return
 	}
 
@@ -566,7 +540,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": review})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
 // ListReviews handles GET /api/v1/blog/reviews.
@@ -589,7 +563,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	if contentIDStr != "" {
 		var contentID pgtype.UUID
 		if err := contentID.Scan(contentIDStr); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
 			return
 		}
 
@@ -599,7 +573,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": reviews})
 
 		return
 	}
@@ -611,7 +585,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": reviews})
 
 		return
 	}
@@ -623,7 +597,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": reviews})
 }
 
 // UpdateReview handles PATCH /api/v1/blog/reviews/{id}.
@@ -638,9 +612,9 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
 		return
 	}
 
@@ -650,12 +624,12 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Status == "" {
-		writeError(w, http.StatusBadRequest, "missing_status", "Status is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_status", "Status is required")
 		return
 	}
 
@@ -665,7 +639,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": review})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": review})
 }
 
 // DeleteReview handles DELETE /api/v1/blog/reviews/{id}.
@@ -680,9 +654,9 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
 		return
 	}
 
@@ -691,7 +665,7 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -717,25 +691,25 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ContentID == "" {
-		writeError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_content_id", "content_id is required")
 		return
 	}
 
 	var contentID pgtype.UUID
 	if err := contentID.Scan(input.ContentID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
 		return
 	}
 
 	var featuredUntil pgtype.Timestamptz
 	if input.FeaturedUntil != "" {
 		if err := featuredUntil.Scan(input.FeaturedUntil); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_featured_until", "Invalid featured_until date format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_featured_until", "Invalid featured_until date format")
 			return
 		}
 	}
@@ -750,7 +724,7 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": featured})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": featured})
 }
 
 // UnfeaturePost handles DELETE /api/v1/blog/featured/{contentId}.
@@ -776,7 +750,7 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": featured})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": featured})
 }
 
 // ReorderFeatured handles PATCH /api/v1/blog/featured/reorder.
@@ -799,19 +773,19 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if len(input.Items) == 0 {
-		writeError(w, http.StatusBadRequest, "missing_items", "At least one item required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_items", "At least one item required")
 		return
 	}
 
 	for _, item := range input.Items {
 		var id pgtype.UUID
 		if err := id.Scan(item.ID); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid featured ID in items array")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid featured ID in items array")
 			return
 		}
 
@@ -821,7 +795,7 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -865,14 +839,14 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 	var cursor pgtype.Timestamptz
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
 		if err := cursor.Scan(cs); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
 			return
 		}
 	}
 
 	posts, err := h.content.ListContentsByType(r.Context(), tenantID, contentTypeBlogPost, cursor, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
 		return
 	}
 
@@ -887,7 +861,7 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": published})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": published})
 }
 
 // GetPost handles GET /api/v1/blog/{slug} — a single published blog post.
@@ -902,22 +876,22 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
 	post, err := h.content.GetContentBySlug(r.Context(), slug, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Post not found")
 		return
 	}
 
 	if post.ContentType != contentTypeBlogPost || post.Status != content.StatusPublished {
-		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Post not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": post})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": post})
 }
 
 // AdminListPosts handles GET /api/v1/admin/blog — all blog posts
@@ -935,18 +909,18 @@ func (h *Handlers) AdminListPosts(w http.ResponseWriter, r *http.Request) {
 	var cursor pgtype.Timestamptz
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
 		if err := cursor.Scan(cs); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
 			return
 		}
 	}
 
 	posts, err := h.content.ListContentsByType(r.Context(), tenantID, contentTypeBlogPost, cursor, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list blog posts")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": posts})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": posts})
 }
 
 // AdminDeletePost handles DELETE /api/v1/admin/blog/{id} — soft-deletes
@@ -957,18 +931,18 @@ func (h *Handlers) AdminDeletePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	if err := h.content.DeleteContent(r.Context(), id, tenantID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete blog post")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete blog post")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }
 
 // CreatePost handles POST /api/v1/blog — creates a blog post (content_type
@@ -994,12 +968,12 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
@@ -1023,11 +997,11 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("failed to create blog post", "error", err, "title", input.Title, "slug", input.Slug)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": post})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": post})
 }
 
 // SubmitForReview handles POST /api/v1/blog/{id}/submit-for-review —
@@ -1043,32 +1017,32 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentID, err := parseUUIDParam(r, "id")
+	contentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	existing, err := h.content.GetContent(r.Context(), contentID, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Post not found")
 		return
 	}
 
 	// A blog-specific action must not be usable to change the status of
 	// unrelated content (forum threads, pages, etc.) reached by guessing IDs.
 	if existing.ContentType != contentTypeBlogPost {
-		writeError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
+		httpx.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 		return
 	}
 
 	post, err := h.content.UpdateContentStatus(r.Context(), contentID, tenantID, statusInReview)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to submit post for review")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to submit post for review")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": post})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": post})
 }
 
 // FeaturePostByID handles POST /api/v1/blog/{id}/feature — the catalog's
@@ -1084,20 +1058,20 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentID, err := parseUUIDParam(r, "id")
+	contentID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	existing, err := h.content.GetContent(r.Context(), contentID, tenantID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Post not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Post not found")
 		return
 	}
 
 	if existing.ContentType != contentTypeBlogPost {
-		writeError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
+		httpx.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 		return
 	}
 
@@ -1107,14 +1081,14 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	var featuredUntil pgtype.Timestamptz
 	if input.FeaturedUntil != "" {
 		if err := featuredUntil.Scan(input.FeaturedUntil); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_featured_until", "Invalid featured_until date format")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_featured_until", "Invalid featured_until date format")
 			return
 		}
 	}
@@ -1129,5 +1103,5 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": featured})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": featured})
 }

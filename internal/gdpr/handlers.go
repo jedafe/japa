@@ -12,18 +12,18 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -47,7 +47,7 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -58,7 +58,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -69,35 +69,16 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case errors.Is(err, errpkg.ErrRequired):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, errpkg.ErrInvalid):
-		writeError(w, http.StatusBadRequest, "invalid_consent_type", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_consent_type", err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts page_size from query params with defaults.
@@ -115,17 +96,6 @@ func parsePageSize(r *http.Request) int32 {
 	}
 
 	return int32(ps) //nolint:gosec // G115: bounded by MaxPageSize check above
-}
-
-// parseOffset extracts offset from query params.
-func parseOffset(r *http.Request) int32 {
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
-			return int32(parsed) //nolint:gosec // G109: bounded by MaxPageSize check above
-		}
-	}
-
-	return 0
 }
 
 // clientIP extracts the client IP from the request.
@@ -178,7 +148,7 @@ func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
@@ -194,7 +164,7 @@ func (h *Handlers) RecordConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": record})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": record})
 }
 
 // GetUserConsents handles GET /api/v1/consent.
@@ -212,7 +182,7 @@ func (h *Handlers) GetUserConsents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": records})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": records})
 }
 
 // RevokeConsent handles DELETE /api/v1/consent/:type.
@@ -229,7 +199,7 @@ func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 
 	consentType := chi.URLParam(r, "type")
 	if consentType == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "consent type is required")
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", "consent type is required")
 		return
 	}
 
@@ -242,7 +212,7 @@ func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "revoked"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "revoked"}})
 }
 
 // RequestDataExport handles POST /api/v1/account/export.
@@ -263,7 +233,7 @@ func (h *Handlers) RequestDataExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": request})
+	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"data": request})
 }
 
 // GetMyDataExportStatus handles GET /api/v1/me/data-export/status.
@@ -285,11 +255,11 @@ func (h *Handlers) GetMyDataExportStatus(w http.ResponseWriter, r *http.Request)
 	}
 
 	if !found {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "no_pending_export"}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "no_pending_export"}})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": request})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": request})
 }
 
 // GetMyDataExportDownload handles GET /api/v1/me/data-export/download.
@@ -312,7 +282,7 @@ func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Reques
 	}
 
 	if !found || request.Status != "completed" || request.DownloadUrl == nil {
-		writeError(w, http.StatusNotFound, "export_not_ready", "No completed export is available for download")
+		httpx.WriteError(w, http.StatusNotFound, "export_not_ready", "No completed export is available for download")
 		return
 	}
 
@@ -339,7 +309,7 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 	// empty body (io.EOF) so deletion works without a payload; only reject
 	// genuinely malformed JSON.
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
@@ -349,7 +319,7 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"data": request})
+	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"data": request})
 }
 
 // ---------------------------------------------------------------------------
@@ -369,7 +339,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	var actorUserID pgtype.UUID
 	if v := r.URL.Query().Get("actor_user_id"); v != "" {
 		if err := actorUserID.Scan(v); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_actor", "Invalid actor_user_id")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_actor", "Invalid actor_user_id")
 			return
 		}
 	}
@@ -391,7 +361,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePageSize(r)
-	offset := parseOffset(r)
+	offset := httpx.ParseOffset(r)
 
 	logs, err := h.Service.ListAuditLogsWithQuery(r.Context(), tenantID, actorUserID, actionType, targetType, r.URL.Query().Get("q"), startDate, endDate, limit, offset)
 	if err != nil {
@@ -399,7 +369,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": logs})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": logs})
 }
 
 // ListConsentsByTenant handles GET /api/v1/admin/consents.
@@ -411,7 +381,7 @@ func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) 
 
 	consentType := r.URL.Query().Get("type")
 	limit := parsePageSize(r)
-	offset := parseOffset(r)
+	offset := httpx.ParseOffset(r)
 
 	records, err := h.Service.ListConsentsByTenantWithQuery(r.Context(), tenantID, consentType, r.URL.Query().Get("q"), limit, offset)
 	if err != nil {
@@ -419,7 +389,7 @@ func (h *Handlers) ListConsentsByTenant(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": records})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": records})
 }
 
 // DeleteConsent handles DELETE /api/v1/admin/consents/{id}.
@@ -431,7 +401,7 @@ func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid consent ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid consent ID")
 		return
 	}
 
@@ -441,7 +411,7 @@ func (h *Handlers) DeleteConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": record})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": record})
 }
 
 // ListPendingDataExports handles GET /api/v1/admin/data-exports.
@@ -459,7 +429,7 @@ func (h *Handlers) ListPendingDataExports(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": requests})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": requests})
 }
 
 // ListPendingDeletions handles GET /api/v1/admin/deletions.
@@ -477,7 +447,7 @@ func (h *Handlers) ListPendingDeletions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": requests})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": requests})
 }
 
 // ---------------------------------------------------------------------------
@@ -554,7 +524,7 @@ func (h *Handlers) ExecuteDeletion(w http.ResponseWriter, r *http.Request) {
 
 	var requestID pgtype.UUID
 	if err := requestID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid deletion request ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid deletion request ID")
 		return
 	}
 
@@ -565,7 +535,7 @@ func (h *Handlers) ExecuteDeletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
 		"request_id": requestID.String(), "status": "executed",
 	}})
 }

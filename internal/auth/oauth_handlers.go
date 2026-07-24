@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -29,7 +30,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 
 	provider := h.Config.NewProvider(providerName)
 	if provider == nil {
-		writeError(w, http.StatusBadRequest, "unsupported_provider",
+		httpx.WriteError(w, http.StatusBadRequest, "unsupported_provider",
 			"OAuth provider is not configured or not supported")
 		return
 	}
@@ -37,7 +38,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	state, err := GenerateOAuthState()
 	if err != nil {
 		slog.Error("generate OAuth state", "error", err)
-		writeError(w, http.StatusInternalServerError, "state_error", "Failed to initiate OAuth")
+		httpx.WriteError(w, http.StatusInternalServerError, "state_error", "Failed to initiate OAuth")
 
 		return
 	}
@@ -54,7 +55,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"auth_url": provider.AuthURL(state)},
 	})
 }
@@ -67,7 +68,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	provider := h.Config.NewProvider(providerName)
 	if provider == nil {
-		writeError(w, http.StatusBadRequest, "unsupported_provider",
+		httpx.WriteError(w, http.StatusBadRequest, "unsupported_provider",
 			"OAuth provider is not configured or not supported")
 		return
 	}
@@ -75,13 +76,13 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Validate CSRF state
 	stateCookie, err := r.Cookie("jc_oauth_state")
 	if err != nil || stateCookie.Value == "" {
-		writeError(w, http.StatusBadRequest, "missing_state", "OAuth state cookie is missing")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_state", "OAuth state cookie is missing")
 		return
 	}
 
 	callbackState := r.URL.Query().Get("state")
 	if !ValidateOAuthState(stateCookie.Value, callbackState) {
-		writeError(w, http.StatusBadRequest, "invalid_state", "OAuth state mismatch — possible CSRF attack")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_state", "OAuth state mismatch — possible CSRF attack")
 		return
 	}
 
@@ -101,14 +102,14 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
 		desc := r.URL.Query().Get("error_description")
 		slog.Warn("OAuth provider error", "provider", providerName, "error", errParam, "description", desc)
-		writeError(w, http.StatusUnauthorized, "oauth_error", "Authorization was denied or failed")
+		httpx.WriteError(w, http.StatusUnauthorized, "oauth_error", "Authorization was denied or failed")
 
 		return
 	}
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		writeError(w, http.StatusBadRequest, "missing_code", "Authorization code is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_code", "Authorization code is required")
 		return
 	}
 
@@ -116,14 +117,14 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	userInfo, err := provider.Exchange(r.Context(), code)
 	if err != nil {
 		slog.Error("OAuth exchange failed", "provider", providerName, "error", err)
-		writeError(w, http.StatusUnauthorized, "oauth_exchange_failed", "Failed to verify with OAuth provider")
+		httpx.WriteError(w, http.StatusUnauthorized, "oauth_exchange_failed", "Failed to verify with OAuth provider")
 
 		return
 	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -151,7 +152,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// No existing account or email match — new user signup would go here.
 	// For now, return an error directing users to register first.
-	writeError(w, http.StatusForbidden, "account_not_found",
+	httpx.WriteError(w, http.StatusForbidden, "account_not_found",
 		"No account found. Please register with email/password first, then link your OAuth account from settings.")
 }
 
@@ -169,12 +170,12 @@ func (h *OAuthHandlers) issueToken(w http.ResponseWriter, r *http.Request, userI
 	token, err := h.KeyRot.MintAccessTokenWithContext(r.Context(), userID, tenantID)
 	if err != nil {
 		slog.Error("mint access token", "error", err)
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
+		httpx.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"access_token": token,
 			"user": map[string]interface{}{

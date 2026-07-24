@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // silenceLogger replaces the default slog handler with one that discards
@@ -94,7 +95,7 @@ func TestCORSMiddleware_Preflight(t *testing.T) {
 	r.Use(corsMiddleware)
 
 	r.Get("/data", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
 	req := httptest.NewRequest(http.MethodOptions, "/data", nil)
@@ -123,7 +124,7 @@ func TestCORSMiddleware_ActualRequest(t *testing.T) {
 	r.Use(corsMiddleware)
 
 	r.Get("/data", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/data", nil)
@@ -151,7 +152,7 @@ func TestCORSMiddleware_NoOrigin(t *testing.T) {
 	r.Use(corsMiddleware)
 
 	r.Get("/data", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/data", nil)

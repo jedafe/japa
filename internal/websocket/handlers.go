@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/valkey"
 )
@@ -58,29 +59,12 @@ func (h *Handlers) requireUser(r *http.Request) (*auth.AuthenticatedUser, bool) 
 	return user, true
 }
 
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 // GetWSTicket mints a short-lived WS ticket.
 // POST /api/v1/auth/ws-ticket.
 func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(r)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -89,14 +73,14 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	// Generate a ticket ID.
 	ticketID := pgtype.UUID{}
 	if err := ticketID.Scan(generateUUID()); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to generate ticket")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate ticket")
 		return
 	}
 
 	// Insert ticket into DB.
 	if err := h.service.store.CreateWSTicket(ctx, user.UserID, user.TenantID); err != nil {
 		slog.Error("creating ws ticket", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
 
 		return
 	}
@@ -109,7 +93,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 		_ = h.vkClient.Redis().Set(vctx, "jc:ws_ticket:"+ticketID.String(), user.UserID.String(), 60*time.Second).Err()
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
 		"ticket": ticketID.String(),
 	})
 }
@@ -119,13 +103,13 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ticketStr := r.URL.Query().Get("ticket")
 	if ticketStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_ticket", "Ticket query parameter is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_ticket", "Ticket query parameter is required")
 		return
 	}
 
 	var ticketID pgtype.UUID
 	if err := ticketID.Scan(ticketStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_ticket", "Invalid ticket format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_ticket", "Invalid ticket format")
 		return
 	}
 
@@ -150,13 +134,13 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Fallback to DB if Valkey didn't have it.
 	if !userID.Valid {
-		writeError(w, http.StatusUnauthorized, "invalid_ticket", "Ticket not found or expired")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_ticket", "Ticket not found or expired")
 		return
 	}
 
 	// Mark ticket as used in DB.
 	if _, err := h.service.store.UseWSTicket(ctx, ticketID, userID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to consume ticket")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to consume ticket")
 		return
 	}
 
@@ -200,7 +184,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/ws/online.
 func (h *Handlers) GetOnlineUsers(w http.ResponseWriter, _ *http.Request) {
 	users := h.hub.GetOnlineUsers()
-	writeJSON(w, http.StatusOK, map[string]any{"data": users})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": users})
 }
 
 // readPump reads messages from the WebSocket connection.

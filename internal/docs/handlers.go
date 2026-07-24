@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -32,7 +33,7 @@ func NewHandlers(service *Service, siteURL string, siteName string) *Handlers {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -41,32 +42,15 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 
 // requireUser resolves the authenticated user from the request context.
 
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
 }
 
@@ -84,7 +68,7 @@ func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
 
 	audience := chi.URLParam(r, "audience")
 	if !ValidAudiences[audience] {
-		writeError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
 		return
 	}
 
@@ -94,7 +78,7 @@ func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
 // GetDocPage handles GET /api/v1/docs/{audience}/{slug}.
@@ -109,7 +93,7 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 
 	if !ValidAudiences[audience] {
-		writeError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
 		return
 	}
 
@@ -119,7 +103,7 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // ListDocNav handles GET /api/v1/docs/nav.
@@ -136,7 +120,7 @@ func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": nav})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": nav})
 }
 
 // SearchDocPages handles GET /api/v1/docs/search?q=&limit=.
@@ -149,7 +133,7 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
-		writeError(w, http.StatusBadRequest, "missing_query", "Query parameter q is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter q is required")
 		return
 	}
 
@@ -166,7 +150,7 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +167,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 
 	audience := chi.URLParam(r, "audience")
 	if !ValidAudiences[audience] {
-		writeError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
 		return
 	}
 
@@ -193,7 +177,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
 // CreateDocPage handles POST /api/v1/admin/docs.
@@ -205,12 +189,12 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 
 	var req CreateDocPageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	if req.Title == "" || req.Slug == "" || req.Audience == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "title, slug, and audience are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "title, slug, and audience are required")
 		return
 	}
 
@@ -219,7 +203,7 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]string{"status": "created"})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]string{"status": "created"})
 }
 
 // UpdateDocPage handles PATCH /api/v1/admin/docs/{id}.
@@ -231,18 +215,18 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
 		return
 	}
 
 	var req UpdateDocPageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "title is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "title is required")
 		return
 	}
 
@@ -251,7 +235,7 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
 // DeleteDocPage handles DELETE /api/v1/admin/docs/{id}.
@@ -263,7 +247,7 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
 		return
 	}
 
@@ -272,7 +256,7 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // ---------------------------------------------------------------------------

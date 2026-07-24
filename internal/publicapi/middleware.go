@@ -8,6 +8,7 @@ import (
 
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -26,7 +27,7 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 			keyCtx, err := service.ValidateAPIKey(r.Context(), apiKey)
 			if err != nil {
 				slog.Warn("api key validation failed", "error", err)
-				writeError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid or expired API key")
+				httpx.WriteError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid or expired API key")
 
 				return
 			}
@@ -38,7 +39,7 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 				allowed, err := service.hasIPAccess(r.Context(), keyCtx.KeyID, clientIP)
 				if err != nil {
 					slog.Error("api key: IP allowlist check failed", "error", err)
-					writeError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
+					httpx.WriteError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
 
 					return
 				}
@@ -47,7 +48,7 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 					slog.Warn("api key: IP not in allowlist",
 						"key_id", keyCtx.KeyID.String(),
 						"client_ip", clientIP)
-					writeError(w, http.StatusForbidden, "ip_not_allowed", "Your IP address is not authorized for this API key")
+					httpx.WriteError(w, http.StatusForbidden, "ip_not_allowed", "Your IP address is not authorized for this API key")
 
 					return
 				}
@@ -102,7 +103,7 @@ func RequireScope(scope string) func(http.Handler) http.Handler {
 			}
 
 			if !hasScope(keyCtx.Scopes, scope) {
-				writeError(w, http.StatusForbidden, "insufficient_scope", "API key lacks required scope: "+scope)
+				httpx.WriteError(w, http.StatusForbidden, "insufficient_scope", "API key lacks required scope: "+scope)
 				return
 			}
 

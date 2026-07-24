@@ -15,12 +15,12 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -33,7 +33,7 @@ const (
 func extractTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusBadRequest, "missing_tenant", "Tenant ID required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_tenant", "Tenant ID required")
 		return pgtype.UUID{}, false
 	}
 
@@ -44,7 +44,7 @@ func extractTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireID(w http.ResponseWriter, r *http.Request, paramName, entityName string) (pgtype.UUID, bool) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, paramName)); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+entityName+" ID")
 		return pgtype.UUID{}, false
 	}
 
@@ -65,11 +65,11 @@ func getByID[T any](w http.ResponseWriter, r *http.Request, entityName string, f
 
 	result, err := fetchFn(r.Context(), tenantID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", entityName+" not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", entityName+" not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // deleteByID is a shared helper for DELETE /{entity}/{id} handlers.
@@ -86,12 +86,12 @@ func deleteByID(w http.ResponseWriter, r *http.Request, entityName string, delet
 
 	if err := deleteFn(r.Context(), tenantID, id); err != nil {
 		slog.Error("deleting newsletter "+entityName, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete "+entityName)
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete "+entityName)
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // Handlers holds dependencies for newsletter admin HTTP handlers.
@@ -108,25 +108,10 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -151,20 +136,6 @@ func parsePageSize(r *http.Request) int32 {
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
-func parseOffset(r *http.Request) int32 {
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			if n > math.MaxInt32 {
-				return defaultPageSize
-			}
-
-			return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
-		}
-	}
-
-	return 0
-}
-
 // ---------------------------------------------------------------------------
 // Admin Handlers — Newsletter Subscribers
 // ---------------------------------------------------------------------------
@@ -182,24 +153,24 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.Email == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "email is required")
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", "email is required")
 		return
 	}
 
 	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, input.Email)
 	if err != nil {
 		slog.Error("creating newsletter subscriber", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create subscriber")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create subscriber")
 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": subscriber})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": subscriber})
 }
 
 // ListSubscribers returns all newsletter subscribers for the tenant.
@@ -211,17 +182,17 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePageSize(r)
-	offset := parseOffset(r)
+	offset := httpx.ParseOffset(r)
 
 	subscribers, err := h.Service.ListSubscribers(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("listing newsletter subscribers", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list subscribers")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list subscribers")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": subscribers})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": subscribers})
 }
 
 // GetSubscriber returns a single newsletter subscriber by ID.
@@ -253,17 +224,17 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePageSize(r)
-	offset := parseOffset(r)
+	offset := httpx.ParseOffset(r)
 
 	campaigns, err := h.Service.ListCampaigns(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("listing newsletter campaigns", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list campaigns")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list campaigns")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaigns})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": campaigns})
 }
 
 // GetCampaign returns a single newsletter campaign by ID.
@@ -289,29 +260,29 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
 
 	if input.Subject == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "subject is required")
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", "subject is required")
 		return
 	}
 
 	campaign, err := h.Service.CreateCampaign(r.Context(), tenantID, input.Name, input.Subject, input.HTML)
 	if err != nil {
 		slog.Error("creating newsletter campaign", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create campaign")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create campaign")
 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": campaign})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": campaign})
 }
 
 // UpdateCampaign updates an existing newsletter campaign.
@@ -324,7 +295,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
@@ -336,19 +307,19 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	campaign, err := h.Service.UpdateCampaign(r.Context(), tenantID, id, input.Name, input.Subject, input.HTML, input.Status)
 	if err != nil {
 		slog.Error("updating newsletter campaign", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": campaign})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
 // DeleteCampaign removes a newsletter campaign.
@@ -369,19 +340,19 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
 
 	// Fetch the campaign and verify it's in a sendable state.
 	campaign, err := h.Service.GetCampaign(r.Context(), tenantID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Campaign not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return
 	}
 
 	if campaign.Status != "draft" && campaign.Status != "ready" {
-		writeError(w, http.StatusBadRequest, "invalid_status", "Campaign must be in draft or ready status to send")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_status", "Campaign must be in draft or ready status to send")
 		return
 	}
 
@@ -389,7 +360,7 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 	sendingStatus := "sending"
 	if _, err := h.Service.UpdateCampaign(r.Context(), tenantID, id, nil, nil, nil, &sendingStatus); err != nil {
 		slog.Error("updating campaign status to sending", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign status")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update campaign status")
 
 		return
 	}
@@ -398,25 +369,25 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 	emails, err := h.Service.GetAllSubscriberEmails(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("getting subscriber emails", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get subscribers")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get subscribers")
 
 		return
 	}
 
 	if len(emails) == 0 {
-		writeError(w, http.StatusBadRequest, "no_subscribers", "No active subscribers to send to")
+		httpx.WriteError(w, http.StatusBadRequest, "no_subscribers", "No active subscribers to send to")
 		return
 	}
 
 	// Enqueue the newsletter send task.
 	if err := h.Service.EnqueueNewsletterSend(r.Context(), id, tenantID, campaign.Subject, campaign.HTML, emails); err != nil {
 		slog.Error("enqueuing newsletter send", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue newsletter send")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue newsletter send")
 
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{
 		"data": map[string]any{
 			"status":     "sending",
 			"recipients": len(emails),

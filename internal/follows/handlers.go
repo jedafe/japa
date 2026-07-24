@@ -2,13 +2,13 @@ package follows
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -28,7 +28,7 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -39,28 +39,11 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
 	return user, true
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -121,33 +104,33 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.EntityType == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
 		return
 	}
 
 	if input.EntityID == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(input.EntityID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
 		return
 	}
 
 	followed, err := h.service.ToggleFollow(r.Context(), tenantID, user.UserID, input.EntityType, entityID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "follow_error", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "follow_error", err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]bool{"following": followed},
 	})
 }
@@ -162,19 +145,19 @@ func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 	entityType := chi.URLParam(r, "entity_type")
 	if entityType == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required in URL")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required in URL")
 		return
 	}
 
 	entityIDStr := r.URL.Query().Get("entity_id")
 	if entityIDStr == "" {
-		writeError(w, http.StatusBadRequest, "missing_entity_id", "entity_id query parameter is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_entity_id", "entity_id query parameter is required")
 		return
 	}
 
 	var entityID pgtype.UUID
 	if err := entityID.Scan(entityIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
 		return
 	}
 
@@ -183,11 +166,11 @@ func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 	followers, err := h.service.GetFollowers(r.Context(), tenantID, entityType, entityID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get followers")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get followers")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": followers})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": followers})
 }
 
 // GetFollowing handles GET /api/v1/users/{user_id}/following.
@@ -202,7 +185,7 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 	var userID pgtype.UUID
 
 	if err := userID.Scan(userIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
 		return
 	}
 
@@ -211,11 +194,11 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 
 	following, err := h.service.GetFollowing(r.Context(), tenantID, userID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get following")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get following")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": following})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": following})
 }
 
 // ListMyFollowing handles GET /api/v1/me/following — everything the caller follows.
@@ -235,11 +218,11 @@ func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
 
 	following, err := h.service.GetFollowing(r.Context(), tenantID, user.UserID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get following")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get following")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": following})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": following})
 }
 
 // ListMyFollowedTags handles GET /api/v1/me/followed-tags — tags the caller follows.
@@ -259,11 +242,11 @@ func (h *Handlers) ListMyFollowedTags(w http.ResponseWriter, r *http.Request) {
 
 	following, err := h.service.GetFollowingByType(r.Context(), tenantID, user.UserID, EntityTypeTag, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get followed tags")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get followed tags")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": following})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": following})
 }
 
 // GetFollowStatus handles GET /api/v1/users/{user_id}/follow-status — whether
@@ -279,17 +262,17 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 	var targetID pgtype.UUID
 
 	if err := targetID.Scan(targetIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
 		return
 	}
 
 	following, err := h.service.IsFollowing(r.Context(), user.UserID, EntityTypeUser, targetID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check follow status")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check follow status")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"following": following}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"following": following}})
 }
 
 // CheckMutual handles GET /api/v1/users/{user_id}/mutual/{other_user_id}.
@@ -304,7 +287,7 @@ func (h *Handlers) CheckMutual(w http.ResponseWriter, r *http.Request) {
 	var userID pgtype.UUID
 
 	if err := userID.Scan(userIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
 		return
 	}
 
@@ -313,17 +296,17 @@ func (h *Handlers) CheckMutual(w http.ResponseWriter, r *http.Request) {
 	var otherID pgtype.UUID
 
 	if err := otherID.Scan(otherIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_other_user_id", "Invalid other_user_id format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_other_user_id", "Invalid other_user_id format")
 		return
 	}
 
 	mutual, err := h.service.IsMutualFollow(r.Context(), userID, otherID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to check mutual follow")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check mutual follow")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]bool{"mutual": mutual},
 	})
 }

@@ -7,15 +7,14 @@
 package trending
 
 import (
-	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -42,7 +41,7 @@ func NewHandlers(store *Store) *Handlers {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -52,36 +51,19 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
 	return user, true
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
 }
 
@@ -135,7 +117,7 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetTrendingTags handles GET /api/v1/trending/tags.
@@ -155,7 +137,7 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetTrendingSpaces handles GET /api/v1/trending/spaces.
@@ -175,7 +157,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetTrendingUsers handles GET /api/v1/trending/users.
@@ -195,7 +177,7 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +204,7 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetSuggestedSpaces handles GET /api/v1/suggestions/spaces.
@@ -245,7 +227,7 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // GetSuggestedTags handles GET /api/v1/suggestions/tags.
@@ -268,5 +250,5 @@ func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": data})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }

@@ -3,13 +3,13 @@ package impersonation
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -30,7 +30,7 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -40,7 +40,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -49,33 +49,16 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrAlreadyExists):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case errors.Is(err, errpkg.ErrRequired):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, errpkg.ErrInvalid):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if v != nil {
-		if err := json.NewEncoder(w).Encode(v); err != nil {
-			slog.Warn("json encode error", "error", err)
-		}
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // ---------------------------------------------------------------------------
@@ -100,18 +83,18 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	if input.UserID == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "user_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", "user_id is required")
 		return
 	}
 
 	var targetUserID pgtype.UUID
 	if err := targetUserID.Scan(input.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user_id format")
 		return
 	}
 
@@ -120,7 +103,7 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{
 			"status":    "impersonation_started",
 			"target_id": input.UserID,
@@ -146,7 +129,7 @@ func (h *Handlers) EndImpersonation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{
 			"status": "impersonation_ended",
 		},
@@ -167,7 +150,7 @@ func (h *Handlers) GetImpersonationStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"active":    active,
 			"target_id": targetID,

@@ -2,8 +2,6 @@ package tags
 
 import (
 	"encoding/json"
-	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,6 +12,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/follows"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -37,7 +36,7 @@ func NewHandlers(service *Service, contentService *content.Service, followsServi
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -48,21 +47,11 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
 	return user, true
-}
-
-// parseUUIDParam reads a UUID URL param, writing a 400 and returning the zero
-// value on failure.
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, fmt.Errorf("invalid %s: %w", param, err)
-	}
-	return id, nil
 }
 
 // resolveTag looks up a tag by slug, writing a 404 and returning ok=false if
@@ -70,13 +59,13 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID) (gen.Tag, bool) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Tag slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Tag slug is required")
 		return gen.Tag{}, false
 	}
 
 	tag, err := h.service.GetTagBySlug(r.Context(), tenantID, slug)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Tag not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
 		return gen.Tag{}, false
 	}
 
@@ -95,17 +84,17 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 
 	tags, err := h.service.AdminListTags(r.Context(), tenantID, q)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tags")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tags")
 		return
 	}
 
 	count, err := h.service.AdminCountTags(r.Context(), tenantID, q)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to count tags")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count tags")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tags, "total": count})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tags, "total": count})
 }
 
 // GetTag handles GET /api/v1/tags/{slug}. [public]
@@ -120,7 +109,7 @@ func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
 // GetTagContent handles GET /api/v1/tags/{slug}/content — published content
@@ -141,7 +130,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	if c := r.URL.Query().Get("cursor"); c != "" {
 		t, err := time.Parse(time.RFC3339, c)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cursor", "cursor must be an RFC3339 timestamp")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_cursor", "cursor must be an RFC3339 timestamp")
 			return
 		}
 
@@ -152,11 +141,11 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.content.ListContentByTag(r.Context(), tenantID, tag.ID, cursor, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tagged content")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tagged content")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
 // ToggleTagFollow handles POST/DELETE /api/v1/tags/{slug}/follow.
@@ -178,11 +167,11 @@ func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
 
 	following, err := h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, follows.EntityTypeTag, tag.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle tag follow")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle tag follow")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"following": following}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"following": following}})
 }
 
 // GetTagFollowers handles GET /api/v1/tags/{slug}/followers.
@@ -202,11 +191,11 @@ func (h *Handlers) GetTagFollowers(w http.ResponseWriter, r *http.Request) {
 
 	followers, err := h.follows.GetFollowers(r.Context(), tenantID, follows.EntityTypeTag, tag.ID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get tag followers")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get tag followers")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": followers})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": followers})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -239,23 +228,6 @@ func parsePageOffset(r *http.Request) int32 {
 	return int32(v)
 }
 
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 // CreateTag handles POST /api/v1/admin/tags.
 func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -271,12 +243,12 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
@@ -297,11 +269,11 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		Color:       input.Color,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create tag")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create tag")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": tag})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": tag})
 }
 
 // UpdateTag handles PATCH /api/v1/admin/tags/{id}.
@@ -313,7 +285,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -324,12 +296,12 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
 
@@ -344,11 +316,11 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		Color:       input.Color,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update tag")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update tag")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tag})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
 // DeleteTag handles DELETE /api/v1/admin/tags/{id}.
@@ -360,16 +332,16 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	if err := h.service.DeleteTag(r.Context(), id, tenantID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tag")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tag")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
 // AddTagModerator handles POST /admin/tags/:id/moderators (P5.6 — Task 7).
@@ -381,15 +353,15 @@ func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tagID, err := parseUUIDParam(r, "id")
+	tagID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
 
 	rows, err := h.service.ListTagModerators(r.Context(), tagID, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tag moderators")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tag moderators")
 		return
 	}
 
@@ -402,7 +374,7 @@ func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": moderators})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": moderators})
 }
 
 // AddTagModerator handles POST /api/v1/admin/tags/:id/moderators (Section 49).
@@ -412,9 +384,9 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tagID, err := parseUUIDParam(r, "id")
+	tagID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
 
@@ -422,27 +394,27 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 		UserID string `json:"user_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.UserID == "" {
-		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(input.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
 		return
 	}
 
 	row, err := h.service.AddTagModerator(r.Context(), tagID, userID, tenantID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to add tag moderator")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add tag moderator")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
 		"tag_id":   row.TagID,
 		"user_id":  row.UserID,
 		"added_at": row.CreatedAt,
@@ -456,22 +428,22 @@ func (h *Handlers) RemoveTagModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tagID, err := parseUUIDParam(r, "id")
+	tagID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tag ID")
 		return
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(chi.URLParam(r, "userId")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
 		return
 	}
 
 	if err := h.service.RemoveTagModerator(r.Context(), tagID, userID, tenantID); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to remove tag moderator")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove tag moderator")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
 }

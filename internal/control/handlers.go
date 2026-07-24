@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/features"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
@@ -33,19 +34,19 @@ import (
 
 // Handlers holds dependencies for control panel HTTP handlers.
 type Handlers struct {
-	Service          *Service
-	DB               *db.DB
-	FeatureChecker   *features.Checker
-	SpamStore        *spam.Store
-	PublicAPI        *publicapi.Handlers
-	Inspector        *asynq.Inspector
-	Client           *asynq.Client
-	RBAC             *rbac.RBAC
-	Settings         *config.Settings
-	Valkey           valkeycompat.Cmdable
-	MeiliSearch      meilisearch.ServiceManager
-	WSHub            *websocket.Hub
-	StartTime        time.Time
+	Service        *Service
+	DB             *db.DB
+	FeatureChecker *features.Checker
+	SpamStore      *spam.Store
+	PublicAPI      *publicapi.Handlers
+	Inspector      *asynq.Inspector
+	Client         *asynq.Client
+	RBAC           *rbac.RBAC
+	Settings       *config.Settings
+	Valkey         valkeycompat.Cmdable
+	MeiliSearch    meilisearch.ServiceManager
+	WSHub          *websocket.Hub
+	StartTime      time.Time
 }
 
 // NewHandlers creates a new Handlers.
@@ -103,10 +104,10 @@ func (h *Handlers) ListTenants(w http.ResponseWriter, r *http.Request) {
 	tenants, err := h.Service.ListTenants(r.Context())
 	if err != nil {
 		slog.Error("control: list tenants", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list tenants")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tenants")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenants})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tenants})
 }
 
 func (h *Handlers) CreateTenant(w http.ResponseWriter, r *http.Request) {
@@ -116,11 +117,11 @@ func (h *Handlers) CreateTenant(w http.ResponseWriter, r *http.Request) {
 		Domain *string `json:"domain"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Name == "" || input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "name and slug are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "name and slug are required")
 		return
 	}
 	tenant, err := h.Service.CreateTenant(r.Context(), CreateTenantInput{
@@ -130,31 +131,31 @@ func (h *Handlers) CreateTenant(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("control: create tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create tenant")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create tenant")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": tenant})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) GetTenant(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	tenant, err := h.Service.GetTenant(r.Context(), id)
 	if err != nil {
 		slog.Error("control: get tenant", "error", err)
-		writeError(w, http.StatusNotFound, "not_found", "Tenant not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Tenant not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	var input struct {
@@ -162,7 +163,7 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		Domain *string `json:"domain"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	tenant, err := h.Service.UpdateTenant(r.Context(), id, UpdateTenantInput{
@@ -171,22 +172,22 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("control: update tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update tenant")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update tenant")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	tenant, err := h.Service.DeleteTenant(r.Context(), id)
 	if err != nil {
 		slog.Error("control: delete tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tenant")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tenant")
 		return
 	}
 
@@ -203,37 +204,37 @@ func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) SuspendTenant(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	tenant, err := h.Service.SuspendTenant(r.Context(), id)
 	if err != nil {
 		slog.Error("control: suspend tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to suspend tenant")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suspend tenant")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 func (h *Handlers) UnsuspendTenant(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	tenant, err := h.Service.UnsuspendTenant(r.Context(), id)
 	if err != nil {
 		slog.Error("control: unsuspend tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to unsuspend tenant")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unsuspend tenant")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": tenant})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +252,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		slog.Error("control: list system settings", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
 		return
 	}
 	defer rows.Close()
@@ -331,7 +332,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 			Options:      opts,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
 }
 
 func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
@@ -341,7 +342,7 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	var input map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	for key, value := range input {
@@ -352,14 +353,14 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 		)
 		if err != nil {
 			slog.Error("control: update system setting", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
+			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
 			return
 		}
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
@@ -369,15 +370,15 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
 		return
 	}
 	var input struct {
-		Value    any  `json:"value"`
+		Value    any   `json:"value"`
 		IsPublic *bool `json:"is_public"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	data, _ := json.Marshal(input.Value)
@@ -388,7 +389,7 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 		)
 		if err != nil {
 			slog.Error("control: update system setting", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
 			return
 		}
 	} else {
@@ -398,14 +399,14 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 		)
 		if err != nil {
 			slog.Error("control: update system setting", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
 			return
 		}
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
 }
 
 func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
@@ -415,7 +416,7 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
 		return
 	}
 	tag, err := h.DB.Writer.Exec(r.Context(),
@@ -424,7 +425,7 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		slog.Error("control: reset system setting", "key", key, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
 		return
 	}
 	if h.Settings != nil {
@@ -438,10 +439,10 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	if tag.RowsAffected() == 0 {
 		// Setting didn't exist in DB (already at default). Return the default value.
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
 }
 
 // ---------------------------------------------------------------------------
@@ -450,9 +451,9 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 
 // GetTenantSettings handles GET /control/tenants/:id/settings.
 func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := parseUUIDParam(r, "id")
+	tenantID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	rows, err := h.DB.Reader.Query(r.Context(),
@@ -461,7 +462,7 @@ func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		slog.Error("control: get tenant settings", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
 		return
 	}
 	defer rows.Close()
@@ -537,19 +538,19 @@ func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 			Options:      opts,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
 }
 
 // UpdateTenantSettings handles PATCH /control/tenants/:id/settings (bulk).
 func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := parseUUIDParam(r, "id")
+	tenantID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	var input map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	for key, value := range input {
@@ -560,34 +561,34 @@ func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) 
 		)
 		if err != nil {
 			slog.Error("control: update tenant setting", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
+			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
 			return
 		}
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
 // UpdateTenantSettingKey handles PATCH /control/tenants/:id/settings/:key.
 func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := parseUUIDParam(r, "id")
+	tenantID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
 		return
 	}
 	var input struct {
-		Value    any  `json:"value"`
+		Value    any   `json:"value"`
 		IsPublic *bool `json:"is_public"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	data, _ := json.Marshal(input.Value)
@@ -598,7 +599,7 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 		)
 		if err != nil {
 			slog.Error("control: update tenant setting key", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
 			return
 		}
 	} else {
@@ -608,26 +609,26 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 		)
 		if err != nil {
 			slog.Error("control: update tenant setting key", "key", key, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
+			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
 			return
 		}
 	}
 	if h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
 }
 
 // ResetTenantSetting handles POST /control/tenants/:id/settings/:key/reset.
 func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := parseUUIDParam(r, "id")
+	tenantID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 	key := chi.URLParam(r, "key")
 	if key == "" {
-		writeError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_key", "Setting key is required")
 		return
 	}
 	tag, err := h.DB.Writer.Exec(r.Context(),
@@ -636,7 +637,7 @@ func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		slog.Error("control: reset tenant setting", "key", key, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
 		return
 	}
 	if h.Settings != nil {
@@ -647,10 +648,10 @@ func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
 		defaultValue = meta.DefaultValue
 	}
 	if tag.RowsAffected() == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "value": defaultValue, "default_value": defaultValue}})
 }
 
 // ---------------------------------------------------------------------------
@@ -663,7 +664,7 @@ func (h *Handlers) ListFeatureFlags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	flags := h.FeatureChecker.GetAllEnabled(r.Context(), tenantID)
-	writeJSON(w, http.StatusOK, map[string]any{"data": flags})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": flags})
 }
 
 func (h *Handlers) SetFeatureFlag(w http.ResponseWriter, r *http.Request) {
@@ -673,24 +674,24 @@ func (h *Handlers) SetFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	}
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
-		writeError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_flag_name", "flag_name is required")
 		return
 	}
 	var input struct {
 		Enabled bool `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	user := authUserFromContext(r)
 	if err := h.FeatureChecker.SetEnabled(r.Context(), tenantID, flagName, input.Enabled, user); err != nil {
 		slog.Error("control: set feature flag", "flag", flagName, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
 		return
 	}
 	h.FeatureChecker.ClearCache()
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"key": flagName, "enabled": input.Enabled}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"key": flagName, "enabled": input.Enabled}})
 }
 
 // ---------------------------------------------------------------------------
@@ -772,7 +773,7 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		}),
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"infrastructure": infrastructure,
 			"application":    application,
@@ -789,7 +790,7 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if err := h.DB.Reader.Ping(ctx); err != nil {
 		slog.Error("control: db health check", "error", err)
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		httpx.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"data": map[string]any{"status": "unhealthy", "error": err.Error()},
 		})
 		return
@@ -883,8 +884,8 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 	// Replication.
 	type replicationInfo struct {
-		State       string  `json:"state"`
-		LagSeconds  float64 `json:"lag_seconds"`
+		State      string  `json:"state"`
+		LagSeconds float64 `json:"lag_seconds"`
 	}
 	var repl *replicationInfo
 	var isRecovery bool
@@ -942,22 +943,22 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 		slowQueries = []slowQuery{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"connected":        true,
-			"version":          version,
-			"latency_ms":       latency,
-			"size_bytes":       sizeBytes,
-			"table_count":      tableCount,
-			"index_count":      indexCount,
+			"connected":         true,
+			"version":           version,
+			"latency_ms":        latency,
+			"size_bytes":        sizeBytes,
+			"table_count":       tableCount,
+			"index_count":       indexCount,
 			"avg_query_time_ms": 0,
-			"tables":           tables,
-			"slow_queries":     slowQueries,
-			"indexes_unused":   indexesUnused,
+			"tables":            tables,
+			"slow_queries":      slowQueries,
+			"indexes_unused":    indexesUnused,
 			"connection_pool": map[string]any{
-				"active":  activeConns,
-				"idle":    idleConns,
-				"max":     maxConns,
+				"active": activeConns,
+				"idle":   idleConns,
+				"max":    maxConns,
 			},
 			"replication": repl,
 		},
@@ -970,10 +971,10 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 		task := asynq.NewTask(worker.TypeDBManualVacuum, nil)
 		if _, err := h.Client.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeDBManualVacuum))); err != nil {
 			slog.Error("control: failed to enqueue db vacuum task", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue vacuum task")
+			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue vacuum task")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "enqueued"}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "enqueued"}})
 		return
 	}
 
@@ -981,10 +982,10 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 	_, err := h.DB.Writer.Exec(r.Context(), `VACUUM`)
 	if err != nil {
 		slog.Error("control: db vacuum", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to run VACUUM")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to run VACUUM")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "completed"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "completed"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -993,14 +994,14 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
-				"queues":               []any{},
-				"total_pending":        0,
-				"total_active":         0,
-				"total_completed_24h":  0,
-				"total_failed_24h":     0,
-				"dlq_count":            0,
+				"queues":              []any{},
+				"total_pending":       0,
+				"total_active":        0,
+				"total_completed_24h": 0,
+				"total_failed_24h":    0,
+				"dlq_count":           0,
 			},
 		})
 		return
@@ -1048,21 +1049,21 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 		queues = []queueInfo{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"queues":               queues,
-			"total_pending":        totalPending,
-			"total_active":         totalActive,
-			"total_completed_24h":  totalCompleted,
-			"total_failed_24h":     totalFailed,
-			"dlq_count":            dlqDepth,
+			"queues":              queues,
+			"total_pending":       totalPending,
+			"total_active":        totalActive,
+			"total_completed_24h": totalCompleted,
+			"total_failed_24h":    totalFailed,
+			"dlq_count":           dlqDepth,
 		},
 	})
 }
 
 func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
 		return
 	}
 
@@ -1076,26 +1077,26 @@ func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, entry := range entries {
 			tasks = append(tasks, map[string]any{
-				"task_id":      entry.ID,
-				"task_type":    entry.Type,
-				"queue":        queueName,
-				"payload":      string(entry.Payload),
+				"task_id":       entry.ID,
+				"task_type":     entry.Type,
+				"queue":         queueName,
+				"payload":       string(entry.Payload),
 				"error_message": entry.LastErr,
-				"retry_count":  entry.Retried,
-				"max_retries":  entry.MaxRetry,
-				"failed_at":    entry.LastFailedAt.Format(time.RFC3339),
+				"retry_count":   entry.Retried,
+				"max_retries":   entry.MaxRetry,
+				"failed_at":     entry.LastFailedAt.Format(time.RFC3339),
 			})
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tasks})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tasks})
 }
 
 // ListQueueTasks returns recent tasks for a specific queue across all states
 // (pending, active, scheduled, retry, archived, completed).
 func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 			"pending": []any{}, "active": []any{}, "scheduled": []any{},
 			"retry": []any{}, "archived": []any{}, "completed": []any{},
 		}})
@@ -1104,19 +1105,19 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 
 	queueName := chi.URLParam(r, "queue_name")
 	if queueName == "" {
-		writeError(w, http.StatusBadRequest, "missing_queue", "queue_name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_queue", "queue_name is required")
 		return
 	}
 
 	type taskSummary struct {
-		ID          string    `json:"id"`
-		Type        string    `json:"type"`
-		State       string    `json:"state"`
-		Payload     string    `json:"payload"`
-		RetryCount  int       `json:"retry_count"`
-		MaxRetry    int       `json:"max_retry"`
-		LastErr     string    `json:"last_err,omitempty"`
-		LastFailedAt *string  `json:"last_failed_at,omitempty"`
+		ID            string  `json:"id"`
+		Type          string  `json:"type"`
+		State         string  `json:"state"`
+		Payload       string  `json:"payload"`
+		RetryCount    int     `json:"retry_count"`
+		MaxRetry      int     `json:"max_retry"`
+		LastErr       string  `json:"last_err,omitempty"`
+		LastFailedAt  *string `json:"last_failed_at,omitempty"`
 		NextProcessAt *string `json:"next_process_at,omitempty"`
 	}
 
@@ -1155,7 +1156,7 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 	archived, _ := h.Inspector.ListArchivedTasks(queueName)
 	completed, _ := h.Inspector.ListCompletedTasks(queueName)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"pending":   summarize(pending, "pending"),
 			"active":    summarize(active, "active"),
@@ -1169,7 +1170,7 @@ func (h *Handlers) ListQueueTasks(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) RetryDLQTask(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
 		return
 	}
 
@@ -1179,16 +1180,16 @@ func (h *Handlers) RetryDLQTask(w http.ResponseWriter, r *http.Request) {
 		if err := h.Inspector.RunTask(queueName, taskID); err != nil {
 			continue
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "retried"}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "retried"}})
 		return
 	}
 
-	writeError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
+	httpx.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
 }
 
 func (h *Handlers) DiscardDLQTask(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
 		return
 	}
 
@@ -1198,16 +1199,16 @@ func (h *Handlers) DiscardDLQTask(w http.ResponseWriter, r *http.Request) {
 		if err := h.Inspector.DeleteTask(queueName, taskID); err != nil {
 			continue
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "discarded"}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": taskID, "status": "discarded"}})
 		return
 	}
 
-	writeError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
+	httpx.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
 }
 
 func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
 		return
 	}
 
@@ -1225,7 +1226,7 @@ func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"discarded": totalDiscarded}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"discarded": totalDiscarded}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1233,20 +1234,20 @@ func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 type cacheNamespace struct {
-	Prefix            string  `json:"prefix"`
-	KeyCount          int64   `json:"key_count"`
-	MemoryEstimateMB  float64 `json:"memory_estimate_mb"`
+	Prefix           string  `json:"prefix"`
+	KeyCount         int64   `json:"key_count"`
+	MemoryEstimateMB float64 `json:"memory_estimate_mb"`
 }
 
 type cacheStatsResponse struct {
-	Namespaces      []cacheNamespace `json:"namespaces"`
-	TotalKeys       int64            `json:"total_keys"`
-	TotalMemoryMB   float64          `json:"total_memory_mb"`
+	Namespaces    []cacheNamespace `json:"namespaces"`
+	TotalKeys     int64            `json:"total_keys"`
+	TotalMemoryMB float64          `json:"total_memory_mb"`
 }
 
 func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"message": "Valkey client not configured",
 			},
@@ -1258,7 +1259,7 @@ func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 	info, err := h.Valkey.Info(ctx, "memory").Result()
 	if err != nil {
 		slog.Error("control: cache stats", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch cache stats")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch cache stats")
 		return
 	}
 
@@ -1278,11 +1279,11 @@ func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stats := cacheStatsResponse{
-		Namespaces:     namespaces,
-		TotalKeys:      totalKeys,
-		TotalMemoryMB:  totalMemoryMB,
+		Namespaces:    namespaces,
+		TotalKeys:     totalKeys,
+		TotalMemoryMB: totalMemoryMB,
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": stats})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 func parseValkeyMemory(info string) float64 {
@@ -1390,7 +1391,7 @@ func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
 	if ok && h.Settings != nil {
 		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"message": "Permission and settings cache flushed"},
 	})
 }
@@ -1407,10 +1408,10 @@ func (h *Handlers) SecurityOverview(w http.ResponseWriter, r *http.Request) {
 	blocks, err := h.SpamStore.GetActiveIPBlocks(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("control: security overview", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch security overview")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch security overview")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"active_ip_blocks": len(blocks),
 		},
@@ -1425,10 +1426,10 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	blocks, err := h.SpamStore.ListIPBlocks(r.Context(), tenantID, 200, pgtype.Timestamptz{})
 	if err != nil {
 		slog.Error("control: list ip blocks", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list IP blocks")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list IP blocks")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": blocks})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": blocks})
 }
 
 func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
@@ -1467,7 +1468,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 	)
 	if err != nil {
 		slog.Error("control: list security scan results", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list security scan results")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list security scan results")
 		return
 	}
 	defer rows.Close()
@@ -1505,7 +1506,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 		totalPages = 1
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"results":     results,
 			"page":        page,
@@ -1521,7 +1522,7 @@ func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.Client == nil {
-		writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "Task queue not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "queue_unavailable", "Task queue not available")
 		return
 	}
 
@@ -1529,7 +1530,7 @@ func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 		"tenant_id": tenantID.String(),
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create scan task")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create scan task")
 		return
 	}
 
@@ -1537,11 +1538,11 @@ func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 	info, err := h.Client.Enqueue(task)
 	if err != nil {
 		slog.Error("control: trigger security scan", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue security scan")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enqueue security scan")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"task_id": info.ID,
 			"status":  "enqueued",
@@ -1564,11 +1565,11 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 		Reason    *string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.CIDR == "" || input.BlockType == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "cidr and block_type are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "cidr and block_type are required")
 		return
 	}
 	block, err := h.SpamStore.CreateIPBlock(r.Context(), spam.CreateIPBlockInput{
@@ -1580,10 +1581,10 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("control: create ip block", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create IP block")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create IP block")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": block})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": block})
 }
 
 func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
@@ -1591,17 +1592,17 @@ func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid IP block ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid IP block ID")
 		return
 	}
 	if err := h.SpamStore.DeleteIPBlock(r.Context(), id, tenantID); err != nil {
 		slog.Error("control: delete ip block", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete IP block")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete IP block")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -1655,13 +1656,13 @@ func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
 	const monthToDateCost = 0.0
 	alertTriggered := threshold > 0 && monthToDateCost >= threshold
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"month_to_date_cost":    monthToDateCost,
-			"budget_threshold_usd":  threshold,
-			"alert_triggered":       alertTriggered,
-			"by_provider":           []any{},
-			"by_task_type":          []any{},
+			"month_to_date_cost":   monthToDateCost,
+			"budget_threshold_usd": threshold,
+			"alert_triggered":      alertTriggered,
+			"by_provider":          []any{},
+			"by_task_type":         []any{},
 		},
 	})
 }
@@ -1679,11 +1680,11 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 		BudgetThresholdUSD *float64 `json:"budget_threshold_usd"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.BudgetThresholdUSD == nil || *input.BudgetThresholdUSD < 0 {
-		writeError(w, http.StatusBadRequest, "invalid_threshold", "budget_threshold_usd must be a non-negative number")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_threshold", "budget_threshold_usd must be a non-negative number")
 		return
 	}
 
@@ -1694,7 +1695,7 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 		tenantID, aiBudgetThresholdKey, string(data),
 	); err != nil {
 		slog.Error("control: update ai budget", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI budget threshold")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI budget threshold")
 		return
 	}
 	if h.Settings != nil {
@@ -1704,13 +1705,13 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 	const monthToDateCost = 0.0
 	alertTriggered := threshold > 0 && monthToDateCost >= threshold
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"month_to_date_cost":    monthToDateCost,
-			"budget_threshold_usd":  threshold,
-			"alert_triggered":       alertTriggered,
-			"by_provider":           []any{},
-			"by_task_type":          []any{},
+			"month_to_date_cost":   monthToDateCost,
+			"budget_threshold_usd": threshold,
+			"alert_triggered":      alertTriggered,
+			"by_provider":          []any{},
+			"by_task_type":         []any{},
 		},
 	})
 }
@@ -1814,7 +1815,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.Reader.Query(r.Context(), query, args...)
 	if err != nil {
 		slog.Error("control: list audit logs", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list audit logs")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list audit logs")
 		return
 	}
 	defer rows.Close()
@@ -1837,7 +1838,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if logs == nil {
 		logs = []auditLog{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": logs})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": logs})
 }
 
 // auditLogDefaultRetentionDays is the fallback retention window for an
@@ -1852,20 +1853,20 @@ const auditLogDefaultRetentionDays = 365
 // a full cross-tenant super-admin view (see ListAuditLogs), so the lookup is
 // not tenant-scoped. Returns 404 when the row does not exist.
 func (h *Handlers) DeleteAuditLog(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid audit log ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid audit log ID")
 		return
 	}
 
 	q := gen.New(h.DB.Writer)
 	if err := q.DeleteAuditLog(r.Context(), id); err != nil {
 		slog.Error("control: delete audit log", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to delete audit log")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete audit log")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"id": id.String(), "status": "deleted"},
 	})
 }
@@ -1890,7 +1891,7 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 	var input AuditLogClearInput
 	if body, _ := io.ReadAll(r.Body); len(body) > 0 {
 		if err := json.Unmarshal(body, &input); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 			return
 		}
 	}
@@ -1903,7 +1904,7 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 	case input.Before != nil && *input.Before != "":
 		ts, err := time.Parse(time.RFC3339, *input.Before)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_before", "before must be an RFC3339 timestamp")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_before", "before must be an RFC3339 timestamp")
 			return
 		}
 		where = "created_at < $1"
@@ -1934,11 +1935,11 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 	tag, err := h.DB.Writer.Exec(r.Context(), query, args...)
 	if err != nil {
 		slog.Error("control: clear audit logs", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to clear audit logs")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to clear audit logs")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"cleared": tag.RowsAffected()},
 	})
 }
@@ -1948,11 +1949,11 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func (h *Handlers) ListDeployments(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": []map[string]any{
 			{
-				"version":  "1.0.0",
-				"status":   "active",
+				"version":     "1.0.0",
+				"status":      "active",
 				"deployed_at": h.StartTime.Format(time.RFC3339),
 			},
 		},
@@ -2081,14 +2082,14 @@ func (h *Handlers) ListCronJobs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": jobs})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": jobs})
 }
 
 // CreateCronJob handles POST /api/v1/control/cron/jobs.
 // Creates a custom cron entry stored in Valkey. The worker process picks it up.
 func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	var input struct {
@@ -2097,11 +2098,11 @@ func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 		Payload string `json:"payload"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Type == "" || input.Spec == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "type and spec are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "type and spec are required")
 		return
 	}
 
@@ -2110,16 +2111,16 @@ func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 	entry := cronCustomEntry{Type: input.Type, Spec: input.Spec, Payload: input.Payload}
 	data, err := json.Marshal(entry)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
+		httpx.WriteError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
 		return
 	}
 	if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 		slog.Error("control: create cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to save cron job")
+		httpx.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to save cron job")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{"id": id, "type": entry.Type, "spec": entry.Spec},
 	})
 }
@@ -2128,24 +2129,24 @@ func (h *Handlers) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 // Updates a custom cron entry in Valkey.
 func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
 		return
 	}
 
 	// Only custom entries can be edited
 	raw, err := h.Valkey.HGet(r.Context(), cronCustomKey(r.Context()), id).Result()
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Cron job not found (only custom jobs can be edited)")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Cron job not found (only custom jobs can be edited)")
 		return
 	}
 	var existing cronCustomEntry
 	if json.Unmarshal([]byte(raw), &existing) != nil {
-		writeError(w, http.StatusInternalServerError, "decode_error", "Failed to read existing entry")
+		httpx.WriteError(w, http.StatusInternalServerError, "decode_error", "Failed to read existing entry")
 		return
 	}
 
@@ -2155,7 +2156,7 @@ func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 		Payload *string `json:"payload"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Type != nil {
@@ -2168,22 +2169,22 @@ func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 		existing.Payload = *input.Payload
 	}
 	if existing.Type == "" || existing.Spec == "" {
-		writeError(w, http.StatusBadRequest, "missing_fields", "type and spec cannot be empty")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_fields", "type and spec cannot be empty")
 		return
 	}
 
 	data, err := json.Marshal(existing)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
+		httpx.WriteError(w, http.StatusInternalServerError, "marshal_error", "Failed to encode entry")
 		return
 	}
 	if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 		slog.Error("control: update cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to update cron job")
+		httpx.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to update cron job")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"id": id, "type": existing.Type, "spec": existing.Spec},
 	})
 }
@@ -2192,12 +2193,12 @@ func (h *Handlers) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 // Deletes a custom cron entry from Valkey or pauses a system entry (soft-delete).
 func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
 		return
 	}
 
@@ -2205,11 +2206,11 @@ func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 	deleted, err := h.Valkey.HDel(r.Context(), cronCustomKey(r.Context()), id).Result()
 	if err != nil {
 		slog.Error("control: delete cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to delete cron job")
+		httpx.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to delete cron job")
 		return
 	}
 	if deleted > 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "deleted"}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "deleted"}})
 		return
 	}
 
@@ -2217,11 +2218,11 @@ func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 	// Instead, mark as paused so it won't run.
 	if err := h.Valkey.SAdd(r.Context(), cronPausedKey(r.Context()), id).Err(); err != nil {
 		slog.Error("control: pause system cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause system cron job")
+		httpx.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to pause system cron job")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"id": id, "status": "paused", "note": "System jobs cannot be deleted; entry has been paused instead."},
 	})
 }
@@ -2229,12 +2230,12 @@ func (h *Handlers) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 // PauseCronJob handles POST /api/v1/control/cron/jobs/{id}/pause.
 func (h *Handlers) PauseCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
 		return
 	}
 
@@ -2246,10 +2247,10 @@ func (h *Handlers) PauseCronJob(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(ce)
 			if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 				slog.Error("control: pause custom cron job", "error", err)
-				writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
+				httpx.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "paused"}})
+			httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "paused"}})
 			return
 		}
 	}
@@ -2257,21 +2258,21 @@ func (h *Handlers) PauseCronJob(w http.ResponseWriter, r *http.Request) {
 	// System entry — add to paused set
 	if err := h.Valkey.SAdd(r.Context(), cronPausedKey(r.Context()), id).Err(); err != nil {
 		slog.Error("control: pause system cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
+		httpx.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to pause cron job")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "paused"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "paused"}})
 }
 
 // UnpauseCronJob handles POST /api/v1/control/cron/jobs/{id}/unpause.
 func (h *Handlers) UnpauseCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
 		return
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_id", "Job ID is required")
 		return
 	}
 
@@ -2283,10 +2284,10 @@ func (h *Handlers) UnpauseCronJob(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(ce)
 			if err := h.Valkey.HSet(r.Context(), cronCustomKey(r.Context()), id, string(data)).Err(); err != nil {
 				slog.Error("control: unpause custom cron job", "error", err)
-				writeError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
+				httpx.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "active"}})
+			httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "active"}})
 			return
 		}
 	}
@@ -2294,28 +2295,28 @@ func (h *Handlers) UnpauseCronJob(w http.ResponseWriter, r *http.Request) {
 	// System entry — remove from paused set
 	if err := h.Valkey.SRem(r.Context(), cronPausedKey(r.Context()), id).Err(); err != nil {
 		slog.Error("control: unpause system cron job", "error", err)
-		writeError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
+		httpx.WriteError(w, http.StatusInternalServerError, "redis_error", "Failed to unpause cron job")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "active"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "active"}})
 }
 
 // TriggerCronJob handles POST /api/v1/control/cron/jobs/{id}/trigger.
 // Enqueues the scheduler entry's task immediately (one-off run).
 func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
 	if h.Client == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_client", "Asynq client not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "no_client", "Asynq client not available")
 		return
 	}
 	if h.Inspector == nil {
-		writeError(w, http.StatusServiceUnavailable, "no_inspector", "Asynq inspector not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Asynq inspector not available")
 		return
 	}
 
 	id := chi.URLParam(r, "id")
 	entries, err := h.Inspector.SchedulerEntries()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "scheduler_error", "Failed to load cron jobs")
+		httpx.WriteError(w, http.StatusInternalServerError, "scheduler_error", "Failed to load cron jobs")
 		return
 	}
 
@@ -2324,10 +2325,10 @@ func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if _, err := h.Client.Enqueue(e.Task, asynq.Queue(worker.QueueForTask(e.Task.Type()))); err != nil {
-			writeError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
+			httpx.WriteError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": e.ID, "status": "enqueued"}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": e.ID, "status": "enqueued"}})
 		return
 	}
 
@@ -2338,51 +2339,29 @@ func (h *Handlers) TriggerCronJob(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal([]byte(raw), &ce) == nil && ce.Type != "" {
 				task := asynq.NewTask(ce.Type, []byte(ce.Payload))
 				if _, err := h.Client.Enqueue(task, asynq.Queue(worker.QueueForTask(ce.Type))); err != nil {
-					writeError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
+					httpx.WriteError(w, http.StatusInternalServerError, "enqueue_error", "Failed to trigger cron job")
 					return
 				}
-				writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "enqueued"}})
+				httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "status": "enqueued"}})
 				return
 			}
 		}
 	}
 
-	writeError(w, http.StatusNotFound, "not_found", "Cron job not found")
+	httpx.WriteError(w, http.StatusNotFound, "not_found", "Cron job not found")
 }
 
 // ListTaskTypes handles GET /control/task-types — returns the full Asynq task
 // type catalog with name, tier, and description for the cron job editor UI.
 func (h *Handlers) ListTaskTypes(w http.ResponseWriter, r *http.Request) {
 	taskTypes := worker.TaskTypeCatalog()
-	writeJSON(w, http.StatusOK, map[string]any{"data": taskTypes})
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("control: json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, err
-	}
-	return id, nil
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": taskTypes})
 }
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
@@ -2391,7 +2370,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
 	return u.UserID, true

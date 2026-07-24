@@ -15,11 +15,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -39,21 +39,11 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-// parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, err
-	}
-
-	return id, nil
-}
-
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -64,7 +54,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -75,29 +65,12 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.
@@ -156,7 +129,7 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int64{
 			"points":  points,
 			"credits": credits,
@@ -182,7 +155,7 @@ func (h *Handlers) GetPointsBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"points": points}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"points": points}})
 }
 
 // GetCreditsBalance handles GET /api/v1/me/wallet/credits.
@@ -203,7 +176,7 @@ func (h *Handlers) GetCreditsBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"credits": credits}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"credits": credits}})
 }
 
 // GetLedger handles GET /api/v1/wallet/ledger.
@@ -233,7 +206,7 @@ func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": entries})
 }
 
 // ConvertPoints handles POST /api/v1/wallet/convert.
@@ -253,12 +226,12 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.PointsToConvert <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_amount", "Points to convert must be positive")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_amount", "Points to convert must be positive")
 		return
 	}
 
@@ -272,7 +245,7 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int64{
 			"points_balance":  pointsBalance,
 			"credits_balance": creditsBalance,
@@ -298,7 +271,7 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
 }
 
 // UpdateSettings handles PUT /api/v1/wallet/settings.
@@ -320,12 +293,12 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.PointsToCreditsRate <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_rate", "points_to_credits_rate must be positive")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_rate", "points_to_credits_rate must be positive")
 		return
 	}
 
@@ -339,7 +312,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
 }
 
 // ListRules handles GET /api/v1/wallet/rules.
@@ -363,7 +336,7 @@ func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rules})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": rules})
 }
 
 // CreateOrUpdateRule handles POST /api/v1/wallet/rules.
@@ -388,12 +361,12 @@ func (h *Handlers) CreateOrUpdateRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.ActivityKey == "" {
-		writeError(w, http.StatusBadRequest, "missing_activity_key", "activity_key is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_activity_key", "activity_key is required")
 		return
 	}
 
@@ -410,7 +383,7 @@ func (h *Handlers) CreateOrUpdateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": rule})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": rule})
 }
 
 // ToggleRule handles PATCH /api/v1/wallet/rules/{id}/toggle.
@@ -425,9 +398,9 @@ func (h *Handlers) ToggleRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID")
 		return
 	}
 
@@ -437,7 +410,7 @@ func (h *Handlers) ToggleRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": rule})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": rule})
 }
 
 // DeleteRule handles DELETE /api/v1/admin/wallet/rules/{id}.
@@ -452,9 +425,9 @@ func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid rule ID")
 		return
 	}
 
@@ -463,7 +436,7 @@ func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }
 
 // AdminAdjust handles POST /api/v1/wallet/admin/adjust.
@@ -487,27 +460,27 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	if input.UserID == "" {
-		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
 	}
 
 	if input.LedgerType == "" {
-		writeError(w, http.StatusBadRequest, "missing_ledger_type", "ledger_type is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_ledger_type", "ledger_type is required")
 		return
 	}
 
 	if input.Amount == 0 {
-		writeError(w, http.StatusBadRequest, "invalid_amount", "Amount cannot be zero")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_amount", "Amount cannot be zero")
 		return
 	}
 
 	if input.Reason == "" {
-		writeError(w, http.StatusBadRequest, "missing_reason", "Reason is required for admin adjustments")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_reason", "Reason is required for admin adjustments")
 		return
 	}
 
@@ -525,7 +498,7 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int64{
 			"balance": balance,
 		},
@@ -544,9 +517,9 @@ func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := parseUUIDParam(r, "userId")
+	userID, err := httpx.ParseUUIDParam(r, "userId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
 		return
 	}
 
@@ -556,7 +529,7 @@ func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int64{
 			"points":  points,
 			"credits": credits,

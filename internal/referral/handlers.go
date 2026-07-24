@@ -11,12 +11,12 @@ package referral
 import (
 	"encoding/json"
 	"log/slog"
-	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -39,25 +39,10 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -82,20 +67,6 @@ func parsePageSize(r *http.Request) int32 {
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
-func parseOffset(r *http.Request) int32 {
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			if n > math.MaxInt32 {
-				return defaultPageSize
-			}
-
-			return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
-		}
-	}
-
-	return 0
-}
-
 // ---------------------------------------------------------------------------
 // Admin Handlers — Referral Program
 // ---------------------------------------------------------------------------
@@ -111,12 +82,12 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 	program, err := h.Service.GetProgram(r.Context(), tenantID)
 	if err != nil {
 		slog.Error("getting referral program", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get program")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get program")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": program})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": program})
 }
 
 // UpdateProgram updates the referral program settings.
@@ -137,19 +108,19 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
 	program, err := h.Service.UpdateProgram(r.Context(), tenantID, input.ReferrerRewardCents, input.RefereeRewardCents, input.MaxReferrals, input.CookieDays, input.IsActive, input.Description)
 	if err != nil {
 		slog.Error("updating referral program", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update program")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update program")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": program})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": program})
 }
 
 // ListReferrals returns all referrals for the tenant.
@@ -161,17 +132,17 @@ func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePageSize(r)
-	offset := parseOffset(r)
+	offset := httpx.ParseOffset(r)
 
 	referrals, err := h.Service.ListReferrals(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("listing referrals", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list referrals")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list referrals")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": referrals})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": referrals})
 }
 
 // GetReferral returns a single referral by ID.
@@ -184,15 +155,15 @@ func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid referral ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid referral ID")
 		return
 	}
 
 	referral, err := h.Service.GetReferral(r.Context(), tenantID, id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", "Referral not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Referral not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": referral})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": referral})
 }

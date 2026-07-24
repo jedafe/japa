@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // Sentinel-like errors for testing handleServiceError. These must wrap the
@@ -30,7 +31,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeJSON(rr, http.StatusOK, map[string]any{"data": "ok"})
+	httpx.WriteJSON(rr, http.StatusOK, map[string]any{"data": "ok"})
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
@@ -55,7 +56,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeError(rr, http.StatusBadRequest, "missing_body", "Comment body is required")
+	httpx.WriteError(rr, http.StatusBadRequest, "missing_body", "Comment body is required")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
@@ -133,9 +134,9 @@ func TestParseUUIDParam(t *testing.T) {
 			rctx.URLParams.Add("id", tt.value)
 			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 
-			got, err := parseUUIDParam(r, "id")
+			got, err := httpx.ParseUUIDParam(r, "id")
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("parseUUIDParam() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("httpx.ParseUUIDParam() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
 			if !tt.wantErr && !got.Valid {

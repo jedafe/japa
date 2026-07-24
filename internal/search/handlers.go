@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/meilisearch/meilisearch-go"
 )
@@ -87,23 +88,6 @@ type SearchResponse struct { //nolint:revive // stuttering type name preserved f
 	Results []SearchResult `json:"results"`
 }
 
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 // Search handles GET /api/v1/search?q=...&type=...&limit=20.
 //
 // It resolves the authenticated user and tenant from the request context,
@@ -113,24 +97,24 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		writeError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
 		return
 	}
 
 	if len([]rune(query)) < 2 {
-		writeError(w, http.StatusBadRequest, "query_too_short", "Query must be at least 2 characters")
+		httpx.WriteError(w, http.StatusBadRequest, "query_too_short", "Query must be at least 2 characters")
 		return
 	}
 
@@ -139,7 +123,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 
 	// Graceful degradation: no Meilisearch client configured or reachable.
 	if h.client == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": SearchResponse{Results: []SearchResult{}},
 		})
 
@@ -149,12 +133,12 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, t.ID, typeFilter)
 	if err != nil {
 		slog.Warn("search query failed", "query", query, "error", err)
-		writeError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": SearchResponse{Results: results},
 	})
 
@@ -172,43 +156,43 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		writeError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
 		return
 	}
 
 	if len([]rune(query)) < 2 {
-		writeError(w, http.StatusBadRequest, "query_too_short", "Query must be at least 2 characters")
+		httpx.WriteError(w, http.StatusBadRequest, "query_too_short", "Query must be at least 2 characters")
 		return
 	}
 
 	limit := parseLimit(r.URL.Query().Get("limit"))
 
 	if h.client == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: []SearchResult{}}})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: []SearchResult{}}})
 		return
 	}
 
 	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, t.ID, "space")
 	if err != nil {
 		slog.Warn("space search query failed", "query", query, "error", err)
-		writeError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: results}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: results}})
 
 	var userID pgtype.UUID
 	if user.UserID != (pgtype.UUID{}) {
@@ -339,18 +323,18 @@ type AutocompleteResponse struct {
 func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		writeError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
 		return
 	}
 
 	if len([]rune(query)) < 2 {
-		writeError(w, http.StatusBadRequest, "query_too_short", "Query must be at least 2 characters")
+		httpx.WriteError(w, http.StatusBadRequest, "query_too_short", "Query must be at least 2 characters")
 		return
 	}
 
@@ -364,7 +348,7 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.client == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": AutocompleteResponse{Suggestions: []AutocompleteSuggestion{}},
 		})
 		return
@@ -373,11 +357,11 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	suggestions, err := h.runAutocomplete(r.Context(), query, limit, t.ID)
 	if err != nil {
 		slog.Warn("autocomplete query failed", "query", query, "error", err)
-		writeError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": AutocompleteResponse{Suggestions: suggestions},
 	})
 }
@@ -459,32 +443,32 @@ func mapAutocompleteResults(resp *meilisearch.MultiSearchResponse) []Autocomplet
 func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	spaceID := r.PathValue("id")
 	if spaceID == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", "Space ID is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_param", "Space ID is required")
 		return
 	}
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		writeError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
 		return
 	}
 
 	limit := parseLimit(r.URL.Query().Get("limit"))
 
 	if h.client == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": SearchResponse{Results: []SearchResult{}},
 		})
 		return
@@ -507,7 +491,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.client.Index(IndexPosts).SearchWithContext(r.Context(), query, req)
 	if err != nil {
 		slog.Warn("space search failed", "space_id", spaceID, "error", err)
-		writeError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
 		return
 	}
 
@@ -522,7 +506,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": SearchResponse{Results: results},
 	})
 }
@@ -533,32 +517,32 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	tagSlug := r.PathValue("slug")
 	if tagSlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_param", "Tag slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_param", "Tag slug is required")
 		return
 	}
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		writeError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_query", "Query parameter 'q' is required")
 		return
 	}
 
 	limit := parseLimit(r.URL.Query().Get("limit"))
 
 	if h.client == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": SearchResponse{Results: []SearchResult{}},
 		})
 		return
@@ -577,7 +561,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.client.Index(IndexPosts).SearchWithContext(r.Context(), query, req)
 	if err != nil {
 		slog.Warn("tag search failed", "tag_slug", tagSlug, "error", err)
-		writeError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
 		return
 	}
 
@@ -592,7 +576,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": SearchResponse{Results: results},
 	})
 }
@@ -604,12 +588,12 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	if h.queries == nil {
-		writeError(w, http.StatusServiceUnavailable, "analytics_unavailable", "Analytics not configured")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "analytics_unavailable", "Analytics not configured")
 		return
 	}
 
@@ -639,7 +623,7 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 	})
 	if err != nil {
 		slog.Warn("failed to fetch search analytics", "error", err)
-		writeError(w, http.StatusInternalServerError, "analytics_error", "Failed to fetch analytics")
+		httpx.WriteError(w, http.StatusInternalServerError, "analytics_error", "Failed to fetch analytics")
 		return
 	}
 
@@ -652,7 +636,7 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 	})
 	if err != nil {
 		slog.Warn("failed to fetch zero-result queries", "error", err)
-		writeError(w, http.StatusInternalServerError, "analytics_error", "Failed to fetch analytics")
+		httpx.WriteError(w, http.StatusInternalServerError, "analytics_error", "Failed to fetch analytics")
 		return
 	}
 
@@ -663,11 +647,11 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 	})
 	if err != nil {
 		slog.Warn("failed to fetch search volume", "error", err)
-		writeError(w, http.StatusInternalServerError, "analytics_error", "Failed to fetch analytics")
+		httpx.WriteError(w, http.StatusInternalServerError, "analytics_error", "Failed to fetch analytics")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"period":              period,
 			"top_queries":         topQueries,

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -25,18 +25,10 @@ func NewHandlers(service *Service) *Handlers {
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
 		return pgtype.UUID{}, false
 	}
 	return t.ID, true
-}
-
-func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, name)); err != nil {
-		return pgtype.UUID{}, err
-	}
-	return id, nil
 }
 
 func parsePageSize(r *http.Request) int32 {
@@ -66,32 +58,18 @@ func parsePageOffset(r *http.Request) int32 {
 	return int32(n)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if v != nil {
-		json.NewEncoder(w).Encode(v)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
-}
-
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrRedirectNotFound):
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		httpx.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrInvalidHTTPStatus):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, ErrDuplicateSourcePath):
-		writeError(w, http.StatusConflict, "already_exists", err.Error())
+		httpx.WriteError(w, http.StatusConflict, "already_exists", err.Error())
 	case errors.Is(err, errpkg.ErrRequired):
-		writeError(w, http.StatusBadRequest, "validation_error", err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 	}
 }
 
@@ -115,7 +93,7 @@ func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
@@ -123,9 +101,9 @@ func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
 		return
 	}
 	redirect, err := h.Service.GetRedirect(r.Context(), id, tenantID)
@@ -133,7 +111,7 @@ func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": redirect})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": redirect})
 }
 
 func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
@@ -148,11 +126,11 @@ func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 		Notes      *string `json:"notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 	if input.SourcePath == "" || input.TargetURL == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "source_path and target_url are required")
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", "source_path and target_url are required")
 		return
 	}
 	if input.HTTPStatus == 0 {
@@ -163,7 +141,7 @@ func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": redirect})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": redirect})
 }
 
 func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
@@ -171,9 +149,9 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
 		return
 	}
 	var input struct {
@@ -184,7 +162,7 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 		Notes      *string `json:"notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 	redirect, err := h.Service.UpdateRedirect(r.Context(), id, tenantID, input.SourcePath, input.TargetURL, input.HTTPStatus, input.IsActive, input.Notes)
@@ -192,7 +170,7 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": redirect})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": redirect})
 }
 
 func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
@@ -200,16 +178,16 @@ func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
 		return
 	}
 	if err := h.Service.DeleteRedirect(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 func (h *Handlers) BulkAction(w http.ResponseWriter, r *http.Request) {
@@ -219,16 +197,16 @@ func (h *Handlers) BulkAction(w http.ResponseWriter, r *http.Request) {
 	}
 	var input BulkActionInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 	if input.Action == "" || len(input.Ids) == 0 {
-		writeError(w, http.StatusBadRequest, "validation_error", "action and ids are required")
+		httpx.WriteError(w, http.StatusBadRequest, "validation_error", "action and ids are required")
 		return
 	}
 	if err := h.Service.BulkAction(r.Context(), tenantID, input); err != nil {
 		handleServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }

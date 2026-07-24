@@ -10,7 +10,6 @@ package pagebuilder
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -35,21 +35,11 @@ func NewHandlers(service *Service) *Handlers {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-// parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, param)); err != nil {
-		return pgtype.UUID{}, err
-	}
-
-	return id, nil
-}
-
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
 
@@ -60,7 +50,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 
@@ -71,29 +61,12 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
-}
-
-// writeJSON serializes the given value as JSON and writes it to the response.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("json encode error", "error", err)
-	}
-}
-
-// writeError writes a JSON error response following the JapaConnect API format.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
 }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +86,7 @@ func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": blocks})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": blocks})
 }
 
 // GetBlock handles GET /api/v1/admin/pagebuilder/blocks/{id}.
@@ -123,9 +96,9 @@ func (h *Handlers) GetBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -135,7 +108,7 @@ func (h *Handlers) GetBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": block})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": block})
 }
 
 // CreateBlock handles POST /api/v1/admin/pagebuilder/blocks.
@@ -147,7 +120,7 @@ func (h *Handlers) CreateBlock(w http.ResponseWriter, r *http.Request) {
 
 	var input CreateBlockInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -157,7 +130,7 @@ func (h *Handlers) CreateBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": block})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": block})
 }
 
 // UpdateBlock handles PATCH /api/v1/admin/pagebuilder/blocks/{id}.
@@ -167,15 +140,15 @@ func (h *Handlers) UpdateBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	var input UpdateBlockInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -185,7 +158,7 @@ func (h *Handlers) UpdateBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": block})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": block})
 }
 
 // DeleteBlock handles DELETE /api/v1/admin/pagebuilder/blocks/{id}.
@@ -195,9 +168,9 @@ func (h *Handlers) DeleteBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -206,7 +179,7 @@ func (h *Handlers) DeleteBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +199,7 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": templates})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": templates})
 }
 
 // GetTemplate handles GET /api/v1/admin/pagebuilder/templates/{id}.
@@ -236,9 +209,9 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -248,7 +221,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tmpl})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tmpl})
 }
 
 // CreateTemplate handles POST /api/v1/admin/pagebuilder/templates.
@@ -260,7 +233,7 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 
 	var input CreateTemplateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -270,7 +243,7 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": tmpl})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": tmpl})
 }
 
 // UpdateTemplate handles PATCH /api/v1/admin/pagebuilder/templates/{id}.
@@ -280,15 +253,15 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	var input UpdateTemplateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -298,7 +271,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tmpl})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tmpl})
 }
 
 // DeleteTemplate handles DELETE /api/v1/admin/pagebuilder/templates/{id}.
@@ -308,9 +281,9 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -319,7 +292,7 @@ func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +312,7 @@ func (h *Handlers) ListThemes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": themes})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": themes})
 }
 
 // GetTheme handles GET /api/v1/admin/pagebuilder/themes/{id}.
@@ -349,9 +322,9 @@ func (h *Handlers) GetTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -361,7 +334,7 @@ func (h *Handlers) GetTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": theme})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": theme})
 }
 
 // CreateTheme handles POST /api/v1/admin/pagebuilder/themes.
@@ -373,7 +346,7 @@ func (h *Handlers) CreateTheme(w http.ResponseWriter, r *http.Request) {
 
 	var input CreateThemeInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -383,7 +356,7 @@ func (h *Handlers) CreateTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": theme})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": theme})
 }
 
 // UpdateTheme handles PATCH /api/v1/admin/pagebuilder/themes/{id}.
@@ -393,15 +366,15 @@ func (h *Handlers) UpdateTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	var input UpdateThemeInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -411,7 +384,7 @@ func (h *Handlers) UpdateTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": theme})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": theme})
 }
 
 // DeleteTheme handles DELETE /api/v1/admin/pagebuilder/themes/{id}.
@@ -421,9 +394,9 @@ func (h *Handlers) DeleteTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -432,7 +405,7 @@ func (h *Handlers) DeleteTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // SetDefaultTheme handles POST /api/v1/admin/pagebuilder/themes/{id}/default.
@@ -442,9 +415,9 @@ func (h *Handlers) SetDefaultTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -453,7 +426,7 @@ func (h *Handlers) SetDefaultTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"message": "theme set as default"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"message": "theme set as default"})
 }
 
 // ---------------------------------------------------------------------------
@@ -473,7 +446,7 @@ func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 }
 
 // GetPage handles GET /api/v1/admin/pages/{id}.
@@ -483,9 +456,9 @@ func (h *Handlers) GetPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -495,7 +468,7 @@ func (h *Handlers) GetPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // CreatePage handles POST /api/v1/admin/pages.
@@ -512,7 +485,7 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 
 	var input CreatePageInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -522,7 +495,7 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": page})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": page})
 }
 
 // UpdatePage handles PATCH /api/v1/admin/pages/{id}.
@@ -532,15 +505,15 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
 	var input UpdatePageInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -550,7 +523,7 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // DeletePage handles DELETE /api/v1/admin/pages/{id}.
@@ -560,9 +533,9 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -571,7 +544,7 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // PublishPage handles POST /api/v1/admin/pages/{id}/publish.
@@ -581,9 +554,9 @@ func (h *Handlers) PublishPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -593,7 +566,7 @@ func (h *Handlers) PublishPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // ArchivePage handles POST /api/v1/admin/pages/{id}/archive.
@@ -603,9 +576,9 @@ func (h *Handlers) ArchivePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
 
@@ -615,7 +588,7 @@ func (h *Handlers) ArchivePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // ReorderBlocks handles PATCH /admin/pages/{id}/blocks/reorder.
@@ -630,9 +603,9 @@ func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
 		return
 	}
 
@@ -641,7 +614,7 @@ func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
@@ -651,7 +624,7 @@ func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // GetPublishedPage handles GET /pages/{slug} — public endpoint, no auth required.
@@ -663,7 +636,7 @@ func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -673,7 +646,7 @@ func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": page})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
 // ─── P5.6 Pagebuilder Extras ─────────────────────────────────────────────
@@ -684,20 +657,20 @@ func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	pageID, err := parseUUIDParam(r, "id")
+	pageID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
 		return
 	}
 	var input struct {
 		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "missing_name", "Template name is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_name", "Template name is required")
 		return
 	}
 	template, err := h.Service.CreateTemplate(r.Context(), tenantID, CreateTemplateInput{
@@ -711,7 +684,7 @@ func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = pageID
-	writeJSON(w, http.StatusCreated, map[string]any{"data": template})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": template})
 }
 
 func slugify(s string) string {

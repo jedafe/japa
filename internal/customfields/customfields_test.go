@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // requestWithURLParam builds a request whose chi route context carries the
@@ -206,7 +207,7 @@ func TestWriteJSON(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeJSON(rr, http.StatusCreated, map[string]string{"status": "ok"})
+	httpx.WriteJSON(rr, http.StatusCreated, map[string]string{"status": "ok"})
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusCreated)
@@ -230,7 +231,7 @@ func TestWriteError(t *testing.T) {
 	t.Parallel()
 
 	rr := httptest.NewRecorder()
-	writeError(rr, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+	httpx.WriteError(rr, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
@@ -252,7 +253,7 @@ func TestParseUUIDParam(t *testing.T) {
 	const valid = "550e8400-e29b-41d4-a716-446655440000"
 	r := requestWithURLParam(http.MethodGet, "/", "id", valid, "")
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
 		t.Fatalf("parseUUIDParam valid UUID: %v", err)
 	}
@@ -262,7 +263,7 @@ func TestParseUUIDParam(t *testing.T) {
 	}
 
 	r2 := requestWithURLParam(http.MethodGet, "/", "id", "not-a-uuid", "")
-	if _, err := parseUUIDParam(r2, "id"); err == nil {
+	if _, err := httpx.ParseUUIDParam(r2, "id"); err == nil {
 		t.Fatal("expected error for invalid UUID, got nil")
 	}
 }

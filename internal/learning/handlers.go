@@ -14,6 +14,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -97,46 +98,46 @@ func (h *Handlers) enqueueIssueCertificate(userID, trackID, tenantID pgtype.UUID
 func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	tracks, err := h.store.ListPublishedTracks(r.Context(), t.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tracks})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
 
 // GetTrackDetail returns a published track with its modules and lesson counts.
 func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Track slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Track slug is required")
 		return
 	}
 
 	track, err := h.store.GetTrackBySlug(r.Context(), t.ID, slug)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "track_not_found", "Track not found")
+		httpx.WriteError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
 	}
 
 	modules, err := h.store.ListModulesByTrack(r.Context(), t.ID, track.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list modules")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list modules")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"track":   track,
 			"modules": modules,
@@ -148,7 +149,7 @@ func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -157,42 +158,42 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 	lessonSlug := chi.URLParam(r, "lessonSlug")
 
 	if trackSlug == "" || moduleSlug == "" || lessonSlug == "" {
-		writeError(w, http.StatusBadRequest, "missing_params", "Track, module, and lesson slugs are required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_params", "Track, module, and lesson slugs are required")
 		return
 	}
 
 	track, err := h.store.GetTrackBySlug(r.Context(), t.ID, trackSlug)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "track_not_found", "Track not found")
+		httpx.WriteError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
 	}
 
 	module, err := h.store.GetModuleBySlug(r.Context(), t.ID, track.ID, moduleSlug)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "module_not_found", "Module not found")
+		httpx.WriteError(w, http.StatusNotFound, "module_not_found", "Module not found")
 		return
 	}
 
 	lesson, err := h.store.GetLessonBySlug(r.Context(), t.ID, module.ID, lessonSlug)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		httpx.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": lesson})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": lesson})
 }
 
 // UpdateProgress records or updates a user's progress on a lesson.
 func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -201,14 +202,14 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	var lessonID pgtype.UUID
 
 	if err := lessonID.Scan(lessonIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
 	}
 
 	// Verify the lesson exists and belongs to this tenant.
 	lesson, err := h.store.GetLessonByID(r.Context(), t.ID, lessonID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		httpx.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
 	}
 
@@ -216,7 +217,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 
 	var input UpdateProgressInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
@@ -225,13 +226,13 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if input.Status != "not_started" && input.Status != "in_progress" && input.Status != "completed" {
-		writeError(w, http.StatusBadRequest, "invalid_status", "Status must be not_started, in_progress, or completed")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be not_started, in_progress, or completed")
 		return
 	}
 
 	progress, err := h.store.UpsertProgress(r.Context(), t.ID, user.UserID, lessonID, input)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to update progress")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update progress")
 		return
 	}
 
@@ -240,24 +241,24 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		h.maybeIssueCertificate(r.Context(), t.ID, user.UserID, lesson.ModuleID)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": progress})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": progress})
 }
 
 // GetMyCertificates returns all certificates earned by the authenticated user.
 func (h *Handlers) GetMyCertificates(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	certs, err := h.store.ListCertificatesByUser(r.Context(), user.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list certificates")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list certificates")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": certs})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": certs})
 }
 
 // ---------------------------------------------------------------------------
@@ -268,40 +269,40 @@ func (h *Handlers) GetMyCertificates(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListAllTracks(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	tracks, err := h.store.ListAllTracks(r.Context(), t.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": tracks})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
 
 // CreateTrack creates a new learning track.
 func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	var input CreateTrackInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -311,18 +312,18 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 
 	track, err := h.store.CreateTrack(r.Context(), t.ID, input)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to create track")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to create track")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": track})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": track})
 }
 
 // UpdateTrack updates an existing track.
 func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -331,30 +332,30 @@ func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 	var id pgtype.UUID
 
 	if err := id.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
 
 	var input UpdateTrackInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	track, err := h.store.UpdateTrack(r.Context(), t.ID, id, input)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to update track")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update track")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": track})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
 // DeleteTrack removes a track and cascades to its modules and lessons.
 func (h *Handlers) DeleteTrack(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -363,23 +364,23 @@ func (h *Handlers) DeleteTrack(w http.ResponseWriter, r *http.Request) {
 	var id pgtype.UUID
 
 	if err := id.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
 
 	if err := h.store.DeleteTrack(r.Context(), t.ID, id); err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to delete track")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to delete track")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // CreateModule adds a module to a track.
 func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -388,40 +389,40 @@ func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
 	var trackID pgtype.UUID
 
 	if err := trackID.Scan(trackIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
 
 	var input CreateModuleInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
 	module, err := h.store.CreateModule(r.Context(), t.ID, trackID, input)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to create module")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to create module")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": module})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": module})
 }
 
 // UpdateModule updates an existing module.
 func (h *Handlers) UpdateModule(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -430,30 +431,30 @@ func (h *Handlers) UpdateModule(w http.ResponseWriter, r *http.Request) {
 	var id pgtype.UUID
 
 	if err := id.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid module ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid module ID")
 		return
 	}
 
 	var input UpdateModuleInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	module, err := h.store.UpdateModule(r.Context(), t.ID, id, input)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to update module")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update module")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": module})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": module})
 }
 
 // DeleteModule removes a module and cascades to its lessons.
 func (h *Handlers) DeleteModule(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -462,23 +463,23 @@ func (h *Handlers) DeleteModule(w http.ResponseWriter, r *http.Request) {
 	var id pgtype.UUID
 
 	if err := id.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid module ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid module ID")
 		return
 	}
 
 	if err := h.store.DeleteModule(r.Context(), t.ID, id); err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to delete module")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to delete module")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // CreateLesson adds a lesson to a module.
 func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -487,23 +488,23 @@ func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 	var moduleID pgtype.UUID
 
 	if err := moduleID.Scan(moduleIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid module ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid module ID")
 		return
 	}
 
 	var input CreateLessonInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	if input.Title == "" {
-		writeError(w, http.StatusBadRequest, "missing_title", "Title is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
 
 	if input.Slug == "" {
-		writeError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
 
@@ -513,18 +514,18 @@ func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 
 	lesson, err := h.store.CreateLesson(r.Context(), t.ID, moduleID, input)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to create lesson")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to create lesson")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": lesson})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": lesson})
 }
 
 // UpdateLesson updates an existing lesson.
 func (h *Handlers) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -533,30 +534,30 @@ func (h *Handlers) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 	var id pgtype.UUID
 
 	if err := id.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
 	}
 
 	var input UpdateLessonInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	lesson, err := h.store.UpdateLesson(r.Context(), t.ID, id, input)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to update lesson")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update lesson")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": lesson})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": lesson})
 }
 
 // DeleteLesson removes a lesson.
 func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
@@ -565,16 +566,16 @@ func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 	var id pgtype.UUID
 
 	if err := id.Scan(idStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
 	}
 
 	if err := h.store.DeleteLesson(r.Context(), t.ID, id); err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to delete lesson")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to delete lesson")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
 // ---------------------------------------------------------------------------
@@ -587,31 +588,31 @@ func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	trackIDStr := chi.URLParam(r, "id")
 	var trackID pgtype.UUID
 	if err := trackID.Scan(trackIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
 
 	track, err := h.store.GetTrackByID(r.Context(), t.ID, trackID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "track_not_found", "Track not found")
+		httpx.WriteError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
 	}
 
 	if !track.IsPublished {
-		writeError(w, http.StatusNotFound, "track_not_found", "Track not found")
+		httpx.WriteError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
 	}
 
@@ -622,11 +623,11 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 
 	enrollment, err := h.store.EnrollUser(r.Context(), user.UserID, trackID, accessType)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to enroll")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to enroll")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
 			"enrolled":    true,
 			"access_type": enrollment.AccessType,
@@ -639,17 +640,17 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListMyEnrollments(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	enrollments, err := h.store.ListEnrollmentsByUser(r.Context(), user.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list enrollments")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list enrollments")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": enrollments})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": enrollments})
 }
 
 // ---------------------------------------------------------------------------
@@ -660,24 +661,24 @@ func (h *Handlers) ListMyEnrollments(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	lessonIDStr := chi.URLParam(r, "id")
 	var lessonID pgtype.UUID
 	if err := lessonID.Scan(lessonIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
 	}
 
 	lesson, err := h.store.GetLessonByID(r.Context(), t.ID, lessonID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		httpx.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": lesson})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": lesson})
 }
 
 // ---------------------------------------------------------------------------
@@ -688,32 +689,32 @@ func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	lessonIDStr := chi.URLParam(r, "id")
 	var lessonID pgtype.UUID
 	if err := lessonID.Scan(lessonIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
 	}
 
 	lesson, err := h.store.GetLessonByID(r.Context(), t.ID, lessonID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		httpx.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
 	}
 
 	progress, err := h.store.UpsertProgress(r.Context(), t.ID, user.UserID, lessonID, UpdateProgressInput{Status: "completed"})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to complete lesson")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to complete lesson")
 		return
 	}
 
@@ -722,7 +723,7 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 	// Enqueue async track completion update — fire-and-forget.
 	h.enqueueTrackCompletionUpdate(user.UserID, lesson.ModuleID, t.ID)
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": progress})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": progress})
 }
 
 // ---------------------------------------------------------------------------
@@ -733,38 +734,38 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	lessonIDStr := chi.URLParam(r, "id")
 	var lessonID pgtype.UUID
 	if err := lessonID.Scan(lessonIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
 	}
 
 	questions, err := h.store.GetQuizQuestions(r.Context(), t.ID, lessonID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to get quiz questions")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to get quiz questions")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": questions})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": questions})
 }
 
 // SubmitQuiz handles POST /learn/quizzes/:id/submit.
 func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 
 	lessonIDStr := chi.URLParam(r, "id")
 	var lessonID pgtype.UUID
 	if err := lessonID.Scan(lessonIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
 	}
 
@@ -773,13 +774,13 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	questions, err := h.store.GetQuizQuestionsWithAnswers(r.Context(), t.ID, lessonID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to get quiz questions")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to get quiz questions")
 		return
 	}
 
@@ -802,7 +803,7 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 
 	passed := score >= 70
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"score":           score,
 			"passed":          passed,
@@ -822,17 +823,17 @@ func (h *Handlers) GetCertificateDetail(w http.ResponseWriter, r *http.Request) 
 	certIDStr := chi.URLParam(r, "id")
 	var certID pgtype.UUID
 	if err := certID.Scan(certIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid certificate ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid certificate ID")
 		return
 	}
 
 	cert, err := h.store.GetCertificateByID(r.Context(), certID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "certificate_not_found", "Certificate not found")
+		httpx.WriteError(w, http.StatusNotFound, "certificate_not_found", "Certificate not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": cert})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": cert})
 }
 
 // DownloadCertificate handles GET /certificates/:id/download.
@@ -840,18 +841,18 @@ func (h *Handlers) DownloadCertificate(w http.ResponseWriter, r *http.Request) {
 	certIDStr := chi.URLParam(r, "id")
 	var certID pgtype.UUID
 	if err := certID.Scan(certIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid certificate ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid certificate ID")
 		return
 	}
 
 	cert, err := h.store.GetCertificateByID(r.Context(), certID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "certificate_not_found", "Certificate not found")
+		httpx.WriteError(w, http.StatusNotFound, "certificate_not_found", "Certificate not found")
 		return
 	}
 
 	if cert.MediaID != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"download_url": fmt.Sprintf("/api/v1/media/%s", cert.MediaID.String()),
 			},
@@ -859,7 +860,7 @@ func (h *Handlers) DownloadCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"certificate_number": cert.CertificateNumber,
 			"issued_at":          cert.IssuedAt,
@@ -872,7 +873,7 @@ func (h *Handlers) DownloadCertificate(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetTrackProgress(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
@@ -881,17 +882,17 @@ func (h *Handlers) GetTrackProgress(w http.ResponseWriter, r *http.Request) {
 	var trackID pgtype.UUID
 
 	if err := trackID.Scan(trackIDStr); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
 
 	completed, total, err := h.store.GetUserTrackProgress(r.Context(), user.UserID, trackID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", "Failed to get progress")
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to get progress")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"completed": completed,
 			"total":     total,
@@ -935,40 +936,18 @@ func calculatePercent(completed, total int) float64 {
 	return float64(completed) / float64(total) * 100
 }
 
-// writeJSON sends a JSON response with the given status code.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		// Log encoding errors — the header is already sent so we cannot
-		// change the status code, but we should not silently swallow it.
-		slog.Error("learning: encode response", "error", err)
-	}
-}
-
-// writeError sends a structured JSON error response.
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
-	})
-}
-
 // ─── Admin Learning Extras (P5.6 — Task 14) ──────────────────────────────
 
 // ListTrackEnrollments handles GET /admin/learn/tracks/:id/enrollments.
 func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant")
 		return
 	}
 	var trackID pgtype.UUID
 	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
 
@@ -987,23 +966,23 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 	enrollments, err := h.store.ListEnrollmentsByTrack(r.Context(), t.ID, trackID, limit, offset)
 	if err != nil {
 		slog.Error("learning: list track enrollments", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list enrollments")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list enrollments")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": enrollments})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": enrollments})
 }
 
 // PublishTrack handles POST /admin/learn/tracks/:id/publish.
 func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant")
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant")
 		return
 	}
 	var trackID pgtype.UUID
 	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
 	published := true
@@ -1014,8 +993,8 @@ func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 		SortOrder:   0,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to publish track")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to publish track")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": trackID.String(), "published": true}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": trackID.String(), "published": true}})
 }

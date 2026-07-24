@@ -13,6 +13,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -24,23 +25,6 @@ type Handlers struct {
 // NewHandlers creates a Handlers instance with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("failed to encode json response", "error", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
-	})
 }
 
 func parsePageSize(r *http.Request) int32 {
@@ -84,7 +68,7 @@ func parsePageOffset(r *http.Request) int32 {
 func requireAuth(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
 	return user, true
@@ -93,30 +77,21 @@ func requireAuth(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func requireTenantID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	tid := tenant.IDFromContext(r.Context())
 	if !tid.Valid {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Tenant context required")
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Tenant context required")
 		return pgtype.UUID{}, false
 	}
 	return tid, true
 }
 
-func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
-	s := chi.URLParam(r, param)
-	var u pgtype.UUID
-	if err := u.Scan(s); err != nil {
-		return pgtype.UUID{}, err
-	}
-	return u, nil
-}
-
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
-		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
 		slog.Error("service error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
 }
 
@@ -144,7 +119,7 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 
 	var req createOrganizationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
 
@@ -156,7 +131,7 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // GetOrganization handles GET /organizations/{slug}.
@@ -174,7 +149,7 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ListOrganizations handles GET /organizations.
@@ -202,7 +177,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		totalPages = int32((total + int64(limit) - 1) / int64(limit))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"items":       items,
 			"total":       total,
@@ -233,15 +208,15 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
 	var req updateOrganizationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
 
@@ -270,7 +245,7 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization updated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization updated"}})
 }
 
 // DeleteOrganization handles DELETE /organizations/{id}.
@@ -285,9 +260,9 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
@@ -296,14 +271,14 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization deleted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization deleted"}})
 }
 
 // ListMembers handles GET /organizations/{id}/members.
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
-	orgID, err := parseUUIDParam(r, "id")
+	orgID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
@@ -313,7 +288,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 type addMemberRequest struct {
@@ -328,15 +303,15 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgID, err := parseUUIDParam(r, "id")
+	orgID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
 	var req addMemberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
 
@@ -354,7 +329,7 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"message": "Member added"}})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"message": "Member added"}})
 }
 
 // RemoveMember handles DELETE /organizations/{id}/members/{userId}.
@@ -364,15 +339,15 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgID, err := parseUUIDParam(r, "id")
+	orgID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
-	targetUserID, err := parseUUIDParam(r, "userId")
+	targetUserID, err := httpx.ParseUUIDParam(r, "userId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid member ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid member ID")
 		return
 	}
 
@@ -381,7 +356,7 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Member removed"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Member removed"}})
 }
 
 type updateMemberRoleRequest struct {
@@ -395,21 +370,21 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgID, err := parseUUIDParam(r, "id")
+	orgID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
-	targetUserID, err := parseUUIDParam(r, "userId")
+	targetUserID, err := httpx.ParseUUIDParam(r, "userId")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid member ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid member ID")
 		return
 	}
 
 	var req updateMemberRoleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
 
@@ -418,7 +393,7 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Member role updated"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Member role updated"}})
 }
 
 type inviteMemberRequest struct {
@@ -438,15 +413,15 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgID, err := parseUUIDParam(r, "id")
+	orgID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
 	var req inviteMemberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
 
@@ -458,7 +433,7 @@ func (h *Handlers) InviteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // ListInvitations handles GET /organizations/{id}/invitations.
@@ -468,9 +443,9 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgID, err := parseUUIDParam(r, "id")
+	orgID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
 
@@ -480,7 +455,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // AcceptInvitation handles POST /organizations/invitations/{token}/accept.
@@ -498,7 +473,7 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Invitation accepted"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Invitation accepted"}})
 }
 
 type claimOwnershipRequest struct {
@@ -521,7 +496,7 @@ func (h *Handlers) ClaimOwnership(w http.ResponseWriter, r *http.Request) {
 
 	var req claimOwnershipRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
 
@@ -536,7 +511,7 @@ func (h *Handlers) ClaimOwnership(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // ListClaims handles GET /claim-ownership.
@@ -554,7 +529,7 @@ func (h *Handlers) ListClaims(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 type reviewClaimRequest struct {
@@ -574,15 +549,15 @@ func (h *Handlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claimID, err := parseUUIDParam(r, "id")
+	claimID, err := httpx.ParseUUIDParam(r, "id")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid claim ID")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid claim ID")
 		return
 	}
 
 	var req reviewClaimRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
 
@@ -593,5 +568,5 @@ func (h *Handlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Claim reviewed"}})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Claim reviewed"}})
 }
