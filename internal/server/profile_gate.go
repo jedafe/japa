@@ -10,11 +10,12 @@ import (
 	"github.com/jedafe/japa/internal/users"
 )
 
-// requireActiveProfileUser gates /users/{id}/* public profile tabs: it 404s
-// unless {id} is an ACTIVE user in the request's tenant. This is the single
-// enforcement point for "the whole profile 404s for banned/suspended/deleted
-// users" — every profile tab route wraps its handler with it.
-func requireActiveProfileUser(usersSvc *users.Service) func(http.Handler) http.Handler {
+// requireActiveProfileUser gates public profile surfaces: it 404s unless the
+// user identified by the URL param named paramKey is an ACTIVE user in the
+// request's tenant. This is the single enforcement point for "the whole profile
+// 404s for banned/suspended/deleted users" — every profile route wraps its
+// handler with it. The tabs use "id"; the profile feed route uses "user_id".
+func requireActiveProfileUser(usersSvc *users.Service, paramKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t := tenant.FromContext(r.Context()) // returns *tenant.Tenant, nil if absent
@@ -24,7 +25,7 @@ func requireActiveProfileUser(usersSvc *users.Service) func(http.Handler) http.H
 			}
 
 			var userID pgtype.UUID
-			if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+			if err := userID.Scan(chi.URLParam(r, paramKey)); err != nil {
 				writeProfileGateError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
 				return
 			}
