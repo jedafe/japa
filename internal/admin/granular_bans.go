@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -74,7 +75,12 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var actorID pgtype.UUID
-	actorID.Scan(actor.UserID.String())
+	if err := actorID.Scan(actor.UserID.String()); err != nil {
+		slog.Error("restrict: invalid actor id", "error", err, "actor_id", actor.UserID.String())
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
+
+		return
+	}
 
 	ctx := r.Context()
 	for _, op := range input.Operations {
@@ -83,10 +89,16 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Soft-delete any existing active restriction for this user+operation first.
-		_ = h.Queries.SoftDeleteActiveOperationBan(ctx, gen.SoftDeleteActiveOperationBanParams{
+		if err := h.Queries.SoftDeleteActiveOperationBan(ctx, gen.SoftDeleteActiveOperationBanParams{
 			UserID:    uid,
 			Operation: gen.BanOperation(op),
-		})
+		}); err != nil {
+			slog.Error("restrict: failed to soft-delete existing operation ban",
+				"error", err, "user_id", uid.String(), "operation", op)
+			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
+
+			return
+		}
 		if err := h.Queries.CreateOperationBan(ctx, gen.CreateOperationBanParams{
 			UserID:    uid,
 			TenantID:  tenantID,
@@ -102,17 +114,18 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set user status to 'restricted'.
-	_ = h.Queries.UpdateUserStatus(ctx, gen.UpdateUserStatusParams{
+	if err := h.Queries.UpdateUserStatus(ctx, gen.UpdateUserStatusParams{
 		Status: "restricted",
 		ID:     uid,
-	})
+	}); err != nil {
+		slog.Error("restrict: failed to update user status", "error", err, "user_id", uid.String())
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
 
-	// Invalidate caches.
-	if h.Valkey != nil {
-		_ = rbac.InvalidatePermCache(ctx, h.Valkey, uid)
-		_ = h.Valkey.Del(ctx, "jc:ban:"+uid.String())
-		_ = h.Valkey.Del(ctx, "jc:restrictions:"+uid.String())
+		return
 	}
+
+	// Invalidate caches so the new restrictions take effect immediately.
+	h.invalidateUserAccessCaches(ctx, uid, restrictionsCacheKey(uid), banCacheKey(uid))
 
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"user_id":    uid.String(),
@@ -145,19 +158,23 @@ func (h *Handlers) LiftRestriction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If no active restrictions remain, restore user status to 'active'.
-	remaining, _ := h.Queries.CountActiveOperationBans(r.Context(), uid)
-	if remaining == 0 {
-		_ = h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
+	// If no active restrictions remain, restore user status to 'active'. On a
+	// count failure the status is left as-is rather than optimistically
+	// restoring access the user may not be entitled to.
+	remaining, err := h.Queries.CountActiveOperationBans(r.Context(), uid)
+	if err != nil {
+		slog.Error("lift restriction: failed to count active operation bans",
+			"error", err, "user_id", uid.String())
+	} else if remaining == 0 {
+		if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
 			Status: "active",
 			ID:     uid,
-		})
+		}); err != nil {
+			slog.Error("lift restriction: failed to restore user status", "error", err, "user_id", uid.String())
+		}
 	}
 
-	if h.Valkey != nil {
-		_ = rbac.InvalidatePermCache(r.Context(), h.Valkey, uid)
-		_ = h.Valkey.Del(r.Context(), "jc:restrictions:"+uid.String())
-	}
+	h.invalidateUserAccessCaches(r.Context(), uid, restrictionsCacheKey(uid))
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"user_id": uid.String(), "operation": op, "lifted": true})
 }
@@ -177,15 +194,14 @@ func (h *Handlers) LiftAllRestrictions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Restore user status to 'active' when all restrictions are lifted.
-	_ = h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
+	if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
 		Status: "active",
 		ID:     uid,
-	})
-
-	if h.Valkey != nil {
-		_ = rbac.InvalidatePermCache(r.Context(), h.Valkey, uid)
-		_ = h.Valkey.Del(r.Context(), "jc:restrictions:"+uid.String())
+	}); err != nil {
+		slog.Error("lift all restrictions: failed to restore user status", "error", err, "user_id", uid.String())
 	}
+
+	h.invalidateUserAccessCaches(r.Context(), uid, restrictionsCacheKey(uid))
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"user_id": uid.String(), "lifted_all": true})
 }
@@ -294,11 +310,7 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Invalidate all caches.
-	if h.Valkey != nil {
-		_ = rbac.InvalidatePermCache(ctx, h.Valkey, uid)
-		_ = h.Valkey.Del(ctx, "jc:ban:"+uid.String())
-		_ = h.Valkey.Del(ctx, "jc:restrictions:"+uid.String())
-	}
+	h.invalidateUserAccessCaches(ctx, uid, restrictionsCacheKey(uid), banCacheKey(uid))
 
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"user_id": uid.String(),
@@ -364,29 +376,38 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check warning count for auto-escalation.
-	count, _ := h.Queries.CountUserWarningsByType(ctx, gen.CountUserWarningsByTypeParams{
+	count, err := h.Queries.CountUserWarningsByType(ctx, gen.CountUserWarningsByTypeParams{
 		UserID:        uid,
 		ViolationType: &input.ViolationType,
 	})
+	if err != nil {
+		slog.Error("warn: failed to count warnings for auto-escalation",
+			"error", err, "user_id", uid.String(), "violation_type", input.ViolationType)
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to issue warning")
+
+		return
+	}
 
 	autoRestricted := false
 	if count >= 3 {
 		// Auto-escalate: restrict from related operations for 7 days.
 		ops := violationToOperations[input.ViolationType]
 		for _, op := range ops {
-			_ = h.Queries.CreateOperationBan(ctx, gen.CreateOperationBanParams{
+			if err := h.Queries.CreateOperationBan(ctx, gen.CreateOperationBanParams{
 				UserID:    uid,
 				TenantID:  tenantID,
 				Operation: gen.BanOperation(op),
 				Reason:    strPtr("Auto-restricted after 3 " + input.ViolationType + " warnings"),
 				Column5:   604800, // 7 days in seconds
-			})
+			}); err != nil {
+				slog.Error("warn: failed to auto-restrict operation",
+					"error", err, "user_id", uid.String(), "operation", op)
+			}
 		}
+
 		autoRestricted = len(ops) > 0
-		if h.Valkey != nil {
-			_ = rbac.InvalidatePermCache(ctx, h.Valkey, uid)
-			_ = h.Valkey.Del(ctx, "jc:restrictions:"+uid.String())
-		}
+
+		h.invalidateUserAccessCaches(ctx, uid, restrictionsCacheKey(uid))
 		slog.Warn("warn: auto-escalation triggered",
 			"user_id", uid.String(),
 			"violation_type", input.ViolationType,
@@ -403,3 +424,32 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// banCacheKey returns the Valkey key holding a user's cached ban state.
+func banCacheKey(uid pgtype.UUID) string { return "jc:ban:" + uid.String() }
+
+// restrictionsCacheKey returns the Valkey key holding a user's cached
+// per-operation restrictions.
+func restrictionsCacheKey(uid pgtype.UUID) string { return "jc:restrictions:" + uid.String() }
+
+// invalidateUserAccessCaches drops the cached RBAC permission set plus the
+// given Valkey keys for a user after a moderation action. Failures are logged
+// rather than returned — the write is already committed — but they are never
+// dropped silently, since a stale cache lets a restricted user keep acting.
+func (h *Handlers) invalidateUserAccessCaches(ctx context.Context, uid pgtype.UUID, keys ...string) {
+	if h.Valkey == nil {
+		return
+	}
+
+	if err := rbac.InvalidatePermCache(ctx, h.Valkey, uid); err != nil {
+		slog.Error("failed to invalidate permission cache", "error", err, "user_id", uid.String())
+	}
+
+	if len(keys) == 0 {
+		return
+	}
+
+	if err := h.Valkey.Del(ctx, keys...).Err(); err != nil {
+		slog.Error("failed to invalidate moderation cache", "error", err, "user_id", uid.String(), "keys", keys)
+	}
+}

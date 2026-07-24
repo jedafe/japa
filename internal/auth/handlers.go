@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/csrf"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -724,24 +725,11 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// clientIP extracts the client IP from the request, respecting
-// X-Forwarded-For and X-Real-IP headers set by the reverse proxy.
+// clientIP extracts the client IP from the request. Forwarding headers are
+// only honoured when the peer is a trusted proxy — the brute-force lockout is
+// keyed on this value, so a spoofable IP means unlimited password guesses.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	// Fall back to RemoteAddr, stripping the port
-	idx := strings.LastIndex(r.RemoteAddr, ":")
-	if idx > 0 {
-		return r.RemoteAddr[:idx]
-	}
-
-	return r.RemoteAddr
+	return clientip.FromRequest(r)
 }
 
 // rateLimitCheck performs a fixed-window rate limit check against Valkey using
@@ -789,7 +777,11 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	if h.VKClient != nil {
 		emailKey := "jc:ratelimit:forgot_password:" + req.Email
 
-		ok, _ := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 3, 10*time.Minute)
+		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 3, 10*time.Minute)
+		if err != nil {
+			slog.Error("forgot password: rate limit check failed, allowing request", "error", err)
+		}
+
 		if !ok {
 			httpx.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many password reset requests. Please try again later.")
 			return
@@ -1091,7 +1083,11 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	if h.VKClient != nil {
 		emailKey := "jc:ratelimit:resend_verification:" + req.Email
 
-		ok, _ := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 1, 5*time.Minute)
+		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 1, 5*time.Minute)
+		if err != nil {
+			slog.Error("resend verification: rate limit check failed, allowing request", "error", err)
+		}
+
 		if !ok {
 			httpx.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many verification email requests. Please try again later.")
 			return

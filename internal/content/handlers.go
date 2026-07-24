@@ -403,10 +403,14 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Increment view count (fire-and-forget, don't fail the request on error).
-	_ = h.Service.IncrementContentView(r.Context(), content.ID, tenantID)
+	if err := h.Service.IncrementContentView(r.Context(), content.ID, tenantID); err != nil {
+		slog.Error("incrementing content view", "error", err, "content_id", content.ID.String())
+	}
 
 	// Increment engagement view for velocity scoring (fire-and-forget).
-	_ = h.Service.IncrementEngagementView(r.Context(), content.ID)
+	if err := h.Service.IncrementEngagementView(r.Context(), content.ID); err != nil {
+		slog.Error("incrementing engagement view", "error", err, "content_id", content.ID.String())
+	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }

@@ -9,7 +9,8 @@
 //     process. Uses slog for structured logging so panics appear in the
 //     same log stream as other application logs.
 //  4. Logger — log every request with method, path, status, and duration.
-//  5. CORS — allow cross-origin requests from the SvelteKit frontends.
+//  5. SecurityHeaders — set nosniff, frame, referrer and CSP headers.
+//  6. CORS — allow cross-origin requests from the SvelteKit frontends.
 package server
 
 import (
@@ -17,13 +18,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	errtracking "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/httpx"
+	mw "github.com/jedafe/japa/internal/middleware"
 )
 
 // RegisterMiddleware attaches the standard middleware stack to the router.
@@ -33,6 +34,7 @@ func RegisterMiddleware(r *chi.Mux) {
 	// chimw.RealIP removed — deprecated due to IP spoofing vulnerabilities (GHSA-3fxj-6jh8-hvhx).
 	r.Use(recoveryMiddleware)
 	r.Use(chimw.Logger)
+	r.Use(mw.SecurityHeaders())
 	r.Use(corsMiddleware)
 }
 
@@ -86,6 +88,9 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 // the browser can proceed with the actual request immediately.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The response body varies by Origin, so caches must key on it.
+		w.Header().Add("Vary", "Origin")
+
 		origin := r.Header.Get("Origin")
 		if isOriginAllowed(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -105,105 +110,10 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 // isOriginAllowed returns true if the given origin should receive CORS
-// headers. In development, localhost and 127.0.0.1 with any port are allowed.
-// In production, only origins from JC_CORS_ORIGINS (comma-separated) are
-// permitted. The wildcard "*" is never allowed in production.
+// headers. The allowlist itself lives in internal/middleware so the
+// WebSocket upgrade check uses exactly the same rules.
 func isOriginAllowed(origin string) bool {
-	if origin == "" {
-		return false
-	}
-
-	env := strings.ToLower(strings.TrimSpace(os.Getenv("JC_ENV")))
-	isProd := env == "production"
-
-	if !isProd {
-		// Development: allow localhost and 127.0.0.1 with any port.
-		return isLocalOrigin(origin)
-	}
-
-	// Production: only allow explicitly configured origins.
-	// Never allow wildcard "*".
-	if origin == "*" {
-		return false
-	}
-
-	allowedCSV := os.Getenv("JC_CORS_ORIGINS")
-	if allowedCSV == "" {
-		// Fall back to production origins derived from JC_SITE_URL if env var not set.
-		return isDefaultProductionOrigin(origin, os.Getenv("JC_SITE_URL"))
-	}
-
-	for _, allowed := range strings.Split(allowedCSV, ",") {
-		allowed = strings.TrimSpace(allowed)
-		if allowed == "" || allowed == "*" {
-			continue // skip empty entries and never allow wildcard
-		}
-
-		if origin == allowed {
-			return true
-		}
-	}
-
-	return false
-}
-
-// isLocalOrigin returns true if the origin is localhost or 127.0.0.1
-// with any port, for development convenience.
-func isLocalOrigin(origin string) bool {
-	// Strip scheme for matching.
-	stripped := origin
-	if idx := strings.Index(origin, "://"); idx != -1 {
-		stripped = origin[idx+3:]
-	}
-	// Remove trailing port if present.
-	host := stripped
-	if idx := strings.LastIndex(stripped, ":"); idx != -1 {
-		host = stripped[:idx]
-	}
-
-	return host == "localhost" || host == "127.0.0.1" || host == "[::1]"
-}
-
-// isDefaultProductionOrigin checks against the production origins derived
-// from JC_SITE_URL when JC_CORS_ORIGINS is not set.
-func isDefaultProductionOrigin(origin string, siteURL string) bool {
-	if siteURL == "" {
-		return false
-	}
-
-	// Extract domain from siteURL (e.g. "https://example.com" -> "example.com")
-	domain := siteURL
-	if idx := len("https://"); len(domain) > idx && domain[:idx] == "https://" {
-		domain = domain[idx:]
-	} else if idx := len("http://"); len(domain) > idx && domain[:idx] == "http://" {
-		domain = domain[idx:]
-	}
-	// Remove trailing path
-	for i, c := range domain {
-		if c == '/' {
-			domain = domain[:i]
-			break
-		}
-	}
-
-	// Generate allowed origins from domain
-	allowed := []string{
-		"https://" + domain,
-		"https://www." + domain,
-		"https://admin." + domain,
-		"https://control." + domain,
-		"https://docs." + domain,
-		"https://learn." + domain,
-		"https://api." + domain,
-	}
-
-	for _, a := range allowed {
-		if origin == a {
-			return true
-		}
-	}
-
-	return false
+	return mw.IsOriginAllowed(origin)
 }
 
 // requestIDFromContext extracts the Chi request ID from the context for
