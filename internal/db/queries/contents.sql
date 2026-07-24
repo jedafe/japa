@@ -318,3 +318,22 @@ FROM contents
 WHERE author_profile_id = @author_profile_id AND tenant_id = @tenant_id AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListPublishedContentByAuthor :many
+-- Public profile Posts tab (GET /users/{id}/content): a user's PUBLISHED PUBLIC
+-- content, newest first, paginated. author_id is the user id (FK users.id).
+-- Public-safe: excludes draft/private, soft-deleted, and auto-hidden content.
+SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+       created_at, updated_at
+FROM contents
+WHERE tenant_id = @tenant_id
+  AND author_id = @author_id
+  AND status = 'published'
+  AND visibility = 'public'
+  AND deleted_at IS NULL
+  AND auto_hidden = false
+ORDER BY published_at DESC NULLS LAST, created_at DESC, id DESC
+LIMIT @page_limit OFFSET @page_offset;
