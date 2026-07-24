@@ -118,6 +118,34 @@ func (q *Queries) CountMediaByUploader(ctx context.Context, arg CountMediaByUplo
 	return count, err
 }
 
+const countMediaFromPublicPostsByUser = `-- name: CountMediaFromPublicPostsByUser :one
+SELECT COUNT(*)::int AS count FROM media m
+WHERE m.tenant_id = $1
+  AND m.deleted_at IS NULL
+  AND m.confirmed = true
+  AND m.user_group_id IS NULL
+  AND EXISTS (
+    SELECT 1 FROM contents c
+    WHERE c.tenant_id = $1
+      AND c.author_id = $2
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+  )
+`
+
+type CountMediaFromPublicPostsByUserParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+}
+
+func (q *Queries) CountMediaFromPublicPostsByUser(ctx context.Context, arg CountMediaFromPublicPostsByUserParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countMediaFromPublicPostsByUser, arg.TenantID, arg.AuthorID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getMediaByID = `-- name: GetMediaByID :one
 
 SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id FROM media WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
@@ -396,6 +424,81 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 	rows, err := q.db.Query(ctx, listMediaByUploader,
 		arg.TenantID,
 		arg.UploaderUserID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Medium
+	for rows.Next() {
+		var i Medium
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UploaderUserID,
+			&i.OriginalFilename,
+			&i.MimeType,
+			&i.FileSizeBytes,
+			&i.WidthPx,
+			&i.HeightPx,
+			&i.DurationSecs,
+			&i.StoragePath,
+			&i.StorageBucket,
+			&i.AltText,
+			&i.Caption,
+			&i.Confirmed,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.QuarantineReason,
+			&i.QuarantinedAt,
+			&i.ReviewedBy,
+			&i.ReviewedAt,
+			&i.UserGroupID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMediaFromPublicPostsByUser = `-- name: ListMediaFromPublicPostsByUser :many
+SELECT m.id, m.tenant_id, m.uploader_user_id, m.original_filename, m.mime_type, m.file_size_bytes, m.width_px, m.height_px, m.duration_secs, m.storage_path, m.storage_bucket, m.alt_text, m.caption, m.confirmed, m.deleted_at, m.created_at, m.quarantine_reason, m.quarantined_at, m.reviewed_by, m.reviewed_at, m.user_group_id FROM media m
+WHERE m.tenant_id = $1
+  AND m.deleted_at IS NULL
+  AND m.confirmed = true
+  AND m.user_group_id IS NULL
+  AND EXISTS (
+    SELECT 1 FROM contents c
+    WHERE c.tenant_id = $1
+      AND c.author_id = $2
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+  )
+ORDER BY m.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListMediaFromPublicPostsByUserParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	AuthorID   pgtype.UUID `json:"author_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+// Public profile Media tab: media referenced (as featured/header image) by the
+// user's PUBLISHED PUBLIC posts. Excludes unconfirmed uploads, group-restricted
+// (non-universal) media, and media only in draft/private posts. Public-safe.
+func (q *Queries) ListMediaFromPublicPostsByUser(ctx context.Context, arg ListMediaFromPublicPostsByUserParams) ([]Medium, error) {
+	rows, err := q.db.Query(ctx, listMediaFromPublicPostsByUser,
+		arg.TenantID,
+		arg.AuthorID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

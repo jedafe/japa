@@ -125,10 +125,12 @@ func SeedFollowing(t *testing.T, d *db.DB, tenantID, followerID pgtype.UUID, n i
 // generated Title, Status "published", and Visibility "public" — the
 // platform's public-visibility combination, so seeded content is visible
 // to public profile reads unless a test deliberately opts out.
+// FeaturedImageID is optional; a zero pgtype.UUID{} inserts NULL.
 type ContentOpts struct {
-	Title      string
-	Status     string
-	Visibility string
+	Title           string
+	Status          string
+	Visibility      string
+	FeaturedImageID pgtype.UUID
 }
 
 // SeedContent inserts a contents row authored by authorID under tenantID
@@ -157,9 +159,9 @@ func SeedContent(t *testing.T, d *db.DB, tenantID, authorID pgtype.UUID, o Conte
 	slug := "test-content-" + uuid.New().String()
 
 	_, err := d.Writer.Exec(ctx,
-		`INSERT INTO contents (id, tenant_id, author_id, content_type, title, slug, body, body_html, status, visibility)
-		 VALUES ($1, $2, $3, 'discussion', $4, $5, 'Seeded test body.', '<p>Seeded test body.</p>', $6, $7)`,
-		contentID, tenantID, authorID, title, slug, status, visibility)
+		`INSERT INTO contents (id, tenant_id, author_id, content_type, title, slug, body, body_html, status, visibility, featured_image_id)
+		 VALUES ($1, $2, $3, 'discussion', $4, $5, 'Seeded test body.', '<p>Seeded test body.</p>', $6, $7, $8)`,
+		contentID, tenantID, authorID, title, slug, status, visibility, o.FeaturedImageID)
 	if err != nil {
 		t.Fatalf("testdb: SeedContent: %v", err)
 	}
