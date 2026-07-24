@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -82,7 +83,9 @@ func (s *Service) RecordSlugChange(ctx context.Context, entityType string, entit
 		NewSlug:    newSlug,
 	}); err != nil {
 		// A failed history entry should not block the content update.
-		_ = err
+		slog.Error("recording slug change",
+			"error", err, "entity_type", entityType, "entity_id", entityID.String(),
+			"old_slug", oldSlug, "new_slug", newSlug)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,7 +16,12 @@ import (
 	mw "github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
+
+// defaultTenantID is used for ticket lookups until the tenant is stored
+// alongside the cached ticket.
+const defaultTenantID = "00000000-0000-0000-0000-000000000001"
 
 var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -113,12 +119,20 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store in Valkey for fast lookup: jc:ws_ticket:{ticket_id} -> user_id, TTL 60s
+	// Store in Valkey for fast lookup: jc:ws_ticket:{ticket_id} -> user_id, TTL 60s.
+	// The upgrade handler resolves tickets from Valkey only, so a failed write
+	// would hand the client a ticket that can never be redeemed.
 	if h.vkClient != nil {
 		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 
-		_ = h.vkClient.Redis().Set(vctx, "jc:ws_ticket:"+ticketID.String(), user.UserID.String(), 60*time.Second).Err()
+		if err := h.vkClient.Redis().Set(vctx, "jc:ws_ticket:"+ticketID.String(),
+			user.UserID.String(), 60*time.Second).Err(); err != nil {
+			slog.Error("caching ws ticket", "error", err, "user_id", user.UserID.String())
+			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
+
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
@@ -153,10 +167,20 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 
 		val, err := h.vkClient.Redis().Get(vctx, "jc:ws_ticket:"+ticketStr).Result()
-		if err == nil {
-			_ = userID.Scan(val)
+
+		switch {
+		case errors.Is(err, valkeycompat.Nil):
+			// Unknown or expired ticket — handled by the !userID.Valid check below.
+		case err != nil:
+			slog.Error("looking up ws ticket", "error", err)
+		default:
+			if scanErr := userID.Scan(val); scanErr != nil {
+				slog.Error("cached ws ticket holds an invalid user id", "error", scanErr, "ticket", ticketStr)
+			}
 			// Tenant ID not stored in Valkey, use default for now.
-			_ = tenantID.Scan("00000000-0000-0000-0000-000000000001")
+			if scanErr := tenantID.Scan(defaultTenantID); scanErr != nil {
+				slog.Error("scanning default tenant id", "error", scanErr)
+			}
 		}
 	}
 
@@ -174,7 +198,9 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Immediately delete the Valkey key so a replayed request cannot pass the cache lookup.
 	if h.vkClient != nil {
-		h.vkClient.Redis().Del(ctx, "jc:ws_ticket:"+ticketStr)
+		if err := h.vkClient.Redis().Del(ctx, "jc:ws_ticket:"+ticketStr).Err(); err != nil {
+			slog.Error("deleting consumed ws ticket", "error", err, "ticket", ticketStr)
+		}
 	}
 
 	// Upgrade to WebSocket.
