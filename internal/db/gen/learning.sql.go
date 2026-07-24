@@ -780,12 +780,17 @@ func (q *Queries) ListEnrollmentsByUserID(ctx context.Context, arg ListEnrollmen
 const listLearningCertificatesByUser = `-- name: ListLearningCertificatesByUser :many
 SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
 FROM learning_certificates
-WHERE user_id = $1
+WHERE tenant_id = $1 AND user_id = $2
 ORDER BY issued_at DESC
 `
 
-func (q *Queries) ListLearningCertificatesByUser(ctx context.Context, userID pgtype.UUID) ([]LearningCertificate, error) {
-	rows, err := q.db.Query(ctx, listLearningCertificatesByUser, userID)
+type ListLearningCertificatesByUserParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) ListLearningCertificatesByUser(ctx context.Context, arg ListLearningCertificatesByUserParams) ([]LearningCertificate, error) {
+	rows, err := q.db.Query(ctx, listLearningCertificatesByUser, arg.TenantID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}

@@ -175,7 +175,7 @@ RETURNING id, tenant_id, user_id, track_id, certificate_number, media_id, issued
 -- name: ListLearningCertificatesByUser :many
 SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
 FROM learning_certificates
-WHERE user_id = @user_id
+WHERE tenant_id = @tenant_id AND user_id = @user_id
 ORDER BY issued_at DESC;
 
 -- name: GetLearningCertificateByID :one

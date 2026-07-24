@@ -1943,6 +1943,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService)).Get("/users/{id}/media", mediaHandlers.ListByUser)
 			// Public profile Spaces tab — public+active spaces only; gated to 404 non-active users.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService)).Get("/users/{id}/spaces", spaceHandlers.ListByMemberUser)
+			// Public profile Certificates tab — earned-certificate badges; gated to 404 non-active users.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService)).Get("/users/{id}/certificates", learningHandlers.ListCertificatesByUser)
 			// Admin user routes (catalog: /admin/users)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Post("/admin/users", adminHandlers.CreateUser)
