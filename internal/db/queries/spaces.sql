@@ -437,8 +437,8 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
        s.updated_at
 FROM spaces s
-JOIN space_members sm ON sm.space_id = s.id
-WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id
+JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
+WHERE sm.user_id = @user_id AND s.tenant_id = @tenant_id
   AND s.visibility = 'public' AND s.status = 'active'
 ORDER BY sm.joined_at DESC, s.id DESC
 LIMIT @page_limit OFFSET @page_offset;

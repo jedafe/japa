@@ -1058,8 +1058,8 @@ SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.descri
        s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
        s.updated_at
 FROM spaces s
-JOIN space_members sm ON sm.space_id = s.id
-WHERE sm.user_id = $1 AND sm.tenant_id = $2
+JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
+WHERE sm.user_id = $1 AND s.tenant_id = $2
   AND s.visibility = 'public' AND s.status = 'active'
 ORDER BY sm.joined_at DESC, s.id DESC
 LIMIT $4 OFFSET $3
