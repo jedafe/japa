@@ -11,7 +11,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/rbac"
 )
 
 // ModerationItem represents a moderation queue item.
@@ -429,11 +428,8 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
 		return
 	}
-	// Rule 6: invalidate caches after ban. 
-	if h.Valkey != nil {
-		_ = rbac.InvalidatePermCache(ctx, h.Valkey, uid)
-		_ = h.Valkey.Del(ctx, "jc:ban:"+userID)
-	}
+	// Rule 6: invalidate caches after ban.
+	h.invalidateUserAccessCaches(ctx, uid, banCacheKey(uid))
 	writeJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "banned"})
 }
 
@@ -458,11 +454,8 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
 		return
 	}
-	// Rule 6: invalidate caches after unban. 
-	if h.Valkey != nil {
-		_ = rbac.InvalidatePermCache(r.Context(), h.Valkey, uid)
-		_ = h.Valkey.Del(r.Context(), "jc:ban:"+userID)
-	}
+	// Rule 6: invalidate caches after unban.
+	h.invalidateUserAccessCaches(r.Context(), uid, banCacheKey(uid))
 	writeJSON(w, http.StatusNoContent, nil)
 }
 

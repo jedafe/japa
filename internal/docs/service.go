@@ -260,7 +260,9 @@ func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req C
 
 	var parentID pgtype.UUID
 	if req.ParentID != nil {
-		_ = parentID.Scan(*req.ParentID)
+		if err := parentID.Scan(*req.ParentID); err != nil {
+			return fmt.Errorf("invalid parent_id %q: %w", *req.ParentID, err)
+		}
 	}
 
 	return s.store.create(ctx, gen.CreateDocPageParams{

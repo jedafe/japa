@@ -594,11 +594,17 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 
 	var imageID, geoSpaceID pgtype.UUID
 	if input.ImageID != "" {
-		_ = imageID.Scan(input.ImageID)
+		if err := imageID.Scan(input.ImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_image_id", "Invalid image ID")
+			return
+		}
 	}
 
 	if input.GeoSpaceID != "" {
-		_ = geoSpaceID.Scan(input.GeoSpaceID)
+		if err := geoSpaceID.Scan(input.GeoSpaceID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo space ID")
+			return
+		}
 	}
 
 	item, err := h.Service.CreateComparisonItem(r.Context(), tenantID, CreateComparisonItemInput{
@@ -655,11 +661,17 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 
 	var imageID, geoSpaceID pgtype.UUID
 	if input.ImageID != "" {
-		_ = imageID.Scan(input.ImageID)
+		if err := imageID.Scan(input.ImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_image_id", "Invalid image ID")
+			return
+		}
 	}
 
 	if input.GeoSpaceID != "" {
-		_ = geoSpaceID.Scan(input.GeoSpaceID)
+		if err := geoSpaceID.Scan(input.GeoSpaceID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo space ID")
+			return
+		}
 	}
 
 	item, err := h.Service.UpdateComparisonItem(r.Context(), id, tenantID, UpdateComparisonItemInput{

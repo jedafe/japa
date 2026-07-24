@@ -257,8 +257,10 @@ func (s *Service) RecordClick(ctx context.Context, input RecordClickInput) error
 		slog.Error("failed to increment link clicks", "link_id", input.LinkID, "error", err)
 	}
 	link, err := s.store.getLinkByID(ctx, input.LinkID, input.TenantID)
-	if err == nil {
-		_ = s.store.incrementMemberClicks(ctx, link.UserID)
+	if err != nil {
+		slog.Error("failed to load link for member click increment", "link_id", input.LinkID, "error", err)
+	} else if err := s.store.incrementMemberClicks(ctx, link.UserID); err != nil {
+		slog.Error("failed to increment member clicks", "user_id", link.UserID, "error", err)
 	}
 	return nil
 }
@@ -339,7 +341,11 @@ type CreditCommissionInput struct {
 
 func (s *Service) CreditCommission(ctx context.Context, input CreditCommissionInput) error {
 	links, err := s.store.listLinksByUser(ctx, input.UserID, input.TenantID, true, 100, 0)
-	if err != nil || len(links) == 0 {
+	if err != nil {
+		return fmt.Errorf("listing affiliate links: %w", err)
+	}
+
+	if len(links) == 0 {
 		return nil
 	}
 	var matchedLink gen.UserAffiliateLink
@@ -359,8 +365,13 @@ func (s *Service) CreditCommission(ctx context.Context, input CreditCommissionIn
 	if err != nil {
 		return fmt.Errorf("recording conversion: %w", err)
 	}
-	_ = s.store.incrementLinkConversions(ctx, matchedLink.ID, input.Amount)
-	_ = s.store.incrementMemberConversions(ctx, matchedLink.UserID, input.Amount)
+	if err := s.store.incrementLinkConversions(ctx, matchedLink.ID, input.Amount); err != nil {
+		slog.Error("failed to increment link conversions", "link_id", matchedLink.ID, "error", err)
+	}
+
+	if err := s.store.incrementMemberConversions(ctx, matchedLink.UserID, input.Amount); err != nil {
+		slog.Error("failed to increment member conversions", "user_id", matchedLink.UserID, "error", err)
+	}
 	return nil
 }
 

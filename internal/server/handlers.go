@@ -9,6 +9,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -88,10 +89,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		// The status header is already written, so we cannot change the
-		// status code. Log would go here in a future iteration; for now
-		// we silently fail since the response is already in flight.
-		_ = err
+		// The status header is already written, so the status code cannot be
+		// changed — the failure is logged so a truncated response is
+		// diagnosable instead of invisible.
+		slog.Error("encoding JSON response", "error", err, "status", status)
 	}
 }
 

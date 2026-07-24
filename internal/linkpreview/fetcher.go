@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -117,7 +118,9 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Preview, error) {
 		cacheKey := f.cacheKey(rawURL)
 		if cached, err := f.cache.Redis().Get(ctx, cacheKey).Result(); err == nil {
 			var preview Preview
-			if err := json.Unmarshal([]byte(cached), &preview); err == nil {
+			if err := json.Unmarshal([]byte(cached), &preview); err != nil {
+				slog.Warn("discarding malformed cached link preview", "error", err, "url", rawURL)
+			} else {
 				return &preview, nil
 			}
 		}
@@ -132,11 +135,12 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Preview, error) {
 	// Cache the result
 	if f.cache != nil {
 		cacheKey := f.cacheKey(rawURL)
-		if data, err := json.Marshal(preview); err == nil {
-			if err := f.cache.Redis().Set(ctx, cacheKey, string(data), f.cacheTTL).Err(); err != nil {
-				// Log but don't fail — caching is best-effort
-				_ = err
-			}
+		data, err := json.Marshal(preview)
+		if err != nil {
+			slog.Warn("marshaling link preview for cache", "error", err, "url", rawURL)
+		} else if err := f.cache.Redis().Set(ctx, cacheKey, string(data), f.cacheTTL).Err(); err != nil {
+			// Log but don't fail — caching is best-effort.
+			slog.Warn("caching link preview", "error", err, "url", rawURL)
 		}
 	}
 
