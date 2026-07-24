@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	mw "github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/valkey"
 )
@@ -19,7 +20,18 @@ import (
 var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin:     func(_ *http.Request) bool { return true },
+	// Only upgrade connections from origins the CORS policy trusts.
+	// Accepting any origin allows cross-site WebSocket hijacking, since the
+	// browser attaches the caller's cookies to the upgrade request.
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			// Non-browser clients (mobile apps, CLI tools) send no Origin.
+			return true
+		}
+
+		return mw.IsOriginAllowed(origin)
+	},
 }
 
 // Handlers holds dependencies for WebSocket and DM HTTP handlers.

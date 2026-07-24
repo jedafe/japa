@@ -15,6 +15,17 @@
 	import { goto, invalidateAll } from "$app/navigation";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
+	// Usernames are user-controlled, so they must be escaped before being
+	// interpolated into the {@html} confirmation copy.
+	function escapeHtml(value: string): string {
+		return value
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#39;");
+	}
+
 	type User = {
 		id: string;
 		username: string;
@@ -465,7 +476,7 @@
 <Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
 	{#if deleteTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
-			{@html t('app.users.delete_confirm', `Delete user <strong>{username}</strong>? This cannot be undone.`).replace('{username}', deleteTarget.username)}
+			{@html t('app.users.delete_confirm', `Delete user <strong>{username}</strong>? This cannot be undone.`).replace('{username}', escapeHtml(deleteTarget.username))}
 		</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
