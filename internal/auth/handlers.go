@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/email"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -743,24 +744,11 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// clientIP extracts the client IP from the request, respecting
-// X-Forwarded-For and X-Real-IP headers set by the reverse proxy.
+// clientIP extracts the client IP from the request. Forwarding headers are
+// only honoured when the peer is a trusted proxy — the brute-force lockout is
+// keyed on this value, so a spoofable IP means unlimited password guesses.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	// Fall back to RemoteAddr, stripping the port
-	idx := strings.LastIndex(r.RemoteAddr, ":")
-	if idx > 0 {
-		return r.RemoteAddr[:idx]
-	}
-
-	return r.RemoteAddr
+	return clientip.FromRequest(r)
 }
 
 // rateLimitCheck performs a fixed-window rate limit check against Valkey using

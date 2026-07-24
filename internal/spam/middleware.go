@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
@@ -149,21 +149,11 @@ func CensorResultFromContext(ctx context.Context) *CensorResult {
 	return r
 }
 
-// extractIP gets the client IP from the request. chi's RealIP middleware
-// has already run by the time this middleware executes, so r.RemoteAddr
-// contains the resolved IP. We also check X-Forwarded-For as a safety net.
+// extractIP gets the client IP the IP blocklist is enforced on. Forwarding
+// headers are only honoured when the peer is a trusted proxy, otherwise a
+// blocked client could unblock itself with an X-Forwarded-For header.
 func extractIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-
-	return host
+	return clientip.FromRequest(r)
 }
 
 // extractBodyText reads the request body and extracts text content for
