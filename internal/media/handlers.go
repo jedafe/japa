@@ -908,19 +908,15 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	localPath := filepath.Join("data", "media", bucket, storagePath)
+	localPath, err := resolveMediaPath(bucket, storagePath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_path", "Invalid media path")
+		return
+	}
 
 	info, err := os.Stat(localPath)
 	if err != nil || info.IsDir() {
-		w.Header().Set("Content-Type", "image/svg+xml")
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
-<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
-  <rect width="100%" height="100%" fill="#1a1a2e"/>
-  <text x="50%" y="50%" font-family="sans-serif" font-size="14" fill="#888" text-anchor="middle" dy=".3em">Media Placeholder</text>
-  <text x="50%" y="65%" font-family="sans-serif" font-size="10" fill="#666" text-anchor="middle" dy=".3em">` + filepath.Base(storagePath) + `</text>
-</svg>`))
+		writePlaceholderSVG(w)
 		return
 	}
 
@@ -930,8 +926,79 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 		contentType = "application/octet-stream"
 	}
 
+	// Stored files are attacker-supplied: never let the browser execute them
+	// as active content on this origin (SVG/HTML script payloads).
+	if isActiveContentType(contentType) {
+		contentType = "application/octet-stream"
+	}
+
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	http.ServeFile(w, r, localPath)
+}
+
+// mediaRoot is the base directory for locally stored media files.
+const mediaRoot = "data/media"
+
+// resolveMediaPath maps a bucket and request path to a file inside mediaRoot.
+// It rejects anything that escapes the bucket directory (path traversal) or
+// that carries a path separator in the bucket name.
+func resolveMediaPath(bucket, storagePath string) (string, error) {
+	if strings.ContainsAny(bucket, `/\`) || bucket == "." || bucket == ".." {
+		return "", errors.New("invalid bucket")
+	}
+
+	base, err := filepath.Abs(filepath.Join(mediaRoot, bucket))
+	if err != nil {
+		return "", err
+	}
+
+	full, err := filepath.Abs(filepath.Join(base, filepath.FromSlash(storagePath)))
+	if err != nil {
+		return "", err
+	}
+
+	if full != base && !strings.HasPrefix(full, base+string(os.PathSeparator)) {
+		return "", errors.New("path escapes media root")
+	}
+
+	return full, nil
+}
+
+// activeContentTypes are MIME types a browser executes as active content.
+// Serving them inline from the API origin would turn any uploaded file into
+// stored XSS, so they are downgraded to an opaque download.
+var activeContentTypes = map[string]bool{
+	"image/svg+xml":          true,
+	"text/html":              true,
+	"text/xml":               true,
+	"application/xml":        true,
+	"application/xhtml+xml":  true,
+	"application/javascript": true,
+	"text/javascript":        true,
+}
+
+func isActiveContentType(contentType string) bool {
+	base, _, _ := strings.Cut(contentType, ";")
+
+	return activeContentTypes[strings.TrimSpace(strings.ToLower(base))]
+}
+
+// writePlaceholderSVG returns a static placeholder image for missing media.
+// The requested filename is deliberately not echoed back — reflecting it into
+// an SVG served from this origin is an XSS sink.
+func writePlaceholderSVG(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="#1a1a2e"/>
+  <text x="50%" y="50%" font-family="sans-serif" font-size="14" fill="#888" text-anchor="middle" dy=".3em">Media Placeholder</text>
+</svg>`))
 }

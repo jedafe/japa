@@ -209,3 +209,43 @@ func TestIsTokenRevoked_NilClient(t *testing.T) {
 		t.Error("expected false when Valkey client is nil")
 	}
 }
+
+func TestValidateAccessToken_RejectsTOTPChallengeToken(t *testing.T) {
+	t.Parallel()
+
+	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
+
+	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
+	tenantID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
+
+	challenge, err := kr.MintTOTPChallengeToken(userID, tenantID)
+	if err != nil {
+		t.Fatalf("MintTOTPChallengeToken failed: %v", err)
+	}
+
+	if _, err := kr.ValidateAccessToken(challenge); err == nil {
+		t.Fatal("challenge token must not be accepted as a session token")
+	}
+
+	if _, err := kr.ValidateChallengeToken(challenge); err != nil {
+		t.Fatalf("ValidateChallengeToken failed: %v", err)
+	}
+}
+
+func TestValidateChallengeToken_RejectsAccessToken(t *testing.T) {
+	t.Parallel()
+
+	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
+
+	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
+	tenantID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
+
+	access, err := kr.MintAccessToken(userID, tenantID)
+	if err != nil {
+		t.Fatalf("MintAccessToken failed: %v", err)
+	}
+
+	if _, err := kr.ValidateChallengeToken(access); err == nil {
+		t.Fatal("session token must not satisfy the TOTP challenge")
+	}
+}

@@ -166,7 +166,7 @@ func (kr *KeyRotation) MintTOTPChallengeToken(userID, tenantID pgtype.UUID) (str
 // ValidateChallengeToken validates a TOTP challenge token and returns its claims.
 // It enforces that the token has scope "totp_verify".
 func (kr *KeyRotation) ValidateChallengeToken(tokenString string) (*JWTClaims, error) {
-	claims, err := kr.ValidateAccessToken(tokenString)
+	claims, err := kr.parseToken(tokenString)
 	if err != nil {
 		return nil, err
 	}
@@ -178,11 +178,28 @@ func (kr *KeyRotation) ValidateChallengeToken(tokenString string) (*JWTClaims, e
 	return claims, nil
 }
 
-// ValidateAccessToken validates a JWT and returns its claims.
-// It checks the kid header against the rotation and validates
+// ValidateAccessToken validates a full-session JWT and returns its claims.
+// Scoped tokens (such as the "totp_verify" challenge issued before the 2FA
+// step completes) are rejected: they only grant access to the endpoint that
+// completes their flow, never to authenticated API routes.
+func (kr *KeyRotation) ValidateAccessToken(tokenString string) (*JWTClaims, error) {
+	claims, err := kr.parseToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+
+	if claims.Scope != "" {
+		return nil, fmt.Errorf("token has restricted scope %q and is not a session token", claims.Scope)
+	}
+
+	return claims, nil
+}
+
+// parseToken validates a JWT signature and base claims without inspecting
+// the scope. It checks the kid header against the rotation and validates
 // the signature with the corresponding secret. It also verifies
 // the JTI claim is present and non-empty.
-func (kr *KeyRotation) ValidateAccessToken(tokenString string) (*JWTClaims, error) {
+func (kr *KeyRotation) parseToken(tokenString string) (*JWTClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
