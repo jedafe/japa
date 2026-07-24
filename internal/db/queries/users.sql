@@ -238,3 +238,11 @@ WHERE u.tenant_id = @tenant_id
   AND u.username = @username
   AND u.status = 'active'
 ORDER BY u.id;
+
+-- name: ActiveUserExistsByID :one
+-- Existence check for the public profile gate: is there an ACTIVE user with
+-- this id in this tenant? Non-active (banned/suspended/deleted) or missing → false.
+SELECT EXISTS (
+    SELECT 1 FROM users
+    WHERE tenant_id = @tenant_id AND id = @id AND status = 'active'
+) AS exists;
