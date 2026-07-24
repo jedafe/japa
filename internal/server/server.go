@@ -2785,8 +2785,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 34: Users public extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/users/{id}/analytics", usersHandlers.GetMyAnalytics)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/users/{id}/content", contentHandlers.ListContent)
+			// Public profile Posts tab — author-scoped published+public content (was
+			// wired to ListContent, which ignored {id} and returned all tenant content).
+			// Public per Section 32; gated to 404 non-active users.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService)).
+				Get("/users/{id}/content", contentHandlers.ListByAuthor)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
 				Post("/users/{id}/follow", followHandlers.ToggleFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
