@@ -59,5 +59,55 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+	writeJSON(w, http.StatusOK, map[string]any{"data": toPostCards(items)})
+}
+
+// PostCard is the lean public shape for the profile Posts tab. It omits the
+// internal columns the raw gen row carries — tenant_id, the raw TipTap `body`
+// (body_html is the rendered public form), field_values, content_hash,
+// geo_space_id, canonical_url, status/visibility (always published+public
+// here), is_locked, reshare_count, publish_at, updated_at.
+type PostCard struct {
+	ID              pgtype.UUID        `json:"id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	BodyHtml        string             `json:"body_html"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	IsPinned        bool               `json:"is_pinned"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
+	cards := make([]PostCard, len(items))
+	for i := range items {
+		c := &items[i]
+		cards[i] = PostCard{
+			ID:              c.ID,
+			AuthorID:        c.AuthorID,
+			SpaceID:         c.SpaceID,
+			ContentType:     c.ContentType,
+			Title:           c.Title,
+			Slug:            c.Slug,
+			BodyHtml:        c.BodyHtml,
+			HeaderImageID:   c.HeaderImageID,
+			FeaturedImageID: c.FeaturedImageID,
+			ReadTimeMinutes: c.ReadTimeMinutes,
+			ViewCount:       c.ViewCount,
+			CommentCount:    c.CommentCount,
+			ShareCount:      c.ShareCount,
+			IsPinned:        c.IsPinned,
+			PublishedAt:     c.PublishedAt,
+			CreatedAt:       c.CreatedAt,
+		}
+	}
+	return cards
 }

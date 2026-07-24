@@ -15,6 +15,7 @@
 	} from "lucide-svelte";
 	import { analyticsAdminApi } from "$lib/api";
 	import { LineChart, AreaChart } from "layerchart";
+	import { curveMonotoneX } from "d3-shape";
 	import StatCard from "$lib/components/ui/StatCard.svelte";
 	import { CardSkeleton } from "$lib/components/ui/skeleton";
 	
@@ -41,11 +42,11 @@
 	};
 
 	let overview = $state<OverviewData | null>(null);
-	let security = $state<{ scans?: Array<Record<string, unknown>> } | null>(null);
-	let userAnalytics = $state<Array<Record<string, unknown>> | null>(null);
-	let contentAnalytics = $state<Array<Record<string, unknown>> | null>(null);
+	let security = $state<Array<Record<string, unknown>> | null>(null);
+	let userAnalytics = $state<{ total_users?: number; active_users?: number; new_users_today?: number } | null>(null);
+	let contentAnalytics = $state<{ content_stats?: Array<Record<string, unknown>>; total_content?: number; total_views?: number; total_reactions?: number; total_comments?: number; total_unique_viewers?: number } | null>(null);
 	let spaceAnalytics = $state<Array<Record<string, unknown>> | null>(null);
-	let revenueAnalytics = $state<Array<Record<string, unknown>> | null>(null);
+	let revenueAnalytics = $state<{ total_revenue?: number; monthly_revenue?: number; active_subscriptions?: number; periods?: Array<{ period: string; revenue: number; transactions: number }> } | null>(null);
 	let searchAnalytics = $state<Array<Record<string, unknown>> | null>(null);
 	let loadAbortController: AbortController | null = null;
 	
@@ -57,25 +58,27 @@
 		loading = true;
 		error = "";
 		try {
+		// Pass the ?from=&to= range to every windowed endpoint so the date
+		// picker drives all tabs, not just the overview.
+		const rangeParams = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join("&") || undefined;
 		const [overviewRes, securityRes, usersRes, contentRes, spacesRes, revenueRes, searchRes] = await Promise.allSettled([
-			// Pass the ?from=&to= range when set; otherwise fetch the default window
-			analyticsAdminApi.getOverview([from && `from=${from}`, to && `to=${to}`].filter(Boolean).join("&") || undefined),
+			analyticsAdminApi.getOverview(rangeParams),
 			analyticsAdminApi.getSecurity(),
-				analyticsAdminApi.getUsers(),
-				analyticsAdminApi.getContent(),
-				analyticsAdminApi.getSpaces(),
-				analyticsAdminApi.getRevenue(),
-				analyticsAdminApi.getSearch()
-			]);
+			analyticsAdminApi.getUsers(rangeParams),
+			analyticsAdminApi.getContent(rangeParams),
+			analyticsAdminApi.getSpaces(rangeParams),
+			analyticsAdminApi.getRevenue(rangeParams),
+			analyticsAdminApi.getSearch(rangeParams)
+		]);
 			
 			if (signal.aborted) return;
 
 			overview = overviewRes.status === 'fulfilled' && overviewRes.value.ok ? (overviewRes.value.data as OverviewData) : null;
-			security = securityRes.status === 'fulfilled' && securityRes.value.ok ? (securityRes.value.data as { scans?: Array<Record<string, unknown>> }) : null;
-			userAnalytics = usersRes.status === 'fulfilled' && usersRes.value.ok ? (usersRes.value.data as Array<Record<string, unknown>>) : null;
-			contentAnalytics = contentRes.status === 'fulfilled' && contentRes.value.ok ? (contentRes.value.data as Array<Record<string, unknown>>) : null;
+			security = securityRes.status === 'fulfilled' && securityRes.value.ok ? (securityRes.value.data as Array<Record<string, unknown>>) : null;
+			userAnalytics = usersRes.status === 'fulfilled' && usersRes.value.ok ? (usersRes.value.data as { total_users?: number; active_users?: number; new_users_today?: number }) : null;
+			contentAnalytics = contentRes.status === 'fulfilled' && contentRes.value.ok ? (contentRes.value.data as { content_stats?: Array<Record<string, unknown>>; total_content?: number; total_views?: number; total_reactions?: number; total_comments?: number; total_unique_viewers?: number }) : null;
 			spaceAnalytics = spacesRes.status === 'fulfilled' && spacesRes.value.ok ? (spacesRes.value.data as Array<Record<string, unknown>>) : null;
-			revenueAnalytics = revenueRes.status === 'fulfilled' && revenueRes.value.ok ? (revenueRes.value.data as Array<Record<string, unknown>>) : null;
+			revenueAnalytics = revenueRes.status === 'fulfilled' && revenueRes.value.ok ? (revenueRes.value.data as { total_revenue?: number; monthly_revenue?: number; active_subscriptions?: number; periods?: Array<{ period: string; revenue: number; transactions: number }> }) : null;
 			searchAnalytics = searchRes.status === 'fulfilled' && searchRes.value.ok ? (searchRes.value.data as Array<Record<string, unknown>>) : null;
 		} catch (e) {
 			if (signal.aborted) return;
@@ -160,7 +163,24 @@
 			color: "success" 
 		}
 	]);
-	
+
+	// Map the user analytics summary object into metric/value rows for the
+	// Users tab DataTable (backend returns an object, not an array).
+	const userRows = $derived([
+		{ metric: t('analytics.total_users', 'Total Users'), value: userAnalytics?.total_users ?? 0 },
+		{ metric: t('analytics.active_users', 'Active Users'), value: userAnalytics?.active_users ?? 0 },
+		{ metric: t('analytics.new_users_today', 'New Users Today'), value: userAnalytics?.new_users_today ?? 0 }
+	]);
+
+	// LayerChart Axis format: dates on the x-axis, numbers on the y-axis.
+	// Typed `any` to satisfy the chart's union `axis` prop type.
+	const chartAxisFormat: any = {
+		format: (v: any) =>
+			v instanceof Date
+				? v.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+				: Number(v).toLocaleString()
+	};
+
 	const securityColumns = [
 		{ key: "id", label: t('analytics.scan_id', 'Scan ID'), sortable: true },
 		{ key: "scan_type", label: t('analytics.type', 'Type'), sortable: true },
@@ -169,7 +189,7 @@
 			label: t('analytics.status', 'Severity'), 
 			sortable: true,
 			render: (value: string) => {
-				const colors: Record<string, string> = { low: 'bg-info-100 text-info-800', medium: 'bg-warning/15 text-warning', high: 'bg-danger/15 text-danger', critical: 'bg-danger text-white' };
+				const colors: Record<string, string> = { info: 'bg-info-100 text-info-800', warning: 'bg-warning/15 text-warning', low: 'bg-info-100 text-info-800', medium: 'bg-warning/15 text-warning', high: 'bg-danger/15 text-danger', critical: 'bg-danger text-white' };
 				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${colors[value] || 'bg-surface text-foreground'}">${value}</span>`;
 			}
 		},
@@ -307,10 +327,10 @@
 								data={(overview?.user_growth ?? []).map((d) => ({ date: new Date(d.day), count: d.new_users }))}
 								x="date"
 								y="count"
+								cRange={['var(--color-primary)']}
+								axis={chartAxisFormat}
 								props={{
-									spline: { curve: 'monotone-x', strokeWidth: 2, stroke: 'var(--color-primary)' },
-									xAxis: { format: (d: Date) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) },
-									yAxis: { format: (v: number) => v.toLocaleString() }
+									spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--color-primary)' }
 								}}
 							/>
 						</div>
@@ -335,10 +355,10 @@
 								data={(overview?.content_over_time ?? []).map((d) => ({ date: new Date(d.day), count: d.content_count }))}
 								x="date"
 								y="count"
+								cRange={['var(--color-primary)']}
+								axis={chartAxisFormat}
 								props={{
-									area: { curve: 'monotone-x', fill: 'var(--color-primary)', fillOpacity: 0.2, strokeWidth: 2, stroke: 'var(--color-primary)' },
-									xAxis: { format: (d: Date) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) },
-									yAxis: { format: (v: number) => v.toLocaleString() }
+									area: { curve: curveMonotoneX, fill: 'var(--color-primary)', fillOpacity: 0.2, strokeWidth: 2, stroke: 'var(--color-primary)', line: { curve: curveMonotoneX } }
 								}}
 							/>
 						</div>
@@ -360,7 +380,7 @@
 			<CardContent>
 				<DataTable
 					columns={securityColumns}
-					data={security?.scans ?? []}
+					data={security ?? []}
 					pageSize={10}
 					emptyMessage={t('analytics.no_security_scans', 'No security scans found')}
 				/>
@@ -377,10 +397,9 @@
 				<DataTable
 					columns={[
 						{ key: "metric", label: t('analytics.metric', 'Metric'), sortable: true },
-						{ key: "value", label: t('analytics.value', 'Value'), sortable: true },
-						{ key: "change", label: t('analytics.change', 'Change'), sortable: true, render: (v: number) => `<span class="${v >= 0 ? 'text-success-600' : 'text-danger-600'}">${v >= 0 ? '+' : ''}${v}%</span>` }
+						{ key: "value", label: t('analytics.value', 'Value'), sortable: true, render: (v: number) => Number(v).toLocaleString() }
 					]}
-					data={userAnalytics ?? []}
+					data={userRows}
 					emptyMessage={t('analytics.no_user_analytics', 'No user analytics data')}
 				/>
 			</CardContent>
@@ -388,6 +407,13 @@
 	{/if}
 	
 	{#if activeTab === "content"}
+		<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+			<StatCard label={t('analytics.total_content', 'Total Content')} value={contentAnalytics?.total_content ?? 0} />
+			<StatCard label={t('analytics.views', 'Views')} value={contentAnalytics?.total_views ?? 0} />
+			<StatCard label={t('analytics.reactions', 'Reactions')} value={contentAnalytics?.total_reactions ?? 0} />
+			<StatCard label={t('analytics.comments', 'Comments')} value={contentAnalytics?.total_comments ?? 0} />
+			<StatCard label={t('analytics.unique_viewers', 'Unique Viewers')} value={contentAnalytics?.total_unique_viewers ?? 0} />
+		</div>
 		<Card>
 			<CardHeader>
 				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.content_analytics', 'Content Analytics')}</h3>
@@ -395,11 +421,14 @@
 			<CardContent>
 				<DataTable
 					columns={[
-						{ key: "type", label: t('analytics.type', 'Type'), sortable: true },
-						{ key: "count", label: t('analytics.count', 'Count'), sortable: true },
-						{ key: "engagement", label: t('analytics.engagement', 'Engagement'), sortable: true }
+						{ key: "day", label: t('analytics.day', 'Day'), sortable: true, render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
+						{ key: "content_id", label: t('analytics.content_id', 'Content ID'), sortable: true },
+						{ key: "views", label: t('analytics.views', 'Views'), sortable: true },
+						{ key: "reactions", label: t('analytics.reactions', 'Reactions'), sortable: true },
+						{ key: "comments", label: t('analytics.comments', 'Comments'), sortable: true },
+						{ key: "unique_viewers", label: t('analytics.unique_viewers', 'Unique Viewers'), sortable: true }
 					]}
-					data={contentAnalytics ?? []}
+					data={contentAnalytics?.content_stats ?? []}
 					emptyMessage={t('analytics.no_content_analytics', 'No content analytics data')}
 				/>
 			</CardContent>
@@ -414,9 +443,9 @@
 			<CardContent>
 				<DataTable
 					columns={[
-						{ key: "space", label: t('analytics.space', 'Space'), sortable: true },
-						{ key: "members", label: t('analytics.members', 'Members'), sortable: true },
-						{ key: "activity", label: t('analytics.activity', 'Activity'), sortable: true }
+						{ key: "space_id", label: t('analytics.space_id', 'Space ID'), sortable: true },
+						{ key: "total_joins", label: t('analytics.total_joins', 'Total Joins'), sortable: true },
+						{ key: "total_posts", label: t('analytics.total_posts', 'Total Posts'), sortable: true }
 					]}
 					data={spaceAnalytics ?? []}
 					emptyMessage={t('analytics.no_space_analytics', 'No space analytics data')}
@@ -426,6 +455,11 @@
 	{/if}
 	
 	{#if activeTab === "revenue"}
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+			<StatCard label={t('analytics.total_revenue', 'Total Revenue')} value={`$${(revenueAnalytics?.total_revenue ?? 0).toLocaleString()}`} />
+			<StatCard label={t('analytics.monthly_revenue', 'Monthly Revenue')} value={`$${(revenueAnalytics?.monthly_revenue ?? 0).toLocaleString()}`} />
+			<StatCard label={t('analytics.active_subscriptions', 'Active Subscriptions')} value={revenueAnalytics?.active_subscriptions ?? 0} />
+		</div>
 		<Card>
 			<CardHeader>
 				<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.revenue_analytics', 'Revenue Analytics')}</h3>
@@ -437,7 +471,7 @@
 						{ key: "revenue", label: t('analytics.revenue', 'Revenue'), sortable: true, render: (v: number) => `$${v.toLocaleString()}` },
 						{ key: "transactions", label: t('analytics.transactions', 'Transactions'), sortable: true }
 					]}
-					data={revenueAnalytics ?? []}
+					data={revenueAnalytics?.periods ?? []}
 					emptyMessage={t('analytics.no_revenue_analytics', 'No revenue analytics data')}
 				/>
 			</CardContent>
@@ -454,7 +488,7 @@
 					columns={[
 						{ key: "query", label: t('analytics.query', 'Query'), sortable: true },
 						{ key: "count", label: t('analytics.count', 'Count'), sortable: true },
-						{ key: "results", label: t('analytics.avg_results', 'Avg Results'), sortable: true }
+						{ key: "avg_results", label: t('analytics.avg_results', 'Avg Results'), sortable: true }
 					]}
 					data={searchAnalytics ?? []}
 					emptyMessage={t('analytics.no_search_analytics', 'No search analytics data')}

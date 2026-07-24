@@ -406,7 +406,43 @@ func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": spaces})
+	writeJSON(w, http.StatusOK, map[string]any{"data": toSpaceCards(spaces)})
+}
+
+// SpaceCard is the lean public shape for the profile Spaces tab — only the
+// fields the profile card renders. It deliberately omits the internal columns
+// the raw gen.Space row carries (tenant_id, parent_id, space_type_id,
+// wiki_content, the *_perm governance fields, geo_code, level, status, and
+// counts the card doesn't show), so a public endpoint never echoes them.
+type SpaceCard struct {
+	ID            pgtype.UUID        `json:"id"`
+	Name          string             `json:"name"`
+	Slug          string             `json:"slug"`
+	Description   *string            `json:"description"`
+	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID pgtype.UUID        `json:"header_image_id"`
+	MemberCount   int32              `json:"member_count"`
+	Visibility    string             `json:"visibility"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+func toSpaceCards(spaces []gen.Space) []SpaceCard {
+	cards := make([]SpaceCard, len(spaces))
+	for i := range spaces {
+		s := &spaces[i]
+		cards[i] = SpaceCard{
+			ID:            s.ID,
+			Name:          s.Name,
+			Slug:          s.Slug,
+			Description:   s.Description,
+			LogoMediaID:   s.LogoMediaID,
+			HeaderImageID: s.HeaderImageID,
+			MemberCount:   s.MemberCount,
+			Visibility:    s.Visibility,
+			CreatedAt:     s.CreatedAt,
+		}
+	}
+	return cards
 }
 
 // ListMyModeratedSpaces handles GET /api/v1/me/spaces/moderated — every space

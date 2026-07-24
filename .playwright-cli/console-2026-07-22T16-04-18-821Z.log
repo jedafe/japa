@@ -1,0 +1,13 @@
+[  751631ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/admin/user-groups?page=1&limit=25:0
+[  773310ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/admin/user-groups?page=1&limit=25:0
+[  900612ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/me/notifications?limit=20:0
+[  923767ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/admin/permissions:0
+[ 1313654ms] [ERROR] Failed to load groups: TypeError: Cannot read properties of undefined (reading 'groups')
+    at load (http://localhost:3001/src/routes/users/groups/+page.svelte?t=1784737571567:69:21) @ http://localhost:3001/src/routes/users/groups/+page.svelte?t=1784737571567:75
+[ 1337956ms] [ERROR] Failed to load groups: TypeError: Cannot read properties of undefined (reading 'groups')
+    at load (http://localhost:3001/src/routes/users/groups/+page.svelte?t=1784737596240:69:21) @ http://localhost:3001/src/routes/users/groups/+page.svelte?t=1784737596240:75
+[ 1360695ms] [ERROR] Failed to load groups: TypeError: Cannot read properties of undefined (reading 'groups')
+    at load (http://localhost:3001/src/routes/users/groups/+page.svelte?t=1784737618624:69:21) @ http://localhost:3001/src/routes/users/groups/+page.svelte?t=1784737618624:75
+[ 1642014ms] [ERROR] Failed to load groups: TypeError: Cannot read properties of undefined (reading 'groups')
+    at load (http://localhost:3001/src/routes/users/groups/+page.svelte?t=1784737899757:69:21) @ http://localhost:3001/src/routes/users/groups/+page.svelte?t=1784737899757:75
+[ 1935142ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/me/notifications?limit=20:0

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -185,4 +186,136 @@ func (h *Handlers) DismissTour(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "dismissed"}})
+}
+
+// ---------------------------------------------------------------------------
+// Admin Onboarding Handlers
+// ---------------------------------------------------------------------------
+
+// GetAdminSettings handles GET /admin/onboarding/settings.
+func (h *Handlers) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	settings, err := h.Service.GetAdminSettings(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": settings})
+}
+
+// UpdateAdminSettings handles PUT /admin/onboarding/settings.
+func (h *Handlers) UpdateAdminSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var req UpdateOnboardingSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if err := h.Service.UpdateAdminSettings(r.Context(), tenantID, &req); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+}
+
+// ListTemplates handles GET /admin/onboarding/templates.
+func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	templates, err := h.Service.ListTemplates(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": templates})
+}
+
+// CreateTemplate handles POST /admin/onboarding/templates.
+func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var req CreateTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "missing_fields", "Name is required")
+		return
+	}
+
+	template, err := h.Service.CreateTemplate(r.Context(), tenantID, &req)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": template})
+}
+
+// UpdateTemplate handles PATCH /admin/onboarding/templates/:id.
+func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
+		return
+	}
+
+	var req UpdateTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if err := h.Service.UpdateTemplate(r.Context(), tenantID, id, &req); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
+}
+
+// DeleteTemplate handles DELETE /admin/onboarding/templates/:id.
+func (h *Handlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
+		return
+	}
+
+	if err := h.Service.DeleteTemplate(r.Context(), tenantID, id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

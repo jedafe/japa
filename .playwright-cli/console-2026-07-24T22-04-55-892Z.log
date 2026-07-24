@@ -1,0 +1,11 @@
+[     519ms] TypeError: Cannot read properties of undefined (reading 'call')
+    at get_next_sibling (http://localhost:3001/node_modules/.vite/deps/runtime-DaRL7t-L.js:4128:29)
+    at remove_effect_dom (http://localhost:3001/node_modules/.vite/deps/runtime-DaRL7t-L.js:4627:52)
+    at destroy_effect (http://localhost:3001/node_modules/.vite/deps/runtime-DaRL7t-L.js:4603:3)
+    at create_effect (http://localhost:3001/node_modules/.vite/deps/runtime-DaRL7t-L.js:4337:4)
+    at branch (http://localhost:3001/node_modules/.vite/deps/runtime-DaRL7t-L.js:4544:9)
+    at http://localhost:3001/node_modules/.vite/deps/client-Bsb-uytg.js:704:13
+    at update_reaction (http://localhost:3001/node_modules/.vite/deps/runtime-DaRL7t-L.js:4914:16)
+    at update_effect (http://localhost:3001/node_modules/.vite/deps/runtime-DaRL7t-L.js:5021:18)
+    at create_effect (http://localhost:3001/node_modules/.vite/deps/runtime-DaRL7t-L.js:4335:4)
+    at block (http://localhost:3001/node_modules/.vite/deps/runtime-DaRL7t-L.js:4527:15)

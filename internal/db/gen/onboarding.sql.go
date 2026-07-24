@@ -27,6 +27,60 @@ func (q *Queries) CompleteOnboarding(ctx context.Context, arg CompleteOnboarding
 	return err
 }
 
+const createOnboardingTemplate = `-- name: CreateOnboardingTemplate :one
+INSERT INTO onboarding_templates (tenant_id, name, description, steps, is_active, is_system)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
+`
+
+type CreateOnboardingTemplateParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Name        string      `json:"name"`
+	Description *string     `json:"description"`
+	Steps       []byte      `json:"steps"`
+	IsActive    bool        `json:"is_active"`
+	IsSystem    bool        `json:"is_system"`
+}
+
+func (q *Queries) CreateOnboardingTemplate(ctx context.Context, arg CreateOnboardingTemplateParams) (OnboardingTemplate, error) {
+	row := q.db.QueryRow(ctx, createOnboardingTemplate,
+		arg.TenantID,
+		arg.Name,
+		arg.Description,
+		arg.Steps,
+		arg.IsActive,
+		arg.IsSystem,
+	)
+	var i OnboardingTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Description,
+		&i.Steps,
+		&i.IsActive,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deleteOnboardingTemplate = `-- name: DeleteOnboardingTemplate :exec
+DELETE FROM onboarding_templates
+WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteOnboardingTemplateParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteOnboardingTemplate(ctx context.Context, arg DeleteOnboardingTemplateParams) error {
+	_, err := q.db.Exec(ctx, deleteOnboardingTemplate, arg.ID, arg.TenantID)
+	return err
+}
+
 const dismissTour = `-- name: DismissTour :exec
 UPDATE onboarding_state
 SET tour_dismissed = true, updated_at = now()
@@ -69,6 +123,98 @@ func (q *Queries) GetOnboardingState(ctx context.Context, arg GetOnboardingState
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getOnboardingTemplate = `-- name: GetOnboardingTemplate :one
+SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
+FROM onboarding_templates
+WHERE id = $1 AND tenant_id = $2
+`
+
+type GetOnboardingTemplateParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetOnboardingTemplate(ctx context.Context, arg GetOnboardingTemplateParams) (OnboardingTemplate, error) {
+	row := q.db.QueryRow(ctx, getOnboardingTemplate, arg.ID, arg.TenantID)
+	var i OnboardingTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Description,
+		&i.Steps,
+		&i.IsActive,
+		&i.IsSystem,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listOnboardingTemplates = `-- name: ListOnboardingTemplates :many
+SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
+FROM onboarding_templates
+WHERE tenant_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListOnboardingTemplates(ctx context.Context, tenantID pgtype.UUID) ([]OnboardingTemplate, error) {
+	rows, err := q.db.Query(ctx, listOnboardingTemplates, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OnboardingTemplate
+	for rows.Next() {
+		var i OnboardingTemplate
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Description,
+			&i.Steps,
+			&i.IsActive,
+			&i.IsSystem,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateOnboardingTemplate = `-- name: UpdateOnboardingTemplate :exec
+UPDATE onboarding_templates
+SET name = $1, description = $2, steps = $3, is_active = $4, updated_at = now()
+WHERE id = $5 AND tenant_id = $6
+`
+
+type UpdateOnboardingTemplateParams struct {
+	Name        string      `json:"name"`
+	Description *string     `json:"description"`
+	Steps       []byte      `json:"steps"`
+	IsActive    bool        `json:"is_active"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateOnboardingTemplate(ctx context.Context, arg UpdateOnboardingTemplateParams) error {
+	_, err := q.db.Exec(ctx, updateOnboardingTemplate,
+		arg.Name,
+		arg.Description,
+		arg.Steps,
+		arg.IsActive,
+		arg.ID,
+		arg.TenantID,
+	)
+	return err
 }
 
 const upsertOnboardingState = `-- name: UpsertOnboardingState :exec

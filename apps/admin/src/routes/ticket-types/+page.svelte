@@ -5,6 +5,7 @@
 	import { FilterBar } from '$lib/components/ui/filter-bar';
 	import { Button } from '$lib/components/ui/button';
 	import { Select } from '$lib/components/ui/select';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { ticketTypesApi } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 
@@ -13,17 +14,27 @@
 		name: string;
 		slug: string;
 		description: string;
-		is_active: boolean;
+		is_public: boolean;
+		is_system: boolean;
 		default_priority: string;
+		field_group_id?: string;
+		auto_assign_group_id?: string;
+		sla_hours?: number;
+		created_at: string;
+		updated_at: string;
 	};
 
 	let ticketTypes = $state<TicketType[]>([]);
-	let filteredTicketTypes = $state<TicketType[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let searchQuery = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
+
+	let currentPage = $state(0);
+	let totalItems = $state(0);
+	let totalPages = $state(1);
+	let pageSize = $state(25);
 
 	let showModal = $state(false);
 	let editingId = $state<string | null>(null);
@@ -36,14 +47,14 @@
 		slug: '',
 		description: '',
 		default_priority: 'medium',
-		is_active: true
+		is_public: true
 	});
 
 	const canManageTickets = $derived(hasPermission('tickets.review'));
 
 	const filterDefs = [
 		{
-			key: 'is_active',
+			key: 'is_public',
 			label: t('app.ticket_types.filter_status', 'Status'),
 			options: [
 				{ value: 'true', label: t('app.ticket_types.filter_active', 'Active') },
@@ -57,22 +68,24 @@
 	function handleSearch(values: Record<string, string>) {
 		searchQuery = values.search ?? '';
 		filterValues = values;
-		applySearch(searchQuery);
+		currentPage = 0;
+		load();
 	}
 
 	function handleClear() {
 		searchQuery = '';
 		filterValues = {};
-		applySearch('');
+		currentPage = 0;
+		load();
 	}
 
 	const priorities = ['low', 'medium', 'high', 'urgent'];
 
 	const columns = [
 		{ key: 'name', label: t('ticket-types.name'), sortable: true },
-		{ key: 'slug', label: t('ticket-types.slug'), sortable: true, class: 'font-mono text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
+		{ key: 'slug', label: t('ticket-types.slug'), sortable: true, class: 'font-mono text-xs' },
 		{ key: 'description', label: t('ticket-types.description'), sortable: false, render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
-		{ key: 'is_active', label: t('ticket-types.active'), sortable: true, render: (v: boolean) => v
+		{ key: 'is_public', label: t('ticket-types.active'), sortable: true, render: (v: boolean) => v
 			? `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-success/15 text-success dark:text-success">${t('app.ticket_types.status_active', 'Active')}</span>`
 			: `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-muted/15 text-muted dark:text-muted">${t('app.ticket_types.status_inactive', 'Inactive')}</span>`
 		},
@@ -93,28 +106,21 @@
 			.replace(/^-|-$/g, '');
 	}
 
-	function applySearch(q: string) {
-		searchQuery = q.toLowerCase();
-		filteredTicketTypes = searchQuery
-			? ticketTypes.filter(tt =>
-				tt.name.toLowerCase().includes(searchQuery) ||
-				tt.slug.toLowerCase().includes(searchQuery) ||
-				(tt.description ?? '').toLowerCase().includes(searchQuery)
-			)
-			: ticketTypes;
-	}
-
 	async function load() {
 		loading = true;
 		errorMessage = '';
-		const params = new URLSearchParams();
-		if (filterValues.is_active) params.set('is_active', filterValues.is_active);
+		const params = new URLSearchParams({
+			page_size: String(pageSize),
+			page_offset: String(currentPage * pageSize)
+		});
+		if (filterValues.is_public) params.set('is_public', filterValues.is_public);
 		const qs = params.toString();
 		const result = await ticketTypesApi.list(qs || undefined);
 		if (result.ok) {
-			const data = result.data as { items: TicketType[]; total_pages: number };
+			const data = result.data as { items: TicketType[]; total: number; page: number; total_pages: number };
 			ticketTypes = data.items ?? [];
-			applySearch(searchQuery);
+			totalItems = data.total ?? 0;
+			totalPages = data.total_pages >= 0 ? data.total_pages : 1;
 		} else {
 			errorMessage = result.error;
 		}
@@ -123,7 +129,7 @@
 
 	function openCreate() {
 		editingId = null;
-		form = { name: '', slug: '', description: '', default_priority: 'medium', is_active: true };
+		form = { name: '', slug: '', description: '', default_priority: 'medium', is_public: true };
 		showModal = true;
 	}
 
@@ -134,7 +140,7 @@
 			slug: item.slug,
 			description: item.description ?? '',
 			default_priority: item.default_priority,
-			is_active: item.is_active
+			is_public: item.is_public
 		};
 		showModal = true;
 	}
@@ -150,7 +156,7 @@
 			slug,
 			description: form.description.trim(),
 			default_priority: form.default_priority,
-			is_active: form.is_active
+			is_public: form.is_public
 		};
 
 		const result = editingId
@@ -216,7 +222,7 @@
 		}
 	}
 
-	const tableData = $derived(filteredTicketTypes.map(item => ({ ...item })));
+	const tableData = $derived(ticketTypes.map(item => ({ ...item })));
 
 	$effect(() => {
 		load();
@@ -253,11 +259,8 @@
 		{columns}
 		data={tableData}
 		{loading}
-		pageSize={25}
+		pageSize={pageSize}
 		emptyMessage={t('ticket-types.no_ticket_types_configured')}
-		searchable={true}
-		searchPlaceholder={t('ticket-types.search_ticket_types', 'Search ticket types...')}
-		onsearch={applySearch}
 		selectable
 		bind:selectedIds
 	>
@@ -267,6 +270,7 @@
 			</Button>
 		{/snippet}
 	</DataTable>
+	<Pagination bind:page={currentPage} {totalPages} {totalItems} bind:pageSize />
 </div>
 
 <!-- Create/Edit Modal -->
@@ -292,7 +296,7 @@
 			/>
 		</div>
 		<div class="flex items-center gap-2">
-			<input id="tt-active" type="checkbox" bind:checked={form.is_active} />
+			<input id="tt-active" type="checkbox" bind:checked={form.is_public} />
 			<label for="tt-active" class="text-sm">{t('ticket-types.active')}</label>
 		</div>
 	</div>

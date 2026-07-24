@@ -7,7 +7,7 @@
 		values: initialValues = {},
 		onApply
 	}: {
-		filters: { key: string; label: string; type?: 'text' | 'select' | 'date'; options?: string[] }[];
+		filters: { key: string; label: string; type?: 'text' | 'select' | 'date'; options?: (string | { value: string; label: string })[] }[];
 		values?: Record<string, string>;
 		onApply?: (values: Record<string, string>) => void;
 	} = $props();
@@ -34,7 +34,7 @@
 			<label for="filter-{filter.key}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{filter.label}</label>
 			{#if filter.type === 'select'}
 				<Select
-					options={[{ value: '', label: t('common.all') }, ...(filter.options ?? []).map(o => ({ value: o, label: o }))]}
+					options={[{ value: '', label: t('common.all') }, ...(filter.options ?? []).map(o => typeof o === 'string' ? { value: o, label: o } : o)]}
 					value={localValues[filter.key] ?? ''}
 					onchange={(val) => handleSelectChange(filter.key, val)}
 					class="!h-9"

@@ -104,6 +104,59 @@ func (s *Store) listReviews(ctx context.Context, tenantID pgtype.UUID, limit, of
 	return rows, nil
 }
 
+// listAdminReviews returns all reviews for a tenant (admin moderation view)
+// with resolved entity names via polymorphic lookup.
+func (s *Store) listAdminReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListAdminReviewsRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.ListAdminReviews(ctx, gen.ListAdminReviewsParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing admin reviews: %w", err)
+	}
+
+	return rows, nil
+}
+
+// listAdminReviewsFiltered returns filtered reviews with entity names.
+func (s *Store) listAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UUID, status, entityType string, limit, offset int32) ([]gen.ListAdminReviewsFilteredRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.ListAdminReviewsFiltered(ctx, gen.ListAdminReviewsFilteredParams{
+		TenantID:   tenantID,
+		Status:     status,
+		EntityType: entityType,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing filtered admin reviews: %w", err)
+	}
+
+	return rows, nil
+}
+
+// countAdminReviews returns the total count of reviews for a tenant.
+func (s *Store) countAdminReviews(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	return s.read.CountAdminReviews(ctx, tenantID)
+}
+
+// countAdminReviewsFiltered returns the filtered count of reviews.
+func (s *Store) countAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UUID, status, entityType string) (int32, error) {
+	return s.read.CountAdminReviewsFiltered(ctx, gen.CountAdminReviewsFilteredParams{
+		TenantID:   tenantID,
+		Status:     status,
+		EntityType: entityType,
+	})
+}
+
 //nolint:unused // reserved for future features
 func (s *Store) updateReview(ctx context.Context, p gen.UpdateReviewParams) (gen.Review, error) {
 	row, err := s.write.UpdateReview(ctx, p)

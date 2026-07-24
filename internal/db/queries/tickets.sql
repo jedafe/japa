@@ -33,8 +33,14 @@ SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
     auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE tenant_id = @tenant_id
+    AND (sqlc.narg(is_public)::bool IS NULL OR is_public = sqlc.narg(is_public))
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountTicketTypesByTenant :one
+SELECT COUNT(*) FROM ticket_types
+WHERE tenant_id = @tenant_id
+    AND (sqlc.narg(is_public)::bool IS NULL OR is_public = sqlc.narg(is_public));
 
 -- name: UpdateTicketType :one
 UPDATE ticket_types
@@ -233,6 +239,15 @@ ORDER BY created_at ASC;
 SELECT COUNT(*) AS count
 FROM tickets
 WHERE tenant_id = @tenant_id AND status = @status;
+
+-- name: CountTicketsByTenant :one
+SELECT COUNT(*) FROM tickets
+WHERE tenant_id = @tenant_id
+    AND (@status::text IS NULL OR status = @status)
+    AND (@priority::text IS NULL OR priority = @priority)
+    AND (@type_id::uuid IS NULL OR type_id = @type_id)
+    AND (@assigned_to::uuid IS NULL OR assigned_to = @assigned_to)
+    AND (@search::text IS NULL OR subject ILIKE '%' || @search || '%');
 
 -- name: UpdateTicketSLABreach :exec
 UPDATE tickets

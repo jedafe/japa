@@ -110,7 +110,17 @@ async function dispatch<T>(
 		return { data: null, error: null, status: res.status };
 	}
 
-	const body = await res.json();
+	const text = await res.text();
+	if (!text) {
+		return { data: null, error: null, status: res.status };
+	}
+
+	let body: any;
+	try {
+		body = JSON.parse(text);
+	} catch {
+		return { data: null, error: { code: 'invalid_response', message: 'Invalid JSON response', status: res.status }, status: res.status };
+	}
 
 	if (!res.ok || 'error' in body) {
 		const err = 'error' in body ? body.error : { code: 'unknown', message: res.statusText, status: res.status };

@@ -12,6 +12,7 @@
 	import { spamApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { onMount } from "svelte";
 
 	type IpBlock = {
 		id: string;
@@ -38,6 +39,7 @@
 
 	let activeTab = $state<Tab>("ip-blocks");
 	let loading = $state(false);
+	let submitting = $state(false);
 	let error = $state("");
 	let success = $state("");
 
@@ -45,8 +47,7 @@
 	let showViewModal = $state(false);
 	let viewTarget = $state<{ kind: string; row: any } | null>(null);
 
-	// Backend gates spam mutations on moderation.spam
-	const canManageSpam = $derived(hasPermission("moderation.spam"));
+	const canManageSpam = $derived(hasPermission("spam.ip_block.manage"));
 
 	// IP Blocks
 	let ipBlocks = $state<IpBlock[]>([]);
@@ -119,24 +120,24 @@
 	const ipColumns = [
 		{ key: "cidr", label: t("spam.cidr", "IP / CIDR"), sortable: true },
 		{ key: "block_type", label: t("spam.block_type", "Type"), sortable: true },
-		{ key: "reason", label: t("spam.reason", "Reason"), render: (v: string) => v || "—" },
-		{ key: "expires_at", label: t("spam.expires", "Expires"), render: (v: string) => v || t("spam.never", "Never") },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", component: IpActionsCell }
+		{ key: "reason", label: t("spam.reason", "Reason"), sortable: true, render: (v: string) => v || "—" },
+		{ key: "expires_at", label: t("spam.expires", "Expires"), sortable: true, render: (v: string) => v || t("spam.never", "Never") },
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", componentSnippet: IpActionsCell }
 	];
 
 	const cwColumns = [
 		{ key: "pattern", label: t("spam.pattern", "Pattern"), sortable: true },
 		{ key: "action", label: t("spam.action", "Action"), sortable: true },
-		{ key: "replacement", label: t("spam.replacement", "Replacement"), render: (v: string) => v || "—" },
-		{ key: "created_at", label: t("common.created", "Created"), render: (v: string) => v ? new Date(v).toLocaleDateString() : "—" },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", component: CwActionsCell }
+		{ key: "replacement", label: t("spam.replacement", "Replacement"), sortable: true, render: (v: string) => v || "—" },
+		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => v ? new Date(v).toLocaleDateString() : "—" },
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", componentSnippet: CwActionsCell }
 	];
 
 	const ubColumns = [
-		{ key: "blocker_id", label: t("spam.blocker", "Blocker") },
-		{ key: "blocked_id", label: t("spam.blocked", "Blocked") },
-		{ key: "created_at", label: t("common.created", "Created"), render: (v: string) => v ? new Date(v).toLocaleDateString() : "—" },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", component: UbActionsCell }
+		{ key: "blocker_id", label: t("spam.blocker", "Blocker"), sortable: true },
+		{ key: "blocked_id", label: t("spam.blocked", "Blocked"), sortable: true },
+		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => v ? new Date(v).toLocaleDateString() : "—" },
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", componentSnippet: UbActionsCell }
 	];
 
 	async function loadIpBlocks() {
@@ -196,7 +197,7 @@
 				let items = (result.data as UserBlock[]) ?? [];
 				if (ubSearch) {
 					const q = ubSearch.toLowerCase();
-					items = items.filter((b: any) => b.username?.toLowerCase().includes(q) || b.reason?.toLowerCase().includes(q));
+					items = items.filter((b: any) => b.blocker_id?.toLowerCase().includes(q) || b.blocked_id?.toLowerCase().includes(q));
 				}
 				userBlocks = items;
 			} else {
@@ -219,41 +220,51 @@
 	}
 
 	async function submitIpBlock() {
-		if (!ipForm.cidr.trim()) return;
+		if (!ipForm.cidr.trim() || submitting) return;
+		submitting = true;
 		error = "";
-		const body: { cidr: string; block_type: string; reason?: string; expires_at?: string } = {
-			cidr: ipForm.cidr.trim(),
-			block_type: ipForm.block_type
-		};
-		if (ipForm.reason.trim()) body.reason = ipForm.reason.trim();
-		if (ipForm.expires_at) body.expires_at = ipForm.expires_at;
-		const result = await spamApi.createIpBlock(body);
-		if (result.ok) {
-			showIpModal = false;
-			ipForm = { cidr: "", block_type: "permanent", reason: "", expires_at: "" };
-			success = t("spam.block_created", "IP block created");
-			loadIpBlocks();
-		} else {
-			error = result.error ?? t("common.error", "Failed to create IP block");
+		try {
+			const body: { cidr: string; block_type: string; reason?: string; expires_at?: string } = {
+				cidr: ipForm.cidr.trim(),
+				block_type: ipForm.block_type
+			};
+			if (ipForm.reason.trim()) body.reason = ipForm.reason.trim();
+			if (ipForm.expires_at) body.expires_at = ipForm.expires_at;
+			const result = await spamApi.createIpBlock(body);
+			if (result.ok) {
+				showIpModal = false;
+				ipForm = { cidr: "", block_type: "permanent", reason: "", expires_at: "" };
+				success = t("spam.block_created", "IP block created");
+				loadIpBlocks();
+			} else {
+				error = result.error ?? t("common.error", "Failed to create IP block");
+			}
+		} finally {
+			submitting = false;
 		}
 	}
 
 	async function submitCensoredWord() {
-		if (!cwForm.pattern.trim()) return;
+		if (!cwForm.pattern.trim() || submitting) return;
+		submitting = true;
 		error = "";
-		const body: { pattern: string; action: string; replacement?: string } = {
-			pattern: cwForm.pattern.trim(),
-			action: cwForm.action
-		};
-		if (cwForm.replacement.trim()) body.replacement = cwForm.replacement.trim();
-		const result = await spamApi.createCensoredWord(body);
-		if (result.ok) {
-			showCwModal = false;
-			cwForm = { pattern: "", action: "block", replacement: "" };
-			success = t("spam.pattern_created", "Censored pattern created");
-			loadCensoredWords();
-		} else {
-			error = result.error ?? t("common.error", "Failed to create censored word");
+		try {
+			const body: { pattern: string; action: string; replacement?: string } = {
+				pattern: cwForm.pattern.trim(),
+				action: cwForm.action
+			};
+			if (cwForm.replacement.trim()) body.replacement = cwForm.replacement.trim();
+			const result = await spamApi.createCensoredWord(body);
+			if (result.ok) {
+				showCwModal = false;
+				cwForm = { pattern: "", action: "block", replacement: "" };
+				success = t("spam.pattern_created", "Censored pattern created");
+				loadCensoredWords();
+			} else {
+				error = result.error ?? t("common.error", "Failed to create censored word");
+			}
+		} finally {
+			submitting = false;
 		}
 	}
 
@@ -288,7 +299,7 @@
 		}
 	}
 
-	$effect(() => { loadIpBlocks(); });
+	onMount(() => { loadIpBlocks(); });
 </script>
 
 <svelte:head>
@@ -312,18 +323,18 @@
 {/if}
 
 <!-- Tab navigation -->
-<div class="mb-4 flex gap-1 rounded-lg p-1" style="background: var(--color-surface)">
+<div class="mb-4 flex flex-wrap gap-1 rounded-lg p-1" style="background: var(--color-surface)">
 	{#each tabs as tab}
 		{@const Icon = tab.icon}
 		<button
-			class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+			class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all"
 			style={activeTab === tab.value
 				? "background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)"
 				: "color: var(--color-muted)"}
 			onclick={() => switchTab(tab.value)}
 		>
-			<Icon class="mr-2 h-4 w-4" />
-			{tab.label}
+			<Icon class="h-4 w-4 shrink-0" />
+			<span class="whitespace-nowrap">{tab.label}</span>
 		</button>
 	{/each}
 </div>
@@ -378,12 +389,16 @@
 
 <!-- User Blocks Tab -->
 {#if activeTab === "user-blocks"}
+	<div class="mb-4 flex items-center justify-between">
+		<p class="text-sm" style="color: var(--color-muted)">{userBlocks.length} {t("spam.user_blocks_count", "user blocks found")}</p>
+	</div>
 	<Card>
+		<CardHeader />
 		<CardContent>
 			{#if loading}
 				<TableSkeleton rows={5} columns={ubColumns.length} />
 			{:else}
-				<DataTable columns={ubColumns} data={userBlocks} pageSize={10} searchable onsearch={(q) => { ubSearch = q; loadUserBlocks(); }} />
+				<DataTable columns={ubColumns} data={userBlocks} pageSize={10} searchable emptyMessage={t("spam.no_user_blocks", "No user blocks found")} onsearch={(q) => { ubSearch = q; loadUserBlocks(); }} />
 			{/if}
 		</CardContent>
 	</Card>

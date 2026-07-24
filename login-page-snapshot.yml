@@ -1,0 +1,142 @@
+- generic [ref=f31e3]:
+  - complementary [ref=f31e4]:
+    - link "Admin" [ref=f31e6] [cursor=pointer]:
+      - /url: /
+    - textbox "Search navigation..." [ref=f31e11]
+    - navigation [ref=f31e12]:
+      - generic [ref=f31e13]:
+        - button "Dashboard" [ref=f31e14]
+        - link "Overview" [ref=f31e18] [cursor=pointer]:
+          - /url: /
+      - generic [ref=f31e21]:
+        - button "User Management" [ref=f31e22]
+        - generic [ref=f31e25]:
+          - link "Users" [ref=f31e26] [cursor=pointer]:
+            - /url: /users
+          - link "Organisations" [ref=f31e29] [cursor=pointer]:
+            - /url: /organisations
+          - link "Universities" [ref=f31e32] [cursor=pointer]:
+            - /url: /universities
+          - link "Professional Types" [ref=f31e35] [cursor=pointer]:
+            - /url: /professional-types
+          - link "Groups" [ref=f31e38] [cursor=pointer]:
+            - /url: /users/groups
+      - generic [ref=f31e41]:
+        - button "Content" [ref=f31e42]
+        - generic [ref=f31e45]:
+          - link "All Content" [ref=f31e46] [cursor=pointer]:
+            - /url: /content
+          - link "Blog Posts" [ref=f31e49] [cursor=pointer]:
+            - /url: /blog/review-queue
+          - link "Documentation" [ref=f31e52] [cursor=pointer]:
+            - /url: /docs
+          - link "Media" [ref=f31e55] [cursor=pointer]:
+            - /url: /media
+          - link "Spaces" [ref=f31e58] [cursor=pointer]:
+            - /url: /spaces
+          - link "Space Types" [ref=f31e61] [cursor=pointer]:
+            - /url: /space-types
+          - link "Tags" [ref=f31e64] [cursor=pointer]:
+            - /url: /tags
+          - link "Reactions" [ref=f31e67] [cursor=pointer]:
+            - /url: /reactions
+      - generic [ref=f31e70]:
+        - button "Moderation" [ref=f31e71]
+        - generic [ref=f31e74]:
+          - link "Queue" [ref=f31e75] [cursor=pointer]:
+            - /url: /moderation
+          - link "Review Queue" [ref=f31e78] [cursor=pointer]:
+            - /url: /moderation-queue
+          - link "Appeals" [ref=f31e81] [cursor=pointer]:
+            - /url: /moderation/appeals
+          - link "Reports" [ref=f31e84] [cursor=pointer]:
+            - /url: /moderation/reports
+          - link "Content" [ref=f31e87] [cursor=pointer]:
+            - /url: /moderation/content
+          - link "Alerts" [ref=f31e90] [cursor=pointer]:
+            - /url: /moderation/alerts
+          - link "Spam Management" [ref=f31e93] [cursor=pointer]:
+            - /url: /spam
+          - link "Support Tickets" [ref=f31e96] [cursor=pointer]:
+            - /url: /tickets
+          - link "Reviews" [ref=f31e99] [cursor=pointer]:
+            - /url: /reviews
+      - button "Analytics & Reports" [ref=f31e103]
+      - button "Engagement" [ref=f31e107]
+      - button "Monetization" [ref=f31e111]
+      - button "Automation" [ref=f31e115]
+      - button "Customization" [ref=f31e119]
+      - button "System" [ref=f31e123]
+    - generic [ref=f31e127]:
+      - generic [ref=f31e128]: A
+      - generic [ref=f31e130]:
+        - paragraph [ref=f31e131]: Admin
+        - paragraph
+      - link "Logout" [ref=f31e132] [cursor=pointer]:
+        - /url: /logout
+  - generic [ref=f31e136]:
+    - banner [ref=f31e137]:
+      - link "JapaConnect Admin" [ref=f31e139] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f31e140]:
+        - button [ref=f31e142]
+        - button [ref=f31e144]
+        - link "JC" [ref=f31e146] [cursor=pointer]:
+          - /url: /
+    - main [ref=f31e149]:
+      - generic [ref=f31e150]:
+        - navigation "Breadcrumb" [ref=f31e151]:
+          - link [ref=f31e152] [cursor=pointer]:
+            - /url: /
+          - generic [ref=f31e155]: Onboarding
+        - generic [ref=f31e157]:
+          - heading "Onboarding Settings" [level=1] [ref=f31e158]
+          - paragraph [ref=f31e159]: Configure the onboarding wizard for new users
+        - generic [ref=f31e160]:
+          - generic [ref=f31e161]:
+            - generic [ref=f31e162]:
+              - heading "Minimum Engagement Requirements" [level=3] [ref=f31e163]
+              - paragraph [ref=f31e164]: Set the minimum number of items users must engage with before completing onboarding.
+            - generic [ref=f31e165]:
+              - generic [ref=f31e166]:
+                - generic [ref=f31e167]:
+                  - generic [ref=f31e168]: Tags to Follow
+                  - spinbutton "Tags to Follow" [ref=f31e169]: "5"
+                  - paragraph [ref=f31e170]: Minimum tags to follow in Step 3
+                - generic [ref=f31e171]:
+                  - generic [ref=f31e172]: Users to Follow
+                  - spinbutton "Users to Follow" [ref=f31e173]: "3"
+                  - paragraph [ref=f31e174]: Minimum users to follow in Step 4
+                - generic [ref=f31e175]:
+                  - generic [ref=f31e176]: Spaces to Join
+                  - spinbutton "Spaces to Join" [ref=f31e177]: "3"
+                  - paragraph [ref=f31e178]: Minimum spaces to join in Step 4
+              - button "Save Changes" [ref=f31e180]
+          - generic [ref=f31e182]:
+            - generic [ref=f31e183]:
+              - heading "Promoted Entities" [level=3] [ref=f31e184]
+              - paragraph [ref=f31e185]: Entities listed here appear first in the onboarding recommendations (Step 4). Enter comma-separated UUIDs.
+            - generic [ref=f31e186]:
+              - generic [ref=f31e187]:
+                - generic [ref=f31e188]:
+                  - generic [ref=f31e189]: Promoted Space IDs
+                  - button [ref=f31e191]:
+                    - generic [ref=f31e192]:
+                      - textbox [ref=f31e193]
+                      - generic: Select spaces to promote...
+                  - paragraph [ref=f31e195]: Spaces that appear first in onboarding recommendations
+                - generic [ref=f31e196]:
+                  - generic [ref=f31e197]: Promoted User IDs
+                  - button [ref=f31e199]:
+                    - generic [ref=f31e200]:
+                      - textbox [ref=f31e201]
+                      - generic: Select users to promote...
+                  - paragraph [ref=f31e203]: Users that appear first in onboarding recommendations
+                - generic [ref=f31e204]:
+                  - generic [ref=f31e205]: Promoted Tag IDs
+                  - button [ref=f31e207]:
+                    - generic [ref=f31e208]:
+                      - textbox [ref=f31e209]
+                      - generic: Select tags to promote...
+                  - paragraph [ref=f31e211]: Tags that appear first in onboarding recommendations
+              - button "Save Changes" [ref=f31e213]

@@ -55,21 +55,45 @@ func (s *Store) getTicketTypeBySlug(ctx context.Context, slug string, tenantID p
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) listTicketTypesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.TicketType, error) {
+func (s *Store) listTicketTypesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32, isPublic *bool) (ListTicketTypesResponse, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.ListTicketTypesByTenant(ctx, gen.ListTicketTypesByTenantParams{
 		TenantID:   tenantID,
+		IsPublic:   isPublic,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing ticket types: %w", err)
+		return ListTicketTypesResponse{}, fmt.Errorf("listing ticket types: %w", err)
 	}
 
-	return rows, nil
+	total, err := s.read.CountTicketTypesByTenant(ctx, gen.CountTicketTypesByTenantParams{
+		TenantID: tenantID,
+		IsPublic: isPublic,
+	})
+	if err != nil {
+		return ListTicketTypesResponse{}, fmt.Errorf("counting ticket types: %w", err)
+	}
+
+	totalPages := int32(0)
+	if total > 0 && limit > 0 {
+		totalPages = int32((total + int64(limit) - 1) / int64(limit))
+	}
+
+	items := rows
+	if items == nil {
+		items = make([]gen.TicketType, 0)
+	}
+
+	return ListTicketTypesResponse{
+		Items:      items,
+		Total:      total,
+		Page:       offset / limit,
+		TotalPages: totalPages,
+	}, nil
 }
 
 //nolint:unused // reserved for future features
@@ -116,17 +140,44 @@ func (s *Store) getTicketByID(ctx context.Context, id, tenantID pgtype.UUID) (ge
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) listTicketsByTenant(ctx context.Context, p gen.ListTicketsByTenantParams) ([]gen.ListTicketsByTenantRow, error) {
+func (s *Store) listTicketsByTenant(ctx context.Context, p gen.ListTicketsByTenantParams) (ListTicketsResponse, error) {
 	if p.PageLimit <= 0 || p.PageLimit > MaxPageSize {
 		p.PageLimit = DefaultPageSize
 	}
 
 	rows, err := s.read.ListTicketsByTenant(ctx, p)
 	if err != nil {
-		return nil, fmt.Errorf("listing tickets: %w", err)
+		return ListTicketsResponse{}, fmt.Errorf("listing tickets: %w", err)
 	}
 
-	return rows, nil
+	total, err := s.read.CountTicketsByTenant(ctx, gen.CountTicketsByTenantParams{
+		TenantID:   p.TenantID,
+		Status:     p.Status,
+		Priority:   p.Priority,
+		TypeID:     p.TypeID,
+		AssignedTo: p.AssignedTo,
+		Search:     p.Search,
+	})
+	if err != nil {
+		return ListTicketsResponse{}, fmt.Errorf("counting tickets: %w", err)
+	}
+
+	totalPages := int32(0)
+	if total > 0 && p.PageLimit > 0 {
+		totalPages = int32((total + int64(p.PageLimit) - 1) / int64(p.PageLimit))
+	}
+
+	items := rows
+	if items == nil {
+		items = make([]gen.ListTicketsByTenantRow, 0)
+	}
+
+	return ListTicketsResponse{
+		Tickets:     items,
+		Total:       total,
+		Page:        p.PageOffset / p.PageLimit,
+		TotalPages:  totalPages,
+	}, nil
 }
 
 //nolint:unused // reserved for future features
