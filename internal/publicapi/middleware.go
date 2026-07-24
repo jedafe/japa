@@ -8,6 +8,7 @@ import (
 
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -65,29 +66,11 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 	}
 }
 
-// extractClientIP extracts the client's IP address from the request.
-// It checks X-Forwarded-For, X-Real-IP, and falls back to RemoteAddr.
+// extractClientIP resolves the client's IP address, trusting forwarding
+// headers only from known proxies. The per-key IP allowlist is enforced on
+// this value, so an attacker-supplied header must never reach it.
 func extractClientIP(r *http.Request) string {
-	// X-Forwarded-For: first IP is the original client.
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP from the comma-separated list.
-		if idx := strings.Index(xff, ","); idx > 0 {
-			return strings.TrimSpace(xff[:idx])
-		}
-
-		return strings.TrimSpace(xff)
-	}
-	// X-Real-IP: single client IP set by reverse proxy.
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	// RemoteAddr: strip port if present.
-	addr := r.RemoteAddr
-	if idx := strings.LastIndex(addr, ":"); idx > 0 {
-		return addr[:idx]
-	}
-
-	return addr
+	return clientip.FromRequest(r)
 }
 
 // RequireScope checks that the validated API key includes the given scope.
