@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -280,7 +281,9 @@ func RevokeAllSessions(ctx context.Context, _ string, vkClient valkeycompat.Cmda
 
 		for _, key := range keys {
 			// Best effort — individual key deletion failures are logged but not fatal.
-			_ = vkClient.Del(ctx, key).Err()
+			if err := vkClient.Del(ctx, key).Err(); err != nil {
+				slog.Error("failed to delete revoked JTI", "error", err, "key", key)
+			}
 		}
 
 		cursor = nextCursor

@@ -295,7 +295,9 @@ func (s *Service) GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (
 func (s *Service) UpdateMetadata(ctx context.Context, tenantID, mediaID pgtype.UUID, altText, caption *string, width, height *int32, duration *float64, userGroupID pgtype.UUID) error {
 	var durationNum pgtype.Numeric
 	if duration != nil {
-		_ = durationNum.Scan(fmt.Sprintf("%f", *duration))
+		if err := durationNum.Scan(fmt.Sprintf("%f", *duration)); err != nil {
+			return fmt.Errorf("invalid duration %v: %w", *duration, err)
+		}
 	}
 
 	return s.store.UpdateMediaMetadata(ctx, gen.UpdateMediaMetadataParams{
