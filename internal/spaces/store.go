@@ -193,6 +193,23 @@ func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pg
 	return spaces, nil
 }
 
+// ListPublicByMemberUser returns the PUBLIC, active spaces the given user is
+// a member of, paginated. Powers the public profile Spaces tab — excludes
+// members-only/private and non-active spaces.
+func (s *Service) ListPublicByMemberUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Space, error) {
+	spaces, err := s.read.ListPublicSpacesByMemberUser(ctx, gen.ListPublicSpacesByMemberUserParams{
+		UserID:     userID,
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing public spaces by member: %w", err)
+	}
+
+	return spaces, nil
+}
+
 // ListStatesByCountryCode returns the state/province spaces parented to the
 // country with the given ISO geo_code (catalog: GET /geo/countries/:code/states).
 func (s *Service) ListStatesByCountryCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) ([]gen.Space, error) {

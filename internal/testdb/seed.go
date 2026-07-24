@@ -239,13 +239,31 @@ func SeedMedia(t *testing.T, d *db.DB, tenantID, uploaderID pgtype.UUID) pgtype.
 	return mediaID
 }
 
+// SpaceOpts customizes SeedSpaceMembership. Zero-value fields fall back to
+// defaults: Visibility to "public" and Status to "active" — matching the
+// spaces table's own column defaults.
+type SpaceOpts struct {
+	Visibility string // default "public"
+	Status     string // default "active"
+}
+
 // SeedSpaceMembership creates a throwaway space (and the space_type row it
 // requires) under tenantID and adds userID as a member, returning the new
 // space id.
-func SeedSpaceMembership(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID) pgtype.UUID {
+func SeedSpaceMembership(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, o SpaceOpts) pgtype.UUID {
 	t.Helper()
 
 	ctx := t.Context()
+
+	visibility := o.Visibility
+	if visibility == "" {
+		visibility = "public"
+	}
+
+	status := o.Status
+	if status == "" {
+		status = "active"
+	}
 
 	spaceTypeID := mustUUID()
 	typeSlug := "test-space-type-" + uuid.New().String()
@@ -261,8 +279,8 @@ func SeedSpaceMembership(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID) p
 	spaceSlug := "test-space-" + uuid.New().String()
 
 	_, err = d.Writer.Exec(ctx,
-		`INSERT INTO spaces (id, tenant_id, space_type_id, name, slug, level) VALUES ($1, $2, $3, 'Test Space', $4, 'custom')`,
-		spaceID, tenantID, spaceTypeID, spaceSlug)
+		`INSERT INTO spaces (id, tenant_id, space_type_id, name, slug, level, visibility, status) VALUES ($1, $2, $3, 'Test Space', $4, 'custom', $5, $6)`,
+		spaceID, tenantID, spaceTypeID, spaceSlug, visibility, status)
 	if err != nil {
 		t.Fatalf("testdb: SeedSpaceMembership: seeding spaces: %v", err)
 	}

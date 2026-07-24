@@ -1941,6 +1941,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public profile Media tab (Task A3) — same audience rule as above.
 			// Gated by requireActiveProfileUser: 404s for banned/suspended/deleted users.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService)).Get("/users/{id}/media", mediaHandlers.ListByUser)
+			// Public profile Spaces tab — public+active spaces only; gated to 404 non-active users.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService)).Get("/users/{id}/spaces", spaceHandlers.ListByMemberUser)
 			// Admin user routes (catalog: /admin/users)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Post("/admin/users", adminHandlers.CreateUser)
