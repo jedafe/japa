@@ -1041,11 +1041,17 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 
 	var coverImageID, moderatorUserID pgtype.UUID
 	if input.CoverImageID != nil {
-		_ = coverImageID.Scan(*input.CoverImageID)
+		if err := coverImageID.Scan(*input.CoverImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_cover_image_id", "Invalid cover image ID")
+			return
+		}
 	}
 
 	if input.ModeratorUserID != nil {
-		_ = moderatorUserID.Scan(*input.ModeratorUserID)
+		if err := moderatorUserID.Scan(*input.ModeratorUserID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_moderator_user_id", "Invalid moderator user ID")
+			return
+		}
 	}
 
 	tag, err := h.Service.UpdateTag(r.Context(), id, tenantID, UpdateTagInput{
