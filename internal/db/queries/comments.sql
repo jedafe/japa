@@ -134,3 +134,30 @@ WHERE c.tenant_id = @tenant_id
   AND cs.relevance_embedding IS NOT NULL
 ORDER BY cs.relevance_embedding <=> @embedding
 LIMIT @page_limit;
+
+-- name: ListCommentsByAuthor :many
+-- Public "Replies" tab: comments the user authored on published+public content,
+-- with parent-content title/slug for context. Public-safe: comments on
+-- draft/private content and soft-deleted comments are excluded.
+SELECT c.id, c.tenant_id, c.content_id, c.parent_id, c.body, c.vote_score,
+       c.created_at,
+       ct.title AS content_title, ct.slug AS content_slug
+FROM comments c
+JOIN contents ct ON ct.id = c.content_id AND ct.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.author_user_id = @author_user_id
+  AND c.deleted_at IS NULL
+  AND ct.status = 'published'
+  AND ct.visibility = 'public'
+ORDER BY c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountCommentsByAuthor :one
+SELECT COUNT(*)::int AS count
+FROM comments c
+JOIN contents ct ON ct.id = c.content_id AND ct.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.author_user_id = @author_user_id
+  AND c.deleted_at IS NULL
+  AND ct.status = 'published'
+  AND ct.visibility = 'public';
