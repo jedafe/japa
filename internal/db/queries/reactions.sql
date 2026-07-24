@@ -73,7 +73,7 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        MAX(r.created_at)::timestamptz AS reacted_at
 FROM reactions r
 JOIN contents c ON c.id = r.entity_id AND c.tenant_id = r.tenant_id
-LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
 WHERE r.tenant_id = @tenant_id
   AND r.user_id = @user_id
