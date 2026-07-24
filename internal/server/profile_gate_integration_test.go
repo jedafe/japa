@@ -34,7 +34,7 @@ func TestRequireActiveProfileUser(t *testing.T) {
 		nextCalled = true
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := requireActiveProfileUser(usersSvc)(next)
+	handler := requireActiveProfileUser(usersSvc, "id")(next)
 
 	newReq := func(id string, withTenant bool) *http.Request {
 		req := httptest.NewRequest(http.MethodGet, "/users/"+id+"/media", nil)
@@ -71,4 +71,31 @@ func TestRequireActiveProfileUser(t *testing.T) {
 			}
 		})
 	}
+
+	// The profile-feed route (GET /feed/profile/{user_id}) reuses this gate with a
+	// DIFFERENT param key. Verify the gate reads the configured key, not a hardcoded
+	// "id": with paramKey="user_id" an active user passes and a suspended one 404s.
+	t.Run("honors custom param key user_id", func(t *testing.T) {
+		userIDHandler := requireActiveProfileUser(usersSvc, "user_id")(next)
+
+		newFeedReq := func(id string) *http.Request {
+			req := httptest.NewRequest(http.MethodGet, "/feed/profile/"+id, nil)
+			req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
+			return testdb.WithChiURLParam(req, "user_id", id)
+		}
+
+		nextCalled = false
+		rec := httptest.NewRecorder()
+		userIDHandler.ServeHTTP(rec, newFeedReq(activeID.String()))
+		if rec.Code != http.StatusOK || !nextCalled {
+			t.Fatalf("active via user_id: status=%d nextCalled=%v; want 200/true; body=%s", rec.Code, nextCalled, rec.Body)
+		}
+
+		nextCalled = false
+		rec = httptest.NewRecorder()
+		userIDHandler.ServeHTTP(rec, newFeedReq(suspendedID.String()))
+		if rec.Code != http.StatusNotFound || nextCalled {
+			t.Fatalf("suspended via user_id: status=%d nextCalled=%v; want 404/false; body=%s", rec.Code, nextCalled, rec.Body)
+		}
+	})
 }
