@@ -618,7 +618,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	searchHandlers.SetSettings(settingsService)
 
 	// Onboarding subsystem (Section 09).
-	onboardingService := onboarding.NewService(database)
+	onboardingService := onboarding.NewService(database, settingsService)
 	onboardingHandlers := onboarding.NewHandlers(onboardingService)
 
 	// SEO & Performance subsystem (Section 26).
@@ -869,6 +869,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/forms/{id}", cfHandlers.UpdateForm)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.delete")).
 				Delete("/forms/{id}", cfHandlers.DeleteForm)
+			// Ensure form has a backing field group (called by admin UI before adding fields)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.edit")).
+				Post("/forms/{id}/ensure-field-group", cfHandlers.EnsureFormGroup)
 			// Space-scoped form creation (the builder UI posts here)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forms.create")).
 				Post("/spaces/{spaceId}/forms", cfHandlers.CreateSpaceForm)
@@ -1154,7 +1157,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/space/{space_id}", feedHandlers.GetSpaceFeed)
 			// catalog: GET /spaces/:id/feed — same handler, param name matches (space_id).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/feed", feedHandlers.GetSpaceFeed)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/profile/{user_id}", feedHandlers.GetProfileFeed)
+			// Public per Section 32:12 (profile timeline audience = "Anyone"), but
+			// gated so a banned/suspended/deleted user's timeline 404s like the rest
+			// of their profile (governing decision: "the whole profile 404s for
+			// non-active users"). The feed route's param is {user_id}, not {id}.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "user_id")).Get("/feed/profile/{user_id}", feedHandlers.GetProfileFeed)
 
 			// Trending & Discovery routes (Phase 28)
 			// Public trending endpoints (no auth required)
@@ -1401,6 +1408,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.delete_own")).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.flag")).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.moderate")).Patch("/admin/reviews/{id}", reviewHandlers.ModerateReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.moderate")).Delete("/admin/reviews/{id}", reviewHandlers.HardDeleteReview)
 			})
 
 			// Generic Comparison System routes — gated by feature.comparison (Section 30)
@@ -1935,7 +1943,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/download", gdprHandlers.GetMyDataExportDownload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/reports", reportsHandlers.ListMyReports)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/users", usersHandlers.ListUsers)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
+			// Public per Section 32:12 (profile timeline audience = "Anyone").
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
+			// Public profile Media tab (Task A3) — same audience rule as above.
+			// Gated by requireActiveProfileUser: 404s for banned/suspended/deleted users.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/media", mediaHandlers.ListByUser)
+			// Public profile Spaces tab — public+active spaces only; gated to 404 non-active users.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/spaces", spaceHandlers.ListByMemberUser)
+			// Public profile Certificates tab — earned-certificate badges; gated to 404 non-active users.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/certificates", learningHandlers.ListCertificatesByUser)
+			// Public profile Likes tab — published+public content the user reacted to; gated to 404 non-active users.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/likes", contentHandlers.ListLikedByUser)
+			// Public profile Replies tab — user's comments on published+public content; gated to 404 non-active users.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/replies", commentsHandlers.ListByAuthor)
 			// Admin user routes (catalog: /admin/users)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.list")).Get("/admin/users", usersHandlers.ListUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Post("/admin/users", adminHandlers.CreateUser)
@@ -1952,6 +1972,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/onboarding/complete", onboardingHandlers.Complete)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/onboarding/recommendations", onboardingHandlers.GetRecommendations)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/onboarding/tour/dismiss", onboardingHandlers.DismissTour)
+
+			// Admin onboarding settings
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings.view")).Get("/admin/onboarding/settings", onboardingHandlers.GetAdminSettings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).Put("/admin/onboarding/settings", onboardingHandlers.UpdateAdminSettings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings.view")).Get("/admin/onboarding/templates", onboardingHandlers.ListTemplates)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).Post("/admin/onboarding/templates", onboardingHandlers.CreateTemplate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).Patch("/admin/onboarding/templates/{id}", onboardingHandlers.UpdateTemplate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).Delete("/admin/onboarding/templates/{id}", onboardingHandlers.DeleteTemplate)
 
 			// Search routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/search", searchHandlers.Search)
@@ -2772,8 +2800,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Task 34: Users public extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/users/{id}/analytics", usersHandlers.GetMyAnalytics)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/users/{id}/content", contentHandlers.ListContent)
+			// Public profile Posts tab — author-scoped published+public content (was
+			// wired to ListContent, which ignored {id} and returned all tenant content).
+			// Public per Section 32; gated to 404 non-active users.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).
+				Get("/users/{id}/content", contentHandlers.ListByAuthor)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
 				Post("/users/{id}/follow", followHandlers.ToggleFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).

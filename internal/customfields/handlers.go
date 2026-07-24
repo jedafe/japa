@@ -113,7 +113,16 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	groups, err := h.Service.ListFieldGroups(r.Context(), tenantID)
+	entityClass := r.URL.Query().Get("entity_class")
+
+	var groups []gen.CustomFieldGroup
+	var err error
+
+	if entityClass != "" {
+		groups, err = h.Service.ListFieldGroupsByEntityClass(r.Context(), tenantID, entityClass)
+	} else {
+		groups, err = h.Service.ListFieldGroups(r.Context(), tenantID)
+	}
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -839,13 +848,25 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Also return field_group_id for frontend field management.
+	fieldGroupID := h.Service.GetFormGroupID(r.Context(), id)
+
+	// Return all form fields including slug, status etc.
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"id":          form.ID,
-			"name":        form.Name,
-			"description": form.Description,
-			"fields":      fieldList,
-			"created_at":  form.CreatedAt,
+			"id":              form.ID,
+			"name":            form.Name,
+			"description":     form.Description,
+			"slug":            form.Slug,
+			"status":          form.Status,
+			"is_multi_step":   form.IsMultiStep,
+			"submit_label":    form.SubmitLabel,
+			"success_message": form.SuccessMessage,
+			"is_system":       form.IsSystem,
+			"fields":          fieldList,
+			"field_group_id":  fieldGroupID,
+			"space_id":        form.SpaceID,
+			"created_at":      form.CreatedAt,
 		},
 	})
 }
@@ -898,6 +919,9 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Auto-create a backing field group so the admin UI can manage fields.
+	_ = h.Service.EnsureFormGroup(r.Context(), tenantID, form.ID, req.Name, req.Slug)
 
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"data": form})
 }
@@ -1091,6 +1115,44 @@ func (h *Handlers) DeleteForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// EnsureFormGroup handles POST /api/v1/forms/{id}/ensure-field-group.
+// It creates a backing field group and assignment for a form if one doesn't exist.
+// This is called by the admin UI before adding fields to a form.
+func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := httpx.ParseUUIDParam(r, "id")
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	// Get the form to find its name/slug
+	form, err := h.Service.GetForm(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Ensure the form has a backing field group
+	err = h.Service.EnsureFormGroup(r.Context(), tenantID, id, form.Name, form.Slug)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Return the field_group_id
+	fieldGroupID := h.Service.GetFormGroupID(r.Context(), id)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"field_group_id": fieldGroupID,
+		},
+	})
 }
 
 // GetFormEmbed handles GET /forms/{slug}/embed.

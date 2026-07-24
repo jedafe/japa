@@ -1,0 +1,246 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - link "Admin":
+            - /url: /
+            - generic: Admin
+        - generic:
+          - generic:
+            - img
+            - textbox "Search navigation..."
+        - navigation:
+          - generic:
+            - button "Dashboard":
+              - generic: Dashboard
+              - img
+            - generic:
+              - link "Overview":
+                - /url: /
+                - img
+                - generic: Overview
+          - generic:
+            - button "User Management":
+              - generic: User Management
+              - img
+            - generic:
+              - link "Users":
+                - /url: /users
+                - img
+                - generic: Users
+              - link "Organisations":
+                - /url: /organisations
+                - img
+                - generic: Organisations
+              - link "Universities":
+                - /url: /universities
+                - img
+                - generic: Universities
+              - link "Professional Types":
+                - /url: /professional-types
+                - img
+                - generic: Professional Types
+              - link "Groups":
+                - /url: /users/groups
+                - img
+                - generic: Groups
+          - generic:
+            - button "Content":
+              - generic: Content
+              - img
+            - generic:
+              - link "All Content":
+                - /url: /content
+                - img
+                - generic: All Content
+              - link "Blog Posts":
+                - /url: /blog/review-queue
+                - img
+                - generic: Blog Posts
+              - link "Documentation":
+                - /url: /docs
+                - img
+                - generic: Documentation
+              - link "Media":
+                - /url: /media
+                - img
+                - generic: Media
+              - link "Spaces":
+                - /url: /spaces
+                - img
+                - generic: Spaces
+              - link "Space Types":
+                - /url: /space-types
+                - img
+                - generic: Space Types
+              - link "Tags":
+                - /url: /tags
+                - img
+                - generic: Tags
+              - link "Reactions":
+                - /url: /reactions
+                - img
+                - generic: Reactions
+          - generic:
+            - button "Moderation":
+              - generic: Moderation
+              - img
+            - generic:
+              - link "Queue":
+                - /url: /moderation
+                - img
+                - generic: Queue
+              - link "Review Queue":
+                - /url: /moderation-queue
+                - img
+                - generic: Review Queue
+              - link "Spam Management":
+                - /url: /spam
+                - img
+                - generic: Spam Management
+              - link "Support Tickets":
+                - /url: /tickets
+                - img
+                - generic: Support Tickets
+              - link "Reviews":
+                - /url: /reviews
+                - img
+                - generic: Reviews
+          - generic:
+            - button "Analytics & Reports":
+              - generic: Analytics & Reports
+              - img
+          - generic:
+            - button "Engagement":
+              - generic: Engagement
+              - img
+          - generic:
+            - button "Monetization":
+              - generic: Monetization
+              - img
+          - generic:
+            - button "Automation":
+              - generic: Automation
+              - img
+          - generic:
+            - button "Customization":
+              - generic: Customization
+              - img
+          - generic:
+            - button "System":
+              - generic: System
+              - img
+        - generic:
+          - generic:
+            - generic:
+              - generic: A
+            - generic:
+              - paragraph: Admin
+              - paragraph
+            - link "Logout":
+              - /url: /logout
+              - img
+      - generic:
+        - banner:
+          - generic:
+            - link "JapaConnect Admin":
+              - /url: /
+          - generic:
+            - generic:
+              - button:
+                - img
+            - button:
+              - img
+            - link "JC":
+              - /url: /
+              - generic:
+                - generic: JC
+        - main:
+          - generic:
+            - navigation "Breadcrumb":
+              - link:
+                - /url: /
+                - img
+              - img
+              - link "Users":
+                - /url: /users
+              - img
+              - generic: User Groups
+            - generic:
+              - generic:
+                - heading "User Groups" [level=1]
+                - paragraph: Manage user groups and their permissions
+              - generic:
+                - button "Create Group":
+                  - img
+                  - text: Create Group
+                - button "Refresh":
+                  - img
+                  - text: Refresh
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - searchbox "Search"
+                  - generic:
+                    - table:
+                      - rowgroup:
+                        - row "Select all rows Name Description Members Permissions Actions":
+                          - columnheader "Select all rows":
+                            - checkbox "Select all rows"
+                          - columnheader "Name":
+                            - generic:
+                              - text: Name
+                              - img
+                          - columnheader "Description":
+                            - generic: Description
+                          - columnheader "Members":
+                            - generic:
+                              - text: Members
+                              - img
+                          - columnheader "Permissions":
+                            - generic: Permissions
+                          - columnheader "Actions":
+                            - generic: Actions
+                      - rowgroup:
+                        - row "No groups configured":
+                          - cell "No groups configured":
+                            - generic:
+                              - paragraph: No groups configured
+                - generic:
+                  - generic:
+                    - generic: 0 items
+                    - generic:
+                      - generic: "Per page:"
+                      - button "25":
+                        - generic: "25"
+                        - img
+                  - generic:
+                    - button "First page" [disabled]:
+                      - img
+                    - button "Previous page" [disabled]:
+                      - img
+                    - generic: Page 1 of 1
+                    - button "Next page" [disabled]:
+                      - img
+                    - button "Last page" [disabled]:
+                      - img
+  - dialog "Create Group" [ref=e203]:
+    - heading "Create Group" [level=2] [ref=e204]
+    - generic [ref=e206]:
+      - generic [ref=e207]:
+        - generic [ref=e208]: Name
+        - textbox "Name" [active] [ref=e209]:
+          - /placeholder: e.g. moderators
+      - generic [ref=e210]:
+        - generic [ref=e211]: Description
+        - textbox "Description" [ref=e212]:
+          - /placeholder: What is this group for?
+      - generic [ref=e213]:
+        - paragraph [ref=e214]: Permissions
+        - textbox "Search permissions..." [ref=e215]
+    - generic [ref=e216]:
+      - button "Cancel" [ref=e217]
+      - button "Save Changes" [ref=e218]
+    - button "Close" [ref=e219]: ×

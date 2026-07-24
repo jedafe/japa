@@ -103,7 +103,7 @@
 		try {
 			const result = await api<{ items: Appeal[] }>(`/admin/appeals?${params}`);
 			if (result.ok) {
-				appeals = result.data.items;
+				appeals = result.data?.items ?? [];
 			} else {
 				errorMessage = result.error;
 			}

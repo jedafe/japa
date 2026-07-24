@@ -1050,6 +1050,82 @@ func (q *Queries) ListPermissionPresetsByTenant(ctx context.Context, tenantID pg
 	return items, nil
 }
 
+const listPublicSpacesByMemberUser = `-- name: ListPublicSpacesByMemberUser :many
+
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
+WHERE sm.user_id = $1 AND s.tenant_id = $2
+  AND s.visibility = 'public' AND s.status = 'active'
+ORDER BY sm.joined_at DESC, s.id DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListPublicSpacesByMemberUserParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+// =====================
+// Public Profile Spaces Tab
+// =====================
+// Public profile Spaces tab: PUBLIC, active spaces the user is a member of.
+// Excludes 'members'/'private' visibility and non-active spaces. Public-safe.
+func (q *Queries) ListPublicSpacesByMemberUser(ctx context.Context, arg ListPublicSpacesByMemberUserParams) ([]Space, error) {
+	rows, err := q.db.Query(ctx, listPublicSpacesByMemberUser,
+		arg.UserID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Space
+	for rows.Next() {
+		var i Space
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSpaceJoinRequests = `-- name: ListSpaceJoinRequests :many
 
 

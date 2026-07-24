@@ -101,6 +101,24 @@ func (q *Queries) CloseTicket(ctx context.Context, arg CloseTicketParams) (Ticke
 	return i, err
 }
 
+const countTicketTypesByTenant = `-- name: CountTicketTypesByTenant :one
+SELECT COUNT(*) FROM ticket_types
+WHERE tenant_id = $1
+    AND ($2::bool IS NULL OR is_public = $2)
+`
+
+type CountTicketTypesByTenantParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	IsPublic *bool       `json:"is_public"`
+}
+
+func (q *Queries) CountTicketTypesByTenant(ctx context.Context, arg CountTicketTypesByTenantParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTicketTypesByTenant, arg.TenantID, arg.IsPublic)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countTicketsByStatus = `-- name: CountTicketsByStatus :one
 SELECT COUNT(*) AS count
 FROM tickets
@@ -114,6 +132,39 @@ type CountTicketsByStatusParams struct {
 
 func (q *Queries) CountTicketsByStatus(ctx context.Context, arg CountTicketsByStatusParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countTicketsByStatus, arg.TenantID, arg.Status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTicketsByTenant = `-- name: CountTicketsByTenant :one
+SELECT COUNT(*) FROM tickets
+WHERE tenant_id = $1
+    AND ($2::text IS NULL OR status = $2)
+    AND ($3::text IS NULL OR priority = $3)
+    AND ($4::uuid IS NULL OR type_id = $4)
+    AND ($5::uuid IS NULL OR assigned_to = $5)
+    AND ($6::text IS NULL OR subject ILIKE '%' || $6 || '%')
+`
+
+type CountTicketsByTenantParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Status     string      `json:"status"`
+	Priority   string      `json:"priority"`
+	TypeID     pgtype.UUID `json:"type_id"`
+	AssignedTo pgtype.UUID `json:"assigned_to"`
+	Search     string      `json:"search"`
+}
+
+func (q *Queries) CountTicketsByTenant(ctx context.Context, arg CountTicketsByTenantParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTicketsByTenant,
+		arg.TenantID,
+		arg.Status,
+		arg.Priority,
+		arg.TypeID,
+		arg.AssignedTo,
+		arg.Search,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -700,18 +751,25 @@ SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
     auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE tenant_id = $1
+    AND ($2::bool IS NULL OR is_public = $2)
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListTicketTypesByTenantParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
+	IsPublic   *bool       `json:"is_public"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListTicketTypesByTenant(ctx context.Context, arg ListTicketTypesByTenantParams) ([]TicketType, error) {
-	rows, err := q.db.Query(ctx, listTicketTypesByTenant, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listTicketTypesByTenant,
+		arg.TenantID,
+		arg.IsPublic,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

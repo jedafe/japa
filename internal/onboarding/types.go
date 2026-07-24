@@ -30,3 +30,39 @@ type OnboardingRecommendation struct { //nolint:revive // stuttering type name p
 	Reason    string  `json:"reason"` // "geo_match", "tag_overlap", "reputation"
 	Score     float64 `json:"score"`
 }
+
+// OnboardingAdminSettings is the API response for GET /admin/onboarding/settings.
+type OnboardingAdminSettings struct { //nolint:revive // stuttering type name preserved for API compatibility
+	MinTagsFollow  int      `json:"min_tags_follow"`
+	MinUsersFollow int      `json:"min_users_follow"`
+	MinSpacesJoin  int      `json:"min_spaces_join"`
+	PromotedSpaces []string `json:"promoted_spaces"`
+	PromotedUsers  []string `json:"promoted_users"`
+	PromotedTags   []string `json:"promoted_tags"`
+}
+
+// UpdateOnboardingSettingsRequest is the JSON body for PUT /admin/onboarding/settings.
+type UpdateOnboardingSettingsRequest struct {
+	MinTagsFollow  *int      `json:"min_tags_follow,omitempty"`
+	MinUsersFollow *int      `json:"min_users_follow,omitempty"`
+	MinSpacesJoin  *int      `json:"min_spaces_join,omitempty"`
+	PromotedSpaces *[]string `json:"promoted_spaces,omitempty"`
+	PromotedUsers  *[]string `json:"promoted_users,omitempty"`
+	PromotedTags   *[]string `json:"promoted_tags,omitempty"`
+}
+
+// CreateTemplateRequest is the JSON body for POST /admin/onboarding/templates.
+type CreateTemplateRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Steps       any    `json:"steps"`
+	IsActive    bool   `json:"is_active"`
+}
+
+// UpdateTemplateRequest is the JSON body for PATCH /admin/onboarding/templates/:id.
+type UpdateTemplateRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Steps       any    `json:"steps"`
+	IsActive    bool   `json:"is_active"`
+}

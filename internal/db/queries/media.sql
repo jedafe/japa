@@ -124,6 +124,41 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*)::int AS count FROM media
 WHERE tenant_id = @tenant_id AND uploader_user_id = @uploader_user_id AND deleted_at IS NULL;
 
+-- name: ListMediaFromPublicPostsByUser :many
+-- Public profile Media tab: media referenced (as featured/header image) by the
+-- user's PUBLISHED PUBLIC posts. Excludes unconfirmed uploads, group-restricted
+-- (non-universal) media, and media only in draft/private posts. Public-safe.
+SELECT m.* FROM media m
+WHERE m.tenant_id = @tenant_id
+  AND m.deleted_at IS NULL
+  AND m.confirmed = true
+  AND m.user_group_id IS NULL
+  AND EXISTS (
+    SELECT 1 FROM contents c
+    WHERE c.tenant_id = @tenant_id
+      AND c.author_id = @author_id
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+  )
+ORDER BY m.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountMediaFromPublicPostsByUser :one
+SELECT COUNT(*)::int AS count FROM media m
+WHERE m.tenant_id = @tenant_id
+  AND m.deleted_at IS NULL
+  AND m.confirmed = true
+  AND m.user_group_id IS NULL
+  AND EXISTS (
+    SELECT 1 FROM contents c
+    WHERE c.tenant_id = @tenant_id
+      AND c.author_id = @author_id
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+  );
+
 -- =====================
 -- Bulk Operations
 -- =====================

@@ -265,7 +265,7 @@
                 column.sortable && "cursor-pointer select-none",
                 column.class
               )}
-              style="color: var(--color-muted); background-color: var(--color-surface)"
+              style="color: var(--color-foreground-alt); background-color: var(--color-surface)"
               scope="col"
               aria-sort={column.sortable ? (sortColumn === column.key ? (sortDirection === "asc" ? "ascending" : "descending") : "none") : undefined}
               onclick={() => column.sortable && handleSort(column.key)}
@@ -316,7 +316,8 @@
                 {#if column.componentSnippet}
                   {@render column.componentSnippet({ value: row[column.key], row, ...column.componentProps })}
                 {:else if column.component}
-                  <column.component value={row[column.key]} {row} {...column.componentProps ?? {}} />
+                  {@const CellComponent = column.component}
+                  <CellComponent value={row[column.key]} {row} {...column.componentProps ?? {}} />
                 {:else if column.render}
                   {@html sanitizeHtml(column.render(row[column.key], row))}
                 {:else}

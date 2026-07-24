@@ -1,0 +1,1185 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - link "Admin":
+            - /url: /
+            - generic: Admin
+        - generic:
+          - generic:
+            - img
+            - textbox "Search navigation..."
+        - navigation:
+          - generic:
+            - button "Dashboard":
+              - generic: Dashboard
+              - img
+            - generic:
+              - link "Overview":
+                - /url: /
+                - img
+                - generic: Overview
+          - generic:
+            - button "User Management":
+              - generic: User Management
+              - img
+            - generic:
+              - link "Users":
+                - /url: /users
+                - img
+                - generic: Users
+              - link "Organisations":
+                - /url: /organisations
+                - img
+                - generic: Organisations
+              - link "Universities":
+                - /url: /universities
+                - img
+                - generic: Universities
+              - link "Professional Types":
+                - /url: /professional-types
+                - img
+                - generic: Professional Types
+              - link "Groups":
+                - /url: /users/groups
+                - img
+                - generic: Groups
+          - generic:
+            - button "Content":
+              - generic: Content
+              - img
+            - generic:
+              - link "All Content":
+                - /url: /content
+                - img
+                - generic: All Content
+              - link "Blog Posts":
+                - /url: /blog/review-queue
+                - img
+                - generic: Blog Posts
+              - link "Documentation":
+                - /url: /docs
+                - img
+                - generic: Documentation
+              - link "Media":
+                - /url: /media
+                - img
+                - generic: Media
+              - link "Spaces":
+                - /url: /spaces
+                - img
+                - generic: Spaces
+              - link "Space Types":
+                - /url: /space-types
+                - img
+                - generic: Space Types
+              - link "Tags":
+                - /url: /tags
+                - img
+                - generic: Tags
+              - link "Reactions":
+                - /url: /reactions
+                - img
+                - generic: Reactions
+          - generic:
+            - button "Moderation":
+              - generic: Moderation
+              - img
+            - generic:
+              - link "Queue":
+                - /url: /moderation
+                - img
+                - generic: Queue
+              - link "Review Queue":
+                - /url: /moderation-queue
+                - img
+                - generic: Review Queue
+              - link "Spam Management":
+                - /url: /spam
+                - img
+                - generic: Spam Management
+              - link "Support Tickets":
+                - /url: /tickets
+                - img
+                - generic: Support Tickets
+              - link "Reviews":
+                - /url: /reviews
+                - img
+                - generic: Reviews
+          - generic:
+            - button "Analytics & Reports":
+              - generic: Analytics & Reports
+              - img
+          - generic:
+            - button "Engagement":
+              - generic: Engagement
+              - img
+          - generic:
+            - button "Monetization":
+              - generic: Monetization
+              - img
+          - generic:
+            - button "Automation":
+              - generic: Automation
+              - img
+          - generic:
+            - button "Customization":
+              - generic: Customization
+              - img
+          - generic:
+            - button "System":
+              - generic: System
+              - img
+        - generic:
+          - generic:
+            - generic:
+              - generic: A
+            - generic:
+              - paragraph: Admin
+              - paragraph
+            - link "Logout":
+              - /url: /logout
+              - img
+      - generic:
+        - banner:
+          - generic:
+            - link "JapaConnect Admin":
+              - /url: /
+          - generic:
+            - generic:
+              - button:
+                - img
+            - button:
+              - img
+            - link "JC":
+              - /url: /
+              - generic:
+                - generic: JC
+        - main:
+          - generic:
+            - navigation "Breadcrumb":
+              - link:
+                - /url: /
+                - img
+              - img
+              - link "Users":
+                - /url: /users
+              - img
+              - generic: User Groups
+            - generic:
+              - generic:
+                - heading "User Groups" [level=1]
+                - paragraph: Manage user groups and their permissions
+              - generic:
+                - button "Create Group":
+                  - img
+                  - text: Create Group
+                - button "Refresh":
+                  - img
+                  - text: Refresh
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - searchbox "Search"
+                  - generic:
+                    - table:
+                      - rowgroup:
+                        - row "Select all rows Name Description Members Permissions Actions":
+                          - columnheader "Select all rows":
+                            - checkbox "Select all rows"
+                          - columnheader "Name":
+                            - generic:
+                              - text: Name
+                              - img
+                          - columnheader "Description":
+                            - generic: Description
+                          - columnheader "Members":
+                            - generic:
+                              - text: Members
+                              - img
+                          - columnheader "Permissions":
+                            - generic: Permissions
+                          - columnheader "Actions":
+                            - generic: Actions
+                      - rowgroup:
+                        - row "Select row 00000000-0000-0000-0000-000000000030 Guest 0 moderation.report Edit Delete":
+                          - cell "Select row 00000000-0000-0000-0000-000000000030":
+                            - checkbox "Select row 00000000-0000-0000-0000-000000000030"
+                          - cell "Guest"
+                          - cell
+                          - cell "0":
+                            - generic: "0"
+                          - cell "moderation.report":
+                            - generic:
+                              - generic: moderation.report
+                          - cell "Edit Delete":
+                            - generic:
+                              - button "Edit":
+                                - img
+                                - text: Edit
+                              - button "Delete":
+                                - img
+                                - text: Delete
+                        - row "Select row 00000000-0000-0000-0000-000000000020 Members 9 follows.create forum.vote learning.enroll +49 Edit Delete":
+                          - cell "Select row 00000000-0000-0000-0000-000000000020":
+                            - checkbox "Select row 00000000-0000-0000-0000-000000000020"
+                          - cell "Members"
+                          - cell
+                          - cell "9":
+                            - generic: "9"
+                          - cell "follows.create forum.vote learning.enroll +49":
+                            - generic:
+                              - generic: follows.create
+                              - generic: forum.vote
+                              - generic: learning.enroll
+                              - generic: "+49"
+                          - cell "Edit Delete":
+                            - generic:
+                              - button "Edit":
+                                - img
+                                - text: Edit
+                              - button "Delete":
+                                - img
+                                - text: Delete
+                        - row "Select row 00000000-0000-0000-0000-000000000010 Super Admin 2 * Edit Delete":
+                          - cell "Select row 00000000-0000-0000-0000-000000000010":
+                            - checkbox "Select row 00000000-0000-0000-0000-000000000010"
+                          - cell "Super Admin"
+                          - cell
+                          - cell "2":
+                            - generic: "2"
+                          - cell "*":
+                            - generic:
+                              - generic: "*"
+                          - cell "Edit Delete":
+                            - generic:
+                              - button "Edit":
+                                - img
+                                - text: Edit
+                              - button "Delete":
+                                - img
+                                - text: Delete
+                - generic:
+                  - generic:
+                    - generic: 3 items
+                    - generic:
+                      - generic: "Per page:"
+                      - button "25":
+                        - generic: "25"
+                        - img
+                  - generic:
+                    - button "First page" [disabled]:
+                      - img
+                    - button "Previous page" [disabled]:
+                      - img
+                    - generic: Page 1 of 1
+                    - button "Next page" [disabled]:
+                      - img
+                    - button "Last page" [disabled]:
+                      - img
+  - dialog "Create Group" [ref=e250]:
+    - heading "Create Group" [level=2] [ref=e251]
+    - generic [ref=e253]:
+      - generic [ref=e254]:
+        - generic [ref=e255]: Name
+        - textbox "Name" [active] [ref=e256]:
+          - /placeholder: e.g. moderators
+      - generic [ref=e257]:
+        - generic [ref=e258]: Description
+        - textbox "Description" [ref=e259]:
+          - /placeholder: What is this group for?
+      - generic [ref=e260]:
+        - paragraph [ref=e261]: Permissions
+        - textbox "Search permissions..." [ref=e262]
+        - generic [ref=e263]:
+          - generic [ref=e264]:
+            - checkbox "[object Object]" [ref=e265]
+            - text: "[object Object]"
+          - generic [ref=e266]:
+            - checkbox "[object Object]" [ref=e267]
+            - text: "[object Object]"
+          - generic [ref=e268]:
+            - checkbox "[object Object]" [ref=e269]
+            - text: "[object Object]"
+          - generic [ref=e270]:
+            - checkbox "[object Object]" [ref=e271]
+            - text: "[object Object]"
+          - generic [ref=e272]:
+            - checkbox "[object Object]" [ref=e273]
+            - text: "[object Object]"
+          - generic [ref=e274]:
+            - checkbox "[object Object]" [ref=e275]
+            - text: "[object Object]"
+          - generic [ref=e276]:
+            - checkbox "[object Object]" [ref=e277]
+            - text: "[object Object]"
+          - generic [ref=e278]:
+            - checkbox "[object Object]" [ref=e279]
+            - text: "[object Object]"
+          - generic [ref=e280]:
+            - checkbox "[object Object]" [ref=e281]
+            - text: "[object Object]"
+          - generic [ref=e282]:
+            - checkbox "[object Object]" [ref=e283]
+            - text: "[object Object]"
+          - generic [ref=e284]:
+            - checkbox "[object Object]" [ref=e285]
+            - text: "[object Object]"
+          - generic [ref=e286]:
+            - checkbox "[object Object]" [ref=e287]
+            - text: "[object Object]"
+          - generic [ref=e288]:
+            - checkbox "[object Object]" [ref=e289]
+            - text: "[object Object]"
+          - generic [ref=e290]:
+            - checkbox "[object Object]" [ref=e291]
+            - text: "[object Object]"
+          - generic [ref=e292]:
+            - checkbox "[object Object]" [ref=e293]
+            - text: "[object Object]"
+          - generic [ref=e294]:
+            - checkbox "[object Object]" [ref=e295]
+            - text: "[object Object]"
+          - generic [ref=e296]:
+            - checkbox "[object Object]" [ref=e297]
+            - text: "[object Object]"
+          - generic [ref=e298]:
+            - checkbox "[object Object]" [ref=e299]
+            - text: "[object Object]"
+          - generic [ref=e300]:
+            - checkbox "[object Object]" [ref=e301]
+            - text: "[object Object]"
+          - generic [ref=e302]:
+            - checkbox "[object Object]" [ref=e303]
+            - text: "[object Object]"
+          - generic [ref=e304]:
+            - checkbox "[object Object]" [ref=e305]
+            - text: "[object Object]"
+          - generic [ref=e306]:
+            - checkbox "[object Object]" [ref=e307]
+            - text: "[object Object]"
+          - generic [ref=e308]:
+            - checkbox "[object Object]" [ref=e309]
+            - text: "[object Object]"
+          - generic [ref=e310]:
+            - checkbox "[object Object]" [ref=e311]
+            - text: "[object Object]"
+          - generic [ref=e312]:
+            - checkbox "[object Object]" [ref=e313]
+            - text: "[object Object]"
+          - generic [ref=e314]:
+            - checkbox "[object Object]" [ref=e315]
+            - text: "[object Object]"
+          - generic [ref=e316]:
+            - checkbox "[object Object]" [ref=e317]
+            - text: "[object Object]"
+          - generic [ref=e318]:
+            - checkbox "[object Object]" [ref=e319]
+            - text: "[object Object]"
+          - generic [ref=e320]:
+            - checkbox "[object Object]" [ref=e321]
+            - text: "[object Object]"
+          - generic [ref=e322]:
+            - checkbox "[object Object]" [ref=e323]
+            - text: "[object Object]"
+          - generic [ref=e324]:
+            - checkbox "[object Object]" [ref=e325]
+            - text: "[object Object]"
+          - generic [ref=e326]:
+            - checkbox "[object Object]" [ref=e327]
+            - text: "[object Object]"
+          - generic [ref=e328]:
+            - checkbox "[object Object]" [ref=e329]
+            - text: "[object Object]"
+          - generic [ref=e330]:
+            - checkbox "[object Object]" [ref=e331]
+            - text: "[object Object]"
+          - generic [ref=e332]:
+            - checkbox "[object Object]" [ref=e333]
+            - text: "[object Object]"
+          - generic [ref=e334]:
+            - checkbox "[object Object]" [ref=e335]
+            - text: "[object Object]"
+          - generic [ref=e336]:
+            - checkbox "[object Object]" [ref=e337]
+            - text: "[object Object]"
+          - generic [ref=e338]:
+            - checkbox "[object Object]" [ref=e339]
+            - text: "[object Object]"
+          - generic [ref=e340]:
+            - checkbox "[object Object]" [ref=e341]
+            - text: "[object Object]"
+          - generic [ref=e342]:
+            - checkbox "[object Object]" [ref=e343]
+            - text: "[object Object]"
+          - generic [ref=e344]:
+            - checkbox "[object Object]" [ref=e345]
+            - text: "[object Object]"
+          - generic [ref=e346]:
+            - checkbox "[object Object]" [ref=e347]
+            - text: "[object Object]"
+          - generic [ref=e348]:
+            - checkbox "[object Object]" [ref=e349]
+            - text: "[object Object]"
+          - generic [ref=e350]:
+            - checkbox "[object Object]" [ref=e351]
+            - text: "[object Object]"
+          - generic [ref=e352]:
+            - checkbox "[object Object]" [ref=e353]
+            - text: "[object Object]"
+          - generic [ref=e354]:
+            - checkbox "[object Object]" [ref=e355]
+            - text: "[object Object]"
+          - generic [ref=e356]:
+            - checkbox "[object Object]" [ref=e357]
+            - text: "[object Object]"
+          - generic [ref=e358]:
+            - checkbox "[object Object]" [ref=e359]
+            - text: "[object Object]"
+          - generic [ref=e360]:
+            - checkbox "[object Object]" [ref=e361]
+            - text: "[object Object]"
+          - generic [ref=e362]:
+            - checkbox "[object Object]" [ref=e363]
+            - text: "[object Object]"
+          - generic [ref=e364]:
+            - checkbox "[object Object]" [ref=e365]
+            - text: "[object Object]"
+          - generic [ref=e366]:
+            - checkbox "[object Object]" [ref=e367]
+            - text: "[object Object]"
+          - generic [ref=e368]:
+            - checkbox "[object Object]" [ref=e369]
+            - text: "[object Object]"
+          - generic [ref=e370]:
+            - checkbox "[object Object]" [ref=e371]
+            - text: "[object Object]"
+          - generic [ref=e372]:
+            - checkbox "[object Object]" [ref=e373]
+            - text: "[object Object]"
+          - generic [ref=e374]:
+            - checkbox "[object Object]" [ref=e375]
+            - text: "[object Object]"
+          - generic [ref=e376]:
+            - checkbox "[object Object]" [ref=e377]
+            - text: "[object Object]"
+          - generic [ref=e378]:
+            - checkbox "[object Object]" [ref=e379]
+            - text: "[object Object]"
+          - generic [ref=e380]:
+            - checkbox "[object Object]" [ref=e381]
+            - text: "[object Object]"
+          - generic [ref=e382]:
+            - checkbox "[object Object]" [ref=e383]
+            - text: "[object Object]"
+          - generic [ref=e384]:
+            - checkbox "[object Object]" [ref=e385]
+            - text: "[object Object]"
+          - generic [ref=e386]:
+            - checkbox "[object Object]" [ref=e387]
+            - text: "[object Object]"
+          - generic [ref=e388]:
+            - checkbox "[object Object]" [ref=e389]
+            - text: "[object Object]"
+          - generic [ref=e390]:
+            - checkbox "[object Object]" [ref=e391]
+            - text: "[object Object]"
+          - generic [ref=e392]:
+            - checkbox "[object Object]" [ref=e393]
+            - text: "[object Object]"
+          - generic [ref=e394]:
+            - checkbox "[object Object]" [ref=e395]
+            - text: "[object Object]"
+          - generic [ref=e396]:
+            - checkbox "[object Object]" [ref=e397]
+            - text: "[object Object]"
+          - generic [ref=e398]:
+            - checkbox "[object Object]" [ref=e399]
+            - text: "[object Object]"
+          - generic [ref=e400]:
+            - checkbox "[object Object]" [ref=e401]
+            - text: "[object Object]"
+          - generic [ref=e402]:
+            - checkbox "[object Object]" [ref=e403]
+            - text: "[object Object]"
+          - generic [ref=e404]:
+            - checkbox "[object Object]" [ref=e405]
+            - text: "[object Object]"
+          - generic [ref=e406]:
+            - checkbox "[object Object]" [ref=e407]
+            - text: "[object Object]"
+          - generic [ref=e408]:
+            - checkbox "[object Object]" [ref=e409]
+            - text: "[object Object]"
+          - generic [ref=e410]:
+            - checkbox "[object Object]" [ref=e411]
+            - text: "[object Object]"
+          - generic [ref=e412]:
+            - checkbox "[object Object]" [ref=e413]
+            - text: "[object Object]"
+          - generic [ref=e414]:
+            - checkbox "[object Object]" [ref=e415]
+            - text: "[object Object]"
+          - generic [ref=e416]:
+            - checkbox "[object Object]" [ref=e417]
+            - text: "[object Object]"
+          - generic [ref=e418]:
+            - checkbox "[object Object]" [ref=e419]
+            - text: "[object Object]"
+          - generic [ref=e420]:
+            - checkbox "[object Object]" [ref=e421]
+            - text: "[object Object]"
+          - generic [ref=e422]:
+            - checkbox "[object Object]" [ref=e423]
+            - text: "[object Object]"
+          - generic [ref=e424]:
+            - checkbox "[object Object]" [ref=e425]
+            - text: "[object Object]"
+          - generic [ref=e426]:
+            - checkbox "[object Object]" [ref=e427]
+            - text: "[object Object]"
+          - generic [ref=e428]:
+            - checkbox "[object Object]" [ref=e429]
+            - text: "[object Object]"
+          - generic [ref=e430]:
+            - checkbox "[object Object]" [ref=e431]
+            - text: "[object Object]"
+          - generic [ref=e432]:
+            - checkbox "[object Object]" [ref=e433]
+            - text: "[object Object]"
+          - generic [ref=e434]:
+            - checkbox "[object Object]" [ref=e435]
+            - text: "[object Object]"
+          - generic [ref=e436]:
+            - checkbox "[object Object]" [ref=e437]
+            - text: "[object Object]"
+          - generic [ref=e438]:
+            - checkbox "[object Object]" [ref=e439]
+            - text: "[object Object]"
+          - generic [ref=e440]:
+            - checkbox "[object Object]" [ref=e441]
+            - text: "[object Object]"
+          - generic [ref=e442]:
+            - checkbox "[object Object]" [ref=e443]
+            - text: "[object Object]"
+          - generic [ref=e444]:
+            - checkbox "[object Object]" [ref=e445]
+            - text: "[object Object]"
+          - generic [ref=e446]:
+            - checkbox "[object Object]" [ref=e447]
+            - text: "[object Object]"
+          - generic [ref=e448]:
+            - checkbox "[object Object]" [ref=e449]
+            - text: "[object Object]"
+          - generic [ref=e450]:
+            - checkbox "[object Object]" [ref=e451]
+            - text: "[object Object]"
+          - generic [ref=e452]:
+            - checkbox "[object Object]" [ref=e453]
+            - text: "[object Object]"
+          - generic [ref=e454]:
+            - checkbox "[object Object]" [ref=e455]
+            - text: "[object Object]"
+          - generic [ref=e456]:
+            - checkbox "[object Object]" [ref=e457]
+            - text: "[object Object]"
+          - generic [ref=e458]:
+            - checkbox "[object Object]" [ref=e459]
+            - text: "[object Object]"
+          - generic [ref=e460]:
+            - checkbox "[object Object]" [ref=e461]
+            - text: "[object Object]"
+          - generic [ref=e462]:
+            - checkbox "[object Object]" [ref=e463]
+            - text: "[object Object]"
+          - generic [ref=e464]:
+            - checkbox "[object Object]" [ref=e465]
+            - text: "[object Object]"
+          - generic [ref=e466]:
+            - checkbox "[object Object]" [ref=e467]
+            - text: "[object Object]"
+          - generic [ref=e468]:
+            - checkbox "[object Object]" [ref=e469]
+            - text: "[object Object]"
+          - generic [ref=e470]:
+            - checkbox "[object Object]" [ref=e471]
+            - text: "[object Object]"
+          - generic [ref=e472]:
+            - checkbox "[object Object]" [ref=e473]
+            - text: "[object Object]"
+          - generic [ref=e474]:
+            - checkbox "[object Object]" [ref=e475]
+            - text: "[object Object]"
+          - generic [ref=e476]:
+            - checkbox "[object Object]" [ref=e477]
+            - text: "[object Object]"
+          - generic [ref=e478]:
+            - checkbox "[object Object]" [ref=e479]
+            - text: "[object Object]"
+          - generic [ref=e480]:
+            - checkbox "[object Object]" [ref=e481]
+            - text: "[object Object]"
+          - generic [ref=e482]:
+            - checkbox "[object Object]" [ref=e483]
+            - text: "[object Object]"
+          - generic [ref=e484]:
+            - checkbox "[object Object]" [ref=e485]
+            - text: "[object Object]"
+          - generic [ref=e486]:
+            - checkbox "[object Object]" [ref=e487]
+            - text: "[object Object]"
+          - generic [ref=e488]:
+            - checkbox "[object Object]" [ref=e489]
+            - text: "[object Object]"
+          - generic [ref=e490]:
+            - checkbox "[object Object]" [ref=e491]
+            - text: "[object Object]"
+          - generic [ref=e492]:
+            - checkbox "[object Object]" [ref=e493]
+            - text: "[object Object]"
+          - generic [ref=e494]:
+            - checkbox "[object Object]" [ref=e495]
+            - text: "[object Object]"
+          - generic [ref=e496]:
+            - checkbox "[object Object]" [ref=e497]
+            - text: "[object Object]"
+          - generic [ref=e498]:
+            - checkbox "[object Object]" [ref=e499]
+            - text: "[object Object]"
+          - generic [ref=e500]:
+            - checkbox "[object Object]" [ref=e501]
+            - text: "[object Object]"
+          - generic [ref=e502]:
+            - checkbox "[object Object]" [ref=e503]
+            - text: "[object Object]"
+          - generic [ref=e504]:
+            - checkbox "[object Object]" [ref=e505]
+            - text: "[object Object]"
+          - generic [ref=e506]:
+            - checkbox "[object Object]" [ref=e507]
+            - text: "[object Object]"
+          - generic [ref=e508]:
+            - checkbox "[object Object]" [ref=e509]
+            - text: "[object Object]"
+          - generic [ref=e510]:
+            - checkbox "[object Object]" [ref=e511]
+            - text: "[object Object]"
+          - generic [ref=e512]:
+            - checkbox "[object Object]" [ref=e513]
+            - text: "[object Object]"
+          - generic [ref=e514]:
+            - checkbox "[object Object]" [ref=e515]
+            - text: "[object Object]"
+          - generic [ref=e516]:
+            - checkbox "[object Object]" [ref=e517]
+            - text: "[object Object]"
+          - generic [ref=e518]:
+            - checkbox "[object Object]" [ref=e519]
+            - text: "[object Object]"
+          - generic [ref=e520]:
+            - checkbox "[object Object]" [ref=e521]
+            - text: "[object Object]"
+          - generic [ref=e522]:
+            - checkbox "[object Object]" [ref=e523]
+            - text: "[object Object]"
+          - generic [ref=e524]:
+            - checkbox "[object Object]" [ref=e525]
+            - text: "[object Object]"
+          - generic [ref=e526]:
+            - checkbox "[object Object]" [ref=e527]
+            - text: "[object Object]"
+          - generic [ref=e528]:
+            - checkbox "[object Object]" [ref=e529]
+            - text: "[object Object]"
+          - generic [ref=e530]:
+            - checkbox "[object Object]" [ref=e531]
+            - text: "[object Object]"
+          - generic [ref=e532]:
+            - checkbox "[object Object]" [ref=e533]
+            - text: "[object Object]"
+          - generic [ref=e534]:
+            - checkbox "[object Object]" [ref=e535]
+            - text: "[object Object]"
+          - generic [ref=e536]:
+            - checkbox "[object Object]" [ref=e537]
+            - text: "[object Object]"
+          - generic [ref=e538]:
+            - checkbox "[object Object]" [ref=e539]
+            - text: "[object Object]"
+          - generic [ref=e540]:
+            - checkbox "[object Object]" [ref=e541]
+            - text: "[object Object]"
+          - generic [ref=e542]:
+            - checkbox "[object Object]" [ref=e543]
+            - text: "[object Object]"
+          - generic [ref=e544]:
+            - checkbox "[object Object]" [ref=e545]
+            - text: "[object Object]"
+          - generic [ref=e546]:
+            - checkbox "[object Object]" [ref=e547]
+            - text: "[object Object]"
+          - generic [ref=e548]:
+            - checkbox "[object Object]" [ref=e549]
+            - text: "[object Object]"
+          - generic [ref=e550]:
+            - checkbox "[object Object]" [ref=e551]
+            - text: "[object Object]"
+          - generic [ref=e552]:
+            - checkbox "[object Object]" [ref=e553]
+            - text: "[object Object]"
+          - generic [ref=e554]:
+            - checkbox "[object Object]" [ref=e555]
+            - text: "[object Object]"
+          - generic [ref=e556]:
+            - checkbox "[object Object]" [ref=e557]
+            - text: "[object Object]"
+          - generic [ref=e558]:
+            - checkbox "[object Object]" [ref=e559]
+            - text: "[object Object]"
+          - generic [ref=e560]:
+            - checkbox "[object Object]" [ref=e561]
+            - text: "[object Object]"
+          - generic [ref=e562]:
+            - checkbox "[object Object]" [ref=e563]
+            - text: "[object Object]"
+          - generic [ref=e564]:
+            - checkbox "[object Object]" [ref=e565]
+            - text: "[object Object]"
+          - generic [ref=e566]:
+            - checkbox "[object Object]" [ref=e567]
+            - text: "[object Object]"
+          - generic [ref=e568]:
+            - checkbox "[object Object]" [ref=e569]
+            - text: "[object Object]"
+          - generic [ref=e570]:
+            - checkbox "[object Object]" [ref=e571]
+            - text: "[object Object]"
+          - generic [ref=e572]:
+            - checkbox "[object Object]" [ref=e573]
+            - text: "[object Object]"
+          - generic [ref=e574]:
+            - checkbox "[object Object]" [ref=e575]
+            - text: "[object Object]"
+          - generic [ref=e576]:
+            - checkbox "[object Object]" [ref=e577]
+            - text: "[object Object]"
+          - generic [ref=e578]:
+            - checkbox "[object Object]" [ref=e579]
+            - text: "[object Object]"
+          - generic [ref=e580]:
+            - checkbox "[object Object]" [ref=e581]
+            - text: "[object Object]"
+          - generic [ref=e582]:
+            - checkbox "[object Object]" [ref=e583]
+            - text: "[object Object]"
+          - generic [ref=e584]:
+            - checkbox "[object Object]" [ref=e585]
+            - text: "[object Object]"
+          - generic [ref=e586]:
+            - checkbox "[object Object]" [ref=e587]
+            - text: "[object Object]"
+          - generic [ref=e588]:
+            - checkbox "[object Object]" [ref=e589]
+            - text: "[object Object]"
+          - generic [ref=e590]:
+            - checkbox "[object Object]" [ref=e591]
+            - text: "[object Object]"
+          - generic [ref=e592]:
+            - checkbox "[object Object]" [ref=e593]
+            - text: "[object Object]"
+          - generic [ref=e594]:
+            - checkbox "[object Object]" [ref=e595]
+            - text: "[object Object]"
+          - generic [ref=e596]:
+            - checkbox "[object Object]" [ref=e597]
+            - text: "[object Object]"
+          - generic [ref=e598]:
+            - checkbox "[object Object]" [ref=e599]
+            - text: "[object Object]"
+          - generic [ref=e600]:
+            - checkbox "[object Object]" [ref=e601]
+            - text: "[object Object]"
+          - generic [ref=e602]:
+            - checkbox "[object Object]" [ref=e603]
+            - text: "[object Object]"
+          - generic [ref=e604]:
+            - checkbox "[object Object]" [ref=e605]
+            - text: "[object Object]"
+          - generic [ref=e606]:
+            - checkbox "[object Object]" [ref=e607]
+            - text: "[object Object]"
+          - generic [ref=e608]:
+            - checkbox "[object Object]" [ref=e609]
+            - text: "[object Object]"
+          - generic [ref=e610]:
+            - checkbox "[object Object]" [ref=e611]
+            - text: "[object Object]"
+          - generic [ref=e612]:
+            - checkbox "[object Object]" [ref=e613]
+            - text: "[object Object]"
+          - generic [ref=e614]:
+            - checkbox "[object Object]" [ref=e615]
+            - text: "[object Object]"
+          - generic [ref=e616]:
+            - checkbox "[object Object]" [ref=e617]
+            - text: "[object Object]"
+          - generic [ref=e618]:
+            - checkbox "[object Object]" [ref=e619]
+            - text: "[object Object]"
+          - generic [ref=e620]:
+            - checkbox "[object Object]" [ref=e621]
+            - text: "[object Object]"
+          - generic [ref=e622]:
+            - checkbox "[object Object]" [ref=e623]
+            - text: "[object Object]"
+          - generic [ref=e624]:
+            - checkbox "[object Object]" [ref=e625]
+            - text: "[object Object]"
+          - generic [ref=e626]:
+            - checkbox "[object Object]" [ref=e627]
+            - text: "[object Object]"
+          - generic [ref=e628]:
+            - checkbox "[object Object]" [ref=e629]
+            - text: "[object Object]"
+          - generic [ref=e630]:
+            - checkbox "[object Object]" [ref=e631]
+            - text: "[object Object]"
+          - generic [ref=e632]:
+            - checkbox "[object Object]" [ref=e633]
+            - text: "[object Object]"
+          - generic [ref=e634]:
+            - checkbox "[object Object]" [ref=e635]
+            - text: "[object Object]"
+          - generic [ref=e636]:
+            - checkbox "[object Object]" [ref=e637]
+            - text: "[object Object]"
+          - generic [ref=e638]:
+            - checkbox "[object Object]" [ref=e639]
+            - text: "[object Object]"
+          - generic [ref=e640]:
+            - checkbox "[object Object]" [ref=e641]
+            - text: "[object Object]"
+          - generic [ref=e642]:
+            - checkbox "[object Object]" [ref=e643]
+            - text: "[object Object]"
+          - generic [ref=e644]:
+            - checkbox "[object Object]" [ref=e645]
+            - text: "[object Object]"
+          - generic [ref=e646]:
+            - checkbox "[object Object]" [ref=e647]
+            - text: "[object Object]"
+          - generic [ref=e648]:
+            - checkbox "[object Object]" [ref=e649]
+            - text: "[object Object]"
+          - generic [ref=e650]:
+            - checkbox "[object Object]" [ref=e651]
+            - text: "[object Object]"
+          - generic [ref=e652]:
+            - checkbox "[object Object]" [ref=e653]
+            - text: "[object Object]"
+          - generic [ref=e654]:
+            - checkbox "[object Object]" [ref=e655]
+            - text: "[object Object]"
+          - generic [ref=e656]:
+            - checkbox "[object Object]" [ref=e657]
+            - text: "[object Object]"
+          - generic [ref=e658]:
+            - checkbox "[object Object]" [ref=e659]
+            - text: "[object Object]"
+          - generic [ref=e660]:
+            - checkbox "[object Object]" [ref=e661]
+            - text: "[object Object]"
+          - generic [ref=e662]:
+            - checkbox "[object Object]" [ref=e663]
+            - text: "[object Object]"
+          - generic [ref=e664]:
+            - checkbox "[object Object]" [ref=e665]
+            - text: "[object Object]"
+          - generic [ref=e666]:
+            - checkbox "[object Object]" [ref=e667]
+            - text: "[object Object]"
+          - generic [ref=e668]:
+            - checkbox "[object Object]" [ref=e669]
+            - text: "[object Object]"
+          - generic [ref=e670]:
+            - checkbox "[object Object]" [ref=e671]
+            - text: "[object Object]"
+          - generic [ref=e672]:
+            - checkbox "[object Object]" [ref=e673]
+            - text: "[object Object]"
+          - generic [ref=e674]:
+            - checkbox "[object Object]" [ref=e675]
+            - text: "[object Object]"
+          - generic [ref=e676]:
+            - checkbox "[object Object]" [ref=e677]
+            - text: "[object Object]"
+          - generic [ref=e678]:
+            - checkbox "[object Object]" [ref=e679]
+            - text: "[object Object]"
+          - generic [ref=e680]:
+            - checkbox "[object Object]" [ref=e681]
+            - text: "[object Object]"
+          - generic [ref=e682]:
+            - checkbox "[object Object]" [ref=e683]
+            - text: "[object Object]"
+          - generic [ref=e684]:
+            - checkbox "[object Object]" [ref=e685]
+            - text: "[object Object]"
+          - generic [ref=e686]:
+            - checkbox "[object Object]" [ref=e687]
+            - text: "[object Object]"
+          - generic [ref=e688]:
+            - checkbox "[object Object]" [ref=e689]
+            - text: "[object Object]"
+          - generic [ref=e690]:
+            - checkbox "[object Object]" [ref=e691]
+            - text: "[object Object]"
+          - generic [ref=e692]:
+            - checkbox "[object Object]" [ref=e693]
+            - text: "[object Object]"
+          - generic [ref=e694]:
+            - checkbox "[object Object]" [ref=e695]
+            - text: "[object Object]"
+          - generic [ref=e696]:
+            - checkbox "[object Object]" [ref=e697]
+            - text: "[object Object]"
+          - generic [ref=e698]:
+            - checkbox "[object Object]" [ref=e699]
+            - text: "[object Object]"
+          - generic [ref=e700]:
+            - checkbox "[object Object]" [ref=e701]
+            - text: "[object Object]"
+          - generic [ref=e702]:
+            - checkbox "[object Object]" [ref=e703]
+            - text: "[object Object]"
+          - generic [ref=e704]:
+            - checkbox "[object Object]" [ref=e705]
+            - text: "[object Object]"
+          - generic [ref=e706]:
+            - checkbox "[object Object]" [ref=e707]
+            - text: "[object Object]"
+          - generic [ref=e708]:
+            - checkbox "[object Object]" [ref=e709]
+            - text: "[object Object]"
+          - generic [ref=e710]:
+            - checkbox "[object Object]" [ref=e711]
+            - text: "[object Object]"
+          - generic [ref=e712]:
+            - checkbox "[object Object]" [ref=e713]
+            - text: "[object Object]"
+          - generic [ref=e714]:
+            - checkbox "[object Object]" [ref=e715]
+            - text: "[object Object]"
+          - generic [ref=e716]:
+            - checkbox "[object Object]" [ref=e717]
+            - text: "[object Object]"
+          - generic [ref=e718]:
+            - checkbox "[object Object]" [ref=e719]
+            - text: "[object Object]"
+          - generic [ref=e720]:
+            - checkbox "[object Object]" [ref=e721]
+            - text: "[object Object]"
+          - generic [ref=e722]:
+            - checkbox "[object Object]" [ref=e723]
+            - text: "[object Object]"
+          - generic [ref=e724]:
+            - checkbox "[object Object]" [ref=e725]
+            - text: "[object Object]"
+          - generic [ref=e726]:
+            - checkbox "[object Object]" [ref=e727]
+            - text: "[object Object]"
+          - generic [ref=e728]:
+            - checkbox "[object Object]" [ref=e729]
+            - text: "[object Object]"
+          - generic [ref=e730]:
+            - checkbox "[object Object]" [ref=e731]
+            - text: "[object Object]"
+          - generic [ref=e732]:
+            - checkbox "[object Object]" [ref=e733]
+            - text: "[object Object]"
+          - generic [ref=e734]:
+            - checkbox "[object Object]" [ref=e735]
+            - text: "[object Object]"
+          - generic [ref=e736]:
+            - checkbox "[object Object]" [ref=e737]
+            - text: "[object Object]"
+          - generic [ref=e738]:
+            - checkbox "[object Object]" [ref=e739]
+            - text: "[object Object]"
+          - generic [ref=e740]:
+            - checkbox "[object Object]" [ref=e741]
+            - text: "[object Object]"
+          - generic [ref=e742]:
+            - checkbox "[object Object]" [ref=e743]
+            - text: "[object Object]"
+          - generic [ref=e744]:
+            - checkbox "[object Object]" [ref=e745]
+            - text: "[object Object]"
+          - generic [ref=e746]:
+            - checkbox "[object Object]" [ref=e747]
+            - text: "[object Object]"
+          - generic [ref=e748]:
+            - checkbox "[object Object]" [ref=e749]
+            - text: "[object Object]"
+          - generic [ref=e750]:
+            - checkbox "[object Object]" [ref=e751]
+            - text: "[object Object]"
+          - generic [ref=e752]:
+            - checkbox "[object Object]" [ref=e753]
+            - text: "[object Object]"
+          - generic [ref=e754]:
+            - checkbox "[object Object]" [ref=e755]
+            - text: "[object Object]"
+          - generic [ref=e756]:
+            - checkbox "[object Object]" [ref=e757]
+            - text: "[object Object]"
+          - generic [ref=e758]:
+            - checkbox "[object Object]" [ref=e759]
+            - text: "[object Object]"
+          - generic [ref=e760]:
+            - checkbox "[object Object]" [ref=e761]
+            - text: "[object Object]"
+          - generic [ref=e762]:
+            - checkbox "[object Object]" [ref=e763]
+            - text: "[object Object]"
+          - generic [ref=e764]:
+            - checkbox "[object Object]" [ref=e765]
+            - text: "[object Object]"
+          - generic [ref=e766]:
+            - checkbox "[object Object]" [ref=e767]
+            - text: "[object Object]"
+          - generic [ref=e768]:
+            - checkbox "[object Object]" [ref=e769]
+            - text: "[object Object]"
+          - generic [ref=e770]:
+            - checkbox "[object Object]" [ref=e771]
+            - text: "[object Object]"
+          - generic [ref=e772]:
+            - checkbox "[object Object]" [ref=e773]
+            - text: "[object Object]"
+          - generic [ref=e774]:
+            - checkbox "[object Object]" [ref=e775]
+            - text: "[object Object]"
+          - generic [ref=e776]:
+            - checkbox "[object Object]" [ref=e777]
+            - text: "[object Object]"
+          - generic [ref=e778]:
+            - checkbox "[object Object]" [ref=e779]
+            - text: "[object Object]"
+          - generic [ref=e780]:
+            - checkbox "[object Object]" [ref=e781]
+            - text: "[object Object]"
+          - generic [ref=e782]:
+            - checkbox "[object Object]" [ref=e783]
+            - text: "[object Object]"
+          - generic [ref=e784]:
+            - checkbox "[object Object]" [ref=e785]
+            - text: "[object Object]"
+          - generic [ref=e786]:
+            - checkbox "[object Object]" [ref=e787]
+            - text: "[object Object]"
+          - generic [ref=e788]:
+            - checkbox "[object Object]" [ref=e789]
+            - text: "[object Object]"
+          - generic [ref=e790]:
+            - checkbox "[object Object]" [ref=e791]
+            - text: "[object Object]"
+          - generic [ref=e792]:
+            - checkbox "[object Object]" [ref=e793]
+            - text: "[object Object]"
+          - generic [ref=e794]:
+            - checkbox "[object Object]" [ref=e795]
+            - text: "[object Object]"
+          - generic [ref=e796]:
+            - checkbox "[object Object]" [ref=e797]
+            - text: "[object Object]"
+          - generic [ref=e798]:
+            - checkbox "[object Object]" [ref=e799]
+            - text: "[object Object]"
+          - generic [ref=e800]:
+            - checkbox "[object Object]" [ref=e801]
+            - text: "[object Object]"
+          - generic [ref=e802]:
+            - checkbox "[object Object]" [ref=e803]
+            - text: "[object Object]"
+          - generic [ref=e804]:
+            - checkbox "[object Object]" [ref=e805]
+            - text: "[object Object]"
+          - generic [ref=e806]:
+            - checkbox "[object Object]" [ref=e807]
+            - text: "[object Object]"
+          - generic [ref=e808]:
+            - checkbox "[object Object]" [ref=e809]
+            - text: "[object Object]"
+          - generic [ref=e810]:
+            - checkbox "[object Object]" [ref=e811]
+            - text: "[object Object]"
+          - generic [ref=e812]:
+            - checkbox "[object Object]" [ref=e813]
+            - text: "[object Object]"
+          - generic [ref=e814]:
+            - checkbox "[object Object]" [ref=e815]
+            - text: "[object Object]"
+          - generic [ref=e816]:
+            - checkbox "[object Object]" [ref=e817]
+            - text: "[object Object]"
+          - generic [ref=e818]:
+            - checkbox "[object Object]" [ref=e819]
+            - text: "[object Object]"
+          - generic [ref=e820]:
+            - checkbox "[object Object]" [ref=e821]
+            - text: "[object Object]"
+          - generic [ref=e822]:
+            - checkbox "[object Object]" [ref=e823]
+            - text: "[object Object]"
+          - generic [ref=e824]:
+            - checkbox "[object Object]" [ref=e825]
+            - text: "[object Object]"
+          - generic [ref=e826]:
+            - checkbox "[object Object]" [ref=e827]
+            - text: "[object Object]"
+          - generic [ref=e828]:
+            - checkbox "[object Object]" [ref=e829]
+            - text: "[object Object]"
+          - generic [ref=e830]:
+            - checkbox "[object Object]" [ref=e831]
+            - text: "[object Object]"
+          - generic [ref=e832]:
+            - checkbox "[object Object]" [ref=e833]
+            - text: "[object Object]"
+          - generic [ref=e834]:
+            - checkbox "[object Object]" [ref=e835]
+            - text: "[object Object]"
+          - generic [ref=e836]:
+            - checkbox "[object Object]" [ref=e837]
+            - text: "[object Object]"
+          - generic [ref=e838]:
+            - checkbox "[object Object]" [ref=e839]
+            - text: "[object Object]"
+          - generic [ref=e840]:
+            - checkbox "[object Object]" [ref=e841]
+            - text: "[object Object]"
+          - generic [ref=e842]:
+            - checkbox "[object Object]" [ref=e843]
+            - text: "[object Object]"
+          - generic [ref=e844]:
+            - checkbox "[object Object]" [ref=e845]
+            - text: "[object Object]"
+          - generic [ref=e846]:
+            - checkbox "[object Object]" [ref=e847]
+            - text: "[object Object]"
+          - generic [ref=e848]:
+            - checkbox "[object Object]" [ref=e849]
+            - text: "[object Object]"
+          - generic [ref=e850]:
+            - checkbox "[object Object]" [ref=e851]
+            - text: "[object Object]"
+          - generic [ref=e852]:
+            - checkbox "[object Object]" [ref=e853]
+            - text: "[object Object]"
+    - generic [ref=e854]:
+      - button "Cancel" [ref=e855]
+      - button "Save Changes" [ref=e856]
+    - button "Close" [ref=e857]: ×

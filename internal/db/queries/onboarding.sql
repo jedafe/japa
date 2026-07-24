@@ -22,3 +22,28 @@ WHERE tenant_id = @tenant_id AND user_id = @user_id;
 UPDATE onboarding_state
 SET tour_dismissed = true, updated_at = now()
 WHERE tenant_id = @tenant_id AND user_id = @user_id;
+
+-- name: ListOnboardingTemplates :many
+SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
+FROM onboarding_templates
+WHERE tenant_id = @tenant_id
+ORDER BY created_at DESC;
+
+-- name: GetOnboardingTemplate :one
+SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
+FROM onboarding_templates
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: CreateOnboardingTemplate :one
+INSERT INTO onboarding_templates (tenant_id, name, description, steps, is_active, is_system)
+VALUES (@tenant_id, @name, @description, @steps, @is_active, @is_system)
+RETURNING id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at;
+
+-- name: UpdateOnboardingTemplate :exec
+UPDATE onboarding_templates
+SET name = @name, description = @description, steps = @steps, is_active = @is_active, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: DeleteOnboardingTemplate :exec
+DELETE FROM onboarding_templates
+WHERE id = @id AND tenant_id = @tenant_id;

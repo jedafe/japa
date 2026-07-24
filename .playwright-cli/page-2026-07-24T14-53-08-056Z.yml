@@ -1,0 +1,443 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - link "Admin":
+            - /url: /
+            - generic: Admin
+        - generic:
+          - generic:
+            - img
+            - textbox "Search navigation..."
+        - navigation:
+          - generic:
+            - button "Dashboard":
+              - generic: Dashboard
+              - img
+            - generic:
+              - link "Overview":
+                - /url: /
+                - img
+                - generic: Overview
+          - generic:
+            - button "User Management":
+              - generic: User Management
+              - img
+            - generic:
+              - link "Users":
+                - /url: /users
+                - img
+                - generic: Users
+              - link "Organisations":
+                - /url: /organisations
+                - img
+                - generic: Organisations
+              - link "Universities":
+                - /url: /universities
+                - img
+                - generic: Universities
+              - link "Professional Types":
+                - /url: /professional-types
+                - img
+                - generic: Professional Types
+              - link "Groups":
+                - /url: /users/groups
+                - img
+                - generic: Groups
+          - generic:
+            - button "Content":
+              - generic: Content
+              - img
+            - generic:
+              - link "All Content":
+                - /url: /content
+                - img
+                - generic: All Content
+              - link "Blog Posts":
+                - /url: /blog/review-queue
+                - img
+                - generic: Blog Posts
+              - link "Documentation":
+                - /url: /docs
+                - img
+                - generic: Documentation
+              - link "Media":
+                - /url: /media
+                - img
+                - generic: Media
+              - link "Spaces":
+                - /url: /spaces
+                - img
+                - generic: Spaces
+              - link "Space Types":
+                - /url: /space-types
+                - img
+                - generic: Space Types
+              - link "Tags":
+                - /url: /tags
+                - img
+                - generic: Tags
+              - link "Reactions":
+                - /url: /reactions
+                - img
+                - generic: Reactions
+          - generic:
+            - button "Moderation":
+              - generic: Moderation
+              - img
+            - generic:
+              - link "Queue":
+                - /url: /moderation
+                - img
+                - generic: Queue
+              - link "Review Queue":
+                - /url: /moderation-queue
+                - img
+                - generic: Review Queue
+              - link "Appeals":
+                - /url: /moderation/appeals
+                - img
+                - generic: Appeals
+              - link "Reports":
+                - /url: /moderation/reports
+                - img
+                - generic: Reports
+              - link "Content":
+                - /url: /moderation/content
+                - img
+                - generic: Content
+              - link "Alerts":
+                - /url: /moderation/alerts
+                - img
+                - generic: Alerts
+              - link "Spam Management":
+                - /url: /spam
+                - img
+                - generic: Spam Management
+              - link "Support Tickets":
+                - /url: /tickets
+                - img
+                - generic: Support Tickets
+              - link "Reviews":
+                - /url: /reviews
+                - img
+                - generic: Reviews
+          - generic:
+            - button "Analytics & Reports":
+              - generic: Analytics & Reports
+              - img
+          - generic:
+            - button "Engagement":
+              - generic: Engagement
+              - img
+          - generic:
+            - button "Monetization":
+              - generic: Monetization
+              - img
+          - generic:
+            - button "Automation":
+              - generic: Automation
+              - img
+          - generic:
+            - button "Customization":
+              - generic: Customization
+              - img
+          - generic:
+            - button "System":
+              - generic: System
+              - img
+        - generic:
+          - generic:
+            - generic:
+              - generic: A
+            - generic:
+              - paragraph: Admin
+              - paragraph
+            - link "Logout":
+              - /url: /logout
+              - img
+      - generic:
+        - banner:
+          - generic:
+            - link "JapaConnect Admin":
+              - /url: /
+          - generic:
+            - generic:
+              - button:
+                - img
+            - button:
+              - img
+            - link "JC":
+              - /url: /
+              - generic:
+                - generic: JC
+        - main:
+          - generic:
+            - navigation "Breadcrumb":
+              - link:
+                - /url: /
+                - img
+              - img
+              - generic: Page Builder Block Types
+            - heading "Block Types" [level=1]
+            - paragraph: Manage block types available in the page builder
+            - generic:
+              - button "Create Block Type":
+                - img
+                - text: Create Block Type
+            - generic:
+              - generic:
+                - searchbox "Search"
+              - generic:
+                - table:
+                  - rowgroup:
+                    - row "Name Type Category Status Actions":
+                      - columnheader "Name":
+                        - generic:
+                          - text: Name
+                          - img
+                      - columnheader "Type":
+                        - generic:
+                          - text: Type
+                          - img
+                      - columnheader "Category":
+                        - generic:
+                          - text: Category
+                          - img
+                      - columnheader "Status":
+                        - generic:
+                          - text: Status
+                          - img
+                      - columnheader "Actions":
+                        - generic: Actions
+                  - rowgroup:
+                    - row "Comparison Embed comparison_embed content Enabled":
+                      - cell "Comparison Embed"
+                      - cell "comparison_embed"
+                      - cell "content"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Content Table table content Enabled":
+                      - cell "Content Table"
+                      - cell "table"
+                      - cell "content"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Countdown Timer countdown content Enabled":
+                      - cell "Countdown Timer"
+                      - cell "countdown"
+                      - cell "content"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "CTA Button cta_button layout Enabled":
+                      - cell "CTA Button"
+                      - cell "cta_button"
+                      - cell "layout"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Dynamic Listing dynamic_listing content Enabled":
+                      - cell "Dynamic Listing"
+                      - cell "dynamic_listing"
+                      - cell "content"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "FAQ Accordion faq_accordion content Enabled":
+                      - cell "FAQ Accordion"
+                      - cell "faq_accordion"
+                      - cell "content"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Form Embed form_embed content Enabled":
+                      - cell "Form Embed"
+                      - cell "form_embed"
+                      - cell "content"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Hero Section hero layout Enabled":
+                      - cell "Hero Section"
+                      - cell "hero"
+                      - cell "layout"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Image Gallery image_gallery media Enabled":
+                      - cell "Image Gallery"
+                      - cell "image_gallery"
+                      - cell "media"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Rich Text rich_text content Enabled":
+                      - cell "Rich Text"
+                      - cell "rich_text"
+                      - cell "content"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Slider slider media Enabled":
+                      - cell "Slider"
+                      - cell "slider"
+                      - cell "media"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Spacer Divider spacer_divider layout Enabled":
+                      - cell "Spacer Divider"
+                      - cell "spacer_divider"
+                      - cell "layout"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Stats Grid stats content Enabled":
+                      - cell "Stats Grid"
+                      - cell "stats"
+                      - cell "content"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+                    - row "Table of Contents table_of_contents content Enabled":
+                      - cell "Table of Contents"
+                      - cell "table_of_contents"
+                      - cell "content"
+                      - cell "Enabled":
+                        - generic: Enabled
+                      - cell:
+                        - generic:
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - button:
+                            - img
+  - dialog "Block Type Preview" [ref=e381]:
+    - heading "Block Type Preview" [level=2] [ref=e382]
+    - generic [ref=e384]:
+      - generic [ref=e385]:
+        - generic [ref=e387]: C
+        - generic [ref=e388]:
+          - paragraph [ref=e389]: Comparison Embed
+          - paragraph [ref=e390]: comparison_embed
+        - generic [ref=e392]: Enabled
+      - generic [ref=e393]:
+        - generic [ref=e394]:
+          - paragraph [ref=e395]: Name
+          - paragraph [ref=e396]: Comparison Embed
+        - generic [ref=e397]:
+          - paragraph [ref=e398]: Slug
+          - paragraph [ref=e399]: comparison-embed
+        - generic [ref=e400]:
+          - paragraph [ref=e401]: Type
+          - paragraph [ref=e402]: comparison_embed
+        - generic [ref=e403]:
+          - paragraph [ref=e404]: Category
+          - paragraph [ref=e405]: content
+        - generic [ref=e406]:
+          - paragraph [ref=e407]: Created
+          - paragraph [ref=e408]: 24/07/2026
+        - generic [ref=e409]:
+          - paragraph [ref=e410]: Updated
+          - paragraph [ref=e411]: 24/07/2026
+      - button "Edit Block Type" [active] [ref=e413]:
+        - img [ref=e414]
+        - text: Edit Block Type
+    - button "Cancel" [ref=e416]
+    - button "Close" [ref=e417]: ×

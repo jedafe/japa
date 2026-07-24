@@ -126,6 +126,62 @@ func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugPara
 	return i, err
 }
 
+const listAllDocPages = `-- name: ListAllDocPages :many
+SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
+       last_reviewed_at, parent_id, position, created_at, updated_at
+FROM doc_pages
+WHERE tenant_id = $1
+ORDER BY audience ASC, position ASC, title ASC
+`
+
+type ListAllDocPagesRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Audience       string             `json:"audience"`
+	AiGenerated    bool               `json:"ai_generated"`
+	ReviewStatus   string             `json:"review_status"`
+	LastReviewedBy pgtype.UUID        `json:"last_reviewed_by"`
+	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]ListAllDocPagesRow, error) {
+	rows, err := q.db.Query(ctx, listAllDocPages, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllDocPagesRow
+	for rows.Next() {
+		var i ListAllDocPagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.Audience,
+			&i.AiGenerated,
+			&i.ReviewStatus,
+			&i.LastReviewedBy,
+			&i.LastReviewedAt,
+			&i.ParentID,
+			&i.Position,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllDocPagesByAudience = `-- name: ListAllDocPagesByAudience :many
 SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
        last_reviewed_at, parent_id, position, created_at, updated_at

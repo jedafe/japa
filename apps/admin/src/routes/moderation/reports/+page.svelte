@@ -116,7 +116,7 @@
 		try {
 			const result = await api<{ items: Report[] }>(`/admin/reports?${params}`);
 			if (result.ok) {
-				reports = result.data.items;
+				reports = result.data.items ?? [];
 			} else {
 				errorMessage = result.error;
 			}

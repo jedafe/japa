@@ -202,14 +202,12 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
-// GetProfileFeed handles GET /api/v1/feed/profile/{user_id}.
+// GetProfileFeed handles GET /api/v1/feed/profile/{user_id}. Public per
+// Section 32:12 (profile timeline audience = "Anyone"): the viewer is
+// optional — guests get the same public rows as an authenticated viewer,
+// since this handler does not (yet) pass the viewer into GetFeed for
+// personalization.
 func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
-	user := h.optionalUser(r)
-	if user == nil {
-		httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return

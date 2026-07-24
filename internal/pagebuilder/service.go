@@ -3,12 +3,12 @@ package pagebuilder
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Service provides pagebuilder business logic with reader/writer pool separation.
@@ -19,6 +19,13 @@ type Service struct {
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB) *Service {
 	return &Service{store: NewStore(database)}
+}
+
+// validationError wraps a human-readable validation message with the
+// ErrRequired sentinel so handleServiceError can map it to a 400 response
+// (Rule 5 / §1.1) instead of surfacing a generic 500.
+func validationError(msg string) error {
+	return fmt.Errorf("%w: %s", errpkg.ErrRequired, msg)
 }
 
 // ---------------------------------------------------------------------------
@@ -38,15 +45,15 @@ func (s *Service) GetBlock(ctx context.Context, id, tenantID pgtype.UUID) (Block
 // CreateBlock creates a new block with input validation.
 func (s *Service) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input CreateBlockInput) (Block, error) {
 	if input.Name == "" {
-		return Block{}, errors.New("name is required")
+		return Block{}, validationError("name is required")
 	}
 
 	if input.Slug == "" {
-		return Block{}, errors.New("slug is required")
+		return Block{}, validationError("slug is required")
 	}
 
 	if input.Component == "" {
-		return Block{}, errors.New("component is required")
+		return Block{}, validationError("component is required")
 	}
 
 	if input.Category == "" {
@@ -59,11 +66,11 @@ func (s *Service) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input C
 // UpdateBlock updates an existing block with input validation.
 func (s *Service) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, input UpdateBlockInput) (Block, error) {
 	if input.Name == "" {
-		return Block{}, errors.New("name is required")
+		return Block{}, validationError("name is required")
 	}
 
 	if input.Component == "" {
-		return Block{}, errors.New("component is required")
+		return Block{}, validationError("component is required")
 	}
 
 	return s.store.UpdateBlock(ctx, id, tenantID, input)
@@ -78,9 +85,9 @@ func (s *Service) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) err
 // Template operations
 // ---------------------------------------------------------------------------
 
-// ListTemplates returns all templates for a tenant.
-func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID) ([]Template, error) {
-	return s.store.ListTemplates(ctx, tenantID)
+// ListTemplates returns all templates for a tenant, optionally filtered by q and category.
+func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, category string) ([]Template, error) {
+	return s.store.ListTemplates(ctx, tenantID, q, category)
 }
 
 // GetTemplate returns a single template by ID, scoped to the tenant.
@@ -91,15 +98,15 @@ func (s *Service) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (Te
 // CreateTemplate creates a new template with input validation.
 func (s *Service) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, input CreateTemplateInput) (Template, error) {
 	if input.Name == "" {
-		return Template{}, errors.New("name is required")
+		return Template{}, validationError("name is required")
 	}
 
 	if input.Slug == "" {
-		return Template{}, errors.New("slug is required")
+		input.Slug = slugify(input.Name)
 	}
 
 	if input.PageType == "" {
-		input.PageType = "landing"
+		input.PageType = "custom"
 	}
 
 	return s.store.CreateTemplate(ctx, tenantID, input)
@@ -108,7 +115,11 @@ func (s *Service) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, inpu
 // UpdateTemplate updates an existing template with input validation.
 func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTemplateInput) (Template, error) {
 	if input.Name == "" {
-		return Template{}, errors.New("name is required")
+		return Template{}, validationError("name is required")
+	}
+
+	if input.Slug == "" {
+		input.Slug = slugify(input.Name)
 	}
 
 	return s.store.UpdateTemplate(ctx, id, tenantID, input)
@@ -136,11 +147,11 @@ func (s *Service) GetTheme(ctx context.Context, id, tenantID pgtype.UUID) (Theme
 // CreateTheme creates a new theme with input validation.
 func (s *Service) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input CreateThemeInput) (Theme, error) {
 	if input.Name == "" {
-		return Theme{}, errors.New("name is required")
+		return Theme{}, validationError("name is required")
 	}
 
 	if input.Slug == "" {
-		return Theme{}, errors.New("slug is required")
+		return Theme{}, validationError("slug is required")
 	}
 
 	return s.store.CreateTheme(ctx, tenantID, input)
@@ -149,7 +160,7 @@ func (s *Service) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input C
 // UpdateTheme updates an existing theme with input validation.
 func (s *Service) UpdateTheme(ctx context.Context, id, tenantID pgtype.UUID, input UpdateThemeInput) (Theme, error) {
 	if input.Name == "" {
-		return Theme{}, errors.New("name is required")
+		return Theme{}, validationError("name is required")
 	}
 
 	return s.store.UpdateTheme(ctx, id, tenantID, input)
@@ -184,18 +195,30 @@ func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtyp
 	return s.store.GetPageBySlug(ctx, slug, tenantID)
 }
 
-// CreatePage creates a new page with input validation.
+// CreatePage creates a new page with input validation. When a template_id is
+// provided and no blocks are supplied, the template's block array is copied
+// into the new page (Section 16: templates are "starting points for page
+// creation").
 func (s *Service) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID, input CreatePageInput) (Page, error) {
 	if input.Title == "" {
-		return Page{}, errors.New("title is required")
+		return Page{}, validationError("title is required")
 	}
 
 	if input.Slug == "" {
-		return Page{}, errors.New("slug is required")
+		input.Slug = slugify(input.Title)
 	}
 
 	if input.Status == "" {
 		input.Status = PageStatusDraft
+	}
+
+	// If a template is selected and no blocks were explicitly provided,
+	// copy the template's blocks into the new page (§16 template wiring).
+	if input.TemplateID != nil && input.TemplateID.Valid && (len(input.Blocks) == 0 || string(input.Blocks) == "[]") {
+		tpl, err := s.store.GetTemplate(ctx, *input.TemplateID, tenantID)
+		if err == nil && len(tpl.Blocks) > 0 {
+			input.Blocks = tpl.Blocks
+		}
 	}
 
 	input.Blocks = sanitizeBlocksJSON(input.Blocks)
@@ -206,7 +229,11 @@ func (s *Service) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUI
 // UpdatePage updates an existing page with input validation.
 func (s *Service) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input UpdatePageInput) (Page, error) {
 	if input.Title == "" {
-		return Page{}, errors.New("title is required")
+		return Page{}, validationError("title is required")
+	}
+
+	if input.Slug == "" {
+		input.Slug = slugify(input.Title)
 	}
 
 	input.Blocks = sanitizeBlocksJSON(input.Blocks)
@@ -270,14 +297,30 @@ func (s *Service) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Pa
 	return s.store.ArchivePage(ctx, id, tenantID)
 }
 
-// ReorderBlocks updates the order of blocks for a page.
+// ReorderBlocks updates the order of blocks for a page. It preserves the
+// page's existing metadata (title/slug/status/theme/template/meta) and only
+// replaces the blocks array. The prior implementation called store.UpdatePage
+// with just Blocks set, which wiped every other column on each reorder
+// (§1.3 data-loss bug).
 func (s *Service) ReorderBlocks(ctx context.Context, id, tenantID pgtype.UUID, blocks []map[string]any) (Page, error) {
 	blocksJSON, err := json.Marshal(blocks)
 	if err != nil {
 		return Page{}, fmt.Errorf("marshaling blocks: %w", err)
 	}
 
+	existing, err := s.store.GetPage(ctx, id, tenantID)
+	if err != nil {
+		return Page{}, err
+	}
+
 	return s.store.UpdatePage(ctx, id, tenantID, UpdatePageInput{
-		Blocks: blocksJSON,
+		Title:       existing.Title,
+		Slug:        existing.Slug,
+		Description: existing.Description,
+		TemplateID:  existing.TemplateID,
+		ThemeID:     existing.ThemeID,
+		Blocks:      blocksJSON,
+		Meta:        existing.Meta,
+		Status:      existing.Status,
 	})
 }

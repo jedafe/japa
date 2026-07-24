@@ -341,6 +341,27 @@ func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderI
 	return s.store.ListMediaByTenant(ctx, tenantID, limit, offset)
 }
 
+// ListByUser returns the media on the user's published public posts (featured/
+// header images), plus the total count. Public-safe: excludes unconfirmed,
+// group-restricted, and draft/private-post media. Powers the profile Media tab.
+func (s *Service) ListByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Medium, int32, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	items, err := s.store.ListMediaFromPublicPostsByUser(ctx, tenantID, userID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing media from public posts: %w", err)
+	}
+	total, err := s.store.CountMediaFromPublicPostsByUser(ctx, tenantID, userID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting media from public posts: %w", err)
+	}
+	return items, total, nil
+}
+
 // GetMediaURL generates an imgproxy signed URL for the media item.
 // NEVER cached in DB — generated on every serialization.
 func (s *Service) GetMediaURL(m *gen.Medium, opts ImageProxyOpts) string {

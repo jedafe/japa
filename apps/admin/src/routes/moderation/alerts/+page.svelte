@@ -38,12 +38,12 @@
 		}
 	}
 
-	function statusVariant(status: string): 'destructive' | 'warning' | 'success' {
+	function statusVariant(status: string): 'destructive' | 'warning' | 'success' | 'default' {
 		switch (status) {
 			case 'open': return 'destructive';
 			case 'acknowledged': return 'warning';
 			case 'resolved': return 'success';
-			default: return 'default' as any;
+			default: return 'default';
 		}
 	}
 
@@ -54,9 +54,9 @@
 		if (filterSeverity) params.set('severity', filterSeverity);
 		if (filterStatus) params.set('status', filterStatus);
 		try {
-			const result = await api<{ alerts: ModerationAlert[] }>(`/admin/moderation/alerts?${params}`);
+			const result = await api<ModerationAlert[]>(`/admin/moderation/alerts?${params}`);
 			if (result.ok) {
-				alerts = result.data.alerts;
+				alerts = result.data ?? [];
 			} else {
 				errorMessage = result.error;
 			}

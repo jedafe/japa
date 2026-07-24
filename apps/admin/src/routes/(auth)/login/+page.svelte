@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
-	import { goto } from '$app/navigation';
 	import { setAccessToken } from '$lib/api/token';
 
 	let email = $state('');
@@ -38,7 +37,11 @@
 
 			if (res.ok && body.data?.access_token) {
 				setAccessToken(body.data.access_token);
-				await goto('/', { invalidateAll: true });
+				// Hard reload so the root layout re-mounts and onMount re-runs
+				// with the fresh access token (fetches /me + /me/permissions).
+				// Client-side goto() would NOT re-run onMount since the layout
+				// is already mounted from the initial page load.
+				window.location.href = '/';
 			} else if (res.ok) {
 				// Authenticated but no access token (e.g. TOTP challenge) — surface it.
 				error = body.error?.message || 'Login succeeded but no session was issued';

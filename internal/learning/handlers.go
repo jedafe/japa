@@ -252,7 +252,38 @@ func (h *Handlers) GetMyCertificates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	certs, err := h.store.ListCertificatesByUser(r.Context(), user.UserID)
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	certs, err := h.store.ListCertificatesByUser(r.Context(), t.ID, user.UserID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list certificates")
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": certs})
+}
+
+// ListCertificatesByUser handles GET /users/{id}/certificates — public earned-
+// certificate badges (social proof). All issued certs are public; non-active
+// users are already 404'd by the requireActiveProfileUser gate on the route.
+func (h *Handlers) ListCertificatesByUser(w http.ResponseWriter, r *http.Request) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	var userID pgtype.UUID
+	if err := userID.Scan(chi.URLParam(r, "id")); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		return
+	}
+
+	certs, err := h.store.ListCertificatesByUser(r.Context(), t.ID, userID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list certificates")
 		return

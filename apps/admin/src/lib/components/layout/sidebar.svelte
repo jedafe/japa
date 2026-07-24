@@ -92,6 +92,10 @@
 			items: [
 				{ path: "/moderation", label: "Queue", icon: Shield, permission: "admin.moderation" },
 				{ path: "/moderation-queue", label: "Review Queue", icon: AlertTriangle, permission: "admin.moderation" },
+				{ path: "/moderation/appeals", label: "Appeals", icon: MessageCircle, permission: "admin.moderation" },
+				{ path: "/moderation/reports", label: "Reports", icon: FileText, permission: "admin.moderation" },
+				{ path: "/moderation/content", label: "Content", icon: FileText, permission: "admin.moderation" },
+				{ path: "/moderation/alerts", label: "Alerts", icon: AlertTriangle, permission: "admin.moderation" },
 				{ path: "/spam", label: "Spam Management", icon: AlertTriangle, permission: "spam.ip_block.manage" },
 			{ path: "/tickets", label: "Support Tickets", icon: Ticket, permission: "tickets.admin" },
 			{ path: "/reviews", label: "Reviews", icon: MessageCircle, permission: "reviews.moderate" }
@@ -114,11 +118,12 @@
 			{ path: "/broadcast", label: "Broadcasts", icon: Bell, permission: "admin.broadcast" },
 			{ path: "/forms", label: "Forms", icon: FileInput, permission: "forms.create" },
 			{ path: "/learning", label: "Learning", icon: GraduationCap, permission: "learning.admin.manage" },
-			{ path: "/mentorship", label: "Mentorship", icon: Users2, permission: "mentorship.admin" }
-			]
-		},
-		{
-			id: "monetization",
+		{ path: "/mentorship", label: "Mentorship", icon: Users2, permission: "mentorship.admin" },
+		{ path: "/onboarding", label: "Onboarding", icon: UserPlus, permission: "admin.settings.view" }
+		]
+	},
+	{
+		id: "monetization",
 			label: "Monetization",
 			items: [
 				{ path: "/wallet", label: "Wallet", icon: Wallet, permission: "wallet.admin" },
@@ -144,7 +149,8 @@
 			label: "Customization",
 			items: [
 			{ path: "/page-builder", label: "Page Builder", icon: Layout, permission: "pagebuilder.blocks.manage" },
-			{ path: "/page-builder/themes", label: "Page Themes", icon: Palette, permission: "pagebuilder.blocks.manage" },
+			{ path: "/page-builder/pages", label: "Pages", icon: FileText, permission: "pages.manage" },
+			{ path: "/page-builder/themes", label: "Page Themes", icon: Palette, permission: "pagebuilder.themes.manage" },
 			{ path: "/page-templates", label: "Page Templates", icon: FileText, permission: "pagebuilder.templates.manage" },
 			{ path: "/custom-fields", label: "Custom Fields", icon: Type, permission: "custom_fields.group.view" },
 			{ path: "/comparisons", label: "Comparisons", icon: GitCompare, permission: "comparison.type.create" },

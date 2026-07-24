@@ -12,6 +12,29 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
+const countCommentsByAuthor = `-- name: CountCommentsByAuthor :one
+SELECT COUNT(*)::int AS count
+FROM comments c
+JOIN contents ct ON ct.id = c.content_id AND ct.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.author_user_id = $2
+  AND c.deleted_at IS NULL
+  AND ct.status = 'published'
+  AND ct.visibility = 'public'
+`
+
+type CountCommentsByAuthorParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	AuthorUserID pgtype.UUID `json:"author_user_id"`
+}
+
+func (q *Queries) CountCommentsByAuthor(ctx context.Context, arg CountCommentsByAuthorParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countCommentsByAuthor, arg.TenantID, arg.AuthorUserID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countCommentsByContent = `-- name: CountCommentsByContent :one
 
 SELECT COUNT(*)::int AS count
@@ -309,6 +332,78 @@ func (q *Queries) GetRelatedContent(ctx context.Context, arg GetRelatedContentPa
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Similarity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommentsByAuthor = `-- name: ListCommentsByAuthor :many
+SELECT c.id, c.tenant_id, c.content_id, c.parent_id, c.body, c.vote_score,
+       c.created_at,
+       ct.title AS content_title, ct.slug AS content_slug
+FROM comments c
+JOIN contents ct ON ct.id = c.content_id AND ct.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.author_user_id = $2
+  AND c.deleted_at IS NULL
+  AND ct.status = 'published'
+  AND ct.visibility = 'public'
+ORDER BY c.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListCommentsByAuthorParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	AuthorUserID pgtype.UUID `json:"author_user_id"`
+	PageOffset   int32       `json:"page_offset"`
+	PageLimit    int32       `json:"page_limit"`
+}
+
+type ListCommentsByAuthorRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	ContentID    pgtype.UUID        `json:"content_id"`
+	ParentID     pgtype.UUID        `json:"parent_id"`
+	Body         string             `json:"body"`
+	VoteScore    int32              `json:"vote_score"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ContentTitle string             `json:"content_title"`
+	ContentSlug  string             `json:"content_slug"`
+}
+
+// Public "Replies" tab: comments the user authored on published+public content,
+// with parent-content title/slug for context. Public-safe: comments on
+// draft/private content and soft-deleted comments are excluded.
+func (q *Queries) ListCommentsByAuthor(ctx context.Context, arg ListCommentsByAuthorParams) ([]ListCommentsByAuthorRow, error) {
+	rows, err := q.db.Query(ctx, listCommentsByAuthor,
+		arg.TenantID,
+		arg.AuthorUserID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCommentsByAuthorRow
+	for rows.Next() {
+		var i ListCommentsByAuthorRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ContentID,
+			&i.ParentID,
+			&i.Body,
+			&i.VoteScore,
+			&i.CreatedAt,
+			&i.ContentTitle,
+			&i.ContentSlug,
 		); err != nil {
 			return nil, err
 		}

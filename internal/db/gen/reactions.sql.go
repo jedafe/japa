@@ -213,6 +213,94 @@ func (q *Queries) GetUserReactions(ctx context.Context, arg GetUserReactionsPara
 	return items, nil
 }
 
+const listContentLikedByUser = `-- name: ListContentLikedByUser :many
+SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
+       c.created_at, c.view_count, c.comment_count,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       LEFT(c.body, 200) AS excerpt,
+       MAX(r.created_at)::timestamptz AS reacted_at
+FROM reactions r
+JOIN contents c ON c.id = r.entity_id AND c.tenant_id = r.tenant_id
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+WHERE r.tenant_id = $1
+  AND r.user_id = $2
+  AND r.entity_type = 'content'
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+GROUP BY c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
+         c.created_at, c.view_count, c.comment_count,
+         up.display_name, u.username, up.avatar_url, c.body
+ORDER BY reacted_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListContentLikedByUserParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	UserID     pgtype.UUID `json:"user_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListContentLikedByUserRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	ContentType     string             `json:"content_type"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	AuthorName      string             `json:"author_name"`
+	AuthorAvatarUrl string             `json:"author_avatar_url"`
+	Excerpt         string             `json:"excerpt"`
+	ReactedAt       pgtype.Timestamptz `json:"reacted_at"`
+}
+
+// Public "Likes" tab: published+public content the user has reacted to (any
+// reaction key), one row per content (GROUP BY collapses multiple reaction
+// keys), newest reaction first. Public-safe: draft/private content excluded.
+func (q *Queries) ListContentLikedByUser(ctx context.Context, arg ListContentLikedByUserParams) ([]ListContentLikedByUserRow, error) {
+	rows, err := q.db.Query(ctx, listContentLikedByUser,
+		arg.TenantID,
+		arg.UserID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContentLikedByUserRow
+	for rows.Next() {
+		var i ListContentLikedByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.ContentType,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.CreatedAt,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.Excerpt,
+			&i.ReactedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listReactionTypes = `-- name: ListReactionTypes :many
 
 

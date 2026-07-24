@@ -3,11 +3,13 @@
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
+	import Modal from '$lib/components/Modal.svelte';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import { RefreshCw, CheckCircle, XCircle, ShieldAlert, Users, MessageSquare, AlertTriangle } from 'lucide-svelte';
 	import { moderationAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import FilterBar from '$lib/components/FilterBar.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 
 	type ModerationQueueItem = {
 		id: string;
@@ -48,6 +50,41 @@
 	let appealReason = $state('');
 	let appealLoading = $state(false);
 
+	let currentPage = $state(0);
+	let itemsPerPage = $state(20);
+	let totalPages = $state(0);
+
+	const canModerate = $derived(hasPermission('admin.moderation'));
+
+	const filterDefs: { key: string; label: string; type: 'select'; options: { value: string; label: string }[] }[] = [
+		{ key: 'status', label: 'Status', type: 'select', options: [
+			{ value: 'pending', label: 'Pending' },
+			{ value: 'approved', label: 'Approved' },
+			{ value: 'rejected', label: 'Rejected' },
+			{ value: 'under_review', label: 'Under Review' },
+			{ value: 'escalated', label: 'Escalated' }
+		]},
+		{ key: 'content_type', label: 'Content Type', type: 'select', options: [
+			{ value: 'post', label: 'Post' },
+			{ value: 'comment', label: 'Comment' },
+			{ value: 'message', label: 'Message' },
+			{ value: 'profile', label: 'Profile' }
+		]},
+		{ key: 'source', label: 'Source', type: 'select', options: [
+			{ value: 'user_report', label: 'User Report' },
+			{ value: 'auto_flag', label: 'Auto Flag' },
+			{ value: 'admin', label: 'Admin' }
+		]}
+	];
+
+	let filterValues = $state<Record<string, string>>({});
+
+	function handleApplyFilters(values: Record<string, string>) {
+		filterValues = values;
+		currentPage = 0;
+		fetchData();
+	}
+
 	const queueColumns = [
 		{
 			key: 'content_type',
@@ -57,7 +94,7 @@
 		{
 			key: 'content_id',
 			label: t('moderationQueue.content_id'),
-			render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v.slice(0, 12)}</span>`
+			render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${(v ?? '').slice(0, 12)}</span>`
 		},
 		{
 			key: 'reason',
@@ -79,7 +116,7 @@
 			key: 'actions',
 			label: t('common.actions'),
 			class: 'w-32',
-			component: QueueActionsCell
+			componentSnippet: QueueActionsCell
 		}
 	];
 
@@ -112,25 +149,34 @@
 			key: 'actions',
 			label: t('common.actions'),
 			class: 'w-32',
-			component: AlertActionsCell
+			componentSnippet: AlertActionsCell
 		}
 	];
 
-	async function load() {
+	async function fetchData() {
 		loading = true;
 		errorMessage = '';
 		try {
 			if (activeTab === 'queue') {
-				const result = await moderationAdminApi.getQueue();
+				const params = new URLSearchParams({
+					page: String(currentPage + 1),
+					limit: String(itemsPerPage)
+				});
+				Object.entries(filterValues).forEach(([key, value]) => {
+					if (value) params.set(key, value);
+				});
+				const result = await moderationAdminApi.getQueue(params.toString());
 				if (result.ok) {
-					items = (result.data as ModerationQueueItem[]) ?? [];
+					const d = result.data as { items: ModerationQueueItem[]; total_pages: number };
+					items = d?.items ?? [];
+					totalPages = d?.total_pages ?? 0;
 				} else {
 					errorMessage = result.error;
 				}
 			} else {
 				const result = await moderationAdminApi.getAlerts();
 				if (result.ok) {
-					alerts = (result.data as ModerationAlert[]) ?? [];
+					alerts = ((result.data as { alerts: ModerationAlert[] })?.alerts) ?? [];
 				} else {
 					errorMessage = result.error;
 				}
@@ -146,7 +192,7 @@
 		errorMessage = '';
 		try {
 			await moderationAdminApi.updateItem(id, { status: 'approved' });
-			load();
+			fetchData();
 		} catch {
 			errorMessage = t('common.error');
 		}
@@ -156,7 +202,7 @@
 		errorMessage = '';
 		try {
 			await moderationAdminApi.updateItem(id, { status: 'rejected' });
-			load();
+			fetchData();
 		} catch {
 			errorMessage = t('common.error');
 		}
@@ -172,7 +218,7 @@
 				action
 			});
 			selectedIds = new Set();
-			load();
+			fetchData();
 		} catch {
 			errorMessage = t('common.error');
 		} finally {
@@ -193,7 +239,7 @@
 		try {
 			await moderationAdminApi.assignItem(assignItemId, { assignee_id: assigneeId.trim() });
 			showAssignModal = false;
-			load();
+			fetchData();
 		} catch {
 			errorMessage = t('common.error');
 		} finally {
@@ -214,7 +260,7 @@
 		try {
 			await moderationAdminApi.appealItem(appealItemId, { reason: appealReason.trim() });
 			showAppealModal = false;
-			load();
+			fetchData();
 		} catch {
 			errorMessage = t('common.error');
 		} finally {
@@ -226,7 +272,7 @@
 		errorMessage = '';
 		try {
 			await moderationAdminApi.acknowledgeAlert(id);
-			load();
+			fetchData();
 		} catch {
 			errorMessage = t('common.error');
 		}
@@ -236,14 +282,18 @@
 		errorMessage = '';
 		try {
 			await moderationAdminApi.resolveAlert(id, { resolution: 'resolved' });
-			load();
+			fetchData();
 		} catch {
 			errorMessage = t('common.error');
 		}
 	}
 
 	$effect(() => {
-		load();
+		void activeTab;
+		void currentPage;
+		void itemsPerPage;
+		void filterValues;
+		fetchData();
 	});
 </script>
 
@@ -251,74 +301,108 @@
 	<title>{t('moderationQueue.title')} — JapaConnect Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t('moderationQueue.title')}
-	description={t('moderationQueue.description')}
-	actions={[
-		{ label: t('common.refresh'), icon: RefreshCw, onclick: load }
-	]}
-/>
-
-{#if errorMessage}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
-		{errorMessage}
+{#if !canModerate}
+	<div class="p-8 text-center text-muted-foreground">
+		<p>You don't have permission to access moderation.</p>
 	</div>
+{:else}
+	<PageHeader
+		title={t('moderationQueue.title')}
+		description={t('moderationQueue.description')}
+		actions={[
+			{ label: t('common.refresh'), icon: RefreshCw, onclick: fetchData }
+		]}
+	/>
+
+	<FilterBar filters={filterDefs} values={filterValues} onApply={handleApplyFilters} />
+
+	{#if errorMessage}
+		<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+			{errorMessage}
+		</div>
+	{/if}
+
+	<!-- Tabs -->
+	<div class="mb-6 flex gap-1 rounded-lg p-1" style="background: var(--color-surface)">
+		<button
+			class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+			style={activeTab === 'queue' ? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)' : 'color: var(--color-muted)'}
+			onclick={() => { activeTab = 'queue'; selectedIds = new Set(); currentPage = 0; fetchData(); }}
+		>
+			<MessageSquare class="mr-2 h-4 w-4" />
+			{t('moderationQueue.tab_queue')}
+		</button>
+		<button
+			class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
+			style={activeTab === 'alerts' ? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)' : 'color: var(--color-muted)'}
+			onclick={() => { activeTab = 'alerts'; currentPage = 0; fetchData(); }}
+		>
+			<AlertTriangle class="mr-2 h-4 w-4" />
+			{t('moderationQueue.tab_alerts')}
+		</button>
+	</div>
+
+	<Card>
+		<CardContent>
+			{#if loading}
+				<TableSkeleton rows={8} columns={activeTab === 'queue' ? queueColumns.length : alertColumns.length} />
+			{:else if activeTab === 'queue'}
+				<DataTable
+					columns={queueColumns}
+					data={items}
+					selectable={true}
+					bind:selectedIds
+					showPagination={false}
+					pageSize={itemsPerPage}
+					emptyMessage={t('moderationQueue.empty')}
+				>
+					{#snippet bulkActions()}
+						<Button variant="ghost" size="sm" onclick={() => bulkAction('approve')} disabled={bulkLoading} style="color: var(--color-success)">
+							<CheckCircle class="mr-1 h-3.5 w-3.5" />
+							{t('moderationQueue.bulk_approve')}
+						</Button>
+						<Button variant="ghost" size="sm" onclick={() => bulkAction('reject')} disabled={bulkLoading} style="color: var(--color-danger)">
+							<XCircle class="mr-1 h-3.5 w-3.5" />
+							{t('moderationQueue.bulk_reject')}
+						</Button>
+					{/snippet}
+				</DataTable>
+			{:else}
+				<DataTable
+					columns={alertColumns}
+					data={alerts}
+					showPagination={false}
+					pageSize={itemsPerPage}
+					emptyMessage={t('moderationQueue.no_alerts')}
+				/>
+			{/if}
+		</CardContent>
+	</Card>
+
+	{#if totalPages > 1}
+		<div class="flex items-center justify-between mt-4">
+			<p class="text-sm text-muted-foreground">
+				Page {currentPage + 1} of {totalPages}
+			</p>
+			<div class="flex gap-2">
+				<button
+					class="btn btn-outline btn-sm"
+					disabled={currentPage === 0}
+					onclick={() => { currentPage--; fetchData(); }}
+				>
+					Previous
+				</button>
+				<button
+					class="btn btn-outline btn-sm"
+					disabled={currentPage >= totalPages - 1}
+					onclick={() => { currentPage++; fetchData(); }}
+				>
+					Next
+				</button>
+			</div>
+		</div>
+	{/if}
 {/if}
-
-<!-- Tabs -->
-<div class="mb-6 flex gap-1 rounded-lg p-1" style="background: var(--color-surface)">
-	<button
-		class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
-		style={activeTab === 'queue' ? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)' : 'color: var(--color-muted)'}
-		onclick={() => { activeTab = 'queue'; selectedIds = new Set(); load(); }}
-	>
-		<MessageSquare class="mr-2 h-4 w-4" />
-		{t('moderationQueue.tab_queue')}
-	</button>
-	<button
-		class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
-		style={activeTab === 'alerts' ? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)' : 'color: var(--color-muted)'}
-		onclick={() => { activeTab = 'alerts'; load(); }}
-	>
-		<AlertTriangle class="mr-2 h-4 w-4" />
-		{t('moderationQueue.tab_alerts')}
-	</button>
-</div>
-
-<Card>
-	<CardContent>
-		{#if loading}
-			<TableSkeleton rows={8} columns={activeTab === 'queue' ? queueColumns.length : alertColumns.length} />
-		{:else if activeTab === 'queue'}
-			<DataTable
-				columns={queueColumns}
-				data={items}
-				selectable={true}
-				bind:selectedIds
-				pageSize={25}
-				emptyMessage={t('moderationQueue.empty')}
-			>
-				{#snippet bulkActions()}
-					<Button variant="ghost" size="sm" onclick={() => bulkAction('approve')} disabled={bulkLoading} style="color: var(--color-success)">
-						<CheckCircle class="mr-1 h-3.5 w-3.5" />
-						{t('moderationQueue.bulk_approve')}
-					</Button>
-					<Button variant="ghost" size="sm" onclick={() => bulkAction('reject')} disabled={bulkLoading} style="color: var(--color-danger)">
-						<XCircle class="mr-1 h-3.5 w-3.5" />
-						{t('moderationQueue.bulk_reject')}
-					</Button>
-				{/snippet}
-			</DataTable>
-		{:else}
-			<DataTable
-				columns={alertColumns}
-				data={alerts}
-				pageSize={25}
-				emptyMessage={t('moderationQueue.no_alerts')}
-			/>
-		{/if}
-	</CardContent>
-</Card>
 
 <!-- Assign Moderator Modal -->
 <Modal bind:open={showAssignModal} title={t('moderationQueue.assign_moderator')}>

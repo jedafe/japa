@@ -533,3 +533,9 @@ func (s *Service) UpdateProfileType(ctx context.Context, tenantID, userID pgtype
 		ProfileType: profileType,
 	})
 }
+
+// ActiveUserExists reports whether an active user with this id exists in the
+// tenant. Used by the public profile gate to 404 non-active users.
+func (s *Service) ActiveUserExists(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
+	return s.store.activeUserExistsByID(ctx, tenantID, userID)
+}

@@ -1,0 +1,11 @@
+[      15ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3001/dashboard:0
+[     106ms] [ERROR] SvelteKitError: Not found: /dashboard
+    at navigate (http://localhost:3001/node_modules/.pnpm/@sveltejs+kit@2.69.3_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@7.2.0_svelte_f8c948d2db8cf210f0c2f6e9ff569557/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=50c01b90:1793:24)
+    at async Module.start (http://localhost:3001/node_modules/.pnpm/@sveltejs+kit@2.69.3_@opentelemetry+api@1.9.1_@sveltejs+vite-plugin-svelte@7.2.0_svelte_f8c948d2db8cf210f0c2f6e9ff569557/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=50c01b90:405:3) @ http://localhost:3001/node_modules/.vite/deps/@sentry_sveltekit.js?v=50c01b90:25774
+[     498ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0
+[     503ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0
+[     507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/me:0
+[     512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0
+[     519ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/me/notifications?limit=20:0
+[     523ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3001/api/v1/auth/refresh:0
+[     587ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3001/login:0

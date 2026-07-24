@@ -60,3 +60,28 @@ ORDER BY count DESC;
 SELECT tenant_id, entity_type, entity_id, user_id, reaction_key, created_at
 FROM reactions
 WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @entity_id AND user_id = @user_id;
+
+-- name: ListContentLikedByUser :many
+-- Public "Likes" tab: published+public content the user has reacted to (any
+-- reaction key), one row per content (GROUP BY collapses multiple reaction
+-- keys), newest reaction first. Public-safe: draft/private content excluded.
+SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
+       c.created_at, c.view_count, c.comment_count,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       LEFT(c.body, 200) AS excerpt,
+       MAX(r.created_at)::timestamptz AS reacted_at
+FROM reactions r
+JOIN contents c ON c.id = r.entity_id AND c.tenant_id = r.tenant_id
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+WHERE r.tenant_id = @tenant_id
+  AND r.user_id = @user_id
+  AND r.entity_type = 'content'
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+GROUP BY c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
+         c.created_at, c.view_count, c.comment_count,
+         up.display_name, u.username, up.avatar_url, c.body
+ORDER BY reacted_at DESC
+LIMIT @page_limit OFFSET @page_offset;

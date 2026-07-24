@@ -423,3 +423,22 @@ WHERE id = @id AND tenant_id = @tenant_id;
 -- name: DecrementSpaceFollowerCount :exec
 UPDATE spaces SET follower_count = follower_count - 1
 WHERE id = @id AND tenant_id = @tenant_id AND follower_count > 0;
+
+-- =====================
+-- Public Profile Spaces Tab
+-- =====================
+
+-- name: ListPublicSpacesByMemberUser :many
+-- Public profile Spaces tab: PUBLIC, active spaces the user is a member of.
+-- Excludes 'members'/'private' visibility and non-active spaces. Public-safe.
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
+       s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
+       s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
+       s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
+       s.updated_at
+FROM spaces s
+JOIN space_members sm ON sm.space_id = s.id AND sm.tenant_id = s.tenant_id
+WHERE sm.user_id = @user_id AND s.tenant_id = @tenant_id
+  AND s.visibility = 'public' AND s.status = 'active'
+ORDER BY sm.joined_at DESC, s.id DESC
+LIMIT @page_limit OFFSET @page_offset;

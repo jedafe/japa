@@ -620,6 +620,34 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": toMediaResponses(items, h.service)})
 }
 
+// ListByUser handles GET /users/{id}/media — the public profile Media tab.
+func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var uploaderID pgtype.UUID
+	if err := uploaderID.Scan(chi.URLParam(r, "id")); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	items, total, err := h.service.ListByUser(r.Context(), tenantID, uploaderID, limit, offset)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "list_error", err.Error())
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": toMediaResponses(items, h.service),
+		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Admin Handlers — Media Quarantine
 // ---------------------------------------------------------------------------

@@ -622,7 +622,7 @@ func (s *Store) GetUserTrackProgress(ctx context.Context, userID, trackID pgtype
 // Certificate represents certificate.
 type Certificate struct {
 	ID                pgtype.UUID  `json:"id"`
-	TenantID          pgtype.UUID  `json:"tenant_id"`
+	TenantID          pgtype.UUID  `json:"-"` // internal multi-tenancy key; never serialized (public + /me responses)
 	UserID            pgtype.UUID  `json:"user_id"`
 	TrackID           pgtype.UUID  `json:"track_id"`
 	CertificateNumber string       `json:"certificate_number"`
@@ -677,9 +677,12 @@ func (s *Store) IssueCertificate(ctx context.Context, tenantID, userID, trackID 
 	return &c, nil
 }
 
-// ListCertificatesByUser lists certificates for a user.
-func (s *Store) ListCertificatesByUser(ctx context.Context, userID pgtype.UUID) ([]Certificate, error) {
-	rows, err := s.read.ListLearningCertificatesByUser(ctx, userID)
+// ListCertificatesByUser lists a user's certificates, tenant-scoped.
+func (s *Store) ListCertificatesByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]Certificate, error) {
+	rows, err := s.read.ListLearningCertificatesByUser(ctx, gen.ListLearningCertificatesByUserParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list certificates by user: %w", err)
 	}

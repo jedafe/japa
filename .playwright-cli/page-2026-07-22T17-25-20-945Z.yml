@@ -1,0 +1,1217 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - link "Admin":
+            - /url: /
+            - generic: Admin
+        - generic:
+          - generic:
+            - img
+            - textbox "Search navigation..."
+        - navigation:
+          - generic:
+            - button "Dashboard":
+              - generic: Dashboard
+              - img
+            - generic:
+              - link "Overview":
+                - /url: /
+                - img
+                - generic: Overview
+          - generic:
+            - button "User Management":
+              - generic: User Management
+              - img
+            - generic:
+              - link "Users":
+                - /url: /users
+                - img
+                - generic: Users
+              - link "Organisations":
+                - /url: /organisations
+                - img
+                - generic: Organisations
+              - link "Universities":
+                - /url: /universities
+                - img
+                - generic: Universities
+              - link "Professional Types":
+                - /url: /professional-types
+                - img
+                - generic: Professional Types
+              - link "Groups":
+                - /url: /users/groups
+                - img
+                - generic: Groups
+          - generic:
+            - button "Content":
+              - generic: Content
+              - img
+            - generic:
+              - link "All Content":
+                - /url: /content
+                - img
+                - generic: All Content
+              - link "Blog Posts":
+                - /url: /blog/review-queue
+                - img
+                - generic: Blog Posts
+              - link "Documentation":
+                - /url: /docs
+                - img
+                - generic: Documentation
+              - link "Media":
+                - /url: /media
+                - img
+                - generic: Media
+              - link "Spaces":
+                - /url: /spaces
+                - img
+                - generic: Spaces
+              - link "Space Types":
+                - /url: /space-types
+                - img
+                - generic: Space Types
+              - link "Tags":
+                - /url: /tags
+                - img
+                - generic: Tags
+              - link "Reactions":
+                - /url: /reactions
+                - img
+                - generic: Reactions
+          - generic:
+            - button "Moderation":
+              - generic: Moderation
+              - img
+            - generic:
+              - link "Queue":
+                - /url: /moderation
+                - img
+                - generic: Queue
+              - link "Review Queue":
+                - /url: /moderation-queue
+                - img
+                - generic: Review Queue
+              - link "Spam Management":
+                - /url: /spam
+                - img
+                - generic: Spam Management
+              - link "Support Tickets":
+                - /url: /tickets
+                - img
+                - generic: Support Tickets
+              - link "Reviews":
+                - /url: /reviews
+                - img
+                - generic: Reviews
+          - generic:
+            - button "Analytics & Reports":
+              - generic: Analytics & Reports
+              - img
+          - generic:
+            - button "Engagement":
+              - generic: Engagement
+              - img
+          - generic:
+            - button "Monetization":
+              - generic: Monetization
+              - img
+          - generic:
+            - button "Automation":
+              - generic: Automation
+              - img
+          - generic:
+            - button "Customization":
+              - generic: Customization
+              - img
+          - generic:
+            - button "System":
+              - generic: System
+              - img
+        - generic:
+          - generic:
+            - generic:
+              - generic: A
+            - generic:
+              - paragraph: Admin
+              - paragraph
+            - link "Logout":
+              - /url: /logout
+              - img
+      - generic:
+        - banner:
+          - generic:
+            - link "JapaConnect Admin":
+              - /url: /
+          - generic:
+            - generic:
+              - button:
+                - img
+            - button:
+              - img
+            - link "JC":
+              - /url: /
+              - generic:
+                - generic: JC
+        - main:
+          - generic:
+            - navigation "Breadcrumb":
+              - link:
+                - /url: /
+                - img
+              - img
+              - link "Users":
+                - /url: /users
+              - img
+              - generic: User Groups
+            - generic:
+              - generic:
+                - heading "User Groups" [level=1]
+                - paragraph: Manage user groups and their permissions
+              - generic:
+                - button "Create Group":
+                  - img
+                  - text: Create Group
+                - button "Refresh":
+                  - img
+                  - text: Refresh
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - searchbox "Search"
+                  - generic:
+                    - table:
+                      - rowgroup:
+                        - row "Select all rows Name Description Members Permissions Actions":
+                          - columnheader "Select all rows":
+                            - checkbox "Select all rows"
+                          - columnheader "Name":
+                            - generic:
+                              - text: Name
+                              - img
+                          - columnheader "Description":
+                            - generic: Description
+                          - columnheader "Members":
+                            - generic:
+                              - text: Members
+                              - img
+                          - columnheader "Permissions":
+                            - generic: Permissions
+                          - columnheader "Actions":
+                            - generic: Actions
+                      - rowgroup:
+                        - row "Select row fab042d8-4a4d-4daf-8ce8-a3e731a19bd1 Blog Moderator 0 Edit Delete":
+                          - cell "Select row fab042d8-4a4d-4daf-8ce8-a3e731a19bd1":
+                            - checkbox "Select row fab042d8-4a4d-4daf-8ce8-a3e731a19bd1"
+                          - cell "Blog Moderator"
+                          - cell
+                          - cell "0":
+                            - generic: "0"
+                          - cell
+                          - cell "Edit Delete":
+                            - generic:
+                              - button "Edit":
+                                - img
+                                - text: Edit
+                              - button "Delete":
+                                - img
+                                - text: Delete
+                        - row "Select row 00000000-0000-0000-0000-000000000030 Guest 0 moderation.report Edit Delete":
+                          - cell "Select row 00000000-0000-0000-0000-000000000030":
+                            - checkbox "Select row 00000000-0000-0000-0000-000000000030"
+                          - cell "Guest"
+                          - cell
+                          - cell "0":
+                            - generic: "0"
+                          - cell "moderation.report":
+                            - generic:
+                              - generic: moderation.report
+                          - cell "Edit Delete":
+                            - generic:
+                              - button "Edit":
+                                - img
+                                - text: Edit
+                              - button "Delete":
+                                - img
+                                - text: Delete
+                        - row "Select row 00000000-0000-0000-0000-000000000020 Members 9 bookmarks.create content.pin feature.blog +49 Edit Delete":
+                          - cell "Select row 00000000-0000-0000-0000-000000000020":
+                            - checkbox "Select row 00000000-0000-0000-0000-000000000020"
+                          - cell "Members"
+                          - cell
+                          - cell "9":
+                            - generic: "9"
+                          - cell "bookmarks.create content.pin feature.blog +49":
+                            - generic:
+                              - generic: bookmarks.create
+                              - generic: content.pin
+                              - generic: feature.blog
+                              - generic: "+49"
+                          - cell "Edit Delete":
+                            - generic:
+                              - button "Edit":
+                                - img
+                                - text: Edit
+                              - button "Delete":
+                                - img
+                                - text: Delete
+                        - row "Select row 00000000-0000-0000-0000-000000000010 Super Admin 2 * Edit Delete":
+                          - cell "Select row 00000000-0000-0000-0000-000000000010":
+                            - checkbox "Select row 00000000-0000-0000-0000-000000000010"
+                          - cell "Super Admin"
+                          - cell
+                          - cell "2":
+                            - generic: "2"
+                          - cell "*":
+                            - generic:
+                              - generic: "*"
+                          - cell "Edit Delete":
+                            - generic:
+                              - button "Edit":
+                                - img
+                                - text: Edit
+                              - button "Delete":
+                                - img
+                                - text: Delete
+                        - row "Select row ce3f3a88-f4b6-4ea6-ac64-107f9e5530c6 Test Group 0 Edit Delete":
+                          - cell "Select row ce3f3a88-f4b6-4ea6-ac64-107f9e5530c6":
+                            - checkbox "Select row ce3f3a88-f4b6-4ea6-ac64-107f9e5530c6"
+                          - cell "Test Group"
+                          - cell
+                          - cell "0":
+                            - generic: "0"
+                          - cell
+                          - cell "Edit Delete":
+                            - generic:
+                              - button "Edit":
+                                - img
+                                - text: Edit
+                              - button "Delete":
+                                - img
+                                - text: Delete
+                - generic:
+                  - generic:
+                    - generic: 5 items
+                    - generic:
+                      - generic: "Per page:"
+                      - button "25":
+                        - generic: "25"
+                        - img
+                  - generic:
+                    - button "First page" [disabled]:
+                      - img
+                    - button "Previous page" [disabled]:
+                      - img
+                    - generic: Page 1 of 1
+                    - button "Next page" [disabled]:
+                      - img
+                    - button "Last page" [disabled]:
+                      - img
+  - dialog "Edit Group" [ref=e278]:
+    - heading "Edit Group" [level=2] [ref=e280]
+    - generic [ref=e281]:
+      - generic [ref=e282]:
+        - generic [ref=e283]: Name
+        - textbox "Name" [active] [ref=e284]: Test Group
+      - generic [ref=e285]:
+        - generic [ref=e286]: Description
+        - textbox "Description" [ref=e287]
+      - generic [ref=e288]:
+        - paragraph [ref=e289]: Permissions
+        - textbox "Search permissions..." [ref=e290]
+        - generic [ref=e291]:
+          - generic [ref=e292]:
+            - checkbox "*" [ref=e293]
+            - text: "*"
+          - generic [ref=e294]:
+            - checkbox "ad.campaign.manage" [ref=e295]
+            - text: ad.campaign.manage
+          - generic [ref=e296]:
+            - checkbox "ad.event.track" [ref=e297]
+            - text: ad.event.track
+          - generic [ref=e298]:
+            - checkbox "admin.advertising.view" [ref=e299]
+            - text: admin.advertising.view
+          - generic [ref=e300]:
+            - checkbox "admin.ai.view" [ref=e301]
+            - text: admin.ai.view
+          - generic [ref=e302]:
+            - checkbox "admin.analytics.search" [ref=e303]
+            - text: admin.analytics.search
+          - generic [ref=e304]:
+            - checkbox "admin.analytics.view" [ref=e305]
+            - text: admin.analytics.view
+          - generic [ref=e306]:
+            - checkbox "admin.audit.view" [ref=e307]
+            - text: admin.audit.view
+          - generic [ref=e308]:
+            - checkbox "admin.broadcast" [ref=e309]
+            - text: admin.broadcast
+          - generic [ref=e310]:
+            - checkbox "admin.content.view" [ref=e311]
+            - text: admin.content.view
+          - generic [ref=e312]:
+            - checkbox "admin.feature_flags.manage" [ref=e313]
+            - text: admin.feature_flags.manage
+          - generic [ref=e314]:
+            - checkbox "admin.feature_flags.view" [ref=e315]
+            - text: admin.feature_flags.view
+          - generic [ref=e316]:
+            - checkbox "admin.groups.manage" [ref=e317]
+            - text: admin.groups.manage
+          - generic [ref=e318]:
+            - checkbox "admin.i18n.manage" [ref=e319]
+            - text: admin.i18n.manage
+          - generic [ref=e320]:
+            - checkbox "admin.impersonate" [ref=e321]
+            - text: admin.impersonate
+          - generic [ref=e322]:
+            - checkbox "admin.moderation" [ref=e323]
+            - text: admin.moderation
+          - generic [ref=e324]:
+            - checkbox "admin.moderation.view" [ref=e325]
+            - text: admin.moderation.view
+          - generic [ref=e326]:
+            - checkbox "admin.payments.view" [ref=e327]
+            - text: admin.payments.view
+          - generic [ref=e328]:
+            - checkbox "admin.rbac.manage" [ref=e329]
+            - text: admin.rbac.manage
+          - generic [ref=e330]:
+            - checkbox "admin.roles.view" [ref=e331]
+            - text: admin.roles.view
+          - generic [ref=e332]:
+            - checkbox "admin.settings" [ref=e333]
+            - text: admin.settings
+          - generic [ref=e334]:
+            - checkbox "admin.settings.manage" [ref=e335]
+            - text: admin.settings.manage
+          - generic [ref=e336]:
+            - checkbox "admin.settings.view" [ref=e337]
+            - text: admin.settings.view
+          - generic [ref=e338]:
+            - checkbox "admin.spaces.manage" [ref=e339]
+            - text: admin.spaces.manage
+          - generic [ref=e340]:
+            - checkbox "admin.tickets.manage" [ref=e341]
+            - text: admin.tickets.manage
+          - generic [ref=e342]:
+            - checkbox "admin.users.list" [ref=e343]
+            - text: admin.users.list
+          - generic [ref=e344]:
+            - checkbox "admin.users.manage" [ref=e345]
+            - text: admin.users.manage
+          - generic [ref=e346]:
+            - checkbox "admin.users.view" [ref=e347]
+            - text: admin.users.view
+          - generic [ref=e348]:
+            - checkbox "ad.slot.manage" [ref=e349]
+            - text: ad.slot.manage
+          - generic [ref=e350]:
+            - checkbox "ad.stats.view" [ref=e351]
+            - text: ad.stats.view
+          - generic [ref=e352]:
+            - checkbox "affiliate.admin.manage" [ref=e353]
+            - text: affiliate.admin.manage
+          - generic [ref=e354]:
+            - checkbox "affiliate.admin.view" [ref=e355]
+            - text: affiliate.admin.view
+          - generic [ref=e356]:
+            - checkbox "affiliate.enroll" [ref=e357]
+            - text: affiliate.enroll
+          - generic [ref=e358]:
+            - checkbox "affiliate.manage" [ref=e359]
+            - text: affiliate.manage
+          - generic [ref=e360]:
+            - checkbox "affiliate.providers.manage" [ref=e361]
+            - text: affiliate.providers.manage
+          - generic [ref=e362]:
+            - checkbox "ai.context.admin_delete_entry" [ref=e363]
+            - text: ai.context.admin_delete_entry
+          - generic [ref=e364]:
+            - checkbox "ai.context.admin_view" [ref=e365]
+            - text: ai.context.admin_view
+          - generic [ref=e366]:
+            - checkbox "ai.context.course_progress" [ref=e367]
+            - text: ai.context.course_progress
+          - generic [ref=e368]:
+            - checkbox "ai.context.forum_activity" [ref=e369]
+            - text: ai.context.forum_activity
+          - generic [ref=e370]:
+            - checkbox "ai.context.mentorship_activity" [ref=e371]
+            - text: ai.context.mentorship_activity
+          - generic [ref=e372]:
+            - checkbox "ai.context.moderation_history" [ref=e373]
+            - text: ai.context.moderation_history
+          - generic [ref=e374]:
+            - checkbox "ai.context.points_balance" [ref=e375]
+            - text: ai.context.points_balance
+          - generic [ref=e376]:
+            - checkbox "ai.context.referral_activity" [ref=e377]
+            - text: ai.context.referral_activity
+          - generic [ref=e378]:
+            - checkbox "ai.generate" [ref=e379]
+            - text: ai.generate
+          - generic [ref=e380]:
+            - checkbox "ai.hitl.review" [ref=e381]
+            - text: ai.hitl.review
+          - generic [ref=e382]:
+            - checkbox "ai.tools.manage" [ref=e383]
+            - text: ai.tools.manage
+          - generic [ref=e384]:
+            - checkbox "analytics.admin" [ref=e385]
+            - text: analytics.admin
+          - generic [ref=e386]:
+            - checkbox "analytics.cache.flush" [ref=e387]
+            - text: analytics.cache.flush
+          - generic [ref=e388]:
+            - checkbox "analytics.view.all" [ref=e389]
+            - text: analytics.view.all
+          - generic [ref=e390]:
+            - checkbox "analytics.view.own" [ref=e391]
+            - text: analytics.view.own
+          - generic [ref=e392]:
+            - checkbox "api.keys.analytics.view" [ref=e393]
+            - text: api.keys.analytics.view
+          - generic [ref=e394]:
+            - checkbox "api.keys.manage" [ref=e395]
+            - text: api.keys.manage
+          - generic [ref=e396]:
+            - checkbox "api.keys.self_manage" [ref=e397]
+            - text: api.keys.self_manage
+          - generic [ref=e398]:
+            - checkbox "api.keys.view.all" [ref=e399]
+            - text: api.keys.view.all
+          - generic [ref=e400]:
+            - checkbox "blog.create" [ref=e401]
+            - text: blog.create
+          - generic [ref=e402]:
+            - checkbox "blog.edit_any" [ref=e403]
+            - text: blog.edit_any
+          - generic [ref=e404]:
+            - checkbox "blog.edit_own" [ref=e405]
+            - text: blog.edit_own
+          - generic [ref=e406]:
+            - checkbox "blog.feature" [ref=e407]
+            - text: blog.feature
+          - generic [ref=e408]:
+            - checkbox "blog.publish" [ref=e409]
+            - text: blog.publish
+          - generic [ref=e410]:
+            - checkbox "blog.review" [ref=e411]
+            - text: blog.review
+          - generic [ref=e412]:
+            - checkbox "blog.review.create" [ref=e413]
+            - text: blog.review.create
+          - generic [ref=e414]:
+            - checkbox "blog.review.manage" [ref=e415]
+            - text: blog.review.manage
+          - generic [ref=e416]:
+            - checkbox "blog.rss.view" [ref=e417]
+            - text: blog.rss.view
+          - generic [ref=e418]:
+            - checkbox "blog.series.create" [ref=e419]
+            - text: blog.series.create
+          - generic [ref=e420]:
+            - checkbox "blog.series.delete" [ref=e421]
+            - text: blog.series.delete
+          - generic [ref=e422]:
+            - checkbox "blog.series.edit" [ref=e423]
+            - text: blog.series.edit
+          - generic [ref=e424]:
+            - checkbox "bookmarks.create" [ref=e425]
+            - text: bookmarks.create
+          - generic [ref=e426]:
+            - checkbox "bookmarks.manage" [ref=e427]
+            - text: bookmarks.manage
+          - generic [ref=e428]:
+            - checkbox "bots.admin" [ref=e429]
+            - text: bots.admin
+          - generic [ref=e430]:
+            - checkbox "comments.create" [ref=e431]
+            - text: comments.create
+          - generic [ref=e432]:
+            - checkbox "comments.delete_any" [ref=e433]
+            - text: comments.delete_any
+          - generic [ref=e434]:
+            - checkbox "comments.delete_own" [ref=e435]
+            - text: comments.delete_own
+          - generic [ref=e436]:
+            - checkbox "comments.edit_any" [ref=e437]
+            - text: comments.edit_any
+          - generic [ref=e438]:
+            - checkbox "comments.edit_own" [ref=e439]
+            - text: comments.edit_own
+          - generic [ref=e440]:
+            - checkbox "comments.vote" [ref=e441]
+            - text: comments.vote
+          - generic [ref=e442]:
+            - checkbox "comparison.create" [ref=e443]
+            - text: comparison.create
+          - generic [ref=e444]:
+            - checkbox "comparison.delete_any" [ref=e445]
+            - text: comparison.delete_any
+          - generic [ref=e446]:
+            - checkbox "comparison.delete_own" [ref=e447]
+            - text: comparison.delete_own
+          - generic [ref=e448]:
+            - checkbox "comparison.dimension.manage" [ref=e449]
+            - text: comparison.dimension.manage
+          - generic [ref=e450]:
+            - checkbox "comparison.edit_any" [ref=e451]
+            - text: comparison.edit_any
+          - generic [ref=e452]:
+            - checkbox "comparison.edit_own" [ref=e453]
+            - text: comparison.edit_own
+          - generic [ref=e454]:
+            - checkbox "comparison.item.manage" [ref=e455]
+            - text: comparison.item.manage
+          - generic [ref=e456]:
+            - checkbox "comparison.type.access.manage" [ref=e457]
+            - text: comparison.type.access.manage
+          - generic [ref=e458]:
+            - checkbox "comparison.type.create" [ref=e459]
+            - text: comparison.type.create
+          - generic [ref=e460]:
+            - checkbox "comparison.type.delete" [ref=e461]
+            - text: comparison.type.delete
+          - generic [ref=e462]:
+            - checkbox "comparison.type.edit" [ref=e463]
+            - text: comparison.type.edit
+          - generic [ref=e464]:
+            - checkbox "comparison.value.manage" [ref=e465]
+            - text: comparison.value.manage
+          - generic [ref=e466]:
+            - checkbox "content.create" [ref=e467]
+            - text: content.create
+          - generic [ref=e468]:
+            - checkbox "content.delete" [ref=e469]
+            - text: content.delete
+          - generic [ref=e470]:
+            - checkbox "content.edit" [ref=e471]
+            - text: content.edit
+          - generic [ref=e472]:
+            - checkbox "content.jsonld.manage" [ref=e473]
+            - text: content.jsonld.manage
+          - generic [ref=e474]:
+            - checkbox "content.page_builder.create" [ref=e475]
+            - text: content.page_builder.create
+          - generic [ref=e476]:
+            - checkbox "content.page_builder.delete" [ref=e477]
+            - text: content.page_builder.delete
+          - generic [ref=e478]:
+            - checkbox "content.page_builder.edit" [ref=e479]
+            - text: content.page_builder.edit
+          - generic [ref=e480]:
+            - checkbox "content.pin" [ref=e481]
+            - text: content.pin
+          - generic [ref=e482]:
+            - checkbox "content.publish" [ref=e483]
+            - text: content.publish
+          - generic [ref=e484]:
+            - checkbox "content.reactions.add" [ref=e485]
+            - text: content.reactions.add
+          - generic [ref=e486]:
+            - checkbox "content.reactions.remove" [ref=e487]
+            - text: content.reactions.remove
+          - generic [ref=e488]:
+            - checkbox "content.reaction_types.manage" [ref=e489]
+            - text: content.reaction_types.manage
+          - generic [ref=e490]:
+            - checkbox "content.render" [ref=e491]
+            - text: content.render
+          - generic [ref=e492]:
+            - checkbox "content.revisions.view" [ref=e493]
+            - text: content.revisions.view
+          - generic [ref=e494]:
+            - checkbox "content.schedule" [ref=e495]
+            - text: content.schedule
+          - generic [ref=e496]:
+            - checkbox "content.scheduled.view" [ref=e497]
+            - text: content.scheduled.view
+          - generic [ref=e498]:
+            - checkbox "content.scores.view" [ref=e499]
+            - text: content.scores.view
+          - generic [ref=e500]:
+            - checkbox "content.share" [ref=e501]
+            - text: content.share
+          - generic [ref=e502]:
+            - checkbox "control.ai_budget.manage" [ref=e503]
+            - text: control.ai_budget.manage
+          - generic [ref=e504]:
+            - checkbox "control.api_keys.manage" [ref=e505]
+            - text: control.api_keys.manage
+          - generic [ref=e506]:
+            - checkbox "control.audit_logs.view" [ref=e507]
+            - text: control.audit_logs.view
+          - generic [ref=e508]:
+            - checkbox "control.cache.manage" [ref=e509]
+            - text: control.cache.manage
+          - generic [ref=e510]:
+            - checkbox "control.feature_flags.manage" [ref=e511]
+            - text: control.feature_flags.manage
+          - generic [ref=e512]:
+            - checkbox "control.health.view" [ref=e513]
+            - text: control.health.view
+          - generic [ref=e514]:
+            - checkbox "control.panel.access" [ref=e515]
+            - text: control.panel.access
+          - generic [ref=e516]:
+            - checkbox "control.queue.manage" [ref=e517]
+            - text: control.queue.manage
+          - generic [ref=e518]:
+            - checkbox "control.security.manage" [ref=e519]
+            - text: control.security.manage
+          - generic [ref=e520]:
+            - checkbox "control.settings.manage" [ref=e521]
+            - text: control.settings.manage
+          - generic [ref=e522]:
+            - checkbox "control.tenants.manage" [ref=e523]
+            - text: control.tenants.manage
+          - generic [ref=e524]:
+            - checkbox "coupons.manage" [ref=e525]
+            - text: coupons.manage
+          - generic [ref=e526]:
+            - checkbox "custom_fields.field.create" [ref=e527]
+            - text: custom_fields.field.create
+          - generic [ref=e528]:
+            - checkbox "custom_fields.field.delete" [ref=e529]
+            - text: custom_fields.field.delete
+          - generic [ref=e530]:
+            - checkbox "custom_fields.field.edit" [ref=e531]
+            - text: custom_fields.field.edit
+          - generic [ref=e532]:
+            - checkbox "custom_fields.group.create" [ref=e533]
+            - text: custom_fields.group.create
+          - generic [ref=e534]:
+            - checkbox "custom_fields.group.delete" [ref=e535]
+            - text: custom_fields.group.delete
+          - generic [ref=e536]:
+            - checkbox "custom_fields.group.edit" [ref=e537]
+            - text: custom_fields.group.edit
+          - generic [ref=e538]:
+            - checkbox "custom_fields.group.view" [ref=e539]
+            - text: custom_fields.group.view
+          - generic [ref=e540]:
+            - checkbox "custom_fields.values.set" [ref=e541]
+            - text: custom_fields.values.set
+          - generic [ref=e542]:
+            - checkbox "dm.delete" [ref=e543]
+            - text: dm.delete
+          - generic [ref=e544]:
+            - checkbox "dm.manage_privacy" [ref=e545]
+            - text: dm.manage_privacy
+          - generic [ref=e546]:
+            - checkbox "dm.request" [ref=e547]
+            - text: dm.request
+          - generic [ref=e548]:
+            - checkbox "dm.send" [ref=e549]
+            - text: dm.send
+          - generic [ref=e550]:
+            - checkbox "dm.view" [ref=e551]
+            - text: dm.view
+          - generic [ref=e552]:
+            - checkbox "docs.admin" [ref=e553]
+            - text: docs.admin
+          - generic [ref=e554]:
+            - checkbox "docs.manage" [ref=e555]
+            - text: docs.manage
+          - generic [ref=e556]:
+            - checkbox "email.templates.manage" [ref=e557]
+            - text: email.templates.manage
+          - generic [ref=e558]:
+            - checkbox "feature.ai_chat" [ref=e559]
+            - text: feature.ai_chat
+          - generic [ref=e560]:
+            - checkbox "feature.blog" [ref=e561]
+            - text: feature.blog
+          - generic [ref=e562]:
+            - checkbox "feature.dm" [ref=e563]
+            - text: feature.dm
+          - generic [ref=e564]:
+            - checkbox "feature.forum" [ref=e565]
+            - text: feature.forum
+          - generic [ref=e566]:
+            - checkbox "feature.professional" [ref=e567]
+            - text: feature.professional
+          - generic [ref=e568]:
+            - checkbox "feature.ratings_reviews" [ref=e569]
+            - text: feature.ratings_reviews
+          - generic [ref=e570]:
+            - checkbox "features.manage" [ref=e571]
+            - text: features.manage
+          - generic [ref=e572]:
+            - checkbox "feature.wallet" [ref=e573]
+            - text: feature.wallet
+          - generic [ref=e574]:
+            - checkbox "follows.create" [ref=e575]
+            - text: follows.create
+          - generic [ref=e576]:
+            - checkbox "follows.toggle" [ref=e577]
+            - text: follows.toggle
+          - generic [ref=e578]:
+            - checkbox "follows.view" [ref=e579]
+            - text: follows.view
+          - generic [ref=e580]:
+            - checkbox "forms.create" [ref=e581]
+            - text: forms.create
+          - generic [ref=e582]:
+            - checkbox "forms.delete" [ref=e583]
+            - text: forms.delete
+          - generic [ref=e584]:
+            - checkbox "forms.edit" [ref=e585]
+            - text: forms.edit
+          - generic [ref=e586]:
+            - checkbox "forms.submissions.delete" [ref=e587]
+            - text: forms.submissions.delete
+          - generic [ref=e588]:
+            - checkbox "forms.submissions.edit" [ref=e589]
+            - text: forms.submissions.edit
+          - generic [ref=e590]:
+            - checkbox "forms.submissions.view" [ref=e591]
+            - text: forms.submissions.view
+          - generic [ref=e592]:
+            - checkbox "forum.admin" [ref=e593]
+            - text: forum.admin
+          - generic [ref=e594]:
+            - checkbox "forum.bookmark.manage" [ref=e595]
+            - text: forum.bookmark.manage
+          - generic [ref=e596]:
+            - checkbox "forum.create" [ref=e597]
+            - text: forum.create
+          - generic [ref=e598]:
+            - checkbox "forum.poll.create" [ref=e599]
+            - text: forum.poll.create
+          - generic [ref=e600]:
+            - checkbox "forum.poll.vote" [ref=e601]
+            - text: forum.poll.vote
+          - generic [ref=e602]:
+            - checkbox "forum.reply.create" [ref=e603]
+            - text: forum.reply.create
+          - generic [ref=e604]:
+            - checkbox "forum.reply.delete_any" [ref=e605]
+            - text: forum.reply.delete_any
+          - generic [ref=e606]:
+            - checkbox "forum.reply.delete_own" [ref=e607]
+            - text: forum.reply.delete_own
+          - generic [ref=e608]:
+            - checkbox "forum.reply.edit_any" [ref=e609]
+            - text: forum.reply.edit_any
+          - generic [ref=e610]:
+            - checkbox "forum.reply.edit_own" [ref=e611]
+            - text: forum.reply.edit_own
+          - generic [ref=e612]:
+            - checkbox "forum.solve" [ref=e613]
+            - text: forum.solve
+          - generic [ref=e614]:
+            - checkbox "forum.tag.assign" [ref=e615]
+            - text: forum.tag.assign
+          - generic [ref=e616]:
+            - checkbox "forum.tag.create" [ref=e617]
+            - text: forum.tag.create
+          - generic [ref=e618]:
+            - checkbox "forum.tag.edit" [ref=e619]
+            - text: forum.tag.edit
+          - generic [ref=e620]:
+            - checkbox "forum.tag.moderate" [ref=e621]
+            - text: forum.tag.moderate
+          - generic [ref=e622]:
+            - checkbox "forum.thread.create" [ref=e623]
+            - text: forum.thread.create
+          - generic [ref=e624]:
+            - checkbox "forum.thread.delete_any" [ref=e625]
+            - text: forum.thread.delete_any
+          - generic [ref=e626]:
+            - checkbox "forum.thread.delete_own" [ref=e627]
+            - text: forum.thread.delete_own
+          - generic [ref=e628]:
+            - checkbox "forum.thread.edit_any" [ref=e629]
+            - text: forum.thread.edit_any
+          - generic [ref=e630]:
+            - checkbox "forum.thread.edit_own" [ref=e631]
+            - text: forum.thread.edit_own
+          - generic [ref=e632]:
+            - checkbox "forum.thread.solve" [ref=e633]
+            - text: forum.thread.solve
+          - generic [ref=e634]:
+            - checkbox "forum.vote" [ref=e635]
+            - text: forum.vote
+          - generic [ref=e636]:
+            - checkbox "gdpr.audit_logs.view" [ref=e637]
+            - text: gdpr.audit_logs.view
+          - generic [ref=e638]:
+            - checkbox "gdpr.consents.delete" [ref=e639]
+            - text: gdpr.consents.delete
+          - generic [ref=e640]:
+            - checkbox "gdpr.consents.view" [ref=e641]
+            - text: gdpr.consents.view
+          - generic [ref=e642]:
+            - checkbox "gdpr.data_exports.view" [ref=e643]
+            - text: gdpr.data_exports.view
+          - generic [ref=e644]:
+            - checkbox "gdpr.deletions.view" [ref=e645]
+            - text: gdpr.deletions.view
+          - generic [ref=e646]:
+            - checkbox "geo.lookup" [ref=e647]
+            - text: geo.lookup
+          - generic [ref=e648]:
+            - checkbox "i18n.manage" [ref=e649]
+            - text: i18n.manage
+          - generic [ref=e650]:
+            - checkbox "integrations.webhooks.manage" [ref=e651]
+            - text: integrations.webhooks.manage
+          - generic [ref=e652]:
+            - checkbox "interactions.block.manage" [ref=e653]
+            - text: interactions.block.manage
+          - generic [ref=e654]:
+            - checkbox "interactions.mute.manage" [ref=e655]
+            - text: interactions.mute.manage
+          - generic [ref=e656]:
+            - checkbox "learning.admin.manage" [ref=e657]
+            - text: learning.admin.manage
+          - generic [ref=e658]:
+            - checkbox "learning.certificate.issue" [ref=e659]
+            - text: learning.certificate.issue
+          - generic [ref=e660]:
+            - checkbox "learning.enroll" [ref=e661]
+            - text: learning.enroll
+          - generic [ref=e662]:
+            - checkbox "learning.manage" [ref=e663]
+            - text: learning.manage
+          - generic [ref=e664]:
+            - checkbox "learning.progress.update" [ref=e665]
+            - text: learning.progress.update
+          - generic [ref=e666]:
+            - checkbox "learning.view" [ref=e667]
+            - text: learning.view
+          - generic [ref=e668]:
+            - checkbox "link_preview.fetch" [ref=e669]
+            - text: link_preview.fetch
+          - generic [ref=e670]:
+            - checkbox "media.delete_any" [ref=e671]
+            - text: media.delete_any
+          - generic [ref=e672]:
+            - checkbox "media.delete_own" [ref=e673]
+            - text: media.delete_own
+          - generic [ref=e674]:
+            - checkbox "media.edit_any" [ref=e675]
+            - text: media.edit_any
+          - generic [ref=e676]:
+            - checkbox "media.library.view_all" [ref=e677]
+            - text: media.library.view_all
+          - generic [ref=e678]:
+            - checkbox "media.library.view_own" [ref=e679]
+            - text: media.library.view_own
+          - generic [ref=e680]:
+            - checkbox "media.quarantine.manage" [ref=e681]
+            - text: media.quarantine.manage
+          - generic [ref=e682]:
+            - checkbox "media.upload" [ref=e683]
+            - text: media.upload
+          - generic [ref=e684]:
+            - checkbox "media.video.upload" [ref=e685]
+            - text: media.video.upload
+          - generic [ref=e686]:
+            - checkbox "media.view_all" [ref=e687]
+            - text: media.view_all
+          - generic [ref=e688]:
+            - checkbox "media.view_own" [ref=e689]
+            - text: media.view_own
+          - generic [ref=e690]:
+            - checkbox "mentorship.admin" [ref=e691]
+            - text: mentorship.admin
+          - generic [ref=e692]:
+            - checkbox "menus.manage" [ref=e693]
+            - text: menus.manage
+          - generic [ref=e694]:
+            - checkbox "moderation.alerts.manage" [ref=e695]
+            - text: moderation.alerts.manage
+          - generic [ref=e696]:
+            - checkbox "moderation.appeal.review" [ref=e697]
+            - text: moderation.appeal.review
+          - generic [ref=e698]:
+            - checkbox "moderation.ban" [ref=e699]
+            - text: moderation.ban
+          - generic [ref=e700]:
+            - checkbox "moderation.broadcast" [ref=e701]
+            - text: moderation.broadcast
+          - generic [ref=e702]:
+            - checkbox "moderation.content.review" [ref=e703]
+            - text: moderation.content.review
+          - generic [ref=e704]:
+            - checkbox "moderation.report" [ref=e705]
+            - text: moderation.report
+          - generic [ref=e706]:
+            - checkbox "moderation.warn" [ref=e707]
+            - text: moderation.warn
+          - generic [ref=e708]:
+            - checkbox "newsletter.admin" [ref=e709]
+            - text: newsletter.admin
+          - generic [ref=e710]:
+            - checkbox "notifications.manage" [ref=e711]
+            - text: notifications.manage
+          - generic [ref=e712]:
+            - checkbox "notifications.view" [ref=e713]
+            - text: notifications.view
+          - generic [ref=e714]:
+            - checkbox "organizations.claim" [ref=e715]
+            - text: organizations.claim
+          - generic [ref=e716]:
+            - checkbox "organizations.create" [ref=e717]
+            - text: organizations.create
+          - generic [ref=e718]:
+            - checkbox "organizations.delete_own" [ref=e719]
+            - text: organizations.delete_own
+          - generic [ref=e720]:
+            - checkbox "organizations.edit_own" [ref=e721]
+            - text: organizations.edit_own
+          - generic [ref=e722]:
+            - checkbox "organizations.invite" [ref=e723]
+            - text: organizations.invite
+          - generic [ref=e724]:
+            - checkbox "organizations.manage" [ref=e725]
+            - text: organizations.manage
+          - generic [ref=e726]:
+            - checkbox "organizations.members.manage" [ref=e727]
+            - text: organizations.members.manage
+          - generic [ref=e728]:
+            - checkbox "pagebuilder.blocks.manage" [ref=e729]
+            - text: pagebuilder.blocks.manage
+          - generic [ref=e730]:
+            - checkbox "pagebuilder.templates.manage" [ref=e731]
+            - text: pagebuilder.templates.manage
+          - generic [ref=e732]:
+            - checkbox "pagebuilder.themes.manage" [ref=e733]
+            - text: pagebuilder.themes.manage
+          - generic [ref=e734]:
+            - checkbox "pages.manage" [ref=e735]
+            - text: pages.manage
+          - generic [ref=e736]:
+            - checkbox "pages.publish" [ref=e737]
+            - text: pages.publish
+          - generic [ref=e738]:
+            - checkbox "payments.create" [ref=e739]
+            - text: payments.create
+          - generic [ref=e740]:
+            - checkbox "payments.discount_codes.manage" [ref=e741]
+            - text: payments.discount_codes.manage
+          - generic [ref=e742]:
+            - checkbox "payments.refund" [ref=e743]
+            - text: payments.refund
+          - generic [ref=e744]:
+            - checkbox "payments.subscriptions.manage" [ref=e745]
+            - text: payments.subscriptions.manage
+          - generic [ref=e746]:
+            - checkbox "payments.view_any" [ref=e747]
+            - text: payments.view_any
+          - generic [ref=e748]:
+            - checkbox "payments.view.own" [ref=e749]
+            - text: payments.view.own
+          - generic [ref=e750]:
+            - checkbox "payments.view_own" [ref=e751]
+            - text: payments.view_own
+          - generic [ref=e752]:
+            - checkbox "payments.webhook" [ref=e753]
+            - text: payments.webhook
+          - generic [ref=e754]:
+            - checkbox "professional.create" [ref=e755]
+            - text: professional.create
+          - generic [ref=e756]:
+            - checkbox "professional.manage" [ref=e757]
+            - text: professional.manage
+          - generic [ref=e758]:
+            - checkbox "professional_profile.author.switch" [ref=e759]
+            - text: professional_profile.author.switch
+          - generic [ref=e760]:
+            - checkbox "professional_profile.create" [ref=e761]
+            - text: professional_profile.create
+          - generic [ref=e762]:
+            - checkbox "professional_profile.delete_any" [ref=e763]
+            - text: professional_profile.delete_any
+          - generic [ref=e764]:
+            - checkbox "professional_profile.delete_own" [ref=e765]
+            - text: professional_profile.delete_own
+          - generic [ref=e766]:
+            - checkbox "professional_profile.edit_any" [ref=e767]
+            - text: professional_profile.edit_any
+          - generic [ref=e768]:
+            - checkbox "professional_profile.edit_own" [ref=e769]
+            - text: professional_profile.edit_own
+          - generic [ref=e770]:
+            - checkbox "professional_profile.invite" [ref=e771]
+            - text: professional_profile.invite
+          - generic [ref=e772]:
+            - checkbox "professional_profile.member.manage" [ref=e773]
+            - text: professional_profile.member.manage
+          - generic [ref=e774]:
+            - checkbox "professional_profile.type.create" [ref=e775]
+            - text: professional_profile.type.create
+          - generic [ref=e776]:
+            - checkbox "professional_profile.type.view" [ref=e777]
+            - text: professional_profile.type.view
+          - generic [ref=e778]:
+            - checkbox "reactions.create" [ref=e779]
+            - text: reactions.create
+          - generic [ref=e780]:
+            - checkbox "reactions.delete.own" [ref=e781]
+            - text: reactions.delete.own
+          - generic [ref=e782]:
+            - checkbox "redirects.manage" [ref=e783]
+            - text: redirects.manage
+          - generic [ref=e784]:
+            - checkbox "referral.admin" [ref=e785]
+            - text: referral.admin
+          - generic [ref=e786]:
+            - checkbox "reports.review" [ref=e787]
+            - text: reports.review
+          - generic [ref=e788]:
+            - checkbox "reviews.aggregate.view" [ref=e789]
+            - text: reviews.aggregate.view
+          - generic [ref=e790]:
+            - checkbox "reviews.create" [ref=e791]
+            - text: reviews.create
+          - generic [ref=e792]:
+            - checkbox "reviews.delete_any" [ref=e793]
+            - text: reviews.delete_any
+          - generic [ref=e794]:
+            - checkbox "reviews.delete_own" [ref=e795]
+            - text: reviews.delete_own
+          - generic [ref=e796]:
+            - checkbox "reviews.edit_any" [ref=e797]
+            - text: reviews.edit_any
+          - generic [ref=e798]:
+            - checkbox "reviews.edit_own" [ref=e799]
+            - text: reviews.edit_own
+          - generic [ref=e800]:
+            - checkbox "reviews.flag" [ref=e801]
+            - text: reviews.flag
+          - generic [ref=e802]:
+            - checkbox "reviews.moderate" [ref=e803]
+            - text: reviews.moderate
+          - generic [ref=e804]:
+            - checkbox "search.analytics.view" [ref=e805]
+            - text: search.analytics.view
+          - generic [ref=e806]:
+            - checkbox "spaces.admin" [ref=e807]
+            - text: spaces.admin
+          - generic [ref=e808]:
+            - checkbox "spaces.create" [ref=e809]
+            - text: spaces.create
+          - generic [ref=e810]:
+            - checkbox "spaces.delete" [ref=e811]
+            - text: spaces.delete
+          - generic [ref=e812]:
+            - checkbox "spaces.edit" [ref=e813]
+            - text: spaces.edit
+          - generic [ref=e814]:
+            - checkbox "spaces.moderate" [ref=e815]
+            - text: spaces.moderate
+          - generic [ref=e816]:
+            - checkbox "spaces.moderate.any" [ref=e817]
+            - text: spaces.moderate.any
+          - generic [ref=e818]:
+            - checkbox "spaces.moderate.assigned" [ref=e819]
+            - text: spaces.moderate.assigned
+          - generic [ref=e820]:
+            - checkbox "spaces.moderator.assign" [ref=e821]
+            - text: spaces.moderator.assign
+          - generic [ref=e822]:
+            - checkbox "space_types.create" [ref=e823]
+            - text: space_types.create
+          - generic [ref=e824]:
+            - checkbox "space_types.delete" [ref=e825]
+            - text: space_types.delete
+          - generic [ref=e826]:
+            - checkbox "space_types.edit" [ref=e827]
+            - text: space_types.edit
+          - generic [ref=e828]:
+            - checkbox "spam.censored_words.manage" [ref=e829]
+            - text: spam.censored_words.manage
+          - generic [ref=e830]:
+            - checkbox "spam.ip_block.manage" [ref=e831]
+            - text: spam.ip_block.manage
+          - generic [ref=e832]:
+            - checkbox "spam.user_block.manage" [ref=e833]
+            - text: spam.user_block.manage
+          - generic [ref=e834]:
+            - checkbox "tags.create" [ref=e835]
+            - text: tags.create
+          - generic [ref=e836]:
+            - checkbox "tags.delete" [ref=e837]
+            - text: tags.delete
+          - generic [ref=e838]:
+            - checkbox "tags.edit" [ref=e839]
+            - text: tags.edit
+          - generic [ref=e840]:
+            - checkbox "tags.manage" [ref=e841]
+            - text: tags.manage
+          - generic [ref=e842]:
+            - checkbox "tickets.admin" [ref=e843]
+            - text: tickets.admin
+          - generic [ref=e844]:
+            - checkbox "tickets.create" [ref=e845]
+            - text: tickets.create
+          - generic [ref=e846]:
+            - checkbox "tickets.manage" [ref=e847]
+            - text: tickets.manage
+          - generic [ref=e848]:
+            - checkbox "tickets.submit" [ref=e849]
+            - text: tickets.submit
+          - generic [ref=e850]:
+            - checkbox "tickets.type.manage" [ref=e851]
+            - text: tickets.type.manage
+          - generic [ref=e852]:
+            - checkbox "tickets.view_own" [ref=e853]
+            - text: tickets.view_own
+          - generic [ref=e854]:
+            - checkbox "user.delete" [ref=e855]
+            - text: user.delete
+          - generic [ref=e856]:
+            - checkbox "wallet.admin" [ref=e857]
+            - text: wallet.admin
+          - generic [ref=e858]:
+            - checkbox "wallet.admin.adjust" [ref=e859]
+            - text: wallet.admin.adjust
+          - generic [ref=e860]:
+            - checkbox "wallet.admin.rules.manage" [ref=e861]
+            - text: wallet.admin.rules.manage
+          - generic [ref=e862]:
+            - checkbox "wallet.admin.settings.manage" [ref=e863]
+            - text: wallet.admin.settings.manage
+          - generic [ref=e864]:
+            - checkbox "wallet.convert" [ref=e865]
+            - text: wallet.convert
+          - generic [ref=e866]:
+            - checkbox "wallet.credits.balance" [ref=e867]
+            - text: wallet.credits.balance
+          - generic [ref=e868]:
+            - checkbox "wallet.credits.purchase" [ref=e869]
+            - text: wallet.credits.purchase
+          - generic [ref=e870]:
+            - checkbox "wallet.credits.spend" [ref=e871]
+            - text: wallet.credits.spend
+          - generic [ref=e872]:
+            - checkbox "wallet.points.balance" [ref=e873]
+            - text: wallet.points.balance
+          - generic [ref=e874]:
+            - checkbox "wallet.points.convert" [ref=e875]
+            - text: wallet.points.convert
+          - generic [ref=e876]:
+            - checkbox "wallet.points.earn" [ref=e877]
+            - text: wallet.points.earn
+          - generic [ref=e878]:
+            - checkbox "wallet.view" [ref=e879]
+            - text: wallet.view
+          - generic [ref=e880]:
+            - checkbox "webhooks.manage" [ref=e881]
+            - text: webhooks.manage
+    - generic [ref=e882]:
+      - button "Cancel" [ref=e883]
+      - button "Save Changes" [ref=e884]
+    - button "Close" [ref=e885]:
+      - img [ref=e886]
+      - generic [ref=e887]: Close

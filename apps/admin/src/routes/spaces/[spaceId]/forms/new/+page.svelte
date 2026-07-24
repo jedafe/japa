@@ -140,8 +140,8 @@
 				style="border-color: var(--color-border)"
 				onclick={addField}
 			>
-			{t('space_forms.add_field')}
-		</button>
+				{t('space_forms.add_field')}
+			</button>
 		</div>
 
 		<div class="space-y-4">

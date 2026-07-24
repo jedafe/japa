@@ -24,6 +24,9 @@
 			// Map segment to human-readable label
 			let label = segment;
 			switch (segment) {
+				case 'forms':
+					label = t('forms.title');
+					break;
 				case 'moderation':
 					label = t('moderation.title');
 					break;
@@ -154,6 +157,10 @@
 					label = t('common.new');
 					break;
 				default:
+					// Skip UUID segments (e.g., form IDs, user IDs) — they're not human-readable
+					if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) {
+						continue;
+					}
 					// Try to capitalize first letter
 					label = segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' ');
 			}

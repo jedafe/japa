@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/httpx"
@@ -44,12 +45,19 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
+		return
+	}
+
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		httpx.WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrDuplicate):
 		httpx.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	default:
+		slog.Error("handleServiceError", "err", err)
 		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
 }
@@ -157,21 +165,32 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 // Admin Handlers (write operations)
 // ---------------------------------------------------------------------------
 
-// ListAllDocPages handles GET /api/v1/admin/docs/{audience}.
-// Returns all pages (any status) for admin listing.
+// ListAllDocPages handles GET /api/v1/admin/docs/pages.
+// Returns all pages (any status) for admin listing. Optionally filters by ?audience=.
 func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	audience := chi.URLParam(r, "audience")
-	if !ValidAudiences[audience] {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+	audience := r.URL.Query().Get("audience")
+	if audience != "" {
+		if !ValidAudiences[audience] {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid audience section")
+			return
+		}
+
+		pages, err := h.Service.ListAllDocPagesByAudience(r.Context(), tenantID, audience)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
 		return
 	}
 
-	pages, err := h.Service.ListAllDocPagesByAudience(r.Context(), tenantID, audience)
+	pages, err := h.Service.ListAllDocPages(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -199,6 +218,7 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Service.CreateDocPage(r.Context(), tenantID, req); err != nil {
+		slog.Error("CreateDocPage failed", "err", err, "title", req.Title, "slug", req.Slug)
 		handleServiceError(w, err)
 		return
 	}

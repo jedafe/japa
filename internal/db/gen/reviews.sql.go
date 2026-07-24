@@ -11,6 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAdminReviews = `-- name: CountAdminReviews :one
+SELECT count(*)::int AS total
+FROM reviews
+WHERE tenant_id = $1
+`
+
+func (q *Queries) CountAdminReviews(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countAdminReviews, tenantID)
+	var total int32
+	err := row.Scan(&total)
+	return total, err
+}
+
+const countAdminReviewsFiltered = `-- name: CountAdminReviewsFiltered :one
+SELECT count(*)::int AS total
+FROM reviews
+WHERE tenant_id = $1
+  AND ($2::text = '' OR status = $2)
+  AND ($3::text = '' OR entity_type = $3)
+`
+
+type CountAdminReviewsFilteredParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Status     string      `json:"status"`
+	EntityType string      `json:"entity_type"`
+}
+
+func (q *Queries) CountAdminReviewsFiltered(ctx context.Context, arg CountAdminReviewsFilteredParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countAdminReviewsFiltered, arg.TenantID, arg.Status, arg.EntityType)
+	var total int32
+	err := row.Scan(&total)
+	return total, err
+}
+
 const createReview = `-- name: CreateReview :one
 
 
@@ -169,6 +203,160 @@ func (q *Queries) HasUserReviewedEntity(ctx context.Context, arg HasUserReviewed
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const listAdminReviews = `-- name: ListAdminReviews :many
+SELECT r.id, r.tenant_id, r.entity_type, r.entity_id, r.reviewer_user_id,
+       r.rating, r.title, r.body, r.status, r.created_at, r.updated_at,
+       COALESCE(
+           CASE r.entity_type
+               WHEN 'organization' THEN (SELECT o.name FROM organizations o WHERE o.id = r.entity_id)
+               WHEN 'university'   THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
+               WHEN 'service'      THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
+               WHEN 'mentor'       THEN (SELECT COALESCE(up.display_name, u.username) FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = r.entity_id)
+           END,
+           r.entity_type
+       )::text AS entity_name
+FROM reviews r
+WHERE r.tenant_id = $1
+ORDER BY r.created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListAdminReviewsParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListAdminReviewsRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	Rating         int16              `json:"rating"`
+	Title          *string            `json:"title"`
+	Body           *string            `json:"body"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	EntityName     string             `json:"entity_name"`
+}
+
+func (q *Queries) ListAdminReviews(ctx context.Context, arg ListAdminReviewsParams) ([]ListAdminReviewsRow, error) {
+	rows, err := q.db.Query(ctx, listAdminReviews, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAdminReviewsRow
+	for rows.Next() {
+		var i ListAdminReviewsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ReviewerUserID,
+			&i.Rating,
+			&i.Title,
+			&i.Body,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.EntityName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAdminReviewsFiltered = `-- name: ListAdminReviewsFiltered :many
+SELECT r.id, r.tenant_id, r.entity_type, r.entity_id, r.reviewer_user_id,
+       r.rating, r.title, r.body, r.status, r.created_at, r.updated_at,
+       COALESCE(
+           CASE r.entity_type
+               WHEN 'organization' THEN (SELECT o.name FROM organizations o WHERE o.id = r.entity_id)
+               WHEN 'university'   THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
+               WHEN 'service'      THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
+               WHEN 'mentor'       THEN (SELECT COALESCE(up.display_name, u.username) FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = r.entity_id)
+           END,
+           r.entity_type
+       )::text AS entity_name
+FROM reviews r
+WHERE r.tenant_id = $1
+  AND ($2::text = '' OR r.status = $2)
+  AND ($3::text = '' OR r.entity_type = $3)
+ORDER BY r.created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListAdminReviewsFilteredParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Status     string      `json:"status"`
+	EntityType string      `json:"entity_type"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListAdminReviewsFilteredRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
+	Rating         int16              `json:"rating"`
+	Title          *string            `json:"title"`
+	Body           *string            `json:"body"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	EntityName     string             `json:"entity_name"`
+}
+
+func (q *Queries) ListAdminReviewsFiltered(ctx context.Context, arg ListAdminReviewsFilteredParams) ([]ListAdminReviewsFilteredRow, error) {
+	rows, err := q.db.Query(ctx, listAdminReviewsFiltered,
+		arg.TenantID,
+		arg.Status,
+		arg.EntityType,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAdminReviewsFilteredRow
+	for rows.Next() {
+		var i ListAdminReviewsFilteredRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ReviewerUserID,
+			&i.Rating,
+			&i.Title,
+			&i.Body,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.EntityName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listReviews = `-- name: ListReviews :many
