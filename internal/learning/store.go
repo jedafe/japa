@@ -677,9 +677,12 @@ func (s *Store) IssueCertificate(ctx context.Context, tenantID, userID, trackID 
 	return &c, nil
 }
 
-// ListCertificatesByUser lists certificates for a user.
-func (s *Store) ListCertificatesByUser(ctx context.Context, userID pgtype.UUID) ([]Certificate, error) {
-	rows, err := s.read.ListLearningCertificatesByUser(ctx, userID)
+// ListCertificatesByUser lists a user's certificates, tenant-scoped.
+func (s *Store) ListCertificatesByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]Certificate, error) {
+	rows, err := s.read.ListLearningCertificatesByUser(ctx, gen.ListLearningCertificatesByUserParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list certificates by user: %w", err)
 	}
