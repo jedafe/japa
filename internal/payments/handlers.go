@@ -958,6 +958,11 @@ func (h *Handlers) DeleteDiscountCode(w http.ResponseWriter, r *http.Request) {
 // verifyHMACSHA256 computes HMAC-SHA256 of payload with the given secret and
 // compares it against the provided signature using constant-time comparison.
 func verifyHMACSHA256(payload []byte, signature, secret string) error {
+	if secret == "" {
+		// Without a secret every caller could compute a valid signature.
+		return errors.New("webhook secret not configured")
+	}
+
 	if signature == "" {
 		return errors.New("missing signature")
 	}
