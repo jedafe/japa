@@ -248,3 +248,12 @@ func (s *Store) SoftDeleteUser(ctx context.Context, tenantID, userID pgtype.UUID
 		ID:       userID,
 	})
 }
+
+// activeUserExistsByID reports whether an ACTIVE user with this id exists in
+// the tenant. Used by the public profile gate.
+func (s *Store) activeUserExistsByID(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
+	return s.read.ActiveUserExistsByID(ctx, gen.ActiveUserExistsByIDParams{
+		TenantID: tenantID,
+		ID:       userID,
+	})
+}

@@ -11,6 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activeUserExistsByID = `-- name: ActiveUserExistsByID :one
+SELECT EXISTS (
+    SELECT 1 FROM users
+    WHERE tenant_id = $1 AND id = $2 AND status = 'active'
+) AS exists
+`
+
+type ActiveUserExistsByIDParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+// Existence check for the public profile gate: is there an ACTIVE user with
+// this id in this tenant? Non-active (banned/suspended/deleted) or missing → false.
+func (q *Queries) ActiveUserExistsByID(ctx context.Context, arg ActiveUserExistsByIDParams) (bool, error) {
+	row := q.db.QueryRow(ctx, activeUserExistsByID, arg.TenantID, arg.ID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const countUserActivity = `-- name: CountUserActivity :one
 SELECT (SELECT count(*) FROM contents c
         WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL)
