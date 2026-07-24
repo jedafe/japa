@@ -808,7 +808,11 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	if h.VKClient != nil {
 		emailKey := "jc:ratelimit:forgot_password:" + req.Email
 
-		ok, _ := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 3, 10*time.Minute)
+		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 3, 10*time.Minute)
+		if err != nil {
+			slog.Error("forgot password: rate limit check failed, allowing request", "error", err)
+		}
+
 		if !ok {
 			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many password reset requests. Please try again later.")
 			return
@@ -1110,7 +1114,11 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	if h.VKClient != nil {
 		emailKey := "jc:ratelimit:resend_verification:" + req.Email
 
-		ok, _ := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 1, 5*time.Minute)
+		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), emailKey, 1, 5*time.Minute)
+		if err != nil {
+			slog.Error("resend verification: rate limit check failed, allowing request", "error", err)
+		}
+
 		if !ok {
 			writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many verification email requests. Please try again later.")
 			return
