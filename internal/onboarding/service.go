@@ -7,26 +7,30 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // Service provides onboarding business logic with reader/writer pool separation.
 type Service struct {
-	store *Store
-	db    *db.DB
+	store    *Store
+	db       *db.DB
+	settings *config.Settings
 }
 
 // NewService creates a Service backed by the given database pool.
-func NewService(database *db.DB) *Service {
+func NewService(database *db.DB, settings *config.Settings) *Service {
 	return &Service{
-		store: NewStore(gen.New(database.Reader), gen.New(database.Writer)),
-		db:    database,
+		store:    NewStore(gen.New(database.Reader), gen.New(database.Writer)),
+		db:       database,
+		settings: settings,
 	}
 }
 
@@ -209,6 +213,7 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.
 	// fmt.Sprintf is used only for the parenthetical OR grouping, not for values.
 	likePatterns := make([]string, 0, len(tags))
 	args := []any{tenantID}
+
 	for i, tag := range tags {
 		args = append(args, "%"+strings.ToLower(tag)+"%")
 		likePatterns = append(likePatterns, fmt.Sprintf("(LOWER(s.name) LIKE $%d OR LOWER(s.description) LIKE $%d)", i+2, i+2))
@@ -356,4 +361,125 @@ func tagOverlapScore(description string, tags []string) float64 {
 	}
 
 	return math.Min(float64(matchCount)/float64(len(tags)), 1.0)
+}
+
+// ---------------------------------------------------------------------------
+// Admin onboarding settings and template management
+// ---------------------------------------------------------------------------
+
+const (
+	keyMinTagsFollow  = "onboarding.min_tags_follow"
+	keyMinUsersFollow = "onboarding.min_users_follow"
+	keyMinSpacesJoin  = "onboarding.min_spaces_join"
+	keyPromotedSpaces = "onboarding.promoted_spaces"
+	keyPromotedUsers  = "onboarding.promoted_users"
+	keyPromotedTags   = "onboarding.promoted_tags"
+)
+
+// GetAdminSettings reads onboarding configuration from system_settings.
+func (s *Service) GetAdminSettings(ctx context.Context, tenantID pgtype.UUID) (*OnboardingAdminSettings, error) {
+	minTags, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinTagsFollow)
+	minUsers, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinUsersFollow)
+	minSpaces, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinSpacesJoin)
+
+	promotedSpaces, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedSpaces)
+	promotedUsers, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedUsers)
+	promotedTags, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedTags)
+
+	var spacesArr, usersArr, tagsArr []string
+	if promotedSpaces != "" {
+		_ = json.Unmarshal([]byte(promotedSpaces), &spacesArr)
+	}
+
+	if promotedUsers != "" {
+		_ = json.Unmarshal([]byte(promotedUsers), &usersArr)
+	}
+
+	if promotedTags != "" {
+		_ = json.Unmarshal([]byte(promotedTags), &tagsArr)
+	}
+
+	// Defaults per Section 09
+	if minTags == 0 {
+		minTags = 3
+	}
+
+	if minUsers == 0 {
+		minUsers = 2
+	}
+
+	if minSpaces == 0 {
+		minSpaces = 2
+	}
+
+	return &OnboardingAdminSettings{
+		MinTagsFollow:  minTags,
+		MinUsersFollow: minUsers,
+		MinSpacesJoin:  minSpaces,
+		PromotedSpaces: spacesArr,
+		PromotedUsers:  usersArr,
+		PromotedTags:   tagsArr,
+	}, nil
+}
+
+// UpdateAdminSettings writes onboarding configuration to system_settings.
+func (s *Service) UpdateAdminSettings(ctx context.Context, tenantID pgtype.UUID, req *UpdateOnboardingSettingsRequest) error {
+	if req.MinTagsFollow != nil {
+		_ = s.settings.SetSetting(ctx, tenantID, keyMinTagsFollow, strconv.Itoa(*req.MinTagsFollow))
+	}
+
+	if req.MinUsersFollow != nil {
+		_ = s.settings.SetSetting(ctx, tenantID, keyMinUsersFollow, strconv.Itoa(*req.MinUsersFollow))
+	}
+
+	if req.MinSpacesJoin != nil {
+		_ = s.settings.SetSetting(ctx, tenantID, keyMinSpacesJoin, strconv.Itoa(*req.MinSpacesJoin))
+	}
+
+	if req.PromotedSpaces != nil {
+		b, _ := json.Marshal(*req.PromotedSpaces)
+		_ = s.settings.SetSetting(ctx, tenantID, keyPromotedSpaces, string(b))
+	}
+
+	if req.PromotedUsers != nil {
+		b, _ := json.Marshal(*req.PromotedUsers)
+		_ = s.settings.SetSetting(ctx, tenantID, keyPromotedUsers, string(b))
+	}
+
+	if req.PromotedTags != nil {
+		b, _ := json.Marshal(*req.PromotedTags)
+		_ = s.settings.SetSetting(ctx, tenantID, keyPromotedTags, string(b))
+	}
+
+	return nil
+}
+
+// ListTemplates returns all onboarding templates for the tenant.
+func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.OnboardingTemplate, error) {
+	return s.store.listTemplates(ctx, tenantID)
+}
+
+// CreateTemplate creates a new onboarding template.
+func (s *Service) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, req *CreateTemplateRequest) (gen.OnboardingTemplate, error) {
+	steps, err := json.Marshal(req.Steps)
+	if err != nil {
+		return gen.OnboardingTemplate{}, fmt.Errorf("marshaling steps: %w", err)
+	}
+
+	return s.store.createTemplate(ctx, tenantID, req.Name, req.Description, steps, req.IsActive, false)
+}
+
+// UpdateTemplate updates an existing onboarding template.
+func (s *Service) UpdateTemplate(ctx context.Context, tenantID, id pgtype.UUID, req *UpdateTemplateRequest) error {
+	steps, err := json.Marshal(req.Steps)
+	if err != nil {
+		return fmt.Errorf("marshaling steps: %w", err)
+	}
+
+	return s.store.updateTemplate(ctx, tenantID, id, req.Name, req.Description, steps, req.IsActive)
+}
+
+// DeleteTemplate deletes an onboarding template.
+func (s *Service) DeleteTemplate(ctx context.Context, tenantID, id pgtype.UUID) error {
+	return s.store.deleteTemplate(ctx, tenantID, id)
 }

@@ -26,6 +26,21 @@ func (s *Service) ListFieldGroups(ctx context.Context, tenantID pgtype.UUID) ([]
 	return groups, nil
 }
 
+// ListFieldGroupsByEntityClass returns custom field groups owned by the given
+// tenant that are assigned to the given entity class (e.g. "form", "space_type"),
+// newest first.
+func (s *Service) ListFieldGroupsByEntityClass(ctx context.Context, tenantID pgtype.UUID, entityClass string) ([]gen.CustomFieldGroup, error) {
+	groups, err := s.read.ListCustomFieldGroupsByTenantAndEntityClass(ctx, gen.ListCustomFieldGroupsByTenantAndEntityClassParams{
+		TenantID:    tenantID,
+		EntityClass: entityClass,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing custom field groups by entity class: %w", err)
+	}
+
+	return groups, nil
+}
+
 // GetFieldGroup returns the custom field group with the given ID, scoped to
 // the tenant.
 func (s *Service) GetFieldGroup(ctx context.Context, id, tenantID pgtype.UUID) (gen.CustomFieldGroup, error) {
@@ -503,6 +518,62 @@ func (s *Service) GetFormFields(ctx context.Context, formID, tenantID pgtype.UUI
 	}
 
 	return fields, nil
+}
+
+// GetFormGroupID returns the field group UUID assigned to the given form,
+// or nil if no group is assigned yet.
+func (s *Service) GetFormGroupID(ctx context.Context, formID pgtype.UUID) *string {
+	assignment, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
+		EntityClass: "form",
+		EntityID:    formID,
+	})
+	if err != nil {
+		return nil
+	}
+	if !assignment.GroupID.Valid {
+		return nil
+	}
+	gid := assignment.GroupID.String()
+	return &gid
+}
+
+// EnsureFormGroup creates a backing field group and assignment for a form
+// if one doesn't already exist. Called by CreateForm to ensure every form
+// has a field group for the admin UI to add fields to.
+func (s *Service) EnsureFormGroup(ctx context.Context, tenantID, formID pgtype.UUID, formName, formSlug string) error {
+	// Check if assignment already exists
+	_, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
+		EntityClass: "form",
+		EntityID:    formID,
+	})
+	if err == nil {
+		return nil // already has a field group
+	}
+
+	// Create a backing field group
+	groupSlug := "form-" + formSlug
+	group, err := s.write.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
+		TenantID: tenantID,
+		Name:     "Form: " + formName,
+		Slug:     groupSlug,
+		IsSystem: false,
+	})
+	if err != nil {
+		return fmt.Errorf("creating form field group: %w", err)
+	}
+
+	// Assign the group to this form
+	_, err = s.write.CreateAssignment(ctx, gen.CreateAssignmentParams{
+		GroupID:     group.ID,
+		EntityClass: "form",
+		EntityID:    formID,
+		Position:    0,
+	})
+	if err != nil {
+		return fmt.Errorf("assigning form field group: %w", err)
+	}
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------

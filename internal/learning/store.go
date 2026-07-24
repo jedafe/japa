@@ -622,7 +622,7 @@ func (s *Store) GetUserTrackProgress(ctx context.Context, userID, trackID pgtype
 // Certificate represents certificate.
 type Certificate struct {
 	ID                pgtype.UUID  `json:"id"`
-	TenantID          pgtype.UUID  `json:"tenant_id"`
+	TenantID          pgtype.UUID  `json:"-"` // internal multi-tenancy key; never serialized (public + /me responses)
 	UserID            pgtype.UUID  `json:"user_id"`
 	TrackID           pgtype.UUID  `json:"track_id"`
 	CertificateNumber string       `json:"certificate_number"`

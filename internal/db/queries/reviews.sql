@@ -49,6 +49,54 @@ WHERE tenant_id = @tenant_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListAdminReviews :many
+SELECT r.id, r.tenant_id, r.entity_type, r.entity_id, r.reviewer_user_id,
+       r.rating, r.title, r.body, r.status, r.created_at, r.updated_at,
+       COALESCE(
+           CASE r.entity_type
+               WHEN 'organization' THEN (SELECT o.name FROM organizations o WHERE o.id = r.entity_id)
+               WHEN 'university'   THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
+               WHEN 'service'      THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
+               WHEN 'mentor'       THEN (SELECT COALESCE(up.display_name, u.username) FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = r.entity_id)
+           END,
+           r.entity_type
+       )::text AS entity_name
+FROM reviews r
+WHERE r.tenant_id = @tenant_id
+ORDER BY r.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListAdminReviewsFiltered :many
+SELECT r.id, r.tenant_id, r.entity_type, r.entity_id, r.reviewer_user_id,
+       r.rating, r.title, r.body, r.status, r.created_at, r.updated_at,
+       COALESCE(
+           CASE r.entity_type
+               WHEN 'organization' THEN (SELECT o.name FROM organizations o WHERE o.id = r.entity_id)
+               WHEN 'university'   THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
+               WHEN 'service'      THEN (SELECT s.name FROM spaces s WHERE s.id = r.entity_id)
+               WHEN 'mentor'       THEN (SELECT COALESCE(up.display_name, u.username) FROM users u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.id = r.entity_id)
+           END,
+           r.entity_type
+       )::text AS entity_name
+FROM reviews r
+WHERE r.tenant_id = @tenant_id
+  AND (@status::text = '' OR r.status = @status)
+  AND (@entity_type::text = '' OR r.entity_type = @entity_type)
+ORDER BY r.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountAdminReviews :one
+SELECT count(*)::int AS total
+FROM reviews
+WHERE tenant_id = @tenant_id;
+
+-- name: CountAdminReviewsFiltered :one
+SELECT count(*)::int AS total
+FROM reviews
+WHERE tenant_id = @tenant_id
+  AND (@status::text = '' OR status = @status)
+  AND (@entity_type::text = '' OR entity_type = @entity_type);
+
 -- name: UpdateReview :one
 UPDATE reviews
 SET rating = @rating, title = sqlc.narg(title), body = sqlc.narg(body),

@@ -35,12 +35,16 @@ export const spamApi = {
 	getIpBlocks: (params?: string) => api<unknown>(`/admin/spam/ip-blocks${params ? `?${params}` : ''}`),
 	createIpBlock: (body: { cidr: string; block_type: string; reason?: string; expires_at?: string }) =>
 		api('/admin/spam/ip-blocks', { method: 'POST', body }),
+	updateIpBlock: (id: string, body: { cidr?: string; block_type?: string; reason?: string; expires_at?: string }) =>
+		api(`/admin/spam/ip-blocks/${id}`, { method: 'PATCH', body }),
 	deleteIpBlock: (id: string) =>
 		api(`/admin/spam/ip-blocks/${id}`, { method: 'DELETE' }),
 
 	getCensoredWords: (params?: string) => api<unknown>(`/admin/spam/censored-words${params ? `?${params}` : ''}`),
 	createCensoredWord: (body: { pattern: string; action: string; replacement?: string }) =>
 		api('/admin/spam/censored-words', { method: 'POST', body }),
+	updateCensoredWord: (id: string, body: { pattern?: string; action?: string; replacement?: string }) =>
+		api(`/admin/spam/censored-words/${id}`, { method: 'PATCH', body }),
 	deleteCensoredWord: (id: string) =>
 		api(`/admin/spam/censored-words/${id}`, { method: 'DELETE' }),
 
@@ -51,9 +55,9 @@ export const spamApi = {
 
 export const ticketTypesApi = {
 	list: (params?: string) => api<unknown>(`/admin/ticket-types${params ? `?${params}` : ''}`),
-	create: (body: { name: string; slug: string; description?: string; default_priority: string; is_active: boolean }) =>
+	create: (body: { name: string; slug: string; description?: string; default_priority: string; is_public: boolean }) =>
 		api('/admin/ticket-types', { method: 'POST', body }),
-	update: (id: string, body: { name?: string; slug?: string; description?: string; default_priority?: string; is_active?: boolean }) =>
+	update: (id: string, body: { name?: string; slug?: string; description?: string; default_priority?: string; is_public?: boolean }) =>
 		api(`/admin/ticket-types/${id}`, { method: 'PUT', body }),
 	delete: (id: string) =>
 		api(`/admin/ticket-types/${id}`, { method: 'DELETE' }),
@@ -96,12 +100,12 @@ export const impersonationApi = {
 
 export const docsApi = {
 	list: (params?: string) => api<unknown>(`/admin/docs/pages${params ? `?${params}` : ''}`),
-	create: (body: { title: string; slug: string; audience: string; body: string }) =>
-		api('/admin/docs', { method: 'POST', body }),
-	update: (id: string, body: { title?: string; slug?: string; audience?: string; body?: string; status?: string }) =>
-		api(`/admin/docs/${id}`, { method: 'PATCH', body }),
+	create: (body: { title: string; slug: string; audience: string; content: string; review_status?: string }) =>
+		api('/admin/docs/pages', { method: 'POST', body }),
+	update: (id: string, body: { title?: string; slug?: string; audience?: string; content?: string; review_status?: string }) =>
+		api(`/admin/docs/pages/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) =>
-		api(`/admin/docs/${id}`, { method: 'DELETE' }),
+		api(`/admin/docs/pages/${id}`, { method: 'DELETE' }),
 };
 
 export const adSlotTypesApi = {
@@ -395,14 +399,16 @@ export const jsonLdApi = {
 };
 
 export interface BlockType {
+	type: string;
 	name: string;
 	description: string;
+	icon: string;
+	default_props: Record<string, unknown>;
 	category: string;
-	is_enabled: boolean;
 }
 
 export const pageBuilderApi = {
-	getBlockTypes: () => api<BlockType[]>('/page-builder/block-types'),
+	getBlockTypes: () => api<{ block_types: BlockType[] }>('/page-builder/block-types'),
 };
 
 export const spacesAdminApi = {
@@ -633,6 +639,45 @@ export const fieldGroupsAdminApiExtended = {
 		api<{ deleted: boolean }>(`/admin/field-groups/${id}/fields/${fid}`, { method: 'DELETE' }),
 	reorderFields: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/field-groups/${id}/fields/reorder`, { method: 'POST', body }),
+};
+
+export const formsAdminApi = {
+	list: (params?: string) => api<unknown>(`/forms${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/forms/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/forms', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/forms/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/forms/${id}`, { method: 'DELETE' }),
+	ensureFieldGroup: (id: string) =>
+		api<{ field_group_id?: string }>(`/forms/${id}/ensure-field-group`, { method: 'POST' }),
+	listSubmissions: (id: string, params?: string) =>
+		api<unknown>(`/forms/${id}/submissions${params ? `?${params}` : ''}`),
+	getSubmission: (id: string, subId: string) =>
+		api<unknown>(`/forms/${id}/submissions/${subId}`),
+	updateSubmission: (id: string, subId: string, body: Record<string, unknown>) =>
+		api<unknown>(`/forms/${id}/submissions/${subId}`, { method: 'PATCH', body }),
+	deleteSubmission: (id: string, subId: string) =>
+		api<{ deleted: boolean }>(`/forms/${id}/submissions/${subId}`, { method: 'DELETE' }),
+	// Trigger CRUD (gracefully handles 404 if backend not yet wired)
+	listTriggers: (formId: string) =>
+		api<unknown>(`/forms/${formId}/triggers`),
+	createTrigger: (formId: string, body: Record<string, unknown>) =>
+		api<unknown>(`/forms/${formId}/triggers`, { method: 'POST', body }),
+	updateTrigger: (formId: string, triggerId: string, body: Record<string, unknown>) =>
+		api<unknown>(`/forms/${formId}/triggers/${triggerId}`, { method: 'PATCH', body }),
+	deleteTrigger: (formId: string, triggerId: string) =>
+		api<{ deleted: boolean }>(`/forms/${formId}/triggers/${triggerId}`, { method: 'DELETE' }),
+	reorderTriggers: (formId: string, body: { trigger_ids: string[] }) =>
+		api<unknown>(`/forms/${formId}/triggers/reorder`, { method: 'POST', body }),
+};
+
+export const onboardingAdminApi = {
+	listSettings: () => api<{ min_tags_follow: number; min_users_follow: number; min_spaces_join: number; promoted_spaces: string[]; promoted_users: string[]; promoted_tags: string[] }>('/admin/onboarding/settings'),
+	updateSettings: (body: Record<string, unknown>) => api<unknown>('/admin/onboarding/settings', { method: 'PUT', body }),
+	listTemplates: () => api<unknown[]>('/admin/onboarding/templates'),
+	createTemplate: (body: Record<string, unknown>) => api<unknown>('/admin/onboarding/templates', { method: 'POST', body }),
+	updateTemplate: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/onboarding/templates/${id}`, { method: 'PATCH', body }),
+	deleteTemplate: (id: string) => api<unknown>(`/admin/onboarding/templates/${id}`, { method: 'DELETE' }),
 };
 
 export const webhooksAdminApiExtended = {

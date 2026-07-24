@@ -71,3 +71,50 @@ func (s *Store) dismissTour(ctx context.Context, tenantID, userID pgtype.UUID) e
 
 	return nil
 }
+
+// listTemplates returns all onboarding templates for a tenant.
+func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.OnboardingTemplate, error) {
+	rows, err := s.read.ListOnboardingTemplates(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing onboarding templates: %w", err)
+	}
+
+	return rows, nil
+}
+
+// createTemplate inserts a new onboarding template.
+func (s *Store) createTemplate(ctx context.Context, tenantID pgtype.UUID, name, description string, steps []byte, isActive, isSystem bool) (gen.OnboardingTemplate, error) {
+	row, err := s.write.CreateOnboardingTemplate(ctx, gen.CreateOnboardingTemplateParams{
+		TenantID:    tenantID,
+		Name:        name,
+		Description: &description,
+		Steps:       steps,
+		IsActive:    isActive,
+		IsSystem:    isSystem,
+	})
+	if err != nil {
+		return gen.OnboardingTemplate{}, fmt.Errorf("creating onboarding template: %w", err)
+	}
+
+	return row, nil
+}
+
+// updateTemplate updates an existing onboarding template.
+func (s *Store) updateTemplate(ctx context.Context, tenantID, id pgtype.UUID, name, description string, steps []byte, isActive bool) error {
+	return s.write.UpdateOnboardingTemplate(ctx, gen.UpdateOnboardingTemplateParams{
+		TenantID:    tenantID,
+		ID:          id,
+		Name:        name,
+		Description: &description,
+		Steps:       steps,
+		IsActive:    isActive,
+	})
+}
+
+// deleteTemplate removes an onboarding template.
+func (s *Store) deleteTemplate(ctx context.Context, tenantID, id pgtype.UUID) error {
+	return s.write.DeleteOnboardingTemplate(ctx, gen.DeleteOnboardingTemplateParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
+}

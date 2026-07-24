@@ -604,7 +604,13 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	types, err := h.Service.ListTicketTypes(r.Context(), tenantID, limit, offset)
+	var isPublic *bool
+	if v := r.URL.Query().Get("is_public"); v != "" {
+		b := v == "true"
+		isPublic = &b
+	}
+
+	types, err := h.Service.ListTicketTypes(r.Context(), tenantID, limit, offset, isPublic)
 	if err != nil {
 		handleServiceError(w, err)
 		return

@@ -17,23 +17,32 @@
 	type TicketItem = {
 		id: string;
 		subject: string;
-		type: string;
+		type_name: string;
+		type_slug: string;
+		type_id: string;
 		status: string;
 		priority: string;
-		assignee?: string;
+		assigned_to?: string;
+		assigned_group_id?: string;
+		submitter_user_id?: string;
+		submitter_email?: string;
+		description: string;
+		resolution_note?: string;
 		created_at: string;
+		updated_at: string;
 	};
 
- 	let tickets = $state<TicketItem[]>([]);
- 	let currentPage = $state(0);
- 	let totalItems = $state(0);
- 	let pageSize = $state(25);
- 	let loading = $state(true);
- 	let error = $state("");
- 	let searchQuery = $state("");
- 	let filterValues = $state<Record<string, string>>({});
- 	let statusFilter = $state("");
- 	let selectedIds = $state<Set<string>>(new Set());
+	let tickets = $state<TicketItem[]>([]);
+	let currentPage = $state(0);
+	let totalItems = $state(0);
+	let totalPages = $state(1);
+	let pageSize = $state(25);
+	let loading = $state(true);
+	let error = $state("");
+	let searchQuery = $state("");
+	let filterValues = $state<Record<string, string>>({});
+	let statusFilter = $state("");
+	let selectedIds = $state<Set<string>>(new Set());
 
 	// View modal
 	let showViewModal = $state(false);
@@ -43,7 +52,7 @@
 	// Edit modal
 	let showEditModal = $state(false);
 	let editingTicket = $state<TicketItem | null>(null);
-	let editForm = $state({ subject: "", status: "", priority: "", assignee: "" });
+	let editForm = $state({ subject: "", status: "", priority: "", assigned_to: "" });
 	let savingEdit = $state(false);
 
 	// Delete modal
@@ -61,16 +70,6 @@
 	];
 
 	const filterDefs = [
-		{
-			key: "type",
-			label: t("tickets.type", "Type"),
-			options: [
-				{ value: "bug", label: "Bug" },
-				{ value: "feature", label: "Feature" },
-				{ value: "question", label: "Question" },
-				{ value: "account", label: "Account" }
-			]
-		},
 		{
 			key: "priority",
 			label: t("tickets.priority", "Priority"),
@@ -90,7 +89,7 @@
 			sortable: true
 		},
 		{
-			key: "type",
+			key: "type_name",
 			label: t("tickets.type", "Type"),
 			sortable: true
 		},
@@ -105,7 +104,7 @@
 			sortable: true
 		},
 		{
-			key: "assignee",
+			key: "assigned_to",
 			label: t("tickets.assignee", "Assignee"),
 			render: (v: string) => v || "—"
 		},
@@ -138,7 +137,7 @@
 			subject: ticket.subject,
 			status: ticket.status,
 			priority: ticket.priority,
-			assignee: ticket.assignee ?? ""
+			assigned_to: ticket.assigned_to ?? ""
 		};
 		showEditModal = true;
 	}
@@ -152,7 +151,7 @@
 				subject: editForm.subject,
 				status: editForm.status,
 				priority: editForm.priority,
-				assignee: editForm.assignee
+				assigned_to: editForm.assigned_to
 			});
 			if (result.ok) {
 				showEditModal = false;
@@ -211,12 +210,11 @@
 		error = "";
 		try {
 			const params = new URLSearchParams({
-				page: String(currentPage + 1),
-				limit: String(pageSize)
+				page_size: String(pageSize),
+				page_offset: String(currentPage * pageSize)
 			});
-			if (searchQuery) params.set("q", searchQuery);
+			if (searchQuery) params.set("search", searchQuery);
 			if (statusFilter) params.set("status", statusFilter);
-			if (filterValues.type) params.set("type", filterValues.type);
 			if (filterValues.priority) params.set("priority", filterValues.priority);
 
 			const result = await ticketsAdminApi.list(params.toString());
@@ -224,6 +222,7 @@
 				const d = result.data as { tickets: TicketItem[]; total: number; page: number; total_pages: number };
 				tickets = d.tickets ?? [];
 				totalItems = d.total ?? 0;
+				totalPages = d.total_pages >= 0 ? d.total_pages : 1;
 			} else {
 				error = result.error ?? t("common.error", "Failed to load tickets");
 			}
@@ -308,7 +307,7 @@
 					</Button>
 				{/snippet}
 			</DataTable>
-			<Pagination bind:page={currentPage} totalPages={Math.ceil(totalItems / pageSize)} {totalItems} bind:pageSize />
+			<Pagination bind:page={currentPage} {totalPages} {totalItems} bind:pageSize />
 		{/if}
 	</CardContent>
 </Card>
@@ -323,26 +322,26 @@
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.subject", "Subject")}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.subject}</p>
 			</div>
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.type", "Type")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.priority", "Priority")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.priority}</p>
-				</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.type", "Type")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type_name}</p>
 			</div>
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.status", "Status")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.assignee", "Assignee")}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.assignee || "—"}</p>
-				</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.priority", "Priority")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.priority}</p>
 			</div>
+		</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.status", "Status")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.assignee", "Assignee")}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.assigned_to || "—"}</p>
+			</div>
+		</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.created", "Created")}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
@@ -391,7 +390,7 @@
 		</div>
 		<div>
 			<label for="tk-assignee" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.assignee", "Assignee")}</label>
-			<input id="tk-assignee" type="text" bind:value={editForm.assignee} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+			<input id="tk-assignee" type="text" bind:value={editForm.assigned_to} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">

@@ -27,7 +27,7 @@
 		{ key: 'description', label: t('space_forms.description_label'), sortable: true, class: 'text-xs max-w-xs truncate', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'submission_count', label: t('space_forms.submissions'), sortable: true, render: (v: number) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-surface/10">${v}</span>` },
 		{ key: 'created_at', label: t('space_forms.created'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
-		{ key: 'actions', label: '', class: 'w-20', component: FormActionsCell }
+		{ key: 'actions', label: '', class: 'w-20', componentSnippet: FormActionsCell }
 	];
 
 	function filteredForms(): FormDef[] {

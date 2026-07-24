@@ -23,6 +23,13 @@ FROM doc_pages
 WHERE tenant_id = @tenant_id AND audience = @audience
 ORDER BY position ASC, title ASC;
 
+-- name: ListAllDocPages :many
+SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
+       last_reviewed_at, parent_id, position, created_at, updated_at
+FROM doc_pages
+WHERE tenant_id = @tenant_id
+ORDER BY audience ASC, position ASC, title ASC;
+
 -- name: GetDocPageByID :one
 SELECT id, tenant_id, title, slug, audience, content, ai_generated, review_status,
        last_reviewed_by, last_reviewed_at, parent_id, position, created_at, updated_at

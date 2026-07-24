@@ -1,0 +1,203 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - link "Admin" [ref=e6] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e7]: Admin
+    - generic [ref=e9]:
+      - img [ref=e10]
+      - textbox "Search navigation..." [ref=e11]
+    - navigation [ref=e12]:
+      - generic [ref=e13]:
+        - button "Dashboard" [ref=e14]:
+          - generic [ref=e15]: Dashboard
+          - img [ref=e16]
+        - link "Overview" [ref=e18] [cursor=pointer]:
+          - /url: /
+          - img [ref=e19]
+          - generic [ref=e20]: Overview
+      - generic [ref=e21]:
+        - button "User Management" [ref=e22]:
+          - generic [ref=e23]: User Management
+          - img [ref=e24]
+        - generic [ref=e25]:
+          - link "Users" [ref=e26] [cursor=pointer]:
+            - /url: /users
+            - img [ref=e27]
+            - generic [ref=e28]: Users
+          - link "Organisations" [ref=e29] [cursor=pointer]:
+            - /url: /organisations
+            - img [ref=e30]
+            - generic [ref=e31]: Organisations
+          - link "Universities" [ref=e32] [cursor=pointer]:
+            - /url: /universities
+            - img [ref=e33]
+            - generic [ref=e34]: Universities
+          - link "Professional Types" [ref=e35] [cursor=pointer]:
+            - /url: /professional-types
+            - img [ref=e36]
+            - generic [ref=e37]: Professional Types
+          - link "Groups" [ref=e38] [cursor=pointer]:
+            - /url: /users/groups
+            - img [ref=e39]
+            - generic [ref=e40]: Groups
+      - generic [ref=e41]:
+        - button "Content" [ref=e42]:
+          - generic [ref=e43]: Content
+          - img [ref=e44]
+        - generic [ref=e45]:
+          - link "All Content" [ref=e46] [cursor=pointer]:
+            - /url: /content
+            - img [ref=e47]
+            - generic [ref=e48]: All Content
+          - link "Blog Posts" [ref=e49] [cursor=pointer]:
+            - /url: /blog/review-queue
+            - img [ref=e50]
+            - generic [ref=e51]: Blog Posts
+          - link "Documentation" [ref=e52] [cursor=pointer]:
+            - /url: /docs
+            - img [ref=e53]
+            - generic [ref=e54]: Documentation
+          - link "Media" [ref=e55] [cursor=pointer]:
+            - /url: /media
+            - img [ref=e56]
+            - generic [ref=e57]: Media
+          - link "Spaces" [ref=e58] [cursor=pointer]:
+            - /url: /spaces
+            - img [ref=e59]
+            - generic [ref=e60]: Spaces
+          - link "Space Types" [ref=e61] [cursor=pointer]:
+            - /url: /space-types
+            - img [ref=e62]
+            - generic [ref=e63]: Space Types
+          - link "Tags" [ref=e64] [cursor=pointer]:
+            - /url: /tags
+            - img [ref=e65]
+            - generic [ref=e66]: Tags
+          - link "Reactions" [ref=e67] [cursor=pointer]:
+            - /url: /reactions
+            - img [ref=e68]
+            - generic [ref=e69]: Reactions
+      - generic [ref=e70]:
+        - button "Moderation" [ref=e71]:
+          - generic [ref=e72]: Moderation
+          - img [ref=e73]
+        - generic [ref=e74]:
+          - link "Queue" [ref=e75] [cursor=pointer]:
+            - /url: /moderation
+            - img [ref=e76]
+            - generic [ref=e77]: Queue
+          - link "Review Queue" [ref=e78] [cursor=pointer]:
+            - /url: /moderation-queue
+            - img [ref=e79]
+            - generic [ref=e80]: Review Queue
+          - link "Spam Management" [ref=e81] [cursor=pointer]:
+            - /url: /spam
+            - img [ref=e82]
+            - generic [ref=e83]: Spam Management
+          - link "Support Tickets" [ref=e84] [cursor=pointer]:
+            - /url: /tickets
+            - img [ref=e85]
+            - generic [ref=e86]: Support Tickets
+          - link "Reviews" [ref=e87] [cursor=pointer]:
+            - /url: /reviews
+            - img [ref=e88]
+            - generic [ref=e89]: Reviews
+      - button "Analytics & Reports" [ref=e91]:
+        - generic [ref=e92]: Analytics & Reports
+        - img [ref=e93]
+      - button "Engagement" [ref=e95]:
+        - generic [ref=e96]: Engagement
+        - img [ref=e97]
+      - button "Monetization" [ref=e99]:
+        - generic [ref=e100]: Monetization
+        - img [ref=e101]
+      - button "Automation" [ref=e103]:
+        - generic [ref=e104]: Automation
+        - img [ref=e105]
+      - button "Customization" [ref=e107]:
+        - generic [ref=e108]: Customization
+        - img [ref=e109]
+      - button "System" [ref=e111]:
+        - generic [ref=e112]: System
+        - img [ref=e113]
+    - generic [ref=e115]:
+      - generic [ref=e117]: A
+      - generic [ref=e118]:
+        - paragraph [ref=e119]: Admin
+        - paragraph
+      - link "Logout" [ref=e120] [cursor=pointer]:
+        - /url: /logout
+        - img [ref=e121]
+  - generic [ref=e124]:
+    - banner [ref=e125]:
+      - link "JapaConnect Admin" [ref=e127] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e128]:
+        - button [ref=e130]:
+          - img [ref=e131]
+        - button [ref=e132]:
+          - img [ref=e133]
+        - link "JC" [ref=e134] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e136]: JC
+    - main [ref=e137]:
+      - generic [ref=e138]:
+        - navigation "Breadcrumb" [ref=e139]:
+          - link [ref=e140] [cursor=pointer]:
+            - /url: /
+            - img [ref=e141]
+          - img [ref=e142]
+          - generic [ref=e143]: Professional Types
+        - generic [ref=e144]:
+          - generic [ref=e145]:
+            - heading "Professional Types" [level=1] [ref=e146]
+            - paragraph [ref=e147]: Manage professional profile types, members, and invitations
+          - generic [ref=e148]:
+            - button "Add Profile Type" [ref=e149]:
+              - img [ref=e150]
+              - text: Add Profile Type
+            - button "Refresh" [ref=e151]:
+              - img [ref=e152]
+              - text: Refresh
+        - generic [ref=e155]:
+          - searchbox "Search" [ref=e157]
+          - table [ref=e159]:
+            - rowgroup [ref=e160]:
+              - row "Select all rows Name Slug Description Profiles Actions" [ref=e161]:
+                - columnheader "Select all rows" [ref=e162]:
+                  - checkbox "Select all rows" [ref=e163]
+                - columnheader "Name" [ref=e164] [cursor=pointer]:
+                  - generic [ref=e165]:
+                    - text: Name
+                    - img [ref=e166]
+                - columnheader "Slug" [ref=e167]:
+                  - generic [ref=e168]: Slug
+                - columnheader "Description" [ref=e169]:
+                  - generic [ref=e170]: Description
+                - columnheader "Profiles" [ref=e171]:
+                  - generic [ref=e172]: Profiles
+                - columnheader "Actions" [ref=e173]:
+                  - generic [ref=e174]: Actions
+            - rowgroup [ref=e175]:
+              - row "Select row 36d907a7-82e8-4f84-8bdc-07b390cd1dec Student student — —" [ref=e176] [cursor=pointer]:
+                - cell "Select row 36d907a7-82e8-4f84-8bdc-07b390cd1dec" [ref=e177]:
+                  - checkbox "Select row 36d907a7-82e8-4f84-8bdc-07b390cd1dec" [ref=e178]
+                - cell "Student" [ref=e179]
+                - cell "student" [ref=e180]
+                - cell "—" [ref=e181]
+                - cell "—" [ref=e182]
+                - cell [ref=e183]:
+                  - generic [ref=e184]:
+                    - button [active] [ref=e185]:
+                      - img [ref=e186]
+                    - button [ref=e187]:
+                      - img [ref=e188]
+                    - button [ref=e189]:
+                      - img [ref=e190]
+        - generic [ref=e211]:
+          - generic [ref=e213]:
+            - heading "Student" [level=3] [ref=e214]:
+              - img [ref=e215]
+              - text: Student
+            - button "Close" [ref=e216]
+          - paragraph [ref=e218]: No custom fields defined

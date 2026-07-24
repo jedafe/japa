@@ -193,6 +193,22 @@ func (s *Settings) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key stri
 	return v
 }
 
+// SetSetting upserts a setting value for the given tenant and key.
+func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, value string) error {
+	_, err := s.db.Writer.Exec(ctx,
+		`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at)
+		VALUES ($1, $2, $3, false, now())
+		ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = now()`,
+		tenantID, key, value,
+	)
+	if err != nil {
+		return fmt.Errorf("upserting setting %q: %w", key, err)
+	}
+
+	s.InvalidateSettings(ctx, tenantID)
+	return nil
+}
+
 // GetPublicSettings returns all settings marked as public for the given tenant.
 func (s *Settings) GetPublicSettings(ctx context.Context, tenantID pgtype.UUID) (map[string]any, error) {
 	rows, err := s.db.Reader.Query(ctx,

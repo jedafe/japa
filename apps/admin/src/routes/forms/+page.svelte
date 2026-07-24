@@ -8,22 +8,23 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
-	import { FileText, Plus, Eye, BarChart3, RefreshCw, Trash2, Pencil } from "lucide-svelte";
-	import { api } from "$lib/api";
+	import { FileText, Plus, Eye, BarChart3, RefreshCw, Trash2, Pencil, ExternalLink, Settings } from "lucide-svelte";
+	import { goto } from '$app/navigation';
+	import { api, formsAdminApi, spacesAdminApi } from "$lib/api";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type Form = {
 		id: string;
-		title: string;
+		name: string;
 		slug: string;
 		space_id?: string;
-		space_name?: string;
 		description?: string;
-		submission_count: number;
-		is_active: boolean;
-		fields_count?: number;
+		status: 'active' | 'draft';
+		is_multi_step?: boolean;
+		submit_label?: string;
+		success_message?: string;
+		is_system?: boolean;
 		created_at: string;
-		updated_at?: string;
 	};
 
 	let { data } = $props();
@@ -34,6 +35,11 @@
 	let filters = $state<Record<string, string>>({});
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
+
+	// Space filter
+	let availableSpaces = $state<Array<{ id: string; name: string }>>([]);
+	let selectedSpaceId = $state("");
+	let selectedTypeFilter = $state("");
 
 	// Delete confirmation
 	let showDeleteModal = $state(false);
@@ -64,49 +70,50 @@
 	const canManageForms = $derived(hasPermission("forms.create"));
 
 	const tabs = [
-		{ value: "all", label: t('forms.tab_all', 'All Forms'), icon: FileText },
-		{ value: "active", label: t('forms.tab_active', 'Active'), icon: Eye },
-		{ value: "inactive", label: t('forms.tab_inactive', 'Inactive'), icon: FileText }
+		{ value: "all", label: t('forms.tabAll', 'All Forms'), icon: FileText },
+		{ value: "system", label: t('forms.tabSystem', 'System'), icon: Settings },
+		{ value: "active", label: t('forms.tabActive', 'Active'), icon: Eye },
+		{ value: "inactive", label: t('forms.tabInactive', 'Inactive'), icon: FileText }
 	];
 
 	const columns = [
 		{
-			key: "title",
-			label: "Form",
+			key: "name",
+			label: t('forms.columnForm', 'Form'),
 			sortable: true,
-			render: (_: any, row: any) => `
-				<div>
-					<p class="font-medium text-foreground">${row.title}</p>
-					<p class="text-xs font-mono text-muted">${row.slug}</p>
-				</div>
-			`
+		render: (_: any, row: any) => `
+			<div>
+				<a href="/forms/${row.id}" class="font-medium text-foreground hover:underline cursor-pointer" onclick="event.stopPropagation()">${row.name}</a>
+				<p class="text-xs font-mono text-muted">${row.slug}</p>
+				${row.is_system ? '<span class="mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold" style="border-color: var(--color-info); color: var(--color-info)">System</span>' : ''}
+			</div>
+		`
 		},
 		{
-			key: "space_name",
-			label: "Space",
+			key: "space_id",
+			label: t('forms.columnSpace', 'Space'),
 			sortable: true,
-			render: (value: string) => `<span class="text-sm text-foreground-alt">${value || t('forms.global', 'Global')}</span>`
+			render: (value: any, row: any) => `<span class="text-sm text-foreground-alt">${row.space_id ? 'Space-specific' : t('forms.global', 'Global')}</span>`
 		},
 		{
-			key: "submission_count",
-			label: "Submissions",
-			sortable: true,
-			render: (value: number) => `<span class="font-medium text-foreground">${(value ?? 0).toLocaleString()}</span>`
-		},
-		{
-			key: "fields_count",
-			label: t('forms.fields_count', 'Fields'),
-			sortable: true,
-			render: (value: number) => `<span class="text-sm text-foreground-alt">${value ?? "—"}</span>`
-		},
-		{
-			key: "is_active",
-			label: "Status",
+			key: "is_system",
+			label: t('forms.columnType', 'Type'),
 			sortable: true,
 			render: (value: boolean) => {
-				const variant = value ? "success" : "secondary";
-				const classes = value ? "bg-success/15 text-success border-success" : "bg-surface text-foreground border";
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes}">${value ? t('forms.status.active', 'Active') : t('forms.status.inactive', 'Inactive')}</span>`;
+				if (value) {
+					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-info/15 text-info border-info">${t('forms.type.system', 'System')}</span>`;
+				}
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-surface text-foreground border">${t('forms.type.custom', 'Custom')}</span>`;
+			}
+		},
+		{
+			key: "status",
+			label: t('forms.columnStatus', 'Status'),
+			sortable: true,
+			render: (value: string) => {
+				const isActive = value === 'active';
+				const classes = isActive ? "bg-success/15 text-success border-success" : "bg-surface text-foreground border";
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes}">${isActive ? t('forms.status.active', 'Active') : t('forms.status.inactive', 'Inactive')}</span>`;
 			}
 		},
 		{
@@ -117,25 +124,30 @@
 		},
 		{
 			key: "actions",
-			label: "",
+			label: t('forms.columnActions', 'Actions'),
 			class: "w-32",
-			component: FormActionsCell
+			componentSnippet: FormActionsCell
 		}
 	];
 
 	let filteredForms = $derived.by(() => {
 		let result = [...forms];
-		if (activeTab === "active") result = result.filter((f) => f.is_active);
-		if (activeTab === "inactive") result = result.filter((f) => !f.is_active);
+		if (activeTab === "system") result = result.filter((f) => f.is_system === true);
+		if (activeTab === "active") result = result.filter((f) => f.status === 'active');
+		if (activeTab === "inactive") result = result.filter((f) => f.status !== 'active');
+		if (selectedTypeFilter === "system") result = result.filter((f) => f.is_system === true);
+		if (selectedTypeFilter === "custom") result = result.filter((f) => f.is_system !== true);
 		return result;
 	});
 
-	async function loadForms() {
+	async function loadForms(spaceId?: string) {
 		loading = true;
 		try {
-			const result = await api<Form[]>("/forms");
+			const params = spaceId ? `space_id=${spaceId}` : undefined;
+			const result = await formsAdminApi.list(params);
 			if (result.ok) {
-				forms = result.data ?? [];
+				const raw = result.data;
+				forms = Array.isArray(raw) ? raw : (raw as any)?.data ?? [];
 			}
 		} catch {
 			// API not available
@@ -146,6 +158,9 @@
 
 	function handleFilter(values: Record<string, string>) {
 		filters = values;
+		selectedSpaceId = values.space ?? "";
+		selectedTypeFilter = values.type ?? "";
+		loadForms(selectedSpaceId || undefined);
 	}
 
 	function openView(form: Form) {
@@ -160,9 +175,9 @@
 
 	function openEdit(form: Form) {
 		editTarget = form;
-		editTitle = form.title;
+		editTitle = form.name;
 		editDescription = form.description ?? "";
-		editIsActive = form.is_active;
+		editIsActive = form.status === 'active';
 		showEditModal = true;
 	}
 
@@ -170,9 +185,10 @@
 		if (!editTarget || !editTitle.trim()) return;
 		savingEdit = true;
 		try {
-			const result = await api(`/forms/${editTarget.id}`, {
-				method: "PATCH",
-				body: { name: editTitle.trim(), description: editDescription.trim() || undefined, status: editIsActive ? "active" : "draft" }
+			const result = await formsAdminApi.update(editTarget.id, {
+				name: editTitle.trim(),
+				description: editDescription.trim() || undefined,
+				status: editIsActive ? "active" : "draft"
 			});
 			if (result.ok) {
 				showEditModal = false;
@@ -189,7 +205,7 @@
 		if (!deleteTarget) return;
 		deleting = true;
 		try {
-			await api(`/forms/${deleteTarget.id}`, { method: "DELETE" });
+			await formsAdminApi.delete(deleteTarget.id);
 			forms = forms.filter((f) => f.id !== deleteTarget!.id);
 			showDeleteModal = false;
 			deleteTarget = null;
@@ -205,7 +221,7 @@
 		if (ids.length === 0) return;
 		bulkDeleting = true;
 		try {
-			await Promise.all(ids.map((id) => api(`/forms/${id}`, { method: "DELETE" })));
+			await Promise.all(ids.map((id) => formsAdminApi.delete(id)));
 			selectedIds = new Set();
 			loadForms();
 		} catch {
@@ -244,14 +260,11 @@
 		if (!createTitle.trim() || !createSlug.trim()) return;
 		savingCreate = true;
 		try {
-			const result = await api("/forms", {
-				method: "POST",
-				body: {
-					name: createTitle.trim(),
-					slug: createSlug.trim(),
-					description: createDescription.trim() || undefined,
-					status: createIsActive ? "active" : "draft"
-				}
+			const result = await formsAdminApi.create({
+				name: createTitle.trim(),
+				slug: createSlug.trim(),
+				description: createDescription.trim() || undefined,
+				status: createIsActive ? "active" : "draft"
 			});
 			if (result.ok) {
 				showCreateModal = false;
@@ -268,9 +281,23 @@
 	$effect(() => {
 		if (!initialized) {
 			initialized = true;
+			loadSpaces();
 			loadForms();
 		}
 	});
+
+	async function loadSpaces() {
+		try {
+			const result = await spacesAdminApi.list();
+			if (result.ok) {
+				const raw = result.data as any;
+				const items = raw?.items ?? (Array.isArray(raw) ? raw : raw?.data?.items ?? []);
+				availableSpaces = items.map((s: any) => ({ id: s.id, name: s.name }));
+			}
+		} catch {
+			// ignore — space filter just won't populate
+		}
+	}
 </script>
 
 <svelte:head>
@@ -298,29 +325,39 @@
 				key: "space",
 				label: t('forms.filter_space', 'Space'),
 				options: [
-					{ value: "global", label: t('forms.global', 'Global') },
-					{ value: "space", label: t('forms.space_specific', 'Space-specific') }
+					{ value: "", label: t('forms.all_spaces', 'All Spaces') },
+					...availableSpaces.map((s) => ({ value: s.id, label: s.name }))
+				]
+			},
+			{
+				key: "type",
+				label: t('forms.filter_type', 'Type'),
+				options: [
+					{ value: "", label: t('forms.all_types', 'All Types') },
+					{ value: "system", label: t('forms.type_system', 'System') },
+					{ value: "custom", label: t('forms.type_custom', 'Custom') }
 				]
 			}
 		]}
 		onsearch={handleFilter}
-		onclear={() => { filters = {}; }}
+		onclear={() => { filters = {}; selectedSpaceId = ""; selectedTypeFilter = ""; loadForms(); }}
 	/>
 
 	<Card>
 		<CardContent class="p-0">
 			{#if loading}
 				<p class="py-8 text-center text-sm text-muted">{t('forms.loading_forms')}</p>
-			{:else}
-				<DataTable
-					columns={columns}
-					data={filteredForms}
-					selectable
-					bind:selectedIds
-					pageSize={20}
-					emptyMessage={t('forms.no_forms', 'No forms found')}
-				>
-					{#snippet bulkActions()}
+		{:else}
+			<DataTable
+				columns={columns}
+				data={filteredForms}
+				loading={loading}
+				selectable
+				bind:selectedIds
+				pageSize={20}
+				emptyMessage={t('forms.no_forms', 'No forms found')}
+			>
+				{#snippet bulkActions()}
 						<Button variant="destructive" size="sm" onclick={bulkDelete} disabled={bulkDeleting}>
 							<Trash2 class="mr-1 h-3.5 w-3.5" />
 							{bulkDeleting ? t('common.deleting', 'Deleting...') : `Delete Selected (${selectedIds.size})`}
@@ -332,23 +369,29 @@
 	</Card>
 
 	<!-- Summary Stats -->
-	<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('forms.total_forms')}</p>
+				<p class="text-sm text-muted">{t('forms.statTotal', 'Total Forms')}</p>
 				<p class="text-2xl font-bold text-foreground">{forms.length}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('forms.active_forms')}</p>
-				<p class="text-2xl font-bold text-foreground">{forms.filter((f) => f.is_active).length}</p>
+				<p class="text-sm text-muted">{t('forms.statActive', 'Active Forms')}</p>
+				<p class="text-2xl font-bold text-foreground">{forms.filter((f) => f.status === 'active').length}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent class="p-4">
-				<p class="text-sm text-muted">{t('forms.total_submissions')}</p>
-				<p class="text-2xl font-bold text-foreground">{forms.reduce((sum, f) => sum + (f.submission_count ?? 0), 0).toLocaleString()}</p>
+				<p class="text-sm text-muted">{t('forms.statInactive', 'Inactive Forms')}</p>
+				<p class="text-2xl font-bold text-foreground">{forms.filter((f) => f.status !== 'active').length}</p>
+			</CardContent>
+		</Card>
+		<Card>
+			<CardContent class="p-4">
+				<p class="text-sm text-muted">{t('forms.statSystem', 'System Forms')}</p>
+				<p class="text-2xl font-bold text-foreground">{forms.filter((f) => f.is_system).length}</p>
 			</CardContent>
 		</Card>
 	</div>
@@ -442,7 +485,7 @@
 	{#if deleteTarget}
 		<div class="rounded-lg bg-danger-50 p-4">
 			<p class="text-sm text-danger-700">
-				{t('forms.delete_confirm', 'Are you sure you want to delete')} <strong>{deleteTarget.title}</strong>?
+				{t('forms.delete_confirm', 'Are you sure you want to delete')} <strong>{deleteTarget.name}</strong>?
 				{t('forms.delete_submissions_lost', 'This will permanently remove the form and all its submissions.')}
 			</p>
 		</div>
@@ -465,7 +508,7 @@
 		<div class="space-y-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('forms.title')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.title}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.name}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('forms.slug', 'Slug')}</p>
@@ -473,21 +516,11 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('forms.filter_space', 'Space')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.space_name || t('forms.global', 'Global')}</p>
-			</div>
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('forms.submissions')}</p>
-					<p class="mt-1 text-sm font-medium text-foreground">{(viewTarget.submission_count ?? 0).toLocaleString()}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('forms.fields')}</p>
-					<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.fields_count ?? "—"}</p>
-				</div>
+				<p class="mt-1 text-sm font-medium text-foreground">{(viewTarget as any).space_id ? 'Space-specific' : t('forms.global', 'Global')}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('forms.status')}</p>
-				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.is_active ? t('forms.status.active', 'Active') : t('forms.status.inactive', 'Inactive')}</p>
+				<p class="mt-1 text-sm font-medium text-foreground">{viewTarget.status === 'active' ? t('forms.status.active', 'Active') : t('forms.status.inactive', 'Inactive')}</p>
 			</div>
 		</div>
 	{/if}
@@ -499,6 +532,9 @@
 <!-- Action Cell -->
 {#snippet FormActionsCell({ value, row }: { value: any; row: Form })}
 	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => goto(`/forms/${row.id}`)} title="Manage form">
+			<ExternalLink class="h-3.5 w-3.5" />
+		</Button>
 		<Button variant="ghost" size="sm" onclick={() => openView(row)}>
 			<Eye class="h-3.5 w-3.5" />
 		</Button>

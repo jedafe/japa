@@ -14,9 +14,20 @@
 	type PageTheme = {
 		id: string;
 		name: string;
+		slug: string;
 		is_default: boolean;
 		created_at: string;
+		updated_at: string;
 	};
+
+	// slugify derives a URL-safe slug from a free-form name so the backend
+	// (CreateThemeInput.Slug — required) always receives a valid value even
+	// when the admin leaves the Slug field blank.
+	function slugify(value: string): string {
+		return value.toLowerCase().trim()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "");
+	}
 
 	let themes = $state<PageTheme[]>([]);
 	let loading = $state(true);
@@ -34,6 +45,7 @@
 	let editingTheme = $state<PageTheme | null>(null);
 	let saving = $state(false);
 	let themeName = $state("");
+	let themeSlug = $state("");
 
 	// Set Default confirmation
 	let showSetDefaultConfirm = $state(false);
@@ -43,7 +55,7 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<PageTheme | null>(null);
 
-	const canManageThemes = $derived(hasPermission("themes.manage"));
+	const canManageThemes = $derived(hasPermission("pagebuilder.themes.manage"));
 
 	function confirmSetDefault(theme: PageTheme) {
 		setDefaultTarget = theme;
@@ -72,7 +84,7 @@
 			render: (v: string) => new Date(v).toLocaleDateString()
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-48",
-			component: ThemeActionsCell
+			componentSnippet: ThemeActionsCell
 		}
 	];
 
@@ -100,6 +112,7 @@
 		modalMode = "create";
 		editingTheme = null;
 		themeName = "";
+		themeSlug = "";
 		showModal = true;
 	}
 
@@ -108,6 +121,7 @@
 		modalMode = "edit";
 		editingTheme = theme;
 		themeName = theme.name;
+		themeSlug = theme.slug;
 		showModal = true;
 	}
 
@@ -116,9 +130,13 @@
 		saving = true;
 		error = "";
 		try {
+			const payload = {
+				name: themeName.trim(),
+				slug: themeSlug.trim() || slugify(themeName)
+			};
 			const result = editingTheme
-				? await pageBuilderAdminApiExtended.updateTheme(editingTheme.id, { name: themeName.trim() })
-				: await pageBuilderAdminApiExtended.createTheme({ name: themeName.trim() });
+				? await pageBuilderAdminApiExtended.updateTheme(editingTheme.id, payload)
+				: await pageBuilderAdminApiExtended.createTheme(payload);
 
 			if (result.ok) {
 				showModal = false;
@@ -223,6 +241,10 @@
 	<div>
 		<label for="theme-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("themes.name", "Name")}</label>
 		<input id="theme-name" type="text" bind:value={themeName} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="e.g., Dark Theme" />
+	</div>
+	<div class="mt-4">
+		<label for="theme-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("themes.slug", "Slug")}</label>
+		<input id="theme-slug" type="text" bind:value={themeSlug} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("themes.slug_placeholder", "auto-generated-from-name")} />
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => showModal = false}>{t("common.cancel", "Cancel")}</Button>

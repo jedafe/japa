@@ -18,8 +18,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -300,7 +301,8 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 // ListAllReviews handles GET /api/v1/admin/reviews.
 // Admin moderation view: lists all reviews for the tenant (all statuses),
 // regardless of entity or reviewer. Gated by reviews.moderate at the router.
-// Returns the standard {"data": [...]} envelope.
+// Supports ?status=, ?entity_type=, ?page_size=, ?page_offset=.
+// Returns {"data": [...], "total": N} envelope with entity_name resolved.
 func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -309,14 +311,48 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
+	status := r.URL.Query().Get("status")
+	entityType := r.URL.Query().Get("entity_type")
 
-	reviews, err := h.Service.ListReviews(r.Context(), tenantID, limit, offset)
+	var (
+		reviews []gen.ListAdminReviewsFilteredRow
+		total   int32
+		err     error
+	)
+
+	if status != "" || entityType != "" {
+		reviews, err = h.Service.ListAdminReviewsFiltered(r.Context(), tenantID, status, entityType, limit, offset)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		total, err = h.Service.CountAdminReviewsFiltered(r.Context(), tenantID, status, entityType)
+	} else {
+		rows, listErr := h.Service.ListAdminReviews(r.Context(), tenantID, limit, offset)
+		if listErr != nil {
+			handleServiceError(w, listErr)
+			return
+		}
+		total, err = h.Service.CountAdminReviews(r.Context(), tenantID)
+		// Convert []gen.ListAdminReviewsRow to []gen.ListAdminReviewsFilteredRow
+		// since they share the same shape.
+		reviews = make([]gen.ListAdminReviewsFilteredRow, len(rows))
+		for i, r := range rows {
+			reviews[i] = gen.ListAdminReviewsFilteredRow{
+				ID: r.ID, TenantID: r.TenantID, EntityType: r.EntityType,
+				EntityID: r.EntityID, ReviewerUserID: r.ReviewerUserID,
+				Rating: r.Rating, Title: r.Title, Body: r.Body,
+				Status: r.Status, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+				EntityName: r.EntityName,
+			}
+		}
+	}
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"data": reviews})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"reviews": reviews, "total": total}})
 }
 
 // GetReview handles GET /api/v1/reviews/{id}.
@@ -419,6 +455,33 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue async review aggregate recalculation — fire-and-forget.
 	h.enqueueReviewAggregateRecalc(tenantID, review.EntityType, review.EntityID)
+
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// HardDeleteReview handles DELETE /api/v1/admin/reviews/{id}.
+// Permanently removes a review from the database (admin only).
+func (h *Handlers) HardDeleteReview(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
+		return
+	}
+
+	if err := h.Service.HardDeleteReview(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
 
 	writeJSON(w, http.StatusNoContent, nil)
 }

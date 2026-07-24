@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { api } from '$lib/api';
+	import { api, pageTemplatesAdminApiExtended, pageBuilderAdminApiExtended } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { goto } from '$app/navigation';
 	import Modal from '$lib/components/Modal.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import { Pencil } from 'lucide-svelte';
 
 	const canManagePages = $derived(hasPermission('pages.manage'));
 	const canPublishPages = $derived(hasPermission('pages.publish'));
@@ -27,8 +29,10 @@
 
 	let searchQuery = $state('');
 	let showCreateModal = $state(false);
-	let newPage = $state({ title: '', slug: '' });
+	let newPage = $state({ title: '', slug: '', template_id: '', theme_id: '' });
 	let creating = $state(false);
+	let templates = $state<{ id: string; name: string }[]>([]);
+	let themes = $state<{ id: string; name: string; is_default: boolean }[]>([]);
 
 	let showTemplateModal = $state(false);
 	let templatePageId = $state('');
@@ -44,7 +48,7 @@
 		{ key: 'slug', label: t('page_builder.slug'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">/${v}</span>` },
 		{ key: 'status', label: t('page_builder.status'), sortable: true, render: (v: string) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(v)}">${v}</span>` },
 		{ key: 'updated_at', label: t('page_builder.updated'), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
-		{ key: 'actions', label: t('common.actions'), class: 'w-64 text-right', component: PageActionsCell }
+		{ key: 'actions', label: t('common.actions'), class: 'w-64 text-right', componentSnippet: PageActionsCell }
 	];
 
 	function statusBadge(status: string) {
@@ -88,17 +92,17 @@
 	}
 
 	async function createPage() {
-		if (!newPage.title || !newPage.slug) return;
+		if (!newPage.title) return;
 		creating = true;
 		try {
-			const result = await api('/admin/pages', {
-				method: 'POST',
-				body: newPage
-			});
-			if (result.ok) {
+			const body: Record<string, unknown> = { title: newPage.title, slug: newPage.slug };
+			if (newPage.template_id) body.template_id = newPage.template_id;
+			if (newPage.theme_id) body.theme_id = newPage.theme_id;
+			const result = await api<{ id: string }>('/admin/pages', { method: 'POST', body });
+			if (result.ok && result.data) {
 				showCreateModal = false;
-				newPage = { title: '', slug: '' };
-				load();
+				newPage = { title: '', slug: '', template_id: '', theme_id: '' };
+				goto(`/page-builder/pages/${result.data.id}`);
 			}
 		} catch {
 			error = t('common.error');
@@ -107,19 +111,44 @@
 		}
 	}
 
+	async function loadTemplatesAndThemes() {
+		const [tplRes, themeRes] = await Promise.all([
+			pageTemplatesAdminApiExtended.list(),
+			pageBuilderAdminApiExtended.listThemes()
+		]);
+		if (tplRes.ok) templates = (tplRes.data as any[])?.map((t) => ({ id: t.id, name: t.name })) ?? [];
+		if (themeRes.ok) themes = (themeRes.data as any[])?.map((t) => ({ id: t.id, name: t.name, is_default: t.is_default })) ?? [];
+	}
+
+	function openCreateModal() {
+		newPage = { title: '', slug: '', template_id: '', theme_id: '' };
+		loadTemplatesAndThemes();
+		showCreateModal = true;
+	}
+
 	async function publishPage(id: string) {
+		error = '';
 		try {
-			await api(`/admin/pages/${id}/publish`, { method: 'POST' });
-			load();
+			const result = await api(`/admin/pages/${id}/publish`, { method: 'POST' });
+			if (result.ok) {
+				load();
+			} else {
+				error = result.error;
+			}
 		} catch {
 			error = t('common.error');
 		}
 	}
 
 	async function archivePage(id: string) {
+		error = '';
 		try {
-			await api(`/admin/pages/${id}/archive`, { method: 'POST' });
-			load();
+			const result = await api(`/admin/pages/${id}/archive`, { method: 'POST' });
+			if (result.ok) {
+				load();
+			} else {
+				error = result.error;
+			}
 		} catch {
 			error = t('common.error');
 		}
@@ -132,9 +161,14 @@
 
 	async function executeDelete() {
 		if (!deleteTarget) return;
+		error = '';
 		try {
-			await api(`/admin/pages/${deleteTarget.id}`, { method: 'DELETE' });
-			load();
+			const result = await api(`/admin/pages/${deleteTarget.id}`, { method: 'DELETE' });
+			if (result.ok) {
+				load();
+			} else {
+				error = result.error;
+			}
 		} catch {
 			error = t('common.error');
 		} finally {
@@ -190,6 +224,9 @@
 
 {#snippet PageActionsCell({ value, row }: { value: any; row: Page })}
 	<div class="flex items-center justify-end gap-2">
+		<Button variant="ghost" size="sm" onclick={() => goto(`/page-builder/pages/${row.id}`)}>
+			<Pencil class="mr-1 h-3 w-3" />{t('common.edit', 'Edit')}
+		</Button>
 		<Button variant="ghost" size="sm" onclick={() => validateSeo(row.id)}>
 			SEO
 		</Button>
@@ -230,7 +267,7 @@
 		<button
 			class="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors"
 			style="background-color: var(--color-primary)"
-			onclick={() => { showCreateModal = true; }}
+			onclick={() => { openCreateModal(); }}
 		>
 			{t('page_builder.create_page')}
 		</button>
@@ -256,7 +293,7 @@
 />
 
 {#if showCreateModal}
-	<Modal title={t('page_builder.create_page')} onclose={() => { showCreateModal = false; }}>
+	<Modal bind:open={showCreateModal} title={t('page_builder.create_page')} onclose={() => { showCreateModal = false; }}>
 		<div class="space-y-4">
 			<div>
 				<label for="page-title" class="mb-1 block text-sm font-medium">{t('page_builder.title')}</label>
@@ -279,6 +316,21 @@
 					bind:value={newPage.slug}
 				/>
 			</div>
+		<div>
+			<label for="page-template" class="mb-1 block text-sm font-medium">{t('page_builder.template', 'Template')}</label>
+			<select id="page-template" bind:value={newPage.template_id} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
+				<option value="">{t('page_builder.blank_template', 'Blank (no template)')}</option>
+				{#each templates as tpl}<option value={tpl.id}>{tpl.name}</option>{/each}
+			</select>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('page_builder.template_hint', 'Start from a pre-built template')}</p>
+		</div>
+		<div>
+			<label for="page-theme" class="mb-1 block text-sm font-medium">{t('page_builder.theme', 'Theme')}</label>
+			<select id="page-theme" bind:value={newPage.theme_id} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
+				<option value="">{t('page_builder.default_theme', 'Default')}</option>
+				{#each themes as thm}<option value={thm.id}>{thm.name}{thm.is_default ? ' (default)' : ''}</option>{/each}
+			</select>
+		</div>
 			<div class="flex justify-end gap-2">
 				<button
 					class="rounded-md px-4 py-2 text-sm font-medium"
@@ -301,7 +353,7 @@
 {/if}
 
 {#if showTemplateModal}
-	<Modal title={t('page_builder.save_as_template')} onclose={() => { showTemplateModal = false; }}>
+	<Modal bind:open={showTemplateModal} title={t('page_builder.save_as_template')} onclose={() => { showTemplateModal = false; }}>
 		<div class="space-y-4">
 			<div>
 				<label for="template-name" class="mb-1 block text-sm font-medium">{t('page_builder.template_name')}</label>
@@ -335,7 +387,7 @@
 {/if}
 
 {#if showSeoModal}
-	<Modal title="SEO Validation" onclose={() => { showSeoModal = false; }}>
+	<Modal bind:open={showSeoModal} title="SEO Validation" onclose={() => { showSeoModal = false; }}>
 		{#if seoLoading}
 			<p class="text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 		{:else if seoIssues.length === 0}

@@ -114,8 +114,8 @@ func (s *Service) GetTicketTypeBySlug(ctx context.Context, slug string, tenantID
 }
 
 // ListTicketTypes returns all ticket types for a tenant.
-func (s *Service) ListTicketTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.TicketType, error) {
-	return s.store.listTicketTypesByTenant(ctx, tenantID, limit, offset)
+func (s *Service) ListTicketTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32, isPublic *bool) (ListTicketTypesResponse, error) {
+	return s.store.listTicketTypesByTenant(ctx, tenantID, limit, offset, isPublic)
 }
 
 // UpdateTicketTypeInput holds parameters for updating a ticket type.
@@ -276,7 +276,7 @@ func (s *Service) GetTicket(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 }
 
 // ListTickets returns tickets for admin view with filters.
-func (s *Service) ListTickets(ctx context.Context, tenantID pgtype.UUID, status, priority string, typeID, assignedTo pgtype.UUID, search string, limit, offset int32) ([]gen.ListTicketsByTenantRow, error) {
+func (s *Service) ListTickets(ctx context.Context, tenantID pgtype.UUID, status, priority string, typeID, assignedTo pgtype.UUID, search string, limit, offset int32) (ListTicketsResponse, error) {
 	return s.store.listTicketsByTenant(ctx, gen.ListTicketsByTenantParams{
 		TenantID:   tenantID,
 		Status:     status,
@@ -585,7 +585,7 @@ func (s *Service) ListEvents(ctx context.Context, ticketID pgtype.UUID) ([]gen.T
 
 // CheckSLABreaches finds tickets where SLA breach time has passed and marks them.
 func (s *Service) CheckSLABreaches(ctx context.Context, tenantID pgtype.UUID) (int, error) {
-	tickets, err := s.store.listTicketsByTenant(ctx, gen.ListTicketsByTenantParams{
+	resp, err := s.store.listTicketsByTenant(ctx, gen.ListTicketsByTenantParams{
 		TenantID:   tenantID,
 		Status:     "",
 		PageLimit:  100,
@@ -598,7 +598,7 @@ func (s *Service) CheckSLABreaches(ctx context.Context, tenantID pgtype.UUID) (i
 	breached := 0
 
 	now := time.Now()
-	for _, t := range tickets {
+	for _, t := range resp.Tickets {
 		if t.SlaBreachAt.Valid && t.SlaBreachAt.Time.Before(now) &&
 			t.Status != string(StatusResolved) && t.Status != string(StatusClosed) && t.Status != string(StatusSpam) {
 			if _, err := s.store.createTicketEvent(ctx, gen.CreateTicketEventParams{

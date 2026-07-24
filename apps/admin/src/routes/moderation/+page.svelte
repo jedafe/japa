@@ -2,9 +2,9 @@
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
-	import { FilterBar } from "$lib/components/ui/filter-bar";
+	import FilterBar from "$lib/components/FilterBar.svelte";
 	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
+	import Modal from "$lib/components/Modal.svelte";
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { RefreshCw, Check, X, Eye, AlertTriangle, Trash2 } from "lucide-svelte";
@@ -52,6 +52,7 @@
 		{
 			key: "type",
 			label: t("moderation.source", "Source"),
+			type: 'select' as const,
 			options: [
 				{ value: "user_report", label: t("app.moderation.queue.user_report", "User Report") },
 				{ value: "ai_flag", label: t("app.moderation.queue.ai_flag", "AI Flag") }
@@ -60,6 +61,7 @@
 		{
 			key: "content_type",
 			label: t("moderation.content_type", "Content Type"),
+			type: 'select' as const,
 			options: [
 				{ value: "post", label: t("app.moderation.queue.post", "Post") },
 				{ value: "comment", label: t("app.moderation.queue.comment", "Comment") },
@@ -71,6 +73,7 @@
 		{
 			key: "status",
 			label: t("common.status", "Status"),
+			type: 'select' as const,
 			options: [
 				{ value: "pending", label: t("app.moderation.queue.pending", "Pending") },
 				{ value: "reviewed", label: t("app.moderation.queue.reviewed", "Reviewed") },
@@ -144,10 +147,10 @@
 
 			const result = await moderationAdminApi.getQueue(params.toString());
 			if (result.ok) {
-				const d = result.data as { items: ModItem[]; total: number; page: number; total_pages: number };
-				items = d.items ?? [];
-				totalItems = d.total ?? items.length;
-				totalPages = d.total_pages ?? 1;
+				const d = result.data as { items: ModItem[]; total: number; page: number; total_pages: number } | null;
+				items = d?.items ?? [];
+				totalItems = d?.total ?? items.length;
+				totalPages = d?.total_pages ?? 1;
 			} else {
 				error = result.error ?? t("common.error", "Failed to load moderation queue");
 			}
@@ -258,7 +261,7 @@
 
 <Card>
 	<CardHeader>
-		<FilterBar filters={filterDefs} onsearch={handleSearch} onclear={handleClear} />
+		<FilterBar filters={filterDefs} onApply={(vals) => { filterValues = vals; currentPage = 0; loadItems(); }} />
 	</CardHeader>
 	<CardContent>
 		{#if loading}
@@ -278,7 +281,7 @@
 </Card>
 
 <!-- View Modal -->
-<Modal bind:open={showViewModal} title={t("moderation.details", "Moderation Details")} size="default">
+<Modal bind:open={showViewModal} title={t("moderation.details", "Moderation Details")}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
