@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net"
 	"net/http"
-	"strings"
+
+	"github.com/jedafe/japa/internal/clientip"
 )
 
 // InternalGuard returns a middleware that restricts access to internal
@@ -18,7 +20,7 @@ func InternalGuard(expectedToken string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Check token header first — fastest path for service-to-service calls.
-			if expectedToken != "" && r.Header.Get("X-Internal-Token") == expectedToken {
+			if expectedToken != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Internal-Token")), []byte(expectedToken)) == 1 {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -39,25 +41,8 @@ func InternalGuard(expectedToken string) func(http.Handler) http.Handler {
 	}
 }
 
-// ClientIP extracts the client IP from the request, preferring
-// X-Forwarded-For and X-Real-IP headers when present.
+// ClientIP extracts the client IP from the request, honouring forwarding
+// headers only when the connecting peer is a trusted proxy.
 func ClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the chain.
-		if idx := strings.IndexByte(xff, ','); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-
-	return host
+	return clientip.FromRequest(r)
 }

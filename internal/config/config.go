@@ -118,6 +118,9 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+// minJWTSecretLength is the shortest JC_JWT_SECRET accepted in production.
+const minJWTSecretLength = 32
+
 // applyDefaults fills in development-safe values for any field that is empty.
 // Production deployments should set every variable explicitly — these defaults
 // exist only so local development works without a full environment.
@@ -191,6 +194,14 @@ func applyDefaults(cfg *Config) error {
 	if cfg.IsProduction() && cfg.CookieDomain == "" {
 		return fmt.Errorf("JC_COOKIE_DOMAIN must be set in production for cross-subdomain session sharing")
 	}
+
+	// Without a configured secret the server signs tokens with a per-process
+	// random key: sessions break across replicas and restarts, and the key is
+	// never rotated or audited.
+	if cfg.IsProduction() && len(cfg.JWTSecret) < minJWTSecretLength {
+		return fmt.Errorf("JC_JWT_SECRET must be set to at least %d characters in production", minJWTSecretLength)
+	}
+
 	return nil
 }
 

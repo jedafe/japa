@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -149,9 +150,11 @@ func TestIsProduction(t *testing.T) {
 			} else {
 				os.Unsetenv("JC_ENV")
 			}
-			// Production validation requires JC_COOKIE_DOMAIN and JC_DATABASE_URL.
+			// Production validation requires JC_COOKIE_DOMAIN, JC_DATABASE_URL
+			// and JC_JWT_SECRET.
 			t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
 			t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
+			t.Setenv("JC_JWT_SECRET", strings.Repeat("x", 32))
 
 			cfg, err := Load()
 			if err != nil {
