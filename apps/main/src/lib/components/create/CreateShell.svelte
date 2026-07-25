@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import type { Snippet } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { ComposerState, type ComposerDeps } from './composerState.svelte';
 	import { evaluatePublish } from './gate';
@@ -12,10 +11,19 @@
 		CustomFieldGroup,
 		MeSpace,
 		BlogSeries,
-		ComposerStatus
+		ComposerStatus,
+		MediaAsset,
+		Visibility
 	} from '$lib/types';
 	import type { TypeEntry } from './contentTypeRegistry';
 	import SaveBar from './SaveBar.svelte';
+	import TitleField from './TitleField.svelte';
+	import SpaceSelector from './SpaceSelector.svelte';
+	import TagInput from './TagInput.svelte';
+	import CoverUploader from './CoverUploader.svelte';
+	import PostEditor from './editors/PostEditor.svelte';
+	import ComparisonBuilder from './editors/ComparisonBuilder.svelte';
+	import CreateRightPanel from './panel/CreateRightPanel.svelte';
 
 	interface Props {
 		types: TypeEntry[];
@@ -24,11 +32,9 @@
 		series: BlogSeries[];
 		draft: ContentRecord | null;
 		user: { id: string } | null;
-		fields?: Snippet;
-		right?: Snippet;
 	}
 
-	let { types, spaces, fieldGroups, series, draft, user, fields, right }: Props = $props();
+	let { types, spaces, fieldGroups, series, draft, user }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(types[0] ?? resolveType('blog_post'));
@@ -36,7 +42,7 @@
 	let slug = $state(draft?.slug ?? '');
 	let bodyHtml = $state(draft?.body_html ?? '');
 	let spaceId = $state<string | null>(draft?.space_id ?? spaces.find((s) => s.is_primary)?.id ?? null);
-	let visibility = $state(draft?.visibility ?? 'public');
+	let visibility = $state<Visibility>((draft?.visibility as Visibility) ?? 'public');
 	let canonicalUrl = $state(draft?.canonical_url ?? '');
 	let publishAt = $state(draft?.publish_at ?? null);
 	let tags = $state<string[]>([]);
@@ -129,8 +135,28 @@
 			</select>
 		</div>
 
-		<!-- Child components (Tasks 11-17) render here -->
-		{#if fields}{@render fields()}{/if}
+		<TitleField {title} {slug} onTitle={(v) => { title = v; markDirty(); }} onSlug={(v) => { slug = v; markDirty(); }} />
+
+		<SpaceSelector
+			{spaces}
+			selectedId={spaceId}
+			onSelect={(id) => { spaceId = id; markDirty(); }}
+		/>
+
+		<TagInput {tags} onTags={(next) => { tags = next; markDirty(); }} />
+
+		<CoverUploader onUploaded={(asset: MediaAsset) => { coverMediaId = asset.id; markDirty(); }} />
+
+		{#if selectedType.formKind === 'comparison'}
+			<ComparisonBuilder
+				{title}
+				{spaceId}
+				oncounts={(n, d) => { items = new Array(n).fill({ label: '' }); dimensions = new Array(d).fill({ label: '' }); }}
+				onedit={markDirty}
+			/>
+		{:else}
+			<PostEditor html={bodyHtml} onedit={markDirty} />
+		{/if}
 
 		<SaveBar
 			status={composer?.status ?? ('pristine' as ComposerStatus)}
@@ -143,8 +169,22 @@
 	</div>
 
 	<div class="composer-right">
-		<!-- Right panel (Tasks 18-20) renders here -->
-		{#if right}{@render right()}{/if}
+		<CreateRightPanel
+			focusedField={null}
+			{visibility}
+			{canonicalUrl}
+			{publishAt}
+			{fieldValues}
+			{fieldGroups}
+			{series}
+			{seriesId}
+			onvisibility={(v) => { visibility = v; markDirty(); }}
+			oncanonical={(v) => { canonicalUrl = v; markDirty(); }}
+			onpublishat={(v) => { publishAt = v; markDirty(); }}
+			onfieldvalues={(v) => { fieldValues = v; markDirty(); }}
+			onseries={(id) => { seriesId = id; markDirty(); }}
+			onedit={markDirty}
+		/>
 	</div>
 </div>
 

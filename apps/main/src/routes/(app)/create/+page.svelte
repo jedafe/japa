@@ -1,17 +1,28 @@
 <script lang="ts">
+	import CreateShell from '$lib/components/create/CreateShell.svelte';
 	import { PenSquare } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import { t } from '$lib/i18n';
 
-	// Placeholder for the dev.to-style composer (Exception #2). The real /create
-	// surface — cover/title/tags, required Space selector, TipTap body, and the
-	// Guide | Settings tabbed right panel — is the next feature task.
+	let { data } = $props();
 </script>
 
-<div class="mx-auto w-full max-w-2xl py-10">
-	<EmptyState
-		icon={PenSquare}
-		title="The composer is coming soon"
-		body="Creating posts, blogs and comparisons will live here."
-		action={{ label: 'Back home', href: '/' }}
+{#if data.loadError}
+	<div class="mx-auto w-full max-w-2xl py-10">
+		<EmptyState
+			icon={PenSquare}
+			title={t('error.500_title')}
+			body={t('error.500_body')}
+			action={{ label: t('empty.action_home'), href: '/' }}
+		/>
+	</div>
+{:else}
+	<CreateShell
+		types={data.types}
+		spaces={data.spaces}
+		fieldGroups={data.fieldGroups}
+		series={data.series}
+		draft={data.draft}
+		user={data.user}
 	/>
-</div>
+{/if}
