@@ -164,3 +164,16 @@ JOIN users u ON u.id = om.user_id AND u.tenant_id = @tenant_id AND u.status = 'a
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 WHERE om.organization_id = @organization_id
 ORDER BY om.joined_at DESC;
+
+-- name: ListPublicOrganizations :many
+-- Public Discover "Organizations": VERIFIED + ACTIVE orgs only, newest first.
+SELECT id, name, slug, tagline, org_type, logo_media_id, header_media_id,
+       country_code, verified, follower_count, member_count, created_at
+FROM organizations
+WHERE tenant_id = @tenant_id AND status = 'active' AND deleted_at IS NULL AND verified = true
+ORDER BY created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountPublicOrganizations :one
+SELECT COUNT(*) FROM organizations
+WHERE tenant_id = @tenant_id AND status = 'active' AND deleted_at IS NULL AND verified = true;

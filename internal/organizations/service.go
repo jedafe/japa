@@ -340,6 +340,19 @@ func (s *Service) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.
 	return s.store.ListPublicMembers(ctx, orgID, tenantID)
 }
 
+// ListPublicOrganizations returns verified+active orgs for the public Discover list.
+func (s *Service) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
+	rows, err := s.store.ListPublicOrganizations(ctx, tenantID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.CountPublicOrganizations(ctx, tenantID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
 func strPtr(s string) *string {
 	if s == "" {
 		return nil
