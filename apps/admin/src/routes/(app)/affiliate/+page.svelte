@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, affiliateProvidersAdminApi } from '$lib/api';
+	import { api, affiliateProvidersAdminApi, affiliateProgramAdminApi, affiliateLinksAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -28,20 +28,29 @@
 
 	type AffiliateMember = {
 		user_id: string;
-		username: string;
+		tenant_id: string;
+		enrolled_at: string;
 		status: string;
-		total_earnings: number;
-		conversion_count: number;
-		joined_at: string;
+		total_clicks: number;
+		total_conversions: number;
+		total_earned_credits: number;
+		payout_method: string | null;
+		notes: string | null;
 	};
 
 	type AffiliateLink = {
 		id: string;
+		tenant_id: string;
 		user_id: string;
+		product_type: string;
+		product_id: string | null;
 		code: string;
-		url: string;
-		clicks: number;
-		conversions: number;
+		description: string | null;
+		destination_url: string;
+		click_count: number;
+		conversion_count: number;
+		total_earned: number;
+		is_active: boolean;
 		created_at: string;
 	};
 
@@ -116,10 +125,10 @@
 
 	const memberColumns = $derived([
 		{
-			key: 'username',
+			key: 'user_id',
 			label: t('affiliate.username'),
 			sortable: true,
-			render: (value: string) => `<span class="font-medium text-foreground">${value}</span>`
+			render: (value: string) => `<span class="font-mono text-xs">${value}</span>`
 		},
 		{
 			key: 'status',
@@ -128,19 +137,19 @@
 				const classes: Record<string, string> = {
 					active: 'bg-success/15 text-success border-success',
 					suspended: 'bg-danger/15 text-danger border-danger',
-					pending: 'bg-warning/15 text-warning border-warning'
+					banned: 'bg-danger/15 text-danger border-danger'
 				};
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${classes[value] || 'bg-surface text-foreground border'}">${value}</span>`;
 			}
 		},
 		{
-			key: 'total_earnings',
+			key: 'total_earned_credits',
 			label: t('affiliate.earnings'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${(value ?? 0).toFixed(2)}</span>`
 		},
 		{
-			key: 'conversion_count',
+			key: 'total_conversions',
 			label: t('affiliate.conversions'),
 			sortable: true,
 			render: (value: number) => `<span>${value ?? 0}</span>`
@@ -167,18 +176,18 @@
 			render: (value: string) => `<span class="font-mono text-xs font-medium text-foreground">${value}</span>`
 		},
 		{
-			key: 'url',
+			key: 'destination_url',
 			label: t('affiliate.url'),
 			render: (value: string) => `<span class="text-xs text-muted truncate max-w-[200px] block">${value}</span>`
 		},
 		{
-			key: 'clicks',
+			key: 'click_count',
 			label: t('affiliate.clicks'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>`
 		},
 		{
-			key: 'conversions',
+			key: 'conversion_count',
 			label: t('affiliate.conversions'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
@@ -211,31 +220,32 @@
 					error = result.error;
 				}
 			} else if (activeTab === 'members') {
-				const result = await api<AffiliateMember[]>('/admin/affiliate-program/members');
+				const result = await affiliateProgramAdminApi.members();
 				if (result.ok) {
-					members = result.data ?? [];
+					members = (Array.isArray(result.data) ? result.data : []) as AffiliateMember[];
 					if (searchQuery) {
 						const q = searchQuery.toLowerCase();
-						members = members.filter((m: any) => m.username?.toLowerCase().includes(q) || m.status?.toLowerCase().includes(q));
+						members = members.filter((m) => m.user_id?.toLowerCase().includes(q) || m.status?.toLowerCase().includes(q));
 					}
 				} else {
 					error = result.error;
 				}
 			} else if (activeTab === 'links') {
-				const result = await api<AffiliateLink[]>('/admin/affiliate-links');
+				const result = await affiliateLinksAdminApi.list();
 				if (result.ok) {
-					links = result.data ?? [];
+					links = (Array.isArray(result.data) ? result.data : []) as AffiliateLink[];
 					if (searchQuery) {
 						const q = searchQuery.toLowerCase();
-						links = links.filter((l: any) => l.code?.toLowerCase().includes(q) || l.url?.toLowerCase().includes(q) || l.user_id?.toLowerCase().includes(q));
+						links = links.filter((l) => l.code?.toLowerCase().includes(q) || l.destination_url?.toLowerCase().includes(q) || l.user_id?.toLowerCase().includes(q));
 					}
 				} else {
 					error = result.error;
 				}
 			} else {
-				const result = await api<CommissionRates>('/admin/affiliate-program/commission-rates');
+				const result = await affiliateProgramAdminApi.commissionRates();
 				if (result.ok) {
-					rates = result.data;
+					const data = result.data as any;
+					rates = data?.rates ?? rates;
 				} else {
 					error = result.error;
 				}
@@ -282,10 +292,7 @@
 
 	async function updateMemberStatus(userId: string, status: string) {
 		try {
-			const result = await api(`/admin/affiliate-program/members/${userId}`, {
-				method: 'PATCH',
-				body: { status }
-			});
+			const result = await affiliateProgramAdminApi.updateMemberStatus(userId, { status });
 			if (result.ok) {
 				load();
 			} else {
@@ -299,10 +306,7 @@
 	async function saveRates() {
 		saving = true;
 		try {
-			const result = await api('/admin/affiliate-program/commission-rates', {
-				method: 'PATCH',
-				body: rates
-			});
+			const result = await affiliateProgramAdminApi.updateCommissionRates(rates);
 			if (!result.ok) {
 				error = result.error ?? t('common.error');
 			}
@@ -595,7 +599,7 @@
 <Modal bind:open={showMemberStatusConfirm} title={t('common.confirm', 'Confirm')}>
 	{#if memberStatusTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
-			{t('affiliate.change_member_status_confirm', 'Change status of')} <strong>{memberStatusTarget.member.username}</strong> {t('affiliate.to', 'to')} <strong>{memberStatusTarget.status}</strong>?
+			{t('affiliate.change_member_status_confirm', 'Change status of')} <strong class="font-mono text-xs">{memberStatusTarget.member.user_id}</strong> {t('affiliate.to', 'to')} <strong>{memberStatusTarget.status}</strong>?
 		</p>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
