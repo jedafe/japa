@@ -79,6 +79,8 @@ const (
 	TypeAffiliateRecordClick            = "affiliate:record_click"
 	TypeAffiliateCreditCommission       = "affiliate:credit_commission"
 	TypeAffiliateExpireCheck            = "affiliate:expire_check"
+	TypeAffiliateCreditAuthorCommission = "affiliate:credit_author_commission"
+	TypeContentScanAffiliateLinks       = "content:scan_affiliate_links"
 	TypeRedirectRecordHit               = "redirect:record_hit"
 
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
@@ -152,6 +154,8 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeAffiliateRecordClick, HandleAffiliateRecordClick)
 	mux.HandleFunc(TypeAffiliateCreditCommission, HandleAffiliateCreditCommission)
 	mux.HandleFunc(TypeAffiliateExpireCheck, HandleAffiliateExpireCheck)
+	mux.HandleFunc(TypeAffiliateCreditAuthorCommission, HandleAffiliateCreditAuthorCommission)
+	mux.HandleFunc(TypeContentScanAffiliateLinks, HandleContentScanAffiliateLinks)
 	mux.HandleFunc(TypeRedirectRecordHit, HandleRedirectRecordHit)
 	mux.HandleFunc(TypeTenantCleanupData, HandleTenantCleanupData)
 
