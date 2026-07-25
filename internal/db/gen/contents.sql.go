@@ -1466,19 +1466,22 @@ func (q *Queries) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([
 }
 
 const listPublishedContentByAuthor = `-- name: ListPublishedContentByAuthor :many
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
-FROM contents
-WHERE tenant_id = $1
-  AND author_id = $2
-  AND status = 'published'
-  AND visibility = 'public'
-  AND deleted_at IS NULL
-  AND auto_hidden = false
-ORDER BY published_at DESC NULLS LAST, created_at DESC, id DESC
+SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
+       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at,
+       o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id
+FROM contents c
+LEFT JOIN organizations o ON o.id = c.organization_id AND o.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
 LIMIT $4 OFFSET $3
 `
 
@@ -1493,6 +1496,7 @@ type ListPublishedContentByAuthorRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
 	Title           string             `json:"title"`
@@ -1518,11 +1522,14 @@ type ListPublishedContentByAuthorRow struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	OrgName         *string            `json:"org_name"`
+	OrgSlug         *string            `json:"org_slug"`
+	OrgLogoMediaID  pgtype.UUID        `json:"org_logo_media_id"`
 }
 
 // Public profile Posts tab (GET /users/{id}/content): a user's PUBLISHED PUBLIC
 // content, newest first, paginated. author_id is the user id (FK users.id).
-// Public-safe: excludes draft/private, soft-deleted, and auto-hidden content.
+// LEFT JOINs organizations so dual-surface posts carry the "on behalf of" badge.
 func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPublishedContentByAuthorParams) ([]ListPublishedContentByAuthorRow, error) {
 	rows, err := q.db.Query(ctx, listPublishedContentByAuthor,
 		arg.TenantID,
@@ -1541,6 +1548,7 @@ func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPubl
 			&i.ID,
 			&i.TenantID,
 			&i.AuthorID,
+			&i.OrganizationID,
 			&i.SpaceID,
 			&i.ContentType,
 			&i.Title,
@@ -1566,6 +1574,9 @@ func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPubl
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OrgName,
+			&i.OrgSlug,
+			&i.OrgLogoMediaID,
 		); err != nil {
 			return nil, err
 		}
