@@ -69,7 +69,39 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": items,
+		"data": toReplyCards(items),
 		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},
 	})
+}
+
+// ReplyCard is the lean public shape for the profile Replies tab: the reply plus
+// the parent content's title/slug for context. It omits the internal tenant_id
+// the raw gen row carries, so a public endpoint never echoes it.
+type ReplyCard struct {
+	ID           pgtype.UUID        `json:"id"`
+	ContentID    pgtype.UUID        `json:"content_id"`
+	ParentID     pgtype.UUID        `json:"parent_id"`
+	Body         string             `json:"body"`
+	VoteScore    int32              `json:"vote_score"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ContentTitle string             `json:"content_title"`
+	ContentSlug  string             `json:"content_slug"`
+}
+
+func toReplyCards(items []gen.ListCommentsByAuthorRow) []ReplyCard {
+	cards := make([]ReplyCard, len(items))
+	for i := range items {
+		c := &items[i]
+		cards[i] = ReplyCard{
+			ID:           c.ID,
+			ContentID:    c.ContentID,
+			ParentID:     c.ParentID,
+			Body:         c.Body,
+			VoteScore:    c.VoteScore,
+			CreatedAt:    c.CreatedAt,
+			ContentTitle: c.ContentTitle,
+			ContentSlug:  c.ContentSlug,
+		}
+	}
+	return cards
 }
