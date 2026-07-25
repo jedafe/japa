@@ -230,16 +230,17 @@ func (q *Queries) DeleteLearningTrack(ctx context.Context, arg DeleteLearningTra
 const getEnrollmentByUserAndTrack = `-- name: GetEnrollmentByUserAndTrack :one
 SELECT id, tenant_id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
 FROM enrollments
-WHERE user_id = $1 AND track_id = $2
+WHERE user_id = $1 AND track_id = $2 AND tenant_id = $3
 `
 
 type GetEnrollmentByUserAndTrackParams struct {
-	UserID  pgtype.UUID `json:"user_id"`
-	TrackID pgtype.UUID `json:"track_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	TrackID  pgtype.UUID `json:"track_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) GetEnrollmentByUserAndTrack(ctx context.Context, arg GetEnrollmentByUserAndTrackParams) (Enrollment, error) {
-	row := q.db.QueryRow(ctx, getEnrollmentByUserAndTrack, arg.UserID, arg.TrackID)
+	row := q.db.QueryRow(ctx, getEnrollmentByUserAndTrack, arg.UserID, arg.TrackID, arg.TenantID)
 	var i Enrollment
 	err := row.Scan(
 		&i.ID,
@@ -626,6 +627,109 @@ func (q *Queries) IssueLearningCertificate(ctx context.Context, arg IssueLearnin
 		&i.IssuedAt,
 	)
 	return i, err
+}
+
+const listAllLearningLessons = `-- name: ListAllLearningLessons :many
+SELECT ll.id, ll.tenant_id, ll.module_id, lm.title AS module_title, ll.title, ll.slug,
+       ll.lesson_type, ll.content, ll.media_id, ll.duration_minutes, ll.sort_order,
+       ll.is_published, ll.created_at, ll.updated_at
+FROM learning_lessons ll
+LEFT JOIN learning_modules lm ON lm.id = ll.module_id AND lm.tenant_id = ll.tenant_id
+WHERE ll.tenant_id = $1
+ORDER BY ll.sort_order ASC, ll.created_at DESC
+`
+
+type ListAllLearningLessonsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	ModuleID        pgtype.UUID        `json:"module_id"`
+	ModuleTitle     *string            `json:"module_title"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	LessonType      string             `json:"lesson_type"`
+	Content         *string            `json:"content"`
+	MediaID         pgtype.UUID        `json:"media_id"`
+	DurationMinutes *int32             `json:"duration_minutes"`
+	SortOrder       int32              `json:"sort_order"`
+	IsPublished     bool               `json:"is_published"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListAllLearningLessons(ctx context.Context, tenantID pgtype.UUID) ([]ListAllLearningLessonsRow, error) {
+	rows, err := q.db.Query(ctx, listAllLearningLessons, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllLearningLessonsRow
+	for rows.Next() {
+		var i ListAllLearningLessonsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ModuleID,
+			&i.ModuleTitle,
+			&i.Title,
+			&i.Slug,
+			&i.LessonType,
+			&i.Content,
+			&i.MediaID,
+			&i.DurationMinutes,
+			&i.SortOrder,
+			&i.IsPublished,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllLearningModules = `-- name: ListAllLearningModules :many
+
+SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
+FROM learning_modules
+WHERE tenant_id = $1
+ORDER BY sort_order ASC, created_at DESC
+`
+
+// =====================
+// Admin List Operations
+// =====================
+func (q *Queries) ListAllLearningModules(ctx context.Context, tenantID pgtype.UUID) ([]LearningModule, error) {
+	rows, err := q.db.Query(ctx, listAllLearningModules, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LearningModule
+	for rows.Next() {
+		var i LearningModule
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TrackID,
+			&i.Title,
+			&i.Slug,
+			&i.Description,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAllLearningTracks = `-- name: ListAllLearningTracks :many

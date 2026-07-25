@@ -196,10 +196,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	oauthStore := auth.NewOAuthStore(database)
 	authQueries := gen.New(database.Writer)
 	oauthHandlers := &auth.OAuthHandlers{
-		Config:  oauthCfg,
-		Store:   oauthStore,
-		Queries: authQueries,
-		KeyRot:  kr,
+		Config:          oauthCfg,
+		Store:           oauthStore,
+		Queries:         authQueries,
+		KeyRot:          kr,
+		FrontendBaseURL: cfg.SiteURL,
+		CookieDomain:    cfg.CookieDomain,
+		SecureCookies:   cfg.IsProduction(),
 	}
 
 	// Feature flag checker
@@ -318,6 +321,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	notificationService.SetAsynqClient(asynqClient)
 	authHandlers.AsynqClient = asynqClient
 	authHandlers.Settings = settingsService
+	oauthHandlers.Settings = settingsService
 	kr.Settings = settingsService
 	contentHandlers.AsynqClient = asynqClient
 	// Wire password policy from system_settings (BE-054).

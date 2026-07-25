@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
-	import { api, walletApi } from '$lib/api';
+	import { walletApi, userManagementApi } from '$lib/api';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
@@ -8,7 +8,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Select } from '$lib/components/ui/select';
-	import { Wallet, DollarSign, Download, Plus, Settings, Trash2 } from 'lucide-svelte';
+	import { Wallet, DollarSign, Download, Plus, Settings, Trash2, X } from 'lucide-svelte';
+	import RuleActions from './rule-actions.svelte';
 
 	type ActivityRule = {
 		id: string;
@@ -37,17 +38,23 @@
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 	let showRuleModal = $state(false);
+	let editingRule = $state<ActivityRule | null>(null);
 	let ruleForm = $state({ activity_key: '', point_value: 1, description: '', is_enabled: true });
 	let ruleSaving = $state(false);
 
 	let settings = $state<WalletSettings>({ points_to_credits_rate: 100, daily_earning_cap: 1000, enable_earning: true });
 	let settingsLoading = $state(true);
 	let settingsSaving = $state(false);
+	let settingsError = $state('');
 
 	let userSearch = $state('');
+	let userSuggestions = $state<Array<{ id: string; username: string; email: string }>>([]);
+	let userSearchLoading = $state(false);
+	let userSearchTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+	let showSuggestions = $state(false);
 	let userBalance = $state<UserBalance | null>(null);
 	let balanceLoading = $state(false);
-	let adjustForm = $state({ amount: 0, reason: '', type: 'points' as 'points' | 'credits' });
+	let adjustForm = $state({ amount: 0, reason: '', ledger_type: 'points' as 'points' | 'credits' });
 	let adjustSaving = $state(false);
 
 	let errorMessage = $state('');
@@ -55,15 +62,29 @@
 	let activeTab = $state('rules');
 
 	const tabs = [
-		{ value: 'rules', label: t('app.wallet.tab_activity_rules', 'Activity Rules'), icon: Settings },
-		{ value: 'settings', label: t('app.wallet.tab_wallet_settings', 'Wallet Settings'), icon: Wallet },
-		{ value: 'adjust', label: t('app.wallet.tab_balance_adjustment', 'Balance Adjustment'), icon: DollarSign }
+		{ value: 'rules', label: t('app.wallet.activity_point_rules', 'Activity Rules'), icon: Settings },
+		{ value: 'settings', label: t('app.wallet.wallet_settings', 'Wallet Settings'), icon: Wallet },
+		{ value: 'adjust', label: t('app.wallet.user_balance_adjustment', 'Balance Adjustment'), icon: DollarSign }
 	];
 
 	const adjTypeOptions = [
-		{ value: 'points', label: t('app.wallet.type_points', 'Points') },
-		{ value: 'credits', label: t('app.wallet.type_credits', 'Credits') }
+		{ value: 'points', label: t('app.wallet.points', 'Points') },
+		{ value: 'credits', label: t('app.wallet.credits', 'Credits') }
 	];
+
+	// Predefined activity keys from Section 28 / internal/wallet/wallet.go.
+	const activityKeyOptions = [
+		{ value: 'post_created', label: 'post_created — Creating a post' },
+		{ value: 'comment_created', label: 'comment_created — Creating a comment' },
+		{ value: 'reaction_added', label: 'reaction_added — Adding a reaction' },
+		{ value: 'content_flagged_removed', label: 'content_flagged_removed — Content flagged/removed' },
+		{ value: 'spam_detected', label: 'spam_detected — Spam detected' },
+		{ value: 'referral_completed', label: 'referral_completed — Referral completed' },
+		{ value: 'daily_login', label: 'daily_login — Daily login' },
+		{ value: 'profile_completed', label: 'profile_completed — Profile completed' },
+		{ value: '_custom', label: '— Custom key —' }
+	];
+	let activityKeyMode = $state<'select' | 'custom'>('select');
 
 	const ruleColumns = [
 		{ key: 'activity_key', label: t('app.wallet.col_activity_key', 'Activity Key'), sortable: true,
@@ -77,8 +98,16 @@
 		},
 		{ key: 'is_enabled', label: t('app.wallet.col_status', 'Status'),
 			render: (_: any, row: any) => {
-				const label = row.is_enabled ? 'Active' : 'Inactive';
+				const label = row.is_enabled ? t('app.wallet.active', 'Active') : t('common.inactive', 'Inactive');
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_enabled ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${label}</span>`;
+			}
+		},
+		{ key: '_actions', label: t('common.actions', 'Actions'),
+			component: RuleActions,
+			componentProps: {
+				onEdit: (row: any) => openEditRuleModal(row),
+				onToggle: (row: any) => toggleRule(row),
+				onDelete: (row: any) => deleteRule(row)
 			}
 		}
 	];
@@ -87,8 +116,8 @@
 		rulesLoading = true;
 		const result = await walletApi.getRules();
 		if (result.ok) {
-			const data = result.data as { items: ActivityRule[] };
-			let items = data.items ?? (Array.isArray(result.data) ? result.data as ActivityRule[] : []);
+			const data = result.data;
+			let items: ActivityRule[] = Array.isArray(data) ? data as ActivityRule[] : (data as any)?.items ?? [];
 			if (searchQuery) {
 				const q = searchQuery.toLowerCase();
 				items = items.filter((r: any) => r.activity_key?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q));
@@ -100,26 +129,71 @@
 
 	async function loadSettings() {
 		settingsLoading = true;
+		settingsError = '';
 		const result = await walletApi.getSettings();
 		if (result.ok) {
 			const data = result.data as WalletSettings;
 			if (data) settings = data;
+		} else {
+			// 404 = no settings row yet — use defaults (not an error to the user).
+			if (!result.error.includes('not_found')) {
+				settingsError = result.error;
+			}
 		}
 		settingsLoading = false;
+	}
+
+	function openAddRuleModal() {
+		editingRule = null;
+		ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true };
+		activityKeyMode = 'select';
+		showRuleModal = true;
+	}
+
+	function openEditRuleModal(rule: ActivityRule) {
+		editingRule = rule;
+		const isKnown = activityKeyOptions.some(o => o.value === rule.activity_key && o.value !== '_custom');
+		activityKeyMode = isKnown ? 'select' : 'custom';
+		ruleForm = {
+			activity_key: rule.activity_key,
+			point_value: rule.point_value,
+			description: rule.description || '',
+			is_enabled: rule.is_enabled
+		};
+		showRuleModal = true;
+	}
+
+	function handleActivityKeySelect(val: string) {
+		if (val === '_custom') {
+			activityKeyMode = 'custom';
+			ruleForm.activity_key = '';
+		} else {
+			ruleForm.activity_key = val;
+		}
 	}
 
 	async function submitRule() {
 		if (!ruleForm.activity_key.trim()) return;
 		ruleSaving = true;
 		errorMessage = '';
-		const result = await walletApi.createRule({
-			activity_key: ruleForm.activity_key.trim(),
-			point_value: ruleForm.point_value,
-			description: ruleForm.description.trim(),
-			is_enabled: ruleForm.is_enabled
-		});
+
+		const result = editingRule
+			? await walletApi.updateRule(editingRule.id, {
+				activity_key: ruleForm.activity_key.trim(),
+				point_value: ruleForm.point_value,
+				description: ruleForm.description.trim(),
+				is_enabled: ruleForm.is_enabled
+			})
+			: await walletApi.createRule({
+				activity_key: ruleForm.activity_key.trim(),
+				point_value: ruleForm.point_value,
+				description: ruleForm.description.trim(),
+				is_enabled: ruleForm.is_enabled
+			});
+
 		if (result.ok) {
 			showRuleModal = false;
+			editingRule = null;
 			ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true };
 			loadRules();
 		} else {
@@ -128,18 +202,38 @@
 		ruleSaving = false;
 	}
 
+	async function toggleRule(rule: ActivityRule) {
+		errorMessage = '';
+		const result = await walletApi.toggleRule(rule.id);
+		if (result.ok) {
+			loadRules();
+		} else {
+			errorMessage = result.error;
+		}
+	}
+
+	async function deleteRule(rule: ActivityRule) {
+		errorMessage = '';
+		const result = await walletApi.deleteRule(rule.id);
+		if (result.ok) {
+			loadRules();
+		} else {
+			errorMessage = result.error;
+		}
+	}
+
 	async function bulkDelete() {
 		if (selectedIds.size === 0) return;
 		bulkDeleting = true;
 		errorMessage = '';
 		try {
 			for (const id of selectedIds) {
-				await api(`/admin/wallet/rules/${id}`, { method: 'DELETE' });
+				await walletApi.deleteRule(id);
 			}
 			selectedIds = new Set();
 			loadRules();
 		} catch {
-			errorMessage = 'Failed to delete selected rules';
+			errorMessage = t('app.wallet.error_delete_rules', 'Failed to delete selected rules');
 		}
 		bulkDeleting = false;
 	}
@@ -150,24 +244,93 @@
 		successMessage = '';
 		const result = await walletApi.updateSettings(settings);
 		if (result.ok) {
-			successMessage = 'Settings saved successfully';
+			successMessage = t('app.wallet.settings_saved', 'Settings saved successfully');
 		} else {
 			errorMessage = result.error;
 		}
 		settingsSaving = false;
 	}
 
-	async function searchUser() {
-		if (!userSearch.trim()) return;
+	// Debounced user search for autocomplete suggestions.
+	function onUserSearchInput() {
+		if (userSearchTimer) clearTimeout(userSearchTimer);
+		const q = userSearch.trim();
+		if (q.length < 2) {
+			userSuggestions = [];
+			showSuggestions = false;
+			return;
+		}
+		userSearchTimer = setTimeout(async () => {
+			userSearchLoading = true;
+			const result = await userManagementApi.list(`search=${encodeURIComponent(q)}&page_size=5`);
+			if (result.ok) {
+				const data = result.data as any;
+				userSuggestions = (data?.items ?? []).map((u: any) => ({
+					id: u.id ?? u.user_id ?? '',
+					username: u.username ?? '',
+					email: u.email ?? ''
+				}));
+				showSuggestions = userSuggestions.length > 0;
+			}
+			userSearchLoading = false;
+		}, 350);
+	}
+
+	function selectSuggestion(user: { id: string; username: string }) {
+		userSearch = user.username;
+		showSuggestions = false;
+		userSuggestions = [];
+		fetchBalance(user.id);
+	}
+
+	function clearUserSearch() {
+		userSearch = '';
+		userBalance = null;
+		userSuggestions = [];
+		showSuggestions = false;
+	}
+
+	async function fetchBalance(userId: string) {
 		balanceLoading = true;
 		userBalance = null;
 		errorMessage = '';
-		const result = await walletApi.getUserBalance(userSearch.trim());
+		const result = await walletApi.getUserBalance(userId);
 		if (result.ok) {
 			userBalance = result.data as UserBalance;
 		} else {
 			errorMessage = result.error;
 		}
+		balanceLoading = false;
+	}
+
+	// Resolve a search term to a user ID, then fetch balance.
+	// Accepts a UUID (direct) or a username/email (looked up via /admin/users).
+	async function searchUser() {
+		const q = userSearch.trim();
+		if (!q) return;
+
+		// If input looks like a UUID (contains hyphens and is long enough), try direct.
+		if (q.length >= 36 && q.includes('-')) {
+			fetchBalance(q);
+			return;
+		}
+
+		// Otherwise resolve username/email → UUID via the admin users list.
+		balanceLoading = true;
+		userBalance = null;
+		errorMessage = '';
+		showSuggestions = false;
+
+		const result = await userManagementApi.list(`search=${encodeURIComponent(q)}&page_size=1`);
+		if (result.ok) {
+			const data = result.data as any;
+			const items = data?.items ?? [];
+			if (items.length > 0) {
+				fetchBalance(items[0].id);
+				return;
+			}
+		}
+		errorMessage = t('app.wallet.user_not_found', 'User not found');
 		balanceLoading = false;
 	}
 
@@ -180,11 +343,13 @@
 			user_id: userBalance.user_id,
 			amount: adjustForm.amount,
 			reason: adjustForm.reason.trim(),
-			type: adjustForm.type
+			ledger_type: adjustForm.ledger_type
 		});
 		if (result.ok) {
-			successMessage = `Adjusted ${adjustForm.type} by ${adjustForm.amount}`;
-			adjustForm = { amount: 0, reason: '', type: 'points' };
+			successMessage = t('app.wallet.adjust_success', 'Adjusted {type} by {amount}')
+				.replace('{type}', adjustForm.ledger_type)
+				.replace('{amount}', String(adjustForm.amount));
+			adjustForm = { amount: 0, reason: '', ledger_type: 'points' };
 			searchUser();
 		} else {
 			errorMessage = result.error;
@@ -228,8 +393,8 @@
 		<Card>
 			<CardContent class="p-6">
 				<div class="mb-4 flex items-center justify-between">
-				<h3 class="text-lg font-semibold text-foreground">{t('app.wallet.activity_rules', 'Activity Point Rules')}</h3>
-				<Button onclick={() => { ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true }; showRuleModal = true; }}>
+				<h3 class="text-lg font-semibold text-foreground">{t('app.wallet.activity_point_rules', 'Activity Point Rules')}</h3>
+				<Button onclick={openAddRuleModal}>
 					<Plus class="h-4 w-4 mr-2" />
 					{t('app.wallet.add_rule', 'Add Rule')}
 				</Button>
@@ -251,13 +416,16 @@
 	{:else if activeTab === 'settings'}
 		<Card>
 			<CardContent class="p-6">
-			<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.settings', 'Wallet Settings')}</h3>
+			<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.wallet_settings', 'Wallet Settings')}</h3>
+			{#if settingsError}
+				<div class="mb-4 rounded-lg border border-danger bg-danger-50 px-4 py-3 text-sm text-danger-700">{settingsError}</div>
+			{/if}
 			{#if settingsLoading}
 				<p class="py-8 text-center text-sm text-muted">{t('common.loading', 'Loading...')}</p>
 				{:else}
 					<div class="max-w-md space-y-4">
 						<div>
-							<label for="ws-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.points_to_credits_rate', 'Points to Credits Rate')}</label>
+							<label for="ws-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.points_to_credit_ratio_2', 'Points to Credit Ratio')}</label>
 							<input id="ws-rate" type="number" min="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={settings.points_to_credits_rate} />
 						</div>
 						<div>
@@ -280,18 +448,36 @@
 	{:else if activeTab === 'adjust'}
 		<Card>
 			<CardContent class="p-6">
-			<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.adjust_balance', 'User Balance Adjustment')}</h3>
-			<div class="mb-4 flex gap-2">
-				<input type="text" class="flex-1 rounded-lg border bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.search_placeholder', 'Search by username or ID...')} bind:value={userSearch} onkeydown={(e) => { if (e.key === 'Enter') searchUser(); }} />
-				<Button onclick={searchUser}>{t('common.search', 'Search')}</Button>
+			<h3 class="mb-4 text-lg font-semibold text-foreground">{t('app.wallet.user_balance_adjustment', 'User Balance Adjustment')}</h3>
+			<div class="relative mb-4 flex gap-2">
+				<div class="relative flex-1">
+					<input type="text" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.search_placeholder', 'Search by username or UUID...')} bind:value={userSearch} oninput={onUserSearchInput} onfocus={() => { if (userSuggestions.length > 0) showSuggestions = true; }} onblur={() => { setTimeout(() => showSuggestions = false, 200); }} onkeydown={(e) => { if (e.key === 'Enter') { showSuggestions = false; searchUser(); } }} />
+					{#if userSearch && !userSearchLoading}
+						<button class="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground" onclick={clearUserSearch} type="button"><X class="h-4 w-4" /></button>
+					{/if}
+					{#if userSearchLoading}
+						<span class="absolute right-8 top-1/2 -translate-y-1/2 text-xs text-muted">{t('common.searching', 'Searching...')}</span>
+					{/if}
+					{#if showSuggestions && userSuggestions.length > 0}
+						<div class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border bg-surface shadow-lg">
+							{#each userSuggestions as user}
+								<button type="button" class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent" onmousedown={() => selectSuggestion(user)}>
+									<span class="font-medium text-foreground">{user.username}</span>
+									<span class="text-xs text-muted">{user.email}</span>
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+				<Button onclick={searchUser} disabled={balanceLoading}>{balanceLoading ? t('common.searching', 'Searching...') : t('common.search', 'Search')}</Button>
 			</div>
 			{#if balanceLoading}
 				<p class="py-8 text-center text-sm text-muted">{t('common.searching', 'Searching...')}</p>
 				{:else if userBalance}
 					<div class="mb-4 grid gap-3 sm:grid-cols-3">
-						<div class="rounded-lg border bg-surface p-3"><p class="text-xs font-medium text-muted">User</p><p class="text-sm font-semibold">{userBalance.username}</p></div>
-						<div class="rounded-lg border bg-surface p-3"><p class="text-xs font-medium text-muted">Points</p><p class="text-lg font-bold text-primary-600">{userBalance.points}</p></div>
-						<div class="rounded-lg border bg-surface p-3"><p class="text-xs font-medium text-muted">Credits</p><p class="text-lg font-bold text-success-600">{userBalance.credits}</p></div>
+						<div class="rounded-lg border bg-surface p-3"><p class="text-xs font-medium text-muted">{t('app.wallet.user', 'User')}</p><p class="text-sm font-semibold">{userBalance.username}</p></div>
+						<div class="rounded-lg border bg-surface p-3"><p class="text-xs font-medium text-muted">{t('app.wallet.points', 'Points')}</p><p class="text-lg font-bold text-primary-600">{userBalance.points}</p></div>
+						<div class="rounded-lg border bg-surface p-3"><p class="text-xs font-medium text-muted">{t('app.wallet.credits', 'Credits')}</p><p class="text-lg font-bold text-success-600">{userBalance.credits}</p></div>
 					</div>
 					<div class="grid gap-3 sm:grid-cols-3">
 						<div>
@@ -300,7 +486,7 @@
 						</div>
 						<div>
 							<span class="mb-1 block text-sm font-medium">{t('app.wallet.type', 'Type')}</span>
-							<Select options={adjTypeOptions} bind:value={adjustForm.type} />
+							<Select options={adjTypeOptions} bind:value={adjustForm.ledger_type} />
 						</div>
 						<div>
 						<label for="adj-reason" class="mb-1 block text-sm font-medium">{t('app.wallet.reason', 'Reason')}</label>
@@ -318,11 +504,20 @@
 	{/if}
 </div>
 
-<Modal bind:open={showRuleModal} title={t('app.wallet.modal_add_rule', 'Add Activity Rule')}>
+<Modal bind:open={showRuleModal} title={editingRule ? t('app.wallet.edit_rule', 'Edit Activity Rule') : t('app.wallet.modal_add_rule', 'Add Activity Rule')}>
 	<div class="space-y-4">
 		<div>
 			<label for="rule-key" class="mb-1 block text-sm font-medium">{t('app.wallet.activity_key', 'Activity Key')}</label>
-			<input id="rule-key" type="text" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" placeholder="post.created" bind:value={ruleForm.activity_key} />
+			{#if activityKeyMode === 'select'}
+				<Select options={activityKeyOptions} value={ruleForm.activity_key} onchange={handleActivityKeySelect} placeholder="Select an activity key..." />
+			{:else}
+				<div class="flex gap-2">
+					<input id="rule-key" type="text" class="flex-1 rounded-lg border bg-surface px-3 py-2 text-sm font-mono" placeholder="custom_activity_key" bind:value={ruleForm.activity_key} />
+					<Button variant="outline" size="sm" onclick={() => { activityKeyMode = 'select'; ruleForm.activity_key = ''; }}>
+						<X class="h-4 w-4" />
+					</Button>
+				</div>
+			{/if}
 		</div>
 		<div>
 			<label for="rule-points" class="mb-1 block text-sm font-medium">{t('app.wallet.points', 'Points')}</label>
@@ -338,7 +533,7 @@
 		</div>
 		<div class="flex justify-end gap-2 pt-2">
 			<Button variant="outline" onclick={() => showRuleModal = false}>{t('common.cancel', 'Cancel')}</Button>
-			<Button onclick={submitRule} disabled={ruleSaving}>{ruleSaving ? t('common.saving', 'Saving...') : t('app.wallet.add_rule', 'Add Rule')}</Button>
+			<Button onclick={submitRule} disabled={ruleSaving}>{ruleSaving ? t('common.saving', 'Saving...') : editingRule ? t('common.save', 'Save') : t('app.wallet.add_rule', 'Add Rule')}</Button>
 		</div>
 	</div>
 </Modal>

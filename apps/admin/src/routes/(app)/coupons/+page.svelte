@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
@@ -23,11 +24,11 @@
 		code: string;
 		discount_type: string;
 		discount_value: number;
-		is_active: boolean;
+		status: string;
 		valid_from?: string;
-		valid_until?: string;
-		usage_limit?: number;
-		used_count: number;
+		expires_at?: string;
+		total_clicks: number;
+		total_copies: number;
 		created_at: string;
 	};
 
@@ -70,21 +71,24 @@
 			key: "discount_value",
 			label: t("coupons.discount", "Discount"),
 			sortable: true,
-			render: (v: number, row: Coupon) => row.discount_type === "percentage" ? `${v}%` : `${v} credits`
+			render: (v: number, row: Coupon) => {
+				if (v == null) return '—';
+				return row.discount_type === "percent" ? `${v}%` : `${v} credits`;
+			}
 		},
 		{
-			key: "used_count",
+			key: "total_clicks",
 			label: t("coupons.used", "Used"),
 			sortable: true,
-			render: (v: number, row: Coupon) => `${v ?? 0}${row.usage_limit ? ` / ${row.usage_limit}` : ""}`
+			render: (v: number, row: Coupon) => `${v ?? 0}`
 		},
 		{
-			key: "valid_until",
+			key: "expires_at",
 			label: t("coupons.expires", "Expires"),
 			sortable: true,
 			render: (v: string) => v ? new Date(v).toLocaleDateString() : t("coupons.never", "Never")
 		},
-		{ key: "is_active", label: t("common.status", "Status"), sortable: true },
+		{ key: "status", label: t("common.status", "Status"), sortable: true },
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
 			componentSnippet: CouponActionsCell
 		}
@@ -124,12 +128,12 @@
 		modalMode = "edit";
 		editingCoupon = coupon;
 		code = coupon.code;
-		discountType = coupon.discount_type === "percentage" ? "percent" : coupon.discount_type || "percent";
+		discountType = coupon.discount_type || "percent";
 		discountValue = String(coupon.discount_value);
 		validFrom = isoTimestampToDateInput(coupon.valid_from);
-		validUntil = isoTimestampToDateInput(coupon.valid_until);
-		usageLimit = coupon.usage_limit ? String(coupon.usage_limit) : "";
-		isActive = coupon.is_active;
+		validUntil = isoTimestampToDateInput(coupon.expires_at);
+		usageLimit = "";
+		isActive = coupon.status === "active";
 		showModal = true;
 	}
 
@@ -144,7 +148,7 @@
 				coupon_type: "external",
 				discount_type: discountType,
 				discount_value: Number(discountValue),
-				status: isActive ? "active" : "inactive"
+				status: isActive ? "active" : "suspended"
 			};
 			if (validFrom) body.valid_from = dateInputToStartOfDayISO(validFrom);
 			if (validUntil) body.valid_until = dateInputToEndOfDayISO(validUntil);
@@ -202,6 +206,10 @@
 		}
 		bulkDeleting = false;
 	}
+
+	onMount(() => {
+		loadCoupons();
+	});
 
 </script>
 

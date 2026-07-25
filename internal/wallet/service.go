@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -438,6 +440,11 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID 
 	// New balance
 	newBalance := currentBalance + input.Amount
 
+	// Non-negative balance lock (§1.3, Checklist B.10).
+	if newBalance < 0 {
+		return 0, fmt.Errorf("%w: current=%d, adjustment=%d", errpkg.ErrInsufficientBalance, currentBalance, input.Amount)
+	}
+
 	// Create idempotency key
 	idempotencyKey := fmt.Sprintf("admin_adjust:%x:%s:%d", targetUserID.Bytes, input.Reason, input.Amount)
 
@@ -467,8 +474,23 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID 
 }
 
 // GetWalletSettings returns wallet settings for a tenant.
+// If no settings row exists yet, returns sensible defaults instead of an error.
 func (s *Service) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (gen.WalletSetting, error) {
-	return s.store.getWalletSettings(ctx, tenantID)
+	settings, err := s.store.getWalletSettings(ctx, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// No settings row yet — return defaults.
+			rate := int32(DefaultPointsToCreditsRate)
+			return gen.WalletSetting{
+				TenantID:            tenantID,
+				PointsToCreditsRate: &rate,
+				DailyEarningCap:     1000,
+				EnableEarning:       true,
+			}, nil
+		}
+		return gen.WalletSetting{}, err
+	}
+	return settings, nil
 }
 
 // UpdateWalletSettingsInput holds parameters for updating wallet settings.
@@ -542,6 +564,24 @@ func (s *Service) GetLedgerEntry(ctx context.Context, id, tenantID pgtype.UUID) 
 // GetUserBalance returns the balance for any user (admin operation).
 func (s *Service) GetUserBalance(ctx context.Context, tenantID, userID pgtype.UUID) (points, credits int64, err error) {
 	return s.GetBalance(ctx, tenantID, userID)
+}
+
+// GetUserBalanceWithInfo returns balance plus basic user info for admin display.
+func (s *Service) GetUserBalanceWithInfo(ctx context.Context, tenantID, userID pgtype.UUID) (username string, points, credits int64, err error) {
+	points, credits, err = s.GetBalance(ctx, tenantID, userID)
+	if err != nil {
+		return "", 0, 0, err
+	}
+
+	user, err := s.store.read.GetUserByID(ctx, gen.GetUserByIDParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return "", 0, 0, fmt.Errorf("looking up user: %w", err)
+	}
+
+	return user.Username, points, credits, nil
 }
 
 // ---------------------------------------------------------------------------

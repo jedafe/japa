@@ -190,6 +190,22 @@ func (s *Store) DeleteTrack(ctx context.Context, tenantID, id pgtype.UUID) error
 	return nil
 }
 
+// PublishTrack sets the published status of a learning track.
+func (s *Store) PublishTrack(ctx context.Context, tenantID, id pgtype.UUID, isPublished bool) error {
+	tag, err := s.db.Writer.Exec(ctx, `
+		UPDATE learning_tracks
+		SET is_published = $1, updated_at = now()
+		WHERE tenant_id = $2 AND id = $3
+	`, isPublished, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("publish track: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // ListAllTracks lists all tracks including drafts.
 func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Track, error) {
 	rows, err := s.read.ListAllLearningTracks(ctx, tenantID)
@@ -351,6 +367,38 @@ func (s *Store) DeleteModule(ctx context.Context, tenantID, id pgtype.UUID) erro
 	return nil
 }
 
+// ListAllModules returns all modules for a tenant (admin view).
+func (s *Store) ListAllModules(ctx context.Context, tenantID pgtype.UUID) ([]Module, error) {
+	rows, err := s.read.ListAllLearningModules(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list all modules: %w", err)
+	}
+
+	modules := make([]Module, 0, len(rows))
+
+	for _, r := range rows {
+		modules = append(modules, moduleFromRow(r))
+	}
+
+	return modules, nil
+}
+
+// ListAllLessons returns all lessons for a tenant (admin view).
+func (s *Store) ListAllLessons(ctx context.Context, tenantID pgtype.UUID) ([]Lesson, error) {
+	rows, err := s.read.ListAllLearningLessons(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list all lessons: %w", err)
+	}
+
+	lessons := make([]Lesson, 0, len(rows))
+
+	for _, r := range rows {
+		lessons = append(lessons, lessonFromListRow(r))
+	}
+
+	return lessons, nil
+}
+
 // ---------------------------------------------------------------------------
 // Lesson operations
 // ---------------------------------------------------------------------------
@@ -360,6 +408,7 @@ type Lesson struct {
 	ID              pgtype.UUID  `json:"id"`
 	TenantID        pgtype.UUID  `json:"tenant_id"`
 	ModuleID        pgtype.UUID  `json:"module_id"`
+	ModuleTitle     *string      `json:"module_title,omitempty"`
 	Title           string       `json:"title"`
 	Slug            string       `json:"slug"`
 	LessonType      string       `json:"lesson_type"`
@@ -405,6 +454,31 @@ func lessonFromRow(r gen.LearningLesson) Lesson {
 		ID:              r.ID,
 		TenantID:        r.TenantID,
 		ModuleID:        r.ModuleID,
+		Title:           r.Title,
+		Slug:            r.Slug,
+		LessonType:      r.LessonType,
+		Content:         r.Content,
+		MediaID:         mediaID,
+		DurationMinutes: r.DurationMinutes,
+		SortOrder:       r.SortOrder,
+		IsPublished:     r.IsPublished,
+		CreatedAt:       r.CreatedAt.Time,
+		UpdatedAt:       r.UpdatedAt.Time,
+	}
+}
+
+// lessonFromListRow maps a ListAllLearningLessonsRow (with JOIN) to a Lesson.
+func lessonFromListRow(r gen.ListAllLearningLessonsRow) Lesson {
+	var mediaID *pgtype.UUID
+	if r.MediaID.Valid {
+		mediaID = &r.MediaID
+	}
+
+	return Lesson{
+		ID:              r.ID,
+		TenantID:        r.TenantID,
+		ModuleID:        r.ModuleID,
+		ModuleTitle:     r.ModuleTitle,
 		Title:           r.Title,
 		Slug:            r.Slug,
 		LessonType:      r.LessonType,
@@ -746,9 +820,10 @@ func (s *Store) EnrollUser(ctx context.Context, userID, trackID pgtype.UUID, acc
 }
 
 // ListEnrollmentsByUser lists all enrollments for a user.
-func (s *Store) ListEnrollmentsByUser(ctx context.Context, userID pgtype.UUID) ([]Enrollment, error) {
+func (s *Store) ListEnrollmentsByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]Enrollment, error) {
 	rows, err := s.read.ListEnrollmentsByUserID(ctx, gen.ListEnrollmentsByUserIDParams{
-		UserID: userID,
+		UserID:   userID,
+		TenantID: tenantID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list enrollments by user: %w", err)
@@ -773,10 +848,11 @@ func (s *Store) ListEnrollmentsByUser(ctx context.Context, userID pgtype.UUID) (
 }
 
 // GetEnrollment retrieves a specific enrollment.
-func (s *Store) GetEnrollment(ctx context.Context, userID, trackID pgtype.UUID) (*Enrollment, error) {
+func (s *Store) GetEnrollment(ctx context.Context, tenantID, userID, trackID pgtype.UUID) (*Enrollment, error) {
 	r, err := s.read.GetEnrollmentByUserAndTrack(ctx, gen.GetEnrollmentByUserAndTrackParams{
-		UserID:  userID,
-		TrackID: trackID,
+		UserID:   userID,
+		TrackID:  trackID,
+		TenantID: tenantID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("get enrollment: %w", err)

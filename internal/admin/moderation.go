@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -27,6 +28,7 @@ type ModerationItem struct {
 
 // ListModeration handles GET /api/v1/admin/moderation.
 // Queries flagged reviews and returns them with pagination.
+// Supports filters: status, content_type (entity_type), q (search).
 func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -61,25 +63,86 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Parse filter params.
+	filterStatus := r.URL.Query().Get("status")
+	filterContentType := r.URL.Query().Get("content_type")
+	filterSearch := r.URL.Query().Get("q")
+
 	ctx := r.Context()
 
-	rows, err := h.Queries.ListFlaggedReviews(ctx, gen.ListFlaggedReviewsParams{
-		TenantID: tenantID,
-		Limit:    limit,
-		Offset:   offset,
-	})
+	// Build dynamic WHERE clauses.
+	where := "r.tenant_id = $1"
+	args := []interface{}{tenantID}
+	argIdx := 2
+
+	if filterStatus != "" {
+		where += fmt.Sprintf(" AND r.status = $%d", argIdx)
+		args = append(args, filterStatus)
+		argIdx++
+	}
+
+	if filterContentType != "" {
+		where += fmt.Sprintf(" AND r.entity_type = $%d", argIdx)
+		args = append(args, filterContentType)
+		argIdx++
+	}
+
+	if filterSearch != "" {
+		where += fmt.Sprintf(" AND (r.body ILIKE $%d OR r.title ILIKE $%d)", argIdx, argIdx)
+		args = append(args, "%"+filterSearch+"%")
+		argIdx++
+	}
+
+	// Query with dynamic filters.
+	query := fmt.Sprintf(
+		`SELECT r.id, r.body, r.status, r.entity_type, r.created_at, r.reviewer_user_id,
+		        COALESCE(u.username, 'unknown') AS author_username
+		 FROM reviews r
+		 LEFT JOIN users u ON u.id = r.reviewer_user_id
+		 WHERE %s
+		 ORDER BY r.created_at DESC
+		 LIMIT $%d OFFSET $%d`,
+		where, argIdx, argIdx+1,
+	)
+	args = append(args, limit, offset)
+
+	rows, err := h.DB.Reader.Query(ctx, query, args...)
 	if err != nil {
-		slog.Error("moderation: querying flagged reviews", "error", err)
+		slog.Error("moderation: querying reviews", "error", err)
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation queue")
 		return
 	}
+	defer rows.Close()
 
-	// Count total flagged reviews for pagination metadata.
+	type reviewRow struct {
+		ID             pgtype.UUID
+		Body           *string
+		Status         string
+		EntityType     string
+		CreatedAt      pgtype.Timestamptz
+		ReviewerUserID pgtype.UUID
+		AuthorUsername string
+	}
+
+	var rawRows []reviewRow
+	for rows.Next() {
+		var r reviewRow
+		if err := rows.Scan(&r.ID, &r.Body, &r.Status, &r.EntityType, &r.CreatedAt, &r.ReviewerUserID, &r.AuthorUsername); err != nil {
+			slog.Error("moderation: scanning review row", "error", err)
+			continue
+		}
+		rawRows = append(rawRows, r)
+	}
+
+	// Count total with same filters (without LIMIT/OFFSET).
+	countQuery := fmt.Sprintf(
+		`SELECT COUNT(*)::int FROM reviews r WHERE %s`, where,
+	)
+	countArgs := args[:len(args)-2] // exclude limit, offset
+
 	var total int32
-	if err := h.DB.Reader.QueryRow(ctx,
-		`SELECT COUNT(*)::int FROM reviews WHERE tenant_id = $1 AND status = 'flagged'`,
-		tenantID).Scan(&total); err != nil {
-		slog.Warn("moderation: counting flagged reviews", "error", err)
+	if err := h.DB.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		slog.Warn("moderation: counting reviews", "error", err)
 	}
 
 	totalPages := int32(0)
@@ -87,8 +150,8 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 		totalPages = (total + limit - 1) / limit
 	}
 
-	items := make([]ModerationItem, 0, len(rows))
-	for _, row := range rows {
+	items := make([]ModerationItem, 0, len(rawRows))
+	for _, row := range rawRows {
 		content := ""
 		if row.Body != nil {
 			content = *row.Body
@@ -102,10 +165,10 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, ModerationItem{
 			ID:        row.ID.String(),
-			Type:      "review",
+			Type:      row.EntityType,
 			Status:    row.Status,
 			Content:   content,
-			Reporter:  "system",
+			Reporter:  row.AuthorUsername,
 			AuthorID:  authorID,
 			Created:   row.CreatedAt.Time.Format(time.RFC3339),
 			EntityRef: "review:" + row.ID.String(),
@@ -115,6 +178,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"items":       items,
+			"total":       total,
 			"page":        offset / limit,
 			"total_pages": totalPages,
 		},

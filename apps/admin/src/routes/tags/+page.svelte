@@ -8,6 +8,7 @@
 	import Pagination from "$lib/components/ui/Pagination.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { Plus, Pencil, Trash2, RefreshCw, Eye, Shield } from "lucide-svelte";
+	import UserAutocomplete from "$lib/components/ui/UserAutocomplete.svelte";
 	import { tagsAdminApi, tagsModeratorsAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -26,7 +27,7 @@
 	type TagModerator = {
 		user_id: string;
 		username: string;
-		added_at: string;
+		created_at: string;
 	};
 
 	let tags = $state<Tag[]>([]);
@@ -244,7 +245,7 @@
 		addingModerator = true;
 		error = "";
 		try {
-			const result = await tagsModeratorsAdminApi.add(moderatorTag.id, { user_id: newModeratorUsername.trim() });
+			const result = await tagsModeratorsAdminApi.add(moderatorTag.id, { username: newModeratorUsername.trim() });
 			if (result.ok) {
 				newModeratorUsername = "";
 				success = t("tags.moderator_added", "Moderator added");
@@ -423,7 +424,9 @@
 
 			{#if canManageTags}
 				<div class="flex gap-2">
-					<input type="text" bind:value={newModeratorUsername} class="flex-1 rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("tags.moderator_username", "Username")} />
+					<div class="flex-1">
+						<UserAutocomplete bind:value={newModeratorUsername} placeholder={t("tags.moderator_username", "Username")} />
+					</div>
 					<Button onclick={addTagModerator} disabled={addingModerator || !newModeratorUsername.trim()}>
 						{addingModerator ? t("common.adding", "Adding...") : t("common.add", "Add")}
 					</Button>
@@ -440,7 +443,7 @@
 				<div class="space-y-2">
 					{#each tagModerators as mod (mod.user_id)}
 						<div class="flex items-center justify-between rounded-lg border p-3" style="border-color: var(--color-border)">
-							<span class="text-sm font-medium" style="color: var(--color-foreground)">{mod.username}</span>
+							<span class="text-sm font-medium" style="color: var(--color-foreground)">{mod.username || '—'}</span>
 							{#if canManageTags}
 								<Button variant="ghost" size="sm" onclick={() => { removeModeratorTarget = mod; showRemoveModeratorConfirm = true; }} style="color: var(--color-danger)">
 									<Trash2 class="h-3.5 w-3.5" />
