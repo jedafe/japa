@@ -57,3 +57,13 @@ export const reactivateSubscription = () => api.post('/me/subscription/reactivat
 export const exportData = () => api.post('/me/data-export');
 export const deactivateAccount = () => api.post('/me/deactivate');
 export const deleteAccount = () => api.delete('/me');
+
+/* ---- content manager (dashboard) ---- */
+export const publishContent = (id: string) => api.post(`/content/${id}/publish`);
+export const archiveContent = (id: string) => api.post(`/content/${id}/archive`);
+export const deleteContent = (id: string) => api.delete(`/content/${id}`);
+
+/* ---- relationships (dashboard) ---- */
+export const unfollowUser = (id: string) => api.delete(`/users/${id}/follow`);
+export const leaveSpace = (slug: string) => api.delete(`/spaces/${slug}/leave`);
+export const unfollowTag = (slug: string) => api.delete(`/tags/${slug}/follow`);
