@@ -159,6 +159,40 @@ WHERE m.tenant_id = @tenant_id
       AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
   );
 
+-- name: ListMediaFromOrgPublicPosts :many
+-- Org profile Media tab: media referenced (featured/header image) by the ORG's
+-- PUBLISHED PUBLIC posts. Excludes unconfirmed uploads and group-restricted media.
+SELECT m.* FROM media m
+WHERE m.tenant_id = @tenant_id
+  AND m.deleted_at IS NULL
+  AND m.confirmed = true
+  AND m.user_group_id IS NULL
+  AND EXISTS (
+    SELECT 1 FROM contents c
+    WHERE c.tenant_id = @tenant_id
+      AND c.organization_id = @organization_id
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+  )
+ORDER BY m.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountMediaFromOrgPublicPosts :one
+SELECT COUNT(*)::int AS count FROM media m
+WHERE m.tenant_id = @tenant_id
+  AND m.deleted_at IS NULL
+  AND m.confirmed = true
+  AND m.user_group_id IS NULL
+  AND EXISTS (
+    SELECT 1 FROM contents c
+    WHERE c.tenant_id = @tenant_id
+      AND c.organization_id = @organization_id
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+  );
+
 -- =====================
 -- Bulk Operations
 -- =====================

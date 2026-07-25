@@ -664,6 +664,35 @@ func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListByOrganization handles GET /organizations/{id}/media — the org profile
+// Media tab. Non-active orgs are already 404'd by the requireActiveOrgByID gate.
+func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var orgID pgtype.UUID
+	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_org_id", "Invalid organization ID format")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	items, total, err := h.service.ListByOrganization(r.Context(), tenantID, orgID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": toMediaResponses(items, h.service),
+		"meta": map[string]any{"total": total, "page_size": limit, "page_offset": offset},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Admin Handlers — Media Quarantine
 // ---------------------------------------------------------------------------
