@@ -21,9 +21,9 @@
 	};
 
 	type CommissionRates = {
-		content_creation: number;
-		referral_signup: number;
-		referral_purchase: number;
+		pro_monthly: number;
+		pro_annual: number;
+		course: number;
 	};
 
 	type AffiliateMember = {
@@ -49,7 +49,7 @@
 	let providers = $state<AffiliateProvider[]>([]);
 	let members = $state<AffiliateMember[]>([]);
 	let links = $state<AffiliateLink[]>([]);
-	let rates = $state<CommissionRates>({ content_creation: 0, referral_signup: 0, referral_purchase: 0 });
+	let rates = $state<CommissionRates>({ pro_monthly: 0, pro_annual: 0, course: 0 });
 	let loading = $state(true);
 	let error = $state('');
 	let showCreateModal = $state(false);
@@ -72,36 +72,38 @@
 	let showMemberStatusConfirm = $state(false);
 	let memberStatusTarget = $state<{ member: AffiliateMember; status: string } | null>(null);
 
-	const tabs = [
-		{ value: 'providers', label: 'Providers', icon: Link2 },
-		{ value: 'members', label: 'Members', icon: Users },
-		{ value: 'links', label: 'Links', icon: Link2 },
-		{ value: 'rates', label: 'Commission Rates', icon: Percent }
-	];
+	const tabs = $derived([
+		{ value: 'providers', label: t('affiliate.providers'), icon: Link2 },
+		{ value: 'members', label: t('affiliate.members'), icon: Users },
+		{ value: 'links', label: t('affiliate.links'), icon: Link2 },
+		{ value: 'rates', label: t('affiliate.commission_rates'), icon: Percent }
+	]);
 
-	const providerColumns = [
+	const providerColumns = $derived([
 		{
 			key: 'name',
-			label: 'Name',
+			label: t('affiliate.name'),
 			sortable: true,
 			render: (value: string) => `<span class="font-medium text-foreground">${value}</span>`
 		},
 		{
 			key: 'base_url',
-			label: 'Base URL',
+			label: t('affiliate.base_url'),
 			render: (value: string) => `<span class="font-mono text-xs text-muted">${value}</span>`
 		},
 		{
 			key: 'commission_rate',
-			label: 'Commission',
+			label: t('affiliate.commission_rate'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${value}%</span>`
 		},
 		{
 			key: 'is_active',
-			label: 'Status',
+			label: t('affiliate.status'),
 			render: (_: any, row: any) => {
-				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_active ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${row.is_active ? 'Active' : 'Inactive'}</span>`;
+				const activeLabel = t('affiliate.active');
+				const inactiveLabel = t('affiliate.inactive');
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.is_active ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border'}">${row.is_active ? activeLabel : inactiveLabel}</span>`;
 			}
 		},
 		{
@@ -110,18 +112,18 @@
 			class: 'w-24',
 			componentSnippet: ProviderActionsCell
 		}
-	];
+	]);
 
-	const memberColumns = [
+	const memberColumns = $derived([
 		{
 			key: 'username',
-			label: 'Username',
+			label: t('affiliate.username'),
 			sortable: true,
 			render: (value: string) => `<span class="font-medium text-foreground">${value}</span>`
 		},
 		{
 			key: 'status',
-			label: 'Status',
+			label: t('affiliate.status'),
 			render: (value: string) => {
 				const classes: Record<string, string> = {
 					active: 'bg-success/15 text-success border-success',
@@ -133,13 +135,13 @@
 		},
 		{
 			key: 'total_earnings',
-			label: 'Earnings',
+			label: t('affiliate.earnings'),
 			sortable: true,
-			render: (value: number) => `<span class="font-medium">$${(value ?? 0).toFixed(2)}</span>`
+			render: (value: number) => `<span class="font-medium">${(value ?? 0).toFixed(2)}</span>`
 		},
 		{
 			key: 'conversion_count',
-			label: 'Conversions',
+			label: t('affiliate.conversions'),
 			sortable: true,
 			render: (value: number) => `<span>${value ?? 0}</span>`
 		},
@@ -149,45 +151,45 @@
 			class: 'w-24',
 			componentSnippet: MemberActionsCell
 		}
-	];
+	]);
 
-	const linkColumns = [
+	const linkColumns = $derived([
 		{
 			key: 'user_id',
-			label: 'User',
+			label: t('affiliate.user'),
 			sortable: true,
 			render: (value: string) => `<span class="font-mono text-xs">${value}</span>`
 		},
 		{
 			key: 'code',
-			label: 'Code',
+			label: t('affiliate.code'),
 			sortable: true,
 			render: (value: string) => `<span class="font-mono text-xs font-medium text-foreground">${value}</span>`
 		},
 		{
 			key: 'url',
-			label: 'URL',
+			label: t('affiliate.url'),
 			render: (value: string) => `<span class="text-xs text-muted truncate max-w-[200px] block">${value}</span>`
 		},
 		{
 			key: 'clicks',
-			label: 'Clicks',
+			label: t('affiliate.clicks'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>`
 		},
 		{
 			key: 'conversions',
-			label: 'Conversions',
+			label: t('affiliate.conversions'),
 			sortable: true,
 			render: (value: number) => `<span class="font-medium">${value ?? 0}</span>`
 		},
 		{
 			key: 'created_at',
-			label: 'Created',
+			label: t('affiliate.created'),
 			sortable: true,
 			render: (value: string) => `<span class="text-sm">${new Date(value).toLocaleDateString()}</span>`
 		}
-	];
+	]);
 
 	$effect(() => {
 		load();
@@ -372,9 +374,9 @@
 <PageHeader
 	title={t('affiliate.title')}
 	description={t('affiliate.description')}
-	actions={[
-		...(canManageAffiliate ? [{ label: t('affiliate.add_provider'), icon: Plus, onclick: () => showCreateModal = true }] : [])
-	]}
+	actions={activeTab === 'providers' && canManageAffiliate
+		? [{ label: t('affiliate.add_provider'), icon: Plus, onclick: () => showCreateModal = true }]
+		: []}
 />
 
 <div class="space-y-6">
@@ -404,7 +406,7 @@
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDeleteProviders} disabled={bulkDeleting || selectedProviderIds.size === 0}>
 						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedProviderIds.size})
+						{bulkDeleting ? t('common.deleting') : t('common.delete_selected')} ({selectedProviderIds.size})
 					</Button>
 				{/snippet}
 			</DataTable>
@@ -426,7 +428,7 @@
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDeleteMembers} disabled={bulkDeleting || selectedMemberIds.size === 0}>
 						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? 'Deleting...' : 'Suspend Selected'} ({selectedMemberIds.size})
+						{bulkDeleting ? t('common.deleting') : t('affiliate.suspend')} ({selectedMemberIds.size})
 					</Button>
 				{/snippet}
 			</DataTable>
@@ -439,7 +441,7 @@
 				columns={linkColumns}
 				data={links}
 				pageSize={20}
-				emptyMessage="No affiliate links found"
+				emptyMessage={t('affiliate.no_links')}
 				searchable
 				onsearch={(q) => { searchQuery = q; load(); }}
 				selectable
@@ -448,7 +450,7 @@
 				{#snippet bulkActions()}
 					<Button variant="destructive" size="sm" onclick={bulkDeleteLinks} disabled={bulkDeleting || selectedLinkIds.size === 0}>
 						<Trash2 class="h-3.5 w-3.5 mr-1" />
-						{bulkDeleting ? 'Deleting...' : 'Delete Selected'} ({selectedLinkIds.size})
+						{bulkDeleting ? t('common.deleting') : t('common.delete_selected')} ({selectedLinkIds.size})
 					</Button>
 				{/snippet}
 			</DataTable>
@@ -460,46 +462,46 @@
 				<h3 class="mb-4 text-lg font-semibold text-foreground">{t('affiliate.commission_rates')}</h3>
 				<div class="mx-auto max-w-lg space-y-4">
 					<div>
-						<label for="rate-content" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.content_creation')}</label>
+						<label for="rate-monthly" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.pro_monthly')}</label>
 						<div class="flex items-center gap-2">
 							<input
-								id="rate-content"
+								id="rate-monthly"
 								type="number"
 								min="0"
 								max="100"
 								step="0.1"
 								class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-								bind:value={rates.content_creation}
+								bind:value={rates.pro_monthly}
 							/>
 							<span class="text-sm text-muted">%</span>
 						</div>
 					</div>
 					<div>
-						<label for="rate-signup" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.referral_signup')}</label>
+						<label for="rate-annual" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.pro_annual')}</label>
 						<div class="flex items-center gap-2">
 							<input
-								id="rate-signup"
+								id="rate-annual"
 								type="number"
 								min="0"
 								max="100"
 								step="0.1"
 								class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-								bind:value={rates.referral_signup}
+								bind:value={rates.pro_annual}
 							/>
 							<span class="text-sm text-muted">%</span>
 						</div>
 					</div>
 					<div>
-						<label for="rate-purchase" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.referral_purchase')}</label>
+						<label for="rate-course" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.course')}</label>
 						<div class="flex items-center gap-2">
 							<input
-								id="rate-purchase"
+								id="rate-course"
 								type="number"
 								min="0"
 								max="100"
 								step="0.1"
 								class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-								bind:value={rates.referral_purchase}
+								bind:value={rates.course}
 							/>
 							<span class="text-sm text-muted">%</span>
 						</div>
@@ -574,7 +576,7 @@
 </Modal>
 
 <!-- Member Status Confirm -->
-<Modal bind:open={showMemberStatusConfirm} title={t('common.confirmDelete', 'Confirm Change')}>
+<Modal bind:open={showMemberStatusConfirm} title={t('common.confirm', 'Confirm')}>
 	{#if memberStatusTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('affiliate.change_member_status_confirm', 'Change status of')} <strong>{memberStatusTarget.member.username}</strong> {t('affiliate.to', 'to')} <strong>{memberStatusTarget.status}</strong>?
