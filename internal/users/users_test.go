@@ -6,6 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ---------------------------------------------------------------------------
@@ -368,3 +371,138 @@ func TestNewHandlersNotNil(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func strPtr(s string) *string { return &s }
+
+// ---------------------------------------------------------------------------
+// DraftResponse (GET /me/drafts/{id}) — JSON shape + mapping helpers
+// ---------------------------------------------------------------------------
+
+func TestDraftResponseJSONTags(t *testing.T) {
+	t.Parallel()
+
+	r := DraftResponse{
+		ID:           "550e8400-e29b-41d4-a716-446655440000",
+		Slug:         "study-in-the-uk",
+		ContentType:  "blog_post",
+		Title:        "Study in the UK",
+		Body:         "raw body",
+		BodyHTML:     "<p>html</p>",
+		FieldValues:  json.RawMessage(`{"key":"value"}`),
+		CanonicalURL: strPtr("https://example.com/canonical"),
+		Status:       "draft",
+		Visibility:   "public",
+		SpaceID:      strPtr("33333333-3333-3333-3333-333333333333"),
+		PublishAt:    strPtr("2099-01-01T00:00:00Z"),
+		CreatedAt:    "2026-01-01T00:00:00Z",
+		UpdatedAt:    "2026-01-02T00:00:00Z",
+	}
+
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal DraftResponse: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	wantStr := map[string]string{
+		"id":            "550e8400-e29b-41d4-a716-446655440000",
+		"slug":          "study-in-the-uk",
+		"content_type":  "blog_post",
+		"title":         "Study in the UK",
+		"body":          "raw body",
+		"body_html":     "<p>html</p>",
+		"status":        "draft",
+		"visibility":    "public",
+		"canonical_url": "https://example.com/canonical",
+		"space_id":      "33333333-3333-3333-3333-333333333333",
+		"publish_at":    "2099-01-01T00:00:00Z",
+	}
+	for k, want := range wantStr {
+		if got[k] != want {
+			t.Errorf("%s = %v, want %q", k, got[k], want)
+		}
+	}
+
+	// field_values MUST round-trip as a JSON object, not base64 — the composer
+	// consumes it as Record<string, unknown>.
+	fv, ok := got["field_values"].(map[string]any)
+	if !ok {
+		t.Fatalf("field_values = %T, want a JSON object (map[string]any)", got["field_values"])
+	}
+	if fv["key"] != "value" {
+		t.Errorf("field_values.key = %v, want value", fv["key"])
+	}
+}
+
+func TestDraftResponse_NilOptionalsOmit(t *testing.T) {
+	t.Parallel()
+
+	// A draft with no space/canonical/publish_at must serialize those as null,
+	// and an empty FieldValues must not panic (it marshals as null).
+	r := DraftResponse{
+		ID:          "id",
+		Slug:        "slug",
+		ContentType: "blog_post",
+		Title:       "t",
+		Status:      "draft",
+		Visibility:  "public",
+		CreatedAt:   "2026-01-01T00:00:00Z",
+		UpdatedAt:   "2026-01-02T00:00:00Z",
+	}
+
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["space_id"] != nil {
+		t.Errorf("space_id = %v, want nil", got["space_id"])
+	}
+	if got["canonical_url"] != nil {
+		t.Errorf("canonical_url = %v, want nil", got["canonical_url"])
+	}
+}
+
+func TestUUIDPtr(t *testing.T) {
+	t.Parallel()
+
+	if got := uuidPtr(pgtype.UUID{}); got != nil {
+		t.Errorf("invalid UUID → %v, want nil", got)
+	}
+
+	var u pgtype.UUID
+	if err := u.Scan("22222222-2222-2222-2222-222222222222"); err != nil {
+		t.Fatalf("scan uuid: %v", err)
+	}
+	got := uuidPtr(u)
+	if got == nil || *got != "22222222-2222-2222-2222-222222222222" {
+		t.Errorf("valid UUID → %v, want the UUID string", got)
+	}
+}
+
+func TestTsPtr(t *testing.T) {
+	t.Parallel()
+
+	if got := tsPtr(pgtype.Timestamptz{}); got != nil {
+		t.Errorf("invalid ts → %v, want nil", got)
+	}
+
+	wantTime, err := time.Parse(time.RFC3339, "2099-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("parse time: %v", err)
+	}
+	ts := pgtype.Timestamptz{Time: wantTime, Valid: true}
+	got := tsPtr(ts)
+	if got == nil {
+		t.Fatal("valid ts → nil, want RFC3339 string")
+	}
+	if _, err := time.Parse(time.RFC3339, *got); err != nil {
+		t.Errorf("valid ts → %q is not RFC3339: %v", *got, err)
+	}
+}

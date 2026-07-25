@@ -3,6 +3,8 @@
 // with read/write pool separation.
 package users
 
+import "encoding/json"
+
 // UpdateProfileRequest is the JSON body for PATCH /api/v1/users/me.
 type UpdateProfileRequest struct {
 	DisplayName *string `json:"display_name"`
@@ -92,4 +94,30 @@ type PublicProfileResponse struct {
 	FollowerCount  int32   `json:"follower_count"`
 	FollowingCount int32   `json:"following_count"`
 	CreatedAt      string  `json:"created_at"`
+}
+
+// DraftResponse is the API response for GET /api/v1/me/drafts/{id}, used by
+// the /create composer to restore an existing draft for editing. It mirrors
+// the field set the composer's ContentRecord consumes (id, slug, content_type,
+// title, body, body_html, field_values, canonical_url, status, visibility,
+// publish_at, space_id) plus timestamps. FieldValues is a json.RawMessage so
+// the JSONB column serializes as a proper JSON object (not base64), which the
+// composer's field_values: Record<string, unknown> expects.
+type DraftResponse struct {
+	ID            string          `json:"id"`
+	Slug          string          `json:"slug"`
+	ContentType   string          `json:"content_type"`
+	Title         string          `json:"title"`
+	Body          string          `json:"body"`
+	BodyHTML      string          `json:"body_html"`
+	FieldValues   json.RawMessage `json:"field_values"`
+	CanonicalURL  *string         `json:"canonical_url"`
+	Status        string          `json:"status"`
+	Visibility    string          `json:"visibility"`
+	SpaceID       *string         `json:"space_id"`
+	GeoSpaceID    *string         `json:"geo_space_id"`
+	PublishAt     *string         `json:"publish_at"`
+	PublishedAt   *string         `json:"published_at"`
+	CreatedAt     string          `json:"created_at"`
+	UpdatedAt     string          `json:"updated_at"`
 }

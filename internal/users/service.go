@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -455,6 +456,60 @@ func (s *Service) ListUserContent(ctx context.Context, tenantID, userID pgtype.U
 	}
 
 	return result, nil
+}
+
+// GetUserDraft returns the caller's own draft content by ID for the /create
+// composer to restore. Returns pgx.ErrNoRows (→ 404) when the content is
+// missing, not a draft, or owned by another user/tenant. FieldValues is
+// emitted as a json.RawMessage so the JSONB column round-trips as a JSON
+// object.
+func (s *Service) GetUserDraft(ctx context.Context, tenantID, userID, contentID pgtype.UUID) (*DraftResponse, error) {
+	row, err := s.store.getUserDraft(ctx, tenantID, userID, contentID)
+	if err != nil {
+		return nil, fmt.Errorf("getting user draft: %w", err)
+	}
+
+	var fieldValues json.RawMessage
+	if len(row.FieldValues) > 0 {
+		fieldValues = json.RawMessage(row.FieldValues)
+	}
+
+	return &DraftResponse{
+		ID:           row.ID.String(),
+		Slug:         row.Slug,
+		ContentType:  row.ContentType,
+		Title:        row.Title,
+		Body:         row.Body,
+		BodyHTML:     row.BodyHtml,
+		FieldValues:  fieldValues,
+		CanonicalURL: row.CanonicalUrl,
+		Status:       row.Status,
+		Visibility:   row.Visibility,
+		SpaceID:      uuidPtr(row.SpaceID),
+		GeoSpaceID:   uuidPtr(row.GeoSpaceID),
+		PublishAt:    tsPtr(row.PublishAt),
+		PublishedAt:  tsPtr(row.PublishedAt),
+		CreatedAt:    row.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:    row.UpdatedAt.Time.Format(time.RFC3339),
+	}, nil
+}
+
+// uuidPtr converts a nullable pgtype.UUID to a *string (nil when invalid).
+func uuidPtr(u pgtype.UUID) *string {
+	if !u.Valid {
+		return nil
+	}
+	s := u.String()
+	return &s
+}
+
+// tsPtr converts a nullable pgtype.Timestamptz to a *string RFC3339 (nil when invalid).
+func tsPtr(t pgtype.Timestamptz) *string {
+	if !t.Valid {
+		return nil
+	}
+	s := t.Time.Format(time.RFC3339)
+	return &s
 }
 
 // ListUserBookmarks returns the user's bookmarks.
