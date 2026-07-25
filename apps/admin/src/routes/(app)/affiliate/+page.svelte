@@ -35,7 +35,9 @@
 	};
 
 	type AffiliateMember = {
+		id: string;
 		user_id: string;
+		username: string | null;
 		tenant_id: string;
 		enrolled_at: string;
 		status: string;
@@ -48,8 +50,9 @@
 
 	type AffiliateLink = {
 		id: string;
-		tenant_id: string;
 		user_id: string;
+		username: string | null;
+		tenant_id: string;
 		product_type: string;
 		product_id: string | null;
 		code: string;
@@ -185,10 +188,10 @@
 
 	const memberColumns = $derived([
 		{
-			key: 'user_id',
+			key: 'username',
 			label: t('affiliate.username'),
 			sortable: true,
-			render: (value: string) => `<span class="font-mono text-xs">${value}</span>`
+			render: (value: string | null, row: any) => `<span class="font-medium">${value ?? row.user_id ?? '—'}</span>`
 		},
 		{
 			key: 'status',
@@ -224,10 +227,10 @@
 
 	const linkColumns = $derived([
 		{
-			key: 'user_id',
+			key: 'username',
 			label: t('affiliate.user'),
 			sortable: true,
-			render: (value: string) => `<span class="font-mono text-xs">${value}</span>`
+			render: (value: string | null, row: any) => `<span class="font-medium">${value ?? row.user_id ?? '—'}</span>`
 		},
 		{
 			key: 'code',
@@ -375,11 +378,10 @@
 			} else if (activeTab === 'members') {
 				const result = await affiliateProgramAdminApi.members();
 				if (result.ok) {
-					const raw = (Array.isArray(result.data) ? result.data : []) as any[];
-					members = raw.map(m => ({ ...m, id: m.user_id })) as AffiliateMember[];
+					members = (Array.isArray(result.data) ? result.data : []) as AffiliateMember[];
 					if (searchQuery) {
 						const q = searchQuery.toLowerCase();
-						members = members.filter((m) => m.user_id?.toLowerCase().includes(q) || m.status?.toLowerCase().includes(q));
+						members = members.filter((m) => m.username?.toLowerCase().includes(q) || m.user_id?.toLowerCase().includes(q) || m.status?.toLowerCase().includes(q));
 					}
 				} else {
 					error = result.error;
@@ -390,7 +392,7 @@
 					links = (Array.isArray(result.data) ? result.data : []) as AffiliateLink[];
 					if (searchQuery) {
 						const q = searchQuery.toLowerCase();
-						links = links.filter((l) => l.code?.toLowerCase().includes(q) || l.destination_url?.toLowerCase().includes(q) || l.user_id?.toLowerCase().includes(q));
+						links = links.filter((l) => l.username?.toLowerCase().includes(q) || l.code?.toLowerCase().includes(q) || l.destination_url?.toLowerCase().includes(q) || l.user_id?.toLowerCase().includes(q));
 					}
 				} else {
 					error = result.error;
@@ -804,7 +806,7 @@
 <Modal bind:open={showMemberStatusConfirm} title={t('common.confirm', 'Confirm')}>
 	{#if memberStatusTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
-			{t('affiliate.change_member_status_confirm', 'Change status of')} <strong class="font-mono text-xs">{memberStatusTarget.member.user_id}</strong> {t('affiliate.to', 'to')} <strong>{memberStatusTarget.status}</strong>?
+			{t('affiliate.change_member_status_confirm', 'Change status of')} <strong>{memberStatusTarget.member.username ?? memberStatusTarget.member.user_id}</strong> {t('affiliate.to', 'to')} <strong>{memberStatusTarget.status}</strong>?
 		</p>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
