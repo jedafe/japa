@@ -548,8 +548,10 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 	}
 	rows, err := h.Service.db.Reader.Query(r.Context(),
 		"SELECT ac.id, ac.content_id, ac.author_user_id, ac.external_commission, ac.author_share, "+
-			"ac.author_commission_pct, ac.event_description, ac.credited, ac.created_at, ap.name "+
-			"FROM affiliate_content_commissions ac LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id "+
+			"ac.author_commission_pct, ac.event_description, ac.credited, ac.created_at, ap.name, u.username "+
+			"FROM affiliate_content_commissions ac "+
+			"LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id "+
+			"LEFT JOIN users u ON u.id = ac.author_user_id "+
 			"WHERE ac.tenant_id = $1 ORDER BY ac.created_at DESC LIMIT 50", tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query commissions")
@@ -563,14 +565,15 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 		var desc *string
 		var credited bool
 		var createdAt pgtype.Timestamptz
-		var providerName *string
+		var providerName, username *string
 		if err := rows.Scan(&id, &contentID, &authorUserID,
-			&extComm, &authorShare, &pct, &desc, &credited, &createdAt, &providerName); err != nil {
+			&extComm, &authorShare, &pct, &desc, &credited, &createdAt, &providerName, &username); err != nil {
 			continue
 		}
 		results = append(results, map[string]any{
 			"id": id.String(), "content_id": contentID.String(),
-			"author_user_id": authorUserID.String(), "provider_name": providerName,
+			"author_user_id": authorUserID.String(), "author_username": username,
+			"provider_name": providerName,
 			"external_commission": extComm, "author_share": authorShare,
 			"author_commission_pct": pct, "credited": credited, "created_at": createdAt.Time,
 		})
