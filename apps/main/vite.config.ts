@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import type { Connect, Plugin } from 'vite';
 
 // Dev-only backend target. In production the SSR server talks to the backend via
@@ -34,7 +35,7 @@ function apiHeadersPlugin(): Plugin {
 }
 
 export default defineConfig({
-	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit()],
+	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit(), svelteTesting()],
 	server: {
 		proxy: {
 			'/api': { target: API_TARGET, changeOrigin: true },
