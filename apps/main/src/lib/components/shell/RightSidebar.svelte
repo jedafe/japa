@@ -39,7 +39,7 @@
 			type="button"
 			onclick={() => theme.toggle()}
 			class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-			aria-label={theme.current === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+			aria-label={theme.current === 'dark' ? t('theme.toggle_light') : t('theme.toggle_dark')}
 		>
 			{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 		</button>
@@ -76,7 +76,7 @@
 							class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
 						>
 							{#snippet child({ props })}
-								<a href="/logout" {...props}><LogOut size={16} /> Log out</a>
+								<a href="/logout" {...props}><LogOut size={16} /> {t('nav.logout')}</a>
 							{/snippet}
 						</DropdownMenu.Item>
 					{:else}
@@ -84,7 +84,7 @@
 							class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
 						>
 							{#snippet child({ props })}
-								<a href="/login" {...props}><LogIn size={16} /> Log in</a>
+								<a href="/login" {...props}><LogIn size={16} /> {t('nav.login')}</a>
 							{/snippet}
 						</DropdownMenu.Item>
 					{/if}
@@ -128,7 +128,7 @@
 							<span class="min-w-0 flex-1">
 								<span class="block truncate text-sm text-[var(--color-text)]">{space.name}</span>
 								{#if space.member_count != null}
-									<span class="block text-xs text-[var(--color-muted)]">{space.member_count} members</span>
+									<span class="block text-xs text-[var(--color-muted)]">{t('meta.members', '{n} members').replace('{n}', String(space.member_count))}</span>
 								{/if}
 							</span>
 						</a>

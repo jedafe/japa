@@ -9,9 +9,12 @@ import type { Connect, Plugin } from 'vite';
 const API_TARGET = 'http://localhost:8080';
 
 /**
- * For client-side fetches to /api and /ws: turn the jc_token cookie into a Bearer
- * header and forward the tenant host (port stripped) so the backend resolves the
- * tenant. Mirrors the pattern used by the control app.
+ * For client-side fetches to /api/v1 and /ws: turn the jc_token cookie into a
+ * Bearer header and forward the tenant host (port stripped) so the backend
+ * resolves the tenant. Mirrors the pattern used by the control app.
+ *
+ * NOTE: only /api/v1/* is proxied — /api/auth/* are SvelteKit API routes
+ * (+server.ts endpoints) and must NOT be forwarded to the Go backend.
  */
 function apiHeadersPlugin(): Plugin {
 	return {
@@ -20,7 +23,7 @@ function apiHeadersPlugin(): Plugin {
 			server.middlewares.use(
 				(req: Connect.IncomingMessage, _res, next: Connect.NextFunction) => {
 					const url = req.url ?? '';
-					if (url.startsWith('/api/') || url.startsWith('/ws')) {
+					if (url.startsWith('/api/v1/') || url.startsWith('/ws')) {
 						const cookie = req.headers.cookie ?? '';
 						const match = /jc_token=([^;]+)/.exec(cookie);
 						if (match) req.headers.authorization = `Bearer ${match[1]}`;
@@ -38,7 +41,7 @@ export default defineConfig({
 	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit(), svelteTesting()],
 	server: {
 		proxy: {
-			'/api': { target: API_TARGET, changeOrigin: true },
+			'/api/v1': { target: API_TARGET, changeOrigin: true },
 			'/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true }
 		}
 	},

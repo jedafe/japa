@@ -297,3 +297,94 @@ export interface OnboardingStatus {
 	step_data: unknown;
 	tour_dismissed: boolean;
 }
+
+/** GET /onboarding/recommendations item (Section 09). */
+export interface OnboardingRecommendation {
+	type: 'space' | 'user';
+	id: string;
+	name: string;
+	slug: string;
+	avatar_url?: string;
+	reason: string;
+	score: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * Forum — Section 08 (forum Q&A / solved)
+ * Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+ * The backend returns forum thread/reply bodies as base64-encoded
+ * TipTap JSON (not pre-rendered HTML). See $lib/tiptap/serialize.
+ * ------------------------------------------------------------------ */
+
+/** A forum discussion thread (GET /forum, GET /forum/{slug}). */
+export interface ForumThread {
+	id: string;
+	tenant_id: string;
+	content_id: string | null;
+	space_id: string;
+	author_user_id: string;
+	title: string;
+	slug: string;
+	/** Base64-encoded TipTap JSON document. */
+	body: string;
+	is_anonymous: boolean;
+	solved: boolean;
+	solved_at: string | null;
+	solved_by_user_id: string | null;
+	vote_score: number;
+	reply_count: number;
+	view_count: number;
+	bookmark_count: number;
+	edit_window_minutes: number;
+	is_edited: boolean;
+	created_at: string;
+	updated_at: string;
+	deleted_at: string | null;
+	parent_reply_id: string | null;
+	/** Joined author username (null when is_anonymous). */
+	author_username: string | null;
+	/** Joined author display name (null when is_anonymous). */
+	author_display_name: string | null;
+	/** Joined author avatar URL (null when is_anonymous or no avatar). */
+	author_avatar_url: string | null;
+	/** Joined space name (null when no space). */
+	space_name: string | null;
+	/** Joined space slug (null when no space). */
+	space_slug: string | null;
+	/** Joined space level: 'country' | 'state' | 'city' | 'custom'. */
+	space_level: string | null;
+}
+
+/** A forum reply (GET /forum/{id}/replies, POST /forum/{id}/replies). */
+export interface ForumReply {
+	id: string;
+	tenant_id: string;
+	thread_id: string;
+	parent_reply_id: string | null;
+	author_user_id: string;
+	/** Base64-encoded TipTap JSON document. */
+	body: string;
+	vote_score: number;
+	view_count: number;
+	is_anonymous: boolean;
+	is_edited: boolean;
+	created_at: string;
+	updated_at: string;
+	deleted_at: string | null;
+	/** Joined author username (null when is_anonymous). */
+	author_username: string | null;
+	/** Joined author display name (null when is_anonymous). */
+	author_display_name: string | null;
+	/** Joined author avatar URL (null when is_anonymous or no avatar). */
+	author_avatar_url: string | null;
+}
+
+/** Vote entity type accepted by POST /forum/vote. */
+export type ForumVoteEntity = 'thread' | 'reply';
+
+/** POST /forum/vote response row. */
+export interface ForumVote {
+	entity_type: ForumVoteEntity;
+	entity_id: string;
+	value: 1 | -1;
+}

@@ -822,3 +822,101 @@ func (s *Store) getReplyViewCount(ctx context.Context, replyID pgtype.UUID) (int
 
 	return count, nil
 }
+
+// ---------------------------------------------------------------------------
+// Enriched queries — join author + space details for public endpoints.
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+// These return the generated Row types directly; the interface{} author fields
+// serialize correctly as JSON null (anonymous) or string (named author).
+// ---------------------------------------------------------------------------
+
+// getThreadBySlugWithDetails returns a thread plus joined author + space data.
+func (s *Store) getThreadBySlugWithDetails(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetForumThreadBySlugWithDetailsRow, error) {
+	row, err := s.read.GetForumThreadBySlugWithDetails(ctx, gen.GetForumThreadBySlugWithDetailsParams{
+		Slug:     slug,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.GetForumThreadBySlugWithDetailsRow{}, fmt.Errorf("getting forum thread by slug with details: %w", err)
+	}
+	return row, nil
+}
+
+// listThreadsByTenantWithDetails returns paginated threads with author + space.
+func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, tenantID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.ListForumThreadsByTenantWithDetails(ctx, gen.ListForumThreadsByTenantWithDetailsParams{
+		TenantID:        tenantID,
+		CursorCreatedAt: cursorCreatedAt,
+		PageLimit:       limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing forum threads by tenant with details: %w", err)
+	}
+	return rows, nil
+}
+
+// listThreadsBySpaceWithDetails returns paginated threads for a space with author + space.
+func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, tenantID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsBySpaceWithDetailsRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.ListForumThreadsBySpaceWithDetails(ctx, gen.ListForumThreadsBySpaceWithDetailsParams{
+		TenantID:        tenantID,
+		SpaceID:         spaceID,
+		CursorCreatedAt: cursorCreatedAt,
+		PageLimit:       limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing forum threads by space with details: %w", err)
+	}
+	return rows, nil
+}
+
+// listThreadsByAuthorWithDetails returns paginated threads for an author with author + space.
+func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, tenantID, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.ListForumThreadsByAuthorWithDetails(ctx, gen.ListForumThreadsByAuthorWithDetailsParams{
+		TenantID:        tenantID,
+		AuthorUserID:    authorUserID,
+		CursorCreatedAt: cursorCreatedAt,
+		PageLimit:       limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing forum threads by author with details: %w", err)
+	}
+	return rows, nil
+}
+
+// listThreadsByTagWithDetails returns paginated threads for a tag with author + space.
+func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	rows, err := s.read.ListForumThreadsByTagWithDetails(ctx, gen.ListForumThreadsByTagWithDetailsParams{
+		TenantID:        tenantID,
+		TagID:           tagID,
+		CursorCreatedAt: cursorCreatedAt,
+		PageLimit:       limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing forum threads by tag with details: %w", err)
+	}
+	return rows, nil
+}
+
+// listRepliesByThreadWithAuthor returns all replies for a thread with author data.
+func (s *Store) listRepliesByThreadWithAuthor(ctx context.Context, threadID, tenantID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
+	rows, err := s.read.ListForumRepliesByThreadWithAuthor(ctx, gen.ListForumRepliesByThreadWithAuthorParams{
+		ThreadID: threadID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing forum replies by thread with author: %w", err)
+	}
+	return rows, nil
+}
