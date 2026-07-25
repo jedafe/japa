@@ -215,11 +215,12 @@ type UpdateContentInput struct {
 	ContentHash  *string
 	GeoSpaceID   pgtype.UUID
 	CanonicalUrl *string //nolint:revive // matches sqlc-generated field name
-	Status       string
-	Visibility   string
-	PublishAt    pgtype.Timestamptz
-	IsLocked     bool
-	IsPinned     bool
+	Status         string
+	Visibility     string
+	PublishAt      pgtype.Timestamptz
+	IsLocked       bool
+	IsPinned       bool
+	OrganizationID pgtype.UUID
 }
 
 // UpdateContent updates an existing content row, recording a revision and
@@ -251,7 +252,26 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		fieldValues = existing.FieldValues
 	}
 
+	// Post-as-org (ADR-062): attributing/keeping an org on this post requires the
+	// editor be an owner/admin/editor of that org. Symmetric with CreateContent.
+	if input.OrganizationID.Valid {
+		role, err := s.read.GetOrganizationMemberRole(ctx, gen.GetOrganizationMemberRoleParams{
+			OrganizationID: input.OrganizationID,
+			UserID:         editedBy,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return gen.UpdateContentRow{}, ErrOrgPostForbidden
+			}
+			return gen.UpdateContentRow{}, fmt.Errorf("checking org membership on update: %w", err)
+		}
+		if !isOrgPostRole(role) {
+			return gen.UpdateContentRow{}, ErrOrgPostForbidden
+		}
+	}
+
 	content, err := s.write.UpdateContent(ctx, gen.UpdateContentParams{
+		OrganizationID:  input.OrganizationID,
 		Title:           input.Title,
 		Slug:            newSlug,
 		Body:            input.Body,
