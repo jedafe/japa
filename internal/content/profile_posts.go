@@ -62,6 +62,31 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": toPostCards(items)})
 }
 
+// OrgRef is the lean org reference embedded in an org-attributed PostCard so
+// the "on behalf of <Org>" badge renders. Nil for personal posts.
+type OrgRef struct {
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	LogoMediaID pgtype.UUID `json:"logo_media_id"`
+}
+
+// orgRefFrom builds an OrgRef badge from the joined org columns, or nil when the
+// post is not org-attributed. Shared by the user and org Posts-tab mappers.
+func orgRefFrom(orgID pgtype.UUID, name, slug *string, logoMediaID pgtype.UUID) *OrgRef {
+	if !orgID.Valid {
+		return nil
+	}
+	ref := &OrgRef{ID: orgID, LogoMediaID: logoMediaID}
+	if name != nil {
+		ref.Name = *name
+	}
+	if slug != nil {
+		ref.Slug = *slug
+	}
+	return ref
+}
+
 // PostCard is the lean public shape for the profile Posts tab. It omits the
 // internal columns the raw gen row carries — tenant_id, the raw TipTap `body`
 // (body_html is the rendered public form), field_values, content_hash,
@@ -70,6 +95,8 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 type PostCard struct {
 	ID              pgtype.UUID        `json:"id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	Organization    *OrgRef            `json:"organization,omitempty"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
 	Title           string             `json:"title"`
@@ -93,6 +120,8 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 		cards[i] = PostCard{
 			ID:              c.ID,
 			AuthorID:        c.AuthorID,
+			OrganizationID:  c.OrganizationID,
+			Organization:    orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoMediaID),
 			SpaceID:         c.SpaceID,
 			ContentType:     c.ContentType,
 			Title:           c.Title,
