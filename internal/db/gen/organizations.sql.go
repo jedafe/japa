@@ -27,6 +27,28 @@ func (q *Queries) AcceptOrganizationInvitation(ctx context.Context, arg AcceptOr
 	return err
 }
 
+const activeOrgExistsByID = `-- name: ActiveOrgExistsByID :one
+SELECT EXISTS (
+    SELECT 1 FROM organizations
+    WHERE tenant_id = $1 AND id = $2
+      AND status = 'active' AND deleted_at IS NULL
+) AS exists
+`
+
+type ActiveOrgExistsByIDParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+// Existence check for the public org profile gate: is there an ACTIVE,
+// non-deleted organization with this id in this tenant?
+func (q *Queries) ActiveOrgExistsByID(ctx context.Context, arg ActiveOrgExistsByIDParams) (bool, error) {
+	row := q.db.QueryRow(ctx, activeOrgExistsByID, arg.TenantID, arg.ID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const addOrganizationMember = `-- name: AddOrganizationMember :exec
 INSERT INTO organization_members (organization_id, user_id, role, invited_by)
 VALUES ($1, $2, $3, $4)

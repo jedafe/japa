@@ -324,6 +324,12 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 	})
 }
 
+// ActiveOrgExists reports whether an ACTIVE, non-deleted org with this id
+// exists in the tenant. Powers the public profile gate.
+func (s *Service) ActiveOrgExists(ctx context.Context, tenantID, id pgtype.UUID) (bool, error) {
+	return s.store.ActiveOrgExistsByID(ctx, tenantID, id)
+}
+
 func strPtr(s string) *string {
 	if s == "" {
 		return nil
