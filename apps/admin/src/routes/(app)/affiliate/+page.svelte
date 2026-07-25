@@ -251,10 +251,15 @@
 		if (!newProvider.name || !newProvider.base_url) return;
 		saving = true;
 		try {
-			await affiliateProvidersAdminApi.create(newProvider);
-			showCreateModal = false;
-			newProvider = { name: '', base_url: '', commission_rate: 0 };
-			load();
+			const slug = newProvider.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+			const result = await affiliateProvidersAdminApi.create({ ...newProvider, slug });
+			if (result.ok) {
+				showCreateModal = false;
+				newProvider = { name: '', base_url: '', commission_rate: 0 };
+				load();
+			} else {
+				error = result.error ?? t('common.error');
+			}
 		} catch {
 			error = t('common.error');
 		} finally {
@@ -264,8 +269,12 @@
 
 	async function deleteProvider(id: string) {
 		try {
-			await affiliateProvidersAdminApi.delete(id);
-			providers = providers.filter((p) => p.id !== id);
+			const result = await affiliateProvidersAdminApi.delete(id);
+			if (result.ok) {
+				providers = providers.filter((p) => p.id !== id);
+			} else {
+				error = result.error ?? t('common.error');
+			}
 		} catch {
 			error = t('common.error');
 		}
@@ -273,11 +282,15 @@
 
 	async function updateMemberStatus(userId: string, status: string) {
 		try {
-			await api(`/admin/affiliate-program/members/${userId}`, {
+			const result = await api(`/admin/affiliate-program/members/${userId}`, {
 				method: 'PATCH',
 				body: { status }
 			});
-			load();
+			if (result.ok) {
+				load();
+			} else {
+				error = result.error ?? t('common.error');
+			}
 		} catch {
 			error = t('common.error');
 		}
@@ -286,10 +299,13 @@
 	async function saveRates() {
 		saving = true;
 		try {
-			await api('/admin/affiliate-program/commission-rates', {
+			const result = await api('/admin/affiliate-program/commission-rates', {
 				method: 'PATCH',
 				body: rates
 			});
+			if (!result.ok) {
+				error = result.error ?? t('common.error');
+			}
 		} catch {
 			error = t('common.error');
 		} finally {
