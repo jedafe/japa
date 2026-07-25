@@ -2,9 +2,11 @@ package content
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/pgvector/pgvector-go"
@@ -18,8 +20,9 @@ import (
 // The Service layer derives slug uniqueness, read time, and content hash
 // from these inputs.
 type CreateContentInput struct {
-	AuthorID     pgtype.UUID
-	SpaceID      pgtype.UUID
+	AuthorID       pgtype.UUID
+	OrganizationID pgtype.UUID
+	SpaceID        pgtype.UUID
 	ContentType  string
 	Title        string
 	Slug         string
@@ -60,9 +63,28 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 		contentHash = &h
 	}
 
+	// Post-as-org (ADR-062): attributing to an org requires the author be an
+	// owner/admin/editor of it. author_id remains the human, always.
+	if input.OrganizationID.Valid {
+		role, err := s.read.GetOrganizationMemberRole(ctx, gen.GetOrganizationMemberRoleParams{
+			OrganizationID: input.OrganizationID,
+			UserID:         input.AuthorID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return gen.CreateContentRow{}, ErrOrgPostForbidden
+			}
+			return gen.CreateContentRow{}, fmt.Errorf("checking org membership: %w", err)
+		}
+		if !isOrgPostRole(role) {
+			return gen.CreateContentRow{}, ErrOrgPostForbidden
+		}
+	}
+
 	content, err := s.write.CreateContent(ctx, gen.CreateContentParams{
 		TenantID:        tenantID,
 		AuthorID:        input.AuthorID,
+		OrganizationID:  input.OrganizationID,
 		SpaceID:         input.SpaceID,
 		ContentType:     input.ContentType,
 		Title:           input.Title,
