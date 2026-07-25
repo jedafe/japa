@@ -50,7 +50,7 @@
 	let searchAnalytics = $state<Array<Record<string, unknown>> | null>(null);
 	let loadAbortController: AbortController | null = null;
 	
-	async function loadAnalytics() {
+	async function loadAnalytics(f = from, toVal = to) {
 		if (loadAbortController) loadAbortController.abort();
 		loadAbortController = new AbortController();
 		const signal = loadAbortController.signal;
@@ -60,7 +60,7 @@
 		try {
 		// Pass the ?from=&to= range to every windowed endpoint so the date
 		// picker drives all tabs, not just the overview.
-		const rangeParams = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join("&") || undefined;
+		const rangeParams = [f && `from=${f}`, toVal && `to=${toVal}`].filter(Boolean).join("&") || undefined;
 		const [overviewRes, securityRes, usersRes, contentRes, spacesRes, revenueRes, searchRes] = await Promise.allSettled([
 			analyticsAdminApi.getOverview(rangeParams),
 			analyticsAdminApi.getSecurity(),
@@ -100,9 +100,11 @@
 
 	$effect(() => {
 		// Re-sync controls from the URL and reload whenever the range changes
-		from = page.url.searchParams.get("from") ?? "";
-		to = page.url.searchParams.get("to") ?? "";
-		loadAnalytics();
+		const f = page.url.searchParams.get("from") ?? "";
+		const t = page.url.searchParams.get("to") ?? "";
+		from = f;
+		to = t;
+		loadAnalytics(f, t);
 
 		return () => {
 			if (loadAbortController) loadAbortController.abort();
