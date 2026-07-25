@@ -69,13 +69,17 @@ export const walletApi = {
 		api('/admin/wallet/rules', { method: 'POST', body }),
 	updateRule: (id: string, body: { activity_key?: string; point_value?: number; is_enabled?: boolean; description?: string }) =>
 		api(`/admin/wallet/rules/${id}`, { method: 'PATCH', body }),
+	toggleRule: (id: string) =>
+		api(`/admin/wallet/rules/${id}/toggle`, { method: 'PATCH' }),
+	deleteRule: (id: string) =>
+		api(`/admin/wallet/rules/${id}`, { method: 'DELETE' }),
 
 	getSettings: () => api<unknown>('/admin/wallet/settings'),
 	updateSettings: (body: { points_to_credits_rate: number; daily_earning_cap: number; enable_earning: boolean }) =>
 		api('/admin/wallet/settings', { method: 'PUT', body }),
 
 	getUserBalance: (userId: string) => api<unknown>(`/admin/wallet/user/${userId}/balance`),
-	adjustBalance: (body: { user_id: string; amount: number; reason: string; type: 'points' | 'credits' }) =>
+	adjustBalance: (body: { user_id: string; amount: number; reason: string; ledger_type: 'points' | 'credits' }) =>
 		api('/admin/wallet/adjust', { method: 'POST', body }),
 };
 
@@ -899,6 +903,17 @@ export const fieldPermissionsApi = {
 export const affiliateLinksAdminApi = {
 	list: (params?: string) =>
 		api<unknown>(`/admin/affiliate-links${params ? `?${params}` : ''}`),
+};
+
+export const affiliateProgramAdminApi = {
+	members: (params?: string) =>
+		api<unknown>(`/admin/affiliate-program/members${params ? `?${params}` : ''}`),
+	updateMemberStatus: (userId: string, body: { status: string; notes?: string }) =>
+		api<unknown>(`/admin/affiliate-program/members/${userId}`, { method: 'PATCH', body }),
+	commissionRates: () =>
+		api<unknown>('/admin/affiliate-program/commission-rates'),
+	updateCommissionRates: (body: { pro_monthly?: number; pro_annual?: number; course?: number }) =>
+		api<unknown>('/admin/affiliate-program/commission-rates', { method: 'PATCH', body }),
 };
 
 export const affiliateProvidersAdminApi = {
