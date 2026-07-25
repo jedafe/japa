@@ -86,7 +86,7 @@ ALTER TABLE contents DROP COLUMN IF EXISTS organization_id;
 
 ---
 
-## ADR (to be written: ADR-06X — Organization Content Authorship)
+## ADR (to be written: ADR-062 — Organization Content Authorship)
 
 - **Decision:** content attributes to an org via a new nullable `contents.organization_id`, alongside the always-present `author_id` (dual attribution). Orgs are not merged into `professional_profiles`; the stubbed `author_profile_id` path is left as-is.
 - **Authority:** posting/editing as an org is gated by `organization_members.role ∈ {owner, admin, editor}`.
