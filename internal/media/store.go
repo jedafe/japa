@@ -215,6 +215,37 @@ func (s *Store) CountMediaFromPublicPostsByUser(ctx context.Context, tenantID, a
 	return count, nil
 }
 
+// ListMediaFromOrgPublicPosts returns media used as featured/header images by
+// the org's published-public posts, paginated. Powers the org Media tab.
+func (s *Store) ListMediaFromOrgPublicPosts(ctx context.Context, tenantID, orgID pgtype.UUID, limit, offset int32) ([]gen.Medium, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	items, err := s.read.ListMediaFromOrgPublicPosts(ctx, gen.ListMediaFromOrgPublicPostsParams{
+		TenantID:       tenantID,
+		OrganizationID: orgID,
+		PageOffset:     offset,
+		PageLimit:      limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing media from org public posts: %w", err)
+	}
+	return items, nil
+}
+
+// CountMediaFromOrgPublicPosts returns the count of media that is the
+// featured/header image of the org's published, public posts.
+func (s *Store) CountMediaFromOrgPublicPosts(ctx context.Context, tenantID, orgID pgtype.UUID) (int32, error) {
+	count, err := s.read.CountMediaFromOrgPublicPosts(ctx, gen.CountMediaFromOrgPublicPostsParams{
+		TenantID:       tenantID,
+		OrganizationID: orgID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting media from org public posts: %w", err)
+	}
+	return count, nil
+}
+
 // BulkSoftDeleteMedia soft-deletes multiple media items.
 func (s *Store) BulkSoftDeleteMedia(ctx context.Context, tenantID pgtype.UUID, mediaIDs []pgtype.UUID) error {
 	if len(mediaIDs) == 0 {
