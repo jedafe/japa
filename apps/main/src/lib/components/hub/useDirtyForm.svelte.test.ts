@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DirtyForm } from './useDirtyForm.svelte';
 
-const ok = (data: unknown = {}) => ({ data, error: null, status: 200 });
-const fail = (status: number) => ({ data: null, error: { code: 'e', message: 'x', status }, status });
+type Res = { data: unknown; error: { message: string; status: number } | null; status: number };
+
+const ok = (data: unknown = {}): Res => ({ data, error: null, status: 200 });
+const fail = (status: number): Res => ({ data: null, error: { message: 'x', status }, status });
 
 describe('DirtyForm', () => {
-	let save: ReturnType<typeof vi.fn>;
-	beforeEach(() => (save = vi.fn().mockResolvedValue(ok())));
+	let save: ReturnType<typeof vi.fn<(v: Record<string, unknown>) => Promise<Res>>>;
+	beforeEach(() => (save = vi.fn<(v: Record<string, unknown>) => Promise<Res>>().mockResolvedValue(ok())));
 
 	it('is not dirty until a value changes', () => {
 		const f = new DirtyForm({ name: 'Jane', bio: '' }, save);
