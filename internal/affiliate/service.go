@@ -197,7 +197,7 @@ func (s *Service) ListUserLinks(ctx context.Context, userID, tenantID pgtype.UUI
 
 func (s *Service) ListAllLinks(ctx context.Context, tenantID pgtype.UUID, page, pageSize int32) ([]gen.UserAffiliateLink, error) {
 	limit, offset := paginate(page, pageSize)
-	return s.store.listLinksByUser(ctx, pgtype.UUID{}, tenantID, true, limit, offset)
+	return s.store.listAllLinks(ctx, tenantID, limit, offset)
 }
 
 type UpdateLinkInput struct {
