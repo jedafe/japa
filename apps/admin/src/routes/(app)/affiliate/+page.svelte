@@ -76,6 +76,7 @@
 		id: string;
 		content_id: string;
 		author_user_id: string;
+		author_username: string | null;
 		provider_name: string | null;
 		external_commission: number;
 		author_share: number;
@@ -302,9 +303,10 @@
 			render: (value: string | null) => `<span class="font-medium">${value ?? '—'}</span>`
 		},
 		{
-			key: 'author_user_id',
+			key: 'author_username',
 			label: t('affiliate.author', 'Author'),
-			render: (value: string) => `<span class="font-mono text-xs">${value}</span>`
+			sortable: true,
+			render: (value: string | null, row: any) => `<span class="font-medium">${value ?? row.author_user_id ?? '—'}</span>`
 		},
 		{
 			key: 'external_commission',
