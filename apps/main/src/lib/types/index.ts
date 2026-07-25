@@ -222,3 +222,38 @@ export type ComposerStatus =
 
 /** How a failed save should be handled. */
 export type SaveErrorClass = 'validation' | 'server' | 'network' | 'conflict';
+
+/* ------------------------------------------------------------------ *
+ * User hub (/settings, /dashboard)
+ * ------------------------------------------------------------------ */
+
+/** Rail grouping for the settings/dashboard registries. */
+export type HubGroup =
+	| 'account'
+	| 'security'
+	| 'notifications'
+	| 'billing'
+	| 'developer'
+	| 'activity'
+	| 'danger';
+
+/** Own profile+account (GET /me). Extends SessionUser with editable fields. */
+export interface MeProfile {
+	id: string;
+	email: string;
+	username: string;
+	displayName: string;
+	bio?: string | null;
+	avatar_url?: string | null;
+	cover_url?: string | null;
+	primary_space?: SpaceRef | null;
+	ui?: { nav_collapsed?: boolean; theme?: string } & Record<string, unknown>;
+}
+
+/** GET/PATCH /me/privacy — a map of privacy toggles (nested). */
+export interface PrivacySettings {
+	profile_visibility?: 'public' | 'members' | 'private';
+	show_activity?: boolean;
+	searchable?: boolean;
+	[key: string]: unknown;
+}
