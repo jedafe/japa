@@ -17,7 +17,7 @@ export interface SectionMeta {
 	icon: string; // lucide name
 	group: HubGroup;
 	backendReady: boolean;
-	component: Component | null; // null = not built in this plan (rail shows disabled)
+	component: Component<{ data: unknown }> | null; // null = not built in this plan (rail shows disabled)
 }
 
 export const DEFAULT_SECTION = 'profile';
