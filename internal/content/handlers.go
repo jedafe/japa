@@ -296,9 +296,10 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		CanonicalUrl *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
 		Status       string          `json:"status"`
 		Visibility   string          `json:"visibility"`
-		PublishAt    *string         `json:"publish_at"`
-		SpaceID      *string         `json:"space_id"`
-		GeoSpaceID   *string         `json:"geo_space_id"`
+		PublishAt      *string         `json:"publish_at"`
+		SpaceID        *string         `json:"space_id"`
+		GeoSpaceID     *string         `json:"geo_space_id"`
+		OrganizationID *string         `json:"organization_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -339,6 +340,13 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	if input.SpaceID != nil && *input.SpaceID != "" {
 		if err := createInput.SpaceID.Scan(*input.SpaceID); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
+			return
+		}
+	}
+
+	if input.OrganizationID != nil && *input.OrganizationID != "" {
+		if err := createInput.OrganizationID.Scan(*input.OrganizationID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
 			return
 		}
 	}
@@ -387,6 +395,10 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 	content, err := h.Service.CreateContent(r.Context(), tenantID, createInput)
 	if err != nil {
+		if errors.Is(err, ErrOrgPostForbidden) {
+			writeError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to post as this organization")
+			return
+		}
 		handleServiceError(w, err)
 		return
 	}
