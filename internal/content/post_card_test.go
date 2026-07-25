@@ -66,3 +66,32 @@ func TestToPostCards_LeanAndCorrect(t *testing.T) {
 		}
 	}
 }
+
+func TestToPostCards_OrgBadge(t *testing.T) {
+	orgName := "Acme"
+	orgSlug := "acme"
+	rows := []gen.ListPublishedContentByAuthorRow{
+		{ // org-attributed → badge present
+			ID: mustUUID(t, "11111111-1111-1111-1111-111111111111"), AuthorID: mustUUID(t, "22222222-2222-2222-2222-222222222222"),
+			OrganizationID: mustUUID(t, "33333333-3333-3333-3333-333333333333"), Title: "org post", Slug: "op",
+			ContentType: "discussion", OrgName: &orgName, OrgSlug: &orgSlug,
+		},
+		{ // personal → no badge
+			ID: mustUUID(t, "44444444-4444-4444-4444-444444444444"), AuthorID: mustUUID(t, "22222222-2222-2222-2222-222222222222"),
+			Title: "personal", Slug: "p", ContentType: "discussion",
+		},
+	}
+
+	cards := toPostCards(rows)
+	if cards[0].Organization == nil || cards[0].Organization.Name != "Acme" || cards[0].Organization.Slug != "acme" {
+		t.Fatalf("org post missing badge: %+v", cards[0].Organization)
+	}
+	if cards[1].Organization != nil {
+		t.Fatalf("personal post should have nil Organization: %+v", cards[1].Organization)
+	}
+
+	blob, _ := json.Marshal(cards[1])
+	if strings.Contains(string(blob), "\"organization\":{") {
+		t.Errorf("personal card must omit the organization object (omitempty): %s", blob)
+	}
+}
