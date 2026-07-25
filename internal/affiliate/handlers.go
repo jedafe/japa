@@ -17,7 +17,6 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
@@ -367,19 +366,39 @@ func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	status := parseQueryString(r, "status")
-	page := int32(parseQueryInt(r, "page", 1))
-	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
-
-	members, err := h.Service.ListMembers(r.Context(), tenantID, status, page, pageSize)
+	rows, err := h.Service.db.Reader.Query(r.Context(),
+		"SELECT apm.user_id, apm.tenant_id, apm.enrolled_at, apm.status, apm.total_clicks, "+
+			"apm.total_conversions, apm.total_earned_credits, apm.payout_method, apm.notes, u.username "+
+			"FROM affiliate_program_members apm "+
+			"LEFT JOIN users u ON u.id = apm.user_id "+
+			"WHERE apm.tenant_id = $1 ORDER BY apm.enrolled_at DESC LIMIT 50", tenantID)
 	if err != nil {
-		handleServiceError(w, err)
+		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query members")
 		return
 	}
-	if members == nil {
-		members = []gen.AffiliateProgramMember{}
+	defer rows.Close()
+	var results []map[string]any
+	for rows.Next() {
+		var userID, tid pgtype.UUID
+		var enrolledAt pgtype.Timestamptz
+		var status string
+		var clicks, conversions int32
+		var earnedCredits float64
+		var payoutMethod, notes, username *string
+		if err := rows.Scan(&userID, &tid, &enrolledAt, &status, &clicks,
+			&conversions, &earnedCredits, &payoutMethod, &notes, &username); err != nil {
+			continue
+		}
+		results = append(results, map[string]any{
+			"id": userID.String(), "user_id": userID.String(), "username": username,
+			"status": status, "total_clicks": clicks, "total_conversions": conversions,
+			"total_earned_credits": earnedCredits, "enrolled_at": enrolledAt.Time,
+		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": members})
+	if results == nil {
+		results = []map[string]any{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
 // UpdateMemberStatusAdmin handles PATCH /api/v1/admin/affiliate-program/members/:user_id
@@ -417,18 +436,45 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	page := int32(parseQueryInt(r, "page", 1))
-	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize))
-
-	links, err := h.Service.ListAllLinks(r.Context(), tenantID, page, pageSize)
+	rows, err := h.Service.db.Reader.Query(r.Context(),
+		"SELECT ual.id, ual.user_id, ual.product_type, ual.code, ual.description, "+
+			"ual.destination_url, ual.click_count, ual.conversion_count, ual.total_earned, "+
+			"ual.is_active, ual.created_at, u.username "+
+			"FROM user_affiliate_links ual "+
+			"LEFT JOIN users u ON u.id = ual.user_id "+
+			"WHERE ual.tenant_id = $1 ORDER BY ual.created_at DESC LIMIT 50", tenantID)
 	if err != nil {
-		handleServiceError(w, err)
+		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query links")
 		return
 	}
-	if links == nil {
-		links = []gen.UserAffiliateLink{}
+	defer rows.Close()
+	var results []map[string]any
+	for rows.Next() {
+		var id, userID pgtype.UUID
+		var productType, code string
+		var description, username *string
+		var destinationURL string
+		var clickCount, conversionCount int32
+		var totalEarned float64
+		var isActive bool
+		var createdAt pgtype.Timestamptz
+		if err := rows.Scan(&id, &userID, &productType, &code, &description,
+			&destinationURL, &clickCount, &conversionCount, &totalEarned,
+			&isActive, &createdAt, &username); err != nil {
+			continue
+		}
+		results = append(results, map[string]any{
+			"id": id.String(), "user_id": userID.String(), "username": username,
+			"product_type": productType, "code": code, "description": description,
+			"destination_url": destinationURL, "click_count": clickCount,
+			"conversion_count": conversionCount, "total_earned": totalEarned,
+			"is_active": isActive, "created_at": createdAt.Time,
+		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": links})
+	if results == nil {
+		results = []map[string]any{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
 // ── Internal helpers ────────────────────────────────────────────────
