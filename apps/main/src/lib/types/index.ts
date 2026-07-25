@@ -131,3 +131,94 @@ export interface FeedItem {
 	cover_image_url?: string | null;
 	tags?: string[];
 }
+
+/* ------------------------------------------------------------------ *
+ * Composer (/create) — Section 14/24/30
+ * ------------------------------------------------------------------ */
+
+export type Visibility = 'public' | 'unlisted' | 'private';
+
+/** GET /content-types item. */
+export interface ContentTypeMeta {
+	value: string;
+	label: string;
+}
+
+/** GET /me/spaces item (the caller's joined spaces). */
+export interface MeSpace {
+	id: string;
+	slug: string;
+	name: string;
+	is_primary?: boolean;
+}
+
+/** One custom-field definition (from GET /custom-field-groups/{id}). */
+export interface CustomFieldDef {
+	id: string;
+	key: string;
+	label: string;
+	field_type: string; // text|textarea|rich_text|number|boolean|date|select|multiselect|rating|url|...
+	is_required: boolean;
+	options?: string[] | null;
+	help_text?: string | null;
+}
+
+/** A custom-field group scoped to an entity type (the composer keeps entity_type === "content"). */
+export interface CustomFieldGroup {
+	id: string;
+	name: string;
+	entity_type: string;
+	fields: CustomFieldDef[];
+}
+
+/** GET /blog/series item. */
+export interface BlogSeries {
+	id: string;
+	slug: string;
+	title: string;
+}
+
+/** Content record returned by POST /content and PATCH /content/{id}. */
+export interface ContentRecord {
+	id: string;
+	slug: string;
+	content_type: string;
+	title: string;
+	body?: string;
+	body_html?: string;
+	field_values?: Record<string, unknown>;
+	canonical_url?: string | null;
+	status: string;
+	visibility: string;
+	publish_at?: string | null;
+	space_id?: string | null;
+}
+
+/** Uploaded media (POST /media/upload → confirm). */
+export interface MediaAsset {
+	id: string;
+	url: string;
+}
+
+/** One autocomplete result for @ / [[ / # triggers. */
+export interface SearchHit {
+	id: string;
+	label: string; // display name / title / tag name
+	slug?: string;
+	handle?: string;
+	avatar_url?: string | null;
+}
+
+/** Autosave/publish lifecycle state. */
+export type ComposerStatus =
+	| 'pristine'
+	| 'creating'
+	| 'saved'
+	| 'dirty'
+	| 'saving'
+	| 'published'
+	| 'scheduled'
+	| 'error';
+
+/** How a failed save should be handled. */
+export type SaveErrorClass = 'validation' | 'server' | 'network' | 'conflict';
