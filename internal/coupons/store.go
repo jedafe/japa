@@ -21,25 +21,48 @@ func newStore(read, write *gen.Queries) *Store {
 
 // ── Affiliate Providers ──────────────────────────────────────────────
 
+// rowToProvider converts any sqlc-generated affiliate provider row type to the
+// base AffiliateProvider model. All row types share the same columns; the only
+// difference is struct field order which sqlc generates per-query.
 func (s *Store) createProvider(ctx context.Context, p gen.CreateAffiliateProviderParams) (gen.AffiliateProvider, error) {
-	return s.write.CreateAffiliateProvider(ctx, p)
+	row, err := s.write.CreateAffiliateProvider(ctx, p)
+	if err != nil {
+		return gen.AffiliateProvider{}, err
+	}
+	return rowToProvider(row), nil
 }
 
 func (s *Store) getProviderByID(ctx context.Context, id pgtype.UUID, tenantID pgtype.UUID) (gen.AffiliateProvider, error) {
-	return s.read.GetAffiliateProviderByID(ctx, gen.GetAffiliateProviderByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetAffiliateProviderByID(ctx, gen.GetAffiliateProviderByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		return gen.AffiliateProvider{}, err
+	}
+	return rowToProvider(row), nil
 }
 
 func (s *Store) listProviders(ctx context.Context, tenantID pgtype.UUID, isActive bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
-	return s.read.ListAffiliateProvidersByTenant(ctx, gen.ListAffiliateProvidersByTenantParams{
+	rows, err := s.read.ListAffiliateProvidersByTenant(ctx, gen.ListAffiliateProvidersByTenantParams{
 		TenantID:   tenantID,
 		IsActive:   isActive,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
+	if err != nil {
+		return nil, err
+	}
+	var result []gen.AffiliateProvider
+	for _, r := range rows {
+		result = append(result, rowToProvider(r))
+	}
+	return result, nil
 }
 
 func (s *Store) updateProvider(ctx context.Context, p gen.UpdateAffiliateProviderParams) (gen.AffiliateProvider, error) {
-	return s.write.UpdateAffiliateProvider(ctx, p)
+	row, err := s.write.UpdateAffiliateProvider(ctx, p)
+	if err != nil {
+		return gen.AffiliateProvider{}, err
+	}
+	return rowToProvider(row), nil
 }
 
 func (s *Store) deleteProvider(ctx context.Context, id pgtype.UUID, tenantID pgtype.UUID) error {
@@ -121,6 +144,46 @@ func (s *Store) countCouponsByTenant(ctx context.Context, tenantID pgtype.UUID) 
 
 func isNoRows(err error) bool {
 	return err != nil && err == pgx.ErrNoRows
+}
+
+// rowToProvider converts any affiliate provider row type to the canonical model.
+func rowToProvider[T any](row T) gen.AffiliateProvider {
+	switch r := any(row).(type) {
+	case gen.CreateAffiliateProviderRow:
+		return gen.AffiliateProvider{
+			ID: r.ID, TenantID: r.TenantID, Name: r.Name, Slug: r.Slug,
+			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
+			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
+			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
+			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+	case gen.GetAffiliateProviderByIDRow:
+		return gen.AffiliateProvider{
+			ID: r.ID, TenantID: r.TenantID, Name: r.Name, Slug: r.Slug,
+			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
+			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
+			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
+			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+	case gen.ListAffiliateProvidersByTenantRow:
+		return gen.AffiliateProvider{
+			ID: r.ID, TenantID: r.TenantID, Name: r.Name, Slug: r.Slug,
+			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
+			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
+			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
+			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+	case gen.UpdateAffiliateProviderRow:
+		return gen.AffiliateProvider{
+			ID: r.ID, TenantID: r.TenantID, Name: r.Name, Slug: r.Slug,
+			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
+			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
+			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
+			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+	default:
+		return gen.AffiliateProvider{}
+	}
 }
 
 // Unused but referenced.

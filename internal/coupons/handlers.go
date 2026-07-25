@@ -472,3 +472,139 @@ func parseQueryUUID(r *http.Request, key string) *pgtype.UUID {
 	}
 	return &id
 }
+
+// ─── Affiliate Enhancement Handlers ─────────────────────────────────
+
+// ListAffiliateScanResults handles GET /admin/affiliate/scan-results
+func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.Service.db.Reader.Query(r.Context(),
+		"SELECT id, content_id, url, domain, detection_method, action_taken, created_at "+
+			"FROM content_affiliate_scan_results WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50", tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query scan results")
+		return
+	}
+	defer rows.Close()
+	var results []map[string]any
+	for rows.Next() {
+		var id, contentID pgtype.UUID
+		var url, domain, method, action string
+		var createdAt pgtype.Timestamptz
+		if err := rows.Scan(&id, &contentID, &url, &domain, &method, &action, &createdAt); err != nil {
+			continue
+		}
+		results = append(results, map[string]any{
+			"id": id.String(), "content_id": contentID.String(), "url": url,
+			"domain": domain, "detection_method": method, "action_taken": action,
+			"created_at": createdAt.Time,
+		})
+	}
+	if results == nil {
+		results = []map[string]any{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+}
+
+// ReviewAffiliateScanResult handles PATCH /admin/affiliate/scan-results/{id}
+func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid scan result ID")
+		return
+	}
+	var input struct {
+		Action string  `json:"action"`
+		Notes  *string `json:"notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	var reviewerID pgtype.UUID
+	reviewerID.Scan(user.UserID)
+	h.Service.db.Writer.Exec(r.Context(),
+		"UPDATE content_affiliate_scan_results SET action_taken = $1, reviewed_by = $2, reviewed_at = now(), notes = $3 WHERE id = $4 AND tenant_id = $5",
+		input.Action, reviewerID, input.Notes, id, tenantID)
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
+}
+
+// ListAffiliateCommissions handles GET /admin/affiliate/commissions
+func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.Service.db.Reader.Query(r.Context(),
+		"SELECT ac.id, ac.content_id, ac.author_user_id, ac.external_commission, ac.author_share, "+
+			"ac.author_commission_pct, ac.event_description, ac.credited, ac.created_at, ap.name "+
+			"FROM affiliate_content_commissions ac LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id "+
+			"WHERE ac.tenant_id = $1 ORDER BY ac.created_at DESC LIMIT 50", tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "query_error", "Failed to query commissions")
+		return
+	}
+	defer rows.Close()
+	var results []map[string]any
+	for rows.Next() {
+		var id, contentID, authorUserID pgtype.UUID
+		var extComm, authorShare, pct float64
+		var desc *string
+		var credited bool
+		var createdAt pgtype.Timestamptz
+		var providerName *string
+		if err := rows.Scan(&id, &contentID, &authorUserID,
+			&extComm, &authorShare, &pct, &desc, &credited, &createdAt, &providerName); err != nil {
+			continue
+		}
+		results = append(results, map[string]any{
+			"id": id.String(), "content_id": contentID.String(),
+			"author_user_id": authorUserID.String(), "provider_name": providerName,
+			"external_commission": extComm, "author_share": authorShare,
+			"author_commission_pct": pct, "credited": credited, "created_at": createdAt.Time,
+		})
+	}
+	if results == nil {
+		results = []map[string]any{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": results})
+}
+
+// UpdateProviderAuthorCommission handles PATCH /admin/affiliate/providers/{id}/author-commission
+func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid provider ID")
+		return
+	}
+	var input struct {
+		AuthorCommissionPct float64 `json:"author_commission_pct"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if input.AuthorCommissionPct < 0 || input.AuthorCommissionPct > 100 {
+		writeError(w, http.StatusBadRequest, "invalid_pct", "Percentage must be 0-100")
+		return
+	}
+	h.Service.db.Writer.Exec(r.Context(),
+		"UPDATE affiliate_providers SET author_commission_pct = $1 WHERE id = $2 AND tenant_id = $3",
+		input.AuthorCommissionPct, id, tenantID)
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
+}
