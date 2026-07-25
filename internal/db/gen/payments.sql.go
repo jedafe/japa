@@ -971,15 +971,28 @@ func (q *Queries) SoftDeleteSubscription(ctx context.Context, arg SoftDeleteSubs
 
 const updateDiscountCode = `-- name: UpdateDiscountCode :one
 UPDATE discount_codes
-SET code = COALESCE(NULLIF($1, ''), code)
-WHERE id = $2 AND tenant_id = $3
+SET
+    code = COALESCE(NULLIF($1, ''), code),
+    discount_type = COALESCE(NULLIF($2, ''), discount_type),
+    discount_value = COALESCE($3, discount_value),
+    applicable_to = COALESCE(NULLIF($4, ''), applicable_to),
+    max_uses = $5,
+    valid_from = COALESCE($6, valid_from),
+    valid_until = $7
+WHERE id = $8 AND tenant_id = $9
 RETURNING id, code
 `
 
 type UpdateDiscountCodeParams struct {
-	NewCode  interface{} `json:"new_code"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	NewCode       interface{}        `json:"new_code"`
+	DiscountType  interface{}        `json:"discount_type"`
+	DiscountValue pgtype.Numeric     `json:"discount_value"`
+	ApplicableTo  interface{}        `json:"applicable_to"`
+	MaxUses       *int32             `json:"max_uses"`
+	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
+	ValidUntil    pgtype.Timestamptz `json:"valid_until"`
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
 }
 
 type UpdateDiscountCodeRow struct {
@@ -988,7 +1001,17 @@ type UpdateDiscountCodeRow struct {
 }
 
 func (q *Queries) UpdateDiscountCode(ctx context.Context, arg UpdateDiscountCodeParams) (UpdateDiscountCodeRow, error) {
-	row := q.db.QueryRow(ctx, updateDiscountCode, arg.NewCode, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, updateDiscountCode,
+		arg.NewCode,
+		arg.DiscountType,
+		arg.DiscountValue,
+		arg.ApplicableTo,
+		arg.MaxUses,
+		arg.ValidFrom,
+		arg.ValidUntil,
+		arg.ID,
+		arg.TenantID,
+	)
 	var i UpdateDiscountCodeRow
 	err := row.Scan(&i.ID, &i.Code)
 	return i, err

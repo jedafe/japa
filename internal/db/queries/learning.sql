@@ -202,7 +202,7 @@ ORDER BY enrolled_at DESC;
 -- name: GetEnrollmentByUserAndTrack :one
 SELECT id, tenant_id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
 FROM enrollments
-WHERE user_id = @user_id AND track_id = @track_id;
+WHERE user_id = @user_id AND track_id = @track_id AND tenant_id = @tenant_id;
 
 -- name: UpdateEnrollmentProgress :exec
 UPDATE enrollments
@@ -230,3 +230,22 @@ SELECT id, tenant_id, lesson_id, question, options, answer, explanation, positio
 FROM lesson_quizzes
 WHERE lesson_id = @lesson_id AND tenant_id = @tenant_id
 ORDER BY position ASC;
+
+-- =====================
+-- Admin List Operations
+-- =====================
+
+-- name: ListAllLearningModules :many
+SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
+FROM learning_modules
+WHERE tenant_id = $1
+ORDER BY sort_order ASC, created_at DESC;
+
+-- name: ListAllLearningLessons :many
+SELECT ll.id, ll.tenant_id, ll.module_id, lm.title AS module_title, ll.title, ll.slug,
+       ll.lesson_type, ll.content, ll.media_id, ll.duration_minutes, ll.sort_order,
+       ll.is_published, ll.created_at, ll.updated_at
+FROM learning_lessons ll
+LEFT JOIN learning_modules lm ON lm.id = ll.module_id AND lm.tenant_id = ll.tenant_id
+WHERE ll.tenant_id = $1
+ORDER BY ll.sort_order ASC, ll.created_at DESC;

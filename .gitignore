@@ -79,3 +79,13 @@ api
 meilisearch
 seed
 bin/japa-api
+
+# Agent/tool artifacts — never commit
+.playwright-cli/
+.devin/
+.commandcode/
+.mimocode/
+screenshot/
+/test-*.cjs
+/inspect_*.cjs
+/debug_*.cjs

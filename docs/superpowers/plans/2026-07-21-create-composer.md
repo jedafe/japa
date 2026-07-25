@@ -1285,7 +1285,11 @@ export const load: PageServerLoad = async (event) => {
 	let draft: ContentRecord | null = null;
 	if (draftId) {
 		try {
-			draft = await apiGet<ContentRecord>(ctx, `/content/${draftId}`);
+			// Ownership-scoped: GET /me/drafts/{id} returns the caller's own
+			// draft only (tenant + author + status='draft'); 404 otherwise.
+			// The public GET /content/{slug} resolves by slug and is not
+			// ownership-scoped, so it cannot safely serve the editor restore.
+			draft = await apiGet<ContentRecord>(ctx, `/me/drafts/${draftId}`);
 		} catch {
 			draft = null;
 		}

@@ -6,6 +6,7 @@
 	import { Modal } from "$lib/components/ui/modal";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { Plus, Trash2, RefreshCw, ArrowLeft, Shield } from "lucide-svelte";
+	import UserAutocomplete from "$lib/components/ui/UserAutocomplete.svelte";
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
 	import { spacesAdminApi, spacesModeratorsAdminApi } from "$lib/api";
@@ -15,9 +16,14 @@
 	const spaceId = $derived(page.params.spaceId ?? "");
 
 	type Moderator = {
+		id: string;
 		user_id: string;
-		username: string;
-		added_at: string;
+		space_id: string;
+		assigned_by: string;
+		assigned_by_user_id: string;
+		user_username: string;
+		user_display_name?: string;
+		created_at: string;
 	};
 
 	type SpaceDetail = {
@@ -52,9 +58,15 @@
 	const canManageModerators = $derived(hasPermission("spaces.manage"));
 
 	const columns = [
-		{ key: "username", label: t("spaces.moderator", "Moderator"), sortable: true },
-		{ key: "added_at", label: t("spaces.added_at", "Added"), sortable: true,
-			render: (v: string) => new Date(v).toLocaleDateString()
+		{ key: "user_username", label: t("spaces.moderator", "Moderator"), sortable: true,
+			render: (v: string, row: Moderator) => row.user_display_name || v || "—"
+		},
+		{ key: "created_at", label: t("spaces.added_at", "Added"), sortable: true,
+			render: (v: string) => {
+				if (!v) return "—";
+				const d = new Date(v);
+				return isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
+			}
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
 			componentSnippet: ModeratorActionsCell
@@ -88,7 +100,7 @@
 				let items = (result.data as Moderator[]) ?? [];
 				if (searchQuery) {
 					const q = searchQuery.toLowerCase();
-					items = items.filter((m: any) => m.username?.toLowerCase().includes(q) || m.role?.toLowerCase().includes(q));
+					items = items.filter((m: Moderator) => m.user_username?.toLowerCase().includes(q));
 				}
 				moderators = items;
 			}
@@ -139,7 +151,12 @@
 		error = "";
 		try {
 			const ids = Array.from(selectedIds);
-			await Promise.all(ids.map((userId) => spacesModeratorsAdminApi.remove(spaceId, userId)));
+			// Map moderator record IDs to user IDs
+			const userIds = ids.map((modId) => {
+				const mod = moderators.find((m) => m.id === modId);
+				return mod ? mod.user_id : modId;
+			});
+			await Promise.all(userIds.map((userId) => spacesModeratorsAdminApi.remove(spaceId, userId)));
 			selectedIds = new Set();
 			success = t("spaces.moderators_removed", "Moderators removed");
 			await loadModerators();
@@ -242,7 +259,9 @@
 <Modal bind:open={showAddModal} title={t("spaces.add_moderator", "Add Moderator")}>
 	<div>
 		<label for="mod-username" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spaces.moderator_username", "Username")}</label>
-		<input id="mod-username" type="text" bind:value={newModeratorUsername} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder="username" />
+		<div class="mt-1">
+			<UserAutocomplete bind:value={newModeratorUsername} placeholder={t("spaces.moderator_username", "Username")} />
+		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => showAddModal = false}>{t("common.cancel", "Cancel")}</Button>
@@ -256,7 +275,7 @@
 <Modal bind:open={showRemoveConfirm} title={t("common.confirmDelete", "Confirm Remove")}>
 	{#if removeTarget}
 		<p class="text-sm" style="color: var(--color-foreground)">
-			{t("spaces.remove_moderator_confirm", "Remove")} <strong>{removeTarget.username}</strong> {t("spaces.as_moderator", "as moderator?")}
+			{t("spaces.remove_moderator_confirm", "Remove")} <strong>{removeTarget.user_display_name || removeTarget.user_username}</strong> {t("spaces.as_moderator", "as moderator?")}
 		</p>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">

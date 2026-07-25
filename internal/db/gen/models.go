@@ -153,6 +153,22 @@ type AdminBroadcast struct {
 	RecipientCount int32              `json:"recipient_count"`
 }
 
+// Tracks external affiliate commissions earned from content with affiliate links, and the author revenue share.
+type AffiliateContentCommission struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	ContentID           pgtype.UUID        `json:"content_id"`
+	ProviderID          pgtype.UUID        `json:"provider_id"`
+	AuthorUserID        pgtype.UUID        `json:"author_user_id"`
+	ExternalCommission  pgtype.Numeric     `json:"external_commission"`
+	AuthorShare         pgtype.Numeric     `json:"author_share"`
+	AuthorCommissionPct pgtype.Numeric     `json:"author_commission_pct"`
+	EventDescription    *string            `json:"event_description"`
+	Credited            bool               `json:"credited"`
+	CreditedAt          pgtype.Timestamptz `json:"credited_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+}
+
 type AffiliateLinkEvent struct {
 	ID                 pgtype.UUID        `json:"id"`
 	TenantID           pgtype.UUID        `json:"tenant_id"`
@@ -200,6 +216,8 @@ type AffiliateProvider struct {
 	IsFeatured     bool               `json:"is_featured"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	// Percentage of external affiliate commission shared with the content author who embedded the link. 0 = no sharing.
+	AuthorCommissionPct pgtype.Numeric `json:"author_commission_pct"`
 }
 
 type AiHitlReview struct {
@@ -475,6 +493,23 @@ type Content struct {
 	AutoHidden      bool               `json:"auto_hidden"`
 	AutoHiddenAt    pgtype.Timestamptz `json:"auto_hidden_at"`
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+}
+
+// Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.
+type ContentAffiliateScanResult struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	Url               string             `json:"url"`
+	Domain            string             `json:"domain"`
+	MatchedProviderID pgtype.UUID        `json:"matched_provider_id"`
+	DetectionMethod   string             `json:"detection_method"`
+	ActionTaken       string             `json:"action_taken"`
+	ReviewedBy        pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
+	Notes             *string            `json:"notes"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
 type ContentEngagement struct {

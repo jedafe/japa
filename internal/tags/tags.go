@@ -157,3 +157,16 @@ func (s *Service) RemoveTagModerator(ctx context.Context, tagID, userID, tenantI
 
 	return nil
 }
+
+// GetUserIDByUsername resolves a username to a user ID within the tenant.
+func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{
+		TenantID: tenantID,
+		Username: username,
+	})
+	if err != nil {
+		return id, fmt.Errorf("looking up user %q: %w", username, err)
+	}
+	return row.UserID, nil
+}
