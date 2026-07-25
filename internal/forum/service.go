@@ -351,3 +351,38 @@ func (s *Service) IncrementThreadView(ctx context.Context, id, tenantID pgtype.U
 		slog.Warn("failed to increment thread view count", "thread_id", id, "error", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Enriched methods — return joined author + space data for public endpoints.
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+// ---------------------------------------------------------------------------
+
+// GetThreadBySlugWithDetails returns a thread plus joined author + space data.
+func (s *Service) GetThreadBySlugWithDetails(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetForumThreadBySlugWithDetailsRow, error) {
+	return s.store.getThreadBySlugWithDetails(ctx, slug, tenantID)
+}
+
+// ListThreadsByTenantWithDetails returns paginated threads with author + space.
+func (s *Service) ListThreadsByTenantWithDetails(ctx context.Context, tenantID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
+	return s.store.listThreadsByTenantWithDetails(ctx, tenantID, cursorCreatedAt, limit)
+}
+
+// ListThreadsBySpaceWithDetails returns paginated threads for a space with author + space.
+func (s *Service) ListThreadsBySpaceWithDetails(ctx context.Context, tenantID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsBySpaceWithDetailsRow, error) {
+	return s.store.listThreadsBySpaceWithDetails(ctx, tenantID, spaceID, cursorCreatedAt, limit)
+}
+
+// ListThreadsByAuthorWithDetails returns paginated threads for an author with author + space.
+func (s *Service) ListThreadsByAuthorWithDetails(ctx context.Context, tenantID, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
+	return s.store.listThreadsByAuthorWithDetails(ctx, tenantID, authorUserID, cursorCreatedAt, limit)
+}
+
+// ListThreadsByTagWithDetails returns paginated threads for a tag with author + space.
+func (s *Service) ListThreadsByTagWithDetails(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
+	return s.store.listThreadsByTagWithDetails(ctx, tenantID, tagID, cursorCreatedAt, limit)
+}
+
+// ListRepliesByThreadWithAuthor returns all replies for a thread with author data.
+func (s *Service) ListRepliesByThreadWithAuthor(ctx context.Context, threadID, tenantID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
+	return s.store.listRepliesByThreadWithAuthor(ctx, threadID, tenantID)
+}

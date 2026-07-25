@@ -85,6 +85,124 @@ WHERE ft.tenant_id = @tenant_id
 ORDER BY ft.created_at DESC, ft.id DESC
 LIMIT @page_limit;
 
+-- =====================
+-- Threads with joined author + space details.
+-- These variants power the public list/detail endpoints so the frontend
+-- gets author username/display_name/avatar and space name/slug in one
+-- response. When is_anonymous = true, author fields are nulled out so
+-- the frontend never receives identifying data for anonymous posts.
+-- =====================
+
+-- name: GetForumThreadBySlugWithDetails :one
+SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
+       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+       s.name AS space_name,
+       s.slug AS space_slug,
+       s.level AS space_level
+FROM forum_threads ft
+LEFT JOIN users u ON u.id = ft.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
+LEFT JOIN spaces s ON s.id = ft.space_id
+WHERE ft.slug = @slug AND ft.tenant_id = @tenant_id AND ft.deleted_at IS NULL;
+
+-- name: ListForumThreadsByTenantWithDetails :many
+SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
+       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+       s.name AS space_name,
+       s.slug AS space_slug,
+       s.level AS space_level
+FROM forum_threads ft
+LEFT JOIN users u ON u.id = ft.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
+LEFT JOIN spaces s ON s.id = ft.space_id
+WHERE ft.tenant_id = @tenant_id
+  AND ft.deleted_at IS NULL
+  AND (ft.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ORDER BY ft.created_at DESC, ft.id DESC
+LIMIT @page_limit;
+
+-- name: ListForumThreadsBySpaceWithDetails :many
+SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
+       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+       s.name AS space_name,
+       s.slug AS space_slug,
+       s.level AS space_level
+FROM forum_threads ft
+LEFT JOIN users u ON u.id = ft.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
+LEFT JOIN spaces s ON s.id = ft.space_id
+WHERE ft.tenant_id = @tenant_id
+  AND ft.space_id = @space_id
+  AND ft.deleted_at IS NULL
+  AND (ft.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ORDER BY ft.created_at DESC, ft.id DESC
+LIMIT @page_limit;
+
+-- name: ListForumThreadsByAuthorWithDetails :many
+SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
+       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+       s.name AS space_name,
+       s.slug AS space_slug,
+       s.level AS space_level
+FROM forum_threads ft
+LEFT JOIN users u ON u.id = ft.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
+LEFT JOIN spaces s ON s.id = ft.space_id
+WHERE ft.tenant_id = @tenant_id
+  AND ft.author_user_id = @author_user_id
+  AND ft.deleted_at IS NULL
+  AND (ft.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ORDER BY ft.created_at DESC, ft.id DESC
+LIMIT @page_limit;
+
+-- name: ListForumThreadsByTagWithDetails :many
+SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
+       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+       s.name AS space_name,
+       s.slug AS space_slug,
+       s.level AS space_level
+FROM forum_threads ft
+JOIN forum_thread_tags ftt ON ftt.thread_id = ft.id
+LEFT JOIN users u ON u.id = ft.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
+LEFT JOIN spaces s ON s.id = ft.space_id
+WHERE ft.tenant_id = @tenant_id
+  AND ftt.tag_id = @tag_id
+  AND ft.deleted_at IS NULL
+  AND (ft.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+ORDER BY ft.created_at DESC, ft.id DESC
+LIMIT @page_limit;
+
 -- name: UpdateForumThread :one
 UPDATE forum_threads
 SET title = @title, body = @body, is_anonymous = @is_anonymous,
@@ -142,6 +260,21 @@ WHERE thread_id = @thread_id
   AND tenant_id = @tenant_id
   AND deleted_at IS NULL
 ORDER BY created_at ASC;
+
+-- name: ListForumRepliesByThreadWithAuthor :many
+SELECT fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+       fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+       fr.created_at, fr.updated_at, fr.deleted_at,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+FROM forum_replies fr
+LEFT JOIN users u ON u.id = fr.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
+WHERE fr.thread_id = @thread_id
+  AND fr.tenant_id = @tenant_id
+  AND fr.deleted_at IS NULL
+ORDER BY fr.created_at ASC;
 
 -- name: UpdateForumReply :one
 UPDATE forum_replies
