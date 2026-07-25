@@ -24,3 +24,24 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": toPublicOrg(org)})
 }
+
+// ListPublicMembers handles GET /organizations/{id}/members (public). The
+// active-org gate (requireActiveOrgByID) has already 404'd non-active orgs.
+func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	orgID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	rows, err := h.service.ListPublicMembers(r.Context(), orgID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": toOrgMembers(rows)})
+}

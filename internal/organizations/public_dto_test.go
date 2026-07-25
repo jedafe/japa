@@ -59,3 +59,31 @@ func TestToPublicOrg_LeanAndCorrect(t *testing.T) {
 		}
 	}
 }
+
+func TestToOrgMembers_LeanAndCorrect(t *testing.T) {
+	dn := "Jane Doe"
+	rows := []gen.ListPublicOrganizationMembersRow{{
+		OrganizationID: mustUUID(t, "11111111-1111-1111-1111-111111111111"),
+		UserID:         mustUUID(t, "22222222-2222-2222-2222-222222222222"),
+		Role:           "admin",
+		JoinedAt:       pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		Username:       "jane",
+		DisplayName:    &dn,
+	}}
+
+	cards := toOrgMembers(rows)
+	if len(cards) != 1 || cards[0].Role != "admin" || cards[0].User.Username != "jane" {
+		t.Fatalf("field-copy mismatch: %+v", cards)
+	}
+
+	blob, _ := json.Marshal(cards)
+	got := string(blob)
+	if strings.Contains(got, "invited_by") || strings.Contains(got, "organization_id") {
+		t.Errorf("OrgMemberResponse leaks internal field: %s", got)
+	}
+	for _, want := range []string{"\"role\"", "\"user\"", "username", "joined_at"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("OrgMemberResponse missing %q: %s", want, got)
+		}
+	}
+}

@@ -335,6 +335,11 @@ func (s *Service) GetPublicOrganizationBySlug(ctx context.Context, slug string, 
 	return s.store.GetPublicOrganizationBySlug(ctx, slug, tenantID)
 }
 
+// ListPublicMembers returns the org's ACTIVE members for the public Members tab.
+func (s *Service) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.ListPublicOrganizationMembersRow, error) {
+	return s.store.ListPublicMembers(ctx, orgID, tenantID)
+}
+
 func strPtr(s string) *string {
 	if s == "" {
 		return nil

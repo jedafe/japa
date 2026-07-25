@@ -152,3 +152,15 @@ SELECT EXISTS (
 SELECT * FROM organizations
 WHERE slug = @slug AND tenant_id = @tenant_id
   AND status = 'active' AND deleted_at IS NULL;
+
+-- name: ListPublicOrganizationMembers :many
+-- Public Members tab: ACTIVE members only (banned/suspended/deleted users
+-- excluded), tenant-scoped via the users join (defense-in-depth). Excludes the
+-- internal invited_by column by projecting only public fields.
+SELECT om.organization_id, om.user_id, om.role, om.joined_at,
+       u.username, up.display_name, up.avatar_url
+FROM organization_members om
+JOIN users u ON u.id = om.user_id AND u.tenant_id = @tenant_id AND u.status = 'active'
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+WHERE om.organization_id = @organization_id
+ORDER BY om.joined_at DESC;
