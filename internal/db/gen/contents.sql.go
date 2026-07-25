@@ -111,15 +111,15 @@ const createContent = `-- name: CreateContent :one
 
 
 INSERT INTO contents (
-    tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+    tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
     field_values, content_hash, geo_space_id, canonical_url, status, visibility,
     read_time_minutes, publish_at, published_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12,
-    $13, $14, $15, $16, $17
+    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    $10, $11, $12, $13,
+    $14, $15, $16, $17, $18
 )
-RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
@@ -129,6 +129,7 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
 type CreateContentParams struct {
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
 	Title           string             `json:"title"`
@@ -150,6 +151,7 @@ type CreateContentRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
 	Title           string             `json:"title"`
@@ -185,6 +187,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 	row := q.db.QueryRow(ctx, createContent,
 		arg.TenantID,
 		arg.AuthorID,
+		arg.OrganizationID,
 		arg.SpaceID,
 		arg.ContentType,
 		arg.Title,
@@ -206,6 +209,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.ID,
 		&i.TenantID,
 		&i.AuthorID,
+		&i.OrganizationID,
 		&i.SpaceID,
 		&i.ContentType,
 		&i.Title,
@@ -394,7 +398,7 @@ func (q *Queries) DeleteJSONLDTemplate(ctx context.Context, arg DeleteJSONLDTemp
 }
 
 const getContentByID = `-- name: GetContentByID :one
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
        canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
@@ -412,6 +416,7 @@ type GetContentByIDRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
 	Title           string             `json:"title"`
@@ -446,6 +451,7 @@ func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) 
 		&i.ID,
 		&i.TenantID,
 		&i.AuthorID,
+		&i.OrganizationID,
 		&i.SpaceID,
 		&i.ContentType,
 		&i.Title,
@@ -1739,9 +1745,10 @@ SET title = $1, slug = $2, body = $3, body_html = $4,
     geo_space_id = $7, canonical_url = $8,
     status = $9, visibility = $10, read_time_minutes = $11,
     publish_at = $12, published_at = $13,
-    is_locked = $14, is_pinned = $15, updated_at = now()
-WHERE id = $16 AND tenant_id = $17 AND deleted_at IS NULL
-RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+    is_locked = $14, is_pinned = $15,
+    organization_id = $16, updated_at = now()
+WHERE id = $17 AND tenant_id = $18 AND deleted_at IS NULL
+RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
@@ -1764,6 +1771,7 @@ type UpdateContentParams struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	IsLocked        bool               `json:"is_locked"`
 	IsPinned        bool               `json:"is_pinned"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 }
@@ -1772,6 +1780,7 @@ type UpdateContentRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
 	Title           string             `json:"title"`
@@ -1816,6 +1825,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.PublishedAt,
 		arg.IsLocked,
 		arg.IsPinned,
+		arg.OrganizationID,
 		arg.ID,
 		arg.TenantID,
 	)
@@ -1824,6 +1834,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.ID,
 		&i.TenantID,
 		&i.AuthorID,
+		&i.OrganizationID,
 		&i.SpaceID,
 		&i.ContentType,
 		&i.Title,
