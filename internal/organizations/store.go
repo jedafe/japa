@@ -188,3 +188,9 @@ func (s *Store) IncrementMemberCount(ctx context.Context, orgID pgtype.UUID, del
 		MemberCount: delta,
 	})
 }
+
+// ActiveOrgExistsByID reports whether an ACTIVE, non-deleted org with this id
+// exists in the tenant.
+func (s *Store) ActiveOrgExistsByID(ctx context.Context, tenantID, id pgtype.UUID) (bool, error) {
+	return s.read.ActiveOrgExistsByID(ctx, gen.ActiveOrgExistsByIDParams{TenantID: tenantID, ID: id})
+}
