@@ -668,25 +668,18 @@ SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
     total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE tenant_id = $1
-    AND ($2::text IS NULL OR status = $2)
 ORDER BY enrolled_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListAffiliateMembersParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
-	Status     string      `json:"status"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListAffiliateMembers(ctx context.Context, arg ListAffiliateMembersParams) ([]AffiliateProgramMember, error) {
-	rows, err := q.db.Query(ctx, listAffiliateMembers,
-		arg.TenantID,
-		arg.Status,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listAffiliateMembers, arg.TenantID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -720,31 +713,18 @@ SELECT id, tenant_id, user_id, product_type, product_id, code, description,
     destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE tenant_id = $1
-    AND ($2::uuid IS NULL OR user_id = $2)
-    AND ($3::text IS NULL OR product_type = $3)
-    AND ($4::bool IS NULL OR is_active = $4)
 ORDER BY created_at DESC
-LIMIT $6 OFFSET $5
+LIMIT $3 OFFSET $2
 `
 
 type ListAllAffiliateLinksParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	UserIDFilter pgtype.UUID `json:"user_id_filter"`
-	ProductType  string      `json:"product_type"`
-	IsActive     bool        `json:"is_active"`
-	PageOffset   int32       `json:"page_offset"`
-	PageLimit    int32       `json:"page_limit"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListAllAffiliateLinks(ctx context.Context, arg ListAllAffiliateLinksParams) ([]UserAffiliateLink, error) {
-	rows, err := q.db.Query(ctx, listAllAffiliateLinks,
-		arg.TenantID,
-		arg.UserIDFilter,
-		arg.ProductType,
-		arg.IsActive,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listAllAffiliateLinks, arg.TenantID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}

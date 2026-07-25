@@ -32,7 +32,6 @@ func (s *Store) getMember(ctx context.Context, userID, tenantID pgtype.UUID) (ge
 func (s *Store) listMembers(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
 	return s.read.ListAffiliateMembers(ctx, gen.ListAffiliateMembersParams{
 		TenantID:   tenantID,
-		Status:     status,
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -71,6 +70,14 @@ func (s *Store) getLinkByCode(ctx context.Context, code string) (gen.UserAffilia
 func (s *Store) listLinksByUser(ctx context.Context, userID, tenantID pgtype.UUID, isActive bool, limit, offset int32) ([]gen.UserAffiliateLink, error) {
 	return s.read.ListAffiliateLinksByUser(ctx, gen.ListAffiliateLinksByUserParams{
 		UserID: userID, TenantID: tenantID, IsActive: isActive, PageLimit: limit, PageOffset: offset,
+	})
+}
+
+func (s *Store) listAllLinks(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.UserAffiliateLink, error) {
+	return s.read.ListAllAffiliateLinks(ctx, gen.ListAllAffiliateLinksParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
 	})
 }
 

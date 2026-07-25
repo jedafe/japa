@@ -17,6 +17,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
@@ -375,6 +376,9 @@ func (h *Handlers) ListMembersAdmin(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+	if members == nil {
+		members = []gen.AffiliateProgramMember{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": members})
 }
 
@@ -420,6 +424,9 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if links == nil {
+		links = []gen.UserAffiliateLink{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": links})
 }
