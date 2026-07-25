@@ -248,7 +248,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsBySpace(r.Context(), tenantID, spaceID, cursor, limit)
+		threads, err := h.Service.ListThreadsBySpaceWithDetails(r.Context(), tenantID, spaceID, cursor, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -263,7 +263,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByAuthor(r.Context(), tenantID, authorID, cursor, limit)
+		threads, err := h.Service.ListThreadsByAuthorWithDetails(r.Context(), tenantID, authorID, cursor, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -278,7 +278,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByTag(r.Context(), tenantID, tagID, cursor, limit)
+		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tenantID, tagID, cursor, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -288,9 +288,10 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		// List all public threads for the tenant regardless of auth — the
-		// forum index shows everyone's threads. Callers wanting their own
-		// threads pass author_id explicitly.
-		threads, err := h.Service.ListThreadsByTenant(r.Context(), tenantID, cursor, limit)
+		// forum index shows everybody's threads. Callers wanting their own
+		// threads pass author_id explicitly. Uses the WithDetails variant so
+		// the frontend receives joined author + space data in one response.
+		threads, err := h.Service.ListThreadsByTenantWithDetails(r.Context(), tenantID, cursor, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -313,7 +314,9 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	thread, err := h.Service.GetThreadBySlug(r.Context(), slug, tenantID)
+	// Use the WithDetails variant so the frontend receives joined author +
+	// space data in one response. Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+	thread, err := h.Service.GetThreadBySlugWithDetails(r.Context(), slug, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -486,7 +489,9 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	replies, err := h.Service.ListRepliesByThread(r.Context(), threadID, tenantID)
+	// Use the WithAuthor variant so the frontend receives joined author data
+	// (username, display_name, avatar_url) in the same response.
+	replies, err := h.Service.ListRepliesByThreadWithAuthor(r.Context(), threadID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
