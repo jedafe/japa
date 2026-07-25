@@ -140,3 +140,77 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 	}
 	return cards
 }
+
+// ListPublishedByOrganization returns an org's published+public content, newest
+// first, paginated. Powers the org profile Posts tab (GET /organizations/{id}/content).
+func (s *Service) ListPublishedByOrganization(ctx context.Context, tenantID, orgID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedContentByOrganizationRow, error) {
+	rows, err := s.read.ListPublishedContentByOrganization(ctx, gen.ListPublishedContentByOrganizationParams{
+		TenantID:       tenantID,
+		OrganizationID: orgID,
+		PageLimit:      limit,
+		PageOffset:     offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing published content by organization: %w", err)
+	}
+	return rows, nil
+}
+
+// ListByOrganization handles GET /organizations/{id}/content — the org profile
+// Posts tab. Non-active orgs are already 404'd by the requireActiveOrgByID gate.
+func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var orgID pgtype.UUID
+	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_org_id", "Invalid organization ID format")
+		return
+	}
+
+	limit := parsePageSize(r)
+	var offset int32
+	if o := r.URL.Query().Get("page_offset"); o != "" {
+		if n, err := strconv.Atoi(o); err == nil && n > 0 {
+			offset = int32(n)
+		}
+	}
+
+	items, err := h.Service.ListPublishedByOrganization(r.Context(), tenantID, orgID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": toOrgPostCards(items)})
+}
+
+func toOrgPostCards(items []gen.ListPublishedContentByOrganizationRow) []PostCard {
+	cards := make([]PostCard, len(items))
+	for i := range items {
+		c := &items[i]
+		cards[i] = PostCard{
+			ID:              c.ID,
+			AuthorID:        c.AuthorID,
+			OrganizationID:  c.OrganizationID,
+			Organization:    orgRefFrom(c.OrganizationID, c.OrgName, c.OrgSlug, c.OrgLogoMediaID),
+			SpaceID:         c.SpaceID,
+			ContentType:     c.ContentType,
+			Title:           c.Title,
+			Slug:            c.Slug,
+			BodyHtml:        c.BodyHtml,
+			HeaderImageID:   c.HeaderImageID,
+			FeaturedImageID: c.FeaturedImageID,
+			ReadTimeMinutes: c.ReadTimeMinutes,
+			ViewCount:       c.ViewCount,
+			CommentCount:    c.CommentCount,
+			ShareCount:      c.ShareCount,
+			IsPinned:        c.IsPinned,
+			PublishedAt:     c.PublishedAt,
+			CreatedAt:       c.CreatedAt,
+		}
+	}
+	return cards
+}

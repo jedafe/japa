@@ -341,3 +341,25 @@ WHERE c.tenant_id = @tenant_id
   AND c.auto_hidden = false
 ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListPublishedContentByOrganization :many
+-- Org profile Posts tab (GET /organizations/{id}/content): the org's PUBLISHED
+-- PUBLIC content, newest first, paginated. Keyed by organization_id (ADR-062).
+-- author_id (the human) is projected for accountability; org badge fields via join.
+SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
+       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at,
+       o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id
+FROM contents c
+LEFT JOIN organizations o ON o.id = c.organization_id AND o.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.organization_id = @organization_id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
+LIMIT @page_limit OFFSET @page_offset;
