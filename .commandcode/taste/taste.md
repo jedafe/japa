@@ -69,4 +69,5 @@ See [svelte/taste.md](svelte/taste.md)
 - Make DataTable columns `sortable: true` by default when adding new columns (e.g., a Groups column on the users list) — users expect to sort columns like they can with other columns. Confidence: 0.70
 - DataTables showing tab content (e.g., Activity, Sessions, AI Context, Warnings) should include pagination with configurable page size options (10/25/50/100), not use `showPagination={false}`. Confidence: 0.80
 - Admin list pages (reviews, tickets, etc.) should include: (1) status filter tabs with active highlighting, (2) entity/type filter dropdown using Select component, (3) server-side Pagination component. Model new pages after the tickets page pattern. Confidence: 0.85
+- Frontend filter option values (status, content_type, etc.) must match the actual database column values, not assumed or fabricated ones — verify against the backend schema/query before defining filter dropdown options. Confidence: 0.85
 

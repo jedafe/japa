@@ -12,14 +12,10 @@
 	}
 	let { item, style, layout }: Props = $props();
 
-	const typeLabels: Record<string, string> = {
-		blog_post: 'Blog',
-		discussion: 'Discussion',
-		question: 'Question',
-		comparison: 'Comparison',
-		page: 'Page'
-	};
-	const typeLabel = (ct: string) => typeLabels[ct] ?? ct.replace(/_/g, ' ');
+	// Content-type pill label. Resolved via i18n with a content_type.{value}
+	// key; falls back to a humanized form of the raw type for unknown types.
+	// Ref: Guide §7 (i18n), Rule 16 — no hardcoded English in components.
+	const typeLabel = (ct: string) => t(`content_type.${ct}`, ct.replace(/_/g, ' '));
 	const href = (i: FeedItem) => (i.content_type === 'blog_post' ? `/blog/${i.slug}` : `/content/${i.slug}`);
 	const time = $derived(relativeTime(item.created_at));
 	const initials = $derived((item.author_name ?? '?').slice(0, 2).toUpperCase());
