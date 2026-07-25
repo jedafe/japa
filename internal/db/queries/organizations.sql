@@ -136,3 +136,12 @@ WHERE organization_id = $1 AND user_id = $2;
 UPDATE organizations
 SET member_count = member_count + $2, updated_at = now()
 WHERE id = $1;
+
+-- name: ActiveOrgExistsByID :one
+-- Existence check for the public org profile gate: is there an ACTIVE,
+-- non-deleted organization with this id in this tenant?
+SELECT EXISTS (
+    SELECT 1 FROM organizations
+    WHERE tenant_id = @tenant_id AND id = @id
+      AND status = 'active' AND deleted_at IS NULL
+) AS exists;
