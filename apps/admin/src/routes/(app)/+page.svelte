@@ -126,7 +126,7 @@
 			.slice(0, 10)
 	);
 
-	async function load() {
+	async function load(f = from, toVal = to, p = period) {
 		// Abort any in-flight request to prevent race conditions
 		if (loadAbortController) loadAbortController.abort();
 		loadAbortController = new AbortController();
@@ -135,7 +135,7 @@
 		loading = true;
 		error = '';
 		try {
-		const params = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join('&') || `period=${period}`;
+		const params = [f && `from=${f}`, toVal && `to=${toVal}`].filter(Boolean).join('&') || `period=${p}`;
 		const [overviewResult, usersResult] = await Promise.all([
 			// Prefer an explicit date range; fall back to the period selector
 			analyticsAdminApi.getOverview(params),
@@ -184,10 +184,13 @@
 
 	$effect(() => {
 		// Re-sync controls from the URL and reload whenever the range changes
-		from = page.url.searchParams.get('from') ?? '';
-		to = page.url.searchParams.get('to') ?? '';
-		period = page.url.searchParams.get('period') ?? '7d';
-		load();
+		const f = page.url.searchParams.get('from') ?? '';
+		const t = page.url.searchParams.get('to') ?? '';
+		const p = page.url.searchParams.get('period') ?? '7d';
+		from = f;
+		to = t;
+		period = p;
+		load(f, t, p);
 
 		return () => {
 			if (loadAbortController) loadAbortController.abort();

@@ -12,6 +12,11 @@
 	import { couponsAdminApiExtended } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import {
+		dateInputToStartOfDayISO,
+		dateInputToEndOfDayISO,
+		isoTimestampToDateInput
+	} from "$lib/utils/date";
 
 	type Coupon = {
 		id: string;
@@ -36,7 +41,7 @@
 	const canManageCoupons = $derived(hasPermission("coupons.manage"));
 	
 	const discountTypeOptions = $derived([
-		{ value: "percentage", label: t("coupons.percentage", "Percentage") },
+		{ value: "percent", label: t("coupons.percentage", "Percentage") },
 		{ value: "fixed", label: t("coupons.fixed", "Fixed") }
 	]);
 
@@ -52,7 +57,7 @@
 
 	// Form state
 	let code = $state("");
-	let discountType = $state("percentage");
+	let discountType = $state("percent");
 	let discountValue = $state("");
 	let validFrom = $state("");
 	let validUntil = $state("");
@@ -106,7 +111,7 @@
 		modalMode = "create";
 		editingCoupon = null;
 		code = "";
-		discountType = "percentage";
+		discountType = "percent";
 		discountValue = "";
 		validFrom = "";
 		validUntil = "";
@@ -119,10 +124,10 @@
 		modalMode = "edit";
 		editingCoupon = coupon;
 		code = coupon.code;
-		discountType = coupon.discount_type;
+		discountType = coupon.discount_type === "percentage" ? "percent" : coupon.discount_type || "percent";
 		discountValue = String(coupon.discount_value);
-		validFrom = coupon.valid_from || "";
-		validUntil = coupon.valid_until || "";
+		validFrom = isoTimestampToDateInput(coupon.valid_from);
+		validUntil = isoTimestampToDateInput(coupon.valid_until);
 		usageLimit = coupon.usage_limit ? String(coupon.usage_limit) : "";
 		isActive = coupon.is_active;
 		showModal = true;
@@ -134,13 +139,15 @@
 		error = "";
 		try {
 			const body: Record<string, unknown> = {
+				title: code.trim(),
 				code: code.trim().toUpperCase(),
+				coupon_type: "external",
 				discount_type: discountType,
 				discount_value: Number(discountValue),
-				is_active: isActive
+				status: isActive ? "active" : "inactive"
 			};
-			if (validFrom) body.valid_from = validFrom;
-			if (validUntil) body.valid_until = validUntil;
+			if (validFrom) body.valid_from = dateInputToStartOfDayISO(validFrom);
+			if (validUntil) body.valid_until = dateInputToEndOfDayISO(validUntil);
 			if (usageLimit) body.usage_limit = Number(usageLimit);
 
 			const result = editingCoupon

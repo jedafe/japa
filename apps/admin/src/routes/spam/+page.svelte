@@ -13,6 +13,7 @@
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { onMount } from "svelte";
+	import { datetimeLocalToPostgresTimestamptz } from "$lib/utils/date";
 
 	type IpBlock = {
 		id: string;
@@ -50,8 +51,10 @@
 	const canManageSpam = $derived(hasPermission("spam.ip_block.manage"));
 	
 	const blockTypeOptions = $derived([
-		{ value: "permanent", label: t("spam.permanent", "Permanent") },
-		{ value: "temporary", label: t("spam.temporary", "Temporary") }
+		{ value: "full", label: t("spam.block_type_full", "Full Block") },
+		{ value: "registration", label: t("spam.block_type_registration", "Registration") },
+		{ value: "posting", label: t("spam.block_type_posting", "Posting") },
+		{ value: "api", label: t("spam.block_type_api", "API") }
 	]);
 	
 	const actionOptions = $derived([
@@ -63,7 +66,7 @@
 	// IP Blocks
 	let ipBlocks = $state<IpBlock[]>([]);
 	let showIpModal = $state(false);
-	let ipForm = $state({ cidr: "", block_type: "permanent", reason: "", expires_at: "" });
+	let ipForm = $state({ cidr: "", block_type: "full", reason: "", expires_at: "" });
 	let ipSearch = $state("");
 
 	// Censored Words
@@ -81,8 +84,10 @@
 			key: "block_type",
 			label: t("spam.block_type", "Block Type"),
 			options: [
-				{ value: "permanent", label: t("spam.permanent", "Permanent") },
-				{ value: "temporary", label: t("spam.temporary", "Temporary") }
+				{ value: "full", label: t("spam.block_type_full", "Full Block") },
+				{ value: "registration", label: t("spam.block_type_registration", "Registration") },
+				{ value: "posting", label: t("spam.block_type_posting", "Posting") },
+				{ value: "api", label: t("spam.block_type_api", "API") }
 			]
 		}
 	];
@@ -240,11 +245,11 @@
 				block_type: ipForm.block_type
 			};
 			if (ipForm.reason.trim()) body.reason = ipForm.reason.trim();
-			if (ipForm.expires_at) body.expires_at = ipForm.expires_at;
+			if (ipForm.expires_at) body.expires_at = datetimeLocalToPostgresTimestamptz(ipForm.expires_at);
 			const result = await spamApi.createIpBlock(body);
 			if (result.ok) {
 				showIpModal = false;
-				ipForm = { cidr: "", block_type: "permanent", reason: "", expires_at: "" };
+				ipForm = { cidr: "", block_type: "full", reason: "", expires_at: "" };
 				success = t("spam.block_created", "IP block created");
 				loadIpBlocks();
 			} else {
@@ -355,7 +360,7 @@
 	<div class="mb-4 flex items-center justify-between">
 		<p class="text-sm" style="color: var(--color-muted)">{ipBlocks.length} {t("spam.ip_blocks_count", "IP blocks configured")}</p>
 		{#if canManageSpam}
-			<Button onclick={() => { ipForm = { cidr: "", block_type: "permanent", reason: "", expires_at: "" }; showIpModal = true; }}>
+			<Button onclick={() => { ipForm = { cidr: "", block_type: "full", reason: "", expires_at: "" }; showIpModal = true; }}>
 				<Plus class="mr-2 h-4 w-4" /> {t("spam.add_ip_block", "Add IP Block")}
 			</Button>
 		{/if}
