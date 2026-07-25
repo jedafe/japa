@@ -6,22 +6,22 @@
 
 -- name: CreateContent :one
 INSERT INTO contents (
-    tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+    tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
     field_values, content_hash, geo_space_id, canonical_url, status, visibility,
     read_time_minutes, publish_at, published_at
 ) VALUES (
-    @tenant_id, @author_id, sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html,
+    @tenant_id, @author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html,
     @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id), sqlc.narg(canonical_url),
     @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at)
 )
-RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at;
 
 -- name: GetContentByID :one
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
        canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
@@ -88,9 +88,10 @@ SET title = @title, slug = @slug, body = @body, body_html = @body_html,
     geo_space_id = sqlc.narg(geo_space_id), canonical_url = sqlc.narg(canonical_url),
     status = @status, visibility = @visibility, read_time_minutes = @read_time_minutes,
     publish_at = sqlc.narg(publish_at), published_at = sqlc.narg(published_at),
-    is_locked = @is_locked, is_pinned = @is_pinned, updated_at = now()
+    is_locked = @is_locked, is_pinned = @is_pinned,
+    organization_id = sqlc.narg(organization_id), updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
-RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
+RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,

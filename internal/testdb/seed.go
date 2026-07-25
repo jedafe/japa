@@ -131,6 +131,8 @@ type ContentOpts struct {
 	Status          string
 	Visibility      string
 	FeaturedImageID pgtype.UUID
+	OrganizationID  pgtype.UUID
+	SpaceID         pgtype.UUID
 }
 
 // SeedContent inserts a contents row authored by authorID under tenantID
@@ -159,9 +161,9 @@ func SeedContent(t *testing.T, d *db.DB, tenantID, authorID pgtype.UUID, o Conte
 	slug := "test-content-" + uuid.New().String()
 
 	_, err := d.Writer.Exec(ctx,
-		`INSERT INTO contents (id, tenant_id, author_id, content_type, title, slug, body, body_html, status, visibility, featured_image_id)
-		 VALUES ($1, $2, $3, 'discussion', $4, $5, 'Seeded test body.', '<p>Seeded test body.</p>', $6, $7, $8)`,
-		contentID, tenantID, authorID, title, slug, status, visibility, o.FeaturedImageID)
+		`INSERT INTO contents (id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html, status, visibility, featured_image_id)
+		 VALUES ($1, $2, $3, $4, $5, 'discussion', $6, $7, 'Seeded test body.', '<p>Seeded test body.</p>', $8, $9, $10)`,
+		contentID, tenantID, authorID, o.OrganizationID, o.SpaceID, title, slug, status, visibility, o.FeaturedImageID)
 	if err != nil {
 		t.Fatalf("testdb: SeedContent: %v", err)
 	}
