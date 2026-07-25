@@ -11,10 +11,10 @@
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Select } from '$lib/components/ui/select';
 	import { Modal } from '$lib/components/ui/modal';
+	import { page } from '$app/state';
 	import { Plus, Pencil, Trash2, Eye } from 'lucide-svelte';
 
 	type DiscountCode = {
@@ -23,11 +23,12 @@
 		description?: string;
 		discount_type: string;
 		discount_value: number;
-		is_active: boolean;
+		applicable_to?: string;
+		max_uses?: number;
+		uses_per_user?: number;
 		valid_from?: string;
 		valid_until?: string;
-		usage_limit?: number;
-		used_count: number;
+		used_count?: number;
 		created_at: string;
 	};
 
@@ -37,19 +38,17 @@
 
 	let showCreateModal = $state(false);
 	let showUsageModal = $state(false);
-	let usageCode = $state<DiscountCode | null>(null);
+	let editingCode = $state<DiscountCode | null>(null);
 	let usageData = $state<{ users: Array<{ user_id: string; used_at: string }>; total: number } | null>(null);
 	let saving = $state(false);
 
-	// Delete confirm
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<DiscountCode | null>(null);
 
-	// Bulk delete state
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 
-	const canManageDiscounts = $derived(hasPermission('discount_codes.manage'));
+	const canManageDiscounts = $derived(hasPermission('payments.discount_codes.manage'));
 
 	let code = $state('');
 	let description = $state('');
@@ -58,14 +57,27 @@
 	let validFrom = $state('');
 	let validUntil = $state('');
 	let usageLimit = $state('');
-	let isActive = $state(true);
 
 	let activeTab = $state('active');
-	let searchQuery = $state("");
+	let searchQuery = $state('');
+
+	function computeStatus(row: DiscountCode): string {
+		const now = new Date();
+		const isExpired = !!row.valid_until && new Date(row.valid_until) < now;
+		const isUsedUp = row.max_uses != null && row.used_count != null && row.used_count >= row.max_uses;
+		if (isExpired) return 'expired';
+		if (isUsedUp) return 'used';
+		return 'active';
+	}
+
+	function isCodeActive(row: DiscountCode): boolean {
+		const status = computeStatus(row);
+		return status === 'active';
+	}
 
 	const tabs = $derived([
-		{ value: 'active', label: 'Active', count: codes.filter((c) => c.is_active).length },
-		{ value: 'inactive', label: 'Inactive', count: codes.filter((c) => !c.is_active).length },
+		{ value: 'active', label: 'Active', count: codes.filter((c) => isCodeActive(c)).length },
+		{ value: 'inactive', label: 'Inactive', count: codes.filter((c) => !isCodeActive(c)).length },
 		{ value: 'all', label: 'All', count: codes.length }
 	]);
 
@@ -93,7 +105,7 @@
 			key: 'used_count',
 			label: 'Used',
 			sortable: true,
-			render: (value: number, row: any) => `<span class="text-sm text-foreground-alt">${value ?? 0}${row.usage_limit ? ` / ${row.usage_limit}` : ''}</span>`
+			render: (value: number, row: any) => `<span class="text-sm text-foreground-alt">${value ?? 0}${row.max_uses ? ` / ${row.max_uses}` : ''}</span>`
 		},
 		{
 			key: 'valid_until',
@@ -102,13 +114,11 @@
 			render: (value: string) => value ? `<span class="text-sm">${new Date(value).toLocaleDateString()}</span>` : '<span class="text-sm text-muted">Never</span>'
 		},
 		{
-			key: 'is_active',
+			key: 'status',
 			label: 'Status',
-			sortable: true,
+			sortable: false,
 			render: (_: any, row: any) => {
-				const isExpired = row.valid_until && new Date(row.valid_until) < new Date();
-				const isUsedUp = row.usage_limit && row.used_count >= row.usage_limit;
-				const status = isExpired ? 'expired' : isUsedUp ? 'used' : row.is_active ? 'active' : 'inactive';
+				const status = computeStatus(row);
 				const classes: Record<string, string> = {
 					active: 'bg-success/15 text-success border-success',
 					inactive: 'bg-surface text-foreground border',
@@ -128,8 +138,15 @@
 
 	let filteredCodes = $derived.by(() => {
 		let result = [...codes];
-		if (activeTab === 'active') result = result.filter((c) => c.is_active);
-		else if (activeTab === 'inactive') result = result.filter((c) => !c.is_active);
+
+		if (activeTab === 'active') result = result.filter((c) => isCodeActive(c));
+		else if (activeTab === 'inactive') result = result.filter((c) => !isCodeActive(c));
+
+		if (searchQuery) {
+			const q = searchQuery.toLowerCase();
+			result = result.filter((c) => c.code?.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q));
+		}
+
 		return result;
 	});
 
@@ -140,10 +157,6 @@
 			const result = await api<DiscountCode[]>('/admin/discount-codes');
 			if (result.ok) {
 				codes = result.data ?? [];
-				if (searchQuery) {
-					const q = searchQuery.toLowerCase();
-					codes = codes.filter((c: any) => c.code?.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q));
-				}
 			} else {
 				errorMessage = result.error;
 			}
@@ -162,20 +175,19 @@
 		validFrom = '';
 		validUntil = '';
 		usageLimit = '';
-		isActive = true;
+		editingCode = null;
 		showCreateModal = true;
 	}
 
 	function openEdit(codeItem: DiscountCode) {
 		code = codeItem.code;
 		description = codeItem.description || '';
-		discountType = codeItem.discount_type === 'percentage' ? 'percent' : codeItem.discount_type || 'percent';
+		discountType = codeItem.discount_type || 'percent';
 		discountValue = String(codeItem.discount_value);
 		validFrom = isoTimestampToDateInput(codeItem.valid_from);
 		validUntil = isoTimestampToDateInput(codeItem.valid_until);
-		usageLimit = codeItem.usage_limit ? String(codeItem.usage_limit) : '';
-		isActive = codeItem.is_active;
-		usageCode = codeItem;
+		usageLimit = codeItem.max_uses != null ? String(codeItem.max_uses) : '';
+		editingCode = codeItem;
 		showCreateModal = true;
 	}
 
@@ -189,18 +201,18 @@
 				description: description.trim() || undefined,
 				discount_type: discountType,
 				discount_value: Number(discountValue),
-				applicable_to: 'all'
+				applicable_to: 'all',
+				valid_from: validFrom ? dateInputToStartOfDayISO(validFrom) : null,
+				valid_until: validUntil ? dateInputToEndOfDayISO(validUntil) : null,
+				max_uses: usageLimit ? Number(usageLimit) : null
 			};
-			if (validFrom) body.valid_from = dateInputToStartOfDayISO(validFrom);
-			if (validUntil) body.valid_until = dateInputToEndOfDayISO(validUntil);
-			if (usageLimit) body.max_uses = Number(usageLimit);
 
-			const url = usageCode ? `/admin/discount-codes/${usageCode.id}` : '/admin/discount-codes';
-			const method = usageCode ? 'PATCH' : 'POST';
+			const url = editingCode ? `/admin/discount-codes/${editingCode.id}` : '/admin/discount-codes';
+			const method = editingCode ? 'PATCH' : 'POST';
 			const result = await api(url, { method, body });
 			if (result.ok) {
 				showCreateModal = false;
-				usageCode = null;
+				editingCode = null;
 				load();
 			} else {
 				errorMessage = result.error;
@@ -231,7 +243,7 @@
 		try {
 			const result = await api<{ users: Array<{ user_id: string; used_at: string }>; total: number }>(`/admin/discount-codes/${codeItem.id}/usage`);
 			if (result.ok) {
-				usageCode = codeItem;
+				editingCode = codeItem;
 				usageData = result.data;
 				showUsageModal = true;
 			} else {
@@ -271,6 +283,8 @@
 	}
 
 	$effect(() => {
+		const q = page.url.searchParams.get('q') ?? '';
+		if (q) searchQuery = q;
 		load();
 	});
 </script>
@@ -308,7 +322,7 @@
 			selectable={true}
 			bind:selectedIds
 			searchable
-			onsearch={(q) => { searchQuery = q; load(); }}
+			onsearch={(q) => { searchQuery = q; }}
 			emptyMessage={t('discounts.empty')}
 		>
 			{#snippet bulkActions()}
@@ -326,7 +340,7 @@
 </div>
 
 <!-- Create/Edit Modal -->
-<Modal bind:open={showCreateModal} title={usageCode ? t('discounts.edit') : t('discounts.create')}>
+<Modal bind:open={showCreateModal} title={editingCode ? t('discounts.edit') : t('discounts.create')}>
 	<div class="space-y-4">
 		<div>
 			<label for="dc-code" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.code')}</label>
@@ -362,20 +376,14 @@
 				<input id="dc-until" type="date" bind:value={validUntil} class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
 			</div>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
-			<div>
-				<label for="dc-limit" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.usage_limit')}</label>
-				<input id="dc-limit" type="number" bind:value={usageLimit} class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
-			</div>
-			<div class="flex items-center gap-2 pt-6">
-				<input id="dc-active" type="checkbox" bind:checked={isActive} class="h-4 w-4 rounded border text-primary-600 focus:ring-primary" />
-				<label for="dc-active" class="text-sm font-medium text-foreground-alt">{t('discounts.active')}</label>
-			</div>
+		<div>
+			<label for="dc-limit" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.usage_limit')}</label>
+			<input id="dc-limit" type="number" bind:value={usageLimit} class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" />
 		</div>
 		<div class="flex justify-end gap-2 pt-2">
-			<Button variant="outline" onclick={() => { showCreateModal = false; usageCode = null; }}>{t('common.cancel')}</Button>
+			<Button variant="outline" onclick={() => { showCreateModal = false; editingCode = null; }}>{t('common.cancel')}</Button>
 			<Button onclick={saveCode} disabled={saving}>
-				{saving ? t('common.saving') : usageCode ? t('common.save') : t('common.create')}
+				{saving ? t('common.saving') : editingCode ? t('common.save') : t('common.create')}
 			</Button>
 		</div>
 	</div>

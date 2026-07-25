@@ -419,20 +419,29 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		UserID string `json:"user_id"`
+		UserID   string `json:"user_id"`
+		Username string `json:"username"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	if input.UserID == "" {
-		writeError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
-		return
-	}
 
 	var userID pgtype.UUID
-	if err := userID.Scan(input.UserID); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+	switch {
+	case input.UserID != "":
+		if err := userID.Scan(input.UserID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+			return
+		}
+	case input.Username != "":
+		userID, err = h.service.GetUserIDByUsername(r.Context(), tenantID, input.Username)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "user_not_found", "User not found")
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
 		return
 	}
 

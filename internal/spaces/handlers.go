@@ -1288,6 +1288,11 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 
 	var targetUserID pgtype.UUID
 	switch {
+	case chi.URLParam(r, "moderator_id") != "":
+		if err := targetUserID.Scan(chi.URLParam(r, "moderator_id")); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid moderator_id format")
+			return
+		}
 	case chi.URLParam(r, "userId") != "":
 		if err := targetUserID.Scan(chi.URLParam(r, "userId")); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_id", "Invalid userId format")

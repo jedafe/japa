@@ -169,7 +169,7 @@
 									<span>{alert.entity_type}</span>
 								{/if}
 								<span>&middot;</span>
-								<span>{alert.created_at}</span>
+								<span>{new Date(alert.created_at).toLocaleDateString()}</span>
 							</div>
 						</div>
 					</div>

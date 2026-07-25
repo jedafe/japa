@@ -1053,20 +1053,64 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Code      string `json:"code"`
-		Percent   *int   `json:"percent"`
-		Amount    *int64 `json:"amount"`
-		ExpiresAt string `json:"expires_at"`
+		Code          string  `json:"code"`
+		DiscountType  string  `json:"discount_type"`
+		DiscountValue float64 `json:"discount_value"`
+		ApplicableTo  string  `json:"applicable_to"`
+		MaxUses       *int32  `json:"max_uses"`
+		ValidFrom     string  `json:"valid_from"`
+		ValidUntil    *string `json:"valid_until"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
+	// Build nullable valid_until: explicit null clears the field, missing key keeps existing.
+	var validUntil pgtype.Timestamptz
+	if input.ValidUntil != nil {
+		if *input.ValidUntil == "" {
+			validUntil = pgtype.Timestamptz{Valid: false}
+		} else {
+			t, err := time.Parse(time.RFC3339, *input.ValidUntil)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_valid_until", "Invalid valid_until format")
+				return
+			}
+			validUntil = pgtype.Timestamptz{Time: t, Valid: true}
+		}
+	} else {
+		// Key not present — keep existing value (pass NULL so COALESCE preserves it).
+		validUntil = pgtype.Timestamptz{Valid: false}
+	}
+
+	var validFrom pgtype.Timestamptz
+	if input.ValidFrom != "" {
+		t, err := time.Parse(time.RFC3339, input.ValidFrom)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_valid_from", "Invalid valid_from format")
+			return
+		}
+		validFrom = pgtype.Timestamptz{Time: t, Valid: true}
+	}
+
+	var discountValue pgtype.Numeric
+	if input.DiscountValue != 0 {
+		discountValue = pgtype.Numeric{}
+		_ = discountValue.Scan(input.DiscountValue)
+	}
+
 	queries := gen.New(h.Service.db.Writer)
 	_, err = queries.UpdateDiscountCode(r.Context(), gen.UpdateDiscountCodeParams{
-		ID:       id,
-		TenantID: tenantID,
-		NewCode:  input.Code,
+		ID:            id,
+		TenantID:      tenantID,
+		NewCode:       input.Code,
+		DiscountType:  input.DiscountType,
+		DiscountValue: discountValue,
+		ApplicableTo:  input.ApplicableTo,
+		MaxUses:       input.MaxUses,
+		ValidFrom:     validFrom,
+		ValidUntil:    validUntil,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to update discount code")
@@ -1077,17 +1121,45 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 
 // GetDiscountCodeUsage handles GET /admin/discount-codes/:id/usage.
 func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
-	code := chi.URLParam(r, "id")
-	usage, err := h.Service.GetDiscountCodeUsageStats(r.Context(), tenantID, code)
+	codeID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid discount code ID")
+		return
+	}
+
+	queries := gen.New(h.Service.db.Reader)
+	uses, err := queries.ListDiscountCodeUses(r.Context(), gen.ListDiscountCodeUsesParams{
+		CodeID:     codeID,
+		PageLimit:  1000,
+		PageOffset: 0,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to get usage stats")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": usage})
+
+	type userUse struct {
+		UserID string `json:"user_id"`
+		UsedAt string `json:"used_at"`
+	}
+	users := make([]userUse, 0, len(uses))
+	for _, u := range uses {
+		users = append(users, userUse{
+			UserID: u.UserID.String(),
+			UsedAt: u.UsedAt.Time.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"users": users,
+			"total": len(uses),
+		},
+	})
 }
 
 // DeleteSubscription handles DELETE /subscriptions/:id.

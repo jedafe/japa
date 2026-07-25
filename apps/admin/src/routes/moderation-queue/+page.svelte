@@ -13,21 +13,24 @@
 
 	type ModerationQueueItem = {
 		id: string;
-		content_type: string;
-		content_id: string;
+		type: string;
 		status: string;
-		reason?: string;
-		reported_at: string;
-		assignee_id?: string;
-		assignee_name?: string;
+		content?: string;
+		reporter?: string;
+		author_id?: string;
+		created_at: string;
+		entity_ref?: string;
 	};
 
 	type ModerationAlert = {
 		id: string;
-		type: string;
-		message: string;
+		alert_type: string;
+		title: string;
+		description?: string;
 		severity: string;
-		acknowledged: boolean;
+		status: string;
+		acknowledged_at?: string;
+		resolved_at?: string;
 		created_at: string;
 	};
 
@@ -56,25 +59,19 @@
 
 	const canModerate = $derived(hasPermission('admin.moderation'));
 
-	const filterDefs: { key: string; label: string; type: 'select'; options: { value: string; label: string }[] }[] = [
-		{ key: 'status', label: 'Status', type: 'select', options: [
-			{ value: 'pending', label: 'Pending' },
-			{ value: 'approved', label: 'Approved' },
-			{ value: 'rejected', label: 'Rejected' },
-			{ value: 'under_review', label: 'Under Review' },
-			{ value: 'escalated', label: 'Escalated' }
+	const filterDefs: { key: string; label: string; type: 'select' | 'text'; options?: { value: string; label: string }[] }[] = [
+		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: [
+			{ value: 'flagged', label: t('app.moderation.queue.flagged', 'Flagged') },
+			{ value: 'published', label: t('app.moderation.queue.published', 'Published') },
+			{ value: 'removed', label: t('app.moderation.queue.removed', 'Removed') }
 		]},
-		{ key: 'content_type', label: 'Content Type', type: 'select', options: [
-			{ value: 'post', label: 'Post' },
-			{ value: 'comment', label: 'Comment' },
-			{ value: 'message', label: 'Message' },
-			{ value: 'profile', label: 'Profile' }
+		{ key: 'content_type', label: t('moderation.content_type', 'Content Type'), type: 'select', options: [
+			{ value: 'organization', label: t('app.moderation.queue.organization', 'Organization') },
+			{ value: 'service', label: t('app.moderation.queue.service', 'Service') },
+			{ value: 'mentor', label: t('app.moderation.queue.mentor', 'Mentor') },
+			{ value: 'university', label: t('app.moderation.queue.university', 'University') }
 		]},
-		{ key: 'source', label: 'Source', type: 'select', options: [
-			{ value: 'user_report', label: 'User Report' },
-			{ value: 'auto_flag', label: 'Auto Flag' },
-			{ value: 'admin', label: 'Admin' }
-		]}
+		{ key: 'q', label: t('common.search', 'Search'), type: 'text' }
 	];
 
 	let filterValues = $state<Record<string, string>>({});
@@ -82,39 +79,43 @@
 	function handleApplyFilters(values: Record<string, string>) {
 		filterValues = values;
 		currentPage = 0;
-		fetchData();
 	}
 
 	const queueColumns = [
 		{
-			key: 'content_type',
-			label: t('moderationQueue.type'),
-			sortable: true
+			key: 'status',
+			label: t('common.status', 'Status'),
+			sortable: true,
+			render: (v: string) => {
+				const colors = v === 'pending' ? 'bg-warning/15 text-warning dark:text-warning' : v === 'approved' ? 'bg-success/15 text-success dark:text-success' : v === 'rejected' ? 'bg-danger/15 text-danger dark:text-danger' : v === 'flagged' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-info/15 text-info dark:text-info';
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
+			}
 		},
 		{
-			key: 'content_id',
-			label: t('moderationQueue.content_id'),
-			render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${(v ?? '').slice(0, 12)}</span>`
+			key: 'type',
+			label: t('moderation.content_type', 'Content Type'),
+			sortable: true,
+			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${v}</span>`
 		},
 		{
-			key: 'reason',
-			label: t('moderationQueue.reason'),
+			key: 'content',
+			label: t('moderation.content_preview', 'Content'),
+			render: (v: string) => v ? `<span class="text-xs max-w-xs truncate block">${v}</span>` : '<span style="color: var(--color-muted)">—</span>'
+		},
+		{
+			key: 'reporter',
+			label: t('moderation.reporter', 'Reporter'),
 			render: (v: string) => v || '—'
 		},
 		{
-			key: 'assignee_name',
-			label: t('moderationQueue.assignee'),
-			render: (v: string) => v || '—'
-		},
-		{
-			key: 'reported_at',
-			label: t('moderationQueue.reported'),
+			key: 'created_at',
+			label: t('moderationQueue.reported', 'Reported'),
 			sortable: true,
 			render: (v: string) => new Date(v).toLocaleDateString()
 		},
 		{
 			key: 'actions',
-			label: t('common.actions'),
+			label: t('common.actions', 'Actions'),
 			class: 'w-32',
 			componentSnippet: QueueActionsCell
 		}
@@ -122,17 +123,22 @@
 
 	const alertColumns = [
 		{
-			key: 'type',
-			label: t('moderationQueue.alert_type'),
-			sortable: true
+			key: 'alert_type',
+			label: t('moderationQueue.alert_type', 'Alert Type'),
+			sortable: true,
+			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${v.replace(/_/g, ' ')}</span>`
 		},
 		{
-			key: 'message',
-			label: t('moderationQueue.message')
+			key: 'title',
+			label: t('moderationQueue.message', 'Message'),
+			render: (v: string, row: ModerationAlert) => {
+				const desc = row.description ? `<br><span class="text-xs" style="color: var(--color-muted)">${row.description}</span>` : '';
+				return `<span class="text-sm">${v}</span>${desc}`;
+			}
 		},
 		{
 			key: 'severity',
-			label: t('moderationQueue.severity'),
+			label: t('moderationQueue.severity', 'Severity'),
 			sortable: true,
 			render: (v: string) => {
 				const cls = v === 'high' ? 'bg-danger/15 text-danger dark:text-danger' : v === 'medium' ? 'bg-warning/15 text-warning dark:text-warning' : 'bg-muted/15 text-muted dark:text-muted';
@@ -141,13 +147,13 @@
 		},
 		{
 			key: 'created_at',
-			label: t('moderationQueue.created'),
+			label: t('moderationQueue.created', 'Created'),
 			sortable: true,
 			render: (v: string) => new Date(v).toLocaleDateString()
 		},
 		{
 			key: 'actions',
-			label: t('common.actions'),
+			label: t('common.actions', 'Actions'),
 			class: 'w-32',
 			componentSnippet: AlertActionsCell
 		}
@@ -159,15 +165,15 @@
 		try {
 			if (activeTab === 'queue') {
 				const params = new URLSearchParams({
-					page: String(currentPage + 1),
-					limit: String(itemsPerPage)
+					page_size: String(itemsPerPage),
+					page_offset: String(currentPage * itemsPerPage)
 				});
 				Object.entries(filterValues).forEach(([key, value]) => {
 					if (value) params.set(key, value);
 				});
 				const result = await moderationAdminApi.getQueue(params.toString());
 				if (result.ok) {
-					const d = result.data as { items: ModerationQueueItem[]; total_pages: number };
+					const d = result.data as { items: ModerationQueueItem[]; total: number; total_pages: number };
 					items = d?.items ?? [];
 					totalPages = d?.total_pages ?? 0;
 				} else {
@@ -176,13 +182,13 @@
 			} else {
 				const result = await moderationAdminApi.getAlerts();
 				if (result.ok) {
-					alerts = ((result.data as { alerts: ModerationAlert[] })?.alerts) ?? [];
+					alerts = Array.isArray(result.data) ? result.data : ((result.data as { alerts: ModerationAlert[] })?.alerts) ?? [];
 				} else {
 					errorMessage = result.error;
 				}
 			}
 		} catch {
-			errorMessage = t('common.error');
+			errorMessage = t('common.error', 'An error occurred');
 		} finally {
 			loading = false;
 		}
@@ -191,7 +197,7 @@
 	async function approveItem(id: string) {
 		errorMessage = '';
 		try {
-			await moderationAdminApi.updateItem(id, { status: 'approved' });
+			await moderationAdminApi.updateItem(id, { action: 'approve' });
 			fetchData();
 		} catch {
 			errorMessage = t('common.error');
@@ -201,7 +207,7 @@
 	async function rejectItem(id: string) {
 		errorMessage = '';
 		try {
-			await moderationAdminApi.updateItem(id, { status: 'rejected' });
+			await moderationAdminApi.updateItem(id, { action: 'reject' });
 			fetchData();
 		} catch {
 			errorMessage = t('common.error');
@@ -303,7 +309,7 @@
 
 {#if !canModerate}
 	<div class="p-8 text-center text-muted-foreground">
-		<p>You don't have permission to access moderation.</p>
+		<p>{t('moderationQueue.no_permission', "You don't have permission to access moderation.")}</p>
 	</div>
 {:else}
 	<PageHeader
@@ -327,7 +333,7 @@
 		<button
 			class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
 			style={activeTab === 'queue' ? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)' : 'color: var(--color-muted)'}
-			onclick={() => { activeTab = 'queue'; selectedIds = new Set(); currentPage = 0; fetchData(); }}
+			onclick={() => { activeTab = 'queue'; selectedIds = new Set(); currentPage = 0; }}
 		>
 			<MessageSquare class="mr-2 h-4 w-4" />
 			{t('moderationQueue.tab_queue')}
@@ -335,7 +341,7 @@
 		<button
 			class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
 			style={activeTab === 'alerts' ? 'background: var(--color-background); color: var(--color-foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.05)' : 'color: var(--color-muted)'}
-			onclick={() => { activeTab = 'alerts'; currentPage = 0; fetchData(); }}
+			onclick={() => { activeTab = 'alerts'; currentPage = 0; }}
 		>
 			<AlertTriangle class="mr-2 h-4 w-4" />
 			{t('moderationQueue.tab_alerts')}
@@ -352,9 +358,8 @@
 					data={items}
 					selectable={true}
 					bind:selectedIds
-					showPagination={false}
 					pageSize={itemsPerPage}
-					emptyMessage={t('moderationQueue.empty')}
+					emptyMessage={t('moderationQueue.empty', 'No items in moderation queue')}
 				>
 					{#snippet bulkActions()}
 						<Button variant="ghost" size="sm" onclick={() => bulkAction('approve')} disabled={bulkLoading} style="color: var(--color-success)">
@@ -371,37 +376,12 @@
 				<DataTable
 					columns={alertColumns}
 					data={alerts}
-					showPagination={false}
 					pageSize={itemsPerPage}
-					emptyMessage={t('moderationQueue.no_alerts')}
+					emptyMessage={t('moderationQueue.no_alerts', 'No alerts')}
 				/>
 			{/if}
 		</CardContent>
 	</Card>
-
-	{#if totalPages > 1}
-		<div class="flex items-center justify-between mt-4">
-			<p class="text-sm text-muted-foreground">
-				Page {currentPage + 1} of {totalPages}
-			</p>
-			<div class="flex gap-2">
-				<button
-					class="btn btn-outline btn-sm"
-					disabled={currentPage === 0}
-					onclick={() => { currentPage--; fetchData(); }}
-				>
-					Previous
-				</button>
-				<button
-					class="btn btn-outline btn-sm"
-					disabled={currentPage >= totalPages - 1}
-					onclick={() => { currentPage++; fetchData(); }}
-				>
-					Next
-				</button>
-			</div>
-		</div>
-	{/if}
 {/if}
 
 <!-- Assign Moderator Modal -->
@@ -409,7 +389,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="assignee-id" class="mb-1 block text-sm font-medium">{t('moderationQueue.assignee_id')}</label>
-			<input id="assignee-id" type="text" bind:value={assigneeId} placeholder="User ID" class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
+			<input id="assignee-id" type="text" bind:value={assigneeId} placeholder={t('moderationQueue.user_id_placeholder', 'User ID')} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)" />
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">
@@ -453,13 +433,15 @@
 <!-- Alert Action Cell Snippet -->
 {#snippet AlertActionsCell({ value, row }: { value: any; row: ModerationAlert })}
 	<div class="flex items-center gap-1">
-		{#if !row.acknowledged}
+		{#if !row.acknowledged_at}
 			<Button variant="ghost" size="sm" onclick={() => acknowledgeAlert(row.id)} style="color: var(--color-info)">
 				{t('moderationQueue.acknowledge')}
 			</Button>
 		{/if}
-		<Button variant="ghost" size="sm" onclick={() => resolveAlert(row.id)} style="color: var(--color-success)">
-			{t('moderationQueue.resolve')}
-		</Button>
+		{#if !row.resolved_at}
+			<Button variant="ghost" size="sm" onclick={() => resolveAlert(row.id)} style="color: var(--color-success)">
+				{t('moderationQueue.resolve')}
+			</Button>
+		{/if}
 	</div>
 {/snippet}

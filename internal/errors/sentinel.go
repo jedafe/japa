@@ -37,6 +37,9 @@ var (
 
 	// ErrInvalidStatusTransition indicates an invalid state transition.
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
+
+	// ErrInsufficientBalance indicates a wallet balance would go negative.
+	ErrInsufficientBalance = errors.New("insufficient balance")
 )
 
 // WrapDuplicate wraps an error with the duplicate sentinel if it appears to be

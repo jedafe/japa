@@ -11,13 +11,12 @@
 	type Appeal = {
 		id: string;
 		user_id: string;
-		username: string;
-		original_action: string;
-		original_reason: string;
-		appeal_reason: string;
+		entity_type: string;
+		entity_id: string;
+		reason: string;
 		status: string;
 		created_at: string;
-		reviewed_at?: string;
+		updated_at?: string;
 	};
 
 	let appeals = $state<Appeal[]>([]);
@@ -35,7 +34,11 @@
 	let acting = $state(false);
 
 	const filterDefs = [
-		{ key: 'status', label: t('moderation.status'), type: 'select' as const, options: ['pending', 'approved', 'denied'] }
+		{ key: 'status', label: t('moderation.status', 'Status'), type: 'select' as const, options: [
+			{ value: 'pending', label: t('app.moderation.queue.pending', 'Pending') },
+			{ value: 'approved', label: t('app.moderation.queue.approved', 'Approved') },
+			{ value: 'denied', label: t('moderation.denied', 'Denied') }
+		] }
 	];
 
 	function statusBadge(status: string) {
@@ -58,33 +61,33 @@
 
 	const columns = [
 		{
-			key: 'username',
-			label: t('moderation.user'),
+			key: 'user_id',
+			label: t('moderation.user', 'User'),
 			sortable: true,
-			render: (_: any, row: Appeal) => `<p class="font-medium">${row.username}</p><p class="text-xs" style="color: var(--color-muted)">${row.user_id.slice(0, 12)}</p>`
+			render: (v: string) => `<p class="font-mono text-xs">${v.slice(0, 12)}</p>`
 		},
 		{
-			key: 'original_action',
-			label: t('moderation.original_action'),
+			key: 'entity_type',
+			label: t('moderation.entity_type', 'Entity Type'),
 			sortable: true,
 			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${actionBadgeColor(v)}">${v}</span>`
 		},
 		{
-			key: 'appeal_reason',
-			label: t('moderation.appeal_reason'),
+			key: 'reason',
+			label: t('moderation.appeal_reason', 'Appeal Reason'),
 			render: (v: string) => `<span class="text-xs max-w-xs truncate block">${v}</span>`
 		},
 		{
 			key: 'status',
-			label: t('moderation.status'),
+			label: t('moderation.status', 'Status'),
 			sortable: true,
 			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${statusBadge(v)}">${v}</span>`
 		},
 		{
 			key: 'created_at',
-			label: t('moderation.date'),
+			label: t('moderation.date', 'Date'),
 			sortable: true,
-			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>`
 		},
 		{
 			key: 'actions',
@@ -101,14 +104,14 @@
 		if (filterStatus) params.set('status', filterStatus);
 		if (searchQuery) params.set('q', searchQuery);
 		try {
-			const result = await api<{ items: Appeal[] }>(`/admin/appeals?${params}`);
+			const result = await api<Appeal[] | { items: Appeal[] }>(`/admin/appeals?${params}`);
 			if (result.ok) {
-				appeals = result.data?.items ?? [];
+				appeals = Array.isArray(result.data) ? result.data : (result.data as { items: Appeal[] })?.items ?? [];
 			} else {
 				errorMessage = result.error;
 			}
 		} catch {
-			errorMessage = t('common.error');
+			errorMessage = t('common.error', 'An error occurred');
 		} finally {
 			loading = false;
 		}
@@ -201,7 +204,7 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<DataTable {columns} data={appeals} pageSize={25} searchable emptyMessage="No appeals found" onrowclick={(row) => toggleExpand(row.id)} />
+	<DataTable {columns} data={appeals} pageSize={25} searchable emptyMessage={t('moderation.no_appeals', 'No appeals found')} onrowclick={(row) => toggleExpand(row.id)} />
 
 	{#if expandedId}
 		{@const expanded = appeals.find((a) => a.id === expandedId)}
@@ -209,21 +212,21 @@
 			<div class="mt-3 rounded-lg border px-4 py-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.appeals.original_action')}</p>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.entity_type', 'Entity Type')}</p>
 						<p class="mt-1">
-							<span class="inline-block rounded-full px-2 py-0.5 text-xs {actionBadgeColor(expanded.original_action)}">
-								{expanded.original_action}
+							<span class="inline-block rounded-full px-2 py-0.5 text-xs {actionBadgeColor(expanded.entity_type)}">
+								{expanded.entity_type}
 							</span>
 						</p>
-						<p class="mt-1 text-sm" style="color: var(--color-muted)">{expanded.original_reason || 'No reason provided'}</p>
+						<p class="mt-1 text-xs font-mono" style="color: var(--color-muted)">{expanded.entity_id}</p>
 					</div>
 					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.appeals.appeal_reason')}</p>
-						<p class="mt-1 text-sm">{expanded.appeal_reason}</p>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.appeal_reason', 'Appeal Reason')}</p>
+						<p class="mt-1 text-sm">{expanded.reason}</p>
 					</div>
 				</div>
-				{#if expanded.reviewed_at}
-					<p class="mt-3 text-xs" style="color: var(--color-muted)">Reviewed at: {expanded.reviewed_at}</p>
+				{#if expanded.updated_at}
+					<p class="mt-3 text-xs" style="color: var(--color-muted)">{t('moderation.updated_at', 'Updated at')}: {new Date(expanded.updated_at).toLocaleString()}</p>
 				{/if}
 				{#if canManage && expanded.status === 'pending'}
 					<div class="mt-3 flex gap-2">
@@ -232,14 +235,14 @@
 							style="background-color: var(--color-success)"
 							onclick={() => openAction(expanded, 'approve')}
 						>
-							{t('moderation.approve_appeal')}
+							{t('moderation.approve_appeal', 'Approve Appeal')}
 						</button>
 						<button
 							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
 							style="background-color: var(--color-danger)"
 							onclick={() => openAction(expanded, 'deny')}
 						>
-							{t('moderation.deny_appeal')}
+							{t('moderation.deny_appeal', 'Deny Appeal')}
 						</button>
 					</div>
 				{/if}
@@ -264,7 +267,7 @@
 		class="w-full rounded-md border px-3 py-2 text-sm"
 		style="border-color: var(--color-border); background-color: var(--color-surface)"
 		rows="3"
-		placeholder="Note (optional)"
+		placeholder={t('moderation.note_optional', 'Note (optional)')}
 		bind:value={actionNote}
 	></textarea>
 </Modal>

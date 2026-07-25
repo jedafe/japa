@@ -1,29 +1,54 @@
 package auth
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (OAuth social login)
+// On first OAuth login, create account if no matching email exists; if a matching
+// email exists, merge the OAuth identity onto the existing account. The callback
+// redirects to the frontend with cookies set — it does not return JSON, because
+// the browser lands here after the provider redirect.
+
 // OAuthHandlers holds dependencies for OAuth HTTP handlers.
 type OAuthHandlers struct {
-	Config       OAuthConfig
-	Store        OAuthStore
-	Queries      *gen.Queries
-	KeyRot       *KeyRotation
-	CookieDomain string // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
+	Config          OAuthConfig
+	Store           OAuthStore
+	Queries         *gen.Queries
+	KeyRot          *KeyRotation
+	Settings        SettingsReader // Hot-reloadable system settings for refresh token TTL
+	FrontendBaseURL string         // Public frontend base URL (JC_SITE_URL) for post-OAuth redirects
+	CookieDomain    string         // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
+	SecureCookies   bool           // When true, session cookies are marked Secure (production / TLS)
 }
+
+// oauthRedirectCookie is the short-lived cookie holding the frontend path to
+// redirect to after a successful OAuth callback. Stored alongside jc_oauth_state.
+const oauthRedirectCookie = "jc_oauth_redirect"
 
 // HandleInitiate handles POST /api/v1/auth/oauth/{provider}/initiate.
 // Validates the provider, generates a CSRF state token, stores it in a
 // short-lived cookie, and returns the auth URL as JSON for the frontend
-// to redirect the user to the provider's login page.
+// to redirect the user to the provider's login page. An optional redirect
+// path is stored in a separate cookie so the callback knows where to send
+// the user after success.
 func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	providerName := chi.URLParam(r, "provider")
 
@@ -54,6 +79,34 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
+	// Store the requested redirect path so the callback can forward the user
+	// to the right frontend page after success. Defaults to "/".
+	redirect := r.URL.Query().Get("redirect")
+	if redirect == "" {
+		var body struct {
+			Redirect string `json:"redirect"`
+		}
+		// Best-effort decode; the frontend may send redirect as JSON or query.
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Redirect != "" {
+			redirect = body.Redirect
+		}
+	}
+	if redirect == "" {
+		redirect = "/"
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthRedirectCookie,
+		Value:    redirect,
+		Path:     "/",
+		Domain:   h.CookieDomain,
+		MaxAge:   600, // 10 minutes
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]string{"auth_url": provider.AuthURL(state)},
 	})
@@ -61,54 +114,51 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 
 // HandleCallback handles GET /api/v1/auth/oauth/{provider}/callback.
 // Validates the CSRF state, exchanges the code for user info, creates or
-// links the account, and returns a JWT.
+// links the account per Section 02, sets session cookies, and redirects
+// to the frontend. New users redirect to /onboarding; returning users to
+// the stored redirect path (default /). Errors redirect to /login with
+// an oauth_error query parameter.
 func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	providerName := chi.URLParam(r, "provider")
 
 	provider := h.Config.NewProvider(providerName)
 	if provider == nil {
-		writeError(w, http.StatusBadRequest, "unsupported_provider",
-			"OAuth provider is not configured or not supported")
+		h.redirectOAuthError(w, r, "unsupported_provider")
 		return
 	}
 
 	// Validate CSRF state
 	stateCookie, err := r.Cookie("jc_oauth_state")
 	if err != nil || stateCookie.Value == "" {
-		writeError(w, http.StatusBadRequest, "missing_state", "OAuth state cookie is missing")
+		h.redirectOAuthError(w, r, "missing_state")
 		return
 	}
 
 	callbackState := r.URL.Query().Get("state")
 	if !ValidateOAuthState(stateCookie.Value, callbackState) {
-		writeError(w, http.StatusBadRequest, "invalid_state", "OAuth state mismatch — possible CSRF attack")
+		h.redirectOAuthError(w, r, "invalid_state")
 		return
 	}
 
-	// Clear the state cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "jc_oauth_state",
-		Value:    "",
-		Path:     "/",
-		Domain:   h.CookieDomain,
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	// Clear the state + redirect cookies (read redirect before clearing).
+	redirectPath := "/"
+	if rc, err := r.Cookie(oauthRedirectCookie); err == nil && rc.Value != "" {
+		redirectPath = rc.Value
+	}
+	h.clearOAuthCookies(w)
 
 	// Check for provider error
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
 		desc := r.URL.Query().Get("error_description")
 		slog.Warn("OAuth provider error", "provider", providerName, "error", errParam, "description", desc)
-		writeError(w, http.StatusUnauthorized, "oauth_error", "Authorization was denied or failed")
+		h.redirectOAuthError(w, r, "oauth_error")
 
 		return
 	}
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		writeError(w, http.StatusBadRequest, "missing_code", "Authorization code is required")
+		h.redirectOAuthError(w, r, "missing_code")
 		return
 	}
 
@@ -116,47 +166,140 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	userInfo, err := provider.Exchange(r.Context(), code)
 	if err != nil {
 		slog.Error("OAuth exchange failed", "provider", providerName, "error", err)
-		writeError(w, http.StatusUnauthorized, "oauth_exchange_failed", "Failed to verify with OAuth provider")
+		h.redirectOAuthError(w, r, "oauth_exchange_failed")
 
 		return
 	}
 
 	t := tenant.FromContext(r.Context())
 	if t == nil {
-		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		h.redirectOAuthError(w, r, "tenant_unavailable")
 		return
 	}
 
-	// Try to find existing linked account
+	// Try to find existing linked account — returning user.
 	existing, err := h.Store.GetOAuthAccount(r.Context(), t.ID, providerName, userInfo.ProviderUserID)
 	if err == nil && existing != nil {
-		// Account already linked — issue JWT
-		h.issueToken(w, r, existing.UserID, t.ID)
+		h.issueSessionAndRedirect(w, r, existing.UserID, t.ID, redirectPath, false)
 		return
 	}
 
-	// Try to find user by email — if found, link the account
+	// Try to find user by email — if found, merge the OAuth identity.
 	if userInfo.Email != "" {
 		user, err := h.Store.GetUserByEmail(r.Context(), t.ID, userInfo.Email)
 		if err == nil && user != nil {
 			if linkErr := h.Store.LinkOAuthAccount(r.Context(), t.ID, user.ID, providerName, userInfo.ProviderUserID); linkErr != nil {
 				slog.Error("link OAuth account", "error", linkErr)
 			}
-
-			h.issueToken(w, r, user.ID, t.ID)
-
+			h.issueSessionAndRedirect(w, r, user.ID, t.ID, redirectPath, false)
 			return
 		}
 	}
 
-	// No existing account or email match — new user signup would go here.
-	// For now, return an error directing users to register first.
-	writeError(w, http.StatusForbidden, "account_not_found",
-		"No account found. Please register with email/password first, then link your OAuth account from settings.")
+	// No existing account or email match — create a new OAuth-only account
+	// per Section 02 line 36. password_hash is NULL for OAuth-only accounts.
+	if userInfo.Email == "" {
+		// Without an email we cannot create an account — the provider did not
+		// return one. Redirect to login with an explanatory error.
+		h.redirectOAuthError(w, r, "missing_email")
+		return
+	}
+
+	userID, err := h.createOAuthUser(r.Context(), t.ID, userInfo, providerName)
+	if err != nil {
+		slog.Error("create OAuth user", "provider", providerName, "error", err)
+		h.redirectOAuthError(w, r, "create_failed")
+		return
+	}
+
+	// New user → onboarding wizard, regardless of the stored redirect path.
+	h.issueSessionAndRedirect(w, r, userID, t.ID, "/onboarding", true)
 }
 
-// issueToken mints a JWT and returns it as a JSON response.
-func (h *OAuthHandlers) issueToken(w http.ResponseWriter, r *http.Request, userID, tenantID pgtype.UUID) {
+// createOAuthUser creates a new OAuth-only user (password_hash = NULL) with a
+// unique username derived from the email local-part and provider, then links
+// the OAuth account. Retries on username collision with a random suffix.
+func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUID, info *OAuthUserInfo, providerName string) (pgtype.UUID, error) {
+	base := sanitizeUsernameBase(info.Email, info.Name)
+	attempt := base + "_" + providerName
+
+	for i := 0; i < 5; i++ {
+		candidate := attempt
+		if i > 0 {
+			suffix, err := randomSuffix(6)
+			if err != nil {
+				return pgtype.UUID{}, fmt.Errorf("generate username suffix: %w", err)
+			}
+			candidate = attempt + "_" + suffix
+		}
+
+		userID, err := h.Queries.CreateUser(ctx, gen.CreateUserParams{
+			TenantID:     tenantID,
+			Email:        strings.ToLower(strings.TrimSpace(info.Email)),
+			Username:     candidate,
+			PasswordHash: nil, // OAuth-only account
+		})
+		if err != nil {
+			if errors.Is(err, errpkg.ErrDuplicate) {
+				continue // username or email collision — retry with new suffix
+			}
+			return pgtype.UUID{}, fmt.Errorf("create user: %w", err)
+		}
+
+		if linkErr := h.Store.LinkOAuthAccount(ctx, tenantID, userID, providerName, info.ProviderUserID); linkErr != nil {
+			return pgtype.UUID{}, fmt.Errorf("link OAuth account: %w", linkErr)
+		}
+
+		return userID, nil
+	}
+
+	return pgtype.UUID{}, fmt.Errorf("username collision after retries: %s", attempt)
+}
+
+// sanitizeUsernameBase derives a username base from the email local-part or
+// the provider-supplied name. Lowercased, alphanumeric + underscore only,
+// truncated to 20 characters.
+func sanitizeUsernameBase(email, name string) string {
+	source := email
+	if at := strings.IndexByte(email, '@'); at > 0 {
+		source = email[:at]
+	}
+	if source == "" {
+		source = name
+	}
+	source = strings.ToLower(strings.TrimSpace(source))
+	var b strings.Builder
+	for _, c := range source {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' {
+			b.WriteRune(c)
+		} else if c == '.' || c == '-' || c == ' ' || c == '+' {
+			b.WriteRune('_')
+		}
+	}
+	out := strings.Trim(b.String(), "_")
+	if out == "" {
+		out = "user"
+	}
+	if len(out) > 20 {
+		out = out[:20]
+	}
+	return out
+}
+
+// randomSuffix returns a hex-encoded random string of the given byte length.
+func randomSuffix(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// issueSessionAndRedirect mints an access token, sets jc_token + jc_refresh
+// cookies, updates last_login_at, and redirects the browser to the frontend.
+// isNew controls the redirect target: new users go to /onboarding (passed as
+// redirectPath by the caller); returning users go to redirectPath.
+func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.Request, userID, tenantID pgtype.UUID, redirectPath string, _ bool) {
 	if h.Queries != nil {
 		if err := h.Queries.UpdateLastLoginAt(r.Context(), gen.UpdateLastLoginAtParams{
 			TenantID: tenantID,
@@ -166,22 +309,95 @@ func (h *OAuthHandlers) issueToken(w http.ResponseWriter, r *http.Request, userI
 		}
 	}
 
-	token, err := h.KeyRot.MintAccessTokenWithContext(r.Context(), userID, tenantID)
+	accessToken, err := h.KeyRot.MintAccessTokenWithContext(r.Context(), userID, tenantID)
 	if err != nil {
 		slog.Error("mint access token", "error", err)
-		writeError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
-
+		h.redirectOAuthError(w, r, "token_error")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"data": map[string]interface{}{
-			"access_token": token,
-			"user": map[string]interface{}{
-				"id": userID.String(),
-			},
-		},
+	refreshToken, err := generateRefreshToken()
+	if err != nil {
+		slog.Error("generate refresh token", "error", err)
+		h.redirectOAuthError(w, r, "token_error")
+		return
+	}
+
+	tokenHash := hashRefreshToken(refreshToken)
+	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, tenantID)
+
+	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
+		TenantID:  tenantID,
+		UserID:    userID,
+		TokenHash: tokenHash,
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(refreshTTL), Valid: true},
+	}); err != nil {
+		slog.Error("create refresh token", "error", err)
+		h.redirectOAuthError(w, r, "token_error")
+		return
+	}
+
+	// jc_token: access token, readable by the frontend hooks via cookie.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "jc_token",
+		Value:    accessToken,
+		Path:     "/",
+		Domain:   h.CookieDomain,
+		MaxAge:   int((15 * time.Minute).Seconds()), // access token TTL
+		HttpOnly: true,
+		Secure:   h.SecureCookies,
+		SameSite: http.SameSiteLaxMode,
 	})
+
+	// jc_refresh: refresh token, scoped to /api/v1/auth like the register handler.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "jc_refresh",
+		Value:    refreshToken,
+		Path:     "/api/v1/auth",
+		Domain:   h.CookieDomain,
+		MaxAge:   int(refreshTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
+
+	h.redirectToFrontend(w, r, redirectPath)
+}
+
+// redirectToFrontend sends a 302 to the frontend base + path.
+func (h *OAuthHandlers) redirectToFrontend(w http.ResponseWriter, r *http.Request, path string) {
+	base := strings.TrimRight(h.FrontendBaseURL, "/")
+	if base == "" {
+		base = "/"
+	}
+	target := base + path
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
+// redirectOAuthError redirects to the frontend login page with an error code.
+func (h *OAuthHandlers) redirectOAuthError(w http.ResponseWriter, r *http.Request, code string) {
+	base := strings.TrimRight(h.FrontendBaseURL, "/")
+	if base == "" {
+		base = ""
+	}
+	target := base + "/login?oauth_error=" + url.QueryEscape(code)
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
+// clearOAuthCookies expires the state and redirect cookies.
+func (h *OAuthHandlers) clearOAuthCookies(w http.ResponseWriter) {
+	for _, name := range []string{"jc_oauth_state", oauthRedirectCookie} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			Domain:   h.CookieDomain,
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 }
 
 // RequireAuthRoute wraps RequireAuth for convenience in route registration.

@@ -34,8 +34,18 @@
 	const canModerateContent = $derived(hasPermission('content.moderate'));
 
 	const filterDefs = [
-		{ key: 'type', label: t('moderation.content_type'), type: 'select' as const, options: ['post', 'comment', 'blog', 'forum'] },
-		{ key: 'status', label: t('moderation.status'), type: 'select' as const, options: ['published', 'draft', 'archived', 'flagged'] }
+		{ key: 'type', label: t('moderation.content_type', 'Content Type'), type: 'select' as const, options: [
+			{ value: 'post', label: t('app.moderation.queue.post', 'Post') },
+			{ value: 'comment', label: t('app.moderation.queue.comment', 'Comment') },
+			{ value: 'blog', label: t('app.moderation.queue.blog', 'Blog') },
+			{ value: 'forum', label: t('app.moderation.queue.forum', 'Forum') }
+		] },
+		{ key: 'status', label: t('moderation.status', 'Status'), type: 'select' as const, options: [
+			{ value: 'published', label: t('moderation.content.published', 'Published') },
+			{ value: 'draft', label: t('moderation.content.draft', 'Draft') },
+			{ value: 'archived', label: t('moderation.content.archived', 'Archived') },
+			{ value: 'flagged', label: t('moderation.content.flagged', 'Flagged') }
+		] }
 	];
 
 	function typeBadge(type: string) {
@@ -60,39 +70,39 @@
 	const columns = [
 		{
 			key: 'title',
-			label: t('moderation.title'),
+			label: t('moderation.title', 'Title'),
 			sortable: true,
-			render: (_: any, row: ContentItem) => `<div><p class="font-medium">${row.title}</p>${row.is_featured ? '<span class="inline-block rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning dark:text-warning">' + t('moderation.content.featured') + '</span>' : ''}</div>`
+			render: (_: any, row: ContentItem) => `<div><p class="font-medium">${row.title}</p>${row.is_featured ? '<span class="inline-block rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning dark:text-warning">' + t('moderation.content.featured', 'Featured') + '</span>' : ''}</div>`
 		},
 		{
 			key: 'author',
-			label: t('moderation.author'),
+			label: t('moderation.author', 'Author'),
 			sortable: true,
 			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
 		},
 		{
 			key: 'type',
-			label: t('moderation.content_type'),
+			label: t('moderation.content_type', 'Content Type'),
 			sortable: true,
 			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${typeBadge(v)}">${v}</span>`
 		},
 		{
 			key: 'status',
-			label: t('moderation.status'),
+			label: t('moderation.status', 'Status'),
 			sortable: true,
 			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${statusBadge(v)}">${v}</span>`
 		},
 		{
 			key: 'reports_count',
-			label: t('moderation.reports'),
+			label: t('moderation.reports', 'Reports'),
 			sortable: true,
 			render: (v: number) => v > 0 ? `<span class="inline-block rounded-full bg-danger/15 px-2 py-0.5 text-xs text-danger dark:text-danger">${v}</span>` : `<span class="text-xs" style="color: var(--color-muted)">0</span>`
 		},
 		{
 			key: 'created_at',
-			label: t('moderation.date'),
+			label: t('moderation.date', 'Date'),
 			sortable: true,
-			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>`
 		},
 		{
 			key: 'actions',
@@ -188,7 +198,7 @@
 		{errorMessage}
 	</div>
 {/if}
-<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('moderation.content.browse_and_manage_platform_content_acros')}</p>
+<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('moderation.content.description', 'Browse and manage platform content across all types.')}</p>
 
 <FilterBar filters={filterDefs} onApply={handleFilter} />
 
@@ -203,22 +213,22 @@
 			<div class="mt-3 rounded-lg border px-4 py-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.content.title')}</p>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.title', 'Title')}</p>
 						<p class="mt-1 text-sm font-medium">{expanded.title}</p>
 					</div>
 					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.content.author')}</p>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.author', 'Author')}</p>
 						<p class="mt-1 text-sm">{expanded.author}</p>
 						<p class="text-xs font-mono" style="color: var(--color-muted)">{expanded.author_id.slice(0, 12)}</p>
 					</div>
 					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.content.created')}</p>
-						<p class="mt-1 text-sm">{expanded.created_at}</p>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.created', 'Created')}</p>
+						<p class="mt-1 text-sm">{new Date(expanded.created_at).toLocaleDateString()}</p>
 					</div>
 				</div>
 				{#if expanded.body_preview}
 					<div class="mt-3 rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
-						<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">{t('moderation.content.content_preview')}</p>
+						<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">{t('moderation.content_preview', 'Content Preview')}</p>
 						{expanded.body_preview}
 					</div>
 				{/if}
