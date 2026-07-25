@@ -2,6 +2,7 @@
 	import { api, userManagementApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { datetimeLocalToISOString } from '$lib/utils/date';
 
 	const canManage = $derived(hasPermission('admin.broadcast'));
 	import { Select } from '$lib/components/ui/select';
@@ -114,10 +115,9 @@
 			await api('/admin/broadcasts', {
 				method: 'POST',
 				body: {
-					title,
-					message,
-					target_scope: targetScope,
-					scheduled_at: scheduledAt || null
+					subject: title,
+					body: message,
+					schedule: datetimeLocalToISOString(scheduledAt)
 				}
 			});
 			resultType = 'success';

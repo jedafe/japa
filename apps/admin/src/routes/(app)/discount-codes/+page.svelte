@@ -2,6 +2,11 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import {
+		dateInputToStartOfDayISO,
+		dateInputToEndOfDayISO,
+		isoTimestampToDateInput
+	} from '$lib/utils/date';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
@@ -48,7 +53,7 @@
 
 	let code = $state('');
 	let description = $state('');
-	let discountType = $state('percentage');
+	let discountType = $state('percent');
 	let discountValue = $state('');
 	let validFrom = $state('');
 	let validUntil = $state('');
@@ -82,7 +87,7 @@
 			key: 'discount_value',
 			label: 'Discount',
 			sortable: true,
-			render: (value: number, row: any) => `<span class="font-medium">${row.discount_type === 'percentage' ? `${value}%` : `${value} credits`}</span>`
+			render: (value: number, row: any) => `<span class="font-medium">${row.discount_type === 'percent' ? `${value}%` : `${value} credits`}</span>`
 		},
 		{
 			key: 'used_count',
@@ -152,7 +157,7 @@
 	function openCreate() {
 		code = '';
 		description = '';
-		discountType = 'percentage';
+		discountType = 'percent';
 		discountValue = '';
 		validFrom = '';
 		validUntil = '';
@@ -164,10 +169,10 @@
 	function openEdit(codeItem: DiscountCode) {
 		code = codeItem.code;
 		description = codeItem.description || '';
-		discountType = codeItem.discount_type;
+		discountType = codeItem.discount_type === 'percentage' ? 'percent' : codeItem.discount_type || 'percent';
 		discountValue = String(codeItem.discount_value);
-		validFrom = codeItem.valid_from || '';
-		validUntil = codeItem.valid_until || '';
+		validFrom = isoTimestampToDateInput(codeItem.valid_from);
+		validUntil = isoTimestampToDateInput(codeItem.valid_until);
 		usageLimit = codeItem.usage_limit ? String(codeItem.usage_limit) : '';
 		isActive = codeItem.is_active;
 		usageCode = codeItem;
@@ -184,11 +189,11 @@
 				description: description.trim() || undefined,
 				discount_type: discountType,
 				discount_value: Number(discountValue),
-				is_active: isActive
+				applicable_to: 'all'
 			};
-			if (validFrom) body.valid_from = validFrom;
-			if (validUntil) body.valid_until = validUntil;
-			if (usageLimit) body.usage_limit = Number(usageLimit);
+			if (validFrom) body.valid_from = dateInputToStartOfDayISO(validFrom);
+			if (validUntil) body.valid_until = dateInputToEndOfDayISO(validUntil);
+			if (usageLimit) body.max_uses = Number(usageLimit);
 
 			const url = usageCode ? `/admin/discount-codes/${usageCode.id}` : '/admin/discount-codes';
 			const method = usageCode ? 'PATCH' : 'POST';
@@ -336,7 +341,7 @@
 			<label for="dc-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('discounts.type')}</label>
 			<Select
 				options={[
-					{ value: 'percentage', label: t('discounts.percentage') },
+					{ value: 'percent', label: t('discounts.percentage') },
 					{ value: 'fixed', label: t('discounts.fixed') }
 				]}
 				bind:value={discountType}
