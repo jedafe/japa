@@ -63,3 +63,34 @@ func TestCreateContent_OrgAttribution_Permission(t *testing.T) {
 		t.Fatalf("outsider: err=%v want ErrOrgPostForbidden", err)
 	}
 }
+
+func TestUpdateContent_OrgAttribution_Permission(t *testing.T) {
+	t.Parallel()
+
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+	svc := NewService(database)
+
+	admin := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "up-admin"})
+	member := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "up-member"})
+	orgID := testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "beta", Status: "active", OwnerUserID: admin})
+	testdb.SeedOrgMembership(t, database, orgID, admin, "admin")
+	testdb.SeedOrgMembership(t, database, orgID, member, "member")
+
+	// seed a plain (non-org) post authored by admin
+	postID := testdb.SeedContent(t, database, tenantID, admin, testdb.ContentOpts{Title: "draft", Status: "draft", Visibility: "public"})
+
+	base := UpdateContentInput{
+		Title: "attributed to org", Body: "b", BodyHtml: "<p>b</p>",
+		Status: "published", Visibility: "public", OrganizationID: orgID,
+	}
+
+	// admin may attribute the post to the org
+	if _, err := svc.UpdateContent(context.Background(), postID, tenantID, admin, base); err != nil {
+		t.Fatalf("admin UpdateContent: %v", err)
+	}
+	// member may not
+	if _, err := svc.UpdateContent(context.Background(), postID, tenantID, member, base); !errors.Is(err, ErrOrgPostForbidden) {
+		t.Fatalf("member update: err=%v want ErrOrgPostForbidden", err)
+	}
+}

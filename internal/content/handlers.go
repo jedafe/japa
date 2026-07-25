@@ -529,10 +529,11 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		CanonicalUrl *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
 		Status       string          `json:"status"`
 		Visibility   string          `json:"visibility"`
-		PublishAt    *string         `json:"publish_at"`
-		GeoSpaceID   *string         `json:"geo_space_id"`
-		IsLocked     bool            `json:"is_locked"`
-		IsPinned     bool            `json:"is_pinned"`
+		PublishAt      *string         `json:"publish_at"`
+		GeoSpaceID     *string         `json:"geo_space_id"`
+		OrganizationID *string         `json:"organization_id"`
+		IsLocked       bool            `json:"is_locked"`
+		IsPinned       bool            `json:"is_pinned"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -564,6 +565,13 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if input.OrganizationID != nil && *input.OrganizationID != "" {
+		if err := updateInput.OrganizationID.Scan(*input.OrganizationID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
+			return
+		}
+	}
+
 	if input.PublishAt != nil && *input.PublishAt != "" {
 		if err := updateInput.PublishAt.Scan(*input.PublishAt); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
@@ -578,6 +586,10 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput)
 	if err != nil {
+		if errors.Is(err, ErrOrgPostForbidden) {
+			writeError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to edit as this organization")
+			return
+		}
 		handleServiceError(w, err)
 		return
 	}
