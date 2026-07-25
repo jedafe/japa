@@ -89,16 +89,20 @@ export function isUnsafeMethod(method: string | undefined): boolean {
 
 // csrfHeaders returns the X-CSRF-Token header (when a token is available and the
 // method is unsafe) merged over the provided headers. Safe methods are left
-// untouched. The token is resolved synchronously from the cache/cookie to avoid
-// making request dispatch async; a caller that needs a guaranteed-fresh token
-// should await getCsrfToken() first.
-export function csrfHeaders(
+// untouched. The token is resolved from the cache, cookie, or a fresh fetch.
+export async function csrfHeaders(
 	method: string | undefined,
 	base: Record<string, string> = {}
-): Record<string, string> {
+): Promise<Record<string, string>> {
 	if (!isUnsafeMethod(method)) return base;
 	const token = cachedToken ?? readCsrfCookie();
-	if (!token) return base;
+	if (!token) {
+		// Cookie might not be readable (different port/domain via Vite proxy).
+		// Fetch a fresh token synchronously from the cache or endpoint.
+		const freshToken = await getCsrfToken();
+		if (!freshToken) return base;
+		return { ...base, [CSRF_HEADER]: freshToken };
+	}
 	return { ...base, [CSRF_HEADER]: token };
 }
 

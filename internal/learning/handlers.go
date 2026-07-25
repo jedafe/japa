@@ -63,32 +63,6 @@ func (h *Handlers) enqueueTrackCompletionUpdate(userID, trackID, tenantID pgtype
 	}
 }
 
-// enqueueIssueCertificate enqueues an async certificate issuance task.
-// Fire-and-forget: errors are logged but never propagated.
-func (h *Handlers) enqueueIssueCertificate(userID, trackID, tenantID pgtype.UUID) {
-	if h.AsynqClient == nil {
-		return
-	}
-
-	payload, err := json.Marshal(map[string]string{
-		"user_id":   userID.String(),
-		"track_id":  trackID.String(),
-		"tenant_id": tenantID.String(),
-	})
-	if err != nil {
-		slog.Warn("learning: failed to marshal issue certificate payload", "error", err)
-		return
-	}
-
-	if _, err := h.AsynqClient.Enqueue(
-		asynq.NewTask(worker.TypeLearningIssueCertificate, payload),
-		asynq.Queue(worker.QueueForTask(worker.TypeLearningIssueCertificate)),
-	); err != nil {
-		slog.Warn("learning: failed to enqueue issue certificate task",
-			"user_id", userID.String(), "track_id", trackID.String(), "error", err)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Public / authenticated user endpoints
 // ---------------------------------------------------------------------------
@@ -612,8 +586,6 @@ func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 // Enrollment handlers
 // ---------------------------------------------------------------------------
 
-// NOTE: Enrollment handlers are disabled because the enrollments table
-// does not exist in migrations.
 // EnrollInTrack handles POST /learn/tracks/:id/enroll.
 func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
@@ -674,7 +646,13 @@ func (h *Handlers) ListMyEnrollments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	enrollments, err := h.store.ListEnrollmentsByUser(r.Context(), user.UserID)
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	enrollments, err := h.store.ListEnrollmentsByUser(r.Context(), t.ID, user.UserID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list enrollments")
 		return
@@ -742,6 +720,13 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve the module to get the correct track ID.
+	mod, err := h.store.GetModuleByID(r.Context(), t.ID, lesson.ModuleID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "module_not_found", "Module not found")
+		return
+	}
+
 	progress, err := h.store.UpsertProgress(r.Context(), t.ID, user.UserID, lessonID, UpdateProgressInput{Status: "completed"})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "db_error", "Failed to complete lesson")
@@ -751,7 +736,7 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 	h.maybeIssueCertificate(r.Context(), t.ID, user.UserID, lesson.ModuleID)
 
 	// Enqueue async track completion update — fire-and-forget.
-	h.enqueueTrackCompletionUpdate(user.UserID, lesson.ModuleID, t.ID)
+	h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID, t.ID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": progress})
 }
@@ -1025,6 +1010,64 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"data": enrollments})
 }
 
+// ListAllModules handles GET /admin/learn/modules.
+func (h *Handlers) ListAllModules(w http.ResponseWriter, r *http.Request) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	modules, err := h.store.ListAllModules(r.Context(), t.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list modules")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": modules})
+}
+
+// ListAllLessons handles GET /admin/learn/lessons.
+func (h *Handlers) ListAllLessons(w http.ResponseWriter, r *http.Request) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	lessons, err := h.store.ListAllLessons(r.Context(), t.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list lessons")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": lessons})
+}
+
+// ListModulesByTrack handles GET /admin/learn/tracks/{trackId}/modules.
+func (h *Handlers) ListModulesByTrack(w http.ResponseWriter, r *http.Request) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	trackIDStr := chi.URLParam(r, "trackId")
+	var trackID pgtype.UUID
+	if err := trackID.Scan(trackIDStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		return
+	}
+
+	modules, err := h.store.ListModulesByTrack(r.Context(), t.ID, trackID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list modules")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": modules})
+}
+
 // PublishTrack handles POST /admin/learn/tracks/:id/publish.
 func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
@@ -1037,14 +1080,7 @@ func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
-	published := true
-	_, err := h.store.UpdateTrack(r.Context(), t.ID, trackID, UpdateTrackInput{
-		IsPublished: published,
-		Title:       "",
-		Difficulty:  "",
-		SortOrder:   0,
-	})
-	if err != nil {
+	if err := h.store.PublishTrack(r.Context(), t.ID, trackID, true); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to publish track")
 		return
 	}

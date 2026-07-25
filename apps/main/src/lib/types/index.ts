@@ -257,3 +257,43 @@ export interface PrivacySettings {
 	searchable?: boolean;
 	[key: string]: unknown;
 }
+
+// ─── Auth (Section 02) ───────────────────────────────────────────────
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+
+/** Response from POST /auth/login and POST /auth/register. */
+export interface AuthSession {
+	access_token: string;
+	user: AuthUser;
+}
+
+/** Minimal user shape returned by the auth endpoints (register/login). */
+export interface AuthUser {
+	id: string;
+	email: string;
+	username: string;
+}
+
+/** Machine-readable error codes from the auth API, mapped to field-level messages. */
+export type AuthErrorCode =
+	| 'missing_fields'
+	| 'invalid_credentials'
+	| 'email_exists'
+	| 'weak_password'
+	| 'password_breached'
+	| 'invalid_body'
+	| 'tenant_unavailable'
+	| 'unsupported_provider'
+	| 'state_error'
+	| 'invalid_state'
+	| 'missing_email'
+	| 'create_failed'
+	| 'token_error';
+
+/** Onboarding status from GET /onboarding/status. */
+export interface OnboardingStatus {
+	current_step: number;
+	completed: boolean;
+	step_data: unknown;
+	tour_dismissed: boolean;
+}

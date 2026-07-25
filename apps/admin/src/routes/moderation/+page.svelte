@@ -14,14 +14,13 @@
 
 	type ModItem = {
 		id: string;
-		type: "user_report" | "ai_flag";
-		content_type: string;
-		content_id: string;
-		reporter_name?: string;
-		reason: string;
+		type: string;
 		status: string;
+		content?: string;
+		reporter?: string;
+		author_id?: string;
 		created_at: string;
-		content_preview?: string;
+		entity_ref?: string;
 	};
 
 	let items = $state<ModItem[]>([]);
@@ -50,12 +49,13 @@
 
 	const filterDefs = [
 		{
-			key: "type",
-			label: t("moderation.source", "Source"),
+			key: "status",
+			label: t("common.status", "Status"),
 			type: 'select' as const,
 			options: [
-				{ value: "user_report", label: t("app.moderation.queue.user_report", "User Report") },
-				{ value: "ai_flag", label: t("app.moderation.queue.ai_flag", "AI Flag") }
+				{ value: "flagged", label: t("app.moderation.queue.flagged", "Flagged") },
+				{ value: "published", label: t("app.moderation.queue.published", "Published") },
+				{ value: "removed", label: t("app.moderation.queue.removed", "Removed") }
 			]
 		},
 		{
@@ -63,22 +63,10 @@
 			label: t("moderation.content_type", "Content Type"),
 			type: 'select' as const,
 			options: [
-				{ value: "post", label: t("app.moderation.queue.post", "Post") },
-				{ value: "comment", label: t("app.moderation.queue.comment", "Comment") },
-				{ value: "blog", label: t("app.moderation.queue.blog", "Blog") },
-				{ value: "forum", label: t("app.moderation.queue.forum", "Forum") },
-				{ value: "message", label: t("app.moderation.queue.message", "Message") }
-			]
-		},
-		{
-			key: "status",
-			label: t("common.status", "Status"),
-			type: 'select' as const,
-			options: [
-				{ value: "pending", label: t("app.moderation.queue.pending", "Pending") },
-				{ value: "reviewed", label: t("app.moderation.queue.reviewed", "Reviewed") },
-				{ value: "resolved", label: t("app.moderation.queue.resolved", "Resolved") },
-				{ value: "dismissed", label: t("app.moderation.queue.dismissed", "Dismissed") }
+				{ value: "organization", label: t("app.moderation.queue.organization", "Organization") },
+				{ value: "service", label: t("app.moderation.queue.service", "Service") },
+				{ value: "mentor", label: t("app.moderation.queue.mentor", "Mentor") },
+				{ value: "university", label: t("app.moderation.queue.university", "University") }
 			]
 		}
 	];
@@ -89,32 +77,27 @@
 			label: t("moderation.source", "Source"),
 			sortable: true,
 			render: (v: string) => {
-				const colors = v === "ai_flag" ? "bg-info/15 text-info dark:text-info" : "bg-info/15 text-info dark:text-info";
+				const colors = v === "ai_flag" ? "bg-info/15 text-info dark:text-info" : "bg-warning/15 text-warning dark:text-warning";
 				const label = v === "ai_flag" ? t('app.moderation.queue.ai_flag', 'AI Flag') : t('app.moderation.queue.user_report', 'User Report');
-				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${label}</span>`;
+				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
 			}
 		},
 		{
-			key: "content_type",
-			label: t("moderation.content_type", "Content Type"),
-			sortable: true
-		},
-		{
-			key: "reason",
-			label: t("moderation.reason", "Reason"),
-			sortable: true
+			key: "content",
+			label: t("moderation.content_preview", "Content"),
+			render: (v: string) => v ? `<span class="text-xs max-w-xs truncate block">${v}</span>` : '<span style="color: var(--color-muted)">—</span>'
 		},
 		{
 			key: "status",
 			label: t("common.status", "Status"),
 			sortable: true,
 			render: (v: string) => {
-				const colors = v === "pending" ? "bg-warning/15 text-warning dark:text-warning" : v === "resolved" ? "bg-success/15 text-success dark:text-success" : v === "dismissed" ? "bg-muted/15 text-muted dark:text-muted" : "bg-info/15 text-info dark:text-info";
+				const colors = v === "pending" ? "bg-warning/15 text-warning dark:text-warning" : v === "resolved" ? "bg-success/15 text-success dark:text-success" : v === "dismissed" ? "bg-muted/15 text-muted dark:text-muted" : v === "flagged" ? "bg-warning/15 text-warning dark:text-warning" : "bg-info/15 text-info dark:text-info";
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors}">${v}</span>`;
 			}
 		},
 		{
-			key: "reporter_name",
+			key: "reporter",
 			label: t("moderation.reporter", "Reporter"),
 			render: (v: string) => v || "—"
 		},
@@ -137,8 +120,8 @@
 		error = "";
 		try {
 			const params = new URLSearchParams({
-				page: String(currentPage),
-				limit: String(pageSize)
+				page_size: String(pageSize),
+				page_offset: String(currentPage * pageSize)
 			});
 			if (searchQuery) params.set("q", searchQuery);
 			if (filterValues.type) params.set("type", filterValues.type);
@@ -147,7 +130,7 @@
 
 			const result = await moderationAdminApi.getQueue(params.toString());
 			if (result.ok) {
-				const d = result.data as { items: ModItem[]; total: number; page: number; total_pages: number } | null;
+				const d = result.data as { items: ModItem[]; total?: number; page: number; total_pages: number } | null;
 				items = d?.items ?? [];
 				totalItems = d?.total ?? items.length;
 				totalPages = d?.total_pages ?? 1;
@@ -286,35 +269,27 @@
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.source')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type === "ai_flag" ? t('app.moderation.queue.ai_flag', 'AI Flag') : t('app.moderation.queue.user_report', 'User Report')}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.source', 'Source')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.content_type')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.content_type}</p>
-				</div>
-				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.status')}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.status', 'Status')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
 				</div>
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.reporter')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.reporter_name || "—"}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.reporter', 'Reporter')}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.reporter || "—"}</p>
 				</div>
-				<div class="col-span-2">
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.reason')}</p>
-					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{viewTarget.reason}</p>
-				</div>
-				{#if viewTarget.content_preview}
-					<div class="col-span-2">
-						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.content_preview')}</p>
-						<p class="mt-1 text-sm rounded-lg p-3" style="background: var(--color-surface); color: var(--color-foreground)">{viewTarget.content_preview}</p>
-					</div>
-				{/if}
 				<div>
-					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.created')}</p>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.created', 'Created')}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{new Date(viewTarget.created_at).toLocaleString()}</p>
 				</div>
+				{#if viewTarget.content}
+					<div class="col-span-2">
+						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.content_preview', 'Content Preview')}</p>
+						<p class="mt-1 text-sm rounded-lg p-3" style="background: var(--color-surface); color: var(--color-foreground)">{viewTarget.content}</p>
+					</div>
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -327,7 +302,7 @@
 				<X class="mr-1 h-3.5 w-3.5" /> {t("app.moderation.queue.reject_action", "Reject")}
 			</Button>
 		{/if}
-		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('moderation.close')}</Button>
+		<Button variant="outline" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</Button>
 	</div>
 </Modal>
 
@@ -335,8 +310,8 @@
 <Modal bind:open={showActionModal} title={actionType === "approve" ? t("moderation.approve_title", "Approve Content") : actionType === "reject" ? t("moderation.reject_title", "Reject Content") : t("moderation.delete_title", "Delete Content")}>
 	{#if actionItem}
 		<div class="mb-3 rounded-lg p-3 text-sm" style="background: var(--color-surface); border: 1px solid var(--color-border)">
-			<p class="font-medium" style="color: var(--color-foreground)">{actionItem.content_type}</p>
-			<p style="color: var(--color-muted)">{actionItem.reason}</p>
+			<p class="font-medium" style="color: var(--color-foreground)">{actionItem.type}</p>
+			<p style="color: var(--color-muted)">{actionItem.content || "—"}</p>
 		</div>
 	{/if}
 	{#if actionType !== "approve"}

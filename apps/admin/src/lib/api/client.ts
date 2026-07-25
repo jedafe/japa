@@ -61,7 +61,7 @@ async function dispatch<T>(
 	withCsrf: boolean
 ): Promise<ApiResult<T>> {
 	const baseHeaders = options.headers as Record<string, string> | undefined;
-	const headers = withCsrf ? csrfHeaders(options.method, baseHeaders) : baseHeaders;
+	const headers = withCsrf ? await csrfHeaders(options.method, baseHeaders) : baseHeaders;
 
 	const accessToken = getAccessToken();
 	const authHeader: Record<string, string> = accessToken
@@ -94,7 +94,7 @@ async function dispatch<T>(
 				headers: {
 					...jsonHeader,
 					...retryAuth,
-					...csrfHeaders(options.method, headers),
+					...await csrfHeaders(options.method, headers),
 				},
 			});
 			if (retryRes.ok) {

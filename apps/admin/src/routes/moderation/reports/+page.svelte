@@ -10,15 +10,17 @@
 
 	type Report = {
 		id: string;
-		reporter_id: string;
-		reporter_name: string;
-		target_content_type: string;
-		target_content_id: string;
+		reporter_user_id: string;
+		entity_type: string;
+		entity_id: string;
 		reason: string;
+		notes?: string;
+		evidence_urls?: string[];
 		status: string;
+		reviewed_by?: string;
+		resolution_note?: string;
+		resolved_at?: string;
 		created_at: string;
-		reporter_email?: string;
-		content_preview?: string;
 	};
 
 	let reports = $state<Report[]>([]);
@@ -36,7 +38,12 @@
 	let acting = $state(false);
 
 	const filterDefs = [
-		{ key: 'status', label: t('moderation.status'), type: 'select' as const, options: ['pending', 'reviewing', 'actioned', 'dismissed'] }
+		{ key: 'status', label: t('moderation.status', 'Status'), type: 'select' as const, options: [
+			{ value: 'pending', label: t('app.moderation.queue.pending', 'Pending') },
+			{ value: 'reviewing', label: t('moderation.reviewing', 'Reviewing') },
+			{ value: 'actioned', label: t('moderation.actioned', 'Actioned') },
+			{ value: 'dismissed', label: t('app.moderation.queue.dismissed', 'Dismissed') }
+		] }
 	];
 
 	function statusBadge(status: string) {
@@ -71,33 +78,33 @@
 
 	const columns = [
 		{
-			key: 'reporter_name',
-			label: t('moderation.reporter'),
+			key: 'reporter_user_id',
+			label: t('moderation.reporter', 'Reporter'),
 			sortable: true,
-			render: (_: any, row: Report) => `<p class="font-medium">${row.reporter_name}</p><p class="text-xs" style="color: var(--color-muted)">${row.reporter_id.slice(0, 12)}</p>`
+			render: (v: string) => `<p class="font-mono text-xs">${(v ?? '').slice(0, 12)}</p>`
 		},
 		{
-			key: 'target_content_type',
-			label: t('moderation.target'),
+			key: 'entity_type',
+			label: t('moderation.target', 'Target'),
 			sortable: true,
-			render: (_: any, row: Report) => `<span class="text-xs" style="color: var(--color-muted)">${row.target_content_type} &middot; ${row.target_content_id.slice(0, 10)}</span>`
+			render: (_: any, row: Report) => `<span class="text-xs" style="color: var(--color-muted)">${row.entity_type} &middot; ${(row.entity_id ?? '').slice(0, 10)}</span>`
 		},
 		{
 			key: 'reason',
-			label: t('moderation.reason'),
+			label: t('moderation.reason', 'Reason'),
 			render: (v: string) => `<span class="text-xs max-w-xs truncate block">${v}</span>`
 		},
 		{
 			key: 'status',
-			label: t('moderation.status'),
+			label: t('moderation.status', 'Status'),
 			sortable: true,
 			render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${statusBadge(v)}">${v}</span>`
 		},
 		{
 			key: 'created_at',
-			label: t('moderation.date'),
+			label: t('moderation.date', 'Date'),
 			sortable: true,
-			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
+			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>`
 		},
 		{
 			key: 'actions',
@@ -219,7 +226,7 @@
 {#if loading}
 	<p class="py-8 text-center text-sm" style="color: var(--color-muted)">{t('common.loading')}</p>
 {:else}
-	<DataTable {columns} data={reports} pageSize={25} searchable emptyMessage="No reports found" onrowclick={(row) => toggleExpand(row.id)} />
+	<DataTable {columns} data={reports} pageSize={25} searchable emptyMessage={t('moderation.no_reports', 'No reports found')} onrowclick={(row) => toggleExpand(row.id)} />
 
 	{#if expandedId}
 		{@const expanded = reports.find((r) => r.id === expandedId)}
@@ -227,26 +234,29 @@
 			<div class="mt-3 rounded-lg border px-4 py-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.reporter')}</p>
-						<p class="mt-1 text-sm">{expanded.reporter_name}</p>
-						{#if expanded.reporter_email}
-							<p class="text-xs" style="color: var(--color-muted)">{expanded.reporter_email}</p>
-						{/if}
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reporter', 'Reporter')}</p>
+						<p class="mt-1 text-sm font-mono">{expanded.reporter_user_id.slice(0, 12)}</p>
 					</div>
 					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.target_content')}</p>
-						<p class="mt-1 text-sm">{expanded.target_content_type}</p>
-						<p class="text-xs font-mono" style="color: var(--color-muted)">{expanded.target_content_id}</p>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.target', 'Target')}</p>
+						<p class="mt-1 text-sm">{expanded.entity_type}</p>
+						<p class="text-xs font-mono" style="color: var(--color-muted)">{expanded.entity_id}</p>
 					</div>
 					<div>
-						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reports.report_reason')}</p>
+						<p class="text-xs font-medium" style="color: var(--color-muted)">{t('moderation.reason', 'Reason')}</p>
 						<p class="mt-1 text-sm">{expanded.reason}</p>
 					</div>
 				</div>
-				{#if expanded.content_preview}
+				{#if expanded.notes}
 					<div class="mt-3 rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
-						<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">{t('moderation.reports.content_preview')}</p>
-						{expanded.content_preview}
+						<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">{t('moderation.notes', 'Notes')}</p>
+						{expanded.notes}
+					</div>
+				{/if}
+				{#if expanded.resolution_note}
+					<div class="mt-3 rounded-md border p-3 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)">
+						<p class="text-xs font-medium mb-1" style="color: var(--color-muted)">{t('moderation.resolution_note', 'Resolution Note')}</p>
+						{expanded.resolution_note}
 					</div>
 				{/if}
 				{#if canManage && expanded.status === 'pending'}
@@ -256,28 +266,28 @@
 							style="background-color: var(--color-surface); border: 1px solid var(--color-border)"
 							onclick={() => openAction(expanded, 'dismiss')}
 						>
-							{t('moderation.dismiss_report')}
+							{t('moderation.dismiss_report', 'Dismiss Report')}
 						</button>
 						<button
 							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
 							style="background-color: var(--color-warning)"
 							onclick={() => openAction(expanded, 'warn')}
 						>
-							{t('moderation.warn_reporter')}
+							{t('moderation.warn', 'Warn')}
 						</button>
 						<button
 							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
 							style="background-color: var(--color-danger)"
 							onclick={() => openAction(expanded, 'remove')}
 						>
-							{t('moderation.remove_content')}
+							{t('moderation.remove_content', 'Remove Content')}
 						</button>
 						<button
 							class="rounded-md px-3 py-1.5 text-xs font-medium text-white"
 							style="background-color: var(--color-danger)"
 							onclick={() => openAction(expanded, 'ban')}
 						>
-							{t('moderation.ban_target')}
+							{t('moderation.ban_target', 'Ban')}
 						</button>
 					</div>
 				{/if}
@@ -300,7 +310,7 @@
 		class="w-full rounded-md border px-3 py-2 text-sm"
 		style="border-color: var(--color-border); background-color: var(--color-surface)"
 		rows="3"
-		placeholder="Reason (optional)"
+		placeholder={t('moderation.reason_optional', 'Reason (optional)')}
 		bind:value={actionReason}
 	></textarea>
 </Modal>

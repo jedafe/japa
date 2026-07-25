@@ -170,7 +170,14 @@ WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: UpdateDiscountCode :one
 UPDATE discount_codes
-SET code = COALESCE(NULLIF(@new_code, ''), code)
+SET
+    code = COALESCE(NULLIF(@new_code, ''), code),
+    discount_type = COALESCE(NULLIF(@discount_type, ''), discount_type),
+    discount_value = COALESCE(sqlc.narg(discount_value), discount_value),
+    applicable_to = COALESCE(NULLIF(@applicable_to, ''), applicable_to),
+    max_uses = sqlc.narg(max_uses),
+    valid_from = COALESCE(sqlc.narg(valid_from), valid_from),
+    valid_until = sqlc.narg(valid_until)
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING id, code;
 

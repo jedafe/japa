@@ -78,6 +78,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found")
 	case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
 		writeError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	case errors.Is(err, errpkg.ErrInsufficientBalance):
+		writeError(w, http.StatusUnprocessableEntity, "insufficient_balance", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 	}
@@ -550,16 +552,18 @@ func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	points, credits, err := h.Service.GetUserBalance(r.Context(), tenantID, userID)
+	username, points, credits, err := h.Service.GetUserBalanceWithInfo(r.Context(), tenantID, userID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]int64{
-			"points":  points,
-			"credits": credits,
+		"data": map[string]any{
+			"user_id":  userID.String(),
+			"username": username,
+			"points":   points,
+			"credits":  credits,
 		},
 	})
 }
