@@ -14,9 +14,20 @@
 package content
 
 import (
+	"errors"
+
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
+
+// ErrOrgPostForbidden is returned when a caller tries to attribute content to
+// an organization they are not an owner/admin/editor of (ADR-062).
+var ErrOrgPostForbidden = errors.New("not authorized to post as this organization")
+
+// isOrgPostRole reports whether an org membership role may post/edit as the org.
+func isOrgPostRole(role string) bool {
+	return role == "owner" || role == "admin" || role == "editor"
+}
 
 // Content status values stored in the contents.status column.
 const (
