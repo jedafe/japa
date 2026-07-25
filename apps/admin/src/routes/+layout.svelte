@@ -11,6 +11,7 @@
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import Breadcrumb from '$lib/components/layout/Breadcrumb.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
+	import { CardSkeleton } from '$lib/components/ui/skeleton';
 	import '../app.css';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -204,7 +205,13 @@
 			<main class="flex-1 overflow-y-auto" style="background-color: var(--color-background)">
 				<div class="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 md:px-8">
 					<Breadcrumb />
-					{#if hasAccess}
+					{#if loading}
+						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-6">
+							{#each Array(4) as _}
+								<CardSkeleton />
+							{/each}
+						</div>
+					{:else if hasAccess}
 						{@render children()}
 					{:else}
 						<AccessDenied {requiredPermission} />

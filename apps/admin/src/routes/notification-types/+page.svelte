@@ -43,7 +43,7 @@
 		{
 			key: 'actions',
 			label: t('common.actions'),
-			component: NtActionsCell
+			componentSnippet: NtActionsCell
 		}
 	];
 

@@ -11,7 +11,7 @@
   import { DataTable } from "$lib/components/ui/data-table";
   import Pagination from "$lib/components/ui/Pagination.svelte";
   import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play, RotateCcw } from "lucide-svelte";
-   import { userManagementApi, impersonationApi, usersWarningsAdminApi } from "$lib/api";
+   import { userManagementApi, impersonationApi, usersWarningsAdminApi, type UserSession } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
 
   type UserDetail = {
@@ -39,12 +39,6 @@
     created_at: string;
   };
 
-   type Session = {
-     id: string;
-     created_at: string;
-     expires_at: string;
-   };
-
    type Warning = {
      id: string;
      reason: string;
@@ -66,7 +60,7 @@
    let user = $state<UserDetail | null>(null);
    let activities = $state<Activity[]>([]);
    let aiEntries = $state<AiContextEntry[]>([]);
-   let sessions = $state<Session[]>([]);
+   let sessions = $state<UserSession[]>([]);
    let warnings = $state<Warning[]>([]);
    let restrictions = $state<Restriction[]>([]);
    let loading = $state(true);
@@ -179,7 +173,7 @@
     { key: 'entry_type', label: t('users.userId.type'), sortable: false, render: (v: string) => `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-secondary) 15%, transparent); color: var(--color-foreground)">${v}</span>` },
     { key: 'content', label: t('users.userId.content'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
     { key: 'created_at', label: t('users.userId.created'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
-    { key: 'actions', label: '', class: 'w-24', component: AiActionsCell }
+    { key: 'actions', label: '', class: 'w-24', componentSnippet: AiActionsCell }
   ];
 
   const sessionColumns = [

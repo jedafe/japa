@@ -30,7 +30,7 @@
 		{ key: 'slug', label: t('learn.slug'), sortable: true, class: 'text-xs font-mono', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
 		{ key: 'enrollment_count', label: t('learn.enrollments'), sortable: true, class: 'text-xs' },
 		{ key: 'is_published', label: t('learn.status'), sortable: true, render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">${v ? t('learn.published') : t('learn.draft')}</span>` },
-		{ key: 'actions', label: t('common.actions'), class: 'w-32 text-right', component: TrackActionsCell }
+		{ key: 'actions', label: t('common.actions'), class: 'w-32 text-right', componentSnippet: TrackActionsCell }
 	];
 
 	function filteredTracks(): Track[] {

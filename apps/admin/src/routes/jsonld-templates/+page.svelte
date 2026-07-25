@@ -89,7 +89,7 @@
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			component: TemplateActionsCell
+			componentSnippet: TemplateActionsCell
 		}
 	];
 

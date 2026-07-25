@@ -34,6 +34,11 @@
 	let bulkDeleting = $state(false);
 
 	const canManageCoupons = $derived(hasPermission("coupons.manage"));
+	
+	const discountTypeOptions = $derived([
+		{ value: "percentage", label: t("coupons.percentage", "Percentage") },
+		{ value: "fixed", label: t("coupons.fixed", "Fixed") }
+	]);
 
 	// Modal state
 	let showModal = $state(false);
@@ -76,7 +81,7 @@
 		},
 		{ key: "is_active", label: t("common.status", "Status"), sortable: true },
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			component: CouponActionsCell
+			componentSnippet: CouponActionsCell
 		}
 	];
 
@@ -244,7 +249,7 @@
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<label for="coupon-type" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.type", "Type")}</label>
-				<Select id="coupon-type" options={[{ value: "percentage", label: t("coupons.percentage", "Percentage") }, { value: "fixed", label: t("coupons.fixed", "Fixed") }]} bind:value={discountType} />
+				<Select id="coupon-type" options={discountTypeOptions} bind:value={discountType} />
 			</div>
 			<div>
 				<label for="coupon-value" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("coupons.value", "Value")}</label>

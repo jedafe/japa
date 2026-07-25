@@ -128,7 +128,7 @@
 			key: "actions",
 			label: t("common.actions", "Actions"),
 			class: "w-40",
-			component: ModActionsCell
+			componentSnippet: ModActionsCell
 		}
 	];
 

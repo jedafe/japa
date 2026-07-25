@@ -13,6 +13,8 @@
 	} = $props();
 
 	let localValues = $state<Record<string, string>>({});
+	
+	const allOption = $derived({ value: '', label: t('common.all') });
 
 	$effect(() => {
 		const snap = { ...initialValues };
@@ -34,7 +36,7 @@
 			<label for="filter-{filter.key}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{filter.label}</label>
 			{#if filter.type === 'select'}
 				<Select
-					options={[{ value: '', label: t('common.all') }, ...(filter.options ?? []).map(o => typeof o === 'string' ? { value: o, label: o } : o)]}
+					options={[allOption, ...(filter.options ?? []).map(o => typeof o === 'string' ? { value: o, label: o } : o)]}
 					value={localValues[filter.key] ?? ''}
 					onchange={(val) => handleSelectChange(filter.key, val)}
 					class="!h-9"

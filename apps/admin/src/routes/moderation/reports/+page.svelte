@@ -103,7 +103,7 @@
 			key: 'actions',
 			label: '',
 			class: 'w-32',
-			component: ReportActionsCell
+			componentSnippet: ReportActionsCell
 		}
 	];
 

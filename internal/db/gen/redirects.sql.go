@@ -47,14 +47,14 @@ const countRedirects = `-- name: CountRedirects :one
 SELECT COUNT(*)::int AS count
 FROM redirects
 WHERE tenant_id = $1
-  AND ($2 IS NULL OR is_active = $2)
-  AND ($3 = '' OR source_path ILIKE '%' || $3 || '%' OR target_url ILIKE '%' || $3 || '%')
+  AND ($2::boolean IS NULL OR is_active = $2::boolean)
+  AND ($3::text = '' OR source_path ILIKE '%' || $3 || '%' OR target_url ILIKE '%' || $3 || '%')
 `
 
 type CountRedirectsParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
-	IsActive interface{} `json:"is_active"`
-	Search   interface{} `json:"search"`
+	IsActive *bool       `json:"is_active"`
+	Search   string      `json:"search"`
 }
 
 func (q *Queries) CountRedirects(ctx context.Context, arg CountRedirectsParams) (int32, error) {
@@ -187,16 +187,16 @@ SELECT id, tenant_id, source_path, target_url, http_status, is_active,
        notes, hit_count, last_hit_at, created_at, updated_at
 FROM redirects
 WHERE tenant_id = $1
-  AND ($2 IS NULL OR is_active = $2)
-  AND ($3 = '' OR source_path ILIKE '%' || $3 || '%' OR target_url ILIKE '%' || $3 || '%')
+  AND ($2::boolean IS NULL OR is_active = $2::boolean)
+  AND ($3::text = '' OR source_path ILIKE '%' || $3 || '%' OR target_url ILIKE '%' || $3 || '%')
 ORDER BY created_at DESC
 LIMIT $5 OFFSET $4
 `
 
 type ListRedirectsParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
-	IsActive   interface{} `json:"is_active"`
-	Search     interface{} `json:"search"`
+	IsActive   *bool       `json:"is_active"`
+	Search     string      `json:"search"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }

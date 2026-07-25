@@ -122,7 +122,7 @@
 			key: "actions",
 			label: "",
 			class: "w-32",
-			component: TrackActionsCell
+			componentSnippet: TrackActionsCell
 		}
 	];
 
@@ -154,7 +154,7 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			component: ModuleActionsCell
+			componentSnippet: ModuleActionsCell
 		}
 	];
 
@@ -186,7 +186,7 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			component: LessonActionsCell
+			componentSnippet: LessonActionsCell
 		}
 	];
 

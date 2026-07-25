@@ -37,6 +37,11 @@
 	});
 
 	const audiences = ['users', 'premium', 'organizations', 'moderators', 'api', 'admin', 'superadmin'];
+	
+	const statusOptions = $derived([
+		{ value: 'draft', label: 'Draft' },
+		{ value: 'published', label: 'Published' }
+	]);
 
 	const filterDefs = [
 		{ key: 'audience', label: t('docs.audience'), type: 'select' as const, options: audiences }
@@ -229,7 +234,7 @@
 <Dialog.Root open={true}>
 	<Dialog.Portal>
 		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95" style="border-color: var(--color-border); background-color: var(--color-background)" oninteractOutside={() => { showModal = false; }}>
+		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95" style="border-color: var(--color-border); background-color: var(--color-background)" onInteractOutside={() => { showModal = false; }}>
 			<Dialog.Title class="text-lg font-semibold">{editingId ? t('docs.edit_doc_page') : t('docs.new_doc_page')}</Dialog.Title>
 			<div class="mt-4 space-y-3">
 				<div class="grid gap-3 sm:grid-cols-2">
@@ -253,7 +258,7 @@
 					<div>
 						<label for="doc-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.status')}</label>
 						<Select
-							options={[{ value: 'draft', label: 'Draft' }, { value: 'published', label: 'Published' }]}
+							options={statusOptions}
 							bind:value={form.status}
 						/>
 					</div>

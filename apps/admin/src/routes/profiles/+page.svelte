@@ -81,7 +81,7 @@
 				return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${text}</span>`;
 			}
 		},
-		{ key: 'actions', label: t('common.actions'), class: 'w-36', component: ProfileActionsCell }
+		{ key: 'actions', label: t('common.actions'), class: 'w-36', componentSnippet: ProfileActionsCell }
 	];
 
 	function openView(profile: Profile) {

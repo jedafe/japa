@@ -4,8 +4,12 @@
 
 	let { blockType }: { blockType: { type: string; name: string; description: string; icon: string; category: string; default_props: Record<string, unknown> } } = $props();
 
+	const draggableInput = $state({
+		get id() { return `palette-${blockType.type}`; },
+		get data() { return { source: 'palette', blockType: blockType.type, defaultProps: blockType.default_props }; }
+	});
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const draggable = createDraggable({ id: `palette-${blockType.type}`, data: { source: 'palette', blockType: blockType.type, defaultProps: blockType.default_props } } as any);
+	const draggable = createDraggable(draggableInput as any);
 </script>
 
 <div

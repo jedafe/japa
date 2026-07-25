@@ -42,8 +42,8 @@ SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
     ip_address, user_agent, created_at
 FROM consent_records
 WHERE tenant_id = @tenant_id
-  AND (@consent_type = '' OR consent_type = @consent_type)
-  AND (@q::text = '' OR consent_type ILIKE '%' || @q || '%' OR ip_address ILIKE '%' || @q || '%')
+  AND (@consent_type::text = '' OR consent_type = @consent_type::text)
+  AND (@q::text = '' OR consent_type ILIKE '%' || @q || '%' OR ip_address::text ILIKE '%' || @q || '%')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
