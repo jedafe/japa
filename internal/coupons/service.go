@@ -126,14 +126,20 @@ func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) 
 // ── Coupon Operations ───────────────────────────────────────────────
 
 type CreateCouponInput struct {
-	ProviderID                                  *pgtype.UUID
-	CouponType, Title, Code, Status             string
-	Description                                 *string
-	DiscountType                                *string
-	DiscountValue                               *pgtype.Numeric
-	Currency, TermsURL, ReferralURL             *string
-	IsVerified                                  bool
-	ValidFrom, ExpiresAt                        *pgtype.Timestamptz
+	ProviderID    *pgtype.UUID        `json:"provider_id,omitempty"`
+	CouponType    string              `json:"coupon_type,omitempty"`
+	Title         string              `json:"title"`
+	Code          string              `json:"code"`
+	Status        string              `json:"status,omitempty"`
+	Description   *string             `json:"description,omitempty"`
+	DiscountType  *string             `json:"discount_type,omitempty"`
+	DiscountValue *pgtype.Numeric     `json:"discount_value,omitempty"`
+	Currency      *string             `json:"currency,omitempty"`
+	TermsURL      *string             `json:"terms_url,omitempty"`
+	ReferralURL   *string             `json:"referral_url,omitempty"`
+	IsVerified    bool                `json:"is_verified,omitempty"`
+	ValidFrom     *pgtype.Timestamptz `json:"valid_from,omitempty"`
+	ExpiresAt     *pgtype.Timestamptz `json:"valid_until,omitempty"`
 }
 
 func (s *Service) CreateCoupon(ctx context.Context, tenantID, userID pgtype.UUID, input CreateCouponInput) (gen.Coupon, error) {
