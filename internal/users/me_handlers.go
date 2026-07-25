@@ -331,6 +331,38 @@ func (h *Handlers) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": content})
 }
 
+// GetMyDraft handles GET /api/v1/me/drafts/{id}. It returns the caller's own
+// draft content by ID so the /create composer can restore an existing draft
+// for editing. Ownership + draft status are enforced by the store query; a
+// mismatch (missing, not-a-draft, or another user's content) resolves to
+// pgx.ErrNoRows → 404, so the route never leaks another author's draft.
+func (h *Handlers) GetMyDraft(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	var contentID pgtype.UUID
+	if err := contentID.Scan(idStr); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid draft ID format")
+		return
+	}
+
+	draft, err := h.Service.GetUserDraft(r.Context(), tenantID, user.UserID, contentID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": draft})
+}
+
 // ListMyScheduled handles GET /api/v1/me/scheduled.
 func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

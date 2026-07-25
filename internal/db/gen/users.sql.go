@@ -281,6 +281,97 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 	return i, err
 }
 
+const getUserDraft = `-- name: GetUserDraft :one
+SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
+       c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
+       c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
+FROM contents c
+WHERE c.id = $1 AND c.tenant_id = $2 AND c.author_id = $3
+  AND c.status = 'draft' AND c.deleted_at IS NULL
+`
+
+type GetUserDraftParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+}
+
+type GetUserDraftRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Returns the caller's own draft content by ID (tenant + author scoped,
+// status = 'draft'). Used by the /create composer to restore an existing
+// draft for editing via GET /api/v1/me/drafts/{id}. Mirrors the column set
+// of GetContentByID so the response shape matches GET /content/{slug}.
+func (q *Queries) GetUserDraft(ctx context.Context, arg GetUserDraftParams) (GetUserDraftRow, error) {
+	row := q.db.QueryRow(ctx, getUserDraft, arg.ID, arg.TenantID, arg.AuthorID)
+	var i GetUserDraftRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AuthorID,
+		&i.OrganizationID,
+		&i.SpaceID,
+		&i.ContentType,
+		&i.Title,
+		&i.Slug,
+		&i.Body,
+		&i.BodyHtml,
+		&i.FieldValues,
+		&i.ContentHash,
+		&i.GeoSpaceID,
+		&i.HeaderImageID,
+		&i.FeaturedImageID,
+		&i.CanonicalUrl,
+		&i.Status,
+		&i.Visibility,
+		&i.IsLocked,
+		&i.IsPinned,
+		&i.ReadTimeMinutes,
+		&i.ViewCount,
+		&i.CommentCount,
+		&i.ShareCount,
+		&i.ReshareCount,
+		&i.PublishAt,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUserPasswordHash = `-- name: GetUserPasswordHash :one
 SELECT id, password_hash FROM users WHERE id = $1 AND tenant_id = $2
 `
