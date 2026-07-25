@@ -108,3 +108,38 @@ func TestListPublicMembers_ActiveOnly_Lean(t *testing.T) {
 		t.Fatalf("unexpected member: %+v", envelope.Data[0])
 	}
 }
+
+func TestListPublicOrganizations_VerifiedActiveOnly(t *testing.T) {
+	t.Parallel()
+
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+	testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "v1", Status: "active", Verified: true})
+	testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "v2", Status: "active", Verified: true})
+	testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "unverified", Status: "active", Verified: false})
+	testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "suspended", Status: "suspended", Verified: true})
+
+	h := NewHandlers(NewService(database))
+	req := httptest.NewRequest(http.MethodGet, "/organizations", nil)
+	req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
+	rec := httptest.NewRecorder()
+	h.ListPublicOrganizations(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200; body=%s", rec.Code, rec.Body)
+	}
+	var envelope struct {
+		Data []struct {
+			Slug string `json:"slug"`
+		} `json:"data"`
+		Meta struct {
+			Total int `json:"total"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if envelope.Meta.Total != 2 || len(envelope.Data) != 2 {
+		t.Fatalf("got total=%d len=%d, want 2 verified+active only", envelope.Meta.Total, len(envelope.Data))
+	}
+}
