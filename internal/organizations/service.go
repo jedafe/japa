@@ -330,6 +330,11 @@ func (s *Service) ActiveOrgExists(ctx context.Context, tenantID, id pgtype.UUID)
 	return s.store.ActiveOrgExistsByID(ctx, tenantID, id)
 }
 
+// GetPublicOrganizationBySlug returns an active org for the public profile header.
+func (s *Service) GetPublicOrganizationBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Organization, error) {
+	return s.store.GetPublicOrganizationBySlug(ctx, slug, tenantID)
+}
+
 func strPtr(s string) *string {
 	if s == "" {
 		return nil

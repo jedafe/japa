@@ -448,6 +448,49 @@ func (q *Queries) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype
 	return items, nil
 }
 
+const getPublicOrganizationBySlug = `-- name: GetPublicOrganizationBySlug :one
+SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at FROM organizations
+WHERE slug = $1 AND tenant_id = $2
+  AND status = 'active' AND deleted_at IS NULL
+`
+
+type GetPublicOrganizationBySlugParams struct {
+	Slug     string      `json:"slug"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Public org profile header: only ACTIVE, non-deleted orgs (unverified-but-
+// active is a valid public state per Section 07). Non-active/deleted → no row → 404.
+func (q *Queries) GetPublicOrganizationBySlug(ctx context.Context, arg GetPublicOrganizationBySlugParams) (Organization, error) {
+	row := q.db.QueryRow(ctx, getPublicOrganizationBySlug, arg.Slug, arg.TenantID)
+	var i Organization
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.OwnerUserID,
+		&i.Name,
+		&i.Slug,
+		&i.Tagline,
+		&i.Description,
+		&i.LogoMediaID,
+		&i.HeaderMediaID,
+		&i.WebsiteUrl,
+		&i.CountryCode,
+		&i.GeoSpaceID,
+		&i.OrgType,
+		&i.Verified,
+		&i.VerificationType,
+		&i.FollowerCount,
+		&i.MemberCount,
+		&i.Status,
+		&i.FieldValues,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const incrementOrganizationMemberCount = `-- name: IncrementOrganizationMemberCount :exec
 UPDATE organizations
 SET member_count = member_count + $2, updated_at = now()

@@ -145,3 +145,10 @@ SELECT EXISTS (
     WHERE tenant_id = @tenant_id AND id = @id
       AND status = 'active' AND deleted_at IS NULL
 ) AS exists;
+
+-- name: GetPublicOrganizationBySlug :one
+-- Public org profile header: only ACTIVE, non-deleted orgs (unverified-but-
+-- active is a valid public state per Section 07). Non-active/deleted → no row → 404.
+SELECT * FROM organizations
+WHERE slug = @slug AND tenant_id = @tenant_id
+  AND status = 'active' AND deleted_at IS NULL;
