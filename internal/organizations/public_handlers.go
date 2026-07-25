@@ -45,3 +45,26 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": toOrgMembers(rows)})
 }
+
+// ListPublicOrganizations handles GET /organizations (public): verified+active
+// orgs, paginated. Reuses the org package's shared parsePageSize/parsePageOffset
+// helpers so pagination behaves identically to the authenticated list.
+func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	rows, total, err := h.service.ListPublicOrganizations(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": toPublicOrgList(rows),
+		"meta": map[string]any{"total": total, "limit": limit, "offset": offset},
+	})
+}
