@@ -103,6 +103,7 @@
 	"settings.group.billing": "Facturation",
 	"settings.group.developer": "Développeur",
 	"settings.group.danger": "Zone de danger",
+	"settings.group.activity": "Activité",
 	"settings.action.save": "Enregistrer",
 	"settings.action.discard": "Annuler",
 	"settings.unsaved_warning": "Vous avez des modifications non enregistrées. Quitter quand même ?",
@@ -231,5 +232,13 @@
 	"settings.danger.deleting": "Suppression…",
 	"settings.danger.logged_out_title": "Compte supprimé",
 	"settings.danger.logged_out_body": "Votre compte a été définitivement supprimé. Nous sommes désolés de vous voir partir.",
-	"settings.danger.logged_out_home": "Retour à l'accueil"
+	"settings.danger.logged_out_home": "Retour à l'accueil",
+	"dashboard.nav.label": "Tableau de bord",
+	"dashboard.nav.overview": "Vue d'ensemble",
+	"dashboard.nav.analytics": "Analytique",
+	"dashboard.nav.content": "Contenu",
+	"dashboard.nav.relationships": "Relations",
+	"dashboard.nav.learning": "Apprentissage",
+	"dashboard.nav.certificates": "Certificats",
+	"dashboard.nav.knowledge_base": "Base de connaissances"
 }
