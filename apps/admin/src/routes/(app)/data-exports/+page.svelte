@@ -149,13 +149,13 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			component: ExportActionsCell
+			componentSnippet: ExportActionsCell
 		}
 	];
 
 	async function loadExports() {
 		loading = true;
-		const result = await api<DataExport[]>("/data-exports");
+		const result = await api<DataExport[]>("/admin/data-exports");
 		if (result.ok) {
 			exports = Array.isArray(result.data) ? result.data : [];
 		}
@@ -166,7 +166,7 @@
 		if (!form.name.trim()) return;
 		saving = true;
 		errorMessage = "";
-		const result = await api("/data-exports", {
+		const result = await api("/admin/data-exports", {
 			method: "POST",
 			body: {
 				name: form.name.trim(),
@@ -199,7 +199,7 @@
 	async function confirmDelete() {
 		if (!deletingId) return;
 		saving = true;
-		const result = await api(`/data-exports/${deletingId}`, { method: "DELETE" });
+		const result = await api(`/admin/data-exports/${deletingId}`, { method: "DELETE" });
 		if (result.ok) {
 			successMessage = t('app.data_exports.msg_deleted', 'Export deleted');
 			loadExports();
@@ -216,7 +216,7 @@
 		saving = true;
 		const ids = [...selectedIds];
 		for (const id of ids) {
-			await api(`/data-exports/${id}`, { method: "DELETE" });
+			await api(`/admin/data-exports/${id}`, { method: "DELETE" });
 		}
 		selectedIds = new Set();
 		successMessage = t('app.data_exports.msg_bulk_deleted', `${ids.length} export(s) deleted`);

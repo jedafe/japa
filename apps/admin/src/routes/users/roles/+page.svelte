@@ -50,7 +50,7 @@
 			return `<div class="flex flex-wrap gap-1">${chips}${extra}</div>`;
 		}},
 		{ key: 'user_count', label: t('users.roles.user_count', 'Users'), sortable: true, render: (v: number) => `<span class="rounded-full px-2 py-0.5 text-xs font-bold" style="background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)">${v}</span>` },
-		{ key: 'actions', label: t('users.roles.actions', 'Actions'), class: 'w-36', component: RoleActionsCell }
+		{ key: 'actions', label: t('users.roles.actions', 'Actions'), class: 'w-36', componentSnippet: RoleActionsCell }
 	];
 
 	async function load() {

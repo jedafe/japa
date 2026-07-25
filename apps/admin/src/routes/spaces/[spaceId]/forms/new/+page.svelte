@@ -20,7 +20,7 @@
 	let saving = $state(false);
 	let errorMessage = $state('');
 
-	const fieldTypes = ['text', 'number', 'email', 'boolean', 'select', 'textarea', 'url'] as const;
+	const fieldTypes = $derived(['text', 'number', 'email', 'boolean', 'select', 'textarea', 'url'] as const);
 
 	function addField() {
 		fields = [...fields, { label: '', type: 'text', required: false, options: [] }];

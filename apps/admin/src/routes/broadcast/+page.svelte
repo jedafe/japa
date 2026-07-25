@@ -67,7 +67,7 @@
 			key: 'actions',
 			label: t('common.actions'),
 			class: 'w-24',
-			component: BroadcastActionsCell
+			componentSnippet: BroadcastActionsCell
 		}
 	];
 

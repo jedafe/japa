@@ -53,7 +53,7 @@
 			render: (v: boolean) => v ? t("common.active", "Active") : t("common.inactive", "Inactive")
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-48",
-			component: TemplateActionsCell
+			componentSnippet: TemplateActionsCell
 		}
 	];
 

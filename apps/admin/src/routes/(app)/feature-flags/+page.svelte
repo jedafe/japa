@@ -130,7 +130,7 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			component: FlagActionsCell
+			componentSnippet: FlagActionsCell
 		}
 	];
 

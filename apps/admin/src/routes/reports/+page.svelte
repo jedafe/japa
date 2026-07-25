@@ -91,7 +91,7 @@
 			key: "actions",
 			label: t("common.actions", "Actions"),
 			class: "w-32",
-			component: ReportActionsCell
+			componentSnippet: ReportActionsCell
 		}
 	];
 

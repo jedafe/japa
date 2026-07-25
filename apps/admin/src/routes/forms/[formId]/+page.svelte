@@ -630,8 +630,8 @@
 	title={form?.name ?? t('forms.loading', 'Loading...')}
 	description={form ? `${t('forms.slug', 'Slug')}: ${form.slug ?? form.id ?? ''}` : ''}
 	actions={[
-		{ label: t('common.back', 'Back'), icon: ArrowUp, onclick: () => goto('/forms'), variant: 'outline' },
-		...(canManage ? [{ label: t('common.delete', 'Delete'), icon: Trash2, onclick: () => (showDeleteModal = true), variant: 'destructive' }] : []),
+		{ label: t('common.back', 'Back'), icon: ArrowUp, onclick: () => goto('/forms'), variant: 'outline' as const },
+		...(canManage ? [{ label: t('common.delete', 'Delete'), icon: Trash2, onclick: () => (showDeleteModal = true), variant: 'destructive' as const }] : []),
 	]}
 />
 

@@ -45,7 +45,7 @@
 		{
 			key: 'actions',
 			label: t('common.actions'),
-			component: ComparisonActionsCell
+			componentSnippet: ComparisonActionsCell
 		}
 	];
 

@@ -71,7 +71,7 @@
 			render: (v: string) => v ? new Date(v).toLocaleDateString() : t("webhooks.never", "Never")
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			component: WebhookActionsCell
+			componentSnippet: WebhookActionsCell
 		}
 	];
 

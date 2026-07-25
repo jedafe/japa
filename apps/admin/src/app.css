@@ -20,6 +20,13 @@
   --info: #3b82f6;
   --accent: #f0f9ff;
   --accent-foreground: #0c4a6e;
+
+  /* LayerChart dataviz tokens (ADR-059) */
+  --chart-1: #0d9488;
+  --chart-2: #3b82f6;
+  --chart-3: #f59e0b;
+  --chart-4: #ef4444;
+  --chart-5: #8b5cf6;
 }
 
 .dark {
@@ -39,6 +46,13 @@
   --info: #60a5fa;
   --accent: #1e3a5f;
   --accent-foreground: #bae6fd;
+
+  /* LayerChart dataviz tokens (ADR-059) */
+  --chart-1: #2dd4bf;
+  --chart-2: #60a5fa;
+  --chart-3: #fbbf24;
+  --chart-4: #f87171;
+  --chart-5: #a78bfa;
 }
 
 @theme {

@@ -2185,7 +2185,7 @@
   "app.gdpr.erasure.execute": "Exécuter",
   "app.gdpr.erasure.empty": "Aucune demande de suppression trouvée",
   "app.users.selected_count": "sélectionné(s)",
-  "app.users.delete_confirm": "Supprimer l'utilisateur ? Cette action est irréversible.",
+  "app.users.delete_confirm": "Supprimer l'utilisateur {username} ? Cette action est irréversible.",
   "app.users.deleting": "Suppression...",
   "app.users.delete_action": "Supprimer",
   "app.moderation.content.empty_message": "Aucun contenu trouvé",

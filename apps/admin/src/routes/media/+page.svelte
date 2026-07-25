@@ -52,6 +52,31 @@
   let viewMode = $state<"grid" | "list">("grid");
   let selectedIds = $state<Set<string>>(new Set());
 
+  let filteredItems = $derived.by(() => {
+    let result = [...items];
+
+    if (activeTab === "quarantined") {
+      result = result.filter((i) => i.status === "quarantined" || i.status === "pending");
+    }
+
+    if (filters.status) {
+      result = result.filter((i) => i.status === filters.status);
+    }
+    if (filters.mime_type) {
+      result = result.filter((i) => i.mime_type?.startsWith(filters.mime_type));
+    }
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      result = result.filter(
+        (i) =>
+          i.filename?.toLowerCase().includes(q) ||
+          i.alt_text?.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  });
+
   // Pagination
   let currentPage = $state(0);
   let pageSize = $state(20);
@@ -183,31 +208,6 @@
       componentSnippet: MediaActionsCell
     }
   ];
-
-  let filteredItems = $derived.by(() => {
-    let result = [...items];
-
-    if (activeTab === "quarantined") {
-      result = result.filter((i) => i.status === "quarantined" || i.status === "pending");
-    }
-
-    if (filters.status) {
-      result = result.filter((i) => i.status === filters.status);
-    }
-    if (filters.mime_type) {
-      result = result.filter((i) => i.mime_type?.startsWith(filters.mime_type));
-    }
-    if (filters.search) {
-      const q = filters.search.toLowerCase();
-      result = result.filter(
-        (i) =>
-          i.filename?.toLowerCase().includes(q) ||
-          i.alt_text?.toLowerCase().includes(q)
-      );
-    }
-
-    return result;
-  });
 
   function formatFileSize(bytes: number): string {
     if (!bytes || bytes === 0) return "0 Bytes";
@@ -623,8 +623,9 @@
 <Modal bind:open={showUploadModal} title={t('app.media.modal_upload_title', 'Upload Media')}>
   <div class="space-y-4">
     <div>
-      <label class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_files', 'Files')}</label>
+      <label for="media-upload-files" class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_files', 'Files')}</label>
       <input
+        id="media-upload-files"
         type="file"
         multiple
         accept="image/*,video/*,audio/*,application/pdf,.doc,.docx"
@@ -653,8 +654,9 @@
       </div>
     {/if}
     <div>
-      <label class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
+      <label for="media-upload-group" class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
       <select
+        id="media-upload-group"
         bind:value={uploadUserGroupId}
         class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
       >
@@ -665,8 +667,9 @@
       </select>
     </div>
     <div>
-      <label class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
+      <label for="media-upload-alt" class="block text-sm font-medium text-foreground mb-1">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
       <input
+        id="media-upload-alt"
         type="text"
         bind:value={uploadAltText}
         placeholder={t('app.media.upload_alt_placeholder', 'Describe the media...')}

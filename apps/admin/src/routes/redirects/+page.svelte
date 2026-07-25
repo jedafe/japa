@@ -66,7 +66,7 @@
 			render: (v: boolean) => v ? t("common.active", "Active") : t("common.inactive", "Inactive")
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32",
-			component: RedirectActionsCell
+			componentSnippet: RedirectActionsCell
 		}
 	];
 
@@ -78,7 +78,7 @@
 			if (filterValues.is_active) params.set("is_active", filterValues.is_active);
 			const result = await redirectsAdminApi.list(params.toString() || undefined);
 			if (result.ok) {
-				redirects = (result.data as Redirect[]) ?? [];
+				redirects = ((result.data as { items: Redirect[] })?.items) ?? [];
 			} else {
 				error = result.error ?? t("common.error", "Failed to load redirects");
 			}
