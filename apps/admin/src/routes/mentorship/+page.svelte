@@ -108,7 +108,7 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			component: ProgramActionsCell
+			componentSnippet: ProgramActionsCell
 		}
 	];
 

@@ -56,7 +56,7 @@
 		{ key: 'updated_at', label: t('i18n.updated'), sortable: true,
 			render: (v: string) => new Date(v).toLocaleDateString()
 		},
-		{ key: 'actions', label: t('common.actions', 'Actions'), class: 'w-24', component: TranslationActionsCell }
+		{ key: 'actions', label: t('common.actions', 'Actions'), class: 'w-24', componentSnippet: TranslationActionsCell }
 	];
 
 	async function load() {

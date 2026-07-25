@@ -327,10 +327,10 @@
 								data={(overview?.user_growth ?? []).map((d) => ({ date: new Date(d.day), count: d.new_users }))}
 								x="date"
 								y="count"
-								cRange={['var(--color-primary)']}
+								cRange={['var(--chart-1)']}
 								axis={chartAxisFormat}
 								props={{
-									spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--color-primary)' }
+									spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--chart-1)' }
 								}}
 							/>
 						</div>
@@ -355,10 +355,10 @@
 								data={(overview?.content_over_time ?? []).map((d) => ({ date: new Date(d.day), count: d.content_count }))}
 								x="date"
 								y="count"
-								cRange={['var(--color-primary)']}
+								cRange={['var(--chart-1)']}
 								axis={chartAxisFormat}
 								props={{
-									area: { curve: curveMonotoneX, fill: 'var(--color-primary)', fillOpacity: 0.2, strokeWidth: 2, stroke: 'var(--color-primary)', line: { curve: curveMonotoneX } }
+									area: { curve: curveMonotoneX, fill: 'var(--chart-1)', fillOpacity: 0.2, strokeWidth: 2, stroke: 'var(--chart-1)', line: { curve: curveMonotoneX } }
 								}}
 							/>
 						</div>

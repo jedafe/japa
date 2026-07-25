@@ -131,7 +131,7 @@
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			component: CampaignActionsCell
+			componentSnippet: CampaignActionsCell
 		}
 	];
 
@@ -173,7 +173,7 @@
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			component: BoostActionsCell
+			componentSnippet: BoostActionsCell
 		}
 	];
 

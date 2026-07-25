@@ -317,9 +317,10 @@
 								data={userGrowthData}
 								x="date"
 								y="count"
+								cRange={['var(--chart-1)']}
 								props={{
-									// Use the design-system color instead of the LayerChart default
-									spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--color-primary)' }
+									// Ref: japaconnect-engineering/adr/ADR-059-*.md (LayerChart theming)
+									spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--chart-1)' }
 								}}
 							/>
 							</div>
@@ -347,10 +348,11 @@
 									data={contentActivityData}
 									x="date"
 									y="count"
+									cRange={['var(--chart-1)']}
 									props={{
 										area: {
 											curve: curveMonotoneX,
-											fill: 'var(--color-primary)',
+											fill: 'var(--chart-1)',
 											fillOpacity: 0.2,
 											strokeWidth: 2
 										}
@@ -384,8 +386,9 @@
 									data={monthlyActiveData}
 									x="date"
 									y="count"
+									cRange={['var(--chart-2)']}
 									props={{
-										spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--color-success)' }
+										spline: { curve: curveMonotoneX, strokeWidth: 2, stroke: 'var(--chart-2)' }
 									}}
 								/>
 							</div>

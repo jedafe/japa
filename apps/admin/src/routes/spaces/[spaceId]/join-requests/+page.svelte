@@ -28,7 +28,7 @@
 		{ key: 'message', label: t('joinRequests.message'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
 		{ key: 'status', label: t('joinRequests.status'), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'approved' ? 'bg-success/15 text-success dark:text-success' : v === 'rejected' ? 'bg-danger/15 text-danger dark:text-danger' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
 		{ key: 'requested_at', label: t('joinRequests.requested'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` },
-		{ key: 'actions', label: t('common.actions'), class: 'w-32 text-right', component: JoinRequestActionsCell }
+		{ key: 'actions', label: t('common.actions'), class: 'w-32 text-right', componentSnippet: JoinRequestActionsCell }
 	];
 
 	function filteredRequests(): JoinRequest[] {

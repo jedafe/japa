@@ -121,7 +121,7 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			component: SubscriberActionsCell
+			componentSnippet: SubscriberActionsCell
 		}
 	];
 
@@ -174,7 +174,7 @@
 			key: "actions",
 			label: "",
 			class: "w-24",
-			component: CampaignActionsCell
+			componentSnippet: CampaignActionsCell
 		}
 	];
 

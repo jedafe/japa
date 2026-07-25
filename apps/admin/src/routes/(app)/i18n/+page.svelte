@@ -104,7 +104,7 @@
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			component: LanguageActionsCell
+			componentSnippet: LanguageActionsCell
 		}
 	];
 
@@ -126,7 +126,7 @@
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			component: TranslationActionsCell
+			componentSnippet: TranslationActionsCell
 		}
 	];
 

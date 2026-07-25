@@ -69,7 +69,7 @@ async function dispatch<T>(
 		: {};
 
 	const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
-	const jsonHeader = isFormData ? {} : { 'Content-Type': 'application/json' };
+	const jsonHeader: Record<string, string> = isFormData ? {} : { 'Content-Type': 'application/json' };
 
 	const res = await fetcher(url, {
 		...options,

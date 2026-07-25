@@ -39,7 +39,7 @@
 		{
 			key: 'actions',
 			label: t('common.actions'),
-			component: WidgetActionsCell
+			componentSnippet: WidgetActionsCell
 		}
 	];
 

@@ -117,7 +117,7 @@
 			render: (v: string) => v ? new Date(v).toLocaleString() : "—"
 		},
 		{ key: "ip_address", label: t("gdpr.ip", "IP Address"), sortable: true },
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", component: ConsentActionsCell }
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-24", componentSnippet: ConsentActionsCell }
 	];
 
 	async function loadConsents() {

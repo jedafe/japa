@@ -744,7 +744,7 @@
   "app.ticket_types.status_inactive": "Inactive",
   "app.ticket_types.update": "Update",
   "app.users.delete_action": "Delete",
-  "app.users.delete_confirm": "Delete user? This cannot be undone.",
+  "app.users.delete_confirm": "Delete user {username}? This cannot be undone.",
   "app.users.deleting": "Deleting...",
   "app.users.selected_count": "selected",
   "app.wallet.active": "Active",

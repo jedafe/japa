@@ -78,7 +78,7 @@
 			render: (_: any, row: Menu) => String(row.items?.length ?? 0)
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-40",
-			component: MenuActionsCell
+			componentSnippet: MenuActionsCell
 		}
 	];
 
@@ -89,7 +89,7 @@
 			render: (v: boolean) => v ? t("common.yes", "Yes") : t("common.no", "No")
 		},
 		{ key: "actions", label: t("common.actions", "Actions"), class: "w-48",
-			component: ItemActionsCell
+			componentSnippet: ItemActionsCell
 		}
 	];
 
@@ -99,7 +99,7 @@
 		try {
 			const result = await menusAdminApi.list();
 			if (result.ok) {
-				menus = (result.data as Menu[]) ?? [];
+				menus = ((result.data as { items: Menu[] })?.items) ?? [];
 			} else {
 				error = result.error ?? t("common.error", "Failed to load menus");
 			}
