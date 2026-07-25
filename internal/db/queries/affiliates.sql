@@ -29,7 +29,6 @@ SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
     total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE tenant_id = @tenant_id
-    AND (@status::text IS NULL OR status = @status)
 ORDER BY enrolled_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -96,9 +95,6 @@ SELECT id, tenant_id, user_id, product_type, product_id, code, description,
     destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE tenant_id = @tenant_id
-    AND (@user_id_filter::uuid IS NULL OR user_id = @user_id_filter)
-    AND (@product_type::text IS NULL OR product_type = @product_type)
-    AND (@is_active::bool IS NULL OR is_active = @is_active)
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
