@@ -98,14 +98,24 @@ export async function searchHits(
 }
 
 /* ---- comparisons ---- */
-export const createComparison = (input: { title: string; slug?: string; visibility?: string }) =>
-	api.post<{ id: string; slug: string }>('/comparisons', input);
+export const createComparison = (input: {
+	title: string;
+	body?: string;
+	visibility?: string;
+	space_id?: string;
+}) => api.post<{ id: string }>('/comparisons', input);
 export const patchComparison = (id: string, patch: Record<string, unknown>) =>
 	api.patch(`/comparisons/${id}`, patch);
-export const addComparisonItem = (id: string, input: { label: string; position: number }) =>
-	api.post(`/comparisons/${id}/items`, input);
-export const addComparisonDimension = (id: string, input: { label: string; position: number }) =>
-	api.post(`/comparisons/${id}/dimensions`, input);
-/** The backend registers PUT /comparisons/dimensions/{id}/values (not PATCH). */
-export const setDimensionValues = (dimensionId: string, values: Record<string, unknown>) =>
-	api.put(`/comparisons/dimensions/${dimensionId}/values`, values);
+export const addComparisonItem = (
+	id: string,
+	input: { title: string; description?: string; image_id?: string; geo_space_id?: string; position: number }
+) => api.post<{ id: string }>(`/comparisons/${id}/items`, input);
+export const addComparisonDimension = (
+	id: string,
+	input: { label: string; dimension_type: string; position: number }
+) => api.post<{ id: string }>(`/comparisons/${id}/dimensions`, input);
+/** PUT /comparisons/dimensions/{id}/values — batch upsert of cell values. */
+export const setDimensionValues = (
+	dimensionId: string,
+	values: Array<{ item_id: string; value?: string; value_rating?: number; value_boolean?: boolean }>
+) => api.put(`/comparisons/dimensions/${dimensionId}/values`, { values });
