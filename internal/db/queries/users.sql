@@ -171,6 +171,21 @@ WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
 ORDER BY c.created_at DESC
 LIMIT $4 OFFSET $5;
 
+-- name: GetUserDraft :one
+-- Returns the caller's own draft content by ID (tenant + author scoped,
+-- status = 'draft'). Used by the /create composer to restore an existing
+-- draft for editing via GET /api/v1/me/drafts/{id}. Mirrors the column set
+-- of GetContentByID so the response shape matches GET /content/{slug}.
+SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
+       c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
+       c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
+FROM contents c
+WHERE c.id = $1 AND c.tenant_id = $2 AND c.author_id = $3
+  AND c.status = 'draft' AND c.deleted_at IS NULL;
+
 -- name: ListUserBookmarks :many
 SELECT b.id, b.entity_type, b.entity_id, b.folder, b.created_at
 FROM bookmarks b

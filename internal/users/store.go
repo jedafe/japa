@@ -226,6 +226,18 @@ func (s *Store) listUserContent(ctx context.Context, tenantID, userID pgtype.UUI
 	})
 }
 
+// getUserDraft returns the caller's own draft content by ID, scoped to the
+// tenant and author and restricted to status='draft'. Returns pgx.ErrNoRows
+// when the content does not exist, is not a draft, or belongs to another
+// user/tenant — the handler maps that to 404.
+func (s *Store) getUserDraft(ctx context.Context, tenantID, userID, contentID pgtype.UUID) (gen.GetUserDraftRow, error) {
+	return s.read.GetUserDraft(ctx, gen.GetUserDraftParams{
+		ID:       contentID,
+		TenantID: tenantID,
+		AuthorID: userID,
+	})
+}
+
 func (s *Store) listUserBookmarks(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListUserBookmarksRow, error) {
 	return s.read.ListUserBookmarks(ctx, gen.ListUserBookmarksParams{
 		UserID: userID,
