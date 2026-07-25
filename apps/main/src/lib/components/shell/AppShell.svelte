@@ -16,6 +16,8 @@
 		children: Snippet;
 		/** Route-specific right-sidebar widgets. */
 		sidebar?: Snippet;
+		/** ADR-058 Exception routes suppress the right sidebar entirely. */
+		hideRightSidebar?: boolean;
 	}
 
 	let {
@@ -26,7 +28,8 @@
 		trendingTags = [],
 		suggestedSpaces = [],
 		children,
-		sidebar
+		sidebar,
+		hideRightSidebar = false
 	}: Props = $props();
 
 	let mobileNavOpen = $state(false);
@@ -35,7 +38,7 @@
 	);
 </script>
 
-<div class="shell" style="--current-nav-width: {navWidth}">
+<div class="shell" class:hide-sidebar={hideRightSidebar} style="--current-nav-width: {navWidth}">
 	<div class="shell-nav">
 		<LeftNav {menu} {user} {collapsed} onToggle={onToggleCollapse} />
 	</div>
@@ -61,9 +64,11 @@
 		{@render children()}
 	</main>
 
-	<div class="shell-sidebar">
-		<RightSidebar {user} {trendingTags} {suggestedSpaces} {sidebar} />
-	</div>
+	{#if !hideRightSidebar}
+		<div class="shell-sidebar">
+			<RightSidebar {user} {trendingTags} {suggestedSpaces} {sidebar} />
+		</div>
+	{/if}
 </div>
 
 {#if mobileNavOpen}
@@ -84,6 +89,11 @@
 		grid-template-columns: var(--current-nav-width) 1fr var(--sidebar-width);
 		min-height: 100vh;
 		background-color: var(--color-bg);
+	}
+
+	/* ADR-058 Exception routes: drop the right sidebar column entirely. */
+	.shell.hide-sidebar {
+		grid-template-columns: var(--current-nav-width) 1fr;
 	}
 
 	.shell-nav {
