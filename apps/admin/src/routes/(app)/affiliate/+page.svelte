@@ -14,10 +14,17 @@
 	type AffiliateProvider = {
 		id: string;
 		name: string;
-		base_url: string;
-		commission_rate: number;
+		slug: string;
+		description: string | null;
+		provider_type: string;
+		base_url: string | null;
+		tracking_param: string | null;
+		tracking_value: string | null;
+		commission_rate: number | null;
 		is_active: boolean;
+		is_featured: boolean;
 		created_at: string;
+		updated_at: string;
 	};
 
 	type CommissionRates = {
@@ -93,18 +100,18 @@
 			key: 'name',
 			label: t('affiliate.name'),
 			sortable: true,
-			render: (value: string) => `<span class="font-medium text-foreground">${value}</span>`
+			render: (value: string) => `<span class="font-medium text-foreground">${value ?? '—'}</span>`
 		},
 		{
 			key: 'base_url',
 			label: t('affiliate.base_url'),
-			render: (value: string) => `<span class="font-mono text-xs text-muted">${value}</span>`
+			render: (value: string | null) => value ? `<span class="font-mono text-xs text-muted">${value}</span>` : '<span class="text-xs text-muted">—</span>'
 		},
 		{
 			key: 'commission_rate',
 			label: t('affiliate.commission_rate'),
 			sortable: true,
-			render: (value: number) => `<span class="font-medium">${value}%</span>`
+			render: (value: number | null) => value != null ? `<span class="font-medium">${value}%</span>` : '<span class="text-xs text-muted">—</span>'
 		},
 		{
 			key: 'is_active',
