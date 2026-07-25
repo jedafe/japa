@@ -9,6 +9,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
+	import { Select } from '$lib/components/ui/select';
 	import { Plus, Trash2, Link2, Users, Percent, DollarSign } from 'lucide-svelte';
 
 	type AffiliateProvider = {
@@ -101,6 +102,31 @@
 	let selectedMemberIds = $state<Set<string>>(new Set());
 	let selectedLinkIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
+
+	// Filters
+	let memberStatusFilter = $state('');
+	let scannerActionFilter = $state('');
+	let commissionCreditedFilter = $state('');
+
+	const memberStatusOptions = $derived([
+		{ value: '', label: t('common.all', 'All') },
+		{ value: 'active', label: t('affiliate.active') },
+		{ value: 'suspended', label: t('affiliate.suspended', 'Suspended') },
+		{ value: 'banned', label: t('affiliate.banned', 'Banned') }
+	]);
+
+	const scannerActionOptions = $derived([
+		{ value: '', label: t('common.all', 'All') },
+		{ value: 'flagged', label: t('affiliate.flagged', 'Flagged') },
+		{ value: 'blocked', label: t('affiliate.blocked', 'Blocked') },
+		{ value: 'approved', label: t('affiliate.approved', 'Approved') }
+	]);
+
+	const creditedOptions = $derived([
+		{ value: '', label: t('common.all', 'All') },
+		{ value: 'true', label: t('affiliate.credited', 'Credited') },
+		{ value: 'false', label: t('affiliate.pending', 'Pending') }
+	]);
 
 	const canManageAffiliate = $derived(hasPermission('affiliate.manage'));
 
@@ -233,9 +259,101 @@
 		}
 	]);
 
+	const scanColumns = $derived([
+		{
+			key: 'url',
+			label: t('affiliate.url', 'URL'),
+			render: (value: string) => `<span class="font-mono text-xs truncate max-w-[300px] block">${value}</span>`
+		},
+		{
+			key: 'domain',
+			label: t('affiliate.domain', 'Domain'),
+			sortable: true,
+			render: (value: string) => `<span class="text-sm font-medium">${value}</span>`
+		},
+		{
+			key: 'detection_method',
+			label: t('affiliate.detection', 'Detection'),
+			render: (value: string) => `<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">${value}</span>`
+		},
+		{
+			key: 'action_taken',
+			label: t('affiliate.action', 'Action'),
+			render: (value: string) => {
+				const cls = value === 'approved' ? 'bg-success/15 text-success border-success' :
+					value === 'blocked' ? 'bg-danger/15 text-danger border-danger' :
+					'bg-warning/15 text-warning border-warning';
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${value}</span>`;
+			}
+		},
+		{
+			key: 'created_at',
+			label: t('affiliate.created'),
+			sortable: true,
+			render: (value: string) => `<span class="text-xs">${new Date(value).toLocaleDateString()}</span>`
+		}
+	]);
+
+	const commissionColumns = $derived([
+		{
+			key: 'provider_name',
+			label: t('affiliate.provider', 'Provider'),
+			sortable: true,
+			render: (value: string | null) => `<span class="font-medium">${value ?? '—'}</span>`
+		},
+		{
+			key: 'author_user_id',
+			label: t('affiliate.author', 'Author'),
+			render: (value: string) => `<span class="font-mono text-xs">${value}</span>`
+		},
+		{
+			key: 'external_commission',
+			label: t('affiliate.external_commission', 'External Comm.'),
+			sortable: true,
+			render: (value: number) => `<span class="font-medium">${(value ?? 0).toFixed(2)}</span>`
+		},
+		{
+			key: 'author_share',
+			label: t('affiliate.author_share', 'Author Share'),
+			sortable: true,
+			render: (value: number) => `<span class="font-medium" style="color: var(--color-success)">${(value ?? 0).toFixed(2)}</span>`
+		},
+		{
+			key: 'author_commission_pct',
+			label: t('affiliate.rate', 'Rate'),
+			render: (value: number) => `<span>${value ?? 0}%</span>`
+		},
+		{
+			key: 'credited',
+			label: t('affiliate.credited', 'Credited'),
+			render: (value: boolean) => {
+				const cls = value ? 'bg-success/15 text-success border-success' : 'bg-warning/15 text-warning border-warning';
+				const label = value ? 'Yes' : 'Pending';
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${label}</span>`;
+			}
+		},
+		{
+			key: 'created_at',
+			label: t('affiliate.created'),
+			sortable: true,
+			render: (value: string) => `<span class="text-xs">${new Date(value).toLocaleDateString()}</span>`
+		}
+	]);
+
 	$effect(() => {
 		load();
 	});
+
+	// Filtered data for tabs with filters
+	const filteredMembers = $derived(
+		memberStatusFilter ? members.filter(m => m.status === memberStatusFilter) : members
+	);
+	const filteredScanResults = $derived(
+		scannerActionFilter ? scanResults.filter(s => s.action_taken === scannerActionFilter) : scanResults
+	);
+	const filteredCommissions = $derived(
+		commissionCreditedFilter ? commissions.filter(c => String(c.credited) === commissionCreditedFilter) : commissions
+	);
 
 	async function load() {
 		loading = true;
@@ -482,11 +600,14 @@
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'members'}
+		<div class="flex items-center gap-3">
+			<Select options={memberStatusOptions} bind:value={memberStatusFilter} />
+		</div>
 		<Card>
 			<CardContent class="p-0">
 			<DataTable
 				columns={memberColumns}
-				data={members}
+				data={filteredMembers}
 				pageSize={20}
 				emptyMessage={t('affiliate.no_members')}
 				searchable
@@ -582,83 +703,35 @@
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'scanner'}
+		<div class="flex items-center gap-3">
+			<Select options={scannerActionOptions} bind:value={scannerActionFilter} />
+		</div>
 		<Card>
 			<CardContent class="p-0">
-				{#if scanResults.length === 0}
-					<div class="flex flex-col items-center justify-center py-12 text-center">
-						<p class="text-sm text-muted">{t('affiliate.no_scan_results', 'No unregistered affiliate links detected')}</p>
-					</div>
-				{:else}
-					<div class="overflow-x-auto">
-						<table class="w-full text-sm">
-							<thead>
-								<tr class="border-b" style="border-color: var(--color-border)">
-									<th class="px-4 py-3 text-left text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.url', 'URL')}</th>
-									<th class="px-4 py-3 text-left text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.domain', 'Domain')}</th>
-									<th class="px-4 py-3 text-left text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.detection', 'Detection')}</th>
-									<th class="px-4 py-3 text-left text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.action', 'Action')}</th>
-									<th class="px-4 py-3 text-left text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.created', 'Created')}</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each scanResults as result (result.id)}
-									<tr class="border-b last:border-0" style="border-color: var(--color-border)">
-										<td class="px-4 py-3 font-mono text-xs truncate max-w-[300px]" style="color: var(--color-foreground)">{result.url}</td>
-										<td class="px-4 py-3 text-sm" style="color: var(--color-foreground)">{result.domain}</td>
-										<td class="px-4 py-3">
-											<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">{result.detection_method}</span>
-										</td>
-										<td class="px-4 py-3">
-											<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold {result.action_taken === 'approved' ? 'bg-success/15 text-success border-success' : result.action_taken === 'blocked' ? 'bg-danger/15 text-danger border-danger' : 'bg-warning/15 text-warning border-warning'}">{result.action_taken}</span>
-										</td>
-										<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(result.created_at).toLocaleDateString()}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{/if}
+				<DataTable
+					columns={scanColumns}
+					data={filteredScanResults}
+					pageSize={20}
+					emptyMessage={t('affiliate.no_scan_results', 'No unregistered affiliate links detected')}
+					searchable
+					onsearch={(q) => { searchQuery = q; }}
+				/>
 			</CardContent>
 		</Card>
 	{:else if activeTab === 'author_commissions'}
+		<div class="flex items-center gap-3">
+			<Select options={creditedOptions} bind:value={commissionCreditedFilter} />
+		</div>
 		<Card>
 			<CardContent class="p-0">
-				{#if commissions.length === 0}
-					<div class="flex flex-col items-center justify-center py-12 text-center">
-						<p class="text-sm text-muted">{t('affiliate.no_commissions', 'No author commissions recorded yet')}</p>
-					</div>
-				{:else}
-					<div class="overflow-x-auto">
-						<table class="w-full text-sm">
-							<thead>
-								<tr class="border-b" style="border-color: var(--color-border)">
-									<th class="px-4 py-3 text-left text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.provider', 'Provider')}</th>
-									<th class="px-4 py-3 text-left text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.author', 'Author')}</th>
-									<th class="px-4 py-3 text-right text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.external_commission', 'External Comm.')}</th>
-									<th class="px-4 py-3 text-right text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.author_share', 'Author Share')}</th>
-									<th class="px-4 py-3 text-right text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.rate', 'Rate')}</th>
-									<th class="px-4 py-3 text-center text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.credited', 'Credited')}</th>
-									<th class="px-4 py-3 text-left text-xs font-medium" style="color: var(--color-muted)">{t('affiliate.created', 'Created')}</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each commissions as c (c.id)}
-									<tr class="border-b last:border-0" style="border-color: var(--color-border)">
-										<td class="px-4 py-3 font-medium" style="color: var(--color-foreground)">{c.provider_name ?? '—'}</td>
-										<td class="px-4 py-3 font-mono text-xs" style="color: var(--color-foreground)">{c.author_user_id}</td>
-										<td class="px-4 py-3 text-right font-medium" style="color: var(--color-foreground)">${c.external_commission.toFixed(2)}</td>
-										<td class="px-4 py-3 text-right font-medium" style="color: var(--color-success)">${c.author_share.toFixed(2)}</td>
-										<td class="px-4 py-3 text-right" style="color: var(--color-muted)">{c.author_commission_pct}%</td>
-										<td class="px-4 py-3 text-center">
-											<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold {c.credited ? 'bg-success/15 text-success border-success' : 'bg-warning/15 text-warning border-warning'}">{c.credited ? t('affiliate.yes', 'Yes') : t('affiliate.pending', 'Pending')}</span>
-										</td>
-										<td class="px-4 py-3 text-xs" style="color: var(--color-muted)">{new Date(c.created_at).toLocaleDateString()}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{/if}
+				<DataTable
+					columns={commissionColumns}
+					data={filteredCommissions}
+					pageSize={20}
+					emptyMessage={t('affiliate.no_commissions', 'No author commissions recorded yet')}
+					searchable
+					onsearch={(q) => { searchQuery = q; }}
+				/>
 			</CardContent>
 		</Card>
 	{/if}
