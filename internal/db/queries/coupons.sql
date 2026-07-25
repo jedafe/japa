@@ -17,26 +17,26 @@ INSERT INTO affiliate_providers (
 )
 RETURNING id, tenant_id, name, slug, description, provider_type, logo_media_id,
     base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, created_at, updated_at;
+    is_active, is_featured, author_commission_pct, created_at, updated_at;
 
 -- name: GetAffiliateProviderByID :one
 SELECT id, tenant_id, name, slug, description, provider_type, logo_media_id,
     base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, created_at, updated_at
+    is_active, is_featured, author_commission_pct, created_at, updated_at
 FROM affiliate_providers
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: GetAffiliateProviderBySlug :one
 SELECT id, tenant_id, name, slug, description, provider_type, logo_media_id,
     base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, created_at, updated_at
+    is_active, is_featured, author_commission_pct, created_at, updated_at
 FROM affiliate_providers
 WHERE slug = @slug AND tenant_id = @tenant_id;
 
 -- name: ListAffiliateProvidersByTenant :many
 SELECT id, tenant_id, name, slug, description, provider_type, logo_media_id,
     base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, created_at, updated_at
+    is_active, is_featured, author_commission_pct, created_at, updated_at
 FROM affiliate_providers
 WHERE tenant_id = @tenant_id
     AND (@is_active::bool IS NULL OR is_active = @is_active)
@@ -53,7 +53,7 @@ SET name = @name, description = sqlc.narg(description), provider_type = @provide
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING id, tenant_id, name, slug, description, provider_type, logo_media_id,
     base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, created_at, updated_at;
+    is_active, is_featured, author_commission_pct, created_at, updated_at;
 
 -- name: DeleteAffiliateProvider :exec
 DELETE FROM affiliate_providers

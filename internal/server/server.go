@@ -2360,6 +2360,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
 				Delete("/admin/learn/lessons/{id}", learningHandlers.DeleteLesson)
 
+			// Admin: flat list endpoints for DataTables
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Get("/admin/learn/modules", learningHandlers.ListAllModules)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Get("/admin/learn/lessons", learningHandlers.ListAllLessons)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
+				Get("/admin/learn/tracks/{trackId}/modules", learningHandlers.ListModulesByTrack)
+
 			// Page Builder admin CRUD routes (Section 16 — Page Builder)
 			// Blocks
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "pagebuilder.blocks.manage")).
@@ -2719,6 +2727,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/affiliate-program/commission-rates", affiliateHandlers.GetCommissionRates)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
 				Patch("/admin/affiliate-program/commission-rates", affiliateHandlers.UpdateCommissionRates)
+
+			// Affiliate enhancements: author revenue sharing + unregistered link detection
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+				Get("/admin/affiliate/scan-results", couponHandlers.ListAffiliateScanResults)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+				Patch("/admin/affiliate/scan-results/{id}", couponHandlers.ReviewAffiliateScanResult)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+				Get("/admin/affiliate/commissions", couponHandlers.ListAffiliateCommissions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "affiliate.admin.manage")).
+				Patch("/admin/affiliate/providers/{id}/author-commission", couponHandlers.UpdateProviderAuthorCommission)
 
 			// Task 25: i18n AI translate
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "i18n.manage")).

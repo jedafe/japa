@@ -916,6 +916,17 @@ export const affiliateProgramAdminApi = {
 		api<unknown>('/admin/affiliate-program/commission-rates', { method: 'PATCH', body }),
 };
 
+export const affiliateEnhancementsAdminApi = {
+	scanResults: () =>
+		api<unknown>('/admin/affiliate/scan-results'),
+	reviewScanResult: (id: string, body: { action: string; notes?: string }) =>
+		api<unknown>(`/admin/affiliate/scan-results/${id}`, { method: 'PATCH', body }),
+	commissions: () =>
+		api<unknown>('/admin/affiliate/commissions'),
+	updateAuthorCommission: (providerId: string, body: { author_commission_pct: number }) =>
+		api<unknown>(`/admin/affiliate/providers/${providerId}/author-commission`, { method: 'PATCH', body }),
+};
+
 export const affiliateProvidersAdminApi = {
 	list: (params?: string) =>
 		api<unknown>(`/admin/affiliate-providers${params ? `?${params}` : ''}`),
@@ -982,14 +993,14 @@ export const aiModelsAdminApi = {
 };
 
 export const spacesModeratorsAdminApi = {
-	add: (id: string, body: { user_id: string }) =>
+	add: (id: string, body: { user_id?: string; username?: string }) =>
 		api<unknown>(`/admin/spaces/${id}/moderators`, { method: 'POST', body }),
 	remove: (id: string, moderatorId: string) =>
 		api<{ removed: boolean }>(`/admin/spaces/${id}/moderators/${moderatorId}`, { method: 'DELETE' }),
 };
 
 export const tagsModeratorsAdminApi = {
-	add: (id: string, body: { user_id: string }) =>
+	add: (id: string, body: { user_id?: string; username?: string }) =>
 		api<unknown>(`/admin/tags/${id}/moderators`, { method: 'POST', body }),
 	remove: (id: string, userId: string) =>
 		api<{ removed: boolean }>(`/admin/tags/${id}/moderators/${userId}`, { method: 'DELETE' }),

@@ -89,7 +89,7 @@ INSERT INTO affiliate_providers (
 )
 RETURNING id, tenant_id, name, slug, description, provider_type, logo_media_id,
     base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, created_at, updated_at
+    is_active, is_featured, author_commission_pct, created_at, updated_at
 `
 
 type CreateAffiliateProviderParams struct {
@@ -107,11 +107,30 @@ type CreateAffiliateProviderParams struct {
 	IsFeatured     bool           `json:"is_featured"`
 }
 
+type CreateAffiliateProviderRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Name                string             `json:"name"`
+	Slug                string             `json:"slug"`
+	Description         *string            `json:"description"`
+	ProviderType        string             `json:"provider_type"`
+	LogoMediaID         pgtype.UUID        `json:"logo_media_id"`
+	BaseUrl             *string            `json:"base_url"`
+	TrackingParam       *string            `json:"tracking_param"`
+	TrackingValue       *string            `json:"tracking_value"`
+	CommissionRate      pgtype.Numeric     `json:"commission_rate"`
+	IsActive            bool               `json:"is_active"`
+	IsFeatured          bool               `json:"is_featured"`
+	AuthorCommissionPct pgtype.Numeric     `json:"author_commission_pct"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Coupons & External Affiliate Providers (Section 55)
 // =====================
 // Affiliate Providers CRUD
 // =====================
-func (q *Queries) CreateAffiliateProvider(ctx context.Context, arg CreateAffiliateProviderParams) (AffiliateProvider, error) {
+func (q *Queries) CreateAffiliateProvider(ctx context.Context, arg CreateAffiliateProviderParams) (CreateAffiliateProviderRow, error) {
 	row := q.db.QueryRow(ctx, createAffiliateProvider,
 		arg.TenantID,
 		arg.Name,
@@ -126,7 +145,7 @@ func (q *Queries) CreateAffiliateProvider(ctx context.Context, arg CreateAffilia
 		arg.IsActive,
 		arg.IsFeatured,
 	)
-	var i AffiliateProvider
+	var i CreateAffiliateProviderRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -141,6 +160,7 @@ func (q *Queries) CreateAffiliateProvider(ctx context.Context, arg CreateAffilia
 		&i.CommissionRate,
 		&i.IsActive,
 		&i.IsFeatured,
+		&i.AuthorCommissionPct,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -331,7 +351,7 @@ func (q *Queries) ExpireCoupons(ctx context.Context) error {
 const getAffiliateProviderByID = `-- name: GetAffiliateProviderByID :one
 SELECT id, tenant_id, name, slug, description, provider_type, logo_media_id,
     base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, created_at, updated_at
+    is_active, is_featured, author_commission_pct, created_at, updated_at
 FROM affiliate_providers
 WHERE id = $1 AND tenant_id = $2
 `
@@ -341,9 +361,28 @@ type GetAffiliateProviderByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetAffiliateProviderByID(ctx context.Context, arg GetAffiliateProviderByIDParams) (AffiliateProvider, error) {
+type GetAffiliateProviderByIDRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Name                string             `json:"name"`
+	Slug                string             `json:"slug"`
+	Description         *string            `json:"description"`
+	ProviderType        string             `json:"provider_type"`
+	LogoMediaID         pgtype.UUID        `json:"logo_media_id"`
+	BaseUrl             *string            `json:"base_url"`
+	TrackingParam       *string            `json:"tracking_param"`
+	TrackingValue       *string            `json:"tracking_value"`
+	CommissionRate      pgtype.Numeric     `json:"commission_rate"`
+	IsActive            bool               `json:"is_active"`
+	IsFeatured          bool               `json:"is_featured"`
+	AuthorCommissionPct pgtype.Numeric     `json:"author_commission_pct"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetAffiliateProviderByID(ctx context.Context, arg GetAffiliateProviderByIDParams) (GetAffiliateProviderByIDRow, error) {
 	row := q.db.QueryRow(ctx, getAffiliateProviderByID, arg.ID, arg.TenantID)
-	var i AffiliateProvider
+	var i GetAffiliateProviderByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -358,6 +397,7 @@ func (q *Queries) GetAffiliateProviderByID(ctx context.Context, arg GetAffiliate
 		&i.CommissionRate,
 		&i.IsActive,
 		&i.IsFeatured,
+		&i.AuthorCommissionPct,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -367,7 +407,7 @@ func (q *Queries) GetAffiliateProviderByID(ctx context.Context, arg GetAffiliate
 const getAffiliateProviderBySlug = `-- name: GetAffiliateProviderBySlug :one
 SELECT id, tenant_id, name, slug, description, provider_type, logo_media_id,
     base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, created_at, updated_at
+    is_active, is_featured, author_commission_pct, created_at, updated_at
 FROM affiliate_providers
 WHERE slug = $1 AND tenant_id = $2
 `
@@ -377,9 +417,28 @@ type GetAffiliateProviderBySlugParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetAffiliateProviderBySlug(ctx context.Context, arg GetAffiliateProviderBySlugParams) (AffiliateProvider, error) {
+type GetAffiliateProviderBySlugRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Name                string             `json:"name"`
+	Slug                string             `json:"slug"`
+	Description         *string            `json:"description"`
+	ProviderType        string             `json:"provider_type"`
+	LogoMediaID         pgtype.UUID        `json:"logo_media_id"`
+	BaseUrl             *string            `json:"base_url"`
+	TrackingParam       *string            `json:"tracking_param"`
+	TrackingValue       *string            `json:"tracking_value"`
+	CommissionRate      pgtype.Numeric     `json:"commission_rate"`
+	IsActive            bool               `json:"is_active"`
+	IsFeatured          bool               `json:"is_featured"`
+	AuthorCommissionPct pgtype.Numeric     `json:"author_commission_pct"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetAffiliateProviderBySlug(ctx context.Context, arg GetAffiliateProviderBySlugParams) (GetAffiliateProviderBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getAffiliateProviderBySlug, arg.Slug, arg.TenantID)
-	var i AffiliateProvider
+	var i GetAffiliateProviderBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -394,6 +453,7 @@ func (q *Queries) GetAffiliateProviderBySlug(ctx context.Context, arg GetAffilia
 		&i.CommissionRate,
 		&i.IsActive,
 		&i.IsFeatured,
+		&i.AuthorCommissionPct,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -742,7 +802,7 @@ func (q *Queries) ListActiveCouponsByTenant(ctx context.Context, arg ListActiveC
 const listAffiliateProvidersByTenant = `-- name: ListAffiliateProvidersByTenant :many
 SELECT id, tenant_id, name, slug, description, provider_type, logo_media_id,
     base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, created_at, updated_at
+    is_active, is_featured, author_commission_pct, created_at, updated_at
 FROM affiliate_providers
 WHERE tenant_id = $1
     AND ($2::bool IS NULL OR is_active = $2)
@@ -757,7 +817,26 @@ type ListAffiliateProvidersByTenantParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListAffiliateProvidersByTenant(ctx context.Context, arg ListAffiliateProvidersByTenantParams) ([]AffiliateProvider, error) {
+type ListAffiliateProvidersByTenantRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Name                string             `json:"name"`
+	Slug                string             `json:"slug"`
+	Description         *string            `json:"description"`
+	ProviderType        string             `json:"provider_type"`
+	LogoMediaID         pgtype.UUID        `json:"logo_media_id"`
+	BaseUrl             *string            `json:"base_url"`
+	TrackingParam       *string            `json:"tracking_param"`
+	TrackingValue       *string            `json:"tracking_value"`
+	CommissionRate      pgtype.Numeric     `json:"commission_rate"`
+	IsActive            bool               `json:"is_active"`
+	IsFeatured          bool               `json:"is_featured"`
+	AuthorCommissionPct pgtype.Numeric     `json:"author_commission_pct"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListAffiliateProvidersByTenant(ctx context.Context, arg ListAffiliateProvidersByTenantParams) ([]ListAffiliateProvidersByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listAffiliateProvidersByTenant,
 		arg.TenantID,
 		arg.IsActive,
@@ -768,9 +847,9 @@ func (q *Queries) ListAffiliateProvidersByTenant(ctx context.Context, arg ListAf
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AffiliateProvider
+	var items []ListAffiliateProvidersByTenantRow
 	for rows.Next() {
-		var i AffiliateProvider
+		var i ListAffiliateProvidersByTenantRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -785,6 +864,7 @@ func (q *Queries) ListAffiliateProvidersByTenant(ctx context.Context, arg ListAf
 			&i.CommissionRate,
 			&i.IsActive,
 			&i.IsFeatured,
+			&i.AuthorCommissionPct,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -963,7 +1043,7 @@ SET name = $1, description = $2, provider_type = $3,
 WHERE id = $11 AND tenant_id = $12
 RETURNING id, tenant_id, name, slug, description, provider_type, logo_media_id,
     base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, created_at, updated_at
+    is_active, is_featured, author_commission_pct, created_at, updated_at
 `
 
 type UpdateAffiliateProviderParams struct {
@@ -981,7 +1061,26 @@ type UpdateAffiliateProviderParams struct {
 	TenantID       pgtype.UUID    `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateAffiliateProvider(ctx context.Context, arg UpdateAffiliateProviderParams) (AffiliateProvider, error) {
+type UpdateAffiliateProviderRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Name                string             `json:"name"`
+	Slug                string             `json:"slug"`
+	Description         *string            `json:"description"`
+	ProviderType        string             `json:"provider_type"`
+	LogoMediaID         pgtype.UUID        `json:"logo_media_id"`
+	BaseUrl             *string            `json:"base_url"`
+	TrackingParam       *string            `json:"tracking_param"`
+	TrackingValue       *string            `json:"tracking_value"`
+	CommissionRate      pgtype.Numeric     `json:"commission_rate"`
+	IsActive            bool               `json:"is_active"`
+	IsFeatured          bool               `json:"is_featured"`
+	AuthorCommissionPct pgtype.Numeric     `json:"author_commission_pct"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateAffiliateProvider(ctx context.Context, arg UpdateAffiliateProviderParams) (UpdateAffiliateProviderRow, error) {
 	row := q.db.QueryRow(ctx, updateAffiliateProvider,
 		arg.Name,
 		arg.Description,
@@ -996,7 +1095,7 @@ func (q *Queries) UpdateAffiliateProvider(ctx context.Context, arg UpdateAffilia
 		arg.ID,
 		arg.TenantID,
 	)
-	var i AffiliateProvider
+	var i UpdateAffiliateProviderRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -1011,6 +1110,7 @@ func (q *Queries) UpdateAffiliateProvider(ctx context.Context, arg UpdateAffilia
 		&i.CommissionRate,
 		&i.IsActive,
 		&i.IsFeatured,
+		&i.AuthorCommissionPct,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
