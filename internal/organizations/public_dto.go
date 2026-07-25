@@ -80,3 +80,41 @@ func toOrgMembers(rows []gen.ListPublicOrganizationMembersRow) []OrgMemberRespon
 	}
 	return out
 }
+
+// PublicOrgListItem is the lean shape for the public Discover org list.
+type PublicOrgListItem struct {
+	ID            pgtype.UUID        `json:"id"`
+	Name          string             `json:"name"`
+	Slug          string             `json:"slug"`
+	Tagline       *string            `json:"tagline"`
+	OrgType       string             `json:"org_type"`
+	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
+	HeaderMediaID pgtype.UUID        `json:"header_media_id"`
+	CountryCode   *string            `json:"country_code"`
+	Verified      bool               `json:"verified"`
+	FollowerCount int32              `json:"follower_count"`
+	MemberCount   int32              `json:"member_count"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+func toPublicOrgList(rows []gen.ListPublicOrganizationsRow) []PublicOrgListItem {
+	out := make([]PublicOrgListItem, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		out[i] = PublicOrgListItem{
+			ID:            r.ID,
+			Name:          r.Name,
+			Slug:          r.Slug,
+			Tagline:       r.Tagline,
+			OrgType:       r.OrgType,
+			LogoMediaID:   r.LogoMediaID,
+			HeaderMediaID: r.HeaderMediaID,
+			CountryCode:   r.CountryCode,
+			Verified:      r.Verified,
+			FollowerCount: r.FollowerCount,
+			MemberCount:   r.MemberCount,
+			CreatedAt:     r.CreatedAt,
+		}
+	}
+	return out
+}

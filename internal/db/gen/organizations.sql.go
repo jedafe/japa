@@ -125,6 +125,18 @@ func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizations
 	return count, err
 }
 
+const countPublicOrganizations = `-- name: CountPublicOrganizations :one
+SELECT COUNT(*) FROM organizations
+WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL AND verified = true
+`
+
+func (q *Queries) CountPublicOrganizations(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countPublicOrganizations, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations (tenant_id, owner_user_id, name, slug, tagline, description, website_url, country_code, geo_space_id, org_type)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -830,6 +842,70 @@ func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, arg ListPub
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicOrganizations = `-- name: ListPublicOrganizations :many
+SELECT id, name, slug, tagline, org_type, logo_media_id, header_media_id,
+       country_code, verified, follower_count, member_count, created_at
+FROM organizations
+WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL AND verified = true
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListPublicOrganizationsParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListPublicOrganizationsRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	Name          string             `json:"name"`
+	Slug          string             `json:"slug"`
+	Tagline       *string            `json:"tagline"`
+	OrgType       string             `json:"org_type"`
+	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
+	HeaderMediaID pgtype.UUID        `json:"header_media_id"`
+	CountryCode   *string            `json:"country_code"`
+	Verified      bool               `json:"verified"`
+	FollowerCount int32              `json:"follower_count"`
+	MemberCount   int32              `json:"member_count"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+// Public Discover "Organizations": VERIFIED + ACTIVE orgs only, newest first.
+func (q *Queries) ListPublicOrganizations(ctx context.Context, arg ListPublicOrganizationsParams) ([]ListPublicOrganizationsRow, error) {
+	rows, err := q.db.Query(ctx, listPublicOrganizations, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicOrganizationsRow
+	for rows.Next() {
+		var i ListPublicOrganizationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Tagline,
+			&i.OrgType,
+			&i.LogoMediaID,
+			&i.HeaderMediaID,
+			&i.CountryCode,
+			&i.Verified,
+			&i.FollowerCount,
+			&i.MemberCount,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

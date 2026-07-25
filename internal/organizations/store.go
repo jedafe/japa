@@ -202,3 +202,11 @@ func (s *Store) GetPublicOrganizationBySlug(ctx context.Context, slug string, te
 func (s *Store) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.ListPublicOrganizationMembersRow, error) {
 	return s.read.ListPublicOrganizationMembers(ctx, gen.ListPublicOrganizationMembersParams{OrganizationID: orgID, TenantID: tenantID})
 }
+
+func (s *Store) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListPublicOrganizationsRow, error) {
+	return s.read.ListPublicOrganizations(ctx, gen.ListPublicOrganizationsParams{TenantID: tenantID, PageLimit: clampLimit(limit), PageOffset: offset})
+}
+
+func (s *Store) CountPublicOrganizations(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	return s.read.CountPublicOrganizations(ctx, tenantID)
+}
