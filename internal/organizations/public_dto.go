@@ -46,3 +46,37 @@ func toPublicOrg(o gen.Organization) PublicOrgResponse {
 		CreatedAt:        o.CreatedAt,
 	}
 }
+
+// OrgMemberUser is the lean public user shape embedded in a member row.
+type OrgMemberUser struct {
+	ID          pgtype.UUID `json:"id"`
+	Username    string      `json:"username"`
+	DisplayName *string     `json:"display_name"`
+	AvatarURL   *string     `json:"avatar_url"`
+}
+
+// OrgMemberResponse is the lean public shape for the Members tab: the member's
+// public user identity plus their org role. Omits invited_by and organization_id.
+type OrgMemberResponse struct {
+	User     OrgMemberUser      `json:"user"`
+	Role     string             `json:"role"`
+	JoinedAt pgtype.Timestamptz `json:"joined_at"`
+}
+
+func toOrgMembers(rows []gen.ListPublicOrganizationMembersRow) []OrgMemberResponse {
+	out := make([]OrgMemberResponse, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		out[i] = OrgMemberResponse{
+			User: OrgMemberUser{
+				ID:          r.UserID,
+				Username:    r.Username,
+				DisplayName: r.DisplayName,
+				AvatarURL:   r.AvatarUrl,
+			},
+			Role:     r.Role,
+			JoinedAt: r.JoinedAt,
+		}
+	}
+	return out
+}

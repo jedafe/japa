@@ -198,3 +198,7 @@ func (s *Store) ActiveOrgExistsByID(ctx context.Context, tenantID, id pgtype.UUI
 func (s *Store) GetPublicOrganizationBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Organization, error) {
 	return s.read.GetPublicOrganizationBySlug(ctx, gen.GetPublicOrganizationBySlugParams{Slug: slug, TenantID: tenantID})
 }
+
+func (s *Store) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.ListPublicOrganizationMembersRow, error) {
+	return s.read.ListPublicOrganizationMembers(ctx, gen.ListPublicOrganizationMembersParams{OrganizationID: orgID, TenantID: tenantID})
+}
