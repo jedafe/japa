@@ -22,3 +22,21 @@ func TestHarness_ConnectAndIsolateByTenant(t *testing.T) {
 		t.Fatal("SeedUser returned invalid uuid")
 	}
 }
+
+func TestSeedOrganizationSmoke(t *testing.T) {
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+
+	orgID := testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "smoke-org", Status: "active"})
+	owner := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "smoke-owner"})
+	testdb.SeedOrgMembership(t, database, orgID, owner, "admin")
+
+	var status string
+	if err := database.Reader.QueryRow(t.Context(),
+		`SELECT status FROM organizations WHERE id = $1`, orgID).Scan(&status); err != nil {
+		t.Fatalf("read org: %v", err)
+	}
+	if status != "active" {
+		t.Fatalf("org status = %q, want active", status)
+	}
+}

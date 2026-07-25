@@ -325,3 +325,68 @@ func SeedCertificate(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID) pgtyp
 
 	return certID
 }
+
+// OrgOpts customizes SeedOrganization. Zero-value fields fall back to defaults:
+// Slug/Name to a generated unique value, Status to "active", OrgType to
+// "business". When OwnerUserID is not Valid, a throwaway active owner user is
+// created (organizations.owner_user_id is NOT NULL REFERENCES users(id)).
+type OrgOpts struct {
+	Slug        string
+	Name        string
+	Status      string
+	OrgType     string
+	Verified    bool
+	OwnerUserID pgtype.UUID
+}
+
+// SeedOrganization inserts an organizations row under tenantID and returns its id.
+func SeedOrganization(t *testing.T, d *db.DB, tenantID pgtype.UUID, o OrgOpts) pgtype.UUID {
+	t.Helper()
+
+	ctx := t.Context()
+	orgID := mustUUID()
+
+	owner := o.OwnerUserID
+	if !owner.Valid {
+		owner = SeedUser(t, d, tenantID, UserOpts{})
+	}
+	slug := o.Slug
+	if slug == "" {
+		slug = "org-" + uuid.New().String()
+	}
+	name := o.Name
+	if name == "" {
+		name = slug
+	}
+	status := o.Status
+	if status == "" {
+		status = "active"
+	}
+	orgType := o.OrgType
+	if orgType == "" {
+		orgType = "business"
+	}
+
+	_, err := d.Writer.Exec(ctx,
+		`INSERT INTO organizations (id, tenant_id, owner_user_id, name, slug, org_type, status, verified)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		orgID, tenantID, owner, name, slug, orgType, status, o.Verified)
+	if err != nil {
+		t.Fatalf("testdb: SeedOrganization: %v", err)
+	}
+	return orgID
+}
+
+// SeedOrgMembership inserts an organization_members row. role defaults to "member".
+func SeedOrgMembership(t *testing.T, d *db.DB, orgID, userID pgtype.UUID, role string) {
+	t.Helper()
+	if role == "" {
+		role = "member"
+	}
+	_, err := d.Writer.Exec(t.Context(),
+		`INSERT INTO organization_members (organization_id, user_id, role) VALUES ($1, $2, $3)`,
+		orgID, userID, role)
+	if err != nil {
+		t.Fatalf("testdb: SeedOrgMembership: %v", err)
+	}
+}
