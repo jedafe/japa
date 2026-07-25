@@ -1588,6 +1588,129 @@ func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPubl
 	return items, nil
 }
 
+const listPublishedContentByOrganization = `-- name: ListPublishedContentByOrganization :many
+SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
+       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at,
+       o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id
+FROM contents c
+LEFT JOIN organizations o ON o.id = c.organization_id AND o.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.organization_id = $2
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListPublishedContentByOrganizationParams struct {
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	PageOffset     int32       `json:"page_offset"`
+	PageLimit      int32       `json:"page_limit"`
+}
+
+type ListPublishedContentByOrganizationRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	OrgName         *string            `json:"org_name"`
+	OrgSlug         *string            `json:"org_slug"`
+	OrgLogoMediaID  pgtype.UUID        `json:"org_logo_media_id"`
+}
+
+// Org profile Posts tab (GET /organizations/{id}/content): the org's PUBLISHED
+// PUBLIC content, newest first, paginated. Keyed by organization_id (ADR-062).
+// author_id (the human) is projected for accountability; org badge fields via join.
+func (q *Queries) ListPublishedContentByOrganization(ctx context.Context, arg ListPublishedContentByOrganizationParams) ([]ListPublishedContentByOrganizationRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedContentByOrganization,
+		arg.TenantID,
+		arg.OrganizationID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublishedContentByOrganizationRow
+	for rows.Next() {
+		var i ListPublishedContentByOrganizationRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthorID,
+			&i.OrganizationID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.BodyHtml,
+			&i.FieldValues,
+			&i.ContentHash,
+			&i.GeoSpaceID,
+			&i.HeaderImageID,
+			&i.FeaturedImageID,
+			&i.CanonicalUrl,
+			&i.Status,
+			&i.Visibility,
+			&i.IsLocked,
+			&i.IsPinned,
+			&i.ReadTimeMinutes,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.PublishAt,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.OrgName,
+			&i.OrgSlug,
+			&i.OrgLogoMediaID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pinContentToSpace = `-- name: PinContentToSpace :one
 
 INSERT INTO space_pinned_posts (space_id, content_id, pinned_by, position)
