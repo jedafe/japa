@@ -785,6 +785,62 @@ func (q *Queries) ListOwnershipClaims(ctx context.Context, arg ListOwnershipClai
 	return items, nil
 }
 
+const listPublicOrganizationMembers = `-- name: ListPublicOrganizationMembers :many
+SELECT om.organization_id, om.user_id, om.role, om.joined_at,
+       u.username, up.display_name, up.avatar_url
+FROM organization_members om
+JOIN users u ON u.id = om.user_id AND u.tenant_id = $1 AND u.status = 'active'
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+WHERE om.organization_id = $2
+ORDER BY om.joined_at DESC
+`
+
+type ListPublicOrganizationMembersParams struct {
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+type ListPublicOrganizationMembersRow struct {
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Role           string             `json:"role"`
+	JoinedAt       pgtype.Timestamptz `json:"joined_at"`
+	Username       string             `json:"username"`
+	DisplayName    *string            `json:"display_name"`
+	AvatarUrl      *string            `json:"avatar_url"`
+}
+
+// Public Members tab: ACTIVE members only (banned/suspended/deleted users
+// excluded), tenant-scoped via the users join (defense-in-depth). Excludes the
+// internal invited_by column by projecting only public fields.
+func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, arg ListPublicOrganizationMembersParams) ([]ListPublicOrganizationMembersRow, error) {
+	rows, err := q.db.Query(ctx, listPublicOrganizationMembers, arg.TenantID, arg.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicOrganizationMembersRow
+	for rows.Next() {
+		var i ListPublicOrganizationMembersRow
+		if err := rows.Scan(
+			&i.OrganizationID,
+			&i.UserID,
+			&i.Role,
+			&i.JoinedAt,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeOrganizationMember = `-- name: RemoveOrganizationMember :exec
 DELETE FROM organization_members
 WHERE organization_id = $1 AND user_id = $2
