@@ -373,7 +373,8 @@
 			} else if (activeTab === 'members') {
 				const result = await affiliateProgramAdminApi.members();
 				if (result.ok) {
-					members = (Array.isArray(result.data) ? result.data : []) as AffiliateMember[];
+					const raw = (Array.isArray(result.data) ? result.data : []) as any[];
+					members = raw.map(m => ({ ...m, id: m.user_id })) as AffiliateMember[];
 					if (searchQuery) {
 						const q = searchQuery.toLowerCase();
 						members = members.filter((m) => m.user_id?.toLowerCase().includes(q) || m.status?.toLowerCase().includes(q));
