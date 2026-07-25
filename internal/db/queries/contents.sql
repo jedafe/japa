@@ -323,18 +323,21 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListPublishedContentByAuthor :many
 -- Public profile Posts tab (GET /users/{id}/content): a user's PUBLISHED PUBLIC
 -- content, newest first, paginated. author_id is the user id (FK users.id).
--- Public-safe: excludes draft/private, soft-deleted, and auto-hidden content.
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at
-FROM contents
-WHERE tenant_id = @tenant_id
-  AND author_id = @author_id
-  AND status = 'published'
-  AND visibility = 'public'
-  AND deleted_at IS NULL
-  AND auto_hidden = false
-ORDER BY published_at DESC NULLS LAST, created_at DESC, id DESC
+-- LEFT JOINs organizations so dual-surface posts carry the "on behalf of" badge.
+SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
+       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count,
+       c.publish_at, c.published_at, c.created_at, c.updated_at,
+       o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id
+FROM contents c
+LEFT JOIN organizations o ON o.id = c.organization_id AND o.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.author_id = @author_id
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
