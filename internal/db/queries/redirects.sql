@@ -5,8 +5,8 @@ SELECT id, tenant_id, source_path, target_url, http_status, is_active,
        notes, hit_count, last_hit_at, created_at, updated_at
 FROM redirects
 WHERE tenant_id = @tenant_id
-  AND (@is_active IS NULL OR is_active = @is_active)
-  AND (@search = '' OR source_path ILIKE '%' || @search || '%' OR target_url ILIKE '%' || @search || '%')
+  AND (sqlc.narg(is_active)::boolean IS NULL OR is_active = sqlc.narg(is_active)::boolean)
+  AND (@search::text = '' OR source_path ILIKE '%' || @search || '%' OR target_url ILIKE '%' || @search || '%')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -14,8 +14,8 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*)::int AS count
 FROM redirects
 WHERE tenant_id = @tenant_id
-  AND (@is_active IS NULL OR is_active = @is_active)
-  AND (@search = '' OR source_path ILIKE '%' || @search || '%' OR target_url ILIKE '%' || @search || '%');
+  AND (sqlc.narg(is_active)::boolean IS NULL OR is_active = sqlc.narg(is_active)::boolean)
+  AND (@search::text = '' OR source_path ILIKE '%' || @search || '%' OR target_url ILIKE '%' || @search || '%');
 
 -- name: GetRedirect :one
 SELECT id, tenant_id, source_path, target_url, http_status, is_active,

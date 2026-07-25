@@ -98,7 +98,7 @@
 			key: 'actions',
 			label: '',
 			class: 'w-24',
-			component: ContentActionsCell
+			componentSnippet: ContentActionsCell
 		}
 	];
 

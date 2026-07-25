@@ -38,6 +38,14 @@
 	let errorMessage = $state('');
 	let period = $state('7d');
 	let activeTab = $state<'top' | 'zero' | 'volume'>('top');
+	
+	const timePeriods = $derived([
+		{ value: '24h', label: '24 Hours' },
+		{ value: '7d', label: '7 Days' },
+		{ value: '30d', label: '30 Days' },
+		{ value: '90d', label: '90 Days' },
+		{ value: '1y', label: '1 Year' }
+	]);
 
 	// Pagination state per tab
 	let topPage = $state(0);
@@ -96,11 +104,11 @@
 		errorMessage = '';
 		try {
 			const result = await api<SearchAnalyticsResponse>(`/admin/search/analytics?period=${period}`);
-			if (result.ok && result.data) {
+			if (result.ok) {
 				topQueries = result.data.top_queries ?? [];
 				zeroResultQueries = result.data.zero_result_queries ?? [];
 				dailyVolume = result.data.daily_volume ?? [];
-			} else if (result.error) {
+			} else {
 				errorMessage = result.error;
 			}
 		} catch {
@@ -138,7 +146,7 @@
 
 <div class="mb-4 flex items-center justify-between">
 	<div class="flex gap-1">
-		{#each [{ value: '24h', label: '24 Hours' }, { value: '7d', label: '7 Days' }, { value: '30d', label: '30 Days' }, { value: '90d', label: '90 Days' }, { value: '1y', label: '1 Year' }] as opt}
+		{#each timePeriods as opt}
 			<button
 				class="rounded px-3 py-1.5 text-xs font-medium transition-colors"
 				style={period === opt.value ? 'background-color: var(--color-primary); color: var(--color-background)' : 'color: var(--color-muted)'}

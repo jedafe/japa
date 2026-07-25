@@ -35,8 +35,8 @@
 		{ key: 'sort_order', label: '#', sortable: true, class: 'text-xs', render: (_v: number, _row: Rule, i?: number) => String((i ?? 0) + 1) },
 		{ key: 'title', label: t('space_rules.title_label'), sortable: true },
 		{ key: 'description', label: t('space_rules.description_label'), sortable: true, class: 'text-xs max-w-xs truncate', render: (v: string) => `<span style="color: var(--color-muted)">${v || '—'}</span>` },
-		{ key: 'order', label: t('space_rules.order'), class: 'w-20', component: RuleOrderCell },
-		{ key: 'actions', label: '', class: 'w-32', component: RuleActionsCell }
+		{ key: 'order', label: t('space_rules.order'), class: 'w-20', componentSnippet: RuleOrderCell },
+		{ key: 'actions', label: '', class: 'w-32', componentSnippet: RuleActionsCell }
 	];
 
 	function filteredRules(): Rule[] {

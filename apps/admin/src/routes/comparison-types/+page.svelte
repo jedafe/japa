@@ -67,7 +67,7 @@
 		{
 			key: 'actions',
 			label: '',
-			component: ComparisonTypeActionsCell
+			componentSnippet: ComparisonTypeActionsCell
 		}
 	];
 

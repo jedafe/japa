@@ -101,7 +101,7 @@
 		{ key: 'name', label: t('fieldGroups.name'), sortable: true },
 		{ key: 'entity_type', label: t('fieldGroups.entity_type'), sortable: true },
 		{ key: 'field_count', label: t('fieldGroups.fields'), sortable: true },
-		{ key: 'actions', label: t('common.actions'), class: 'w-24', component: FieldGroupActionsCell }
+		{ key: 'actions', label: t('common.actions'), class: 'w-24', componentSnippet: FieldGroupActionsCell }
 	];
 
 	function confirmDelete(group: FieldGroup) {

@@ -695,15 +695,15 @@ SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
     ip_address, user_agent, created_at
 FROM consent_records
 WHERE tenant_id = $1
-  AND ($2 = '' OR consent_type = $2)
-  AND ($3::text = '' OR consent_type ILIKE '%' || $3 || '%' OR ip_address ILIKE '%' || $3 || '%')
+  AND ($2::text = '' OR consent_type = $2::text)
+  AND ($3::text = '' OR consent_type ILIKE '%' || $3 || '%' OR ip_address::text ILIKE '%' || $3 || '%')
 ORDER BY created_at DESC
 LIMIT $5 OFFSET $4
 `
 
 type ListConsentsByTenantParams struct {
 	TenantID    pgtype.UUID `json:"tenant_id"`
-	ConsentType interface{} `json:"consent_type"`
+	ConsentType string      `json:"consent_type"`
 	Q           string      `json:"q"`
 	PageOffset  int32       `json:"page_offset"`
 	PageLimit   int32       `json:"page_limit"`

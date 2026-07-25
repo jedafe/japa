@@ -114,7 +114,7 @@
 			sortable: true,
 			render: (v: string) => new Date(v).toLocaleDateString()
 		},
-		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32", component: TicketActionsCell }
+		{ key: "actions", label: t("common.actions", "Actions"), class: "w-32", componentSnippet: TicketActionsCell }
 	];
 
 	async function openView(ticket: TicketItem) {

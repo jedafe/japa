@@ -48,6 +48,17 @@
 	let viewTarget = $state<{ kind: string; row: any } | null>(null);
 
 	const canManageSpam = $derived(hasPermission("spam.ip_block.manage"));
+	
+	const blockTypeOptions = $derived([
+		{ value: "permanent", label: t("spam.permanent", "Permanent") },
+		{ value: "temporary", label: t("spam.temporary", "Temporary") }
+	]);
+	
+	const actionOptions = $derived([
+		{ value: "block", label: t("spam.action_block", "Block") },
+		{ value: "replace", label: t("spam.action_replace", "Replace") },
+		{ value: "flag", label: t("spam.action_flag", "Flag") }
+	]);
 
 	// IP Blocks
 	let ipBlocks = $state<IpBlock[]>([]);
@@ -413,7 +424,7 @@
 		</div>
 		<div>
 			<label for="ip-block-type" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.block_type", "Block Type")}</label>
-			<Select options={[{ value: "permanent", label: t("spam.permanent", "Permanent") }, { value: "temporary", label: t("spam.temporary", "Temporary") }]} bind:value={ipForm.block_type} />
+			<Select options={blockTypeOptions} bind:value={ipForm.block_type} />
 		</div>
 		<div>
 			<label for="ip-reason" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.reason", "Reason")}</label>
@@ -439,7 +450,7 @@
 		</div>
 		<div>
 			<label for="cw-action" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.action", "Action")}</label>
-			<Select id="cw-action" options={[{ value: "block", label: t("spam.action_block", "Block") }, { value: "replace", label: t("spam.action_replace", "Replace") }, { value: "flag", label: t("spam.action_flag", "Flag") }]} bind:value={cwForm.action} />
+			<Select id="cw-action" options={actionOptions} bind:value={cwForm.action} />
 		</div>
 		<div>
 			<label for="cw-replacement" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("spam.replacement", "Replacement")} ({t("common.optional", "optional")})</label>

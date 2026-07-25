@@ -2,6 +2,7 @@
 	import { createSortable } from '@dnd-kit/svelte/sortable';
 	import { GripVertical, Trash2, Copy, ChevronUp, ChevronDown, Settings } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { sanitizeHtml } from '$lib/utils/html';
 
 	let { block, index, totalBlocks, selected, onSelect, onDelete, onDuplicate, onMoveUp, onMoveDown }: {
 		block: { id: string; block_type: string; order: number; props: Record<string, unknown> };
@@ -10,8 +11,13 @@
 		onMoveUp: () => void; onMoveDown: () => void;
 	} = $props();
 
+	const sortableInput = $state({
+		get id() { return block.id; },
+		get index() { return index; },
+		get data() { return { source: 'canvas', blockType: block.block_type, index }; }
+	});
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const sortable = createSortable({ id: block.id, data: { source: 'canvas', blockType: block.block_type, index } } as any);
+	const sortable = createSortable(sortableInput as any);
 	const label = $derived(block.block_type.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()));
 </script>
 
@@ -46,7 +52,7 @@
 			{#if block.props.cta_text}<button class="mt-3 rounded-md bg-white px-4 py-1.5 text-sm font-medium" style="color: var(--color-primary)">{block.props.cta_text}</button>{/if}
 		</div>
 	{:else if block.block_type === 'rich_text'}
-		<div class="prose prose-sm max-w-none rounded border p-3 text-sm" style="border-color: var(--color-border); color: var(--color-foreground)">{@html String(block.props.content || '<em style="color:var(--color-muted)">Rich text — click to edit</em>')}</div>
+		<div class="prose prose-sm max-w-none rounded border p-3 text-sm" style="border-color: var(--color-border); color: var(--color-foreground)">{@html sanitizeHtml(String(block.props.content || '<em style="color:var(--color-muted)">Rich text — click to edit</em>'))}</div>
 	{:else if block.block_type === 'image'}
 		<div class="flex h-24 items-center justify-center rounded-lg border-2 border-dashed" style="border-color: var(--color-border); color: var(--color-muted)"><span class="text-sm">🖼 {Array.isArray(block.props.images) ? block.props.images.length : 0} image(s)</span></div>
 	{:else if block.block_type === 'cta'}

@@ -243,7 +243,8 @@ export interface UserSession {
 	id: string;
 	ip_address: string;
 	device: string;
-	started_at: string;
+	created_at: string;
+	expires_at: string;
 }
 
 export interface UserGroup {

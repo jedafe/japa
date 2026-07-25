@@ -6,21 +6,7 @@
   import { clsx, type ClassValue } from "clsx";
   import type { Component, Snippet } from "svelte";
   import { Button } from "$lib/components/ui/button";
-
-  function sanitizeHtml(html: string): string {
-    // Allow only safe inline tags with class/style attributes.
-    // Block everything else to prevent XSS.
-    return html.replace(
-      /<(\/?)(b|i|strong|em|code|span)(\b[^>]*)?>/gi,
-      (match, slash, tag, attrs) => {
-        if (slash) return `</${tag}>`;
-        if (!attrs) return `<${tag}>`;
-        // Strip everything except class and style attributes
-        const safe = attrs.replace(/\s+(?!class|style)[a-z-]+=("[^"]*"|'[^']*'|\S+)/gi, '');
-        return `<${tag}${safe}>`;
-      }
-    );
-  }
+  import { sanitizeHtml } from "$lib/utils/html";
 
   function extractId(row: any): string {
     return String(row?.id ?? '').split('::')[0] || String(row ?? '');
