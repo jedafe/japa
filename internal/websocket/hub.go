@@ -85,81 +85,112 @@ func (h *Hub) Unregister(client *Client) {
 // BroadcastToUser sends an event to a specific user on this instance and
 // publishes to Valkey for delivery on other instances.
 func (h *Hub) BroadcastToUser(userID string, event WSEvent) {
+	h.deliverLocalUser(userID, event)
+
 	h.mu.RLock()
-	client, ok := h.clients[userID]
 	bridge := h.pubsub
 	h.mu.RUnlock()
-
-	if ok {
-		data, err := json.Marshal(event)
-		if err != nil {
-			slog.Error("ws marshal event", "error", err)
-			return
-		}
-		select {
-		case client.Send <- data:
-		default:
-			slog.Warn("ws client send buffer full, dropping message", "user_id", userID)
-		}
-	}
 
 	if bridge != nil {
 		bridge.Publish(event, userID, "")
 	}
 }
 
+// deliverLocalUser sends an event to a specific user connected to THIS
+// instance only. It does NOT publish to Valkey, so it is safe to call from
+// the pubsub subscription goroutine (which must not re-publish, or every
+// received message would fan out again and create an infinite loop).
+func (h *Hub) deliverLocalUser(userID string, event WSEvent) {
+	h.mu.RLock()
+	client, ok := h.clients[userID]
+	h.mu.RUnlock()
+
+	if !ok {
+		return
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		slog.Error("ws marshal event", "error", err)
+		return
+	}
+	select {
+	case client.Send <- data:
+	default:
+		slog.Warn("ws client send buffer full, dropping message", "user_id", userID)
+	}
+}
+
 // BroadcastToSpace sends an event to all subscribers of a space on this
 // instance and publishes to Valkey for delivery on other instances.
 func (h *Hub) BroadcastToSpace(spaceID string, event WSEvent) {
+	h.deliverLocalSpace(spaceID, event)
+
 	h.mu.RLock()
-	subs, ok := h.spaceSubscribers[spaceID]
 	bridge := h.pubsub
-
-	if ok {
-		clients := make([]*Client, 0, len(subs))
-		for _, c := range subs {
-			clients = append(clients, c)
-		}
-		h.mu.RUnlock()
-
-		data, err := json.Marshal(event)
-		if err != nil {
-			slog.Error("ws marshal space event", "error", err)
-			// Still publish to bridge for cross-instance delivery.
-			if bridge != nil {
-				bridge.Publish(event, "", spaceID)
-			}
-			return
-		}
-
-		for _, client := range clients {
-			select {
-			case client.Send <- data:
-			default:
-				slog.Warn("ws client send buffer full, dropping space message",
-					"user_id", client.UserID, "space_id", spaceID)
-			}
-		}
-	} else {
-		h.mu.RUnlock()
-	}
+	h.mu.RUnlock()
 
 	if bridge != nil {
 		bridge.Publish(event, "", spaceID)
 	}
 }
 
+// deliverLocalSpace sends an event to all subscribers of a space connected
+// to THIS instance only. It does NOT publish to Valkey — see
+// deliverLocalUser for the loop-safety rationale.
+func (h *Hub) deliverLocalSpace(spaceID string, event WSEvent) {
+	h.mu.RLock()
+	subs, ok := h.spaceSubscribers[spaceID]
+	if !ok {
+		h.mu.RUnlock()
+		return
+	}
+
+	clients := make([]*Client, 0, len(subs))
+	for _, c := range subs {
+		clients = append(clients, c)
+	}
+	h.mu.RUnlock()
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		slog.Error("ws marshal space event", "error", err)
+		return
+	}
+
+	for _, client := range clients {
+		select {
+		case client.Send <- data:
+		default:
+			slog.Warn("ws client send buffer full, dropping space message",
+				"user_id", client.UserID, "space_id", spaceID)
+		}
+	}
+}
+
 // BroadcastToAll sends an event to all connected clients on this instance
 // and publishes to Valkey for delivery on other instances.
 func (h *Hub) BroadcastToAll(event WSEvent) {
-	h.mu.RLock()
+	h.deliverLocalAll(event)
 
+	h.mu.RLock()
+	bridge := h.pubsub
+	h.mu.RUnlock()
+
+	if bridge != nil {
+		bridge.Publish(event, "", "")
+	}
+}
+
+// deliverLocalAll sends an event to every client connected to THIS instance
+// only. It does NOT publish to Valkey — see deliverLocalUser for the
+// loop-safety rationale.
+func (h *Hub) deliverLocalAll(event WSEvent) {
+	h.mu.RLock()
 	clients := make([]*Client, 0, len(h.clients))
 	for _, c := range h.clients {
 		clients = append(clients, c)
 	}
-
-	bridge := h.pubsub
 	h.mu.RUnlock()
 
 	data, err := json.Marshal(event)
@@ -174,10 +205,6 @@ func (h *Hub) BroadcastToAll(event WSEvent) {
 		default:
 			slog.Warn("ws client send buffer full, dropping broadcast", "user_id", client.UserID)
 		}
-	}
-
-	if bridge != nil {
-		bridge.Publish(event, "", "")
 	}
 }
 

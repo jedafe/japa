@@ -246,6 +246,103 @@ func TestDispatchEmptyTargetBroadcastsToAll(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// dispatch must NOT re-publish (infinite-loop prevention)
+// ---------------------------------------------------------------------------
+//
+// When a PubSubMessage arrives over Valkey, dispatch must deliver it locally
+// only. If it called the public Broadcast* methods, those would re-publish to
+// Valkey, and every instance (including the originator) would receive and
+// re-publish the same message forever — an infinite fan-out loop. These
+// regression tests wire a mockBridge that records Publish calls and assert
+// that dispatch triggers zero Publish calls.
+
+func TestDispatchToUserDoesNotRepublish(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+	mock := &mockBridge{hub: hub}
+	hub.SetPubSub(mock) // wired as in production
+	bridge := &PubSubBridge{hub: hub}
+
+	client := &Client{Hub: hub, UserID: "u-loop", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	hub.Register(client)
+
+	bridge.dispatch(PubSubMessage{
+		Type:         EventNotification,
+		TargetUserID: "u-loop",
+		Payload:      "x",
+	})
+
+	// Local delivery happened.
+	select {
+	case <-client.Send:
+	default:
+		t.Fatal("local delivery failed")
+	}
+
+	// And critically, dispatch did NOT re-publish.
+	if mock.lastEvent.Type != "" {
+		t.Errorf("dispatch re-published event %q; dispatch must be local-only to avoid an infinite loop", mock.lastEvent.Type)
+	}
+}
+
+func TestDispatchToSpaceDoesNotRepublish(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+	mock := &mockBridge{hub: hub}
+	hub.SetPubSub(mock)
+	bridge := &PubSubBridge{hub: hub}
+
+	c := &Client{Hub: hub, UserID: "u-sp-loop", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	hub.Register(c)
+	hub.SubscribeToSpace(c, "s-loop")
+
+	bridge.dispatch(PubSubMessage{
+		Type:          EventSpaceActivity,
+		TargetSpaceID: "s-loop",
+		Payload:       "x",
+	})
+
+	select {
+	case <-c.Send:
+	default:
+		t.Fatal("local delivery failed")
+	}
+
+	if mock.lastEvent.Type != "" {
+		t.Errorf("dispatch re-published event %q; dispatch must be local-only to avoid an infinite loop", mock.lastEvent.Type)
+	}
+}
+
+func TestDispatchToAllDoesNotRepublish(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHub()
+	mock := &mockBridge{hub: hub}
+	hub.SetPubSub(mock)
+	bridge := &PubSubBridge{hub: hub}
+
+	c := &Client{Hub: hub, UserID: "u-all-loop", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	hub.Register(c)
+
+	bridge.dispatch(PubSubMessage{
+		Type:    EventFeedUpdate,
+		Payload: "x",
+	})
+
+	select {
+	case <-c.Send:
+	default:
+		t.Fatal("local delivery failed")
+	}
+
+	if mock.lastEvent.Type != "" {
+		t.Errorf("dispatch re-published event %q; dispatch must be local-only to avoid an infinite loop", mock.lastEvent.Type)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Hub.SetPubSub
 // ---------------------------------------------------------------------------
 
