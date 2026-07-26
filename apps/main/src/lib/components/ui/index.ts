@@ -1,4 +1,11 @@
 export { default as EmptyState } from './EmptyState.svelte';
 export { default as LoadingSkeleton } from './LoadingSkeleton.svelte';
+export { default as AdSlot } from './AdSlot.svelte';
+export { default as RelativeTime } from './RelativeTime.svelte';
+export { default as VerificationBadge } from './VerificationBadge.svelte';
+export { default as BookmarkButton } from './BookmarkButton.svelte';
+export { default as FollowButton } from './FollowButton.svelte';
+export { default as PaginationControls } from './PaginationControls.svelte';
+export { default as EntityCard } from './EntityCard.svelte';
 export { resolveIcon } from './icons';
 export type { IconComponent } from './icons';

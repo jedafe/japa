@@ -281,6 +281,68 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 	return i, err
 }
 
+const getUserContentAnalytics = `-- name: GetUserContentAnalytics :many
+SELECT c.id, c.title, c.content_type, c.status, c.view_count, c.comment_count, c.share_count, c.created_at
+FROM contents c
+WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
+ORDER BY c.view_count DESC NULLS LAST, c.created_at DESC
+LIMIT $3 OFFSET $4
+`
+
+type GetUserContentAnalyticsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	AuthorID pgtype.UUID `json:"author_id"`
+	Limit    int32       `json:"limit"`
+	Offset   int32       `json:"offset"`
+}
+
+type GetUserContentAnalyticsRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Title        string             `json:"title"`
+	ContentType  string             `json:"content_type"`
+	Status       string             `json:"status"`
+	ViewCount    int32              `json:"view_count"`
+	CommentCount int32              `json:"comment_count"`
+	ShareCount   int32              `json:"share_count"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+// Per-content analytics breakdown for the authenticated user (Section 40).
+// Returns each published/draft content item with its view/comment/share counts.
+func (q *Queries) GetUserContentAnalytics(ctx context.Context, arg GetUserContentAnalyticsParams) ([]GetUserContentAnalyticsRow, error) {
+	rows, err := q.db.Query(ctx, getUserContentAnalytics,
+		arg.TenantID,
+		arg.AuthorID,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserContentAnalyticsRow
+	for rows.Next() {
+		var i GetUserContentAnalyticsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.ContentType,
+			&i.Status,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserDraft = `-- name: GetUserDraft :one
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
@@ -379,6 +441,58 @@ func (q *Queries) GetUserDraft(ctx context.Context, arg GetUserDraftParams) (Get
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getUserFollowerGrowth = `-- name: GetUserFollowerGrowth :many
+SELECT date_trunc('day', f.created_at)::date AS day, COUNT(*)::bigint AS new_followers
+FROM follows f
+WHERE f.tenant_id = $1
+  AND f.entity_type = 'user'
+  AND f.entity_id = $2
+  AND ($3::date IS NULL OR f.created_at::date >= $3)
+  AND ($4::date IS NULL OR f.created_at::date <= $4)
+GROUP BY 1
+ORDER BY 1 DESC
+`
+
+type GetUserFollowerGrowthParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	EntityID pgtype.UUID `json:"entity_id"`
+	Column3  pgtype.Date `json:"column_3"`
+	Column4  pgtype.Date `json:"column_4"`
+}
+
+type GetUserFollowerGrowthRow struct {
+	Day          pgtype.Date `json:"day"`
+	NewFollowers int64       `json:"new_followers"`
+}
+
+// Daily follower growth for the authenticated user (Section 40).
+// Counts new follows where entity_type = 'user' and entity_id = the user,
+// grouped by day.
+func (q *Queries) GetUserFollowerGrowth(ctx context.Context, arg GetUserFollowerGrowthParams) ([]GetUserFollowerGrowthRow, error) {
+	rows, err := q.db.Query(ctx, getUserFollowerGrowth,
+		arg.TenantID,
+		arg.EntityID,
+		arg.Column3,
+		arg.Column4,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserFollowerGrowthRow
+	for rows.Next() {
+		var i GetUserFollowerGrowthRow
+		if err := rows.Scan(&i.Day, &i.NewFollowers); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getUserPasswordHash = `-- name: GetUserPasswordHash :one

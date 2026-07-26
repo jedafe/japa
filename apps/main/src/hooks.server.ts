@@ -1,13 +1,14 @@
 import type { Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { SessionUser } from '$lib/types';
+import type { SessionUser, Locale } from '$lib/types';
 
 export const handle: Handle = async ({ event, resolve }) => {
 	// Hostname excludes the port; the backend resolves the tenant from it.
 	event.locals.tenantHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
 	event.locals.theme = event.cookies.get('jc_theme') === 'dark' ? 'dark' : 'light';
+	event.locals.locale = (event.cookies.get('jc_locale') === 'fr' ? 'fr' : 'en') as Locale;
 	event.locals.user = null;
 
 	// Resolve the session. The main app is public: an absent or invalid token
@@ -26,6 +27,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	return resolve(event, {
-		transformPageChunk: ({ html }) => html.replace('%jc.theme%', event.locals.theme)
+		transformPageChunk: ({ html }) =>
+			html
+				.replace('%jc.theme%', event.locals.theme)
+				.replace('lang="en"', `lang="${event.locals.locale}"`)
 	});
 };

@@ -273,6 +273,48 @@ func (q *Queries) CreateOwnershipClaim(ctx context.Context, arg CreateOwnershipC
 	return i, err
 }
 
+const getOrganizationAnalytics = `-- name: GetOrganizationAnalytics :one
+SELECT
+  COALESCE(SUM(c.view_count), 0)::bigint AS total_views,
+  COUNT(c.id)::bigint AS total_posts,
+  (SELECT COUNT(*)::bigint FROM organization_members om WHERE om.organization_id = $1) AS total_members,
+  o.follower_count::bigint AS total_followers,
+  COUNT(c.id) FILTER (WHERE c.created_at >= NOW() - INTERVAL '30 days')::bigint AS posts_last_30d
+FROM organizations o
+LEFT JOIN contents c ON c.organization_id = o.id AND c.status != 'draft' AND c.deleted_at IS NULL
+WHERE o.id = $1 AND o.tenant_id = $2 AND o.deleted_at IS NULL
+GROUP BY o.id, o.follower_count
+`
+
+type GetOrganizationAnalyticsParams struct {
+	OrgID    pgtype.UUID `json:"org_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetOrganizationAnalyticsRow struct {
+	TotalViews     int64 `json:"total_views"`
+	TotalPosts     int64 `json:"total_posts"`
+	TotalMembers   int64 `json:"total_members"`
+	TotalFollowers int64 `json:"total_followers"`
+	PostsLast30d   int64 `json:"posts_last_30d"`
+}
+
+// Aggregated analytics for a single organization (Section 07, 40).
+// Returns total views (sum of content view_count), total posts, members,
+// followers, and posts created in the last 30 days.
+func (q *Queries) GetOrganizationAnalytics(ctx context.Context, arg GetOrganizationAnalyticsParams) (GetOrganizationAnalyticsRow, error) {
+	row := q.db.QueryRow(ctx, getOrganizationAnalytics, arg.OrgID, arg.TenantID)
+	var i GetOrganizationAnalyticsRow
+	err := row.Scan(
+		&i.TotalViews,
+		&i.TotalPosts,
+		&i.TotalMembers,
+		&i.TotalFollowers,
+		&i.PostsLast30d,
+	)
+	return i, err
+}
+
 const getOrganizationByID = `-- name: GetOrganizationByID :one
 SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at FROM organizations
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
@@ -713,6 +755,99 @@ func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsPa
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.OwnerUsername,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationsByMember = `-- name: ListOrganizationsByMember :many
+SELECT o.id, o.tenant_id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, om.role AS member_role
+FROM organizations o
+JOIN organization_members om ON om.organization_id = o.id AND om.user_id = $1
+WHERE o.tenant_id = $2 AND o.deleted_at IS NULL
+ORDER BY o.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListOrganizationsByMemberParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListOrganizationsByMemberRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	OwnerUserID      pgtype.UUID        `json:"owner_user_id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Tagline          *string            `json:"tagline"`
+	Description      *string            `json:"description"`
+	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
+	HeaderMediaID    pgtype.UUID        `json:"header_media_id"`
+	WebsiteUrl       *string            `json:"website_url"`
+	CountryCode      *string            `json:"country_code"`
+	GeoSpaceID       pgtype.UUID        `json:"geo_space_id"`
+	OrgType          string             `json:"org_type"`
+	Verified         bool               `json:"verified"`
+	VerificationType *string            `json:"verification_type"`
+	FollowerCount    int32              `json:"follower_count"`
+	MemberCount      int32              `json:"member_count"`
+	Status           string             `json:"status"`
+	FieldValues      []byte             `json:"field_values"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	MemberRole       string             `json:"member_role"`
+}
+
+// Returns orgs the given user is a member of (for GET /me/organizations).
+// Includes the member's role so the dashboard can badge ownership/admin.
+func (q *Queries) ListOrganizationsByMember(ctx context.Context, arg ListOrganizationsByMemberParams) ([]ListOrganizationsByMemberRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationsByMember,
+		arg.UserID,
+		arg.TenantID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrganizationsByMemberRow
+	for rows.Next() {
+		var i ListOrganizationsByMemberRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.OwnerUserID,
+			&i.Name,
+			&i.Slug,
+			&i.Tagline,
+			&i.Description,
+			&i.LogoMediaID,
+			&i.HeaderMediaID,
+			&i.WebsiteUrl,
+			&i.CountryCode,
+			&i.GeoSpaceID,
+			&i.OrgType,
+			&i.Verified,
+			&i.VerificationType,
+			&i.FollowerCount,
+			&i.MemberCount,
+			&i.Status,
+			&i.FieldValues,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.MemberRole,
 		); err != nil {
 			return nil, err
 		}
