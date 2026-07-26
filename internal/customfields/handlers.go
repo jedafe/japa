@@ -1182,7 +1182,9 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetFormEmbed handles GET /forms/{slug}/embed.
-// Returns form definition data suitable for rendering an embedded form.
+// Returns form definition data (including fields + success message) suitable
+// for rendering an embedded form publicly. Fields are returned so a public
+// form (e.g. /feedback) can be rendered without authentication.
 func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -1201,15 +1203,59 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fetch fields attached via the custom field group assignment so the
+	// public embed can render the full form without authentication.
+	fields, err := h.Service.GetFormFields(r.Context(), form.ID, tenantID)
+	if err != nil {
+		slog.Warn("get form embed fields", "slug", slug, "error", err)
+		fields = nil
+	}
+
+	type fieldJSON struct {
+		ID        string   `json:"id"`
+		Label     string   `json:"label"`
+		Type      string   `json:"type"`
+		Required  bool     `json:"required"`
+		SortOrder int32    `json:"sort_order"`
+		Options   []string `json:"options"`
+	}
+
+	fieldList := make([]fieldJSON, 0, len(fields))
+	for _, f := range fields {
+		var options []string
+		if f.Options != nil {
+			var raw []struct {
+				Value string `json:"value"`
+				Label string `json:"label"`
+			}
+			if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
+				options = make([]string, len(raw))
+				for i, o := range raw {
+					options[i] = o.Label
+				}
+			}
+		}
+		fieldList = append(fieldList, fieldJSON{
+			ID:        f.ID.String(),
+			Label:     f.Label,
+			Type:      f.FieldType,
+			Required:  f.IsRequired,
+			SortOrder: f.Position,
+			Options:   options,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"id":          form.ID,
-			"slug":        form.Slug,
-			"name":        form.Name,
-			"description": form.Description,
-			"status":      form.Status,
-			"is_multi_step": form.IsMultiStep,
-			"submit_label": form.SubmitLabel,
+			"id":              form.ID,
+			"slug":            form.Slug,
+			"name":            form.Name,
+			"description":     form.Description,
+			"status":          form.Status,
+			"is_multi_step":   form.IsMultiStep,
+			"submit_label":    form.SubmitLabel,
+			"success_message": form.SuccessMessage,
+			"fields":          fieldList,
 		},
 	})
 }

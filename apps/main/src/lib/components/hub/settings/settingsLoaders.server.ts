@@ -16,6 +16,19 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	account: (ctx) => apiGet<MeProfile>(ctx, '/me'),
 	privacy: (ctx) => apiGet<PrivacySettings>(ctx, '/me/privacy'),
 
+	language: async (ctx) => ({
+		// GET /i18n/packs — Rule 16: language list from API, not hardcoded.
+		packs: (await apiList<unknown>(ctx, '/i18n/packs')).items,
+		current: await apiGet<unknown>(ctx, '/me/account').catch(() => ({}))
+	}),
+
+	'data-privacy': async (ctx) => ({
+		// GET /consent — consent records (Section 19).
+		consents: (await apiList<unknown>(ctx, '/consent')).items,
+		// GET /me/data-export/status — current export status (none|pending|ready).
+		exportStatus: await apiGet<unknown>(ctx, '/me/data-export/status').catch(() => ({ status: 'none' }))
+	}),
+
 	security: async (ctx) => ({
 		totp: await apiGet<{ enabled: boolean }>(ctx, '/me/totp/status').catch(() => ({ enabled: false }))
 	}),

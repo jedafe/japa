@@ -269,3 +269,30 @@ func (s *Store) activeUserExistsByID(ctx context.Context, tenantID, userID pgtyp
 		ID:       userID,
 	})
 }
+
+// getUserContentAnalytics returns per-content analytics for the user.
+func (s *Store) getUserContentAnalytics(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserContentAnalyticsRow, error) {
+	return s.read.GetUserContentAnalytics(ctx, gen.GetUserContentAnalyticsParams{
+		TenantID: tenantID,
+		AuthorID: userID,
+		Limit:    limit,
+		Offset:   offset,
+	})
+}
+
+// getUserFollowerGrowth returns daily follower growth for the user.
+func (s *Store) getUserFollowerGrowth(ctx context.Context, tenantID, userID pgtype.UUID, startDate, endDate *pgtype.Date) ([]gen.GetUserFollowerGrowthRow, error) {
+	return s.read.GetUserFollowerGrowth(ctx, gen.GetUserFollowerGrowthParams{
+		TenantID: tenantID,
+		EntityID: userID,
+		Column3:  derefDate(startDate),
+		Column4:  derefDate(endDate),
+	})
+}
+
+func derefDate(d *pgtype.Date) pgtype.Date {
+	if d == nil {
+		return pgtype.Date{}
+	}
+	return *d
+}

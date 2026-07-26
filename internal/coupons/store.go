@@ -87,7 +87,7 @@ func (s *Store) getCouponByCode(ctx context.Context, code string, tenantID pgtyp
 	return s.read.GetCouponByCode(ctx, gen.GetCouponByCodeParams{Code: code, TenantID: tenantID})
 }
 
-func (s *Store) listCoupons(ctx context.Context, tenantID pgtype.UUID, status, couponType string, providerID pgtype.UUID, search string, limit, offset int32) ([]gen.ListCouponsByTenantRow, error) {
+func (s *Store) listCoupons(ctx context.Context, tenantID pgtype.UUID, status, couponType, search *string, providerID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsByTenantRow, error) {
 	return s.read.ListCouponsByTenant(ctx, gen.ListCouponsByTenantParams{
 		TenantID:   tenantID,
 		Status:     status,
@@ -99,7 +99,7 @@ func (s *Store) listCoupons(ctx context.Context, tenantID pgtype.UUID, status, c
 	})
 }
 
-func (s *Store) listActiveCoupons(ctx context.Context, tenantID pgtype.UUID, providerID pgtype.UUID, couponType string, search string, limit, offset int32) ([]gen.ListActiveCouponsByTenantRow, error) {
+func (s *Store) listActiveCoupons(ctx context.Context, tenantID pgtype.UUID, providerID pgtype.UUID, couponType, search *string, limit, offset int32) ([]gen.ListActiveCouponsByTenantRow, error) {
 	return s.read.ListActiveCouponsByTenant(ctx, gen.ListActiveCouponsByTenantParams{
 		TenantID:   tenantID,
 		ProviderID: providerID,

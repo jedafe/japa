@@ -166,7 +166,7 @@ func (s *Service) GetCoupon(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 
 func (s *Service) ListCoupons(ctx context.Context, tenantID pgtype.UUID, status, couponType, search *string, page, pageSize int32) ([]gen.ListCouponsByTenantRow, error) {
 	limit, offset := paginate(page, pageSize)
-	return s.store.listCoupons(ctx, tenantID, derefStr(status), derefStr(couponType), pgtype.UUID{}, derefStr(search), limit, offset)
+	return s.store.listCoupons(ctx, tenantID, status, couponType, search, pgtype.UUID{}, limit, offset)
 }
 
 func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, providerID *pgtype.UUID, couponType, search *string, page, pageSize int32) ([]gen.ListActiveCouponsByTenantRow, error) {
@@ -175,7 +175,7 @@ func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, p
 	if providerID != nil {
 		pid = *providerID
 	}
-	return s.store.listActiveCoupons(ctx, tenantID, pid, derefStr(couponType), derefStr(search), limit, offset)
+	return s.store.listActiveCoupons(ctx, tenantID, pid, couponType, search, limit, offset)
 }
 
 type UpdateCouponInput = CreateCouponInput

@@ -114,10 +114,10 @@ SELECT c.id, c.tenant_id, c.provider_id, c.coupon_type, c.title, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.tenant_id = @tenant_id
-    AND (@status::text IS NULL OR c.status = @status)
-    AND (@coupon_type::text IS NULL OR c.coupon_type = @coupon_type)
-    AND (@provider_id::uuid IS NULL OR c.provider_id = @provider_id)
-    AND (@search::text IS NULL OR c.title ILIKE '%' || @search || '%' OR c.code ILIKE '%' || @search || '%')
+    AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
+    AND (sqlc.narg(coupon_type)::text IS NULL OR c.coupon_type = sqlc.narg(coupon_type))
+    AND (sqlc.narg(provider_id)::uuid IS NULL OR c.provider_id = sqlc.narg(provider_id))
+    AND (sqlc.narg(search)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(search) || '%' OR c.code ILIKE '%' || sqlc.narg(search) || '%')
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -132,9 +132,9 @@ LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.tenant_id = @tenant_id
     AND c.status = 'active'
     AND (c.expires_at IS NULL OR c.expires_at > now())
-    AND (@provider_id::uuid IS NULL OR c.provider_id = @provider_id)
-    AND (@coupon_type::text IS NULL OR c.coupon_type = @coupon_type)
-    AND (@search::text IS NULL OR c.title ILIKE '%' || @search || '%')
+    AND (sqlc.narg(provider_id)::uuid IS NULL OR c.provider_id = sqlc.narg(provider_id))
+    AND (sqlc.narg(coupon_type)::text IS NULL OR c.coupon_type = sqlc.narg(coupon_type))
+    AND (sqlc.narg(search)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(search) || '%')
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 

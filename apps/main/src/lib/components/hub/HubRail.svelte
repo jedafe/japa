@@ -7,6 +7,7 @@
 		labelKey: string;
 		backendReady: boolean;
 		component: unknown;
+		isRoute?: boolean;
 	}
 	interface Props {
 		groups: [HubGroup, RailItem[]][];
@@ -22,7 +23,7 @@
 		<div class="mb-4">
 			<p class="px-3 pb-1 text-xs font-medium text-[var(--color-muted)]">{t(`settings.group.${group}`)}</p>
 			{#each items as item (item.slug)}
-				{@const disabled = !item.backendReady || !item.component}
+				{@const disabled = !item.backendReady || (!item.component && !item.isRoute)}
 				<a
 					href={disabled ? undefined : `${basePath}/${item.slug}`}
 					aria-current={active === item.slug ? 'page' : undefined}
