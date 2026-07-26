@@ -101,19 +101,21 @@ func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetSpaceID string
 	}
 }
 
-// dispatch delivers a received PubSubMessage to the local hub. This is the
-// cross-instance counterpart of BroadcastToUser/BroadcastToSpace/BroadcastToAll:
-// same logic, but invoked from the subscription goroutine rather than the
-// publishing instance.
+// dispatch delivers a received PubSubMessage to the local hub ONLY. It must
+// not re-publish to Valkey: this message was already published by the
+// originating instance, and re-publishing would fan it out to every
+// instance again (including the originator), creating an infinite loop.
+// The local-delivery hub methods (deliverLocal*) skip the bridge.Publish
+// call for exactly this reason.
 func (b *PubSubBridge) dispatch(msg PubSubMessage) {
 	event := WSEvent{Type: msg.Type, Payload: msg.Payload}
 
 	switch {
 	case msg.TargetUserID != "":
-		b.hub.BroadcastToUser(msg.TargetUserID, event)
+		b.hub.deliverLocalUser(msg.TargetUserID, event)
 	case msg.TargetSpaceID != "":
-		b.hub.BroadcastToSpace(msg.TargetSpaceID, event)
+		b.hub.deliverLocalSpace(msg.TargetSpaceID, event)
 	default:
-		b.hub.BroadcastToAll(event)
+		b.hub.deliverLocalAll(event)
 	}
 }
