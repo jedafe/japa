@@ -5,6 +5,9 @@
 
 export type ThemeName = 'light' | 'dark';
 
+/** Supported UI locales. Mirrors the i18n store's Locale type. */
+export type Locale = 'en' | 'fr';
+
 /* ------------------------------------------------------------------ *
  * Transport envelope
  * ------------------------------------------------------------------ */
@@ -196,8 +199,15 @@ export interface CustomFieldGroup {
 /** GET /blog/series item. */
 export interface BlogSeries {
 	id: string;
+	tenant_id: string;
 	slug: string;
 	title: string;
+	description?: string | null;
+	cover_image_id?: string | null;
+	author_user_id?: string;
+	status?: string;
+	created_at?: string;
+	updated_at?: string;
 }
 
 /** Content record returned by POST /content and PATCH /content/{id}. */
@@ -232,6 +242,24 @@ export interface MediaAsset {
 	alt_text?: string | null;
 	status?: string;
 	created_at?: string;
+	user_group_id?: string | null;
+}
+
+/** GET /me/bookmarks — a thin bookmark record (entity_type + entity_id). */
+export interface Bookmark {
+	id: string;
+	entity_type: string;
+	entity_id: string;
+	folder?: string | null;
+	created_at: string;
+}
+
+/** GET /me/bookmark-folders — a user's bookmark folder. */
+export interface BookmarkFolder {
+	id: string;
+	name: string;
+	bookmark_count?: number;
+	created_at: string;
 }
 
 /** One autocomplete result for @ / [[ / # triggers. */
@@ -297,8 +325,19 @@ export interface PrivacySettings {
 
 /** Response from POST /auth/login and POST /auth/register. */
 export interface AuthSession {
+	totp_required?: undefined;
 	access_token: string;
 	user: AuthUser;
+}
+
+/** Response from POST /auth/login when the account has TOTP enabled — the
+ * backend returns a challenge token instead of an access token; the client
+ * must collect a 6-digit code and POST /auth/totp/verify-challenge. */
+export interface AuthTotpChallenge {
+	totp_required: true;
+	challenge_token: string;
+	user: AuthUser;
+	access_token?: undefined;
 }
 
 /** Minimal user shape returned by the auth endpoints (register/login). */
@@ -387,6 +426,34 @@ export interface ForumThread {
 	space_slug: string | null;
 	/** Joined space level: 'country' | 'state' | 'city' | 'custom'. */
 	space_level: string | null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Forum Polls — Section 08 (GET /forum/polls/{id}, POST /forum/polls/{id}/vote)
+ * ------------------------------------------------------------------ */
+
+/** A forum poll attached to a thread. */
+export interface ForumPoll {
+	id: string;
+	thread_id: string;
+	question: string;
+	is_multi_select: boolean;
+	close_at: string | null;
+	created_at: string;
+}
+
+/** A single poll option with its vote count (from GetPollResults). */
+export interface PollResult {
+	option_id: string;
+	label: string;
+	position: number;
+	vote_count: number;
+}
+
+/** GET /forum/polls/{id} response — poll + results. */
+export interface PollWithResults {
+	poll: ForumPoll;
+	results: PollResult[];
 }
 
 /** A forum reply (GET /forum/{id}/replies, POST /forum/{id}/replies). */
@@ -553,6 +620,29 @@ export interface PublicOrganization {
 	follower_count: number;
 	member_count: number;
 	created_at: string;
+}
+
+/** GET /organizations/{id} (authed member) — full gen.Organization row for the
+ * org admin dashboard. Includes owner_user_id, status, and timestamps. */
+export interface OrganizationAdmin {
+	id: string;
+	owner_user_id: string;
+	name: string;
+	slug: string;
+	tagline?: string | null;
+	description?: string | null;
+	logo_media_id?: string | null;
+	header_media_id?: string | null;
+	website_url?: string | null;
+	country_code?: string | null;
+	org_type: string;
+	verified: boolean;
+	verification_type?: string | null;
+	follower_count: number;
+	member_count: number;
+	status: string;
+	created_at: string;
+	updated_at: string;
 }
 
 /** GET /organizations/{id}/members — active members, lean DTO. */
@@ -772,5 +862,447 @@ export interface PublicOrgListItem {
 	follower_count: number;
 	member_count: number;
 	created_at: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * Trending — Section 10 (GET /trending/{content,tags,spaces,users})
+ * Each row joins a trending_snapshots row to its entity. The shared
+ * snapshot prefix (id, entity_id, score, window, geo_code, computed_at)
+ * is followed by the joined entity's fields (id_2, ...).
+ * ------------------------------------------------------------------ */
+
+export type TrendingWindow = '24h' | '7d' | '30d';
+
+/** Common snapshot prefix shared by every trending row. */
+export interface TrendingSnapshotBase {
+	id: string;
+	entity_id: string;
+	/** Trending score — higher is hotter. Sorting is server-side (DESC). */
+	score: number;
+	window: TrendingWindow;
+	geo_code: string | null;
+	computed_at: string;
+}
+
+/** GET /trending/content item — joined content row. */
+export interface TrendingContent extends TrendingSnapshotBase {
+	id_2: string;
+	title: string;
+	slug: string;
+	content_type: string;
+	author_id: string;
+	space_id: string;
+	view_count: number;
+}
+
+/** GET /trending/tags item — joined tag row. */
+export interface TrendingTag extends TrendingSnapshotBase {
+	id_2: string;
+	name: string;
+	slug: string;
+	follower_count: number;
+}
+
+/** GET /trending/spaces item — joined space row. */
+export interface TrendingSpace extends TrendingSnapshotBase {
+	id_2: string;
+	name: string;
+	slug: string;
+	member_count: number;
+	post_count: number;
+}
+
+/** GET /trending/users item — joined user/profile row. */
+export interface TrendingUser extends TrendingSnapshotBase {
+	id_2: string;
+	username: string;
+	display_name: string | null;
+	avatar_url: string | null;
+	bio: string | null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Learning — Section 22 (GET /learn/tracks, /learn/tracks/{slug})
+ * ------------------------------------------------------------------ */
+
+/** GET /learn/tracks item — a learning track. */
+export interface LearnTrack {
+	id: string;
+	tenant_id: string;
+	title: string;
+	slug: string;
+	description?: string | null;
+	difficulty: 'beginner' | 'intermediate' | 'advanced' | string;
+	is_published: boolean;
+	sort_order: number;
+	cover_media_id?: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+/** GET /learn/tracks/{slug} — track with nested modules. */
+export interface LearnTrackDetail {
+	track: LearnTrack;
+	modules: LearnModule[];
+}
+
+/** A module within a learning track. */
+export interface LearnModule {
+	id: string;
+	tenant_id: string;
+	track_id: string;
+	title: string;
+	slug: string;
+	sort_order: number;
+	created_at: string;
+	updated_at: string;
+}
+
+/** GET /learn/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug} — a single lesson. */
+export interface LearnLesson {
+	id: string;
+	tenant_id: string;
+	module_id: string;
+	module_title?: string | null;
+	title: string;
+	slug: string;
+	lesson_type: string;
+	content?: string | null;
+	media_id?: string | null;
+	duration_minutes?: number | null;
+	sort_order: number;
+	is_published: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+/** GET /learn/progress/{trackId} — the user's progress in a track. */
+export interface LearnProgress {
+	completed: number;
+	total: number;
+	percent: number;
+}
+
+/** GET /me/enrollments item — a track enrollment record. */
+export interface LearnEnrollment {
+	id: string;
+	track_id: string;
+	track_title?: string;
+	enrolled_at: string;
+	completed_at?: string | null;
+	progress_percent?: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * Coupons — Section 21 (GET /coupons, /coupons/{id})
+ * ------------------------------------------------------------------ */
+
+/** GET /coupons item — a public active coupon. */
+export interface Coupon {
+	id: string;
+	tenant_id: string;
+	provider_id: string | null;
+	coupon_type: string;
+	title: string;
+	description?: string | null;
+	code: string;
+	discount_type?: string | null;
+	discount_value?: number | string;
+	currency?: string | null;
+	terms_url?: string | null;
+	referral_url?: string | null;
+	is_verified: boolean;
+	status: string;
+	valid_from?: string | null;
+	expires_at?: string | null;
+	total_clicks: number;
+	total_copies: number;
+	created_by?: string | null;
+	created_at: string;
+	updated_at: string;
+	provider_name?: string | null;
+	provider_slug?: string | null;
+	provider_logo_media_id?: string | null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Comparisons — Section 16 (GET /comparisons/{id})
+ * ------------------------------------------------------------------ */
+
+/** GET /comparisons/{id} — comparison with items and dimensions. */
+export interface ComparisonDetail {
+	id: string;
+	items: ComparisonItem[];
+	dimensions: ComparisonDimension[];
+}
+
+/** A comparison item (entity being compared, e.g. a university). */
+export interface ComparisonItem {
+	id: string;
+	comparison_id: string;
+	entity_type: string;
+	entity_id: string;
+	label: string;
+	sort_order: number;
+}
+
+/** A comparison dimension (criterion being evaluated). */
+export interface ComparisonDimension {
+	id: string;
+	comparison_id: string;
+	label: string;
+	sort_order: number;
+}
+
+/** GET /comparisons/{id}/matrix — one item's row across all dimensions. */
+export interface ComparisonMatrixItem {
+	item: {
+		id: string;
+		content_id: string;
+		type_definition_id: string;
+		title: string;
+		entity_id?: string | null;
+		image_media_id?: string | null;
+		geo_space_id?: string | null;
+		position: number;
+	};
+	dimensions: ComparisonMatrixDimensionValue[];
+}
+
+/** A single dimension's value for one item in the matrix. */
+export interface ComparisonMatrixDimensionValue {
+	dimension_id: string;
+	label: string;
+	type: 'text' | 'number' | 'boolean' | 'rating' | 'url' | 'list';
+	value?: string | null;
+	value_rating?: number | null;
+	value_boolean?: boolean | null;
+}
+
+/** POST /comparisons — created comparison result. */
+export interface ComparisonCreated {
+	id: string;
+	tenant_id: string;
+	author_id: string;
+	title: string;
+	slug: string;
+	visibility: string;
+	space_id: string | null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Professional Profiles — Section 12 (GET /profiles/{slug})
+ * ------------------------------------------------------------------ */
+
+/** GET /profiles/{slug} — a professional profile. */
+export interface ProfessionalProfile {
+	id: string;
+	tenant_id: string;
+	owner_user_id: string;
+	type_id: string;
+	name: string;
+	slug: string;
+	tagline?: string | null;
+	description?: string | null;
+	logo_media_id?: string | null;
+	header_media_id?: string | null;
+	website_url?: string | null;
+	verified: boolean;
+	verification_type?: string | null;
+	follower_count: number;
+	status: string;
+	field_values?: Record<string, unknown>;
+	created_at: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * Page Builder — Section 27 (GET /pages/{slug})
+ * ------------------------------------------------------------------ */
+
+/** GET /pages/{slug} — a published Page Builder page. */
+export interface PageBuilderPage {
+	id: string;
+	title: string;
+	slug: string;
+	description?: string | null;
+	template_id?: string | null;
+	theme_id?: string | null;
+	blocks: LandingBlock[];
+	meta?: Record<string, unknown>;
+	status: string;
+	published_at?: string | null;
+	created_by?: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+/** A single block in a Page Builder page. */
+export interface LandingBlock {
+	id?: string;
+	type: string;
+	props: Record<string, unknown>;
+}
+
+/* ------------------------------------------------------------------ *
+ * Tickets — Section 38 (GET /me/tickets, GET /me/tickets/{id}, POST /tickets)
+ * ------------------------------------------------------------------ */
+
+export type TicketStatus =
+	| 'open'
+	| 'in_progress'
+	| 'waiting_on_user'
+	| 'resolved'
+	| 'closed'
+	| 'spam';
+
+export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+/** GET /me/tickets — list row (includes the joined type name/slug). */
+export interface TicketListItem {
+	id: string;
+	type_id: string;
+	subject: string;
+	description: string;
+	status: TicketStatus;
+	priority: TicketPriority;
+	submitter_email?: string | null;
+	sla_breach_at?: string | null;
+	resolved_at?: string | null;
+	closed_at?: string | null;
+	created_at: string;
+	updated_at: string;
+	type_name: string;
+	type_slug: string;
+}
+
+/** GET /me/tickets/{id} — full ticket + comments + attachments. */
+export interface TicketDetail extends TicketListItem {
+	tenant_id: string;
+	submitter_user_id: string;
+	assigned_to?: string | null;
+	assigned_group_id?: string | null;
+	resolution_note?: string | null;
+	field_values?: Record<string, unknown> | null;
+}
+
+export interface TicketComment {
+	id: string;
+	ticket_id: string;
+	user_id: string;
+	body: string;
+	is_internal: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface TicketAttachment {
+	id: string;
+	ticket_id: string;
+	comment_id?: string | null;
+	media_id: string;
+	created_at: string;
+}
+
+export interface TicketDetailResponse {
+	ticket: TicketDetail;
+	comments: TicketComment[];
+	attachments: TicketAttachment[];
+}
+
+/** GET /ticket-types — admin-defined ticket types (public ones are selectable
+ * by users when filing a new ticket). */
+export interface TicketType {
+	id: string;
+	name: string;
+	slug: string;
+	description?: string | null;
+	default_priority: TicketPriority;
+	sla_hours?: number | null;
+	is_public: boolean;
+	is_system: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+/** POST /tickets — create-ticket payload. */
+export interface CreateTicketInput {
+	type_id?: string;
+	subject: string;
+	description: string;
+	priority?: TicketPriority;
+	email?: string;
+	field_values?: Record<string, unknown>;
+}
+
+/** POST /me/tickets/{id}/comments — reply payload. */
+export interface AddTicketCommentInput {
+	body: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * Forms — Section 06 (GET /forms/{slug}/embed, POST /forms/{id}/submissions)
+ * ------------------------------------------------------------------ */
+
+/** A single field on an embeddable form (GET /forms/{slug}/embed). */
+export interface FormField {
+	id: string;
+	label: string;
+	type: string;
+	required: boolean;
+	sort_order: number;
+	options: string[] | null;
+}
+
+/** GET /forms/{slug}/embed — public form definition for embedded rendering. */
+export interface FormEmbed {
+	id: string;
+	slug: string;
+	name: string;
+	description?: string | null;
+	status: string;
+	is_multi_step: boolean;
+	submit_label: string;
+	success_message?: string | null;
+	fields: FormField[];
+}
+
+/** POST /forms/{id}/submissions — submission response. */
+export interface FormSubmissionResponse {
+	id: string;
+	status: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * Reviews — Section 29 (POST /reviews/{entity_type}/{entity_id}, GET /reviews/{entity_type}/{entity_id}[/aggregate])
+ * ------------------------------------------------------------------ */
+
+/** A single review row (gen.Review). */
+export interface Review {
+	id: string;
+	entity_type: string;
+	entity_id: string;
+	reviewer_user_id: string;
+	rating: number;
+	title?: string | null;
+	body?: string | null;
+	status: string;
+	created_at: string;
+	updated_at: string;
+}
+
+/** GET /reviews/{entity_type}/{entity_id}/aggregate — rolled-up ratings. */
+export interface ReviewAggregate {
+	entity_type: string;
+	entity_id: string;
+	review_count: number;
+	average_rating: number;
+	updated_at: string;
+}
+
+/** POST /reviews/{entity_type}/{entity_id} — create-review payload. */
+export interface CreateReviewInput {
+	rating: number;
+	title?: string;
+	body?: string;
 }
 

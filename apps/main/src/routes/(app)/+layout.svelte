@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { untrack, type Snippet } from 'svelte';
+	import { untrack, onMount, type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
+	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
 	import { isExceptionRoute } from '$lib/components/create/gate';
 	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
 	import { api } from '$lib/api/client';
+	import { realtime } from '$lib/realtime/realtime.svelte';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -29,6 +31,25 @@
 		const res = await api.patch('/me/account', { ui: { nav_collapsed: next } });
 		if (res.error) collapsed = !next; // rollback on failure
 	}
+
+	// Phase 23 — Real-Time WebSocket: connect when an authenticated session is
+	// present, disconnect on unmount or when the session is lost. The store is
+	// a no-op during SSR; onMount guarantees a browser-only connect.
+	onMount(() => {
+		if (data.user) realtime.connect();
+		return () => realtime.disconnect();
+	});
+
+	// Reconnect if the user logs in mid-session (e.g. after /login redirect).
+	$effect(() => {
+		if (data.user) realtime.connect();
+	});
+
+	// Seed the realtime unread-notification counter from the SSR value, and
+	// re-sync whenever the server payload changes (e.g. after invalidateAll).
+	$effect(() => {
+		realtime.setUnreadCount(data.unreadNotifications);
+	});
 </script>
 
 {#if isGuestLanding}
@@ -48,4 +69,7 @@
 	>
 		{@render children()}
 	</AppShell>
+	{#if !exception}
+		<MobileBottomTabBar user={data.user} />
+	{/if}
 {/if}

@@ -41,6 +41,10 @@ export default defineConfig({
 	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit(), svelteTesting()],
 	server: {
 		proxy: {
+			// WebSocket upgrade must be matched before the plain /api/v1 entry
+			// (which has no ws:true) so the dev proxy upgrades /api/v1/ws to the
+			// backend's GET /api/v1/ws?ticket=... handler.
+			'/api/v1/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
 			'/api/v1': { target: API_TARGET, changeOrigin: true },
 			'/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true }
 		}

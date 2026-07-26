@@ -22,7 +22,7 @@ func TestGetPublicOrganization_ActiveLean_NonActive404(t *testing.T) {
 	testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "acme", Status: "active"})
 	testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "shady", Status: "suspended"})
 
-	h := NewHandlers(NewService(database))
+	h := NewHandlers(NewService(database), nil)
 
 	call := func(slug string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "/organizations/"+slug, nil)
@@ -76,7 +76,7 @@ func TestListPublicMembers_ActiveOnly_Lean(t *testing.T) {
 	testdb.SeedOrgMembership(t, database, orgID, activeUser, "admin")
 	testdb.SeedOrgMembership(t, database, orgID, suspendedUser, "member")
 
-	h := NewHandlers(NewService(database))
+	h := NewHandlers(NewService(database), nil)
 	req := httptest.NewRequest(http.MethodGet, "/organizations/"+orgID.String()+"/members", nil)
 	req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
 	req = testdb.WithChiURLParam(req, "id", orgID.String())
@@ -119,7 +119,7 @@ func TestListPublicOrganizations_VerifiedActiveOnly(t *testing.T) {
 	testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "unverified", Status: "active", Verified: false})
 	testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "suspended", Status: "suspended", Verified: true})
 
-	h := NewHandlers(NewService(database))
+	h := NewHandlers(NewService(database), nil)
 	req := httptest.NewRequest(http.MethodGet, "/organizations", nil)
 	req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
 	rec := httptest.NewRecorder()

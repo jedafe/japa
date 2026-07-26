@@ -12,7 +12,9 @@
 		ExternalLink
 	} from 'lucide-svelte';
 	import { resolveIcon } from '$lib/components/ui/icons';
+	import NotificationCentre from './NotificationCentre.svelte';
 	import { t } from '$lib/i18n';
+	import { realtime } from '$lib/realtime/realtime.svelte';
 	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '$lib/types';
 
 	interface Props {
@@ -92,17 +94,65 @@
 		{#each items as item (item.id)}
 			{@const Icon = resolveIcon(item.icon)}
 			{@const active = isActive(item.url)}
+			{@const badge = item.url === '/notifications' ? realtime.unreadNotifications : 0}
+			{@const isNotifications = item.url === '/notifications' && !!user}
 			<li>
-				<a
-					href={item.url}
-					target={item.target}
-					title={collapsed ? item.label : undefined}
-					aria-current={active ? 'page' : undefined}
-					class={itemClass(active)}
-				>
-					<Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
-					{#if !collapsed}<span>{item.label}</span>{/if}
-				</a>
+				{#if isNotifications}
+					<!-- Phase 13.01 — Notifications nav item opens the dropdown -->
+					<NotificationCentre side="right" align="start" {collapsed} class={itemClass(active)}>
+						{#snippet children()}
+							<span
+								class={clsx('flex items-center gap-3', collapsed && 'justify-center')}
+								title={collapsed ? item.label : undefined}
+								aria-current={active ? 'page' : undefined}
+							>
+								<span class="relative">
+									<Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
+									{#if badge > 0}
+										<span
+											class="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
+											aria-label="{badge} unread"
+										>{badge > 99 ? '99+' : badge}</span>
+									{/if}
+								</span>
+								{#if !collapsed}
+									<span class="min-w-0 flex-1">{item.label}</span>
+									{#if badge > 0}
+										<span
+											class="shrink-0 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
+										>{badge > 99 ? '99+' : badge}</span>
+									{/if}
+								{/if}
+							</span>
+						{/snippet}
+					</NotificationCentre>
+				{:else}
+					<a
+						href={item.url}
+						target={item.target}
+						title={collapsed ? item.label : undefined}
+						aria-current={active ? 'page' : undefined}
+						class={itemClass(active)}
+					>
+						<span class="relative">
+							<Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
+							{#if badge > 0}
+								<span
+									class="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
+									aria-label="{badge} unread"
+								>{badge > 99 ? '99+' : badge}</span>
+							{/if}
+						</span>
+						{#if !collapsed}
+							<span class="min-w-0 flex-1">{item.label}</span>
+							{#if badge > 0}
+								<span
+									class="shrink-0 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
+								>{badge > 99 ? '99+' : badge}</span>
+							{/if}
+						{/if}
+					</a>
+				{/if}
 			</li>
 		{/each}
 	</ul>

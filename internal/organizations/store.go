@@ -138,6 +138,17 @@ func (s *Store) GetInvitationByToken(ctx context.Context, tokenHash string) (gen
 	return s.read.GetOrganizationInvitationByToken(ctx, tokenHash)
 }
 
+// ListOrganizationsByMember returns orgs the user is a member of, with the
+// member's role projected through. Used by GET /me/organizations.
+func (s *Store) ListOrganizationsByMember(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ListOrganizationsByMemberRow, error) {
+	return s.read.ListOrganizationsByMember(ctx, gen.ListOrganizationsByMemberParams{
+		TenantID:   tenantID,
+		UserID:     userID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+}
+
 // CreateOwnershipClaim creates an ownership claim.
 func (s *Store) CreateOwnershipClaim(ctx context.Context, params gen.CreateOwnershipClaimParams) (gen.OwnershipClaim, error) {
 	return s.write.CreateOwnershipClaim(ctx, params)
@@ -209,4 +220,13 @@ func (s *Store) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUI
 
 func (s *Store) CountPublicOrganizations(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
 	return s.read.CountPublicOrganizations(ctx, tenantID)
+}
+
+// GetOrganizationAnalytics returns aggregated analytics for a single org.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID) (gen.GetOrganizationAnalyticsRow, error) {
+	return s.read.GetOrganizationAnalytics(ctx, gen.GetOrganizationAnalyticsParams{
+		OrgID:    orgID,
+		TenantID: tenantID,
+	})
 }

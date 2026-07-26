@@ -185,6 +185,11 @@ func (s *Service) ListPages(ctx context.Context, tenantID pgtype.UUID, q string)
 	return s.store.ListPages(ctx, tenantID, q)
 }
 
+// ListPublishedPages returns only published pages for public consumption.
+func (s *Service) ListPublishedPages(ctx context.Context, tenantID pgtype.UUID) ([]Page, error) {
+	return s.store.ListPublishedPages(ctx, tenantID)
+}
+
 // GetPage returns a single page by ID, scoped to the tenant.
 func (s *Service) GetPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
 	return s.store.GetPage(ctx, id, tenantID)

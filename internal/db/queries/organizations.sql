@@ -174,6 +174,31 @@ WHERE tenant_id = @tenant_id AND status = 'active' AND deleted_at IS NULL AND ve
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListOrganizationsByMember :many
+-- Returns orgs the given user is a member of (for GET /me/organizations).
+-- Includes the member's role so the dashboard can badge ownership/admin.
+SELECT o.*, om.role AS member_role
+FROM organizations o
+JOIN organization_members om ON om.organization_id = o.id AND om.user_id = @user_id
+WHERE o.tenant_id = @tenant_id AND o.deleted_at IS NULL
+ORDER BY o.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: CountPublicOrganizations :one
 SELECT COUNT(*) FROM organizations
 WHERE tenant_id = @tenant_id AND status = 'active' AND deleted_at IS NULL AND verified = true;
+
+-- name: GetOrganizationAnalytics :one
+-- Aggregated analytics for a single organization (Section 07, 40).
+-- Returns total views (sum of content view_count), total posts, members,
+-- followers, and posts created in the last 30 days.
+SELECT
+  COALESCE(SUM(c.view_count), 0)::bigint AS total_views,
+  COUNT(c.id)::bigint AS total_posts,
+  (SELECT COUNT(*)::bigint FROM organization_members om WHERE om.organization_id = @org_id) AS total_members,
+  o.follower_count::bigint AS total_followers,
+  COUNT(c.id) FILTER (WHERE c.created_at >= NOW() - INTERVAL '30 days')::bigint AS posts_last_30d
+FROM organizations o
+LEFT JOIN contents c ON c.organization_id = o.id AND c.status != 'draft' AND c.deleted_at IS NULL
+WHERE o.id = @org_id AND o.tenant_id = @tenant_id AND o.deleted_at IS NULL
+GROUP BY o.id, o.follower_count;

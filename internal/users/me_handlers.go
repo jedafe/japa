@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -517,3 +518,59 @@ var _ = tenant.FromContext
 
 // Ensure gen package is referenced.
 var _ = gen.GetUserProfileParams{}
+
+// GetMyContentAnalytics handles GET /api/v1/me/analytics/content.
+// Returns per-content analytics breakdown for the authenticated user.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	items, err := h.Service.GetUserContentAnalytics(r.Context(), tenantID, user.UserID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// GetMyFollowerGrowth handles GET /api/v1/me/analytics/followers.
+// Returns daily follower growth for the authenticated user.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (h *Handlers) GetMyFollowerGrowth(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	days := 30
+	if s := r.URL.Query().Get("days"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 365 {
+			days = n
+		}
+	}
+
+	growth, err := h.Service.GetUserFollowerGrowth(r.Context(), tenantID, user.UserID, days)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": growth})
+}

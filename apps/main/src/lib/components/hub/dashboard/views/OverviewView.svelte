@@ -3,7 +3,7 @@
 	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
 	import MetricCard from '$lib/components/hub/MetricCard.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { FileText } from 'lucide-svelte';
+	import { FileText, Wallet, Bell, Users } from 'lucide-svelte';
 
 	interface Analytics {
 		content_count?: number;
@@ -18,23 +18,92 @@
 		status?: string;
 		created_at?: string;
 	}
+	interface WalletSummary {
+		balance?: number;
+		currency?: string;
+	}
+	interface UnreadSummary {
+		count?: number;
+	}
+	interface FollowerSummary {
+		count?: number;
+	}
 	interface OverviewData {
 		analytics: Analytics | null;
 		recent: RecentItem[];
+		wallet?: WalletSummary | null;
+		unread?: UnreadSummary | null;
+		followers?: FollowerSummary | null;
 	}
 
 	let { data }: { data: unknown } = $props();
 	const overview = $derived(data as OverviewData | null);
 	const analytics = $derived(overview?.analytics ?? {});
 	const recent = $derived(overview?.recent ?? []);
+	const wallet = $derived(overview?.wallet ?? null);
+	const unread = $derived(overview?.unread ?? null);
+	const followers = $derived(overview?.followers ?? null);
 </script>
 
 <section class="space-y-6">
+	<!-- Content metrics -->
 	<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
 		<MetricCard labelKey="dashboard.overview.content_count" value={analytics.content_count ?? 0} />
 		<MetricCard labelKey="dashboard.overview.draft_count" value={analytics.draft_count ?? 0} />
 		<MetricCard labelKey="dashboard.overview.published_count" value={analytics.published_count ?? 0} />
 		<MetricCard labelKey="dashboard.overview.bookmark_count" value={analytics.bookmark_count ?? 0} />
+	</div>
+
+	<!-- Phase 18.01 — wallet / unread / follower summary cards -->
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+		<a
+			href="/dashboard/wallet"
+			class="flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40"
+		>
+			<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+				<Wallet size={18} />
+			</span>
+			<span class="min-w-0 flex-1">
+				<span class="block text-xs text-[var(--color-muted)]">{t('dashboard.overview.wallet', 'Wallet')}</span>
+				<span class="block text-sm font-medium text-[var(--color-text)]">
+					{#if wallet}
+						{wallet.balance ?? 0} {wallet.currency ?? ''}
+					{:else}
+						—
+					{/if}
+				</span>
+			</span>
+		</a>
+
+		<a
+			href="/notifications"
+			class="flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40"
+		>
+			<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+				<Bell size={18} />
+			</span>
+			<span class="min-w-0 flex-1">
+				<span class="block text-xs text-[var(--color-muted)]">{t('dashboard.overview.unread', 'Unread')}</span>
+				<span class="block text-sm font-medium text-[var(--color-text)]">
+					{unread?.count ?? 0}
+				</span>
+			</span>
+		</a>
+
+		<a
+			href="/dashboard/relationships"
+			class="flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40"
+		>
+			<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+				<Users size={18} />
+			</span>
+			<span class="min-w-0 flex-1">
+				<span class="block text-xs text-[var(--color-muted)]">{t('dashboard.overview.followers', 'Followers')}</span>
+				<span class="block text-sm font-medium text-[var(--color-text)]">
+					{followers?.count ?? 0}
+				</span>
+			</span>
+		</a>
 	</div>
 
 	<DashboardPanel titleKey="dashboard.overview.recent">

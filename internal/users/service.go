@@ -594,3 +594,19 @@ func (s *Service) UpdateProfileType(ctx context.Context, tenantID, userID pgtype
 func (s *Service) ActiveUserExists(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
 	return s.store.activeUserExistsByID(ctx, tenantID, userID)
 }
+
+// GetUserContentAnalytics returns per-content analytics for the authenticated user.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (s *Service) GetUserContentAnalytics(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserContentAnalyticsRow, error) {
+	return s.store.getUserContentAnalytics(ctx, tenantID, userID, limit, offset)
+}
+
+// GetUserFollowerGrowth returns daily follower growth for the authenticated user.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (s *Service) GetUserFollowerGrowth(ctx context.Context, tenantID, userID pgtype.UUID, days int) ([]gen.GetUserFollowerGrowthRow, error) {
+	if days <= 0 {
+		days = 30
+	}
+	from := pgtype.Date{Time: time.Now().AddDate(0, 0, -days), Valid: true}
+	return s.store.getUserFollowerGrowth(ctx, tenantID, userID, &from, nil)
+}
