@@ -1012,14 +1012,15 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	post, err := h.content.CreateContent(r.Context(), tenantID, content.CreateContentInput{
-		AuthorID:    user.UserID,
-		ContentType: contentTypeBlogPost,
-		Title:       input.Title,
-		Slug:        input.Slug,
-		Body:        content.SanitizeText(input.Body),
-		BodyHtml:    content.SanitizeHTML(input.BodyHtml),
-		Status:      input.Status,
-		Visibility:  input.Visibility,
+		AuthorID:     user.UserID,
+		ContentType:  contentTypeBlogPost,
+		Title:        input.Title,
+		Slug:         input.Slug,
+		Body:         content.SanitizeText(input.Body),
+		BodyHtml:     content.SanitizeHTML(input.BodyHtml),
+		SeoIndexable: true, // default: indexable — matches the column DEFAULT
+		Status:       input.Status,
+		Visibility:   input.Visibility,
 	})
 	if err != nil {
 		slog.Error("failed to create blog post", "error", err, "title", input.Title, "slug", input.Slug)

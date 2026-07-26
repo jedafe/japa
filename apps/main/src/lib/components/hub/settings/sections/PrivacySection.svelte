@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
 	import { patchPrivacy } from '$lib/api/hub';
@@ -6,18 +7,18 @@
 	import type { PrivacySettings } from '$lib/types';
 
 	let { data }: { data: unknown } = $props();
-	const privacy = (data as PrivacySettings | null) ?? {};
+	const privacy = $derived((data as PrivacySettings | null) ?? {});
 
 	// Nested map — proves useDirtyForm's nested dirty detection (a toggle inside
 	// `prefs` must surface as dirty without manual diffing).
 	const form = new DirtyForm(
-		{
+		untrack(() => ({
 			profile_visibility: privacy.profile_visibility ?? 'public',
 			prefs: {
 				show_activity: privacy.show_activity ?? false,
 				searchable: privacy.searchable ?? true
 			}
-		},
+		})),
 		(v) =>
 			patchPrivacy({
 				profile_visibility: v.profile_visibility,

@@ -8,31 +8,45 @@ const spaces = [
 ];
 
 describe('SpaceSelector', () => {
-	it('renders all spaces as options', () => {
+	it('renders a trigger button with placeholder when no space is selected', () => {
 		const { getByRole } = render(SpaceSelector, {
 			props: { spaces, selectedId: null, onSelect: () => {} }
 		});
-		const select = getByRole('combobox') as HTMLSelectElement;
-		expect(select.options.length).toBe(3); // placeholder + 2 spaces
-		expect(select.options[1].textContent).toContain('Nigeria');
-		expect(select.options[2].textContent).toBe('UK');
+		const trigger = getByRole('button', { name: /select a space/i });
+		expect(trigger).toBeTruthy();
 	});
 
-	it('marks the primary space with an indicator', () => {
-		const { getByRole } = render(SpaceSelector, {
+	it('opens the dropdown and shows all spaces when clicked', async () => {
+		const { getByRole, getAllByRole } = render(SpaceSelector, {
 			props: { spaces, selectedId: null, onSelect: () => {} }
 		});
-		const select = getByRole('combobox') as HTMLSelectElement;
-		expect(select.options[1].textContent).toContain('★');
+		const trigger = getByRole('button', { name: /select a space/i });
+		await fireEvent.click(trigger);
+		const options = getAllByRole('option');
+		expect(options.length).toBe(2);
+		expect(options[0].textContent).toContain('Nigeria');
+		expect(options[1].textContent).toContain('UK');
+	});
+
+	it('marks the primary space with a star indicator', async () => {
+		const { getByRole, getAllByRole } = render(SpaceSelector, {
+			props: { spaces, selectedId: null, onSelect: () => {} }
+		});
+		const trigger = getByRole('button', { name: /select a space/i });
+		await fireEvent.click(trigger);
+		const options = getAllByRole('option');
+		expect(options[0].textContent).toContain('★');
 	});
 
 	it('calls onSelect with the chosen space id', async () => {
 		let chosen: string | null = null;
-		const { getByRole } = render(SpaceSelector, {
+		const { getByRole, getAllByRole } = render(SpaceSelector, {
 			props: { spaces, selectedId: null, onSelect: (id: string) => (chosen = id) }
 		});
-		const select = getByRole('combobox') as HTMLSelectElement;
-		await fireEvent.change(select, { target: { value: 's2' } });
+		const trigger = getByRole('button', { name: /select a space/i });
+		await fireEvent.click(trigger);
+		const options = getAllByRole('option');
+		await fireEvent.click(options[1]);
 		expect(chosen).toBe('s2');
 	});
 });

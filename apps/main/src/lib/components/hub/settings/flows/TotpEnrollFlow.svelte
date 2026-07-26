@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { totpEnable, totpConfirm, totpDisable } from '$lib/api/hub';
 
@@ -7,7 +8,7 @@
 
 	let { enabled = false }: { enabled?: boolean } = $props();
 
-	let step = $state<Step>(enabled ? 'enabled' : 'disabled');
+	let step = $state<Step>(untrack(() => (enabled ? 'enabled' : 'disabled')));
 	let secret = $state('');
 	let otpauthUrl = $state('');
 	let code = $state('');

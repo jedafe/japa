@@ -1,65 +1,162 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import { ImagePlus, Loader2 } from 'lucide-svelte';
-	import { initiateUpload, uploadToPresigned, confirmMedia } from '$lib/api/create';
+	import { ImagePlus, Loader2, X } from 'lucide-svelte';
 	import type { MediaAsset } from '$lib/types';
+	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 
 	interface Props {
+		/** Current cover media id (null = no cover). */
+		mediaId?: string | null;
+		/** Current cover image URL for preview (null = no preview). */
+		previewUrl?: string | null;
 		onUploaded: (asset: MediaAsset) => void;
+		onRemove?: () => void;
 	}
 
-	let { onUploaded }: Props = $props();
+	let { mediaId = null, previewUrl = null, onUploaded, onRemove }: Props = $props();
 
 	let busy = $state(false);
 	let error = $state<string | null>(null);
+	let pickerOpen = $state(false);
 
-	async function handleFile(e: Event) {
-		const input = e.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-		busy = true;
-		error = null;
-		try {
-			// Step 1: initiate — backend creates a media row + returns a presigned URL.
-			const init = await initiateUpload({
-				filename: file.name,
-				mime_type: file.type,
-				file_size: file.size
-			});
-			if (init.error || !init.data) throw new Error(init.error?.message ?? 'initiate failed');
+	function openPicker() {
+		if (busy) return;
+		pickerOpen = true;
+	}
 
-			// Step 2: upload — PUT raw bytes directly to the presigned SeaweedFS URL.
-			const up = await uploadToPresigned(init.data.presigned_url, file);
-			if (!up.ok) throw new Error('upload failed');
-
-			// Step 3: confirm — tell the backend the upload landed; get the canonical URL.
-			const conf = await confirmMedia(init.data.media_id);
-			if (conf.error || !conf.data) throw new Error(conf.error?.message ?? 'confirm failed');
-			onUploaded(conf.data);
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Upload failed';
-		} finally {
-			busy = false;
-			input.value = '';
-		}
+	function handleSelect(asset: MediaAsset) {
+		pickerOpen = false;
+		onUploaded(asset);
 	}
 </script>
 
-<div class="flex flex-col gap-1">
-	<label class="text-sm font-medium text-[var(--color-text)]">{t('create.label.cover')}</label>
-	<label
-		class="flex cursor-pointer items-center justify-center gap-2 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-6 text-sm text-[var(--color-muted)] hover:border-[var(--color-primary)]"
-	>
-		{#if busy}
-			<Loader2 size={18} class="animate-spin" />
-			{t('create.status.uploading')}
-		{:else}
-			<ImagePlus size={18} />
-			{t('create.placeholder.cover')}
-		{/if}
-		<input type="file" accept="image/*" class="hidden" onchange={handleFile} disabled={busy} />
-	</label>
+<div class="cover-field">
+	{#if previewUrl}
+		<!-- Preview state: show the current cover with hover actions -->
+		<div class="cover-preview">
+			<img src={previewUrl} alt="" class="cover-preview-img" />
+			<div class="cover-preview-actions">
+				<button type="button" class="cover-action-btn" onclick={openPicker} disabled={busy}>
+					{t('media.picker.tab_library')}
+				</button>
+				{#if onRemove}
+					<button
+						type="button"
+						class="cover-action-btn cover-action-remove"
+						onclick={onRemove}
+						aria-label={t('create.action.remove_tag')}
+					>
+						<X size={14} />
+					</button>
+				{/if}
+			</div>
+		</div>
+	{:else}
+		<!-- Empty state: single button that opens the Media Library modal
+		     (which has both Library and Upload New tabs) -->
+		<button type="button" class="cover-empty-btn" onclick={openPicker} disabled={busy}>
+			{#if busy}
+				<Loader2 size={18} class="animate-spin" />
+				{t('create.status.uploading')}
+			{:else}
+				<ImagePlus size={18} />
+				{t('create.placeholder.cover')}
+			{/if}
+		</button>
+	{/if}
+
 	{#if error}
-		<span class="text-xs text-red-500">{error}</span>
+		<span class="cover-error">{error}</span>
 	{/if}
 </div>
+
+{#if pickerOpen}
+	<MediaLibraryModal onSelect={handleSelect} onClose={() => (pickerOpen = false)} />
+{/if}
+
+<style>
+	.cover-field {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	/* Preview state */
+	.cover-preview {
+		position: relative;
+		overflow: hidden;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-card);
+		background: var(--color-surface-subtle);
+		aspect-ratio: 16 / 7;
+	}
+	.cover-preview-img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.cover-preview-actions {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: flex-end;
+		justify-content: flex-end;
+		gap: 6px;
+		padding: 8px;
+		background: linear-gradient(to top, rgb(0 0 0 / 0.55) 0%, transparent 50%);
+		opacity: 0;
+		transition: opacity 0.2s;
+	}
+	.cover-preview:hover .cover-preview-actions {
+		opacity: 1;
+	}
+	.cover-action-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 6px 10px;
+		border: 1px solid rgb(255 255 255 / 0.3);
+		border-radius: var(--radius);
+		background: rgb(0 0 0 / 0.6);
+		color: #fff;
+		font-size: 0.75rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+	.cover-action-btn:hover {
+		background: rgb(0 0 0 / 0.8);
+	}
+	.cover-action-remove {
+		padding: 6px;
+	}
+
+	/* Empty state */
+	.cover-empty-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		width: 100%;
+		padding: 1.5rem 1rem;
+		border: 2px dashed var(--color-border);
+		border-radius: var(--radius-card);
+		background: var(--color-surface);
+		color: var(--color-muted);
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s;
+	}
+	.cover-empty-btn:hover:not(:disabled) {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+	}
+	.cover-empty-btn:disabled {
+		opacity: 0.6;
+		cursor: progress;
+	}
+	.cover-error {
+		font-size: 0.75rem;
+		color: var(--destructive, #dc2626);
+	}
+</style>

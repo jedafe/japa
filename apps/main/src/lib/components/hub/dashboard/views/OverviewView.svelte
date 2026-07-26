@@ -24,9 +24,9 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	const overview = data as OverviewData | null;
-	const analytics = overview?.analytics ?? {};
-	const recent = overview?.recent ?? [];
+	const overview = $derived(data as OverviewData | null);
+	const analytics = $derived(overview?.analytics ?? {});
+	const recent = $derived(overview?.recent ?? []);
 </script>
 
 <section class="space-y-6">

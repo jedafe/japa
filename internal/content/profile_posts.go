@@ -3,6 +3,7 @@ package content
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -55,6 +56,7 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.Service.ListPublishedByAuthor(r.Context(), tenantID, authorID, limit, offset)
 	if err != nil {
+		slog.Error("content: ListByAuthor failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
 		return
 	}

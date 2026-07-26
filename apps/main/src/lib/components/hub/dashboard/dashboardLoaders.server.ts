@@ -12,6 +12,9 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkn
 		analytics: await apiGet<unknown>(ctx, '/me/analytics').catch(() => null),
 		recent: (await apiList<unknown>(ctx, '/me/content?page_size=5')).items
 	}),
+	analytics: async (ctx) => ({
+		analytics: await apiGet<unknown>(ctx, '/me/analytics').catch(() => null)
+	}),
 	content: async (ctx) => (await apiList<unknown>(ctx, buildContentQuery({}))).items,
 	relationships: async (ctx) => ({
 		following: (await apiList<unknown>(ctx, '/me/following')).items,

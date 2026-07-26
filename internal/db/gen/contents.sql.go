@@ -112,16 +112,21 @@ const createContent = `-- name: CreateContent :one
 
 INSERT INTO contents (
     tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
-    field_values, content_hash, geo_space_id, canonical_url, status, visibility,
-    read_time_minutes, publish_at, published_at
+    field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+    canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+    status, visibility, read_time_minutes, publish_at, published_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9,
-    $10, $11, $12, $13,
-    $14, $15, $16, $17, $18
+    $10, $11, $12,
+    $13, $14,
+    $15, $16, $17,
+    $18, $19,
+    $20, $21, $22, $23, $24
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at
 `
@@ -139,7 +144,13 @@ type CreateContentParams struct {
 	FieldValues     []byte             `json:"field_values"`
 	ContentHash     *string            `json:"content_hash"`
 	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	ReadTimeMinutes int32              `json:"read_time_minutes"`
@@ -164,6 +175,10 @@ type CreateContentRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -197,7 +212,13 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.FieldValues,
 		arg.ContentHash,
 		arg.GeoSpaceID,
+		arg.HeaderImageID,
+		arg.FeaturedImageID,
 		arg.CanonicalUrl,
+		arg.MetaTitle,
+		arg.MetaDescription,
+		arg.OgImageUrl,
+		arg.SeoIndexable,
 		arg.Status,
 		arg.Visibility,
 		arg.ReadTimeMinutes,
@@ -222,6 +243,10 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
 		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -400,7 +425,8 @@ func (q *Queries) DeleteJSONLDTemplate(ctx context.Context, arg DeleteJSONLDTemp
 const getContentByID = `-- name: GetContentByID :one
 SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -429,6 +455,10 @@ type GetContentByIDRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -464,6 +494,10 @@ func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) 
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
 		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -484,7 +518,8 @@ func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) 
 const getContentBySlug = `-- name: GetContentBySlug :one
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -512,6 +547,10 @@ type GetContentBySlugRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -546,6 +585,10 @@ func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugPara
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
 		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -770,7 +813,8 @@ func (q *Queries) ListBookmarksByUser(ctx context.Context, arg ListBookmarksByUs
 const listContentByTag = `-- name: ListContentByTag :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at
 FROM contents c
@@ -806,6 +850,10 @@ type ListContentByTagRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -851,6 +899,10 @@ func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagPara
 			&i.HeaderImageID,
 			&i.FeaturedImageID,
 			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -958,7 +1010,8 @@ func (q *Queries) ListContentTags(ctx context.Context, contentID pgtype.UUID) ([
 const listContentsByAuthorProfile = `-- name: ListContentsByAuthorProfile :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -990,6 +1043,10 @@ type ListContentsByAuthorProfileRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -1035,6 +1092,10 @@ func (q *Queries) ListContentsByAuthorProfile(ctx context.Context, arg ListConte
 			&i.HeaderImageID,
 			&i.FeaturedImageID,
 			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -1062,7 +1123,8 @@ func (q *Queries) ListContentsByAuthorProfile(ctx context.Context, arg ListConte
 const listContentsBySpace = `-- name: ListContentsBySpace :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -1097,6 +1159,10 @@ type ListContentsBySpaceRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -1142,6 +1208,10 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.HeaderImageID,
 			&i.FeaturedImageID,
 			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -1169,7 +1239,8 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 const listContentsByTenant = `-- name: ListContentsByTenant :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -1205,6 +1276,10 @@ type ListContentsByTenantRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -1250,6 +1325,10 @@ func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTe
 			&i.HeaderImageID,
 			&i.FeaturedImageID,
 			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -1277,7 +1356,8 @@ func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTe
 const listContentsByType = `-- name: ListContentsByType :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -1312,6 +1392,10 @@ type ListContentsByTypeRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -1357,6 +1441,10 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 			&i.HeaderImageID,
 			&i.FeaturedImageID,
 			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -1469,6 +1557,7 @@ const listPublishedContentByAuthor = `-- name: ListPublishedContentByAuthor :man
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
        c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
        c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
@@ -1509,6 +1598,10 @@ type ListPublishedContentByAuthorRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -1561,6 +1654,10 @@ func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPubl
 			&i.HeaderImageID,
 			&i.FeaturedImageID,
 			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -1592,6 +1689,7 @@ const listPublishedContentByOrganization = `-- name: ListPublishedContentByOrgan
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
        c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
        c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
@@ -1632,6 +1730,10 @@ type ListPublishedContentByOrganizationRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -1684,6 +1786,10 @@ func (q *Queries) ListPublishedContentByOrganization(ctx context.Context, arg Li
 			&i.HeaderImageID,
 			&i.FeaturedImageID,
 			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
 			&i.Status,
 			&i.Visibility,
 			&i.IsLocked,
@@ -1776,7 +1882,8 @@ SET status = 'scheduled', publish_at = $1, updated_at = now()
 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at
 `
@@ -1803,6 +1910,10 @@ type ScheduleContentRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -1841,6 +1952,10 @@ func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
 		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -1877,14 +1992,21 @@ UPDATE contents
 SET title = $1, slug = $2, body = $3, body_html = $4,
     field_values = $5, content_hash = $6,
     geo_space_id = $7, canonical_url = $8,
-    status = $9, visibility = $10, read_time_minutes = $11,
-    publish_at = $12, published_at = $13,
-    is_locked = $14, is_pinned = $15,
-    organization_id = $16, updated_at = now()
-WHERE id = $17 AND tenant_id = $18 AND deleted_at IS NULL
+    header_image_id = $9,
+    featured_image_id = $10,
+    meta_title = $11,
+    meta_description = $12,
+    og_image_url = $13,
+    seo_indexable = COALESCE($14, seo_indexable),
+    status = $15, visibility = $16, read_time_minutes = $17,
+    publish_at = $18, published_at = $19,
+    is_locked = $20, is_pinned = $21,
+    organization_id = $22, updated_at = now()
+WHERE id = $23 AND tenant_id = $24 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at
 `
@@ -1898,6 +2020,12 @@ type UpdateContentParams struct {
 	ContentHash     *string            `json:"content_hash"`
 	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    *bool              `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	ReadTimeMinutes int32              `json:"read_time_minutes"`
@@ -1927,6 +2055,10 @@ type UpdateContentRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -1952,6 +2084,12 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.ContentHash,
 		arg.GeoSpaceID,
 		arg.CanonicalUrl,
+		arg.HeaderImageID,
+		arg.FeaturedImageID,
+		arg.MetaTitle,
+		arg.MetaDescription,
+		arg.OgImageUrl,
+		arg.SeoIndexable,
 		arg.Status,
 		arg.Visibility,
 		arg.ReadTimeMinutes,
@@ -1981,6 +2119,10 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
 		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
@@ -2005,7 +2147,8 @@ SET status = $1, updated_at = now(),
 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at
 `
@@ -2032,6 +2175,10 @@ type UpdateContentStatusRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -2066,6 +2213,10 @@ func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStat
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
 		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,

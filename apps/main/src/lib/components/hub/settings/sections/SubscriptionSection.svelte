@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { cancelSubscription, reactivateSubscription } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
@@ -12,7 +13,7 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	let sub = $state<Subscription>((data as Subscription | null) ?? {});
+	let sub = $state<Subscription>(untrack(() => (data as Subscription | null) ?? {}));
 	let cancelOpen = $state(false);
 	let error = $state<string | null>(null);
 

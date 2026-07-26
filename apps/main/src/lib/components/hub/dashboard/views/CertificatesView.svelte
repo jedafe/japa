@@ -12,7 +12,7 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	const certificates = (data as Certificate[] | null) ?? [];
+	const certificates = $derived((data as Certificate[] | null) ?? []);
 </script>
 
 <section class="space-y-4">

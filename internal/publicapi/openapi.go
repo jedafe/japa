@@ -40,22 +40,26 @@ func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
 }
 
 // buildPublicPaths constructs the paths object for every public endpoint.
+//
+// Public API routes are mounted under /public/ to avoid chi radix-tree
+// shadowing with the main API routes (server.go). The OpenAPI spec reflects
+// these actual paths.
 func buildPublicPaths() map[string]any {
 	return map[string]any{
-		"/spaces":                   spacesPath(),
-		"/spaces/{id}":              spaceByIDPath(),
-		"/content":                  contentPath(),
-		"/content/{id}":             contentByIDPath(),
-		"/content/{id}/comments":    contentCommentsPath(),
-		"/users":                    usersPath(),
-		"/users/{id}":               userByIDPath(),
-		"/tags":                     tagsPath(),
-		"/tags/{slug}":              tagBySlugPath(),
-		"/search":                   searchPath(),
-		"/trending/content":         trendingContentPath(),
-		"/trending/tags":            trendingTagsPath(),
-		"/trending/spaces":          trendingSpacesPath(),
-		"/trending/users":           trendingUsersPath(),
+		"/public/spaces":                   spacesPath(),
+		"/public/spaces/{id}":              spaceByIDPath(),
+		"/public/content":                  contentPath(),
+		"/public/content/{id}":             contentByIDPath(),
+		"/public/content/{id}/comments":    contentCommentsPath(),
+		"/public/users":                    usersPath(),
+		"/public/users/{id}":               userByIDPath(),
+		"/public/tags":                     tagsPath(),
+		"/public/tags/{slug}":              tagBySlugPath(),
+		"/public/search":                   searchPath(),
+		"/trending/content":                trendingContentPath(),
+		"/trending/tags":                   trendingTagsPath(),
+		"/trending/spaces":                 trendingSpacesPath(),
+		"/trending/users":                  trendingUsersPath(),
 	}
 }
 

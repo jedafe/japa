@@ -10,6 +10,12 @@ export interface CreateContentInput {
 	body_html?: string;
 	field_values?: Record<string, unknown>;
 	canonical_url?: string | null;
+	header_image_id?: string | null;
+	featured_image_id?: string | null;
+	meta_title?: string | null;
+	meta_description?: string | null;
+	og_image_url?: string | null;
+	seo_indexable?: boolean;
 	status?: string;
 	visibility?: string;
 	publish_at?: string | null;
@@ -82,6 +88,25 @@ export async function uploadToPresigned(
 }
 
 export const confirmMedia = (id: string) => api.post<MediaAsset>(`/media/confirm/${id}`);
+
+/* ---- media library (GET /me/media — ADR-034 Modal Picker) ----
+ * Returns the caller's own uploaded media, paginated. Used by the
+ * MediaLibraryModal component to let users pick from existing uploads
+ * instead of re-uploading. Optional filters: type (image|video|…), q
+ * (filename search), page (1-based). */
+export interface ListMyMediaParams {
+	type?: string;
+	q?: string;
+	page?: number;
+}
+export const listMyMedia = (params: ListMyMediaParams = {}) => {
+	const qs = new URLSearchParams();
+	if (params.type) qs.set('type', params.type);
+	if (params.q) qs.set('q', params.q);
+	if (params.page) qs.set('page', String(params.page));
+	const suffix = qs.toString() ? `?${qs.toString()}` : '';
+	return api.get<MediaAsset[]>(`/me/media${suffix}`);
+};
 
 /* ---- trigger search ---- */
 export async function searchHits(

@@ -13,7 +13,7 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	const enrollments = (data as Enrollment[] | null) ?? [];
+	const enrollments = $derived((data as Enrollment[] | null) ?? []);
 </script>
 
 <section class="space-y-4">

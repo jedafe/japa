@@ -46,7 +46,10 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 	}).extend({ name: 'interlink' });
 
 	return [
-		StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+		// StarterKit v3 ships with Link — disable it here so our separately
+		// configured Link below doesn't trigger a "Duplicate extension names"
+		// console warning.
+		StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: false }),
 		Image.configure({ inline: true, allowBase64: false }),
 		Link.configure({ openOnClick: false, autolink: true }),
 		Placeholder.configure({ placeholder: 'Write something…' }),

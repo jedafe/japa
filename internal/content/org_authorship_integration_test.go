@@ -37,6 +37,7 @@ func TestCreateContent_OrgAttribution_Permission(t *testing.T) {
 			Title:          "Hello from Acme",
 			Body:           "body",
 			BodyHtml:       "<p>body</p>",
+			SeoIndexable:   true,
 			Status:         "published",
 			Visibility:     "public",
 		}

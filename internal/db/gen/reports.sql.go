@@ -17,7 +17,8 @@ SET auto_hidden = true, auto_hidden_at = now()
 WHERE id = $1 AND tenant_id = $2 AND auto_hidden = false
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at
 `
@@ -43,6 +44,10 @@ type AutoHideContentRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -77,6 +82,10 @@ func (q *Queries) AutoHideContent(ctx context.Context, arg AutoHideContentParams
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
 		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,
