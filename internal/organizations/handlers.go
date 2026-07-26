@@ -1,6 +1,7 @@
 package organizations
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -19,11 +20,18 @@ import (
 // Handlers provides HTTP handlers for organization management.
 type Handlers struct {
 	service *Service
+	follows FollowService
+}
+
+// FollowService is the subset of the follows.Service used by org handlers.
+// Ref: japaconnect-engineering/sections/31-follow-system.md
+type FollowService interface {
+	ToggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
 }
 
 // NewHandlers creates a Handlers instance with the given Service.
-func NewHandlers(service *Service) *Handlers {
-	return &Handlers{service: service}
+func NewHandlers(service *Service, follows FollowService) *Handlers {
+	return &Handlers{service: service, follows: follows}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -219,6 +227,32 @@ type updateOrganizationRequest struct {
 	WebsiteURL  *string `json:"website_url"`
 	CountryCode *string `json:"country_code"`
 	OrgType     *string `json:"org_type"`
+}
+
+// ListMyOrganizations handles GET /me/organizations — orgs the caller is a
+// member of, with the caller's role projected through. Used by the dashboard
+// "Organizations" rail entry to list orgs the user can administer.
+func (h *Handlers) ListMyOrganizations(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	orgs, err := h.service.ListMyOrganizations(r.Context(), tenantID, user.UserID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": orgs})
 }
 
 // UpdateOrganization handles PATCH /organizations/{id}.
@@ -594,4 +628,67 @@ func (h *Handlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Claim reviewed"}})
+}
+
+// entityTypeOrganization is the follows.entity_type value for organizations.
+const entityTypeOrganization = "organization"
+
+// ToggleFollow handles POST/DELETE /api/v1/organizations/{id}/follow.
+// Ref: japaconnect-engineering/sections/31-follow-system.md
+func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
+	orgID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	user, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	following, err := h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, entityTypeOrganization, orgID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to toggle follow")
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": false}})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"following": following}})
+}
+
+// GetOrganizationAnalytics handles GET /api/v1/organizations/{id}/analytics.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Request) {
+	orgID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	analytics, err := h.service.GetOrganizationAnalytics(r.Context(), orgID, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Organization not found")
+			return
+		}
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": analytics})
 }

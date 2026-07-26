@@ -714,8 +714,8 @@ LIMIT $6 OFFSET $5
 type ListActiveCouponsByTenantParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	ProviderID pgtype.UUID `json:"provider_id"`
-	CouponType string      `json:"coupon_type"`
-	Search     string      `json:"search"`
+	CouponType *string     `json:"coupon_type"`
+	Search     *string     `json:"search"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -945,10 +945,10 @@ LIMIT $7 OFFSET $6
 
 type ListCouponsByTenantParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
-	Status     string      `json:"status"`
-	CouponType string      `json:"coupon_type"`
+	Status     *string     `json:"status"`
+	CouponType *string     `json:"coupon_type"`
 	ProviderID pgtype.UUID `json:"provider_id"`
-	Search     string      `json:"search"`
+	Search     *string     `json:"search"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }

@@ -1,5 +1,5 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
-import type { SessionUser, ThemeName } from '$lib/types';
+import type { SessionUser, ThemeName, Locale } from '$lib/types';
 
 declare global {
 	namespace App {
@@ -16,10 +16,13 @@ declare global {
 			theme: ThemeName;
 			/** Hostname (port stripped) used for backend tenant resolution. */
 			tenantHost: string;
+			/** Resolved UI locale, from the jc_locale cookie ('en' | 'fr'). */
+			locale: Locale;
 		}
 		interface PageData {
 			user: SessionUser | null;
 			theme: ThemeName;
+			locale: Locale;
 		}
 		// interface PageState {}
 		// interface Platform {}

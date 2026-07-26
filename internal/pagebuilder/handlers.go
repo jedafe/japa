@@ -661,6 +661,23 @@ func (h *Handlers) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
+// ListPublishedPages handles GET /pages — public endpoint, no auth required.
+// Returns only pages with status='published', ordered by created_at DESC.
+func (h *Handlers) ListPublishedPages(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	pages, err := h.Service.ListPublishedPages(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": pages})
+}
+
 // GetPublishedPage handles GET /pages/{slug} — public endpoint, no auth required.
 func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)

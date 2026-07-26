@@ -13,6 +13,10 @@ import KnowledgeBaseView from './views/KnowledgeBaseView.svelte';
  * `component` is null for views listed in the rail but not yet built, and
  * `backendReady:false` gates both the rail (disabled) and the route (404).
  *
+ * `isRoute: true` marks entries that are separate route folders (e.g.
+ * /dashboard/tickets) rather than `[view]` slugs — they have no component but
+ * are enabled in the rail and link to their own route.
+ *
  * Ref: japaconnect-engineering/sections/23-main-site-frontend.md (Dashboard hub)
  */
 export interface ViewMeta {
@@ -22,6 +26,8 @@ export interface ViewMeta {
 	group: HubGroup;
 	backendReady: boolean;
 	component: Component<{ data: unknown }> | null;
+	/** Marks a separate route folder (no [view] component); rail links to it. */
+	isRoute?: boolean;
 }
 
 export const DEFAULT_VIEW = 'overview';
@@ -33,7 +39,13 @@ export const DASHBOARD_VIEWS: ViewMeta[] = [
 	{ slug: 'relationships', labelKey: 'dashboard.nav.relationships', icon: 'users', group: 'activity', backendReady: true, component: RelationshipsView },
 	{ slug: 'learning', labelKey: 'dashboard.nav.learning', icon: 'graduation-cap', group: 'activity', backendReady: true, component: LearningView },
 	{ slug: 'certificates', labelKey: 'dashboard.nav.certificates', icon: 'award', group: 'activity', backendReady: true, component: CertificatesView },
-	{ slug: 'knowledge-base', labelKey: 'dashboard.nav.knowledge_base', icon: 'book-open', group: 'activity', backendReady: true, component: KnowledgeBaseView }
+	{ slug: 'knowledge-base', labelKey: 'dashboard.nav.knowledge_base', icon: 'book-open', group: 'activity', backendReady: true, component: KnowledgeBaseView },
+	// Separate route folders (no [view] component) — linked from the rail.
+	{ slug: 'tickets', labelKey: 'dashboard.nav.tickets', icon: 'ticket', group: 'activity', backendReady: true, component: null, isRoute: true },
+	{ slug: 'bookmarks', labelKey: 'dashboard.nav.bookmarks', icon: 'bookmark', group: 'activity', backendReady: true, component: null, isRoute: true },
+	{ slug: 'media', labelKey: 'dashboard.nav.media', icon: 'image', group: 'activity', backendReady: true, component: null, isRoute: true },
+	{ slug: 'spaces', labelKey: 'dashboard.nav.spaces', icon: 'users-round', group: 'activity', backendReady: true, component: null, isRoute: true },
+	{ slug: 'organizations', labelKey: 'dashboard.nav.organizations', icon: 'building-2', group: 'activity', backendReady: true, component: null, isRoute: true }
 ];
 
 export function resolveView(slug: string): ViewMeta | null {

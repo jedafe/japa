@@ -262,3 +262,26 @@ SELECT EXISTS (
     SELECT 1 FROM users
     WHERE tenant_id = @tenant_id AND id = @id AND status = 'active'
 ) AS exists;
+
+-- name: GetUserContentAnalytics :many
+-- Per-content analytics breakdown for the authenticated user (Section 40).
+-- Returns each published/draft content item with its view/comment/share counts.
+SELECT c.id, c.title, c.content_type, c.status, c.view_count, c.comment_count, c.share_count, c.created_at
+FROM contents c
+WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
+ORDER BY c.view_count DESC NULLS LAST, c.created_at DESC
+LIMIT $3 OFFSET $4;
+
+-- name: GetUserFollowerGrowth :many
+-- Daily follower growth for the authenticated user (Section 40).
+-- Counts new follows where entity_type = 'user' and entity_id = the user,
+-- grouped by day.
+SELECT date_trunc('day', f.created_at)::date AS day, COUNT(*)::bigint AS new_followers
+FROM follows f
+WHERE f.tenant_id = $1
+  AND f.entity_type = 'user'
+  AND f.entity_id = $2
+  AND ($3::date IS NULL OR f.created_at::date >= $3)
+  AND ($4::date IS NULL OR f.created_at::date <= $4)
+GROUP BY 1
+ORDER BY 1 DESC;

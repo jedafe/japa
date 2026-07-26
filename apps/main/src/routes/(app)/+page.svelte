@@ -3,6 +3,7 @@
 	import FeedTabs from '$lib/components/feed/FeedTabs.svelte';
 	import FeedSortBar from '$lib/components/feed/FeedSortBar.svelte';
 	import FeedList from '$lib/components/feed/FeedList.svelte';
+	import FeedUpdatePill from '$lib/components/feed/FeedUpdatePill.svelte';
 	import LandingPage from '$lib/components/pagebuilder/LandingPage.svelte';
 	import GuestLanding from '$lib/components/pagebuilder/GuestLanding.svelte';
 	import { t } from '$lib/i18n';
@@ -69,6 +70,8 @@
 	<div class="mx-auto w-full max-w-2xl">
 		<FeedTabs tab={data.tab} sort={data.sort} authed={data.authed} />
 		<FeedSortBar tab={data.tab} sort={data.sort} />
+		<!-- Phase 23 — live feed update pill (driven by WS feed_update events) -->
+		<FeedUpdatePill />
 		<div class="p-3">
 			<FeedList
 				items={data.items}

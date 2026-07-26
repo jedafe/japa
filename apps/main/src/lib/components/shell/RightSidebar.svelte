@@ -1,9 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { DropdownMenu } from 'bits-ui';
-	import { Search, Sun, Moon, User, LogIn, LogOut } from 'lucide-svelte';
+	import { Search, Sun, Moon, Languages } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
+	import SearchAutocomplete from './SearchAutocomplete.svelte';
+	import UserDropdown from './UserDropdown.svelte';
+	import { AdSlot } from '$lib/components/ui';
 	import type { SessionUser, TagSuggestion, SpaceSuggestion } from '$lib/types';
 
 	interface Props {
@@ -15,6 +17,12 @@
 	}
 
 	let { user, trendingTags = [], suggestedSpaces = [], sidebar }: Props = $props();
+
+	/** Current path without the leading slash, for the /fr /en redirect targets. */
+	function currentPath(): string {
+		if (typeof window === 'undefined') return '';
+		return window.location.pathname.slice(1);
+	}
 </script>
 
 <aside class="flex h-full flex-col gap-4 overflow-y-auto px-4 py-3">
@@ -22,18 +30,7 @@
 	<div
 		class="sticky top-0 z-10 -mx-4 flex items-center gap-2 bg-[var(--color-bg)]/90 px-4 py-2 backdrop-blur"
 	>
-		<form action="/search" method="GET" class="relative flex-1">
-			<Search
-				size={16}
-				class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
-			/>
-			<input
-				type="search"
-				name="q"
-				placeholder={t('sidebar.search_placeholder')}
-				class="w-full rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-			/>
-		</form>
+		<SearchAutocomplete />
 
 		<button
 			type="button"
@@ -44,59 +41,25 @@
 			{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 		</button>
 
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger
-				class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)] hover:ring-2 hover:ring-[var(--color-border)]"
-				aria-label={t('nav.account')}
-			>
-				{#if user?.avatar_url}
-					<img src={user.avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
-				{:else if user}
-					{user.displayName?.charAt(0)?.toUpperCase() ?? '?'}
-				{:else}
-					<User size={18} />
-				{/if}
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Portal>
-				<DropdownMenu.Content
-					align="end"
-					sideOffset={8}
-					class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
-				>
-					{#if user}
-						<DropdownMenu.Item
-							class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
-						>
-							{#snippet child({ props })}
-								<a href="/u/{user.username}" {...props}><User size={16} /> {user.displayName}</a>
-							{/snippet}
-						</DropdownMenu.Item>
-						<DropdownMenu.Separator class="my-1 h-px bg-[var(--color-border)]" />
-						<DropdownMenu.Item
-							class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
-						>
-							{#snippet child({ props })}
-								<a href="/logout" {...props}><LogOut size={16} /> {t('nav.logout')}</a>
-							{/snippet}
-						</DropdownMenu.Item>
-					{:else}
-						<DropdownMenu.Item
-							class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
-						>
-							{#snippet child({ props })}
-								<a href="/login" {...props}><LogIn size={16} /> {t('nav.login')}</a>
-							{/snippet}
-						</DropdownMenu.Item>
-					{/if}
-				</DropdownMenu.Content>
-			</DropdownMenu.Portal>
-		</DropdownMenu.Root>
+		<a
+			href={i18n.locale === 'fr' ? `/en/${currentPath()}` : `/fr/${currentPath()}`}
+			class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+			aria-label={i18n.locale === 'fr' ? t('locale.switch_to_en') : t('locale.switch_to_fr')}
+			title={i18n.locale === 'fr' ? 'English' : 'Français'}
+		>
+			<Languages size={18} />
+		</a>
+
+		<UserDropdown {user} />
 	</div>
 
 	<!-- Route-specific widgets -->
 	{#if sidebar}
 		{@render sidebar()}
 	{/if}
+
+	<!-- Phase 24 — sidebar_top ad slot (above global widgets) -->
+	<AdSlot slot="sidebar_top" format="square" />
 
 	<!-- Global widget: trending tags -->
 	{#if trendingTags.length > 0}
@@ -137,4 +100,7 @@
 			</ul>
 		</section>
 	{/if}
+
+	<!-- Phase 24 — sidebar_bottom ad slot (after global widgets) -->
+	<AdSlot slot="sidebar_bottom" format="banner" />
 </aside>

@@ -4,19 +4,51 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // GetPublicOrganization handles GET /organizations/{slug} (public). Returns the
 // lean org header for ACTIVE orgs; non-active/deleted/missing → 404 (the query
 // returns no row → handleServiceError maps pgx.ErrNoRows to 404).
+//
+// The {slug} slot also accepts a UUID: when the param parses as a UUID and the
+// caller is an authenticated member of that org, the full gen.Organization row
+// is returned (for the org admin dashboard). This avoids a routing conflict
+// between {slug} and {id} on the same path.
 func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
 
-	slug := chi.URLParam(r, "slug")
-	org, err := h.service.GetPublicOrganizationBySlug(r.Context(), slug, tenantID)
+	param := chi.URLParam(r, "slug")
+
+	// Detect UUID: if it parses as a UUID, treat it as an ID lookup.
+	var asUUID pgtype.UUID
+	if err := asUUID.Scan(param); err == nil && asUUID.Valid {
+		// Authed member path: return the full row for the admin dashboard.
+		if user := auth.FromContext(r.Context()); user != nil {
+			org, err := h.service.GetOrganization(r.Context(), asUUID, tenantID)
+			if err != nil {
+				handleServiceError(w, err)
+				return
+			}
+			isMember, err := h.service.IsMember(r.Context(), org.ID, user.UserID)
+			if err != nil || !isMember {
+				writeError(w, http.StatusForbidden, "forbidden", "You are not a member of this organization")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": org})
+			return
+		}
+		// Guest requesting by UUID: fall through to 404 (guests must use the
+		// public slug path, which returns the lean DTO for active orgs only).
+		writeError(w, http.StatusNotFound, "not_found", "Organization not found")
+		return
+	}
+
+	org, err := h.service.GetPublicOrganizationBySlug(r.Context(), param, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

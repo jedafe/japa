@@ -10,7 +10,11 @@ import { buildContentQuery } from './contentQuery';
 export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext) => Promise<unknown>> = {
 	overview: async (ctx) => ({
 		analytics: await apiGet<unknown>(ctx, '/me/analytics').catch(() => null),
-		recent: (await apiList<unknown>(ctx, '/me/content?page_size=5')).items
+		recent: (await apiList<unknown>(ctx, '/me/content?page_size=5')).items,
+		// Phase 18.01 — wallet, unread, follower summary cards.
+		wallet: await apiGet<unknown>(ctx, '/me/wallet').catch(() => null),
+		unread: await apiGet<unknown>(ctx, '/me/notifications/unread-count').catch(() => null),
+		followers: await apiGet<unknown>(ctx, '/me/followers/summary').catch(() => null)
 	}),
 	analytics: async (ctx) => ({
 		analytics: await apiGet<unknown>(ctx, '/me/analytics').catch(() => null)

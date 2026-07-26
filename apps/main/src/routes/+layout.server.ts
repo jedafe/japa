@@ -44,13 +44,28 @@ export const load: LayoutServerLoad = async (event) => {
 		}
 	}
 
+	// Authed-only: unread notification count for the LeftNav badge (Phase 23).
+	// Seeded server-side so the badge paints during SSR; the realtime store
+	// keeps it live via WebSocket notification events.
+	let unreadNotifications = 0;
+	if (user) {
+		try {
+			const res = await apiGet<{ count: number }>(ctx, '/me/notifications/unread-count');
+			unreadNotifications = res.count;
+		} catch {
+			unreadNotifications = 0;
+		}
+	}
+
 	return {
 		user,
 		theme: event.locals.theme,
+		locale: event.locals.locale,
 		menu,
 		trendingTags,
 		suggestedSpaces,
 		userSpaces,
-		navCollapsed: user?.ui?.nav_collapsed ?? false
+		navCollapsed: user?.ui?.nav_collapsed ?? false,
+		unreadNotifications
 	};
 };

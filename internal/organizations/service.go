@@ -105,6 +105,42 @@ func (s *Service) GetOrganization(ctx context.Context, id, tenantID pgtype.UUID)
 	return s.store.GetOrganizationByID(ctx, id, tenantID)
 }
 
+// IsMember reports whether the given user is a member of the organization.
+func (s *Service) IsMember(ctx context.Context, orgID, userID pgtype.UUID) (bool, error) {
+	return s.store.IsMember(ctx, orgID, userID)
+}
+
+// MyOrganization is one row of GET /me/organizations — the org + the caller's
+// role in it. The role lets the dashboard badge owner/admin/member.
+type MyOrganization struct {
+	gen.Organization
+	MemberRole string `json:"member_role"`
+}
+
+// ListMyOrganizations returns orgs the user is a member of, with the member's
+// role projected through. Used by GET /me/organizations.
+func (s *Service) ListMyOrganizations(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]MyOrganization, error) {
+	rows, err := s.store.ListOrganizationsByMember(ctx, tenantID, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("listing organizations by member: %w", err)
+	}
+	result := make([]MyOrganization, len(rows))
+	for i, r := range rows {
+		org := gen.Organization{
+			ID: r.ID, TenantID: r.TenantID, OwnerUserID: r.OwnerUserID,
+			Name: r.Name, Slug: r.Slug, Tagline: r.Tagline, Description: r.Description,
+			LogoMediaID: r.LogoMediaID, HeaderMediaID: r.HeaderMediaID,
+			WebsiteUrl: r.WebsiteUrl, CountryCode: r.CountryCode, GeoSpaceID: r.GeoSpaceID,
+			OrgType: r.OrgType, Verified: r.Verified, VerificationType: r.VerificationType,
+			FollowerCount: r.FollowerCount, MemberCount: r.MemberCount, Status: r.Status,
+			FieldValues: r.FieldValues, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			DeletedAt: r.DeletedAt,
+		}
+		result[i] = MyOrganization{Organization: org, MemberRole: r.MemberRole}
+	}
+	return result, nil
+}
+
 // GetOrganizationBySlug returns an organization by slug.
 func (s *Service) GetOrganizationBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Organization, error) {
 	return s.store.GetOrganizationBySlug(ctx, slug, tenantID)
@@ -373,4 +409,10 @@ func TokenHashForTest(token string) string {
 // NowForTest returns the current time (for testing expiration checks).
 func NowForTest() time.Time {
 	return time.Now()
+}
+
+// GetOrganizationAnalytics returns aggregated analytics for a single org.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+func (s *Service) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID) (gen.GetOrganizationAnalyticsRow, error) {
+	return s.store.GetOrganizationAnalytics(ctx, orgID, tenantID)
 }
