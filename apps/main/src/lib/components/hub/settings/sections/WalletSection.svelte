@@ -9,10 +9,10 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	const walletData = data as WalletData | null;
-	const points = walletData?.wallet?.points ?? 0;
-	const credits = walletData?.wallet?.credits ?? 0;
-	const ledger = walletData?.ledger ?? [];
+	const walletData = $derived(data as WalletData | null);
+	const points = $derived(walletData?.wallet?.points ?? 0);
+	const credits = $derived(walletData?.wallet?.credits ?? 0);
+	const ledger = $derived(walletData?.ledger ?? []);
 
 	let convertAmount = $state('');
 	let converting = $state(false);

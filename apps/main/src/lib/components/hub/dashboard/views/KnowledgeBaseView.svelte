@@ -12,7 +12,7 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	const bookmarks = (data as Bookmark[] | null) ?? [];
+	const bookmarks = $derived((data as Bookmark[] | null) ?? []);
 </script>
 
 <section class="space-y-4">

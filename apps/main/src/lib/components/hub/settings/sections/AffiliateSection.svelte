@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { createAffiliate, deleteAffiliate } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
@@ -13,7 +14,7 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	let links = $state<AffiliateLink[]>((data as AffiliateLink[] | null) ?? []);
+	let links = $state<AffiliateLink[]>(untrack(() => (data as AffiliateLink[] | null) ?? []));
 	let newUrl = $state('');
 	let newLabel = $state('');
 	let creating = $state(false);

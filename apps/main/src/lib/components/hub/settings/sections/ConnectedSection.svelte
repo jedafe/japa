@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { unlinkAccount } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
@@ -11,7 +12,7 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	let accounts = $state<ConnectedAccount[]>((data as ConnectedAccount[] | null) ?? []);
+	let accounts = $state<ConnectedAccount[]>(untrack(() => (data as ConnectedAccount[] | null) ?? []));
 
 	async function doUnlink(provider: string) {
 		const idx = accounts.findIndex((a) => a.provider === provider);

@@ -20,21 +20,27 @@ import (
 // The Service layer derives slug uniqueness, read time, and content hash
 // from these inputs.
 type CreateContentInput struct {
-	AuthorID       pgtype.UUID
-	OrganizationID pgtype.UUID
-	SpaceID        pgtype.UUID
-	ContentType  string
-	Title        string
-	Slug         string
-	Body         string
-	BodyHtml     string //nolint:revive // matches sqlc-generated field name
-	FieldValues  []byte
-	ContentHash  *string
-	GeoSpaceID   pgtype.UUID
-	CanonicalUrl *string //nolint:revive // matches sqlc-generated field name
-	Status       string
-	Visibility   string
-	PublishAt    pgtype.Timestamptz
+	AuthorID        pgtype.UUID
+	OrganizationID  pgtype.UUID
+	SpaceID         pgtype.UUID
+	ContentType     string
+	Title           string
+	Slug            string
+	Body            string
+	BodyHtml        string //nolint:revive // matches sqlc-generated field name
+	FieldValues     []byte
+	ContentHash     *string
+	GeoSpaceID      pgtype.UUID
+	HeaderImageID   pgtype.UUID
+	FeaturedImageID pgtype.UUID
+	CanonicalUrl    *string //nolint:revive // matches sqlc-generated field name
+	MetaTitle       *string
+	MetaDescription *string
+	OgImageUrl      *string //nolint:revive // matches sqlc-generated field name
+	SeoIndexable    bool
+	Status          string
+	Visibility      string
+	PublishAt       pgtype.Timestamptz
 }
 
 // CreateContent creates a new content row, ensuring slug uniqueness within
@@ -94,7 +100,13 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 		FieldValues:     fieldValues,
 		ContentHash:     contentHash,
 		GeoSpaceID:      input.GeoSpaceID,
+		HeaderImageID:   input.HeaderImageID,
+		FeaturedImageID: input.FeaturedImageID,
 		CanonicalUrl:    input.CanonicalUrl,
+		MetaTitle:       input.MetaTitle,
+		MetaDescription: input.MetaDescription,
+		OgImageUrl:      input.OgImageUrl,
+		SeoIndexable:    input.SeoIndexable,
 		Status:          input.Status,
 		Visibility:      input.Visibility,
 		ReadTimeMinutes: ComputeReadTime(input.Body),
@@ -207,20 +219,26 @@ func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgt
 
 // UpdateContentInput holds the parameters for updating an existing content row.
 type UpdateContentInput struct {
-	Title        string
-	Slug         string
-	Body         string
-	BodyHtml     string //nolint:revive // matches sqlc-generated field name
-	FieldValues  []byte
-	ContentHash  *string
-	GeoSpaceID   pgtype.UUID
-	CanonicalUrl *string //nolint:revive // matches sqlc-generated field name
-	Status         string
-	Visibility     string
-	PublishAt      pgtype.Timestamptz
-	IsLocked       bool
-	IsPinned       bool
-	OrganizationID pgtype.UUID
+	Title           string
+	Slug            string
+	Body            string
+	BodyHtml        string //nolint:revive // matches sqlc-generated field name
+	FieldValues     []byte
+	ContentHash     *string
+	GeoSpaceID      pgtype.UUID
+	HeaderImageID   pgtype.UUID
+	FeaturedImageID pgtype.UUID
+	CanonicalUrl    *string //nolint:revive // matches sqlc-generated field name
+	MetaTitle       *string
+	MetaDescription *string
+	OgImageUrl      *string //nolint:revive // matches sqlc-generated field name
+	SeoIndexable    *bool
+	Status          string
+	Visibility      string
+	PublishAt       pgtype.Timestamptz
+	IsLocked        bool
+	IsPinned        bool
+	OrganizationID  pgtype.UUID
 }
 
 // UpdateContent updates an existing content row, recording a revision and
@@ -279,7 +297,13 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		FieldValues:     fieldValues,
 		ContentHash:     input.ContentHash,
 		GeoSpaceID:      input.GeoSpaceID,
+		HeaderImageID:   input.HeaderImageID,
+		FeaturedImageID: input.FeaturedImageID,
 		CanonicalUrl:    input.CanonicalUrl,
+		MetaTitle:       input.MetaTitle,
+		MetaDescription: input.MetaDescription,
+		OgImageUrl:      input.OgImageUrl,
+		SeoIndexable:    input.SeoIndexable,
 		Status:          input.Status,
 		Visibility:      input.Visibility,
 		ReadTimeMinutes: ComputeReadTime(input.Body),

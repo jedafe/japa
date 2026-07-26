@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { isExceptionRoute } from '$lib/components/create/gate';
+	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
 	import { api } from '$lib/api/client';
 	import type { LayoutData } from './$types';
 
@@ -17,6 +18,9 @@
 
 	// Seed from the server value once; thereafter this is user-controlled.
 	let collapsed = $state(untrack(() => data.navCollapsed));
+
+	// Route-specific right-sidebar snippet (set by child routes via setSidebar).
+	const routeSidebar = $derived(sidebarStore.current);
 
 	async function toggleCollapse() {
 		const next = !collapsed;
@@ -38,7 +42,9 @@
 		onToggleCollapse={toggleCollapse}
 		trendingTags={data.trendingTags}
 		suggestedSpaces={data.suggestedSpaces}
+		userSpaces={data.userSpaces}
 		hideRightSidebar={exception}
+		sidebar={routeSidebar ?? undefined}
 	>
 		{@render children()}
 	</AppShell>

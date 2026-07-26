@@ -1892,18 +1892,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public API resource endpoints (Section 47 — api.japaconnect.com).
 			// Gated by API key auth via X-API-Key header. These are read-only
 			// endpoints for external integrations.
+			//
+			// Mounted under /public/ to avoid chi radix-tree shadowing: the main
+			// API registers /content/{slug}, /spaces, /spaces/{slug}, /tags,
+			// /users/{id}, /search, and /me on the same router. Chi v5 treats
+			// {slug} and {id} as the same wildcard pattern, so registering both
+			// /content/{slug} and /content/{id} on the same tree causes the
+			// second registration to silently overwrite the first. The /public/
+			// prefix keeps the public API routes at a distinct path that does
+			// not collide with the main API routes.
 			r.Group(func(r chi.Router) {
 				r.Use(publicapi.APIKeyMiddleware(publicAPIService))
 				r.Use(publicapi.SlidingWindowRateLimit(vkClient.Redis()))
 
-				r.Get("/content/{id}", publicAPIHandlers.GetContentByID)
-				r.Get("/spaces", publicAPIHandlers.ListSpaces)
-				r.Get("/spaces/{slug}", publicAPIHandlers.GetSpaceBySlug)
-				r.Get("/tags", publicAPIHandlers.ListTags)
-				r.Get("/users/{id}", publicAPIHandlers.GetUserByID)
-				r.Get("/search", publicAPIHandlers.SearchContent)
-			r.With(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/me", publicAPIHandlers.GetMyProfile)
-		})
+				r.Get("/public/content/{id}", publicAPIHandlers.GetContentByID)
+				r.Get("/public/spaces", publicAPIHandlers.ListSpaces)
+				r.Get("/public/spaces/{slug}", publicAPIHandlers.GetSpaceBySlug)
+				r.Get("/public/tags", publicAPIHandlers.ListTags)
+				r.Get("/public/users/{id}", publicAPIHandlers.GetUserByID)
+				r.Get("/public/search", publicAPIHandlers.SearchContent)
+				r.With(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/public/me", publicAPIHandlers.GetMyProfile)
+			})
 
 				// User Profile & Preferences routes (catalog: /me, /me/profile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction())).Get("/me", usersHandlers.GetMyProfile)
