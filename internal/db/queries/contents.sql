@@ -7,23 +7,29 @@
 -- name: CreateContent :one
 INSERT INTO contents (
     tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
-    field_values, content_hash, geo_space_id, canonical_url, status, visibility,
-    read_time_minutes, publish_at, published_at
+    field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+    canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+    status, visibility, read_time_minutes, publish_at, published_at
 ) VALUES (
     @tenant_id, @author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html,
-    @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id), sqlc.narg(canonical_url),
+    @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id),
+    sqlc.narg(header_image_id), sqlc.narg(featured_image_id),
+    sqlc.narg(canonical_url), sqlc.narg(meta_title), sqlc.narg(meta_description),
+    sqlc.narg(og_image_url), @seo_indexable,
     @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at)
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at;
 
 -- name: GetContentByID :one
 SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -32,7 +38,8 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 -- name: GetContentBySlug :one
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -41,7 +48,8 @@ WHERE slug = @slug AND tenant_id = @tenant_id AND deleted_at IS NULL;
 -- name: ListContentsByTenant :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -56,7 +64,8 @@ LIMIT @page_limit;
 -- name: ListContentsByType :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -70,7 +79,8 @@ LIMIT @page_limit;
 -- name: ListContentsBySpace :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -86,6 +96,12 @@ UPDATE contents
 SET title = @title, slug = @slug, body = @body, body_html = @body_html,
     field_values = @field_values, content_hash = sqlc.narg(content_hash),
     geo_space_id = sqlc.narg(geo_space_id), canonical_url = sqlc.narg(canonical_url),
+    header_image_id = sqlc.narg(header_image_id),
+    featured_image_id = sqlc.narg(featured_image_id),
+    meta_title = sqlc.narg(meta_title),
+    meta_description = sqlc.narg(meta_description),
+    og_image_url = sqlc.narg(og_image_url),
+    seo_indexable = COALESCE(sqlc.narg(seo_indexable), seo_indexable),
     status = @status, visibility = @visibility, read_time_minutes = @read_time_minutes,
     publish_at = sqlc.narg(publish_at), published_at = sqlc.narg(published_at),
     is_locked = @is_locked, is_pinned = @is_pinned,
@@ -93,7 +109,8 @@ SET title = @title, slug = @slug, body = @body, body_html = @body_html,
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at;
 
@@ -104,7 +121,8 @@ SET status = @status, updated_at = now(),
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at;
 
@@ -118,7 +136,8 @@ SET status = 'scheduled', publish_at = @publish_at, updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at;
 
@@ -251,7 +270,8 @@ ORDER BY t.name;
 -- name: ListContentByTag :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at
 FROM contents c
@@ -312,7 +332,8 @@ WHERE user_id = @user_id AND tenant_id = @tenant_id;
 -- name: ListContentsByAuthorProfile :many
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+       status, visibility, is_locked, is_pinned, read_time_minutes,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at
 FROM contents
@@ -327,6 +348,7 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
        c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
        c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
@@ -349,6 +371,7 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
        c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
        c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,

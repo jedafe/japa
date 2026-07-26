@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { ComposerState, type ComposerDeps } from './composerState.svelte';
 	import { evaluatePublish } from './gate';
@@ -37,21 +37,32 @@
 	let { types, spaces, fieldGroups, series, draft, user }: Props = $props();
 
 	// ---- form state ----
-	let selectedType = $state<TypeEntry>(types[0] ?? resolveType('blog_post'));
-	let title = $state(draft?.title ?? '');
-	let slug = $state(draft?.slug ?? '');
-	let bodyHtml = $state(draft?.body_html ?? '');
-	let spaceId = $state<string | null>(draft?.space_id ?? spaces.find((s) => s.is_primary)?.id ?? null);
-	let visibility = $state<Visibility>((draft?.visibility as Visibility) ?? 'public');
-	let canonicalUrl = $state(draft?.canonical_url ?? '');
-	let publishAt = $state(draft?.publish_at ?? null);
+	let selectedType = $state<TypeEntry>(untrack(() => types[0] ?? resolveType('blog_post')));
+	let title = $state(untrack(() => draft?.title ?? ''));
+	let slug = $state(untrack(() => draft?.slug ?? ''));
+	let bodyHtml = $state(untrack(() => draft?.body_html ?? ''));
+	let spaceId = $state<string | null>(untrack(() => draft?.space_id ?? spaces.find((s) => s.is_primary)?.id ?? null));
+	let visibility = $state<Visibility>(untrack(() => (draft?.visibility as Visibility) ?? 'public'));
+	let canonicalUrl = $state(untrack(() => draft?.canonical_url ?? ''));
+	let publishAt = $state(untrack(() => draft?.publish_at ?? null));
 	let tags = $state<string[]>([]);
 	let seriesId = $state<string | null>(null);
-	let fieldValues = $state<Record<string, unknown>>(draft?.field_values ?? {});
+	let fieldValues = $state<Record<string, unknown>>(untrack(() => draft?.field_values ?? {}));
 	let coverMediaId = $state<string | null>(null);
+	let coverPreviewUrl = $state<string | null>(null);
+	// SEO + feature image fields (migration 000165)
+	let featuredImageId = $state<string | null>(untrack(() => draft?.featured_image_id ?? null));
+	let metaTitle = $state<string | null>(untrack(() => draft?.meta_title ?? null));
+	let metaDescription = $state<string | null>(untrack(() => draft?.meta_description ?? null));
+	let ogImageUrl = $state<string | null>(untrack(() => draft?.og_image_url ?? null));
+	let ogImagePreviewUrl = $state<string | null>(null);
+	let seoIndexable = $state<boolean>(untrack(() => draft?.seo_indexable ?? true));
 	// comparison-only
 	let items = $state<{ label: string }[]>([]);
 	let dimensions = $state<{ label: string }[]>([]);
+
+	// ---- Guide panel: track which field is focused for contextual help ----
+	let focusedField = $state<'space' | 'tags' | 'series' | 'body' | null>(null);
 
 	// ---- autosave machine ----
 	let composer: ComposerState | null = $state(null);
@@ -63,6 +74,11 @@
 		body_html: bodyHtml,
 		field_values: fieldValues,
 		canonical_url: canonicalUrl || null,
+		featured_image_id: featuredImageId,
+		meta_title: metaTitle,
+		meta_description: metaDescription,
+		og_image_url: ogImageUrl,
+		seo_indexable: seoIndexable,
 		visibility,
 		publish_at: publishAt,
 		space_id: spaceId
@@ -103,9 +119,23 @@
 			canPublish: () => gate.ok,
 			getPublishAt: () => publishAt
 		});
+		// Replay the current tags/series into the freshly-created composer so
+		// they are reconciled after the first create. (Fix: wire tags + series.)
+		composer.setTags(tags);
+		composer.setSeries(seriesId);
 	});
 
 	onDestroy(() => composer?.dispose());
+
+	// Wire tags and series to the composer whenever they change — without
+	// these the UI collects tags/series but never sends them to the backend.
+	// (Fix: wire tags + series to composer reconciliation.)
+	$effect(() => {
+		composer?.setTags(tags);
+	});
+	$effect(() => {
+		composer?.setSeries(seriesId);
+	});
 
 	function markDirty() {
 		composer?.markDirty();
@@ -123,9 +153,9 @@
 <div class="composer-grid">
 	<div class="composer-main">
 		<div class="composer-header">
-			<h1 class="text-lg font-semibold">{t('create.title')}</h1>
+			<h1 class="composer-title">{t('create.title')}</h1>
 			<select
-				class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm"
+				class="composer-type-select"
 				value={selectedType.value}
 				onchange={(e) => (selectedType = resolveType(e.currentTarget.value))}
 			>
@@ -141,11 +171,27 @@
 			{spaces}
 			selectedId={spaceId}
 			onSelect={(id) => { spaceId = id; markDirty(); }}
+			onfocus={() => (focusedField = 'space')}
 		/>
 
-		<TagInput {tags} onTags={(next) => { tags = next; markDirty(); }} />
+		<TagInput {tags} onTags={(next) => { tags = next; markDirty(); }} onfocus={() => (focusedField = 'tags')} />
 
-		<CoverUploader onUploaded={(asset: MediaAsset) => { coverMediaId = asset.id; markDirty(); }} />
+		<CoverUploader
+			mediaId={coverMediaId}
+			previewUrl={coverPreviewUrl}
+			onUploaded={(asset: MediaAsset) => {
+				coverMediaId = asset.id;
+				coverPreviewUrl = asset.url;
+				featuredImageId = asset.id;
+				markDirty();
+			}}
+			onRemove={() => {
+				coverMediaId = null;
+				coverPreviewUrl = null;
+				featuredImageId = null;
+				markDirty();
+			}}
+		/>
 
 		{#if selectedType.formKind === 'comparison'}
 			<ComparisonBuilder
@@ -155,7 +201,12 @@
 				onedit={markDirty}
 			/>
 		{:else}
-			<PostEditor html={bodyHtml} onedit={markDirty} />
+			<PostEditor
+				html={bodyHtml}
+				onedit={markDirty}
+				onhtml={(v) => { bodyHtml = v; }}
+				onfocus={() => (focusedField = 'body')}
+			/>
 		{/if}
 
 		<SaveBar
@@ -170,7 +221,7 @@
 
 	<div class="composer-right">
 		<CreateRightPanel
-			focusedField={null}
+			{focusedField}
 			{visibility}
 			{canonicalUrl}
 			{publishAt}
@@ -178,11 +229,25 @@
 			{fieldGroups}
 			{series}
 			{seriesId}
+			{metaTitle}
+			{metaDescription}
+			{ogImageUrl}
+			{ogImagePreviewUrl}
+			{seoIndexable}
 			onvisibility={(v) => { visibility = v; markDirty(); }}
 			oncanonical={(v) => { canonicalUrl = v; markDirty(); }}
 			onpublishat={(v) => { publishAt = v; markDirty(); }}
 			onfieldvalues={(v) => { fieldValues = v; markDirty(); }}
 			onseries={(id) => { seriesId = id; markDirty(); }}
+			onseriesfocus={() => (focusedField = 'series')}
+			onmetatitle={(v) => { metaTitle = v; markDirty(); }}
+			onmetadescription={(v) => { metaDescription = v; markDirty(); }}
+			onogimageselect={(asset: MediaAsset | null) => {
+				ogImageUrl = asset?.url ?? null;
+				ogImagePreviewUrl = asset?.url ?? null;
+				markDirty();
+			}}
+			onseoindexable={(v) => { seoIndexable = v; markDirty(); }}
 			onedit={markDirty}
 		/>
 	</div>
@@ -207,6 +272,28 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: 1rem;
+	}
+	.composer-title {
+		margin: 0;
+		font-size: 1.125rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	.composer-type-select {
+		padding: 6px 12px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-size: 0.875rem;
+		outline: none;
+		cursor: pointer;
+		transition: border-color 0.15s, box-shadow 0.15s;
+	}
+	.composer-type-select:focus {
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
 	}
 	.composer-right {
 		min-width: 0;

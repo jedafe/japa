@@ -4,7 +4,7 @@
 	import LeftNav from './LeftNav.svelte';
 	import RightSidebar from './RightSidebar.svelte';
 	import { t } from '$lib/i18n';
-	import type { Menu, SessionUser, TagSuggestion, SpaceSuggestion } from '$lib/types';
+	import type { Menu, SessionUser, TagSuggestion, SpaceSuggestion, UserSpaceRef } from '$lib/types';
 
 	interface Props {
 		menu: Menu | null;
@@ -13,6 +13,7 @@
 		onToggleCollapse: () => void;
 		trendingTags?: TagSuggestion[];
 		suggestedSpaces?: SpaceSuggestion[];
+		userSpaces?: UserSpaceRef[];
 		children: Snippet;
 		/** Route-specific right-sidebar widgets. */
 		sidebar?: Snippet;
@@ -27,6 +28,7 @@
 		onToggleCollapse,
 		trendingTags = [],
 		suggestedSpaces = [],
+		userSpaces = [],
 		children,
 		sidebar,
 		hideRightSidebar = false
@@ -40,7 +42,7 @@
 
 <div class="shell" class:hide-sidebar={hideRightSidebar} style="--current-nav-width: {navWidth}">
 	<div class="shell-nav">
-		<LeftNav {menu} {user} {collapsed} onToggle={onToggleCollapse} />
+		<LeftNav {menu} {user} {collapsed} {userSpaces} onToggle={onToggleCollapse} />
 	</div>
 
 	<main class="shell-center">
@@ -79,7 +81,7 @@
 		onclick={() => (mobileNavOpen = false)}
 	></button>
 	<div class="drawer">
-		<LeftNav {menu} {user} collapsed={false} onToggle={() => (mobileNavOpen = false)} />
+		<LeftNav {menu} {user} collapsed={false} {userSpaces} onToggle={() => (mobileNavOpen = false)} />
 	</div>
 {/if}
 

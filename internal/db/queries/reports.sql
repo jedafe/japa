@@ -61,6 +61,7 @@ SET auto_hidden = true, auto_hidden_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND auto_hidden = false
 RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, status, visibility, is_locked, is_pinned, read_time_minutes,
+          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+          status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at;

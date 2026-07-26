@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Select } from 'bits-ui';
+	import { untrack } from 'svelte';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
 	import { patchAccount } from '$lib/api/hub';
@@ -7,7 +8,7 @@
 	import type { MeProfile, ThemeName } from '$lib/types';
 
 	let { data }: { data: unknown } = $props();
-	const profile = data as MeProfile | null;
+	const profile = $derived(data as MeProfile | null);
 
 	const themeItems: { value: ThemeName; label: string }[] = [
 		{ value: 'light', label: 'Light' },
@@ -15,10 +16,10 @@
 	];
 
 	const form = new DirtyForm(
-		{
+		untrack(() => ({
 			username: profile?.username ?? '',
 			theme: (profile?.ui?.theme as ThemeName) ?? 'light'
-		},
+		})),
 		(v) => patchAccount({ username: v.username, ui: { theme: v.theme } })
 	);
 </script>

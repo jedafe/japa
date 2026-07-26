@@ -1,19 +1,29 @@
 <script lang="ts">
 	import clsx from 'clsx';
 	import { page } from '$app/state';
-	import { PanelLeftClose, PanelLeftOpen, PenSquare, LogIn } from 'lucide-svelte';
+	import { DropdownMenu } from 'bits-ui';
+	import {
+		PanelLeftClose,
+		PanelLeftOpen,
+		PenSquare,
+		LogIn,
+		Hash,
+		ChevronsUpDown,
+		ExternalLink
+	} from 'lucide-svelte';
 	import { resolveIcon } from '$lib/components/ui/icons';
 	import { t } from '$lib/i18n';
-	import type { Menu, MenuItem, SessionUser } from '$lib/types';
+	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '$lib/types';
 
 	interface Props {
 		menu: Menu | null;
 		user: SessionUser | null;
 		collapsed: boolean;
+		userSpaces?: UserSpaceRef[];
 		onToggle: () => void;
 	}
 
-	let { menu, user, collapsed, onToggle }: Props = $props();
+	let { menu, user, collapsed, userSpaces = [], onToggle }: Props = $props();
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
@@ -120,9 +130,60 @@
 
 	<!-- Account / Space switcher (bottom) -->
 	<div class="border-t border-[var(--color-border)] p-2">
+		{#if user && userSpaces.length > 0}
+			<!-- Space switcher — ADR-058: stays in the left nav, not the account menu -->
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger
+					class={clsx(
+						'mb-1 flex w-full items-center gap-2 rounded-[var(--radius)] p-2 text-sm text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]',
+						collapsed && 'justify-center'
+					)}
+					aria-label={t('nav.space_switcher')}
+				>
+					<Hash size={18} class="shrink-0 text-[var(--color-primary)]" />
+					{#if !collapsed}
+						<span class="min-w-0 flex-1 truncate">{t('nav.space_switcher')}</span>
+						<ChevronsUpDown size={14} class="shrink-0 text-[var(--color-muted)]" />
+					{/if}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Portal>
+					<DropdownMenu.Content
+						side="right"
+						align="start"
+						sideOffset={8}
+						class="z-50 min-w-52 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+					>
+						{#each userSpaces as sp (sp.id)}
+							<DropdownMenu.Item
+								class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
+							>
+								{#snippet child({ props })}
+									<a href={`/spaces/${sp.slug}`} {...props}>
+										<Hash size={14} class="shrink-0 text-[var(--color-muted)]" />
+										<span class="min-w-0 flex-1 truncate">{sp.name}</span>
+									</a>
+								{/snippet}
+							</DropdownMenu.Item>
+						{/each}
+						<DropdownMenu.Separator class="my-1 h-px bg-[var(--color-border)]" />
+						<DropdownMenu.Item
+							class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm font-medium text-[var(--color-primary)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
+						>
+							{#snippet child({ props })}
+								<a href="/discover?tab=spaces" {...props}>
+									<ExternalLink size={14} />
+									{t('nav.space_switcher_browse')}
+								</a>
+							{/snippet}
+						</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Portal>
+			</DropdownMenu.Root>
+		{/if}
+
 		{#if user}
 			<a
-				href="/profile"
+				href="/u/{user.username}"
 				title={collapsed ? user.displayName : undefined}
 				class={clsx('flex items-center gap-3 rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]', collapsed && 'justify-center')}
 			>

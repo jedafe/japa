@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -20,7 +21,7 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	let items = $state<ContentItem[]>((data as ContentItem[] | null) ?? []);
+	let items = $state<ContentItem[]>(untrack(() => (data as ContentItem[] | null) ?? []));
 
 	const status = $derived(page.url.searchParams.get('status') ?? 'published');
 	const typeFilter = $derived(page.url.searchParams.get('type') ?? '');

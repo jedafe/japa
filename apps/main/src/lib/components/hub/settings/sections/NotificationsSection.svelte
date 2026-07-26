@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
 	import { patchNotifications } from '$lib/api/hub';
 	import { t } from '$lib/i18n';
 
 	let { data }: { data: unknown } = $props();
-	const prefs = (data as Record<string, Record<string, boolean>> | null) ?? {};
+	const prefs = $derived((data as Record<string, Record<string, boolean>> | null) ?? {});
 
 	type NotifPrefs = {
 		email: { mentions: boolean; comments: boolean; digest: boolean };
@@ -15,7 +16,7 @@
 	// Nested-map dirty form — each toggle lives under a channel key (email/push),
 	// proving useDirtyForm's nested dirty detection.
 	const form = new DirtyForm<NotifPrefs>(
-		{
+		untrack(() => ({
 			email: {
 				mentions: prefs.email?.mentions ?? true,
 				comments: prefs.email?.comments ?? true,
@@ -25,7 +26,7 @@
 				mentions: prefs.push?.mentions ?? true,
 				comments: prefs.push?.comments ?? false
 			}
-		},
+		})),
 		(v) => patchNotifications(v as unknown as Record<string, unknown>)
 	);
 

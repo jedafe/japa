@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { createApiKey, rotateApiKey, revokeApiKey } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
@@ -17,7 +18,7 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	let keys = $state<ApiKey[]>((data as ApiKey[] | null) ?? []);
+	let keys = $state<ApiKey[]>(untrack(() => (data as ApiKey[] | null) ?? []));
 
 	let newName = $state('');
 	let newScopes = $state('');

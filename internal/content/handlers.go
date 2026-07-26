@@ -287,19 +287,25 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		ContentType  string          `json:"content_type"`
-		Title        string          `json:"title"`
-		Slug         string          `json:"slug"`
-		Body         string          `json:"body"`
-		BodyHtml     string          `json:"body_html"` //nolint:revive // matches sqlc-generated field name
-		FieldValues  json.RawMessage `json:"field_values"`
-		CanonicalUrl *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
-		Status       string          `json:"status"`
-		Visibility   string          `json:"visibility"`
-		PublishAt      *string         `json:"publish_at"`
-		SpaceID        *string         `json:"space_id"`
-		GeoSpaceID     *string         `json:"geo_space_id"`
-		OrganizationID *string         `json:"organization_id"`
+		ContentType     string          `json:"content_type"`
+		Title           string          `json:"title"`
+		Slug            string          `json:"slug"`
+		Body            string          `json:"body"`
+		BodyHtml        string          `json:"body_html"` //nolint:revive // matches sqlc-generated field name
+		FieldValues     json.RawMessage `json:"field_values"`
+		CanonicalUrl    *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
+		HeaderImageID   *string         `json:"header_image_id"`
+		FeaturedImageID *string         `json:"featured_image_id"`
+		MetaTitle       *string         `json:"meta_title"`
+		MetaDescription *string         `json:"meta_description"`
+		OgImageUrl      *string         `json:"og_image_url"` //nolint:revive // matches sqlc-generated field name
+		SeoIndexable    *bool           `json:"seo_indexable"`
+		Status          string          `json:"status"`
+		Visibility      string          `json:"visibility"`
+		PublishAt       *string         `json:"publish_at"`
+		SpaceID         *string         `json:"space_id"`
+		GeoSpaceID      *string         `json:"geo_space_id"`
+		OrganizationID  *string         `json:"organization_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -325,16 +331,23 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	createInput := CreateContentInput{
-		AuthorID:     user.UserID,
-		ContentType:  input.ContentType,
-		Title:        input.Title,
-		Slug:         input.Slug,
-		Body:         SanitizeText(input.Body),
-		BodyHtml:     SanitizeHTML(input.BodyHtml),
-		FieldValues:  input.FieldValues,
-		CanonicalUrl: input.CanonicalUrl,
-		Status:       input.Status,
-		Visibility:   input.Visibility,
+		AuthorID:        user.UserID,
+		ContentType:     input.ContentType,
+		Title:           input.Title,
+		Slug:            input.Slug,
+		Body:            SanitizeText(input.Body),
+		BodyHtml:        SanitizeHTML(input.BodyHtml),
+		FieldValues:     input.FieldValues,
+		CanonicalUrl:    input.CanonicalUrl,
+		MetaTitle:       input.MetaTitle,
+		MetaDescription: input.MetaDescription,
+		OgImageUrl:      input.OgImageUrl,
+		SeoIndexable:    true, // default: indexable; caller can override
+		Status:          input.Status,
+		Visibility:      input.Visibility,
+	}
+	if input.SeoIndexable != nil {
+		createInput.SeoIndexable = *input.SeoIndexable
 	}
 
 	if input.SpaceID != nil && *input.SpaceID != "" {
@@ -354,6 +367,20 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	if input.GeoSpaceID != nil && *input.GeoSpaceID != "" {
 		if err := createInput.GeoSpaceID.Scan(*input.GeoSpaceID); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo_space_id format")
+			return
+		}
+	}
+
+	if input.HeaderImageID != nil && *input.HeaderImageID != "" {
+		if err := createInput.HeaderImageID.Scan(*input.HeaderImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
+			return
+		}
+	}
+
+	if input.FeaturedImageID != nil && *input.FeaturedImageID != "" {
+		if err := createInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
 			return
 		}
 	}
@@ -521,19 +548,25 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Title        string          `json:"title"`
-		Slug         string          `json:"slug"`
-		Body         string          `json:"body"`
-		BodyHtml     string          `json:"body_html"` //nolint:revive // matches sqlc-generated field name
-		FieldValues  json.RawMessage `json:"field_values"`
-		CanonicalUrl *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
-		Status       string          `json:"status"`
-		Visibility   string          `json:"visibility"`
-		PublishAt      *string         `json:"publish_at"`
-		GeoSpaceID     *string         `json:"geo_space_id"`
-		OrganizationID *string         `json:"organization_id"`
-		IsLocked       bool            `json:"is_locked"`
-		IsPinned       bool            `json:"is_pinned"`
+		Title           string          `json:"title"`
+		Slug            string          `json:"slug"`
+		Body            string          `json:"body"`
+		BodyHtml        string          `json:"body_html"` //nolint:revive // matches sqlc-generated field name
+		FieldValues     json.RawMessage `json:"field_values"`
+		CanonicalUrl    *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
+		HeaderImageID   *string         `json:"header_image_id"`
+		FeaturedImageID *string         `json:"featured_image_id"`
+		MetaTitle       *string         `json:"meta_title"`
+		MetaDescription *string         `json:"meta_description"`
+		OgImageUrl      *string         `json:"og_image_url"` //nolint:revive // matches sqlc-generated field name
+		SeoIndexable    *bool           `json:"seo_indexable"`
+		Status          string          `json:"status"`
+		Visibility      string          `json:"visibility"`
+		PublishAt       *string         `json:"publish_at"`
+		GeoSpaceID      *string         `json:"geo_space_id"`
+		OrganizationID  *string         `json:"organization_id"`
+		IsLocked        bool            `json:"is_locked"`
+		IsPinned        bool            `json:"is_pinned"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -542,16 +575,20 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updateInput := UpdateContentInput{
-		Title:        input.Title,
-		Slug:         input.Slug,
-		Body:         SanitizeText(input.Body),
-		BodyHtml:     SanitizeHTML(input.BodyHtml),
-		FieldValues:  input.FieldValues,
-		CanonicalUrl: input.CanonicalUrl,
-		Status:       input.Status,
-		Visibility:   input.Visibility,
-		IsLocked:     input.IsLocked,
-		IsPinned:     input.IsPinned,
+		Title:           input.Title,
+		Slug:            input.Slug,
+		Body:            SanitizeText(input.Body),
+		BodyHtml:        SanitizeHTML(input.BodyHtml),
+		FieldValues:     input.FieldValues,
+		CanonicalUrl:    input.CanonicalUrl,
+		MetaTitle:       input.MetaTitle,
+		MetaDescription: input.MetaDescription,
+		OgImageUrl:      input.OgImageUrl,
+		SeoIndexable:    input.SeoIndexable,
+		Status:          input.Status,
+		Visibility:      input.Visibility,
+		IsLocked:        input.IsLocked,
+		IsPinned:        input.IsPinned,
 	}
 
 	// Compute content hash for duplicate detection (Rule 12).
@@ -568,6 +605,20 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	if input.OrganizationID != nil && *input.OrganizationID != "" {
 		if err := updateInput.OrganizationID.Scan(*input.OrganizationID); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
+			return
+		}
+	}
+
+	if input.HeaderImageID != nil && *input.HeaderImageID != "" {
+		if err := updateInput.HeaderImageID.Scan(*input.HeaderImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
+			return
+		}
+	}
+
+	if input.FeaturedImageID != nil && *input.FeaturedImageID != "" {
+		if err := updateInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
 			return
 		}
 	}

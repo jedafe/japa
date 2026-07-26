@@ -7,7 +7,7 @@ describe('dashboard registry', () => {
 		expect(resolveView('content')?.slug).toBe('content');
 		expect(resolveView('nope')).toBeNull();
 	});
-	it('flags analytics as not backend-ready', () => {
-		expect(resolveView('analytics')?.backendReady).toBe(false);
+	it('flags analytics as backend-ready', () => {
+		expect(resolveView('analytics')?.backendReady).toBe(true);
 	});
 });

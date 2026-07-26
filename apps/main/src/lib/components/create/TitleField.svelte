@@ -19,25 +19,69 @@
 	}
 </script>
 
-<div class="flex flex-col gap-2">
+<div class="title-field">
 	<input
 		type="text"
-		class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-lg font-semibold text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+		class="title-input"
 		placeholder={t('create.placeholder.title')}
 		value={title}
 		oninput={(e) => handleTitle(e.currentTarget.value)}
 	/>
-	<div class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
-		<span>/</span>
-		<input
-			type="text"
-			class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm outline-none focus:border-[var(--color-primary)]"
-			placeholder={t('create.placeholder.slug')}
-			value={slug}
-			oninput={(e) => {
-				slugTouched = true;
-				onSlug(suggestSlug(e.currentTarget.value));
-			}}
-		/>
-	</div>
+	<input
+		type="text"
+		class="slug-input"
+		placeholder={t('create.placeholder.slug')}
+		value={slug}
+		oninput={(e) => {
+			slugTouched = true;
+			onSlug(suggestSlug(e.currentTarget.value));
+		}}
+	/>
 </div>
+
+<style>
+	.title-field {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.title-input {
+		width: 100%;
+		padding: 10px 14px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-size: 1.125rem;
+		font-weight: 600;
+		outline: none;
+		transition: border-color 0.15s, box-shadow 0.15s;
+	}
+	.title-input::placeholder {
+		color: var(--color-muted);
+		font-weight: 500;
+	}
+	.title-input:focus {
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+
+	.slug-input {
+		width: 100%;
+		padding: 10px 14px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		color: var(--color-text-subtle);
+		font-size: 0.875rem;
+		outline: none;
+		transition: border-color 0.15s, box-shadow 0.15s;
+	}
+	.slug-input::placeholder {
+		color: var(--color-muted);
+	}
+	.slug-input:focus {
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+</style>
