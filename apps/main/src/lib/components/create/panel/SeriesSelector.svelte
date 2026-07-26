@@ -6,21 +6,39 @@
 		series: BlogSeries[];
 		seriesId: string | null;
 		onselect: (id: string | null) => void;
+		onfocus?: () => void;
 	}
 
-	let { series, seriesId, onselect }: Props = $props();
+	let { series, seriesId, onselect, onfocus }: Props = $props();
 </script>
 
-<div class="flex flex-col gap-1">
-	<label class="text-sm font-medium text-[var(--color-text)]">{t('create.label.series')}</label>
-	<select
-		class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
-		value={seriesId ?? ''}
-		onchange={(e) => onselect(e.currentTarget.value || null)}
-	>
-		<option value="">{t('create.placeholder.space')}</option>
-		{#each series as s (s.id)}
-			<option value={s.id}>{s.title}</option>
-		{/each}
-	</select>
-</div>
+<select
+	class="series-select"
+	value={seriesId ?? ''}
+	onfocus={onfocus}
+	onchange={(e) => onselect(e.currentTarget.value || null)}
+>
+	<option value="">{t('create.placeholder.series_none')}</option>
+	{#each series as s (s.id)}
+		<option value={s.id}>{s.title}</option>
+	{/each}
+</select>
+
+<style>
+	.series-select {
+		width: 100%;
+		padding: 10px 14px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-size: 1rem;
+		outline: none;
+		cursor: pointer;
+		transition: border-color 0.15s, box-shadow 0.15s;
+	}
+	.series-select:focus {
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+</style>

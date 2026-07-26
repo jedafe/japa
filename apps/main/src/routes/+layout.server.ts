@@ -1,11 +1,12 @@
 import type { LayoutServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { Menu, SpaceSuggestion, TagSuggestion } from '$lib/types';
+import type { Menu, SpaceSuggestion, TagSuggestion, UserSpaceRef } from '$lib/types';
 
 /**
  * Shared shell data for every route: the resolved session (from hooks), the
- * navigation menu, and right-sidebar suggestions. Each remote call degrades
- * gracefully — a failing widget must never blank the whole app.
+ * navigation menu, right-sidebar suggestions, and the user's joined spaces
+ * (for the LeftNav Space switcher). Each remote call degrades gracefully —
+ * a failing widget must never blank the whole app.
  */
 export const load: LayoutServerLoad = async (event) => {
 	const ctx = apiContext(event);
@@ -33,12 +34,23 @@ export const load: LayoutServerLoad = async (event) => {
 		suggestedSpaces = [];
 	}
 
+	// Authed-only: the user's joined spaces for the LeftNav Space switcher.
+	let userSpaces: UserSpaceRef[] = [];
+	if (user) {
+		try {
+			userSpaces = (await apiList<UserSpaceRef>(ctx, '/me/spaces')).items;
+		} catch {
+			userSpaces = [];
+		}
+	}
+
 	return {
 		user,
 		theme: event.locals.theme,
 		menu,
 		trendingTags,
 		suggestedSpaces,
+		userSpaces,
 		navCollapsed: user?.ui?.nav_collapsed ?? false
 	};
 };

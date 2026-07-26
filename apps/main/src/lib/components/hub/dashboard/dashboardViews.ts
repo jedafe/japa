@@ -1,6 +1,7 @@
 import type { Component } from 'svelte';
 import type { HubGroup } from '$lib/types';
 import OverviewView from './views/OverviewView.svelte';
+import AnalyticsView from './views/AnalyticsView.svelte';
 import ContentManagerView from './views/ContentManagerView.svelte';
 import RelationshipsView from './views/RelationshipsView.svelte';
 import LearningView from './views/LearningView.svelte';
@@ -27,7 +28,7 @@ export const DEFAULT_VIEW = 'overview';
 
 export const DASHBOARD_VIEWS: ViewMeta[] = [
 	{ slug: 'overview', labelKey: 'dashboard.nav.overview', icon: 'layout-dashboard', group: 'activity', backendReady: true, component: OverviewView },
-	{ slug: 'analytics', labelKey: 'dashboard.nav.analytics', icon: 'bar-chart-3', group: 'activity', backendReady: false, component: null },
+	{ slug: 'analytics', labelKey: 'dashboard.nav.analytics', icon: 'bar-chart-3', group: 'activity', backendReady: true, component: AnalyticsView },
 	{ slug: 'content', labelKey: 'dashboard.nav.content', icon: 'file-text', group: 'activity', backendReady: true, component: ContentManagerView },
 	{ slug: 'relationships', labelKey: 'dashboard.nav.relationships', icon: 'users', group: 'activity', backendReady: true, component: RelationshipsView },
 	{ slug: 'learning', labelKey: 'dashboard.nav.learning', icon: 'graduation-cap', group: 'activity', backendReady: true, component: LearningView },

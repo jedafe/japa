@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
 	import { patchProfile } from '$lib/api/hub';
@@ -6,10 +7,10 @@
 	import type { MeProfile } from '$lib/types';
 
 	let { data }: { data: unknown } = $props();
-	const profile = data as MeProfile | null;
+	const profile = $derived(data as MeProfile | null);
 
 	const form = new DirtyForm(
-		{ displayName: profile?.displayName ?? '', bio: profile?.bio ?? '' },
+		untrack(() => ({ displayName: profile?.displayName ?? '', bio: profile?.bio ?? '' })),
 		(v) => patchProfile(v)
 	);
 </script>

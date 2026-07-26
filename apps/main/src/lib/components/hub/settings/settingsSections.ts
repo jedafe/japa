@@ -9,6 +9,7 @@ import AffiliateSection from './sections/AffiliateSection.svelte';
 import WalletSection from './sections/WalletSection.svelte';
 import SubscriptionSection from './sections/SubscriptionSection.svelte';
 import SecuritySection from './sections/SecuritySection.svelte';
+import SessionsSection from './sections/SessionsSection.svelte';
 import ApiKeysSection from './sections/ApiKeysSection.svelte';
 import DangerSection from './sections/DangerSection.svelte';
 
@@ -35,6 +36,7 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'account', labelKey: 'settings.nav.account', icon: 'settings', group: 'account', backendReady: true, component: AccountSection },
 	{ slug: 'privacy', labelKey: 'settings.nav.privacy', icon: 'lock', group: 'account', backendReady: true, component: PrivacySection },
 	{ slug: 'security', labelKey: 'settings.nav.security', icon: 'shield', group: 'security', backendReady: true, component: SecuritySection },
+	{ slug: 'sessions', labelKey: 'settings.nav.sessions', icon: 'monitor', group: 'security', backendReady: true, component: SessionsSection },
 	{ slug: 'connected', labelKey: 'settings.nav.connected', icon: 'link', group: 'security', backendReady: true, component: ConnectedSection },
 	{ slug: 'devices', labelKey: 'settings.nav.devices', icon: 'smartphone', group: 'security', backendReady: false, component: null },
 	{ slug: 'notifications', labelKey: 'settings.nav.notifications', icon: 'bell', group: 'notifications', backendReady: true, component: NotificationsSection },
@@ -54,4 +56,24 @@ const GROUP_ORDER: HubGroup[] = ['account', 'security', 'notifications', 'billin
 export function sectionsByGroup(): [HubGroup, SectionMeta[]][] {
 	return GROUP_ORDER.map((g) => [g, SETTINGS_SECTIONS.filter((s) => s.group === g)] as [HubGroup, SectionMeta[]])
 		.filter(([, list]) => list.length > 0);
+}
+
+/** Returns the group that owns the given section slug, or null if not found. */
+export function groupForSection(slug: string): HubGroup | null {
+	return resolveSection(slug)?.group ?? null;
+}
+
+/** Returns all ready sections within the given group, in registry order. */
+export function sectionsInGroup(group: HubGroup): SectionMeta[] {
+	return SETTINGS_SECTIONS.filter((s) => s.group === group && s.backendReady && s.component);
+}
+
+/** Lean list of groups that have at least one ready section, with the first slug for navigation. */
+export function readyGroups(): { group: HubGroup; firstSlug: string; count: number }[] {
+	return sectionsByGroup()
+		.map(([group, items]) => {
+			const ready = items.filter((s) => s.backendReady && s.component);
+			return { group, firstSlug: ready[0]?.slug ?? '', count: ready.length };
+		})
+		.filter((g) => g.count > 0);
 }

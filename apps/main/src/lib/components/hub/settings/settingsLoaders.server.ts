@@ -17,7 +17,9 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	privacy: (ctx) => apiGet<PrivacySettings>(ctx, '/me/privacy'),
 
 	security: async (ctx) => ({
-		totp: await apiGet<{ enabled: boolean }>(ctx, '/me/totp/status').catch(() => ({ enabled: false })),
+		totp: await apiGet<{ enabled: boolean }>(ctx, '/me/totp/status').catch(() => ({ enabled: false }))
+	}),
+	sessions: async (ctx) => ({
 		sessions: (await apiList<unknown>(ctx, '/me/sessions')).items
 	}),
 	connected: async (ctx) => (await apiList<unknown>(ctx, '/me/connected-accounts')).items,

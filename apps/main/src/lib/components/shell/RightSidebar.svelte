@@ -68,7 +68,7 @@
 							class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
 						>
 							{#snippet child({ props })}
-								<a href="/profile" {...props}><User size={16} /> {user.displayName}</a>
+								<a href="/u/{user.username}" {...props}><User size={16} /> {user.displayName}</a>
 							{/snippet}
 						</DropdownMenu.Item>
 						<DropdownMenu.Separator class="my-1 h-px bg-[var(--color-border)]" />

@@ -285,7 +285,8 @@ const getUserDraft = `-- name: GetUserDraft :one
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
        c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned,
        c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
        c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
@@ -316,6 +317,10 @@ type GetUserDraftRow struct {
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 	Status          string             `json:"status"`
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
@@ -355,6 +360,10 @@ func (q *Queries) GetUserDraft(ctx context.Context, arg GetUserDraftParams) (Get
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
 		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
 		&i.Status,
 		&i.Visibility,
 		&i.IsLocked,

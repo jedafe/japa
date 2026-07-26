@@ -494,6 +494,10 @@ type Content struct {
 	AutoHiddenAt    pgtype.Timestamptz `json:"auto_hidden_at"`
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
 }
 
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.

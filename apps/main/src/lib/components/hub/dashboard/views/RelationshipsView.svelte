@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -20,10 +21,10 @@
 	}
 
 	let { data }: { data: unknown } = $props();
-	const rel = data as RelationshipsData | null;
-	let following = $state<FollowedUser[]>(rel?.following ?? []);
-	let spaces = $state<Space[]>(rel?.spaces ?? []);
-	let tags = $state<FollowedTag[]>(rel?.tags ?? []);
+	const rel = $derived(data as RelationshipsData | null);
+	let following = $state<FollowedUser[]>(untrack(() => rel?.following ?? []));
+	let spaces = $state<Space[]>(untrack(() => rel?.spaces ?? []));
+	let tags = $state<FollowedTag[]>(untrack(() => rel?.tags ?? []));
 
 	const activeTab = $derived(page.url.searchParams.get('tab') ?? 'following');
 

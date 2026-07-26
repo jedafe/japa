@@ -109,13 +109,14 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	contentRow, err := s.contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
-		AuthorID:    userID,
-		SpaceID:     input.SpaceID,
-		ContentType: content.TypeComparison,
-		Title:       input.Title,
-		Body:        input.Body,
-		Status:      content.StatusPublished,
-		Visibility:  visibility,
+		AuthorID:     userID,
+		SpaceID:      input.SpaceID,
+		ContentType:  content.TypeComparison,
+		Title:        input.Title,
+		Body:         input.Body,
+		SeoIndexable: true, // default: indexable — matches the column DEFAULT
+		Status:       content.StatusPublished,
+		Visibility:   visibility,
 	})
 	if err != nil {
 		return CreateComparisonResult{}, fmt.Errorf("creating comparison content: %w", err)

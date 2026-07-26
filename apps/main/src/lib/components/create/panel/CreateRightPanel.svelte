@@ -3,7 +3,7 @@
 	import { t } from '$lib/i18n';
 	import CreateGuidePanel from './CreateGuidePanel.svelte';
 	import CreateSettingsPanel from './CreateSettingsPanel.svelte';
-	import type { BlogSeries, CustomFieldGroup, Visibility } from '$lib/types';
+	import type { BlogSeries, CustomFieldGroup, MediaAsset, Visibility } from '$lib/types';
 
 	interface Props {
 		focusedField: 'space' | 'tags' | 'series' | 'body' | null;
@@ -14,11 +14,21 @@
 		fieldGroups: CustomFieldGroup[];
 		series: BlogSeries[];
 		seriesId: string | null;
+		metaTitle: string | null;
+		metaDescription: string | null;
+		ogImageUrl: string | null;
+		ogImagePreviewUrl: string | null;
+		seoIndexable: boolean;
 		onvisibility: (v: Visibility) => void;
 		oncanonical: (v: string) => void;
 		onpublishat: (v: string | null) => void;
 		onfieldvalues: (v: Record<string, unknown>) => void;
 		onseries: (id: string | null) => void;
+		onseriesfocus: () => void;
+		onmetatitle: (v: string | null) => void;
+		onmetadescription: (v: string | null) => void;
+		onogimageselect: (asset: MediaAsset | null) => void;
+		onseoindexable: (v: boolean) => void;
 		onedit: () => void;
 	}
 
@@ -31,27 +41,31 @@
 		fieldGroups,
 		series,
 		seriesId,
+		metaTitle,
+		metaDescription,
+		ogImageUrl,
+		ogImagePreviewUrl,
+		seoIndexable,
 		onvisibility,
 		oncanonical,
 		onpublishat,
 		onfieldvalues,
 		onseries,
+		onseriesfocus,
+		onmetatitle,
+		onmetadescription,
+		onogimageselect,
+		onseoindexable,
 		onedit
 	}: Props = $props();
 </script>
 
 <Tabs.Root value="guide">
-	<Tabs.List class="flex border-b border-[var(--color-border)]">
-		<Tabs.Trigger
-			value="guide"
-			class="px-3 py-2 text-sm font-medium text-[var(--color-muted)] data-[state=active]:text-[var(--color-text)] data-[state=active]:border-b-2 data-[state=active]:border-[var(--color-primary)]"
-		>
+	<Tabs.List class="right-panel-tabs">
+		<Tabs.Trigger value="guide" class="right-panel-tab">
 			{t('create.panel.guide')}
 		</Tabs.Trigger>
-		<Tabs.Trigger
-			value="settings"
-			class="px-3 py-2 text-sm font-medium text-[var(--color-muted)] data-[state=active]:text-[var(--color-text)] data-[state=active]:border-b-2 data-[state=active]:border-[var(--color-primary)]"
-		>
+		<Tabs.Trigger value="settings" class="right-panel-tab">
 			{t('create.panel.settings')}
 		</Tabs.Trigger>
 	</Tabs.List>
@@ -67,12 +81,44 @@
 			{fieldGroups}
 			{series}
 			{seriesId}
-			onvisibility={onvisibility}
-			oncanonical={oncanonical}
-			onpublishat={onpublishat}
-			onfieldvalues={onfieldvalues}
-			onseries={onseries}
-			onedit={onedit}
+			{metaTitle}
+			{metaDescription}
+			{ogImageUrl}
+			{ogImagePreviewUrl}
+			{seoIndexable}
+			{onvisibility}
+			{oncanonical}
+			{onpublishat}
+			{onfieldvalues}
+			{onseries}
+			{onseriesfocus}
+			{onmetatitle}
+			{onmetadescription}
+			{onogimageselect}
+			{onseoindexable}
+			{onedit}
 		/>
 	</Tabs.Content>
 </Tabs.Root>
+
+<style>
+	:global(.right-panel-tabs) {
+		display: flex;
+		border-bottom: 1px solid var(--color-border);
+	}
+	:global(.right-panel-tab) {
+		padding: 8px 12px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-muted);
+		cursor: pointer;
+		transition: color 0.15s;
+	}
+	:global(.right-panel-tab:hover) {
+		color: var(--color-text);
+	}
+	:global([data-state='active'].right-panel-tab) {
+		color: var(--color-text);
+		border-bottom: 2px solid var(--color-primary);
+	}
+</style>
