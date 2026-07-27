@@ -840,16 +840,30 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType := header.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	// Sniff MIME from content, not from client-supplied Content-Type header
+	// (SEC-008). http.DetectContentType reads up to 512 bytes of the file
+	// content and determines the canonical MIME type — consistent with
+	// ConfirmUpload which already does this.
+	sniffBuf := make([]byte, 512)
+	n, _ := io.ReadFull(file, sniffBuf)
+	contentType := http.DetectContentType(sniffBuf[:n])
+	// Rewind so the full file is copied below.
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		writeError(w, http.StatusInternalServerError, "seek_error", "Failed to read file")
+		return
 	}
 
 	ext := strings.ToLower(filepath.Ext(header.Filename))
-	if ext != "" {
-		if detected := mime.TypeByExtension(ext); detected != "" {
-			contentType = detected
+	// Sanitize ext to prevent path traversal in the storage path (SEC-012).
+	ext = strings.TrimPrefix(ext, ".")
+	ext = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
 		}
+		return -1 // drop dots, slashes, backslashes, etc.
+	}, ext)
+	if ext != "" {
+		ext = "." + ext
 	}
 
 	storagePath := fmt.Sprintf("%s/%s/%s%s",

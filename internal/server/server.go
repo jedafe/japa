@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -74,6 +76,7 @@ import (
 	"github.com/jedafe/japa/internal/tickets"
 	"github.com/jedafe/japa/internal/trending"
 	"github.com/jedafe/japa/internal/universities"
+	"github.com/jedafe/japa/internal/university"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/wallet"
@@ -557,6 +560,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Register learning processor for the worker's learning tasks.
 	learningAdapter := learning.NewProcessorAdapter(learningStore)
 	worker.RegisterLearningProcessor(learningAdapter)
+
+	// Japa University creator-economy subsystem (ADR-063 — upgrade to Learn).
+	// The handlers/service/store already exist; this wires them into the router
+	// and the worker so the 24 catalogued routes stop 404ing (ROUTE-001/002).
+	universityStore := university.NewStore(database)
+	universityService := university.NewService(universityStore, settingsService, taskEnqueuer)
+	universityService.SetValkey(vkClient.Redis())
+	universityHandlers := university.NewHandlers(universityService)
+	// Register university processor for the worker's 5 university Asynq tasks.
+	universityProcessor := university.NewProcessor(universityService)
+	worker.RegisterUniversityProcessor(universityProcessor)
 
 	// Newsletter subsystem (Section 33).
 	newsletterService := newsletter.NewService(database)
@@ -1270,7 +1284,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			wsBridge := websocket.NewPubSubBridge(vkClient.Redis(), wsHub)
 			wsHub.SetPubSub(wsBridge)
 
-			go wsBridge.Start(context.Background())
+			// PGX-002: use a signal-aware context so the bridge stops on
+			// SIGINT/SIGTERM instead of running forever on context.Background().
+			wsCtx, wsCancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			_ = wsCancel // cancelled implicitly when the process receives the signal
+			go wsBridge.Start(wsCtx)
 
 			wsService := websocket.NewService(database, wsHub)
 			wsDMStore := websocket.NewDMStore(gen.New(database.Reader), gen.New(database.Writer))
@@ -2011,7 +2029,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// (queue-backed export via data:export_user_data + Honcho hard erasure),
 			// not the users-package stubs. Consolidated here from /account/* (§6).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me", gdprHandlers.RequestAccountDeletion)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/data-export", gdprHandlers.RequestDataExport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/me/data-export", gdprHandlers.RequestDataExport)
 			// NOTE: replaces the users-package stub that hardcoded "no_pending_export"
 			// regardless of actual state (same class of bug as the DELETE /me fix).
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", gdprHandlers.GetMyDataExportStatus)
@@ -2058,7 +2076,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Search routes
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/search", searchHandlers.Search)
-			r.Get("/search/autocomplete", searchHandlers.Autocomplete)
+			// Rate-limit autocomplete to prevent enumeration/abuse (SEC-010).
+			r.With(mw.RateLimit(vkClient.Redis(), "moderate")).Get("/search/autocomplete", searchHandlers.Autocomplete)
 			// catalog: GET /spaces/search — space-discovery search (distinct from
 			// /spaces/{id}/search below, which searches one space's content).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/spaces/search", searchHandlers.SearchSpaces)
@@ -2069,8 +2088,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/tags", tagsHandlers.ListTags)
 			r.Get("/tags/{slug}", tagsHandlers.GetTag)
 			r.Get("/tags/{slug}/content", tagsHandlers.GetTagContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/followers", tagsHandlers.GetTagFollowers)
 			// Admin tag CRUD (previously missing entirely — content_tags/
 			// AddContentTag was unreachable since there was no way to create a tag).
@@ -2411,6 +2430,53 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Certificates (public detail + download — catalog: /certificates/:id)
 			r.Get("/certificates/{id}", learningHandlers.GetCertificateDetail)
 			r.Get("/certificates/{id}/download", learningHandlers.DownloadCertificate)
+
+			// Track reviews (catalog: POST|GET /learn/tracks/{id}/reviews)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/tracks/{id}/reviews", learningHandlers.CreateTrackReview)
+			r.Get("/learn/tracks/{id}/reviews", learningHandlers.ListTrackReviews)
+
+			// Japa University creator-economy routes (ADR-063 — upgrade to Learn).
+			// Instructor lifecycle
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/instructor/apply", universityHandlers.Apply)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/instructor/me", universityHandlers.GetMyInstructorProfile)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/learn/university/instructor/me", universityHandlers.UpdateMyInstructorProfile)
+			r.Get("/learn/university/instructors/{id}", universityHandlers.GetPublicInstructor)
+
+			// Creator track management
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/tracks", universityHandlers.ListMyTracks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/my/tracks", universityHandlers.CreateMyTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/learn/university/my/tracks/{id}", universityHandlers.UpdateMyTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/my/tracks/{id}/submit", universityHandlers.SubmitMyTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/tracks/{id}/stats", universityHandlers.GetMyTrackStats)
+
+			// Marketplace catalog
+			r.Get("/learn/university/catalog", universityHandlers.ListCatalog)
+			r.Get("/learn/university/catalog/{slug}", universityHandlers.GetCatalogTrack)
+
+			// Earnings & payouts
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/earnings", universityHandlers.GetMyEarnings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/payouts", universityHandlers.GetMyPayouts)
+
+			// Content-country preference (ADR-064 geo personalization)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/preferences/content-country", usersHandlers.UpdateMyContentCountry)
+
+			// Admin: University management (catalog: /admin/university/*)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
+				Get("/admin/university/instructors", universityHandlers.AdminListInstructors)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
+				Post("/admin/university/instructors/{id}/approve", universityHandlers.AdminApproveInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
+				Post("/admin/university/instructors/{id}/reject", universityHandlers.AdminRejectInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
+				Post("/admin/university/instructors/{id}/suspend", universityHandlers.AdminSuspendInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
+				Get("/admin/university/tracks/pending", universityHandlers.AdminListPendingTracks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
+				Post("/admin/university/tracks/{id}/approve", universityHandlers.AdminApproveTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
+				Get("/admin/university/payouts", universityHandlers.AdminListPayouts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
+				Post("/admin/university/payouts/{id}/process", universityHandlers.AdminProcessPayout)
 
 			// Admin: CRUD for tracks, modules, lessons
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).

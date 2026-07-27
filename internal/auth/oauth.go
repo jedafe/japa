@@ -97,6 +97,20 @@ func (c OAuthConfig) SupportedProviders() []string {
 	return providers
 }
 
+// oauthHTTPClient is a hardened HTTP client shared by all OAuth provider
+// calls (SEC-006). It enforces a 30s timeout and caps redirects at 10 to
+// prevent SSRF via redirect chains and resource exhaustion via hanging
+// connections. http.DefaultClient has no timeout and unlimited redirects.
+var oauthHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		return nil
+	},
+}
+
 // NewProvider creates an OAuthProvider for the given provider name.
 // Returns nil if the provider is not configured or not supported.
 func (c OAuthConfig) NewProvider(provider string) OAuthProvider {
@@ -193,7 +207,7 @@ func (g *googleProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 
 	req.Header.Set("Authorization", "Bearer "+tokenResp.AccessToken)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := oauthHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching google userinfo: %w", err)
 	}
@@ -265,7 +279,7 @@ func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 	req.Header.Set("Authorization", "Bearer "+tokenResp.AccessToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := oauthHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching github user: %w", err)
 	}
@@ -311,7 +325,7 @@ func fetchGitHubEmail(ctx context.Context, accessToken string) string {
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := oauthHTTPClient.Do(req)
 	if err != nil {
 		return ""
 	}
@@ -414,7 +428,7 @@ func (a *appleProvider) Exchange(ctx context.Context, code string) (*OAuthUserIn
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := oauthHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing apple token request: %w", err)
 	}
@@ -469,7 +483,7 @@ type appleIDTokenClaims struct {
 func (a *appleProvider) parseIDToken(idToken string) (*appleIDTokenClaims, error) {
 	httpClient := a.httpClient
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = oauthHTTPClient // SEC-006: hardened client, not DefaultClient
 	}
 
 	// Determine the token's key ID to decide if we need a fresh fetch.
@@ -713,7 +727,7 @@ func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUse
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := oauthHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing facebook token request: %w", err)
 	}
@@ -742,7 +756,7 @@ func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUse
 		return nil, fmt.Errorf("creating facebook user request: %w", err)
 	}
 
-	userResp, err := http.DefaultClient.Do(userReq)
+	userResp, err := oauthHTTPClient.Do(userReq)
 	if err != nil {
 		return nil, fmt.Errorf("fetching facebook user: %w", err)
 	}
@@ -794,7 +808,7 @@ func exchangeCode(ctx context.Context, tokenURL string, params url.Values) (*tok
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := oauthHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing token request: %w", err)
 	}
