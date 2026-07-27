@@ -184,11 +184,12 @@ func validateRenderInput(data []byte) error {
 }
 
 // cacheKey generates a Valkey cache key for rendered HTML.
-// Format: jc:render:{content_id}:{updated_at_hash}.
+// Format: jc:render:{content_id}:{updated_at_hash}. Uses the full SHA-256
+// hash to avoid collision risk from truncation (STD-003).
 func (r *Renderer) cacheKey(contentID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
 	ts := updatedAt.Time.Unix()
 	hash := sha256.Sum256([]byte(strconv.FormatInt(ts, 10)))
-	tsHash := hex.EncodeToString(hash[:8])
+	tsHash := hex.EncodeToString(hash[:])
 
 	return fmt.Sprintf("jc:render:%s:%s", contentID.String(), tsHash)
 }

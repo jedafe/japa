@@ -8,10 +8,10 @@
 //
 // All keys stored in Valkey MUST be namespaced with the "jc:" prefix so
 // JapaConnect entries are easy to identify and never collide with any other
-// service sharing the same instance. This package does not enforce the prefix
-// — callers are responsible for key naming. A common pattern is to nest the
-// subsystem under the prefix, for example "jc:cache:...", "jc:ratelimit:...",
-// "jc:editlock:...", or "jc:session:...".
+// service sharing the same instance. Use the MustKey helper to construct
+// keys — it enforces the prefix automatically (VALKEY-004). A common pattern
+// is to nest the subsystem under the prefix, for example "jc:cache:...",
+// "jc:ratelimit:...", "jc:editlock:...", or "jc:session:...".
 //
 // The package offers two constructors. New performs an immediate Ping and
 // fails if the server is unreachable, so the caller can decide whether to
@@ -24,10 +24,38 @@ package valkey
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
+
+// keyPrefix is the mandatory namespace for all JapaConnect Valkey keys.
+// Every key stored in the shared Valkey instance MUST begin with this prefix
+// so JapaConnect entries are easy to identify and never collide with any
+// other service sharing the same instance (Rule 4).
+const keyPrefix = "jc:"
+
+// MustKey constructs a Valkey key by prepending the mandatory "jc:" prefix
+// and joining the pattern with the given args using ":" as the separator.
+// If the pattern already starts with "jc:", the prefix is not doubled.
+//
+// Example:
+//
+//	MustKey("docs:page:%s:%s", audience, slug) → "jc:docs:page:public:getting-started"
+//
+// This helper enforces Rule 4 (VALKEY-004): all keys must be namespaced
+// with "jc:". Callers should use this instead of manually constructing keys.
+func MustKey(pattern string, args ...any) string {
+	key := pattern
+	if len(args) > 0 {
+		key = fmt.Sprintf(pattern, args...)
+	}
+	if strings.HasPrefix(key, keyPrefix) {
+		return key
+	}
+	return keyPrefix + key
+}
 
 // Client wraps a valkey.Client with a go-redis-compatible adapter.
 // Other packages should call Redis() when they need direct access to the
@@ -108,8 +136,8 @@ func (c *Client) Close() {
 // Redis returns the go-redis-compatible adapter for direct access by other
 // packages. Returns nil when the client is in degraded mode (server
 // unreachable). Callers that receive a nil Cmdable should treat all
-// operations as no-ops. Remember to namespace every key with "jc:" as
-// described in the package comment.
+// operations as no-ops. Use MustKey to construct keys with the mandatory
+// "jc:" prefix (VALKEY-004).
 func (c *Client) Redis() valkeycompat.Cmdable {
 	return c.rdb
 }

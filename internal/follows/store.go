@@ -20,6 +20,34 @@ func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }
 
+// getSpaceJoiningPerm returns the joining_perm value for a space. Used by
+// ToggleFollow to decide whether following a space should auto-join the
+// follower as a member (BL-010 / Section 31: open-joining spaces auto-join).
+func (s *Store) getSpaceJoiningPerm(ctx context.Context, spaceID, tenantID pgtype.UUID) (string, error) {
+	space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
+		ID:       spaceID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("getting space joining_perm: %w", err)
+	}
+	return space.JoiningPerm, nil
+}
+
+// addSpaceMember adds the user as a member of the space. The underlying
+// query is INSERT ... ON CONFLICT DO NOTHING, so calling this when the user
+// is already a member is a safe no-op (BL-010).
+func (s *Store) addSpaceMember(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
+	if err := s.write.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
+		SpaceID:  spaceID,
+		UserID:   userID,
+		TenantID: tenantID,
+	}); err != nil {
+		return fmt.Errorf("adding space member: %w", err)
+	}
+	return nil
+}
+
 // toggleFollow inserts a follow row. Returns true if a new row was inserted,
 // false if the row already existed (ON CONFLICT DO NOTHING).
 func (s *Store) toggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {

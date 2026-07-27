@@ -274,6 +274,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	settingsService := config.NewSettings(database, vkClient.Redis())
 	contentService.SetSettings(settingsService)
 
+	// BL-014: apply the configurable iframe embed allowlist from system_settings
+	// at startup. The content sanitizer reads this list at render time under a
+	// read lock, so a later settings change requires a process restart or a
+	// dedicated reload hook. Empty/unset restores the compiled-in defaults.
+	iframeHostsCSV := settingsService.GetStringOr(context.Background(), pgtype.UUID{}, "content.sanitization.allowed_iframe_hosts", "")
+	if iframeHostsCSV != "" {
+		content.SetAllowedIframeHosts(strings.Split(iframeHostsCSV, ","))
+	}
+
 	// Content Reports & Flagging subsystem (Section 51).
 	reportsService := reports.NewService(database, settingsService, vkClient.Redis())
 	reportsHandlers := reports.NewHandlers(reportsService)
@@ -301,6 +310,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Link preview subsystem (Section 15 — Link Preview Fetch).
 	linkPreviewFetcher := linkpreview.NewFetcher(nil, vkClient)
+	linkPreviewFetcher.SetSettings(settingsService) // SEC-013: configurable fetch timeout
 	linkPreviewHandlers := linkpreview.NewHandlers(linkPreviewFetcher)
 
 	// Register link preview processor for the worker's link_preview_fetch task.
@@ -324,6 +334,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Comments subsystem (Section 49 — Unified Comments).
 	commentsService := comments.NewService(database)
+	commentsService.SetSettings(settingsService) // BL-009: configurable comment edit window
 	commentsHandlers := comments.NewHandlers(commentsService)
 	commentsHandlers.SetSpamPipeline(spamPipeline)
 	// BL-001: wire comment notification dispatcher (fire-and-forget, Rule 8).
@@ -335,6 +346,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	interactionsHandlers := interactions.NewHandlers(interactionsService)
 
 	worker.RegisterSettings(settingsService)
+	worker.RegisterRedis(vkClient.Redis()) // TASK-003: RSS feed caching in Valkey
 	// Inject into services with hot-reloadable moderation/ops limits (AUDIT-BE-009).
 	spamPipeline.SetSettings(settingsService)
 	notificationService.SetAsynqClient(asynqClient)
@@ -402,6 +414,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
+	walletService.SetSettings(settingsService) // SETTING-007/008: global conversion rate + min convert points
 	walletHandlers := wallet.NewHandlers(walletService)
 	walletService.SetEnqueuer(taskEnqueuer)
 
@@ -513,7 +526,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Documentation System subsystem (Section 44).
 	docsService := docs.NewService(database)
+	docsService.SetCache(vkClient.Redis()) // VALKEY-003: cache doc pages + nav
 	docsHandlers := docs.NewHandlers(docsService, cfg.SiteURL, cfg.SiteName)
+	docsHandlers.AsynqClient = asynqClient // SEARCH-001: enqueue Meilisearch index sync
 
 	// Admin Settings subsystem.
 	adminHandlers := admin.NewHandlers(database, gen.New(database.Writer))
@@ -1074,7 +1089,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/content/{id}/schedule", contentHandlers.ScheduleContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/view", contentHandlers.RecordContentView)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/share-count", contentHandlers.GetContentShareCount)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/content/{id}/report", reportsHandlers.ReportContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.report")).Post("/content/{id}/report", reportsHandlers.ReportContent)
 			// Revisions (require auth + permission to view)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.revisions.view")).
 				Get("/content/{id}/revisions", contentHandlers.ListRevisions)
@@ -1944,7 +1959,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// not collide with the main API routes.
 			r.Group(func(r chi.Router) {
 				r.Use(publicapi.APIKeyMiddleware(publicAPIService))
-				r.Use(publicapi.SlidingWindowRateLimit(vkClient.Redis()))
+				r.Use(publicapi.SlidingWindowRateLimitWithSettings(vkClient.Redis(), settingsService))
 
 				r.Get("/public/content/{id}", publicAPIHandlers.GetContentByID)
 				r.Get("/public/spaces", publicAPIHandlers.ListSpaces)

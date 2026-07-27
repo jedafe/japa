@@ -103,4 +103,16 @@ func RegisterNoopProcessors() {
 	if spaceAutoPopulateProcessor == nil {
 		RegisterSpaceAutoPopulateProcessor(noopSpaceAutoPopulateProcessor{})
 	}
+
+	if docsPageGenerator == nil {
+		RegisterDocsPageGenerator(noopDocsPageGenerator{})
+	}
+}
+
+// noopDocsPageGenerator is a no-op implementation of DocsPageGenerator (TASK-004).
+type noopDocsPageGenerator struct{}
+
+func (noopDocsPageGenerator) GenerateDocsPage(ctx context.Context, prompt, userID, tenantID string) error {
+	slog.Warn("noop: docs:generate_page — no docs page generator registered")
+	return nil
 }

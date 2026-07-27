@@ -1,14 +1,24 @@
 package publicapi
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
+
+// rateLimitSettingsReader is the subset of config.Settings the rate limiter
+// needs to read per-tier limits from system_settings (SEC-012 / Rule 3).
+// *config.Settings satisfies this structurally. When nil, compiled-in
+// defaults are used (preserving the pre-settings behaviour).
+type rateLimitSettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
 
 // SlidingWindowRateLimit returns middleware that enforces per-API-key rate
 // limiting using a sliding-window counter backed by Valkey sorted sets.
@@ -21,7 +31,18 @@ import (
 // counters: a client cannot send N requests at the end of one window and
 // N more at the start of the next and get 2N requests through in under
 // 2×window time.
+//
+// Per-tier limits use compiled-in defaults. Use SlidingWindowRateLimitWithSettings
+// to read limits from system_settings (SEC-012).
 func SlidingWindowRateLimit(rdb valkeycompat.Cmdable) func(http.Handler) http.Handler {
+	return SlidingWindowRateLimitWithSettings(rdb, nil)
+}
+
+// SlidingWindowRateLimitWithSettings is like SlidingWindowRateLimit but reads
+// per-tier request limits from system_settings (`api.rate_limit.basic`,
+// `api.rate_limit.standard`, `api.rate_limit.premium`) when a settings reader
+// is wired. Falls back to compiled-in defaults otherwise (SEC-012 / Rule 3).
+func SlidingWindowRateLimitWithSettings(rdb valkeycompat.Cmdable, sr rateLimitSettingsReader) func(http.Handler) http.Handler {
 	const windowSize = time.Minute
 
 	return func(next http.Handler) http.Handler {
@@ -37,7 +58,7 @@ func SlidingWindowRateLimit(rdb valkeycompat.Cmdable) func(http.Handler) http.Ha
 				return
 			}
 
-			limit := getTierLimit(key.RateLimitTier)
+			limit := resolveTierLimit(r.Context(), key.RateLimitTier, key.TenantID, sr)
 			now := time.Now()
 			windowStart := now.Add(-windowSize)
 

@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -24,6 +25,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,11 +37,17 @@ var (
 	dbPool  *db.DB
 	siteName string
 	//nolint:unused // set by RegisterRedis
-	rdb interface {
-		Ping(ctx context.Context) error
-	}
+	rdb redisCache
 	taskEnqueuer *Enqueuer
 )
+
+// redisCache is the subset of the valkeycompat.Cmdable API that worker
+// handlers need. Used by HandleRSSRegenerate to cache feeds under
+// jc:rss:feed:* (TASK-003). valkeycompat.Cmdable satisfies this interface.
+type redisCache interface {
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *valkeycompat.StatusCmd
+	Get(ctx context.Context, key string) *valkeycompat.StringCmd
+}
 
 // RegisterDBPool sets the database connection pool for worker handlers.
 func RegisterDBPool(d *db.DB) {
@@ -58,10 +66,7 @@ func RegisterTaskEnqueuer(e *Enqueuer) {
 }
 
 // RegisterRedis sets the Valkey/Redis client for worker handlers.
-func RegisterRedis(client interface {
-	Ping(ctx context.Context) error
-},
-) {
+func RegisterRedis(client redisCache) {
 	rdb = client
 }
 
@@ -586,6 +591,8 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 			indexName = "tags"
 		} else if entityType == "learning_track" {
 			indexName = "learning_tracks"
+		} else if entityType == "doc_page" {
+			indexName = "doc_pages"
 		}
 		return searchIndexer.DeleteDocument(ctx, indexName, entityID.Bytes)
 	}
@@ -603,6 +610,8 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 		return searchIndexer.IndexTag(ctx, entityID.Bytes, tenantID.Bytes)
 	case "learning_track":
 		return searchIndexer.IndexLearningTrack(ctx, entityID.Bytes, tenantID.Bytes)
+	case "doc_page":
+		return searchIndexer.IndexDocPage(ctx, entityID.Bytes, tenantID.Bytes)
 	default:
 		slog.Warn("task:search:index_entity: unknown entity type, skipping", "entity_type", entityType)
 		return nil
@@ -683,6 +692,42 @@ func HandleAITaskProcessing(ctx context.Context, t *asynq.Task) error {
 		"model_id", payload.ModelID,
 		"request_id", payload.RequestID)
 
+	return nil
+}
+
+// HandleDocsGeneratePage generates a docs page via AI in the background
+// (TASK-004). Fire-and-forget: the AI handler enqueues this task and returns
+// 202 Accepted immediately; the worker calls the registered DocsPageGenerator
+// to dispatch the AI request and persist the result.
+func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:docs:generate_page")
+
+	if docsPageGenerator == nil {
+		slog.Warn("task:docs:generate_page: no docs page generator registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		Prompt   string `json:"prompt"`
+		UserID   string `json:"user_id"`
+		TenantID string `json:"tenant_id"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:docs:generate_page: invalid payload", "error", err)
+		return err
+	}
+
+	if payload.Prompt == "" {
+		return fmt.Errorf("task:docs:generate_page: prompt is required")
+	}
+
+	if err := docsPageGenerator.GenerateDocsPage(ctx, payload.Prompt, payload.UserID, payload.TenantID); err != nil {
+		slog.Error("task:docs:generate_page: failed", "error", err)
+		return err
+	}
+
+	slog.Info("task:docs:generate_page: completed", "user_id", payload.UserID, "tenant_id", payload.TenantID)
 	return nil
 }
 
@@ -1828,45 +1873,94 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-// generateRSSForTenant generates the RSS feed for a single tenant.
+// generateRSSForTenant generates the RSS feed for a single tenant using the
+// shared sqlc query (ListRSSFeedItems — the same one internal/rss uses for
+// live requests) and caches the rendered XML in Valkey under
+// jc:rss:feed:{tenantID} with a 1-hour TTL (TASK-003). The live /feed.xml
+// route can read from this cache to avoid a DB hit on every request.
+// Writing to a local file is removed — it was not multi-tenant safe.
 func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
-	items, err := gen.New(dbPool.Reader).ListPublishedContentForRSS(ctx, tenantID)
+	q := gen.New(dbPool.Reader)
+	rows, err := q.ListRSSFeedItems(ctx, tenantID)
 	if err != nil {
 		slog.Error("task:rss_regenerate: failed to list content", "tenant_id", tenantID.String(), "error", err)
 		return
 	}
 
-	var rss strings.Builder
-
-	rss.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-	rss.WriteString("<rss version=\"2.0\">\n")
-	rss.WriteString("<channel>\n")
-	rss.WriteString(fmt.Sprintf("  <title>%s</title>\n", siteName))
-	rss.WriteString(fmt.Sprintf("  <link>%s</link>\n", baseURL))
-	rss.WriteString("  <description>Nigerian diaspora community platform</description>\n")
-
-	itemCount := 0
-
-	for _, item := range items {
-		rss.WriteString("  <item>\n")
-		rss.WriteString(fmt.Sprintf("    <title>%s</title>\n", item.Title))
-		rss.WriteString(fmt.Sprintf("    <link>%s/%s</link>\n", baseURL, item.Slug))
-		rss.WriteString(fmt.Sprintf("    <pubDate>%s</pubDate>\n",
-			item.CreatedAt.Time.Format(time.RFC1123Z)))
-		rss.WriteString("  </item>\n")
-
-		itemCount++
+	items := make([]rssItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, rssItem{
+			Title:       row.Title,
+			Link:        baseURL + "/content/" + row.Slug,
+			Description: row.Left,
+			PubDate:     formatRSSTime(row.CreatedAt),
+			Author:      row.Username,
+		})
 	}
 
-	rss.WriteString("</channel>\n")
-	rss.WriteString("</rss>\n")
+	feed := rssFeed{
+		Version: "2.0",
+		Channel: rssChannel{
+			Title:       siteName,
+			Link:        baseURL,
+			Description: "Nigerian diaspora community platform",
+			Language:    "en",
+			Items:       items,
+		},
+	}
 
-	if err := os.WriteFile("feed.xml", []byte(rss.String()), 0o600); err != nil {
-		slog.Error("task:rss_regenerate: failed to write file", "tenant_id", tenantID.String(), "error", err)
+	xmlBytes, err := xml.MarshalIndent(feed, "", "  ")
+	if err != nil {
+		slog.Error("task:rss_regenerate: marshal xml", "tenant_id", tenantID.String(), "error", err)
 		return
 	}
+	xmlBytes = append([]byte(xml.Header+"\n"), xmlBytes...)
 
-	slog.Info("task:rss_regenerate: feed written", "tenant_id", tenantID.String(), "item_count", itemCount)
+	// Cache in Valkey under the jc: prefix (VALKEY-004 compliance).
+	cacheKey := "jc:rss:feed:" + tenantID.String()
+	if rdb != nil {
+		if err := rdb.Set(ctx, cacheKey, string(xmlBytes), time.Hour).Err(); err != nil {
+			slog.Error("task:rss_regenerate: failed to cache feed", "tenant_id", tenantID.String(), "error", err)
+		}
+	} else {
+		slog.Warn("task:rss_regenerate: no redis client, feed not cached", "tenant_id", tenantID.String())
+	}
+
+	slog.Info("task:rss_regenerate: feed cached", "tenant_id", tenantID.String(), "item_count", len(items), "cache_key", cacheKey)
+}
+
+// rssFeed / rssChannel / rssItem are local RSS 2.0 XML models for the worker's
+// feed regeneration task. They mirror internal/rss.RSSFeed but are kept local
+// to avoid importing internal/rss (which imports chi/tenant/http — heavy for
+// a background worker).
+type rssFeed struct {
+	XMLName xml.Name   `xml:"rss"`
+	Version string     `xml:"version,attr"`
+	Channel rssChannel `xml:"channel"`
+}
+
+type rssChannel struct {
+	Title       string    `xml:"title"`
+	Link        string    `xml:"link"`
+	Description string    `xml:"description"`
+	Language    string    `xml:"language,omitempty"`
+	Items       []rssItem `xml:"item"`
+}
+
+type rssItem struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"`
+	PubDate     string `xml:"pubDate"`
+	Author      string `xml:"author,omitempty"`
+}
+
+// formatRSSTime formats a pgtype.Timestamptz as RFC1123Z for RSS pubDate.
+func formatRSSTime(t pgtype.Timestamptz) string {
+	if t.Valid {
+		return t.Time.Format(time.RFC1123Z)
+	}
+	return ""
 }
 
 // HandleDataExport generates a GDPR data export archive for a user.
