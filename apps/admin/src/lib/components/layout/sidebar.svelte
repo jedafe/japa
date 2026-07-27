@@ -81,6 +81,7 @@
 			{ path: "/docs", label: "Documentation", icon: FileCode, permission: "docs.manage" },
 			{ path: "/media", label: "Media", icon: Image, permission: "media.view_all" },
 			{ path: "/spaces", label: "Spaces", icon: Globe, permission: "spaces.admin" },
+			{ path: "/geo", label: "Geo Tools", icon: Globe, permission: "geo.lookup" },
 			{ path: "/space-types", label: "Space Types", icon: Layout, permission: "space_types.create" },
 			{ path: "/tags", label: "Tags", icon: Tag, permission: "tags.manage" },
 			{ path: "/reactions", label: "Reactions", icon: Star, permission: "content.reaction_types.manage" }
@@ -118,6 +119,9 @@
 			{ path: "/broadcast", label: "Broadcasts", icon: Bell, permission: "admin.broadcast" },
 			{ path: "/forms", label: "Forms", icon: FileInput, permission: "forms.create" },
 			{ path: "/learning", label: "Learning", icon: GraduationCap, permission: "learning.admin.manage" },
+			{ path: "/university/instructors", label: "University Instructors", icon: GraduationCap, permission: "university.instructor.approve" },
+			{ path: "/university/tracks", label: "University Tracks", icon: BookOpen, permission: "university.course.approve" },
+			{ path: "/university/payouts", label: "University Payouts", icon: DollarSign, permission: "university.payout.process" },
 		{ path: "/mentorship", label: "Mentorship", icon: Users2, permission: "mentorship.admin" },
 		{ path: "/onboarding", label: "Onboarding", icon: UserPlus, permission: "admin.settings.view" }
 		]

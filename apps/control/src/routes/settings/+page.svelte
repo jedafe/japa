@@ -3,7 +3,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Switch, Tooltip, Label, Select } from 'bits-ui';
-	import { api } from '$lib/api';
+	import { api, getToken } from '$lib/api';
 	import type { SystemSetting } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import FeedCardStyleEditor from '$lib/components/FeedCardStyleEditor.svelte';
@@ -36,12 +36,19 @@
 	let originalSettings = $state<SystemSetting[]>([]);
 	let currentSettings = $state<SystemSetting[]>([]);
 	let contentTypes = $state<{ value: string; label: string }[]>([]);
+	// Entity name lookups for onboarding promoted_* fields (which store UUIDs).
+	// Fetched once on load so the UI can show human-readable names instead of UUIDs.
+	let entityOptions = $state<Record<string, { value: string; label: string }[]>>({
+		'onboarding.promoted_spaces': [],
+		'onboarding.promoted_users': [],
+		'onboarding.promoted_tags': []
+	});
 	let isDirty = $derived(
 		JSON.stringify(currentSettings) !== JSON.stringify(originalSettings)
 	);
 	let dirtyCount = $derived(
 		currentSettings.filter(
-			(s, i) => s.value !== originalSettings[i]?.value
+			(s) => s.value !== getOriginalValue(s.key)
 		).length
 	);
 
@@ -127,6 +134,38 @@
 		return key in multiSelectOptions;
 	}
 
+	// getOptionsForSetting returns the API-provided options (setting.options)
+	// when present, falling back to the hardcoded selectOptions/multiSelectOptions
+	// maps. This satisfies Rule 16: when the backend catalog supplies options,
+	// they are the source of truth.
+	function getSelectOptionsForSetting(setting: SystemSetting): { value: string; label: string }[] {
+		if (setting.options && setting.options.length > 0) return setting.options;
+		return selectOptions[setting.key] ?? [];
+	}
+
+	function getMultiSelectOptionsForSetting(setting: SystemSetting): { value: string; label: string }[] {
+		if (setting.options && setting.options.length > 0) return setting.options;
+		return multiSelectOptions[setting.key] ?? [];
+	}
+
+	// parseJsonArray safely parses a JSON array string (e.g. '["uuid1", "uuid2"]')
+	// returning an empty array on any parse error.
+	function parseJsonArray(v: string): string[] {
+		if (!v) return [];
+		try {
+			const parsed = JSON.parse(v);
+			return Array.isArray(parsed) ? parsed.map(String) : [];
+		} catch {
+			return [];
+		}
+	}
+
+	// getEntityOptionsForSetting returns the entity-name options for the
+	// onboarding promoted_* fields (spaces, users, tags).
+	function getEntityOptionsForSetting(setting: SystemSetting): { value: string; label: string }[] {
+		return entityOptions[setting.key] ?? [];
+	}
+
 	function isTextareaKey(key: string): boolean {
 		return textareaKeys.has(key);
 	}
@@ -144,6 +183,27 @@
 		if (val === '[]' || val === '{}') return '';
 		if (val.startsWith('"') && val.endsWith('"')) return val.slice(1, -1);
 		return val;
+	}
+
+	// normalizeValue strips the JSON string quoting that the batch PATCH
+	// endpoint used to add (e.g. "\"3\"" → "3"). This ensures originalSettings
+	// and currentSettings hold clean values so isDirty / dirtyCount comparisons
+	// are accurate and a value toggled back to its original is not permanently
+	// marked dirty.
+	function normalizeValue(v: string): string {
+		if (typeof v !== 'string') return v;
+		if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+			return v.slice(1, -1);
+		}
+		return v;
+	}
+
+	function normalizeSettings(settings: SystemSetting[]): SystemSetting[] {
+		return settings.map((s) => ({
+			...s,
+			value: normalizeValue(s.value ?? ''),
+			default_value: normalizeValue(s.default_value ?? '')
+		}));
 	}
 
 	function getSelectValue(currentValue: string): string {
@@ -232,7 +292,7 @@
 		message = '';
 		try {
 			const changed = currentSettings.filter(
-				(s, i) => s.value !== originalSettings[i]?.value
+				(s) => s.value !== getOriginalValue(s.key)
 			);
 			for (const setting of changed) {
 				const error = validateSettingValue(setting);
@@ -242,24 +302,19 @@
 					return;
 				}
 			}
-			let failed = 0;
-			const results = await Promise.all(
-				changed.map((setting) =>
-					api(`/control/system-settings/${setting.key}`, {
-						method: 'PATCH',
-						body: { value: setting.value }
-					})
-				)
-			);
-			for (const result of results) {
-				if (!result.ok) failed++;
-			}
-			if (failed === 0) {
+			// Use the batch endpoint PATCH /control/system-settings which accepts
+			// a map of {key: value} and applies them in a single request.
+			const body = Object.fromEntries(changed.map((s) => [s.key, s.value]));
+			const result = await api('/control/system-settings', {
+				method: 'PATCH',
+				body
+			});
+			if (result.ok) {
 				originalSettings = JSON.parse(JSON.stringify(currentSettings));
-				message = t('settings.save_all_success', `${changed.length} setting(s) saved successfully.`);
+				message = t('settings.save_all_success', '{count} setting(s) saved successfully.').replace('{count}', String(changed.length));
 				messageType = 'success';
 			} else {
-				message = t('settings.save_all_error', `Failed to save ${failed} of ${changed.length} setting(s).`);
+				message = result.error || t('settings.save_all_error', 'Failed to save {count} setting(s).').replace('{count}', String(changed.length));
 				messageType = 'error';
 			}
 		} catch {
@@ -309,14 +364,39 @@
 		message = '';
 		const result = await api<SystemSetting[]>('/control/system-settings');
 		if (result.ok) {
-			originalSettings = JSON.parse(JSON.stringify(result.data));
-			currentSettings = JSON.parse(JSON.stringify(result.data));
+			const normalized = normalizeSettings(result.data);
+			originalSettings = JSON.parse(JSON.stringify(normalized));
+			currentSettings = JSON.parse(JSON.stringify(normalized));
 			const ctRes = await api<{ value: string; label: string }[]>('/api/v1/content-types');
 			if (ctRes.ok && Array.isArray(ctRes.data)) {
 				contentTypes = ctRes.data;
 			}
+			// Fetch entity names for onboarding promoted_* fields (UUID → name).
+			await loadEntityOptions();
 		}
 		isLoading = false;
+	}
+
+	// loadEntityOptions fetches spaces, users, and tags from the admin API so
+	// the onboarding.promoted_* settings can display entity names instead of
+	// raw UUIDs. The values stored in the setting are JSON arrays of UUIDs.
+	async function loadEntityOptions() {
+		const [spacesRes, usersRes, tagsRes] = await Promise.all([
+			api<{ items: { id: string; name: string }[] }>('/api/v1/admin/spaces?per_page=200'),
+			api<{ items: { id: string; username: string }[] }>('/api/v1/admin/users?per_page=200'),
+			api<{ id: string; name: string }[]>('/api/v1/admin/tags')
+		]);
+		entityOptions = {
+			'onboarding.promoted_spaces': spacesRes.ok && spacesRes.data?.items
+				? spacesRes.data.items.map((s) => ({ value: s.id, label: s.name }))
+				: [],
+			'onboarding.promoted_users': usersRes.ok && usersRes.data?.items
+				? usersRes.data.items.map((u) => ({ value: u.id, label: u.username }))
+				: [],
+			'onboarding.promoted_tags': tagsRes.ok && Array.isArray(tagsRes.data)
+				? tagsRes.data.map((t) => ({ value: t.id, label: t.name }))
+				: []
+		};
 	}
 
 	beforeNavigate(({ cancel }) => {
@@ -391,7 +471,14 @@
 	function getSettingComponentType(setting: SystemSetting): string {
 		if (setting.key === 'feed.card_style') return 'card-style';
 		if (setting.type === 'bool' || isBoolValue(setting.value)) return 'switch';
-		if (isSelectKey(setting.key)) return 'select';
+		// Onboarding promoted_* fields store JSON arrays of UUIDs — render as
+		// an entity multi-select that shows names instead of raw UUIDs.
+		if (setting.key in entityOptions) return 'entity-multi-select';
+		// When the API provides options, render as select (single) or multi-select
+		// (csv type) per Rule 16 — the backend catalog is the source of truth.
+		const hasApiOptions = !!(setting.options && setting.options.length > 0);
+		if (hasApiOptions && setting.type === 'csv') return 'multi-select';
+		if (hasApiOptions || isSelectKey(setting.key)) return 'select';
 		if (isMultiSelectKey(setting.key)) return 'multi-select';
 		if (isTextareaKey(setting.key)) return 'textarea';
 		if (isUploadKey(setting.key)) return 'upload';
@@ -442,6 +529,18 @@
 
 	const MAX_UPLOAD_SIZE_MB = 50;
 
+	// readCookieValue returns the value of a document cookie by name, or null.
+	// Used for the double-submit CSRF token on multipart uploads that bypass
+	// the JSON-based api() helper.
+	function readCookieValue(name: string): string | null {
+		if (typeof document === 'undefined') return null;
+		const match = document.cookie
+			.split(';')
+			.map((c) => c.trim())
+			.find((c) => c.startsWith(`${name}=`));
+		return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
+	}
+
 	async function handleFileUpload(setting: SystemSetting, file: File, inputEl?: HTMLInputElement) {
 		uploadingKey = setting.key;
 		uploadError = '';
@@ -455,39 +554,34 @@
 		}
 
 		try {
-			const initiateRes = await api<{
-				media_id: string;
-				storage_path: string;
-				presigned_url: string;
-				expires_at: string;
-			}>('/api/v1/media/upload', {
+			// Use the admin direct multipart upload endpoint which stores files
+			// locally in development (no S3/SeaweedFS required) and returns a
+			// ready-to-use serve URL. The two-step /media/upload flow requires
+			// a configured S3 client for presigned URLs.
+			const formData = new FormData();
+			formData.append('file', file);
+			const token = getToken();
+			const csrf = readCookieValue('csrf_token');
+			const res = await fetch('/api/v1/admin/media/upload', {
 				method: 'POST',
-				body: { filename: file.name, mime_type: file.type, file_size: file.size }
+				headers: {
+					...(token ? { authorization: `Bearer ${token}` } : {}),
+					...(csrf ? { 'X-CSRF-Token': csrf } : {})
+				},
+				body: formData
 			});
-			if (!initiateRes.ok) {
-				uploadError = initiateRes.error || 'Failed to initiate upload';
+			if (!res.ok) {
+				const errBody = await res.json().catch(() => ({}));
+				uploadError = errBody?.error?.message || `Upload failed: ${res.statusText}`;
 				return;
 			}
-			if (!initiateRes.data) {
-				uploadError = 'Failed to initiate upload';
+			const body = await res.json();
+			const url = body?.data?.url;
+			if (!url) {
+				uploadError = 'Upload succeeded but no URL returned';
 				return;
 			}
-			const { media_id, presigned_url } = initiateRes.data;
-			const putRes = await fetch(presigned_url, {
-				method: 'PUT',
-				headers: { 'Content-Type': file.type },
-				body: file
-			});
-			if (!putRes.ok) {
-				uploadError = `File upload failed: ${putRes.statusText}`;
-				return;
-			}
-			const confirmRes = await api(`/api/v1/media/confirm/${media_id}`, { method: 'POST' });
-			if (!confirmRes.ok) {
-				uploadError = confirmRes.error || 'Failed to confirm upload';
-				return;
-			}
-			updateSetting(setting.key, `/api/v1/media/${media_id}`);
+			updateSetting(setting.key, url);
 		} catch (e) {
 			uploadError = e instanceof Error ? e.message : 'Upload failed';
 		} finally {
@@ -621,7 +715,7 @@
 			>
 				<AlertTriangle class="text-amber-500 size-4 shrink-0" />
 				<span class="text-foreground text-sm font-medium">
-					{t('settings.unsaved_changes', `You have ${dirtyCount} unsaved change(s).`)}
+					{t('settings.unsaved_changes', 'You have {count} unsaved change(s).').replace('{count}', String(dirtyCount))}
 				</span>
 				<div class="flex-1"></div>
 				<button
@@ -740,7 +834,7 @@
 										<Select.Portal>
 											<Select.Content class={selectContentClasses}>
 												<Select.Viewport class="p-1">
-													{#each selectOptions[setting.key] ?? [] as option}
+													{#each getSelectOptionsForSetting(setting) as option}
 														<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
 															{#snippet children({ selected })}
 																{option.label}
@@ -758,7 +852,7 @@
 									<div class="w-56">
 										<div class="mb-1 flex flex-wrap gap-1">
 											{#each selectedValues as val}
-												{@const optionLabel = (multiSelectOptions[setting.key] ?? []).find((o) => o.value === val)?.label ?? val}
+												{@const optionLabel = getMultiSelectOptionsForSetting(setting).find((o) => o.value === val)?.label ?? val}
 												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
 													{optionLabel}
 													<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, selectedValues.filter((v) => v !== val).join(','))}>×</button>
@@ -777,7 +871,43 @@
 											<Select.Portal>
 												<Select.Content class={selectContentClasses}>
 													<Select.Viewport class="p-1">
-														{#each (multiSelectOptions[setting.key] ?? []).filter((o) => !selectedValues.includes(o.value)) as option}
+														{#each getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value)) as option}
+															<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
+																{option.label}
+															</Select.Item>
+														{/each}
+													</Select.Viewport>
+												</Select.Content>
+											</Select.Portal>
+										</Select.Root>
+									</div>
+
+								{:else if componentType === 'entity-multi-select'}
+									{@const selectedUuids = parseJsonArray(getDisplayValue(setting))}
+									{@const entityOpts = getEntityOptionsForSetting(setting)}
+									<div class="w-64">
+										<div class="mb-1 flex flex-wrap gap-1">
+											{#each selectedUuids as uuid}
+												{@const label = entityOpts.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…'}
+												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+													{label}
+													<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, JSON.stringify(selectedUuids.filter((v) => v !== uuid)))}>×</button>
+												</span>
+											{/each}
+										</div>
+										<Select.Root type="single" value="" onValueChange={(v) => {
+											if (v && !selectedUuids.includes(v)) {
+												updateSetting(setting.key, JSON.stringify([...selectedUuids, v]));
+											}
+										}}>
+											<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
+												<Select.Value placeholder={t('settings.add_placeholder', 'Add...')} />
+												<ChevronDown class="text-muted-foreground size-3.5" />
+											</Select.Trigger>
+											<Select.Portal>
+												<Select.Content class={selectContentClasses}>
+													<Select.Viewport class="p-1">
+														{#each entityOpts.filter((o) => !selectedUuids.includes(o.value)) as option}
 															<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
 																{option.label}
 															</Select.Item>
@@ -805,6 +935,42 @@
 										class="{inputClasses} w-64 resize-y font-mono text-xs"
 									></textarea>
 
+								{:else if componentType === 'entity-multi-select'}
+									{@const selectedUuids = parseJsonArray(getDisplayValue(setting))}
+									{@const entityOpts = getEntityOptionsForSetting(setting)}
+									<div class="w-64">
+										<div class="mb-1 flex flex-wrap gap-1">
+											{#each selectedUuids as uuid}
+												{@const label = entityOpts.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…'}
+												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+													{label}
+													<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, JSON.stringify(selectedUuids.filter((v) => v !== uuid)))}>×</button>
+												</span>
+											{/each}
+										</div>
+										<Select.Root type="single" value="" onValueChange={(v) => {
+											if (v && !selectedUuids.includes(v)) {
+												updateSetting(setting.key, JSON.stringify([...selectedUuids, v]));
+											}
+										}}>
+											<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
+												<Select.Value placeholder={t('settings.add_placeholder', 'Add...')} />
+												<ChevronDown class="text-muted-foreground size-3.5" />
+											</Select.Trigger>
+											<Select.Portal>
+												<Select.Content class={selectContentClasses}>
+													<Select.Viewport class="p-1">
+														{#each entityOpts.filter((o) => !selectedUuids.includes(o.value)) as option}
+															<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
+																{option.label}
+															</Select.Item>
+														{/each}
+													</Select.Viewport>
+												</Select.Content>
+											</Select.Portal>
+										</Select.Root>
+									</div>
+
 								{:else if componentType === 'number'}
 									<input
 										id="setting-{setting.key}"
@@ -817,28 +983,6 @@
 										step={setting.type === 'float' ? '0.01' : '1'}
 										class="{inputClasses} w-28"
 									/>
-
-								{:else if isSensitiveKey(setting.key)}
-									<div class="flex items-center gap-1">
-										<input
-											id="setting-{setting.key}"
-											type={revealedKeys.has(setting.key) ? 'text' : 'password'}
-											value={getDisplayValue(setting)}
-											onchange={(e) => {
-												const target = e.currentTarget as HTMLInputElement;
-												updateSetting(setting.key, target.value);
-											}}
-											class="{inputClasses} w-44 font-mono text-xs"
-										/>
-										<button
-											type="button"
-											class="text-muted-foreground hover:text-foreground rounded p-1 transition-colors"
-											onclick={() => toggleReveal(setting.key)}
-											aria-label={revealedKeys.has(setting.key) ? t('settings.hide_value', 'Hide value') : t('settings.reveal_value', 'Reveal value')}
-										>
-											{revealedKeys.has(setting.key) ? '🙈' : '👁'}
-										</button>
-									</div>
 
 								{:else if componentType === 'upload'}
 									<div class="flex items-center gap-2">
@@ -902,6 +1046,28 @@
 											placeholder="#000000"
 											class="{inputClasses} w-24 font-mono text-xs"
 										/>
+									</div>
+
+								{:else if isSensitiveKey(setting.key)}
+									<div class="flex items-center gap-1">
+										<input
+											id="setting-{setting.key}"
+											type={revealedKeys.has(setting.key) ? 'text' : 'password'}
+											value={getDisplayValue(setting)}
+											onchange={(e) => {
+												const target = e.currentTarget as HTMLInputElement;
+												updateSetting(setting.key, target.value);
+											}}
+											class="{inputClasses} w-44 font-mono text-xs"
+										/>
+										<button
+											type="button"
+											class="text-muted-foreground hover:text-foreground rounded p-1 transition-colors"
+											onclick={() => toggleReveal(setting.key)}
+											aria-label={revealedKeys.has(setting.key) ? t('settings.hide_value', 'Hide value') : t('settings.reveal_value', 'Reveal value')}
+										>
+											{revealedKeys.has(setting.key) ? '🙈' : '👁'}
+										</button>
 									</div>
 
 								{:else}
@@ -1037,7 +1203,7 @@
 												<Select.Portal>
 													<Select.Content class={selectContentClasses}>
 														<Select.Viewport class="p-1">
-															{#each selectOptions[setting.key] ?? [] as option}
+															{#each getSelectOptionsForSetting(setting) as option}
 																<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
 																	{#snippet children({ selected })}
 																		{option.label}
@@ -1055,7 +1221,7 @@
 										<div class="w-56">
 											<div class="mb-1 flex flex-wrap gap-1">
 												{#each selectedValues as val}
-													{@const optionLabel = (multiSelectOptions[setting.key] ?? []).find((o) => o.value === val)?.label ?? val}
+													{@const optionLabel = getMultiSelectOptionsForSetting(setting).find((o) => o.value === val)?.label ?? val}
 													<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
 														{optionLabel}
 														<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, selectedValues.filter((v) => v !== val).join(','))}>×</button>
@@ -1074,7 +1240,7 @@
 												<Select.Portal>
 													<Select.Content class={selectContentClasses}>
 														<Select.Viewport class="p-1">
-															{#each (multiSelectOptions[setting.key] ?? []).filter((o) => !selectedValues.includes(o.value)) as option}
+															{#each getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value)) as option}
 																<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
 																	{option.label}
 																</Select.Item>
@@ -1101,6 +1267,42 @@
 											}}
 											class="{inputClasses} w-64 resize-y font-mono text-xs"
 										></textarea>
+
+									{:else if componentType === 'entity-multi-select'}
+										{@const selectedUuids = parseJsonArray(getDisplayValue(setting))}
+										{@const entityOpts = getEntityOptionsForSetting(setting)}
+										<div class="w-64">
+											<div class="mb-1 flex flex-wrap gap-1">
+												{#each selectedUuids as uuid}
+													{@const label = entityOpts.find((o) => o.value === uuid)?.label ?? uuid.slice(0, 8) + '…'}
+													<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+														{label}
+														<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, JSON.stringify(selectedUuids.filter((v) => v !== uuid)))}>×</button>
+													</span>
+												{/each}
+											</div>
+											<Select.Root type="single" value="" onValueChange={(v) => {
+												if (v && !selectedUuids.includes(v)) {
+													updateSetting(setting.key, JSON.stringify([...selectedUuids, v]));
+												}
+											}}>
+												<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
+													<Select.Value placeholder={t('settings.add_placeholder', 'Add...')} />
+													<ChevronDown class="text-muted-foreground size-3.5" />
+												</Select.Trigger>
+												<Select.Portal>
+													<Select.Content class={selectContentClasses}>
+														<Select.Viewport class="p-1">
+															{#each entityOpts.filter((o) => !selectedUuids.includes(o.value)) as option}
+																<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
+																	{option.label}
+																</Select.Item>
+															{/each}
+														</Select.Viewport>
+													</Select.Content>
+												</Select.Portal>
+											</Select.Root>
+										</div>
 
 									{:else if componentType === 'number'}
 										<input

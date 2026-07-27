@@ -55,11 +55,12 @@ DELETE FROM ad_slot_types WHERE id = @id AND tenant_id = @tenant_id;
 INSERT INTO ad_campaigns (
     tenant_id, name, slot_type_id, content, target_url,
     budget, status, priority, frequency_cap_per_user,
-    start_date, end_date, created_by
+    start_date, end_date, created_by, target_geo, target_space_ids
 ) VALUES (
     @tenant_id, @name, @slot_type_id, @content, sqlc.narg(target_url),
     sqlc.narg(budget), @status, @priority, sqlc.narg(frequency_cap_per_user),
-    sqlc.narg(start_date), sqlc.narg(end_date), sqlc.narg(created_by)
+    sqlc.narg(start_date), sqlc.narg(end_date), sqlc.narg(created_by),
+    sqlc.narg(target_geo), sqlc.narg(target_space_ids)
 )
 RETURNING *;
 
@@ -98,6 +99,8 @@ SET name = @name,
     frequency_cap_per_user = @frequency_cap_per_user,
     start_date = @start_date,
     end_date = @end_date,
+    target_geo = sqlc.narg(target_geo),
+    target_space_ids = sqlc.narg(target_space_ids),
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING *;

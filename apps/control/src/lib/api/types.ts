@@ -192,11 +192,9 @@ export interface DbHealth {
 }
 
 export interface Deployment {
-	git_sha: string;
-	deployed_at: string;
 	version: string;
-	last_backup_at: string | null;
-	last_backup_status: string | null;
+	status: string;
+	deployed_at: string;
 }
 
 export interface PaginatedResponse<T> {

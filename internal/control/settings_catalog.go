@@ -106,7 +106,7 @@ var settingsCatalog = map[string]settingMeta{
 	"pricing.plan.pro.yearly_amount":      {Type: "int", DefaultValue: "5000000", Description: "Pro plan yearly price in kobo (NGN)."},
 	"pricing.plan.business.monthly_amount": {Type: "int", DefaultValue: "1500000", Description: "Business plan monthly price in kobo (NGN)."},
 	"pricing.plan.business.yearly_amount":  {Type: "int", DefaultValue: "15000000", Description: "Business plan yearly price in kobo (NGN)."},
-	"pricing.currency":                    {Type: "string", DefaultValue: "NGN", Description: "Currency code for plan prices."},
+	"pricing.currency":                    {Type: "string", DefaultValue: "NGN", Description: "Currency code for plan prices.", Options: `[{"value":"NGN","label":"Nigerian Naira (NGN)"},{"value":"USD","label":"US Dollar (USD)"},{"value":"GBP","label":"British Pound (GBP)"},{"value":"EUR","label":"Euro (EUR)"}]`},
 	// Affiliate
 	"affiliate.min_account_days":        {Type: "int", DefaultValue: "30", Description: "Minimum account age (days) to enroll in affiliate program."},
 	"affiliate.attribution_window_days": {Type: "int", DefaultValue: "30", Description: "Click attribution window in days."},
@@ -116,14 +116,14 @@ var settingsCatalog = map[string]settingMeta{
 	"affiliate.max_links_per_user":      {Type: "int", DefaultValue: "10", Description: "Max active affiliate links per enrolled user."},
 	// AUDIT-BE-SETTING-001/002/003: affiliate enhancement settings (Section 55).
 	"affiliate.author_commission_default": {Type: "float", DefaultValue: "25", Description: "Default % of external affiliate commission shared with content author (when provider has no override)."},
-	"affiliate.unregistered_link_policy":  {Type: "string", DefaultValue: "flag", Description: "How to handle unregistered affiliate links: flag (log only), block (prevent publish), strip (remove link)."},
+	"affiliate.unregistered_link_policy":  {Type: "string", DefaultValue: "flag", Description: "How to handle unregistered affiliate links: flag (log only), block (prevent publish), strip (remove link).", Options: `[{"value":"flag","label":"Flag (log only)"},{"value":"block","label":"Block (prevent publish)"},{"value":"strip","label":"Strip (remove link)"}]`},
 	"affiliate.scan_on_publish":           {Type: "bool", DefaultValue: "true", Description: "Whether to scan content for unregistered affiliate links on publish."},
 	// AUDIT-BE-SETTING-004: Japa University creator economy settings (ADR-063, Section 36).
 	"university.subdomain":                {Type: "string", DefaultValue: "university", Description: "Host label for the Japa University shell."},
 	"university.custom_domain":            {Type: "string", DefaultValue: "", Description: "Optional custom domain (e.g. japauni.com); empty = use subdomain."},
 	"university.creator_percentage_default": {Type: "int", DefaultValue: "75", Description: "Default creator revenue share % (platform takes the remainder)."},
 	"university.platform_percentage_default": {Type: "int", DefaultValue: "25", Description: "Default platform revenue share %."},
-	"university.payout_schedule":          {Type: "string", DefaultValue: "monthly", Description: "Payout cadence: weekly | monthly."},
+	"university.payout_schedule":          {Type: "string", DefaultValue: "monthly", Description: "Payout cadence: weekly | monthly.", Options: `[{"value":"weekly","label":"Weekly"},{"value":"monthly","label":"Monthly"}]`},
 	"university.min_payout_kobo":          {Type: "int", DefaultValue: "500000", Description: "Minimum accrued net (kobo) before a payout is issued."},
 	"university.pro_stream_rate_kobo":     {Type: "int", DefaultValue: "5000", Description: "Amount (kobo) accrued to a creator per Pro-enrolled learner per period."},
 	// AUDIT-BE-SETTING-005: geo-aware personalization master switch (ADR-064).
@@ -139,6 +139,45 @@ var settingsCatalog = map[string]settingMeta{
 	"onboarding.promoted_spaces": {Type: "json", DefaultValue: "[]", Description: "JSON array of space UUIDs to promote in recommendations."},
 	"onboarding.promoted_users":  {Type: "json", DefaultValue: "[]", Description: "JSON array of user UUIDs to promote in recommendations."},
 	"onboarding.promoted_tags":   {Type: "json", DefaultValue: "[]", Description: "JSON array of tag UUIDs to promote in recommendations."},
+	"onboarding.min_spaces_join": {Type: "int", DefaultValue: "3", Description: "Minimum number of spaces a new user must join during onboarding."},
+	"onboarding.min_tags_follow": {Type: "int", DefaultValue: "5", Description: "Minimum number of tags a new user must follow during onboarding."},
+	"onboarding.min_users_follow": {Type: "int", DefaultValue: "3", Description: "Minimum number of users a new user must follow during onboarding."},
+	// General platform settings (exist in DB, now catalogued for type metadata).
+	"general.site_name":              {Type: "string", DefaultValue: "JapaConnect", Description: "Platform display name."},
+	"general.site_description":       {Type: "string", DefaultValue: "", Description: "Short platform description for SEO and meta tags."},
+	"general.maintenance_mode":       {Type: "bool", DefaultValue: "false", Description: "When true, the platform shows a maintenance banner to non-admin users."},
+	"general.registration_open":      {Type: "bool", DefaultValue: "true", Description: "Whether new user self-registration is allowed."},
+	// Appearance / branding.
+	"appearance.dark_mode_default":   {Type: "bool", DefaultValue: "false", Description: "Default theme for new visitors (false = light)."},
+	"appearance.feed_card_style":     {Type: "string", DefaultValue: "reddit", Description: "Default feed card style: reddit | compact | grid | magazine.", Options: `[{"value":"reddit","label":"Reddit"},{"value":"compact","label":"Compact"},{"value":"grid","label":"Grid"},{"value":"magazine","label":"Magazine"}]`},
+	"appearance.logo_url":            {Type: "string", DefaultValue: "", Description: "URL to the platform logo image."},
+	"appearance.primary_color":       {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex)."},
+	// Advanced / operational.
+	"advanced.cache_ttl_seconds":     {Type: "int", DefaultValue: "20", Description: "Default Valkey cache TTL in seconds for non-explicit keys."},
+	"advanced.log_level":             {Type: "string", DefaultValue: "info", Description: "Application log level.", Options: `[{"value":"debug","label":"Debug"},{"value":"info","label":"Info"},{"value":"warn","label":"Warn"},{"value":"error","label":"Error"}]`},
+	// Content settings not yet in the JEOS catalog but present in the DB.
+	"content.allow_anonymous_posts":  {Type: "bool", DefaultValue: "false", Description: "Whether anonymous (logged-out) users can create posts."},
+	"content.allowed_upload_types":   {Type: "csv", DefaultValue: "jpeg,png,jpg", Description: "Comma-separated allowed file extensions for content uploads.", Options: `[{"value":"jpeg","label":"JPEG"},{"value":"jpg","label":"JPG"},{"value":"png","label":"PNG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"},{"value":"pdf","label":"PDF"},{"value":"doc","label":"DOC"},{"value":"docx","label":"DOCX"},{"value":"mp4","label":"MP4"},{"value":"webm","label":"WebM"},{"value":"mov","label":"MOV"}]`},
+	"content.max_upload_size_mb":     {Type: "int", DefaultValue: "5", Description: "Maximum upload file size in MB for content attachments."},
+	"content.posts_per_page":         {Type: "int", DefaultValue: "12", Description: "Number of posts per page in feed/list views."},
+	"content.require_content_review": {Type: "bool", DefaultValue: "true", Description: "Whether new content requires admin review before publishing."},
+	// Feature flags (platform-level toggles).
+	"features.advertising_enabled":   {Type: "bool", DefaultValue: "true", Description: "Master toggle for the advertising module."},
+	"features.blog_enabled":          {Type: "bool", DefaultValue: "true", Description: "Master toggle for the blog module."},
+	"features.comparisons_enabled":   {Type: "bool", DefaultValue: "true", Description: "Master toggle for the comparison module."},
+	"features.forum_enabled":         {Type: "bool", DefaultValue: "true", Description: "Master toggle for the forum module."},
+	"features.reviews_enabled":       {Type: "bool", DefaultValue: "true", Description: "Master toggle for the reviews module."},
+	// Security settings not in the JEOS catalog.
+	"security.lockout_duration_minutes":    {Type: "int", DefaultValue: "15", Description: "Account lockout duration in minutes after max login attempts."},
+	"security.require_email_verification":  {Type: "bool", DefaultValue: "true", Description: "Whether email verification is required before posting."},
+	// SEO settings.
+	"seo.enable_json_ld":     {Type: "bool", DefaultValue: "true", Description: "Generate JSON-LD structured data on content pages."},
+	"seo.enable_robots_txt":  {Type: "bool", DefaultValue: "true", Description: "Serve a robots.txt file."},
+	"seo.enable_sitemap":     {Type: "bool", DefaultValue: "true", Description: "Generate and serve an XML sitemap."},
+	// User profile settings.
+	"users.allowed_avatar_types":         {Type: "csv", DefaultValue: "png,jpg,gif,webp", Description: "Comma-separated allowed file extensions for user avatars.", Options: `[{"value":"png","label":"PNG"},{"value":"jpg","label":"JPG"},{"value":"jpeg","label":"JPEG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"}]`},
+	"users.allow_social_login":           {Type: "bool", DefaultValue: "false", Description: "Whether OAuth social login providers are enabled."},
+	"users.require_profile_completion":   {Type: "bool", DefaultValue: "false", Description: "Whether users must complete their profile before posting."},
 }
 
 // getSettingMeta returns the metadata for a given dot-notation key.

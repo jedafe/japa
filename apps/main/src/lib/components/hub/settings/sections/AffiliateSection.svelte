@@ -4,7 +4,8 @@
 	import { createAffiliate, deleteAffiliate } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Share2 } from 'lucide-svelte';
+	import { Share2, MousePointerClick, TrendingUp, Wallet } from 'lucide-svelte';
+	import type { AffiliateEarnings } from '$lib/types';
 
 	interface AffiliateLink {
 		id: string;
@@ -13,8 +14,15 @@
 		created_at?: string;
 	}
 
+	interface AffiliateSectionData {
+		links?: AffiliateLink[];
+		earnings?: AffiliateEarnings | null;
+	}
+
 	let { data }: { data: unknown } = $props();
-	let links = $state<AffiliateLink[]>(untrack(() => (data as AffiliateLink[] | null) ?? []));
+	const sectionData = $derived((data as AffiliateSectionData | null) ?? {});
+	let links = $state<AffiliateLink[]>(untrack(() => sectionData.links ?? []));
+	const earnings = $derived(sectionData.earnings ?? null);
 	let newUrl = $state('');
 	let newLabel = $state('');
 	let creating = $state(false);
@@ -52,6 +60,67 @@
 		<h1 class="text-lg font-medium text-[var(--color-text)]">{t('settings.nav.affiliate')}</h1>
 		<p class="text-sm text-[var(--color-muted)]">{t('settings.affiliate.desc')}</p>
 	</header>
+
+	{#if earnings}
+		<div class="mb-6 grid grid-cols-3 gap-3">
+			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+				<div class="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+					<MousePointerClick size={13} /> {t('settings.affiliate.clicks', 'Clicks')}
+				</div>
+				<p class="mt-1 text-lg font-semibold text-[var(--color-text)] [font-variant-numeric:tabular-nums]">{earnings.total_clicks}</p>
+			</div>
+			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+				<div class="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+					<TrendingUp size={13} /> {t('settings.affiliate.conversions', 'Conversions')}
+				</div>
+				<p class="mt-1 text-lg font-semibold text-[var(--color-text)] [font-variant-numeric:tabular-nums]">{earnings.total_conversions}</p>
+			</div>
+			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+				<div class="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+					<Wallet size={13} /> {t('settings.affiliate.earned', 'Earned')}
+				</div>
+				<p class="mt-1 text-lg font-semibold text-[var(--color-text)] [font-variant-numeric:tabular-nums]">{earnings.total_earned}</p>
+			</div>
+		</div>
+
+		{#if earnings.by_product.length > 0}
+			<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('settings.affiliate.by_product', 'Earnings by product')}</h2>
+				<ul class="space-y-2">
+					{#each earnings.by_product as row (row.product_type)}
+						<li class="flex items-center justify-between gap-3 text-sm">
+							<span class="capitalize text-[var(--color-text)]">{row.product_type.replace(/_/g, ' ')}</span>
+							<span class="flex items-center gap-4 text-xs text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
+								<span>{row.clicks} {t('settings.affiliate.clicks', 'Clicks')}</span>
+								<span>{row.conversions} {t('settings.affiliate.conversions', 'Conversions')}</span>
+								<span class="font-medium text-[var(--color-text)]">{row.earned}</span>
+							</span>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+
+		{#if earnings.recent_events.length > 0}
+			<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('settings.affiliate.recent', 'Recent activity')}</h2>
+				<ul class="divide-y divide-[var(--color-border)]">
+					{#each earnings.recent_events.slice(0, 10) as ev (ev.id)}
+						<li class="flex items-center justify-between gap-3 py-2 text-sm">
+							<span class="min-w-0">
+								<span class="capitalize text-[var(--color-text)]">{ev.event_type.replace(/_/g, ' ')}</span>
+								<span class="ml-1 text-xs text-[var(--color-muted)]">· {ev.product_type.replace(/_/g, ' ')}</span>
+							</span>
+							<span class="flex items-center gap-3 text-xs text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
+								{#if ev.commission_amount}<span class="font-medium text-[var(--color-text)]">{ev.commission_amount}</span>{/if}
+								<span>{ev.link_code}</span>
+							</span>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+	{/if}
 
 	<form class="mb-6 space-y-3" onsubmit={(e) => { e.preventDefault(); doCreate(); }}>
 		<label class="block">

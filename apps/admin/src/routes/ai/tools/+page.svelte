@@ -3,6 +3,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
+	import { Pencil } from 'lucide-svelte';
 
 	type AITool = {
 		id: string;
@@ -35,7 +37,7 @@
 		{ key: 'description', label: t('ai.description'), render: (v: string) => v || '-' },
 		{ key: 'model', label: t('ai.model'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
 		{ key: 'enabled', label: t('ai.status'), render: (v: boolean) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success dark:text-success' : 'bg-muted/15 text-muted dark:text-muted'}">${v ? t('ai.enabled') : t('ai.disabled')}</span>` },
-		{ key: 'actions', label: t('common.actions'), class: 'w-24', render: (_: any, row: AITool) => `<button class="text-xs text-info hover:text-info" onclick="window.__editAiTool('${row.id}')">${t('common.edit')}</button>` }
+		{ key: 'actions', label: t('common.actions'), class: 'w-24', componentSnippet: ToolActionsCell }
 	];
 
 	const usageColumns = [
@@ -50,13 +52,6 @@
 			? tools.filter((t) => t.name.toLowerCase().includes(searchQuery.toLowerCase()) || (t.description || '').toLowerCase().includes(searchQuery.toLowerCase()))
 			: tools
 	);
-
-	$effect(() => {
-		(window as any).__editAiTool = (id: string) => {
-			const tool = tools.find((t) => t.id === id);
-			if (tool) editTool(tool);
-		};
-	});
 
 	$effect(() => {
 		load();
@@ -123,14 +118,14 @@
 	<button
 		class="rounded-md px-4 py-2 text-sm font-medium transition-colors"
 		style={activeTab === 'tools' ? 'background-color: var(--color-primary); color: white' : ''}
-		onclick={() => { activeTab = 'tools'; load(); }}
+		onclick={() => { activeTab = 'tools'; }}
 	>
 		{t('ai.tools')}
 	</button>
 	<button
 		class="rounded-md px-4 py-2 text-sm font-medium transition-colors"
 		style={activeTab === 'usage' ? 'background-color: var(--color-primary); color: white' : ''}
-		onclick={() => { activeTab = 'usage'; load(); }}
+		onclick={() => { activeTab = 'usage'; }}
 	>
 		{t('ai.usage')}
 	</button>
@@ -240,3 +235,9 @@
 		</div>
 	</Modal>
 {/if}
+
+{#snippet ToolActionsCell({ row }: { value: any; row: AITool })}
+	<Button variant="ghost" size="sm" onclick={() => editTool(row)} aria-label={t('common.edit', 'Edit')}>
+		<Pencil class="h-3.5 w-3.5" />
+	</Button>
+{/snippet}

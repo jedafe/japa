@@ -123,6 +123,10 @@ type AdCampaign struct {
 	CreatedBy           pgtype.UUID        `json:"created_by"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	// ISO country codes for geo-targeted serving (e.g., {NG,CA,GB}). Empty = all countries.
+	TargetGeo []string `json:"target_geo"`
+	// Specific space UUIDs for fine-grained targeting. Empty = all spaces.
+	TargetSpaceIds []pgtype.UUID `json:"target_space_ids"`
 }
 
 type AdEvent struct {

@@ -79,6 +79,7 @@ import (
 	"github.com/jedafe/japa/internal/university"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/webhooks"
 	"github.com/jedafe/japa/internal/websocket"
@@ -819,11 +820,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				strings.HasPrefix(r.URL.Path, "/api/v1/forms/")
 		}))
 
-		// CSRF token bootstrap endpoint — issues the double-submit cookie and
-		// echoes the token so the SPA can attach it as X-CSRF-Token. The SPA
-		// calls this once at startup and again after a 403 CSRF rejection.
-		r.Get("/csrf", csrf.TokenHandler(cfg.CookieDomain, cfg.IsProduction()))
-
 		// Impersonation middleware (SEC-002) — injects impersonated identity
 		// into request context when an active impersonation session exists.
 		// Runs after auth + bot detection so the impersonator is authenticated
@@ -835,6 +831,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// users (per rbac.HasAdminCapability) without an active TOTP
 		// enrollment are rejected with 403 totp_required on /api/v1/admin/*.
 		r.Use(auth.RequireTOTPForAdmin(settingsService, rbacResolver, totpStore))
+
+		// Soft auth (ADR-064) — populates the authenticated-user context for
+		// every /api/v1 request when a valid Bearer token is present, without
+		// rejecting guests. This lets the VisitorContext resolver (below) read
+		// the user's content_country_preference on public+authenticated routes
+		// without each route needing its own OptionalAuth wrapper. Per-route
+		// RequireAuth guards still enforce 401 on protected endpoints.
+		r.Use(auth.OptionalAuth(kr, vkClient.Redis()))
+
+		// VisitorContext resolver (ADR-064) — resolves the effective
+		// content country for geo-aware feed/search personalization. Runs
+		// after GeoIP (line 105), tenant, and soft-auth so it can use all
+		// three sources. Priority: ?geo= param → user preference → GeoIP →
+		// "NG" default. Cached in Valkey at jc:visitor:ctx:{user|ip} (15m
+		// TTL). Honors the geo_personalization.enabled killswitch.
+		visitorResolver := visitor.NewResolver(gen.New(database.Reader), vkClient.Redis(), settingsService)
+		r.Use(visitorResolver.Middleware)
+
+		// CSRF token bootstrap endpoint — issues the double-submit cookie and
+		// echoes the token so the SPA can attach it as X-CSRF-Token. The SPA
+		// calls this once at startup and again after a 403 CSRF rejection.
+		r.Get("/csrf", csrf.TokenHandler(cfg.CookieDomain, cfg.IsProduction()))
 
 		// Auth routes (public - no auth required, tenant-scoped)
 			// Tight rate limit to throttle brute-force attempts.
@@ -2475,6 +2493,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/university/instructors/{id}/reject", universityHandlers.AdminRejectInstructor)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
 				Post("/admin/university/instructors/{id}/suspend", universityHandlers.AdminSuspendInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
+				Post("/admin/university/instructors/{id}/reinstate", universityHandlers.AdminReinstateInstructor)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
 				Get("/admin/university/tracks/pending", universityHandlers.AdminListPendingTracks)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).

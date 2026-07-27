@@ -13,12 +13,14 @@
 		BlogSeries,
 		ComposerStatus,
 		MediaAsset,
-		Visibility
+		Visibility,
+		ComposerOrganization
 	} from '$lib/types';
 	import type { TypeEntry } from './contentTypeRegistry';
 	import SaveBar from './SaveBar.svelte';
 	import TitleField from './TitleField.svelte';
 	import SpaceSelector from './SpaceSelector.svelte';
+	import OrgSelector from './OrgSelector.svelte';
 	import TagInput from './TagInput.svelte';
 	import CoverUploader from './CoverUploader.svelte';
 	import PostEditor from './editors/PostEditor.svelte';
@@ -30,11 +32,12 @@
 		spaces: MeSpace[];
 		fieldGroups: CustomFieldGroup[];
 		series: BlogSeries[];
+		organizations: ComposerOrganization[];
 		draft: ContentRecord | null;
 		user: { id: string } | null;
 	}
 
-	let { types, spaces, fieldGroups, series, draft, user }: Props = $props();
+	let { types, spaces, fieldGroups, series, organizations, draft, user }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(untrack(() => types[0] ?? resolveType('blog_post')));
@@ -42,6 +45,9 @@
 	let slug = $state(untrack(() => draft?.slug ?? ''));
 	let bodyHtml = $state(untrack(() => draft?.body_html ?? ''));
 	let spaceId = $state<string | null>(untrack(() => draft?.space_id ?? spaces.find((s) => s.is_primary)?.id ?? null));
+	// Post-as-org (ADR-062): null = personal post; an org id = post on behalf of
+	// that org. Restored from draft so edit-as-org round-trips the assignment.
+	let organizationId = $state<string | null>(untrack(() => draft?.organization_id ?? null));
 	let visibility = $state<Visibility>(untrack(() => (draft?.visibility as Visibility) ?? 'public'));
 	let canonicalUrl = $state(untrack(() => draft?.canonical_url ?? ''));
 	let publishAt = $state(untrack(() => draft?.publish_at ?? null));
@@ -79,6 +85,7 @@
 		meta_description: metaDescription,
 		og_image_url: ogImageUrl,
 		seo_indexable: seoIndexable,
+		organization_id: organizationId,
 		visibility,
 		publish_at: publishAt,
 		space_id: spaceId
@@ -172,6 +179,12 @@
 			selectedId={spaceId}
 			onSelect={(id) => { spaceId = id; markDirty(); }}
 			onfocus={() => (focusedField = 'space')}
+		/>
+
+		<OrgSelector
+			orgs={organizations}
+			selectedId={organizationId}
+			onSelect={(id) => { organizationId = id; markDirty(); }}
 		/>
 
 		<TagInput {tags} onTags={(next) => { tags = next; markDirty(); }} onfocus={() => (focusedField = 'tags')} />

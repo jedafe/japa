@@ -132,17 +132,7 @@
 			if (result.ok) {
 				showModal = false;
 				success = editingRedirect ? t("redirects.updated", "Redirect updated") : t("redirects.created", "Redirect created");
-	loadRedirects();
-
-	function handleSearch(values: Record<string, string>) {
-		filterValues = values;
-		loadRedirects();
-	}
-
-	function handleClear() {
-		filterValues = {};
-		loadRedirects();
-	}
+				loadRedirects();
 			} else {
 				error = result.error ?? t("common.error", "Failed to save redirect");
 			}
@@ -185,8 +175,6 @@
 		}
 	}
 
-	loadRedirects();
-
 	function handleSearch(values: Record<string, string>) {
 		filterValues = values;
 		loadRedirects();
@@ -196,6 +184,10 @@
 		filterValues = {};
 		loadRedirects();
 	}
+
+	$effect(() => {
+		loadRedirects();
+	});
 </script>
 
 <svelte:head>

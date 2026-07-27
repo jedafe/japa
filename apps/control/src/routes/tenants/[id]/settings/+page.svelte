@@ -19,7 +19,8 @@
 		Undo2,
 		AlertTriangle,
 		ArrowLeft,
-		Sliders
+		Sliders,
+		Upload
 	} from 'lucide-svelte';
 
 	let { data } = $props();
