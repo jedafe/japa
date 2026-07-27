@@ -611,3 +611,64 @@ func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http
 		input.AuthorCommissionPct, id, tenantID)
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"updated": true}})
 }
+
+// RecordAffiliateCommission handles POST /admin/affiliate/commissions.
+//
+// Records an external affiliate commission earned from a content's affiliate
+// link. The admin provides the provider_id, content_id, and the external
+// commission amount. The service looks up the content's author and the
+// provider's author_commission_pct, computes the author's share, inserts
+// the commission row, and enqueues the affiliate:credit_author_commission
+// task to credit the author's wallet.
+//
+// AUDIT-BE-TASK-001: this is the missing INSERT site for
+// affiliate_content_commissions and the enqueue trigger for the
+// affiliate:credit_author_commission task.
+func (h *Handlers) RecordAffiliateCommission(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		ProviderID         string  `json:"provider_id"`
+		ContentID          string  `json:"content_id"`
+		ExternalCommission float64 `json:"external_commission"`
+		EventDescription   *string `json:"event_description,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	var providerID pgtype.UUID
+	if err := providerID.Scan(input.ProviderID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_provider_id", "Invalid provider_id")
+		return
+	}
+
+	var contentID pgtype.UUID
+	if err := contentID.Scan(input.ContentID); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content_id")
+		return
+	}
+
+	if input.ExternalCommission <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid_commission", "External commission must be positive")
+		return
+	}
+
+	commission, err := h.Service.RecordAffiliateCommission(r.Context(), tenantID, RecordAffiliateCommissionInput{
+		ProviderID:         providerID,
+		ContentID:          contentID,
+		ExternalCommission: input.ExternalCommission,
+		EventDescription:   input.EventDescription,
+	})
+	if err != nil {
+		errpkg.CaptureException(err)
+		writeError(w, http.StatusInternalServerError, "record_failed", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"data": commission})
+}

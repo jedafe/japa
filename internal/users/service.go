@@ -216,6 +216,17 @@ func (s *Service) UpdatePreferences(ctx context.Context, tenantID, userID pgtype
 	return nil
 }
 
+// SetContentCountry updates the user's content_country_preference.
+// An empty country clears the preference (falls back to GeoIP).
+func (s *Service) SetContentCountry(ctx context.Context, tenantID, userID pgtype.UUID, country string) error {
+	return s.store.SetContentCountryPreference(ctx, tenantID, userID, country)
+}
+
+// GetContentCountry returns the user's content_country_preference.
+func (s *Service) GetContentCountry(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
+	return s.store.GetContentCountryPreference(ctx, tenantID, userID)
+}
+
 // ListUsers returns a paginated list of users for admin use, with optional
 // search filtering by username/email, status filter, and group slug filter.
 func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search, status, groupSlug string, limit, offset int32) (*ListUsersResponse, error) {

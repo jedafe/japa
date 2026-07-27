@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cleanupDeclinedDMRequests = `-- name: CleanupDeclinedDMRequests :exec
+DELETE FROM dm_requests
+WHERE status = 'declined'
+  AND updated_at < now() - interval '90 days'
+`
+
+func (q *Queries) CleanupDeclinedDMRequests(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, cleanupDeclinedDMRequests)
+	return err
+}
+
 const createMessageRequest = `-- name: CreateMessageRequest :exec
 INSERT INTO dm_message_requests (conversation_id, status)
 VALUES ($1, 'pending')
@@ -22,10 +33,11 @@ func (q *Queries) CreateMessageRequest(ctx context.Context, conversationID pgtyp
 	return err
 }
 
-const createWSTicket = `-- name: CreateWSTicket :exec
+const createWSTicket = `-- name: CreateWSTicket :one
 
 INSERT INTO ws_tickets (user_id, tenant_id, expires_at)
 VALUES ($1, $2, now() + interval '60 seconds')
+RETURNING id, user_id, tenant_id, used, expires_at, created_at
 `
 
 type CreateWSTicketParams struct {
@@ -33,10 +45,28 @@ type CreateWSTicketParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+type CreateWSTicketRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	Used      bool               `json:"used"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 // Section 10: Real-Time WebSockets + Direct Messaging
-func (q *Queries) CreateWSTicket(ctx context.Context, arg CreateWSTicketParams) error {
-	_, err := q.db.Exec(ctx, createWSTicket, arg.UserID, arg.TenantID)
-	return err
+func (q *Queries) CreateWSTicket(ctx context.Context, arg CreateWSTicketParams) (CreateWSTicketRow, error) {
+	row := q.db.QueryRow(ctx, createWSTicket, arg.UserID, arg.TenantID)
+	var i CreateWSTicketRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TenantID,
+		&i.Used,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const editDMMessage = `-- name: EditDMMessage :exec
@@ -75,6 +105,41 @@ type GetConversationByIDParams struct {
 
 func (q *Queries) GetConversationByID(ctx context.Context, arg GetConversationByIDParams) (DmConversation, error) {
 	row := q.db.QueryRow(ctx, getConversationByID, arg.ID, arg.TenantID)
+	var i DmConversation
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Participant1ID,
+		&i.Participant2ID,
+		&i.LastMessageAt,
+		&i.LastMessagePreview,
+		&i.P1UnreadCount,
+		&i.P2UnreadCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getConversationByParticipants = `-- name: GetConversationByParticipants :one
+SELECT id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations
+WHERE tenant_id = $1
+  AND participant_1_id = LEAST($2, $3)
+  AND participant_2_id = GREATEST($2, $3)
+`
+
+type GetConversationByParticipantsParams struct {
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	Participant1ID pgtype.UUID `json:"participant_1_id"`
+	Participant2ID pgtype.UUID `json:"participant_2_id"`
+}
+
+// Find an existing conversation between two users without creating one.
+// Used by the DM privacy check (Section 48) to skip privacy enforcement
+// when a conversation already exists (existing threads stay active even
+// when dm_privacy is later set to 'nobody').
+func (q *Queries) GetConversationByParticipants(ctx context.Context, arg GetConversationByParticipantsParams) (DmConversation, error) {
+	row := q.db.QueryRow(ctx, getConversationByParticipants, arg.TenantID, arg.Participant1ID, arg.Participant2ID)
 	var i DmConversation
 	err := row.Scan(
 		&i.ID,

@@ -16,6 +16,7 @@ type SearchIndexer interface {
 	IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) error
 	IndexUser(ctx context.Context, userID, tenantID [16]byte) error
 	IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
+	IndexLearningTrack(ctx context.Context, trackID, tenantID [16]byte) error
 	DeleteDocument(ctx context.Context, indexName string, id [16]byte) error
 }
 

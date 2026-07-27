@@ -973,6 +973,28 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
+// parsePageSize extracts the page_size query param, clamped to [1, MaxPageSize].
+const MaxPageSize = 100
+
+func parsePageSize(r *http.Request) int32 {
+	n, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if n < 1 {
+		n = 20
+	}
+	if n > MaxPageSize {
+		n = MaxPageSize
+	}
+	return int32(n)
+}
+
+func parsePageSizeOffset(r *http.Request) int32 {
+	n, _ := strconv.Atoi(r.URL.Query().Get("page_offset"))
+	if n < 0 {
+		n = 0
+	}
+	return int32(n)
+}
+
 // ─── Admin Learning Extras (P5.6 — Task 14) ──────────────────────────────
 
 // ListTrackEnrollments handles GET /admin/learn/tracks/:id/enrollments.
@@ -1085,4 +1107,104 @@ func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": trackID.String(), "published": true}})
+}
+
+// ---------------------------------------------------------------------------
+// Learning track reviews (AUDIT-BE-ROUTE-040)
+// Reuse Section 29 reviews with entity_type=learning_track.
+// ---------------------------------------------------------------------------
+
+const learningTrackEntityType = "learning_track"
+
+// CreateTrackReview handles POST /api/v1/learn/tracks/{id}/reviews.
+// Only enrolled users can review a track. The review is created via the
+// polymorphic reviews table with entity_type=learning_track.
+func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	var trackID pgtype.UUID
+	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		return
+	}
+
+	var input struct {
+		Rating int16  `json:"rating"`
+		Title  string `json:"title"`
+		Body   string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	if input.Rating < 1 || input.Rating > 5 {
+		writeError(w, http.StatusBadRequest, "invalid_rating", "Rating must be between 1 and 5")
+		return
+	}
+
+	var title *string
+	if input.Title != "" {
+		title = &input.Title
+	}
+	var body *string
+	if input.Body != "" {
+		body = &input.Body
+	}
+
+	review, err := h.store.CreateTrackReview(r.Context(), t.ID, trackID, user.UserID, input.Rating, title, body)
+	if err != nil {
+		handleReviewError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": review})
+}
+
+// ListTrackReviews handles GET /api/v1/learn/tracks/{id}/reviews.
+// Public — no auth required. Returns reviews + aggregate rating.
+func (h *Handlers) ListTrackReviews(w http.ResponseWriter, r *http.Request) {
+	t := tenant.FromContext(r.Context())
+	if t == nil {
+		writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
+		return
+	}
+
+	var trackID pgtype.UUID
+	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	reviews, err := h.store.ListTrackReviews(r.Context(), t.ID, trackID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to list reviews")
+		return
+	}
+
+	aggregate, err := h.store.GetTrackReviewAggregate(r.Context(), t.ID, trackID)
+	if err != nil {
+		// Aggregate may not exist yet — default to zeros.
+		aggregate = TrackReviewAggregate{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":      reviews,
+		"aggregate": aggregate,
+	})
+}
+
+func handleReviewError(w http.ResponseWriter, err error) {
+	// TODO: map common review errors (duplicate, not enrolled) to proper codes.
+	writeError(w, http.StatusInternalServerError, "review_error", err.Error())
 }

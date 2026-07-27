@@ -1192,3 +1192,39 @@ func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (Cou
 	)
 	return i, err
 }
+
+const updateCouponClickCounts = `-- name: UpdateCouponClickCounts :exec
+UPDATE coupons c
+SET total_clicks = (
+    SELECT COUNT(*)::int FROM coupon_events ce
+    WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
+),
+    updated_at = now()
+WHERE EXISTS (
+    SELECT 1 FROM coupon_events ce
+    WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
+)
+`
+
+func (q *Queries) UpdateCouponClickCounts(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, updateCouponClickCounts)
+	return err
+}
+
+const updateCouponCopyCounts = `-- name: UpdateCouponCopyCounts :exec
+UPDATE coupons c
+SET total_copies = (
+    SELECT COUNT(*)::int FROM coupon_events ce
+    WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
+),
+    updated_at = now()
+WHERE EXISTS (
+    SELECT 1 FROM coupon_events ce
+    WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
+)
+`
+
+func (q *Queries) UpdateCouponCopyCounts(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, updateCouponCopyCounts)
+	return err
+}

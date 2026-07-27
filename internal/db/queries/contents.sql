@@ -35,6 +35,16 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
 FROM contents
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
+-- name: GetContentByHash :one
+-- Duplicate-detection check (Rule 12 / BL-006). Returns a conflicting row
+-- with the same (tenant_id, content_hash), excluding the row being updated.
+SELECT id, tenant_id, author_id, content_hash
+FROM contents
+WHERE tenant_id = @tenant_id
+  AND content_hash = @content_hash
+  AND deleted_at IS NULL
+  AND id <> @exclude_id;
+
 -- name: GetContentBySlug :one
 SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
        field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
@@ -386,3 +396,59 @@ WHERE c.tenant_id = @tenant_id
   AND c.auto_hidden = false
 ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: PublishScheduledContent :execrows
+UPDATE contents
+SET status = 'published',
+    published_at = COALESCE(published_at, now()),
+    updated_at = now()
+WHERE id = @id
+  AND tenant_id = @tenant_id
+  AND status = 'scheduled'
+  AND publish_at <= now();
+
+-- name: ListScheduledContentReady :many
+SELECT id, tenant_id
+FROM contents
+WHERE status = 'scheduled'
+  AND publish_at IS NOT NULL
+  AND publish_at <= now()
+ORDER BY publish_at ASC
+LIMIT 100;
+
+-- name: GetContentTitleAndBody :one
+SELECT COALESCE(title, '') AS title, COALESCE(body, '') AS body
+FROM contents
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: ListPublishedSlugsForSitemap :many
+SELECT slug, updated_at
+FROM contents
+WHERE tenant_id = @tenant_id AND status = 'published'
+ORDER BY updated_at DESC
+LIMIT 10000;
+
+-- name: ListPublishedContentForRSS :many
+SELECT title, slug, created_at
+FROM contents
+WHERE tenant_id = @tenant_id AND status = 'published'
+ORDER BY created_at DESC
+LIMIT 50;
+
+-- name: ListPublishedContentForLLMsTxt :many
+SELECT title, slug
+FROM contents
+WHERE tenant_id = @tenant_id AND status = 'published'
+ORDER BY created_at DESC
+LIMIT 1000;
+
+-- name: ListPublishedContentForDigest :many
+SELECT title, slug, created_at
+FROM contents
+WHERE tenant_id = @tenant_id AND status = 'published'
+ORDER BY created_at DESC
+LIMIT 10;
+
+-- name: ArchiveContent :execrows
+UPDATE contents SET status = 'archived', updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND status != 'archived';

@@ -872,6 +872,8 @@ type Enrollment struct {
 	ProgressPct pgtype.Numeric     `json:"progress_pct"`
 	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
 	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	// Section 17 payment for paid enrollments; NULL for free/Pro/pro_stream (ADR-063).
+	PaymentID pgtype.UUID `json:"payment_id"`
 }
 
 type ExternalDataSource struct {
@@ -1065,6 +1067,46 @@ type GroupRole struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// Aggregated periodic creator payout; rolls up revenue_splits (ADR-063).
+type InstructorPayout struct {
+	ID                     pgtype.UUID        `json:"id"`
+	TenantID               pgtype.UUID        `json:"tenant_id"`
+	InstructorID           pgtype.UUID        `json:"instructor_id"`
+	PeriodStart            pgtype.Date        `json:"period_start"`
+	PeriodEnd              pgtype.Date        `json:"period_end"`
+	GrossKobo              int64              `json:"gross_kobo"`
+	PlatformCommissionKobo int64              `json:"platform_commission_kobo"`
+	NetKobo                int64              `json:"net_kobo"`
+	Currency               string             `json:"currency"`
+	Status                 string             `json:"status"`
+	PayoutReference        *string            `json:"payout_reference"`
+	FailureReason          *string            `json:"failure_reason"`
+	ProcessedAt            pgtype.Timestamptz `json:"processed_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+}
+
+// Japa University creator identity; gated application/approval (ADR-063).
+type InstructorProfile struct {
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	UserID      pgtype.UUID `json:"user_id"`
+	DisplayName string      `json:"display_name"`
+	Headline    *string     `json:"headline"`
+	Bio         *string     `json:"bio"`
+	SocialLinks []byte      `json:"social_links"`
+	Tier        string      `json:"tier"`
+	Status      string      `json:"status"`
+	// Creator revenue % override; NULL falls back to tier/system default.
+	CommissionPctOverride pgtype.Numeric     `json:"commission_pct_override"`
+	PayoutMethod          []byte             `json:"payout_method"`
+	KycStatus             string             `json:"kyc_status"`
+	ApplicationNote       *string            `json:"application_note"`
+	ReviewedBy            pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt            pgtype.Timestamptz `json:"reviewed_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
 type IpBlock struct {
 	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`
@@ -1139,6 +1181,17 @@ type LearningTrack struct {
 	SortOrder    int32              `json:"sort_order"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	// Owning creator; NULL = platform/staff-authored course (ADR-063).
+	InstructorID pgtype.UUID `json:"instructor_id"`
+	// À la carte price; NULL = free or Pro-only.
+	PriceKobo *int64 `json:"price_kobo"`
+	Currency  string `json:"currency"`
+	// Marketplace visibility; distinct from is_published (draft/live).
+	IsPublishedToUniversity bool        `json:"is_published_to_university"`
+	Category                *string     `json:"category"`
+	Language                string      `json:"language"`
+	TotalEnrolled           int32       `json:"total_enrolled"`
+	GeoSpaceID              pgtype.UUID `json:"geo_space_id"`
 }
 
 type LessonProgress struct {
@@ -1860,6 +1913,25 @@ type ReplyView struct {
 	ViewedAt pgtype.Timestamptz `json:"viewed_at"`
 }
 
+// Immutable per-event revenue split record; aggregated into instructor_payouts (ADR-063).
+type RevenueSplit struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	InstructorID pgtype.UUID        `json:"instructor_id"`
+	TrackID      pgtype.UUID        `json:"track_id"`
+	EnrollmentID pgtype.UUID        `json:"enrollment_id"`
+	PaymentID    pgtype.UUID        `json:"payment_id"`
+	PayoutID     pgtype.UUID        `json:"payout_id"`
+	Source       string             `json:"source"`
+	GrossKobo    int64              `json:"gross_kobo"`
+	CreatorPct   pgtype.Numeric     `json:"creator_pct"`
+	PlatformPct  pgtype.Numeric     `json:"platform_pct"`
+	CreatorKobo  int64              `json:"creator_kobo"`
+	PlatformKobo int64              `json:"platform_kobo"`
+	Currency     string             `json:"currency"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
 type Review struct {
 	ID             pgtype.UUID        `json:"id"`
 	TenantID       pgtype.UUID        `json:"tenant_id"`
@@ -2325,6 +2397,8 @@ type UserProfile struct {
 	OperatingHours     []byte             `json:"operating_hours"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	// User override for geo content weighting (ISO country code). NULL = use resolved VisitorContext (ADR-064).
+	ContentCountryPreference *string `json:"content_country_preference"`
 }
 
 type UserRole struct {

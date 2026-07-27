@@ -3,15 +3,25 @@
 package interactions
 
 import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
+
+// muteCacheTTL is the TTL for mute SET caches in Valkey (Section 52).
+const muteCacheTTL = 10 * time.Minute
 
 // Service provides block/mute operations with reader/writer pool separation.
 type Service struct {
 	db    *db.DB
 	read  *gen.Queries
 	write *gen.Queries
+	vk    valkeycompat.Cmdable // nil disables caching (tests/development)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -20,5 +30,42 @@ func NewService(database *db.DB) *Service {
 		db:    database,
 		read:  gen.New(database.Reader),
 		write: gen.New(database.Writer),
+	}
+}
+
+// SetValkey wires the Valkey client for mute SET caching (Section 52 /
+// VALKEY-001). Keys: jc:muted_users:{user_id}, jc:muted_spaces:{user_id}.
+func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// mutedUsersKey returns the Valkey key for a user's muted-users SET.
+func mutedUsersKey(userID pgtype.UUID) string {
+	return fmt.Sprintf("jc:muted_users:%s", userID.String())
+}
+
+// mutedSpacesKey returns the Valkey key for a user's muted-spaces SET.
+func mutedSpacesKey(userID pgtype.UUID) string {
+	return fmt.Sprintf("jc:muted_spaces:%s", userID.String())
+}
+
+// invalidateMutedUsersCache deletes the muted-users SET cache for the user.
+// Called after mute/unmute so the next read refetches from the DB.
+func (s *Service) invalidateMutedUsersCache(ctx context.Context, userID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+	if err := s.vk.Del(ctx, mutedUsersKey(userID)).Err(); err != nil {
+		// Cache invalidation failure is non-fatal — the TTL will eventually
+		// refresh; worst case is a stale mute list for up to 10 minutes.
+		return
+	}
+}
+
+// invalidateMutedSpacesCache deletes the muted-spaces SET cache for the user.
+func (s *Service) invalidateMutedSpacesCache(ctx context.Context, userID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+	if err := s.vk.Del(ctx, mutedSpacesKey(userID)).Err(); err != nil {
+		return
 	}
 }

@@ -124,3 +124,70 @@ func (db *DB) Close() {
 		db.Reader.Close()
 	}
 }
+
+// allowedVacuumTables is the allow-list of tables that may be targeted by
+// Vacuum. VACUUM cannot use a parameterized table name, so the caller
+// passes a name that is validated against this set before execution.
+var allowedVacuumTables = map[string]struct{}{
+	"contents":              {},
+	"feeds":                 {},
+	"notifications":         {},
+	"users":                 {},
+	"user_profiles":         {},
+	"spaces":                {},
+	"space_members":         {},
+	"comments":              {},
+	"reactions":             {},
+	"bookmarks":             {},
+	"follows":               {},
+	"tickets":               {},
+	"payments":              {},
+	"media":                 {},
+	"audit_logs":            {},
+	"account_deletion_requests": {},
+	"consent_records":       {},
+	"dm_messages":           {},
+	"dm_conversations":      {},
+	"webhook_deliveries":    {},
+	"webhook_endpoints":     {},
+	"trending_snapshots":    {},
+	"search_analytics":      {},
+	"learning_tracks":       {},
+	"learning_lessons":      {},
+	"learning_modules":      {},
+	"lesson_progress":       {},
+	"learning_certificates": {},
+	"enrollments":           {},
+	"organizations":         {},
+	"organization_members":  {},
+	"moderation_alerts":     {},
+	"user_moderation_actions": {},
+	"content_reports":       {},
+	"coupon_events":         {},
+	"coupons":               {},
+	"affiliate_link_events": {},
+	"user_affiliate_links":  {},
+	"affiliate_program_members": {},
+}
+
+// Vacuum runs a VACUUM (or VACUUM FULL if full is true) on the given table.
+// If table is empty, the entire database is vacuumed. VACUUM cannot run
+// inside a transaction and table names cannot be parameterized, so the
+// table name is validated against an allow-list before execution.
+// This is the only place in the codebase that executes raw VACUUM SQL.
+func (db *DB) Vacuum(ctx context.Context, table string, full bool) error {
+	stmt := "VACUUM"
+	if full {
+		stmt = "VACUUM FULL"
+	}
+	if table != "" {
+		if _, ok := allowedVacuumTables[table]; !ok {
+			return fmt.Errorf("vacuum: table %q is not in the allow-list", table)
+		}
+		stmt += " " + table
+	}
+	if _, err := db.Writer.Exec(ctx, stmt); err != nil {
+		return fmt.Errorf("vacuum: %w", err)
+	}
+	return nil
+}

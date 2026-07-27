@@ -15,6 +15,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -23,15 +24,22 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
 )
 
-// idempotencyTTL controls how long a cached response is kept in Valkey.
-// 24 hours covers the typical browser refresh window and overnight
-// automated retries without hoarding stale entries.
-const idempotencyTTL = 24 * time.Hour
+// idempotencyTTLDefault is the fallback TTL (in hours) when the system
+// setting is unavailable. 24 hours covers the typical browser refresh
+// window and overnight automated retries without hoarding stale entries.
+const idempotencyTTLDefault = 24
+
+// idempotencySettingsReader is the subset of config.Settings the
+// idempotency middleware needs.
+type idempotencySettingsReader interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+}
 
 // cachedResponse is the JSON-serialisable payload stored in Valkey for
 // replay. Only the status code and body bytes are cached — response
@@ -81,7 +89,7 @@ func (rc *responseCapture) Write(b []byte) (int, error) {
 // When Valkey is unreachable or the key lookup/SET fails, the request
 // is forwarded to the handler without caching — the API stays available
 // even when the idempotency layer is down.
-func IdempotencyMiddleware(rdb valkeycompat.Cmdable) func(http.Handler) http.Handler {
+func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySettingsReader) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only state-changing methods are idempotent-safe.
@@ -109,6 +117,12 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable) func(http.Handler) http.Han
 			cacheKey := "jc:idempotency:" + hash
 
 			ctx := r.Context()
+
+			ttlHours := idempotencyTTLDefault
+			if settings != nil {
+				ttlHours = settings.GetIntOr(ctx, defaultTenantUUID, "api.idempotency_ttl_hours", idempotencyTTLDefault)
+			}
+			ttl := time.Duration(ttlHours) * time.Hour
 
 			// Attempt to retrieve a cached response.
 			cached, err := rdb.Get(ctx, cacheKey).Bytes()
@@ -172,7 +186,7 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable) func(http.Handler) http.Han
 				return
 			}
 
-			if err := rdb.Set(ctx, cacheKey, payload, idempotencyTTL).Err(); err != nil {
+			if err := rdb.Set(ctx, cacheKey, payload, ttl).Err(); err != nil {
 				slog.Warn("idempotency: failed to cache response",
 					"key", cacheKey, "err", err)
 			}

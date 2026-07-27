@@ -10,6 +10,7 @@
 package customfields
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,18 +31,30 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// SuperAdminChecker reports whether a user is a super-admin (bypasses
+// field-level RBAC). Implemented by *rbac.RBAC.
+type SuperAdminChecker interface {
+	IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool
+}
+
 // Handlers holds dependencies for custom field HTTP handlers. The Service
 // wraps the reader/writer database pools; the EmbedResolver validates
-// platform_embed field values at write time.
+// platform_embed field values at write time. The RBAC resolver enforces
+// field-level visibility/editability per user group (Section 06).
 type Handlers struct {
 	Service *Service
 	Embed   *EmbedResolver
+	rbac    SuperAdminChecker // nil disables field-level RBAC (test-only)
 }
 
 // NewHandlers creates Handlers with the given Service and EmbedResolver.
 func NewHandlers(service *Service, embed *EmbedResolver) *Handlers {
 	return &Handlers{Service: service, Embed: embed}
 }
+
+// SetRBAC wires the RBAC resolver used for field-level visibility/editability
+// checks (Section 06). Required in production; tests may omit it.
+func (h *Handlers) SetRBAC(rbac SuperAdminChecker) { h.rbac = rbac }
 
 // errorResponse is the JSON body returned for error responses, following the
 // JapaConnect API error format: {"error": {"code": "...", "message": "..."}}.
@@ -572,6 +585,8 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // ListFieldValues handles GET /api/v1/custom-field-values/{entity_type}/{entity_id}.
+// Field-level RBAC (Section 06) is enforced: non-super-admin users only see
+// values for fields their user group has can_view=true on.
 func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 	entityType := chi.URLParam(r, "entity_type")
 
@@ -579,6 +594,30 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 	if err := entityID.Scan(chi.URLParam(r, "entity_id")); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "Invalid entity ID format")
 		return
+	}
+
+	// Field-level RBAC (Section 06): super-admins see all fields; other users
+	// only see fields their user group has can_view=true on.
+	user := auth.FromContext(r.Context())
+	if h.rbac != nil && user != nil && user.UserID.Valid {
+		tenantID, ok := h.requireTenant(w, r)
+		if !ok {
+			return
+		}
+		if !h.rbac.IsSuperAdmin(r.Context(), user.UserID, tenantID) {
+			visibleIDs, err := h.Service.ListVisibleFieldIDsForUser(r.Context(), user.UserID)
+			if err != nil {
+				handleServiceError(w, err)
+				return
+			}
+			values, err := h.Service.ListFieldValuesByEntityForUser(r.Context(), entityType, entityID, visibleIDs)
+			if err != nil {
+				handleServiceError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"data": values})
+			return
+		}
 	}
 
 	values, err := h.Service.ListFieldValuesByEntity(r.Context(), entityType, entityID)
@@ -666,6 +705,25 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Field-level RBAC (Section 06): super-admins bypass; other users must
+	// have can_edit=true on this field via their user group membership.
+	if h.rbac != nil {
+		user := auth.FromContext(r.Context())
+		if user != nil && user.UserID.Valid {
+			if !h.rbac.IsSuperAdmin(r.Context(), user.UserID, tenantID) {
+				_, canEdit, pErr := h.Service.CheckFieldPermissionForUser(r.Context(), fieldID, user.UserID)
+				if pErr != nil {
+					handleServiceError(w, pErr)
+					return
+				}
+				if !canEdit {
+					writeError(w, http.StatusForbidden, "field_not_editable", "You do not have permission to edit this custom field")
+					return
+				}
+			}
+		}
 	}
 
 	// Validate the value was written to the correct column for this field type.

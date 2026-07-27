@@ -647,6 +647,45 @@ func (q *Queries) GetUserStatus(ctx context.Context, id pgtype.UUID) (string, er
 	return status, err
 }
 
+const listActiveUsersForDigest = `-- name: ListActiveUsersForDigest :many
+SELECT u.id, u.tenant_id, u.email
+FROM users u
+WHERE u.status = 'active'
+  AND u.email IS NOT NULL AND u.email != ''
+  AND u.email_verified_at IS NOT NULL
+  AND COALESCE(
+    (SELECT value::bool FROM system_settings ss
+     WHERE ss.tenant_id = u.tenant_id AND ss.key = 'email.digest_enabled'),
+    true)
+ORDER BY u.id
+`
+
+type ListActiveUsersForDigestRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Email    string      `json:"email"`
+}
+
+func (q *Queries) ListActiveUsersForDigest(ctx context.Context) ([]ListActiveUsersForDigestRow, error) {
+	rows, err := q.db.Query(ctx, listActiveUsersForDigest)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveUsersForDigestRow
+	for rows.Next() {
+		var i ListActiveUsersForDigestRow
+		if err := rows.Scan(&i.ID, &i.TenantID, &i.Email); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOAuthAccounts = `-- name: ListOAuthAccounts :many
 SELECT id, provider, provider_user_id, created_at
 FROM oauth_accounts

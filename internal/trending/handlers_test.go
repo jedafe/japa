@@ -77,9 +77,11 @@ func TestParseGeoCode(t *testing.T) {
 		t.Errorf("parseGeoCode() = %q, want NG", got)
 	}
 
+	// When no geo param is provided, parseGeoCode falls back to the visitor
+	// context's ContentCountry, which defaults to "NG" (ADR-064).
 	bare := httptest.NewRequest(http.MethodGet, "/trending/content", nil)
-	if got := parseGeoCode(bare); got != "" {
-		t.Errorf("parseGeoCode() = %q, want empty", got)
+	if got := parseGeoCode(bare); got != "NG" {
+		t.Errorf("parseGeoCode() = %q, want NG (visitor default)", got)
 	}
 }
 

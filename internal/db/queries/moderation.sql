@@ -37,3 +37,15 @@ SET status = 'resolved',
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING *;
+
+-- name: CountPendingReportsByEntity :one
+SELECT COUNT(*) FROM content_reports
+WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @entity_id
+  AND status = 'pending';
+
+-- name: ExpireModerationBans :exec
+UPDATE user_moderation_actions
+SET action = 'unban'
+WHERE action = 'ban'
+  AND expires_at IS NOT NULL
+  AND expires_at < now();

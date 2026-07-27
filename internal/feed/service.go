@@ -196,10 +196,11 @@ func (s *Service) getProfileFeedItems(ctx context.Context, tenantID, authorID pg
 	return profileRowsToItems(rows), nil
 }
 
-// UpdateVelocityScores batch updates velocity scores for posts < 7 days old.
-// velocity = engagement / (hours_old + 2)^1.8.
-func (s *Service) UpdateVelocityScores(ctx context.Context, tenantID pgtype.UUID) error {
-	return s.store.updateVelocityScores(ctx, tenantID)
+// UpdateVelocityScores batch updates velocity scores for published content
+// < 30 days old. gravity is the decay exponent (default 1.8), hot-reloadable
+// via the feed.velocity.gravity system setting.
+func (s *Service) UpdateVelocityScores(ctx context.Context, tenantID pgtype.UUID, gravity float64) error {
+	return s.store.updateVelocityScores(ctx, tenantID, gravity)
 }
 
 // UpdateContentScore updates a single content's score.
@@ -517,7 +518,19 @@ func (s *Service) loadAffinity(
 		return nil, nil, nil, err
 	}
 
-	return authorIDs, dedupeUUIDs(append(followedSpaces, memberSpaces...)), tagIDs, nil
+	spaceIDs = dedupeUUIDs(append(followedSpaces, memberSpaces...))
+
+	// Cap the number of spaces contributing to the feed to prevent a user
+	// with thousands of followed spaces from making the candidate query
+	// unbounded. Hot-reloadable via feed.max_followed_spaces_in_feed.
+	if s.settings != nil {
+		maxSpaces := s.settings.GetIntOr(ctx, tenantID, "feed.max_followed_spaces_in_feed", 50)
+		if maxSpaces > 0 && len(spaceIDs) > maxSpaces {
+			spaceIDs = spaceIDs[:maxSpaces]
+		}
+	}
+
+	return authorIDs, spaceIDs, tagIDs, nil
 }
 
 // GetForYouFeed returns the personalized, ranked feed for a user, cached 90s per sort.

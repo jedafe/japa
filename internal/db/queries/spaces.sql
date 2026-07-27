@@ -442,3 +442,8 @@ WHERE sm.user_id = @user_id AND s.tenant_id = @tenant_id
   AND s.visibility = 'public' AND s.status = 'active'
 ORDER BY sm.joined_at DESC, s.id DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListSpaceMemberUserIDs :many
+SELECT user_id FROM space_members
+WHERE space_id = @space_id AND tenant_id = @tenant_id
+LIMIT @limit_val;

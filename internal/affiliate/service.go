@@ -17,10 +17,20 @@ type Enqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// SettingsProvider abstracts system_settings access for affiliate config
+// (commission rates, link limits, min account age). *config.Settings satisfies
+// this structurally. When nil, the service falls back to compiled-in defaults
+// (Rule 3 / SETTING-002/003).
+type SettingsProvider interface {
+	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
+}
+
 type Service struct {
 	store    *Store
 	db       *db.DB
 	enqueuer Enqueuer
+	settings SettingsProvider
 }
 
 func NewService(database *db.DB) *Service {
@@ -36,6 +46,11 @@ func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc.enqueuer = enqueuer
 	return svc
 }
+
+// SetSettings wires the hot-reloadable settings reader for affiliate config
+// (SETTING-002/003). When wired, commission rates and link limits are read
+// from system_settings; otherwise compiled-in defaults are used.
+func (s *Service) SetSettings(sp SettingsProvider) { s.settings = sp }
 
 type noopEnqueuer struct{}
 
@@ -56,12 +71,27 @@ type CommissionRates struct {
 	Course     float64 `json:"course"`
 }
 
-func (s *Service) GetProgramInfo(_ context.Context) *ProgramInfo {
+func (s *Service) GetProgramInfo(ctx context.Context) *ProgramInfo {
+	// Defaults match the system_settings catalog (SETTING-003).
+	proMonthly := 15.0
+	proAnnual := 20.0
+	course := 10.0
+	minAccountDays := 30
+	maxLinksPerUser := 10
+	if s.settings != nil {
+		// tenantID is zero-valued — affiliate settings are global (tenant_id
+		// is required by the interface but affiliate config is not per-tenant).
+		proMonthly = s.settings.GetFloatOr(ctx, pgtype.UUID{}, "affiliate.commission.pro_monthly", 15)
+		proAnnual = s.settings.GetFloatOr(ctx, pgtype.UUID{}, "affiliate.commission.pro_annual", 20)
+		course = s.settings.GetFloatOr(ctx, pgtype.UUID{}, "affiliate.commission.course", 10)
+		minAccountDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.min_account_days", 30)
+		maxLinksPerUser = s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.max_links_per_user", 10)
+	}
 	return &ProgramInfo{
-		CommissionRates:    CommissionRates{ProMonthly: 15, ProAnnual: 20, Course: 10},
+		CommissionRates:    CommissionRates{ProMonthly: proMonthly, ProAnnual: proAnnual, Course: course},
 		TermsAndConditions: "By enrolling, you agree to our affiliate program terms.",
-		MinAccountDays:     30,
-		MaxLinksPerUser:    10,
+		MinAccountDays:     minAccountDays,
+		MaxLinksPerUser:    maxLinksPerUser,
 	}
 }
 
@@ -141,7 +171,13 @@ func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, 
 	if err != nil {
 		return gen.UserAffiliateLink{}, fmt.Errorf("counting links: %w", err)
 	}
-	if count >= 10 {
+	// Max links per user is configurable via system_settings
+	// (affiliate.max_links_per_user, default 10) — SETTING-002.
+	maxLinks := 10
+	if s.settings != nil {
+		maxLinks = s.settings.GetIntOr(ctx, tenantID, "affiliate.max_links_per_user", 10)
+	}
+	if count >= int64(maxLinks) {
 		return gen.UserAffiliateLink{}, ErrTooManyLinks
 	}
 	validType := false

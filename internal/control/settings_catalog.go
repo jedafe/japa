@@ -96,6 +96,12 @@ var settingsCatalog = map[string]settingMeta{
 	"gdpr.deleted_user_placeholder_uuid":  {Type: "string", DefaultValue: "", Description: "UUID assigned to orphaned content authorship after hard delete."},
 	// Search
 	"search.autocomplete_max": {Type: "int", DefaultValue: "8", Description: "Max autocomplete suggestions returned."},
+	// Pricing Plans (SETTING-001 / Rule 3 — prices must be configurable).
+	"pricing.plan.pro.monthly_amount":     {Type: "int", DefaultValue: "500000", Description: "Pro plan monthly price in kobo (NGN)."},
+	"pricing.plan.pro.yearly_amount":      {Type: "int", DefaultValue: "5000000", Description: "Pro plan yearly price in kobo (NGN)."},
+	"pricing.plan.business.monthly_amount": {Type: "int", DefaultValue: "1500000", Description: "Business plan monthly price in kobo (NGN)."},
+	"pricing.plan.business.yearly_amount":  {Type: "int", DefaultValue: "15000000", Description: "Business plan yearly price in kobo (NGN)."},
+	"pricing.currency":                    {Type: "string", DefaultValue: "NGN", Description: "Currency code for plan prices."},
 	// Affiliate
 	"affiliate.min_account_days":        {Type: "int", DefaultValue: "30", Description: "Minimum account age (days) to enroll in affiliate program."},
 	"affiliate.attribution_window_days": {Type: "int", DefaultValue: "30", Description: "Click attribution window in days."},
@@ -103,6 +109,20 @@ var settingsCatalog = map[string]settingMeta{
 	"affiliate.commission.pro_annual":   {Type: "float", DefaultValue: "20", Description: "Commission % on Pro annual subscription purchase."},
 	"affiliate.commission.course":       {Type: "float", DefaultValue: "10", Description: "Commission % on course access purchase."},
 	"affiliate.max_links_per_user":      {Type: "int", DefaultValue: "10", Description: "Max active affiliate links per enrolled user."},
+	// AUDIT-BE-SETTING-001/002/003: affiliate enhancement settings (Section 55).
+	"affiliate.author_commission_default": {Type: "float", DefaultValue: "25", Description: "Default % of external affiliate commission shared with content author (when provider has no override)."},
+	"affiliate.unregistered_link_policy":  {Type: "string", DefaultValue: "flag", Description: "How to handle unregistered affiliate links: flag (log only), block (prevent publish), strip (remove link)."},
+	"affiliate.scan_on_publish":           {Type: "bool", DefaultValue: "true", Description: "Whether to scan content for unregistered affiliate links on publish."},
+	// AUDIT-BE-SETTING-004: Japa University creator economy settings (ADR-063, Section 36).
+	"university.subdomain":                {Type: "string", DefaultValue: "university", Description: "Host label for the Japa University shell."},
+	"university.custom_domain":            {Type: "string", DefaultValue: "", Description: "Optional custom domain (e.g. japauni.com); empty = use subdomain."},
+	"university.creator_percentage_default": {Type: "int", DefaultValue: "75", Description: "Default creator revenue share % (platform takes the remainder)."},
+	"university.platform_percentage_default": {Type: "int", DefaultValue: "25", Description: "Default platform revenue share %."},
+	"university.payout_schedule":          {Type: "string", DefaultValue: "monthly", Description: "Payout cadence: weekly | monthly."},
+	"university.min_payout_kobo":          {Type: "int", DefaultValue: "500000", Description: "Minimum accrued net (kobo) before a payout is issued."},
+	"university.pro_stream_rate_kobo":     {Type: "int", DefaultValue: "5000", Description: "Amount (kobo) accrued to a creator per Pro-enrolled learner per period."},
+	// AUDIT-BE-SETTING-005: geo-aware personalization master switch (ADR-064).
+	"geo_personalization.enabled":         {Type: "bool", DefaultValue: "true", Description: "Master switch for geo-aware feed/search/discovery weighting."},
 }
 
 // getSettingMeta returns the metadata for a given dot-notation key.
