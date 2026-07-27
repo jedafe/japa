@@ -706,6 +706,29 @@ func (h *Handlers) AdminSuspendInstructor(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
+// AdminReinstateInstructor handles POST /admin/university/instructors/{id}/reinstate.
+func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.ReinstateInstructor(r.Context(), tenantID, instructorID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": prof})
+}
+
 // ---------------------------------------------------------------------------
 // Admin — courses & payouts
 // ---------------------------------------------------------------------------

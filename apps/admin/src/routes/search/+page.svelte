@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
@@ -123,10 +122,9 @@
 		topPage = 0;
 		zeroPage = 0;
 		volumePage = 0;
-		load();
 	}
 
-	onMount(() => {
+	$effect(() => {
 		load();
 	});
 </script>

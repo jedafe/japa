@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -340,8 +341,9 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 type BroadcastRequest struct {
 	Subject  string `json:"subject"`
 	Body     string `json:"body"`
-	Target   string `json:"target"`   // "all", "unverified", "pro_members"
-	Schedule string `json:"schedule"` // RFC3339 time for scheduled send, empty for immediate
+	Target   string `json:"target"`     // "all", "unverified", "pro_members", "user_group", "geo_space"
+	TargetID string `json:"target_id"`  // UUID of the group or space when target is "user_group" or "geo_space"
+	Schedule string `json:"schedule"`   // RFC3339 time for scheduled send, empty for immediate
 }
 
 // Broadcast handles POST /api/v1/admin/broadcast.
@@ -393,8 +395,9 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Immediate broadcast: insert a notification for every active user in the tenant.
-	sent, err := h.broadcastToAllUsers(ctx, tenantID, user.UserID, req.Subject, req.Body)
+	// Immediate broadcast: insert a notification for every active user in the
+	// target scope (all, a user group, or a geo space).
+	sent, err := h.broadcastToScopedUsers(ctx, tenantID, user.UserID, req.Subject, req.Body, req.Target, req.TargetID)
 	if err != nil {
 		slog.Error("broadcast: failed to send", "error", err)
 		writeError(w, http.StatusInternalServerError, "broadcast_error", "Failed to send broadcast")
@@ -405,6 +408,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 		"user_id", user.UserID.String(),
 		"tenant_id", tenantID.String(),
 		"recipients", sent,
+		"target", req.Target,
 		"subject", req.Subject)
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -418,8 +422,45 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 // broadcastToAllUsers inserts a system_announcement notification for every
 // active user in the tenant. Returns the count of notifications created.
 func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID pgtype.UUID, title, body string) (int, error) {
-	// Fetch all active user IDs for this tenant.
-	rows, err := h.Queries.ListActiveUserIDs(ctx, tenantID)
+	return h.broadcastToScopedUsers(ctx, tenantID, senderID, title, body, "all", "")
+}
+
+// broadcastToScopedUsers inserts a system_announcement notification for every
+// active user in the target scope. When target is "user_group" or "geo_space",
+// only users in the specified group or space receive the notification.
+func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderID pgtype.UUID, title, body, target, targetID string) (int, error) {
+	var rows []pgtype.UUID
+	var err error
+
+	switch target {
+	case "geo_space":
+		if targetID == "" {
+			return 0, errors.New("target_id is required for geo_space targeting")
+		}
+		var spaceID pgtype.UUID
+		if scanErr := spaceID.Scan(targetID); scanErr != nil {
+			return 0, fmt.Errorf("invalid target_id: %w", scanErr)
+		}
+		rows, err = h.Queries.ListActiveUserIDsByGeoSpace(ctx, gen.ListActiveUserIDsByGeoSpaceParams{
+			TenantID: tenantID,
+			SpaceID:  spaceID,
+		})
+	case "user_group":
+		if targetID == "" {
+			return 0, errors.New("target_id is required for user_group targeting")
+		}
+		var groupID pgtype.UUID
+		if scanErr := groupID.Scan(targetID); scanErr != nil {
+			return 0, fmt.Errorf("invalid target_id: %w", scanErr)
+		}
+		rows, err = h.Queries.ListActiveUserIDsByGroup(ctx, gen.ListActiveUserIDsByGroupParams{
+			TenantID: tenantID,
+			GroupID:  groupID,
+		})
+	default: // "all", "unverified", "pro_members", or empty
+		rows, err = h.Queries.ListActiveUserIDs(ctx, tenantID)
+	}
+
 	if err != nil {
 		return 0, err
 	}

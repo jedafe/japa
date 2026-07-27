@@ -3,8 +3,10 @@
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import { Select } from '$lib/components/ui/select';
 	import { DataTable } from '$lib/components/ui/data-table';
+	import { Button } from '$lib/components/ui/button';
 	import { docsApi } from '$lib/api';
 	import { Dialog } from 'bits-ui';
+	import { Pencil, Trash2, Send, FileDown } from 'lucide-svelte';
 
 	type DocPage = {
 		id: string;
@@ -53,11 +55,7 @@
 		{ key: 'audience', label: t('docs.audience'), render: (v: string) => `<span class="inline-block rounded-full bg-black/5 px-2 py-0.5 text-xs dark:bg-surface/10">${v}</span>` },
 		{ key: 'status', label: t('docs.status'), render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${v === 'published' ? 'bg-success/15 text-success dark:text-success' : 'bg-warning/15 text-warning dark:text-warning'}">${v}</span>` },
 		{ key: 'updated_at', label: t('docs.updated'), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>` },
-		{ key: 'actions', label: '', class: 'w-48', render: (_: any, row: DocPage) => {
-			const unpublishStyle = row.status === 'published' ? 'var(--color-warning)' : 'var(--color-success)';
-			const unpublishLabel = row.status === 'published' ? t('docs.unpublish') : t('docs.publish');
-			return `<div class="flex items-center gap-2"><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-info)" onclick="window.__editDoc('${row.id}')">Edit</button><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: ${unpublishStyle}" onclick="window.__toggleDoc('${row.id}')">${unpublishLabel}</button><button class="rounded px-2 py-1 text-xs hover:bg-black/5 dark:hover:bg-surface/10" style="color: var(--color-danger)" onclick="window.__deleteDoc('${row.id}')">Delete</button></div>`;
-		}}
+		{ key: 'actions', label: '', class: 'w-48', componentSnippet: DocActionsCell }
 	];
 
 	const filteredDocs = $derived(
@@ -175,18 +173,6 @@
 	$effect(() => {
 		loadDocs();
 	});
-
-	$effect(() => {
-		(window as any).__editDoc = (id: string) => {
-			const doc = docs.find((d) => d.id === id);
-			if (doc) openEdit(doc);
-		};
-		(window as any).__toggleDoc = (id: string) => {
-			const doc = docs.find((d) => d.id === id);
-			if (doc) togglePublish(doc);
-		};
-		(window as any).__deleteDoc = (id: string) => confirmDelete(id);
-	});
 </script>
 
 <svelte:head>
@@ -293,10 +279,33 @@
 			>
 				×
 			</button>
-		</Dialog.Content>
+	</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>
 {/if}
+
+{#snippet DocActionsCell({ row }: { value: any; row: DocPage })}
+	<div class="flex items-center gap-1">
+		<Button variant="ghost" size="sm" onclick={() => openEdit(row)} style="color: var(--color-info)">
+			<Pencil class="h-3.5 w-3.5" />
+		</Button>
+		<Button
+			variant="ghost"
+			size="sm"
+			onclick={() => togglePublish(row)}
+			style={row.status === 'published' ? 'color: var(--color-warning)' : 'color: var(--color-success)'}
+		>
+			{#if row.status === 'published'}
+				<FileDown class="h-3.5 w-3.5" />
+			{:else}
+				<Send class="h-3.5 w-3.5" />
+			{/if}
+		</Button>
+		<Button variant="ghost" size="sm" onclick={() => confirmDelete(row.id)} style="color: var(--color-danger)">
+			<Trash2 class="h-3.5 w-3.5" />
+		</Button>
+	</div>
+{/snippet}
 
 <!-- Delete Confirmation -->
 {#if showDeleteConfirm}

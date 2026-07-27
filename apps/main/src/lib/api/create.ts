@@ -16,6 +16,7 @@ export interface CreateContentInput {
 	meta_description?: string | null;
 	og_image_url?: string | null;
 	seo_indexable?: boolean;
+	organization_id?: string | null;
 	status?: string;
 	visibility?: string;
 	publish_at?: string | null;

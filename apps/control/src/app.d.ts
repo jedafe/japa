@@ -16,8 +16,9 @@ declare global {
 			} | null;
 		}
 		interface PageData {
-			token: string | null;
-			user: App.Locals['user'];
+			token?: string | null;
+			user?: App.Locals['user'];
+			tenantId?: string;
 		}
 		// interface PageState {}
 		// interface Platform {}

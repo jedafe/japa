@@ -345,13 +345,14 @@ func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID)
 	for i, row := range byProduct {
 		bp[i] = EarningsByProduct{
 			ProductType: row.ProductType, Clicks: row.Clicks,
-			Conversions: row.Conversions, Earned: fmt.Sprintf("%v", row.Earned),
+			Conversions: row.Conversions, Earned: formatNumeric(row.Earned),
 		}
 	}
 	re := make([]RecentEvent, len(recent))
 	for i, row := range recent {
 		re[i] = RecentEvent{
 			ID: row.ID.String(), EventType: row.EventType,
+			Commission: formatNumericPtr(row.CommissionAmount),
 			CreatedAt: row.CreatedAt.Time.Format(time.RFC3339),
 			LinkCode: row.LinkCode, ProductType: row.ProductType,
 		}
@@ -362,9 +363,44 @@ func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID)
 
 	return &EarningsSummary{
 		TotalClicks: totalClicks, TotalConversions: totalConversions,
-		TotalEarned: fmt.Sprintf("%v", earnings.TotalEarned),
+		TotalEarned: formatNumeric(earnings.TotalEarned),
 		ByProduct: bp, RecentEvents: re,
 	}, nil
+}
+
+// formatNumeric renders a pgtype.Numeric (or any numeric interface{} coming
+// back from a SUM/COALESCE aggregate) as a currency string with 2 decimals.
+// Returns "0.00" for nil/invalid values so the UI always shows a parseable
+// number — never the pgtype.Numeric struct dump that %v would produce.
+func formatNumeric(v interface{}) string {
+	if v == nil {
+		return "0.00"
+	}
+	if n, ok := v.(pgtype.Numeric); ok {
+		if !n.Valid {
+			return "0.00"
+		}
+		f, err := n.Float64Value()
+		if err != nil || !f.Valid {
+			return "0.00"
+		}
+		return fmt.Sprintf("%.2f", f.Float64)
+	}
+	return fmt.Sprintf("%.2f", v)
+}
+
+// formatNumericPtr is formatNumeric for nullable columns — returns nil when
+// the value is NULL/invalid so the JSON field is omitted (omitempty).
+func formatNumericPtr(n pgtype.Numeric) *string {
+	if !n.Valid {
+		return nil
+	}
+	f, err := n.Float64Value()
+	if err != nil || !f.Valid {
+		return nil
+	}
+	s := fmt.Sprintf("%.2f", f.Float64)
+	return &s
 }
 
 // ── Commission Credit ───────────────────────────────────────────────

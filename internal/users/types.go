@@ -100,24 +100,33 @@ type PublicProfileResponse struct {
 // the /create composer to restore an existing draft for editing. It mirrors
 // the field set the composer's ContentRecord consumes (id, slug, content_type,
 // title, body, body_html, field_values, canonical_url, status, visibility,
-// publish_at, space_id) plus timestamps. FieldValues is a json.RawMessage so
-// the JSONB column serializes as a proper JSON object (not base64), which the
-// composer's field_values: Record<string, unknown> expects.
+// publish_at, space_id) plus timestamps, the post-as-org organization_id, and
+// the SEO/feature-image fields (migration 000165) so a draft restored into the
+// composer round-trips every field the editor can mutate. FieldValues is a
+// json.RawMessage so the JSONB column serializes as a proper JSON object (not
+// base64), which the composer's field_values: Record<string, unknown> expects.
 type DraftResponse struct {
-	ID            string          `json:"id"`
-	Slug          string          `json:"slug"`
-	ContentType   string          `json:"content_type"`
-	Title         string          `json:"title"`
-	Body          string          `json:"body"`
-	BodyHTML      string          `json:"body_html"`
-	FieldValues   json.RawMessage `json:"field_values"`
-	CanonicalURL  *string         `json:"canonical_url"`
-	Status        string          `json:"status"`
-	Visibility    string          `json:"visibility"`
-	SpaceID       *string         `json:"space_id"`
-	GeoSpaceID    *string         `json:"geo_space_id"`
-	PublishAt     *string         `json:"publish_at"`
-	PublishedAt   *string         `json:"published_at"`
-	CreatedAt     string          `json:"created_at"`
-	UpdatedAt     string          `json:"updated_at"`
+	ID              string          `json:"id"`
+	Slug            string          `json:"slug"`
+	ContentType     string          `json:"content_type"`
+	Title           string          `json:"title"`
+	Body            string          `json:"body"`
+	BodyHTML        string          `json:"body_html"`
+	FieldValues     json.RawMessage `json:"field_values"`
+	CanonicalURL    *string         `json:"canonical_url"`
+	HeaderImageID   *string         `json:"header_image_id"`
+	FeaturedImageID *string         `json:"featured_image_id"`
+	MetaTitle       *string         `json:"meta_title"`
+	MetaDescription *string         `json:"meta_description"`
+	OgImageURL      *string         `json:"og_image_url"`
+	SeoIndexable    *bool           `json:"seo_indexable"`
+	OrganizationID  *string         `json:"organization_id"`
+	Status          string          `json:"status"`
+	Visibility      string          `json:"visibility"`
+	SpaceID         *string         `json:"space_id"`
+	GeoSpaceID      *string         `json:"geo_space_id"`
+	PublishAt       *string         `json:"publish_at"`
+	PublishedAt     *string         `json:"published_at"`
+	CreatedAt       string          `json:"created_at"`
+	UpdatedAt       string          `json:"updated_at"`
 }

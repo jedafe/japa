@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
@@ -207,7 +206,7 @@
 		bulkDeleting = false;
 	}
 
-	onMount(() => {
+	$effect(() => {
 		loadCoupons();
 	});
 

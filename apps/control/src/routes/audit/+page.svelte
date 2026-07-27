@@ -19,8 +19,7 @@
 	let message = $state('');
 	let deleteModalOpen = $state(false);
 	let pendingDeleteId = $state<string | null>(null);
-	let clearModalOpen = $state(false);
-	let pendingBulkIds = $state<string[]>([]);
+	let clearAllModalOpen = $state(false);
 
 	let sortKey = $state('timestamp');
 	let sortDirection = $state<'asc' | 'desc'>('desc');
@@ -115,12 +114,11 @@
 
 	const bulkActions: DataTableBulkAction[] = [
 		{
-			label: t('audit.clear_selected', 'Clear Selected'),
+			label: t('audit.clear_all', 'Clear All'),
 			icon: Trash2,
 			variant: 'destructive',
-			onClick: (ids) => {
-				pendingBulkIds = ids;
-				clearModalOpen = true;
+			onClick: () => {
+				clearAllModalOpen = true;
 			}
 		}
 	];
@@ -139,20 +137,23 @@
 		}
 	}
 
-	async function clearSelected(ids: string[]) {
+	async function clearAll() {
 		try {
+			// Backend POST /control/audit-logs/clear accepts {confirm?: bool, before?: RFC3339, action_type?: string}.
+			// Without a scope it purges logs older than the retention window; {confirm:true} clears everything.
 			const result = await api('/control/audit-logs/clear', {
 				method: 'POST',
-				body: { ids }
+				body: { confirm: true }
 			});
 			if (result.ok) {
 				message = '';
+				clearAllModalOpen = false;
 				load();
 			} else {
-				message = result.error || t('audit.clear_error', 'Failed to clear audit entry.');
+				message = result.error || t('audit.clear_error', 'Failed to clear audit logs.');
 			}
 		} catch {
-			message = t('audit.clear_error', 'Failed to clear audit entry.');
+			message = t('audit.clear_error', 'Failed to clear audit logs.');
 		}
 	}
 
@@ -344,15 +345,14 @@
 />
 
 <ConfirmModal
-	bind:open={clearModalOpen}
-	title={t('audit.clear_all_title', 'Clear Selected Audit Entries')}
-	consequence={t('audit.clear_all_confirm', 'Permanently clear {count} selected audit log entries? This cannot be undone.').replace('{count}', String(pendingBulkIds.length))}
-	confirmText={t('audit.clear_all_confirm_text', 'CLEAR SELECTED')}
+	bind:open={clearAllModalOpen}
+	title={t('audit.clear_all_title', 'Clear All Audit Logs')}
+	consequence={t('audit.clear_all_confirm', 'Permanently clear ALL audit log entries? This cannot be undone.')}
+	confirmText={t('audit.clear_all_confirm_text', 'CLEAR ALL')}
 	onConfirm={() => {
-		clearSelected(pendingBulkIds);
-		pendingBulkIds = [];
+		clearAll();
 	}}
 	onCancel={() => {
-		pendingBulkIds = [];
+		clearAllModalOpen = false;
 	}}
 />

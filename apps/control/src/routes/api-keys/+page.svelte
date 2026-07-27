@@ -302,7 +302,9 @@
 	}
 
 	async function revokeKey(id: string) {
-		const result = await api(`/control/api-keys/${id}`, { method: 'DELETE' });
+		// PATCH with status:'revoked' soft-revokes the key (sets status column).
+		// DELETE permanently removes the row — that is deleteKey, not revoke.
+		const result = await api(`/control/api-keys/${id}`, { method: 'PATCH', body: { status: 'revoked' } });
 		if (result.ok) {
 			keys = keys.map((k) => (k.id === id ? { ...k, status: 'revoked' } : k));
 		} else {

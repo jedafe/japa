@@ -7,7 +7,8 @@ import type {
 	MeSpace,
 	CustomFieldGroup,
 	BlogSeries,
-	ContentRecord
+	ContentRecord,
+	ComposerOrganization
 } from '$lib/types';
 
 /** Load everything the composer needs; every fetch degrades independently. */
@@ -20,12 +21,15 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const draftId = event.url.searchParams.get('draft');
 
-	const [typesRes, flagsRes, spacesRes, groupsRes, seriesRes] = await Promise.allSettled([
+	const [typesRes, flagsRes, spacesRes, groupsRes, seriesRes, orgsRes] = await Promise.allSettled([
 		apiList<ContentTypeMeta>(ctx, '/content-types'),
 		apiGet<Record<string, boolean>>(ctx, '/feature-flags'),
 		apiList<MeSpace>(ctx, '/me/spaces'),
 		apiList<CustomFieldGroup>(ctx, '/custom-field-groups'),
-		apiList<BlogSeries>(ctx, '/blog/series')
+		apiList<BlogSeries>(ctx, '/blog/series'),
+		// Post-as-org (ADR-062): the caller's org memberships, used by the
+		// "post on behalf of" selector. Empty list = personal posts only.
+		apiList<ComposerOrganization>(ctx, '/me/organizations')
 	]);
 
 	const rawTypes = typesRes.status === 'fulfilled' ? typesRes.value.items : [];
@@ -36,6 +40,7 @@ export const load: PageServerLoad = async (event) => {
 			? groupsRes.value.items.filter((g) => g.entity_type === 'content')
 			: [];
 	const series = seriesRes.status === 'fulfilled' ? seriesRes.value.items : [];
+	const organizations = orgsRes.status === 'fulfilled' ? orgsRes.value.items : [];
 
 	let draft: ContentRecord | null = null;
 	if (draftId) {
@@ -55,6 +60,7 @@ export const load: PageServerLoad = async (event) => {
 		spaces,
 		fieldGroups,
 		series,
+		organizations,
 		draft,
 		loadError: typesRes.status === 'rejected'
 	};

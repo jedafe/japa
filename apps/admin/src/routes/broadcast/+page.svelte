@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, userManagementApi } from '$lib/api';
+	import { api, userManagementApi, geoApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { datetimeLocalToISOString } from '$lib/utils/date';
@@ -75,13 +75,24 @@
 	$effect(() => {
 		(async () => {
 			try {
-				const result = await userManagementApi.listGroups();
-				if (result.ok) {
-					const groupScopes = result.data.groups.map((g) => ({
-						value: `group:${g.name}`,
-						label: g.name
+				const [groupsResult, countriesResult] = await Promise.all([
+					userManagementApi.listGroups(),
+					geoApi.listCountries()
+				]);
+				if (groupsResult.ok) {
+					const groupScopes = groupsResult.data.groups.map((g) => ({
+						value: `user_group:${g.id}`,
+						label: `${t('broadcast.audiences.group', 'Group')}: ${g.name}`
 					}));
 					scopes = [...scopes, ...groupScopes];
+				}
+				if (countriesResult.ok) {
+					const countries = (countriesResult.data as Array<{ id: string; name: string; geo_code?: string; slug: string }>) ?? [];
+					const geoScopes = countries.map((c) => ({
+						value: `geo_space:${c.id}`,
+						label: `${t('broadcast.audiences.geo', 'Geo')}: ${c.name}`
+					}));
+					scopes = [...scopes, ...geoScopes];
 				}
 			} catch {
 				// Keep default scopes
@@ -112,11 +123,24 @@
 		sending = true;
 		resultMsg = '';
 		try {
+			// Parse the target scope: "all", "user_group:<id>", or "geo_space:<id>"
+			let target = 'all';
+			let targetId = '';
+			if (targetScope.startsWith('user_group:')) {
+				target = 'user_group';
+				targetId = targetScope.split(':')[1];
+			} else if (targetScope.startsWith('geo_space:')) {
+				target = 'geo_space';
+				targetId = targetScope.split(':')[1];
+			}
+
 			await api('/admin/broadcasts', {
 				method: 'POST',
 				body: {
 					subject: title,
 					body: message,
+					target,
+					target_id: targetId,
 					schedule: datetimeLocalToISOString(scheduledAt)
 				}
 			});
@@ -125,6 +149,7 @@
 			title = '';
 			message = '';
 			scheduledAt = '';
+			targetScope = 'all';
 		} catch {
 			resultType = 'error';
 			resultMsg = t('broadcast.error');

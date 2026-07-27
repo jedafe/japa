@@ -1,17 +1,21 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
-	import { Tabs } from 'bits-ui';
+	import { Tabs, Dialog } from 'bits-ui';
 	import { api } from '$lib/api';
 	import type { AiBudget } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { DollarSign, RefreshCw, AlertTriangle } from 'lucide-svelte';
+	import { DollarSign, RefreshCw, AlertTriangle, Pencil } from 'lucide-svelte';
 
 	let {} = $props();
 
 	let budget = $state<AiBudget | null>(null);
 	let loading = $state(true);
 	let activeTab = $state('overview');
+	let editModalOpen = $state(false);
+	let editThreshold = $state('');
+	let saving = $state(false);
+	let editError = $state('');
 
 	async function load() {
 		loading = true;
@@ -24,6 +28,10 @@
 
 	$effect(() => {
 		load();
+		const interval = setInterval(() => {
+			if (document.visibilityState === 'visible') load();
+		}, 30_000);
+		return () => clearInterval(interval);
 	});
 
 	function formatCost(usd: number): string {
@@ -34,11 +42,47 @@
 		if (!budget || !budget.budget_threshold_usd || budget.budget_threshold_usd <= 0) return 0;
 		return Math.round((budget.month_to_date_cost / budget.budget_threshold_usd) * 100);
 	}
+
+	function openEditModal() {
+		editThreshold = budget ? String(budget.budget_threshold_usd ?? 0) : '0';
+		editError = '';
+		editModalOpen = true;
+	}
+
+	async function saveThreshold() {
+		const val = Number(editThreshold);
+		if (Number.isNaN(val) || val < 0) {
+			editError = t('ai_budget.invalid_threshold', 'Threshold must be a non-negative number.');
+			return;
+		}
+		saving = true;
+		editError = '';
+		try {
+			const result = await api<AiBudget>('/control/ai-budget', {
+				method: 'PATCH',
+				body: { budget_threshold_usd: val }
+			});
+			if (result.ok) {
+				budget = result.data;
+				editModalOpen = false;
+			} else {
+				editError = result.error || t('ai_budget.save_error', 'Failed to update budget threshold.');
+			}
+		} catch {
+			editError = t('ai_budget.save_error', 'Failed to update budget threshold.');
+		} finally {
+			saving = false;
+		}
+	}
 </script>
 
 <PageHeader title={t('ai_budget.title', 'AI Budget')} description={t('ai_budget.description', 'Monitor AI costs and budget limits')} />
 
-<div class="mb-4 flex items-center justify-end">
+<div class="mb-4 flex items-center justify-end gap-2">
+	<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={openEditModal}>
+		<Pencil class="size-3" />
+		{t('ai_budget.edit_threshold', 'Edit Threshold')}
+	</button>
 	<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={load}>
 		<RefreshCw class="size-3" />
 		{t('common.refresh')}
@@ -190,3 +234,45 @@
 		<p class="text-muted-foreground mt-3 text-sm">{t('ai_budget.no_data')}</p>
 	</div>
 {/if}
+
+<Dialog.Root bind:open={editModalOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay class="bg-black/50 fixed inset-0 z-40" />
+		<Dialog.Content class="bg-background border-border-card fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 shadow-lg">
+			<Dialog.Title class="text-foreground text-lg font-semibold">{t('ai_budget.edit_threshold', 'Edit Budget Threshold')}</Dialog.Title>
+			<Dialog.Description class="text-muted-foreground mt-1 text-sm">{t('ai_budget.edit_threshold_desc', 'Set the monthly AI spend alert threshold in USD.')}</Dialog.Description>
+
+			<div class="mt-4">
+				<label for="threshold-input" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_budget.budget_threshold')}</label>
+				<input
+					id="threshold-input"
+					type="number"
+					min="0"
+					step="0.01"
+					bind:value={editThreshold}
+					class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm font-mono"
+					placeholder="0.00"
+				/>
+				{#if editError}
+					<p class="text-destructive mt-2 text-xs">{editError}</p>
+				{/if}
+			</div>
+
+			<div class="mt-6 flex justify-end gap-2">
+				<button
+					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
+					onclick={() => (editModalOpen = false)}
+				>
+					{t('common.cancel')}
+				</button>
+				<button
+					class="bg-foreground text-background hover:bg-foreground/90 rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+					disabled={saving}
+					onclick={saveThreshold}
+				>
+					{saving ? t('common.saving') : t('common.save')}
+				</button>
+			</div>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
