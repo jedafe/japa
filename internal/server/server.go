@@ -353,6 +353,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Inject into services with hot-reloadable moderation/ops limits (AUDIT-BE-009).
 	spamPipeline.SetSettings(settingsService)
 	notificationService.SetAsynqClient(asynqClient)
+	notificationService.SetSettings(settingsService)
 	authHandlers.AsynqClient = asynqClient
 	authHandlers.Settings = settingsService
 	oauthHandlers.Settings = settingsService
@@ -1059,9 +1060,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Space moderator routes (slug-resolved via SpaceResolver middleware).
 			// These use RequirePermissionWithInvalidation so the affected
 			// user's permission cache is flushed immediately after the mutation.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderate.assigned")).
+			// AUDIT-FRESH-NAME-001: consolidated on spaces.moderator.assign
+			// (spaces.moderate.assigned removed as a duplicate node).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderator.assign")).
 				Post("/spaces/{slug}/moderators", spaceHandlers.AssignModerator)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderate.assigned")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequirePermissionWithInvalidation(rbacResolver, "spaces.moderator.assign")).
 				Delete("/spaces/{slug}/moderators/{userId}", spaceHandlers.RemoveModerator)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/moderators", spaceHandlers.ListModerators)
@@ -2432,12 +2435,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/certificates/{id}/download", learningHandlers.DownloadCertificate)
 
 			// Track reviews (catalog: POST|GET /learn/tracks/{id}/reviews)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/tracks/{id}/reviews", learningHandlers.CreateTrackReview)
+			// AUDIT-FRESH-DEAD-NODES: wired university.review.create RBAC gate.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.review.create")).Post("/learn/tracks/{id}/reviews", learningHandlers.CreateTrackReview)
 			r.Get("/learn/tracks/{id}/reviews", learningHandlers.ListTrackReviews)
 
 			// Japa University creator-economy routes (ADR-063 — upgrade to Learn).
 			// Instructor lifecycle
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/instructor/apply", universityHandlers.Apply)
+			// AUDIT-FRESH-DEAD-NODES: wired university.instructor.apply RBAC gate.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.apply")).Post("/learn/university/instructor/apply", universityHandlers.Apply)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/instructor/me", universityHandlers.GetMyInstructorProfile)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/learn/university/instructor/me", universityHandlers.UpdateMyInstructorProfile)
 			r.Get("/learn/university/instructors/{id}", universityHandlers.GetPublicInstructor)
@@ -2454,8 +2459,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/learn/university/catalog/{slug}", universityHandlers.GetCatalogTrack)
 
 			// Earnings & payouts
+			// AUDIT-FRESH-DEAD-NODES: wired university.payout.view_own RBAC gate.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/earnings", universityHandlers.GetMyEarnings)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/payouts", universityHandlers.GetMyPayouts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.view_own")).Get("/learn/university/my/payouts", universityHandlers.GetMyPayouts)
 
 			// Content-country preference (ADR-064 geo personalization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/preferences/content-country", usersHandlers.UpdateMyContentCountry)

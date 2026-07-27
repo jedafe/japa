@@ -13,7 +13,7 @@ import (
 
 const createBatchWindow = `-- name: CreateBatchWindow :exec
 INSERT INTO notification_batch_windows (recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at)
-VALUES ($1, $2, $3, $4, ARRAY[$5::uuid], 1, $5, now() + interval '5 minutes')
+VALUES ($1, $2, $3, $4, ARRAY[$5::uuid], 1, $5, now() + make_interval(mins => $6))
 `
 
 type CreateBatchWindowParams struct {
@@ -22,6 +22,7 @@ type CreateBatchWindowParams struct {
 	SubjectType      string      `json:"subject_type"`
 	SubjectID        pgtype.UUID `json:"subject_id"`
 	ActorID          pgtype.UUID `json:"actor_id"`
+	WindowMinutes    int32       `json:"window_minutes"`
 }
 
 func (q *Queries) CreateBatchWindow(ctx context.Context, arg CreateBatchWindowParams) error {
@@ -31,6 +32,7 @@ func (q *Queries) CreateBatchWindow(ctx context.Context, arg CreateBatchWindowPa
 		arg.SubjectType,
 		arg.SubjectID,
 		arg.ActorID,
+		arg.WindowMinutes,
 	)
 	return err
 }

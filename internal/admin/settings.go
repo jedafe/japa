@@ -590,52 +590,26 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	tx, err := h.DB.Writer.Begin(ctx)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "tx_error", "Failed to start transaction")
-		return
-	}
-
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// Upsert each setting. Only keys defined in the schema are accepted.
-	var valueJSON []byte
-
+	// Validate every key up front and serialize values to JSON before delegating
+	// the transactional upsert to the settings service (TX-001: tx belongs to service).
+	pending := make(map[string][]byte, len(updates))
 	for key, value := range updates {
 		if !validKeys[key] {
 			writeError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
 			return
 		}
-
-		fullKey := category + "." + key
-
-		valueJSON, err = json.Marshal(value)
+		valueJSON, err := json.Marshal(value)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
 			return
 		}
-
-		_, err = tx.Exec(ctx, `
-			INSERT INTO system_settings (tenant_id, key, value, created_at, updated_at)
-			VALUES ($1, $2, $3::jsonb, now(), now())
-			ON CONFLICT (tenant_id, key)
-			DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-		`, tenantID, fullKey, string(valueJSON))
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "db_error", "Failed to save setting: "+key)
-			return
-		}
+		pending[category+"."+key] = valueJSON
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		writeError(w, http.StatusInternalServerError, "commit_error", "Failed to save settings")
+	if err := h.Settings.UpdateSettingsBatch(ctx, tenantID, pending); err != nil {
+		slog.Error("admin: failed to save settings", "category", category, "error", err)
+		writeError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
 		return
-	}
-
-	// Invalidate both the in-memory cache and Valkey so the next read picks
-	// up the new values.
-	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
 	}
 
 	// Invalidate link preview cache when the blacklist is updated, since
